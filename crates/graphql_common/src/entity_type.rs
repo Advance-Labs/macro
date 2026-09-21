@@ -73,6 +73,8 @@ pub enum GraphqlEntityType {
     ScheduledAction,
     /// Initiative entity.
     Initiative,
+    /// Macro Database entity (a collection of user-defined tables).
+    Database,
 }
 
 impl GraphqlSoupEntityType {
@@ -105,7 +107,8 @@ impl GraphqlSoupEntityType {
             | EntityType::StaticFile
             | EntityType::CrmContact
             | EntityType::Skill
-            | EntityType::ScheduledAction => return None,
+            | EntityType::ScheduledAction
+            | EntityType::Database => return None,
         })
     }
 
@@ -152,6 +155,7 @@ impl GraphqlEntityType {
             EntityType::AgentSession => Self::AgentSession,
             EntityType::ScheduledAction => Self::ScheduledAction,
             EntityType::Initiative => Self::Initiative,
+            EntityType::Database => Self::Database,
         }
     }
 
@@ -182,6 +186,7 @@ impl GraphqlEntityType {
             Self::AgentSession => EntityType::AgentSession,
             Self::ScheduledAction => EntityType::ScheduledAction,
             Self::Initiative => EntityType::Initiative,
+            Self::Database => EntityType::Database,
         }
     }
 }

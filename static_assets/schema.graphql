@@ -2474,6 +2474,10 @@ enum GraphqlEntityType {
 	Initiative entity.
 	"""
 	INITIATIVE
+	"""
+	Macro Database entity (a collection of user-defined tables).
+	"""
+	DATABASE
 }
 
 """

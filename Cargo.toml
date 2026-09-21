@@ -34,6 +34,7 @@ members = [
   "crates/cursor_cloud_agents",
   "crates/claude_cloud_agents",
   "crates/database_sql",
+  "crates/databases",
   "crates/embedding",
   "crates/dictation",
   "crates/email_api_client",
@@ -296,6 +297,21 @@ reqwest = { version = "0.13", default-features = false, features = [
 rmcp = "1.6.0"
 sse-stream = "0.2"
 rootcause = { version = "0.12", features = ["compat-anyhow1"] }
+# Embedded SQLite for the databases query engine: per-query in-memory
+# materializations, never persistent storage. `session` records changesets for
+# write-through, `column_decltype` gives result provenance, `limits`/`functions`
+# support sandboxing and HAS desugar.
+# Pinned to 0.32 so its libsqlite3-sys (0.30.x) unifies with sqlx-sqlite's —
+# cargo allows only one package linking the native `sqlite3`.
+rusqlite = { version = "0.32", features = [
+  "bundled",
+  "column_decltype",
+  "functions",
+  "hooks",
+  "limits",
+  "serialize",
+  "session",
+] }
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs"] }
 # Mirrors the ACP SDK's own declaration: `coding_agent_worker` ports its
 # process-group kill and makes the same call.
