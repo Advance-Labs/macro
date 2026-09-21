@@ -36,6 +36,7 @@ import {
 import { AgentPullRequestChip } from './AgentPullRequestChip';
 import {
   harnessTitle,
+  sessionHarnessTitle,
   sessionRepositoryUrl,
 } from './compose-agent-session-options';
 
@@ -48,7 +49,7 @@ export function agentSessionTitle(
 ): string {
   const name = session?.name;
   if (name && name !== 'Agent Session') return name;
-  return transcriptTitle ?? name ?? harnessTitle(session?.harness);
+  return transcriptTitle ?? name ?? sessionHarnessTitle(session ?? {});
 }
 
 /**

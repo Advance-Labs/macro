@@ -29,7 +29,10 @@ import {
   TodoList,
 } from '../../ui';
 import { AgentPullRequestChip } from '../AgentPullRequestChip';
-import { harnessTitle, sessionRepositoryUrl } from '../AgentSplitHeader';
+import {
+  sessionHarnessTitle,
+  sessionRepositoryUrl,
+} from '../compose-agent-session-options';
 
 export function AgentSidePanelSections() {
   const { session, bot, metadata, messages } = useAgentSession();
@@ -60,7 +63,9 @@ export function AgentSidePanelSections() {
           </Show>
           <SidePanel.Row label="Harness">
             <SidePanel.Pill>
-              <span class="truncate">{harnessTitle(session()?.harness)}</span>
+              <span class="truncate">
+                {sessionHarnessTitle(session() ?? {})}
+              </span>
             </SidePanel.Pill>
           </SidePanel.Row>
           <Show when={metadata()?.model ?? session()?.model}>
