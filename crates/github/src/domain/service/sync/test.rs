@@ -280,13 +280,6 @@ impl DocumentService for StubDocumentService {
         unimplemented!()
     }
 
-    async fn get_document_comments(
-        &self,
-        _entity_access_receipt: EntityAccessReceipt<ViewAccessLevel>,
-    ) -> Result<Vec<documents::domain::models::CommentThread>, DocumentError> {
-        unimplemented!()
-    }
-
     async fn handle_task_properties(
         &self,
         _user_id: MacroUserIdStr<'static>,
@@ -944,6 +937,15 @@ impl GithubSyncClient for StubSyncClient {
             .push(access_token.to_string());
 
         Ok(self.open_pull_requests.lock().unwrap().clone())
+    }
+
+    async fn list_repository_branches(
+        &self,
+        _access_token: &str,
+        _owner: &str,
+        _repository: &str,
+    ) -> Result<Vec<String>, GithubError> {
+        unimplemented!("the sync service does not list repository branches")
     }
 }
 

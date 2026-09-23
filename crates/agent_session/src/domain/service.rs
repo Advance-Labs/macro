@@ -4,8 +4,9 @@
 //! ports. Protocol decisions live in [`super::session`]'s pure machine, and
 //! each connection's effects are executed by its actor shell.
 //!
-//! A session's log is the only record of what it did: nothing mirrors it
-//! anywhere else, and a reader gets the frames and folds them itself.
+//! A session's log is the source of truth. The writer projects its current
+//! turn state onto the session row for lists; conversation readers fold the
+//! frames themselves.
 //!
 //! A live session's log is written by its actor, which is handed a
 //! [`LiveSessionLogWriter`] rather than the bare repository. Anyone writing a
@@ -32,6 +33,7 @@ use agent_client_protocol::schema::v1::{
     RequestId, Response, SessionId, SetSessionConfigOptionResponse,
 };
 use agent_fold::domain::lifecycle::LifecycleFold;
+use agent_fold::domain::model::{Author, FoldedMessage, MessagePart, TurnState};
 use agent_fold::domain::model_selection::model_selection;
 use agent_fold::domain::ports::FoldedMessageRepo;
 use agent_runtime_protocol::domain::action::{AgentAction, AgentActionId, AgentSetModelAction};
@@ -73,6 +75,8 @@ use crate::domain::events::{AgentSessionLifecycleEvent, SessionRenamedMetadata};
 
 /// Buffered not-yet-accepted commands per session actor.
 const COMMAND_BUFFER: usize = 1028;
+/// Bound memory usage while draining all sessions during account cleanup.
+const USER_CLEANUP_BATCH_SIZE: std::num::NonZeroUsize = std::num::NonZeroUsize::new(100).unwrap();
 /// Persistence may delay lifecycle teardown, but never indefinitely.
 const SESSION_PERSIST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 /// How long a command may sit queued behind the ACP handshake
@@ -171,6 +175,13 @@ pub trait AgentSessionService: Send + Sync + 'static {
         access: &EntityAccessReceipt<OwnerAccessLevel>,
         name: &str,
     ) -> impl Future<Output = Result<()>> + Send;
+
+    /// A bounded batch of sessions owned by this user, including inactive sessions.
+    /// Used by account cleanup, not access-based discovery.
+    fn sessions_for_user_cleanup(
+        &self,
+        owner: &MacroUserIdStr<'static>,
+    ) -> impl Future<Output = Result<Vec<AgentSession>>> + Send;
 
     /// Delete an agent session by id.
     fn delete_session(&self, id: AgentSessionId) -> impl Future<Output = Result<()>> + Send;
@@ -715,14 +726,10 @@ where
                 previews.push(AgentSessionPreview::DoesNotExist(id));
                 continue;
             };
-            // A grant row settles it. Without one, a session opened from a
-            // document discussion may still be visible through the document
-            // itself, which only the access service knows.
-            let visible = candidate.has_grant
-                || (matches!(
-                    candidate.thread_parent,
-                    Some(messages::domain::models::MessageParent::Document(_))
-                ) && self.view_access.can_view(viewer, id).await?);
+            // Links and originating documents can grant access without a
+            // materialized row. Resolve those through the same view port as
+            // the session's read routes.
+            let visible = candidate.has_grant || self.view_access.can_view(viewer, id).await?;
             previews.push(if visible {
                 AgentSessionPreview::Access(Box::new(candidate.data))
             } else {
@@ -751,6 +758,15 @@ where
         bot_id: Option<BotId>,
     ) -> Result<ThreadSession> {
         self.repo.find_for_thread(thread_id, bot_id).await
+    }
+
+    async fn sessions_for_user_cleanup(
+        &self,
+        owner: &MacroUserIdStr<'static>,
+    ) -> Result<Vec<AgentSession>> {
+        self.repo
+            .recent_for_owner(owner, USER_CLEANUP_BATCH_SIZE)
+            .await
     }
 
     async fn delete_session(&self, id: AgentSessionId) -> Result<()> {
@@ -939,8 +955,11 @@ where
     let AgentAction::Prompt(prompt) = action else {
         return None;
     };
+    // Whether anyone has *spoken* here yet, rather than whether the log has
+    // opened a turn: controls take turns of their own, so a session whose
+    // model was set before its first prompt would otherwise never be named.
     folds
-        .next_turn_id(id)
+        .messages(id)
         .await
         .inspect_err(|error| {
             tracing::warn!(
@@ -950,8 +969,19 @@ where
             );
         })
         .ok()
-        .filter(|turn| *turn == MessageId::first(AuthorKind::User).turn)
+        .filter(|messages| !messages.iter().any(is_user_prompt))
         .map(|_| prompt.name_source().to_owned())
+}
+
+/// A message a user wrote, as opposed to a control they issued.
+fn is_user_prompt(message: &FoldedMessage) -> bool {
+    matches!(message.author, Author::User { .. })
+        && message.parts.iter().any(|part| {
+            matches!(
+                part,
+                MessagePart::Text { .. } | MessagePart::Attachment { .. }
+            )
+        })
 }
 
 fn spawn_initial_agent_session_rename<R, Rt, Namer>(
@@ -1150,6 +1180,9 @@ pub struct LiveSessionLogWriter<R, Rt> {
     /// The model last projected onto the session row, so a thousand streamed
     /// frames under one model cost one `UPDATE`, not a thousand.
     projected_model: Option<String>,
+    /// Last turn state stored atomically with its frame. Stream publication
+    /// uses this durable value, never a state from buffered frames.
+    projected_turn: Option<TurnState>,
 }
 
 /// One frame waiting for the next write.
@@ -1200,6 +1233,7 @@ impl<R, Rt> LiveSessionLogWriter<R, Rt> {
             pending: Vec::new(),
             flush_due: None,
             projected_model: None,
+            projected_turn: None,
         }
     }
 
@@ -1217,6 +1251,7 @@ impl<R, Rt> LiveSessionLogWriter<R, Rt> {
             pending: Vec::new(),
             flush_due: None,
             projected_model: None,
+            projected_turn: None,
         }
     }
 
@@ -1275,8 +1310,14 @@ where
             .map(|fold| fold.push(log.clone()).signals)
             .unwrap_or_default();
 
+        let turn_state = self
+            .fold
+            .as_ref()
+            .map(|fold| fold.inner().metadata().turn)
+            .filter(|turn| self.projected_turn != Some(*turn));
+
         let log_id = match &self.claim {
-            Some(_) if boundary.is_none() && batches(&log.content) => {
+            Some(_) if boundary.is_none() && turn_state.is_none() && batches(&log.content) => {
                 let id = macro_uuid::generate_uuid_v7();
                 self.buffer.push(BufferedFrame {
                     id,
@@ -1284,7 +1325,7 @@ where
                 });
                 self.flush_due
                     .get_or_insert_with(|| tokio::time::Instant::now() + LOG_FLUSH_INTERVAL);
-                if self.buffer.len() >= MAX_PENDING_LOG_FRAMES {
+                if self.buffer.len() + self.pending.len() >= MAX_PENDING_LOG_FRAMES {
                     AgentSessionLogWriter::flush(self).await?;
                 }
                 id
@@ -1296,8 +1337,9 @@ where
                 self.flush_writes().await?;
                 let stored = self
                     .repo
-                    .create_fenced_with_boundary(log.clone(), &claim, boundary)
+                    .create_projected(log.clone(), Some(&claim), boundary, turn_state)
                     .await?;
+                self.projected_turn = turn_state.or(self.projected_turn);
                 let id = stored.id;
                 let flush_now = flushes_through(&stored.entry.content);
                 self.pending.push(stored);
@@ -1313,7 +1355,11 @@ where
             // frame at once - the batch exists for streamed output under a
             // claim, nothing else.
             None => {
-                let stored = AgentSessionLogRepo::create(&self.repo, log.clone()).await?;
+                let stored = self
+                    .repo
+                    .create_projected(log.clone(), None, None, turn_state)
+                    .await?;
+                self.projected_turn = turn_state.or(self.projected_turn);
                 let id = stored.id;
                 let flush_now = flushes_through(&stored.entry.content);
                 self.pending.push(stored);
@@ -1325,6 +1371,12 @@ where
                 id
             }
         };
+
+        if turn_state.is_some()
+            && let Err(error) = self.realtime.publish_updated(session).await
+        {
+            tracing::error!(error = ?error, %session, "failed to publish agent session turn update");
+        }
 
         // Projected when it changes - idempotent, rebuildable from the log,
         // and best-effort, so a failed write must not fail the append.
@@ -1585,6 +1637,7 @@ where
         }
         self.realtime
             .publish(LogAppended {
+                turn_state: self.projected_turn,
                 agent_session_id,
                 entries,
             })

@@ -1,12 +1,13 @@
 import { parseLocalDate } from '@app/features/calendar/utils/calendar-date';
-import { openChatWithAgent } from '@app/features/chat/ChatWithAgentButton';
-import { globalSplitManager } from '@app/signal/splitLayout';
 import {
   type CalendarMentionTarget,
   copyCalendarEventMentionTarget,
-} from '@block-calendar/copy-event-mention';
-import { openCalendarEventSplit } from '@block-calendar/open-calendar-event';
-import { CALENDAR_BLOCK_ID } from '@block-calendar/types';
+} from '@app/features/calendar-view/copy-event-mention';
+import { calendarMentionOpen } from '@app/features/calendar-view/mention-open-target';
+import { openCalendarEventSplit } from '@app/features/calendar-view/open-calendar-event';
+import { CALENDAR_VIEW_ID } from '@app/features/calendar-view/types';
+import { openChatWithAgent } from '@app/features/chat/ChatWithAgentButton';
+import { globalSplitManager } from '@app/signal/splitLayout';
 import { URL_PARAMS as URL_PARAMS_CANVAS } from '@block-canvas/constants';
 import { URL_PARAMS as CHANNEL_PARAMS } from '@block-channel/constants';
 import { URL_PARAMS as URL_PARAMS_MD } from '@block-md/constants';
@@ -34,6 +35,7 @@ import ThreadIcon from '@phosphor/chats-circle.svg';
 import ClockIcon from '@phosphor/clock.svg';
 import ColumnsPlusRight from '@phosphor/columns-plus-right.svg';
 import DotsThree from '@phosphor/dots-three.svg';
+import EyeIcon from '@phosphor/eye.svg';
 import GitBranchIcon from '@phosphor/git-branch.svg';
 import HighlightIcon from '@phosphor/highlighter-circle.svg';
 import Link from '@phosphor/link.svg';
@@ -372,6 +374,11 @@ function CalendarEventPreviewDetails(props: {
     props.event.organizerName ?? props.event.organizerEmail;
   return (
     <div class="px-2 pb-2 flex flex-col gap-1 text-sm text-ink-muted">
+      <Show when={!props.event.viewerEventId}>
+        <MetadataInfo icon={EyeIcon}>
+          Shared with you · not on your calendar
+        </MetadataInfo>
+      </Show>
       <Show when={calendarPreviewSchedule(props.event)}>
         {(schedule) => (
           <MetadataInfo icon={ClockIcon}>
@@ -503,29 +510,27 @@ export function DocumentPreviewContent(props: DocumentPreviewContentProps) {
     props.collapseInfo?.handleCollapse();
   };
 
-  // The calendar is a singleton block: a mentioned event opens it aimed at
-  // the viewer's own copy of the meeting rather than a per-id split.
-  const calendarOpenTarget = () => {
-    const i = item();
-    if (isCalendarEventPreviewItem(i)) {
-      return {
-        eventId: i.event.viewerEventId,
-        occurrenceKey: i.event.occurrenceKey ?? undefined,
-        time: i.event.time,
-      };
-    }
-    // Preview not (yet) accessible — e.g. the recent-mention fallback for a
-    // just-created event. Still route through the singleton opener with the
-    // mentioned id; a generic `{type:'calendar', id:<event-id>}` split would
-    // be rejected by the calendar block's load.
-    if (targetBlockType() === 'calendar') {
-      return {
-        eventId: props.documentInfo.id,
-        occurrenceKey: props.documentInfo.params?.occurrenceKey,
-      };
-    }
-    return undefined;
+  // Calendar is a singleton application view: a mentioned event opens it aimed
+  // at the viewer's own copy of the meeting rather than a per-id split. A
+  // preview that is not (yet) accessible still routes the mentioned id through
+  // the singleton opener so it resolves through the event preview API.
+  const calendarOpen = () => {
+    if (targetBlockType() !== 'calendar') return undefined;
+    return calendarMentionOpen(
+      item(),
+      props.documentInfo.id,
+      props.documentInfo.params?.occurrenceKey
+    );
   };
+  const calendarOpenTarget = () => {
+    const open = calendarOpen();
+    return open?.kind === 'calendar' ? open.target : undefined;
+  };
+  // A meeting shared through a channel but absent from the viewer's own
+  // calendars previews read-only: there is no event of theirs to open.
+  const isReadOnlyCalendarShare = () => calendarOpen()?.kind === 'read_only';
+  const isOpenable = () =>
+    !!props.documentInfo.isOpenable && !isReadOnlyCalendarShare();
 
   const openDocument = createCallback(async (event: MouseEvent) => {
     const calendarTarget = calendarOpenTarget();
@@ -583,8 +588,16 @@ export function DocumentPreviewContent(props: DocumentPreviewContentProps) {
   // writes, so pasting into an editor rebuilds the mention instead of
   // dropping in a bare deep link.
   const calendarMentionTarget = (): CalendarMentionTarget | undefined => {
-    const target = calendarOpenTarget();
-    if (!target) return undefined;
+    const open = calendarOpen();
+    if (!open) return undefined;
+    // A read-only share re-mentions the id that was shared with the channel.
+    const target =
+      open.kind === 'calendar'
+        ? open.target
+        : {
+            eventId: props.documentInfo.id,
+            occurrenceKey: props.documentInfo.params?.occurrenceKey,
+          };
     const i = item();
     const previewed = isCalendarEventPreviewItem(i) ? i.event : undefined;
     return {
@@ -636,7 +649,7 @@ export function DocumentPreviewContent(props: DocumentPreviewContentProps) {
     const splitManager = globalSplitManager();
     if (!splitManager) return false;
     if (calendarOpenTarget()) {
-      return !!splitManager.getSplitByContent('calendar', CALENDAR_BLOCK_ID);
+      return !!splitManager.getSplitByContent('component', CALENDAR_VIEW_ID);
     }
     return !!splitManager.getSplitByContent(
       targetBlockType(),
@@ -685,7 +698,7 @@ export function DocumentPreviewContent(props: DocumentPreviewContentProps) {
   const PreviewTitle = (local: { name: string }) => (
     <Item.Title>
       <Show
-        when={props.documentInfo.isOpenable}
+        when={isOpenable()}
         fallback={<span class="wrap-anywhere">{local.name}</span>}
       >
         <button
@@ -756,7 +769,7 @@ export function DocumentPreviewContent(props: DocumentPreviewContentProps) {
                 Copy Branch Name
               </Dropdown.Item>
             </Show>
-            <Show when={props.documentInfo.isOpenable && !isSplitAlreadyOpen()}>
+            <Show when={isOpenable() && !isSplitAlreadyOpen()}>
               <Dropdown.Item onSelect={() => void openInNewSplit()}>
                 <ColumnsPlusRight class="size-4" />
                 Open in New Split

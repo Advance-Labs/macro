@@ -7,6 +7,15 @@ pub type Result<T, E = AgentSessionError> = std::result::Result<T, E>;
 
 #[derive(Error, Debug)]
 pub enum AgentSessionError {
+    /// Invalid link or channel sharing input.
+    #[error("{0}")]
+    InvalidSharing(&'static str),
+    /// Explicit owner-team sharing was rejected by the shared policy.
+    #[error(transparent)]
+    TeamSharing(models_permissions::share_permission::team_share::TeamSharePolicyError),
+    /// Sharing facts changed while an owner update was in flight.
+    #[error("sharing changed; reload and try again")]
+    SharingChanged,
     /// A repository or branch cannot be used by this session.
     #[error("{0}")]
     InvalidRepositorySelection(&'static str),
@@ -22,6 +31,11 @@ pub enum AgentSessionError {
     Disconnected(AgentSessionId),
     #[error("this bot already has a session for this thread")]
     ThreadSessionExists,
+    /// A create named an id a session already holds. Ids are minted by the
+    /// client so a surface can open on the final id before the create
+    /// answers; two creates under one id is a client bug, not a retry.
+    #[error("agent session {0} already exists")]
+    SessionIdTaken(AgentSessionId),
     #[error("the session owner is not a known user")]
     UnknownOwner,
     /// A path that runs as the session's owner - spending their credentials,

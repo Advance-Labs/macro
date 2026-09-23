@@ -48,9 +48,9 @@ type SessionIdentity = {
 };
 
 /**
- * The persona as the header names it: the runtime's product name followed
- * by "Agent" (`Macro Agent`, `Cursor Agent`), a titled slug for a runtime
- * the composer does not name.
+ * The persona as the header names it: the runtime's product name, with
+ * "Agent" appended when that name does not already end in it (`Macro Agent`,
+ * `Cursor Agent`). A titled slug for a runtime the composer does not name.
  */
 function agentName(session: {
   harness?: string;
@@ -59,20 +59,21 @@ function agentName(session: {
   const harness = sessionHarnessSlug(session);
   if (!harness) return undefined;
   const known = harnessDisplayName(harness);
-  return `${known === harness ? harnessTitle(harness) : known} Agent`;
+  const base = known === harness ? harnessTitle(harness) : known;
+  return base.endsWith(' Agent') ? base : `${base} Agent`;
 }
 
 /**
- * The model's display name from the fold, its id when the runtime lists no
- * name, or the slug the session was created with before the fold reports.
+ * The model's display name from the fold, or the one the session was created
+ * with before the fold reports.
  */
 function modelName(
   metadata: SessionMetadata | undefined,
   session: SessionIdentity | undefined
 ): string | undefined {
-  const model = metadata?.model;
-  if (!model) return session?.model || undefined;
-  return modelDisplayName(model, metadata.supportedModels);
+  const model = metadata?.model || session?.model;
+  if (!model) return undefined;
+  return modelDisplayName(model, metadata?.supportedModels ?? []);
 }
 
 /** Replace the message under the same turn and author, or append it. */

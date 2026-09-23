@@ -3,9 +3,11 @@ import { buildPostMessageSendPayload } from '@channel/Input/message-payload';
 import { useMessageBotMentionUsers } from '@channel/use-channel-bot-mention-users';
 import { StaticMarkdownContext } from '@core/component/LexicalMarkdown/component/core/StaticMarkdown';
 import { useUserId } from '@core/context/user';
-import { useContacts } from '@queries/contacts/contacts';
 import { useMessageLink } from '@queries/messages/document-messages';
-import { useSendMessageMutation } from '@queries/messages/mutations';
+import {
+  newMessageId,
+  useSendMessageMutation,
+} from '@queries/messages/mutations';
 import { useMessageTimelineQuery } from '@queries/messages/timeline';
 import type { MessageParent } from '@service-storage/messages';
 import { createMemo, createSignal, For, Show } from 'solid-js';
@@ -22,15 +24,11 @@ export function DocumentConversationComposer(props: {
   const send = useSendMessageMutation();
   const userId = useUserId();
   const bots = useMessageBotMentionUsers(() => props.parent);
-  // Workspace users for @-mentions, matching the legacy comment composer's
-  // global mention source; ChannelInput otherwise offers only agents and bots.
-  const participants = useContacts();
   let input: InputHandle | undefined;
   return (
     <ChannelInput
       parent={props.parent}
       bots={bots}
-      participants={participants}
       input={{ mode: 'channel', placeholder: 'Leave a comment...' }}
       autofocus={false}
       collapsible={props.collapsible}
@@ -41,7 +39,7 @@ export function DocumentConversationComposer(props: {
         await send.mutateAsync({
           parent: props.parent,
           senderId,
-          optimisticId: crypto.randomUUID(),
+          optimisticId: newMessageId(),
           ...buildPostMessageSendPayload({ snapshot }),
         });
         input?.clear();

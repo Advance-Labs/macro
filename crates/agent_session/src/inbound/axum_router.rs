@@ -6,9 +6,9 @@
 //! it - sending, and editing or removing what is queued - needs `Edit`, which
 //! the mention's channel holds, so whoever can prompt the bot through the
 //! thread can prompt it here too; renaming, resizing, or deleting the session
-//! needs `Owner`. Permission comes from the session's own `entity_access`
-//! rows - the owner with owner access, the mention's channel as editor - never
-//! from any channel the session was once rendered in. Handlers only map
+//! needs `Owner`. Permission comes from the session's grants, sharing settings,
+//! or originating document. Sharing changes also require actual session ownership.
+//! Handlers only map
 //! transport DTOs to domain types and call the [`AgentSessionService`]; they
 //! make no authorization or business decisions of their own.
 //!
@@ -35,8 +35,8 @@ use entity_access::domain::models::{EditAccessLevel, OwnerAccessLevel, ViewAcces
 use entity_access::domain::ports::EntityAccessService;
 use entity_access::inbound::axum_extractors::AgentSessionAccessLevelExtractor;
 use macro_authorization::{
-    ActingUser, MacroAuthorizationExtractor, MacroAuthorizationService, MacroAuthorizationState,
-    UserBotOrHarness, UserBotOrHarnessAuthorization,
+    ActingUser, InternalOnly, MacroAuthorizationExtractor, MacroAuthorizationService,
+    MacroAuthorizationState, UserBotOrHarness, UserBotOrHarnessAuthorization,
 };
 use macro_user_id::user_id::MacroUserIdStr;
 use macro_uuid::Uuid;
@@ -59,6 +59,9 @@ use bots::domain::models::BotId;
 
 #[cfg(test)]
 mod test;
+
+/// Link, channel, and team sharing routes.
+pub mod sharing;
 
 /// Shared state for the agent session router: the agent session service plus
 /// the authorization state the request extractors authenticate against.
@@ -212,6 +215,10 @@ where
             delete(delete_agent_session_handler::<R, Access, Auth>),
         )
         .route(
+            "/user/{user_id}",
+            delete(delete_user_sessions_handler::<R, Access, Auth>),
+        )
+        .route(
             "/{session_id}/control",
             post(control_agent_session_handler::<R, Access, Auth>),
         )
@@ -229,6 +236,21 @@ where
             put(put_agent_session_sandbox_size_handler::<R, Access, Auth>),
         )
         .with_state(state)
+}
+
+/// Account lifecycle endpoint: never grants cleanup authority to a user or harness token.
+async fn delete_user_sessions_handler<R, Access, Auth>(
+    State(state): State<AgentSessionControlState<R, Access, Auth>>,
+    _internal: MacroAuthorizationExtractor<Auth, InternalOnly>,
+    Path(user_id): Path<MacroUserIdStr<'static>>,
+) -> Result<StatusCode, AgentSessionApiError>
+where
+    R: AgentSessionNotificationRecipient,
+    Access: EntityAccessService,
+    Auth: MacroAuthorizationService,
+{
+    state.recipient.delete_user_sessions(user_id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Build the caller-default sandbox size router. Mount at `/agent-sandbox-size`.
@@ -294,6 +316,25 @@ impl IntoResponse for AgentSessionApiError {
             }
             Self::Domain(AgentSessionError::Forbidden) => {
                 (StatusCode::FORBIDDEN, "forbidden").into_response()
+            }
+            Self::Domain(AgentSessionError::InvalidSharing(message)) => {
+                (StatusCode::BAD_REQUEST, message).into_response()
+            }
+            Self::Domain(AgentSessionError::SharingChanged) => (
+                StatusCode::CONFLICT,
+                "sharing changed; reload and try again",
+            )
+                .into_response(),
+            Self::Domain(AgentSessionError::TeamSharing(error)) => {
+                use models_permissions::share_permission::team_share::TeamSharePolicyError;
+                let status = match error {
+                    TeamSharePolicyError::MissingActor | TeamSharePolicyError::NotOwner => {
+                        StatusCode::FORBIDDEN
+                    }
+                    TeamSharePolicyError::InvalidRevision => StatusCode::CONFLICT,
+                    _ => StatusCode::BAD_REQUEST,
+                };
+                (status, error.to_string()).into_response()
             }
             // Already dispatched, removed, or never queued: the caller's
             // entry is not waiting anymore, and there is no un-sending it.
@@ -1419,6 +1460,14 @@ where
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAgentSessionRequest {
+    /// Id to create the session under, minted by the caller. Lets a surface
+    /// open on the session's final id - URL, history row, references - the
+    /// moment the user acts, rather than after this request answers (which
+    /// for a managed sandbox can take a while). Omitted, the service mints
+    /// one. Managed sessions only. Answers 409 if a session already holds
+    /// the id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<Uuid>,
     /// Bot the session runs for. On a managed request this optionally selects
     /// a persisted persona the user owns, may use through team membership, or
     /// can `@` mention in a shared channel; omitting it uses the deployment's
@@ -1461,6 +1510,14 @@ pub struct CreateAgentSessionRequest {
     /// in-process one acts on them today; `agent_harness`'s `AgentKind`
     /// records what each of the others will need to.
     pub instructions: Option<String>,
+    /// Model the managed session runs on, overriding the persona's. Managed
+    /// sessions only: an external runtime picks its own.
+    ///
+    /// The session's model from the moment it exists, which is what a caller
+    /// choosing one before the first prompt means. Selecting a model *during*
+    /// a session is a control action instead, and reads as one in its
+    /// transcript.
+    pub model: Option<String>,
 }
 
 /// The triggering mention on a create request.
@@ -1590,7 +1647,7 @@ impl IntoResponse for CreateSessionApiError {
             Self::InvalidWorkspace(reason) => (StatusCode::UNPROCESSABLE_ENTITY, reason.to_owned()),
             Self::MixedSessionShape => (
                 StatusCode::UNPROCESSABLE_ENTITY,
-                "a managed session may take a prompt, persona and instructions; naming a \
+                "a managed session may take an id, prompt, persona and instructions; naming a \
                  workspace, owner or thread asks for an external one"
                     .to_owned(),
             ),
@@ -1608,6 +1665,10 @@ impl IntoResponse for CreateSessionApiError {
             Self::Domain(AgentSessionError::ThreadSessionExists) => (
                 StatusCode::CONFLICT,
                 "this bot already has a session for this thread".to_owned(),
+            ),
+            Self::Domain(AgentSessionError::SessionIdTaken(_)) => (
+                StatusCode::CONFLICT,
+                "a session with this id already exists".to_owned(),
             ),
             Self::Domain(AgentSessionError::InvalidRepositorySelection(reason)) => {
                 (StatusCode::UNPROCESSABLE_ENTITY, reason.to_owned())
@@ -1774,6 +1835,7 @@ pub async fn create_agent_session_handler<
         let session = state
             .opener
             .open_managed_session(OpenManagedSession {
+                id: request.id.map(AgentSessionId::new_from_uuid),
                 repo_url: request.repo_url,
                 repo_branch: request
                     .repo_branch
@@ -1788,6 +1850,7 @@ pub async fn create_agent_session_handler<
                 prompt: request.prompt,
                 profile,
                 instructions,
+                model: request.model.filter(|model| !model.trim().is_empty()),
             })
             .await?;
         return Ok((
@@ -1799,8 +1862,13 @@ pub async fn create_agent_session_handler<
     };
 
     // An external runtime sends its own first prompt through the control
-    // endpoint, so accepting one here would silently drop it.
-    if request.prompt.is_some() || request.repo_branch.is_some() {
+    // endpoint, so accepting one here would silently drop it, and it runs on
+    // whatever model its operator configured, which is not ours to set.
+    if request.prompt.is_some()
+        || request.repo_branch.is_some()
+        || request.model.is_some()
+        || request.id.is_some()
+    {
         return Err(CreateSessionApiError::MixedSessionShape);
     }
     let bot_id = resolve_bot(&caller.authorization, request.bot_id)?;
