@@ -319,11 +319,16 @@ struct OccurrenceJoinRow {
     updated_at: DateTime<Utc>,
 }
 
+/// A preview batch carries up to 100 events, so each description is capped
+/// well above what the hover card shows; clients sanitize what arrives.
+const MENTION_PREVIEW_DESCRIPTION_MAX_CHARS: i32 = 4000;
+
 struct MentionPreviewRow {
     mention_exists: bool,
     resolved_event_id: Option<Uuid>,
     is_channel_shared: Option<bool>,
     title: Option<String>,
+    description: Option<String>,
     location: Option<String>,
     organizer_email: Option<String>,
     organizer_name: Option<String>,
@@ -1144,8 +1149,12 @@ impl CalendarRepository for PgCalendarRepository {
                 (mentioned.id IS NOT NULL) AS "mention_exists!",
                 viewer_event.id AS "resolved_event_id?",
                 viewer_event.is_channel_shared AS "is_channel_shared?",
-                viewer_event.title AS "title?",
-                viewer_event.location AS "location?",
+                COALESCE(occurrence_override.title, viewer_event.title) AS "title?",
+                left(
+                    COALESCE(occurrence_override.description, viewer_event.description),
+                    $5
+                ) AS "description?",
+                COALESCE(occurrence_override.location, viewer_event.location) AS "location?",
                 viewer_event.organizer_email AS "organizer_email?",
                 viewer_event.organizer_name AS "organizer_name?",
                 viewer_event.recurrence_lines AS "recurrence_lines?",
@@ -1175,6 +1184,7 @@ impl CalendarRepository for PgCalendarRepository {
                         (candidate.owner_id = $1) AS is_owned,
                         (candidate.id = mentioned.id) AS is_mentioned,
                         candidate.title,
+                        candidate.description,
                         candidate.location,
                         candidate.organizer_email,
                         candidate.organizer_name,
@@ -1204,6 +1214,7 @@ impl CalendarRepository for PgCalendarRepository {
                         false,
                         true,
                         mentioned.title,
+                        mentioned.description,
                         mentioned.location,
                         mentioned.organizer_email,
                         mentioned.organizer_name,
@@ -1238,6 +1249,7 @@ impl CalendarRepository for PgCalendarRepository {
             LEFT JOIN LATERAL (
                 SELECT
                     instance.occurrence_key,
+                    instance.recurrence_id,
                     instance.starts_at,
                     instance.ends_at,
                     instance.start_date,
@@ -1260,6 +1272,11 @@ impl CalendarRepository for PgCalendarRepository {
                     instance.occurrence_key
                 LIMIT 1
             ) occurrence ON true
+            -- An exception's content replaces the series content for the
+            -- previewed occurrence alone, as it does in the event view.
+            LEFT JOIN calendar_event_overrides occurrence_override
+                ON occurrence_override.event_id = viewer_event.id
+               AND occurrence_override.recurrence_id = occurrence.recurrence_id
             LEFT JOIN LATERAL (
                 SELECT count(*) AS attendee_count
                 FROM calendar_event_attendees attendee
@@ -1271,6 +1288,7 @@ impl CalendarRepository for PgCalendarRepository {
             &event_ids,
             &occurrence_keys as &[Option<String>],
             now,
+            MENTION_PREVIEW_DESCRIPTION_MAX_CHARS,
         )
         .fetch_all(&self.pool)
         .await
@@ -4033,6 +4051,9 @@ fn mention_preview_from_row(row: MentionPreviewRow) -> Result<CalendarMentionPre
         CalendarMentionEvent {
             viewer_event_id: (!is_channel_shared).then_some(resolved_event_id),
             title: row.title.unwrap_or_default(),
+            description: row
+                .description
+                .filter(|description| !description.trim().is_empty()),
             time,
             occurrence_key: row.occurrence_key,
             is_recurring: !row.recurrence_lines.unwrap_or_default().is_empty(),

@@ -1606,6 +1606,88 @@ async fn occurrence_content_override_shadows_the_series_content(pool: PgPool) {
     );
 }
 
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn mention_preview_shows_the_previewed_occurrences_content(pool: PgPool) {
+    let owner_id = "macro|mention-exception@example.com";
+    let link_id = insert_link(&pool, owner_id).await;
+    let repo = PgCalendarRepository::new(pool);
+    let provider = provider_ids(&repo, link_id).await;
+    let mut upsert = timed_upsert(
+        owner_id,
+        link_id,
+        provider,
+        "mention-edited@example.com",
+        "Series title",
+        1,
+    );
+    upsert.event.description = Some("Series description".to_string());
+    upsert.event.location = Some("Series room".to_string());
+    let event_id = upsert.event.id;
+    let edited_start = Utc.with_ymd_and_hms(2026, 7, 25, 14, 0, 0).unwrap();
+    let recurrence_id = edited_start.to_rfc3339();
+    upsert.occurrences[1].recurrence_id = Some(recurrence_id.clone());
+    upsert.overrides = vec![CalendarEventOverride {
+        recurrence_id: recurrence_id.clone(),
+        original_time: EventStart::Timed(edited_start),
+        time: EventTime::Timed {
+            starts_at: edited_start,
+            ends_at: edited_start + Duration::hours(1),
+            time_zone: Some("UTC".to_string()),
+        },
+        title: Some("Edited title".to_string()),
+        description: Some("Only this occurrence changed".to_string()),
+        location: None,
+        status: None,
+        attendees: None,
+    }];
+    repo.upsert_event_fixture(upsert).await.unwrap();
+
+    let now = Utc.with_ymd_and_hms(2026, 7, 23, 0, 0, 0).unwrap();
+    let series_key = Utc
+        .with_ymd_and_hms(2026, 7, 24, 14, 0, 0)
+        .unwrap()
+        .to_rfc3339();
+    let previews = repo
+        .mention_previews(
+            owner_id,
+            [recurrence_id.clone(), series_key]
+                .map(|key| CalendarMentionRequestItem {
+                    event_id,
+                    occurrence_key: Some(key),
+                })
+                .to_vec(),
+            now,
+        )
+        .await
+        .unwrap();
+    let content = |preview: &CalendarMentionPreview| match preview {
+        CalendarMentionPreview::Accessible(event) => (
+            event.title.clone(),
+            event.description.clone(),
+            event.location.clone(),
+        ),
+        other => panic!("expected an accessible preview: {other:?}"),
+    };
+
+    assert_eq!(
+        content(&previews[0]),
+        (
+            "Edited title".to_string(),
+            Some("Only this occurrence changed".to_string()),
+            Some("Series room".to_string()),
+        ),
+        "the exception's content replaces the series content, and an unset field inherits it"
+    );
+    assert_eq!(
+        content(&previews[1]),
+        (
+            "Series title".to_string(),
+            Some("Series description".to_string()),
+            Some("Series room".to_string()),
+        ),
+    );
+}
+
 /// An exception that explicitly replaces the attendee list with an empty one
 /// must project no attendees for that occurrence — not fall back to the
 /// series list, which only an exception without an attendee list inherits.
@@ -4188,7 +4270,7 @@ async fn mention_previews_fall_back_to_a_channel_shared_projection(pool: PgPool)
     let author_provider = provider_ids(&repo, author_link).await;
     let attendee_provider = provider_ids(&repo, attendee_link).await;
 
-    let author_copy = timed_upsert(
+    let mut author_copy = timed_upsert(
         author_id,
         author_link,
         author_provider,
@@ -4196,6 +4278,7 @@ async fn mention_previews_fall_back_to_a_channel_shared_projection(pool: PgPool)
         "Pilates",
         1,
     );
+    author_copy.event.description = Some("Bring a mat".to_string());
     let shared_event_id = author_copy.event.id;
     repo.upsert_event_fixture(author_copy).await.unwrap();
     let attendee_copy = timed_upsert(
@@ -4271,6 +4354,7 @@ async fn mention_previews_fall_back_to_a_channel_shared_projection(pool: PgPool)
     };
     assert_eq!(shared.viewer_event_id, None);
     assert_eq!(shared.title, "Pilates");
+    assert_eq!(shared.description.as_deref(), Some("Bring a mat"));
     assert!(shared.occurrence_key.is_some());
     // Private events stay hidden despite the grant, and a grant covers only
     // the event it names.
