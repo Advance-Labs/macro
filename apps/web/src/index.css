@@ -438,6 +438,18 @@ body.tauri-ios {
   );
 }
 
+/* InvertUtil and Layer supply the bubble's palette. Code and selection washes
+   use that local foreground so they remain visible on either bubble fill. */
+[data-user-message-bubble] {
+  --color-code-buffer: color-mix(in oklch, var(--color-ink) 12%, transparent);
+  --color-inline-code: color-mix(in oklch, var(--color-ink) 12%, transparent);
+}
+
+[data-user-message-bubble]::selection,
+[data-user-message-bubble] ::selection {
+  background-color: color-mix(in oklch, var(--color-ink) 28%, transparent);
+}
+
 @theme {
   /* Reading sizes at a 16px root; rem units preserve accessibility scaling. */
   --text-base: 0.9375rem;
