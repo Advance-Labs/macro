@@ -6,8 +6,8 @@ import {
 import { TruncatedText } from '@core/component/FileList/TruncatedText';
 import { UserIcon } from '@core/component/UserIcon';
 import type { EntityDragData } from '@entity';
-import type { TagDragData } from '@property/tags/tag-drag-and-drop';
 import { TagDot } from '@property/tags/TagDot';
+import type { TagDragData } from '@property/tags/tag-drag-and-drop';
 import {
   DragDropProvider,
   DragDropSensors,

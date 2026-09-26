@@ -21,14 +21,16 @@ export function DroppedTagApplier(props: {
     return [docTags.applyTag(props.tag.scope, props.tag.id)];
   });
 
-  void Promise.allSettled(applications).then((results) => {
+  const settle = async () => {
+    const results = await Promise.allSettled(applications);
     for (const result of results) {
       if (result.status === 'rejected') {
         console.error('Failed to apply dropped tag', result.reason);
       }
     }
     props.onDone();
-  });
+  };
+  void settle();
 
   return null;
 }
