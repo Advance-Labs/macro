@@ -1,6 +1,8 @@
 use chrono::{TimeZone, Utc};
 
 mod access;
+mod events;
+mod reads;
 use entity_access::domain::models::{
     AccessLevel, EditAccessLevel, Entity, EntityAccessReceipt, EntityPermission, EntityType,
     OwnerAccessLevel, ViewAccessLevel,
@@ -131,7 +133,11 @@ fn service_with_documents(
     repo: MockInitiativeRepo,
     documents: MockInitiativeDescriptionDocuments,
 ) -> InitiativeServiceImpl<MockInitiativeRepo, MockInitiativeDescriptionDocuments> {
-    InitiativeServiceImpl::new(repo, documents)
+    InitiativeServiceImpl::new(
+        repo,
+        documents,
+        std::sync::Arc::new(reads::FakeResources::default()),
+    )
 }
 
 fn share_update() -> UpdateSharePermissionRequestV2 {
@@ -532,16 +538,19 @@ async fn assign_dedupes_enforces_cap_and_preserves_order() {
         .withf(|_, task_ids| task_ids == &["t1".to_string(), "t2".to_string()])
         .return_once(|_, _| {
             Box::pin(async {
-                Ok(vec![
-                    AssignTasksResult {
-                        task_id: "t1".into(),
-                        status: AssignTaskStatus::Assigned,
-                    },
-                    AssignTasksResult {
-                        task_id: "t2".into(),
-                        status: AssignTaskStatus::Moved,
-                    },
-                ])
+                Ok(crate::domain::events::AssignedTasks {
+                    results: vec![
+                        AssignTasksResult {
+                            task_id: "t1".into(),
+                            status: AssignTaskStatus::Assigned,
+                        },
+                        AssignTasksResult {
+                            task_id: "t2".into(),
+                            status: AssignTaskStatus::Moved,
+                        },
+                    ],
+                    changes: Vec::new(),
+                })
             })
         });
 
@@ -621,7 +630,7 @@ async fn get_list_and_unassign_call_the_repo() {
         })
     });
     repo.expect_unassign_task()
-        .return_once(|_, _| Box::pin(async { Ok(()) }));
+        .return_once(|_, _| Box::pin(async { Ok(None) }));
 
     let svc = service(repo);
     svc.internal_get_basic(initiative_id())

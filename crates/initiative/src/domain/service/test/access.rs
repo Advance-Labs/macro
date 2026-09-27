@@ -157,7 +157,7 @@ async fn task_side_clear_needs_no_source_initiative_receipt() {
     repo.expect_clear_task()
         .withf(|id| id == "task-1")
         .times(1)
-        .return_once(|_| Box::pin(async { Ok(()) }));
+        .return_once(|_| Box::pin(async { Ok(None) }));
     service(repo)
         .clear_task(task_receipt(OWNER, "task-1"))
         .await
@@ -185,4 +185,65 @@ async fn all_lifecycle_operations_validate_initiative_entity_type() {
             .await,
         Err(InitiativeError::BadRequest(_))
     ));
+}
+
+#[tokio::test]
+async fn assignee_sharing_deduplicates_and_keeps_owner_assignable() {
+    let mut repo = MockInitiativeRepo::new();
+    repo.expect_grant_assignees()
+        .withf(|id, users| *id == initiative_id() && users == &vec![user(OWNER), user(MEMBER)])
+        .times(1)
+        .return_once(|_, _| Box::pin(async { Ok(()) }));
+    service(repo)
+        .grant_assignees(
+            edit_receipt(),
+            vec![user(OWNER), user(MEMBER), user(MEMBER)],
+        )
+        .await
+        .expect("granted");
+}
+
+#[tokio::test]
+async fn batch_clear_preserves_successes_and_continues_after_independent_failures() {
+    use crate::domain::service::{ClearTaskStatus, clear_task_batch};
+    let mut repo = MockInitiativeRepo::new();
+    repo.expect_clear_task().times(4).returning(|id| {
+        let result = match id {
+            "first" | "last" => Ok(None),
+            "not-task" => Err(InitiativeError::NotATask),
+            "broken" => Err(InitiativeError::Internal(rootcause::report!(
+                "storage unavailable"
+            ))),
+            _ => panic!("unauthorized or missing IDs must not reach persistence"),
+        };
+        Box::pin(async move { result })
+    });
+    let assignments = vec![
+        assignment("first"),
+        assignment("broken"),
+        assignment("not-task"),
+        TaskAssignment::NotFound {
+            task_id: "missing".into(),
+        },
+        TaskAssignment::SkippedNoPermission {
+            task_id: "denied".into(),
+        },
+        assignment("last"),
+    ];
+    let result = clear_task_batch(&service(repo), assignments).await.unwrap();
+    let actual: Vec<_> = result
+        .into_iter()
+        .map(|row| (row.task_id, row.status))
+        .collect();
+    assert_eq!(
+        actual,
+        vec![
+            ("first".into(), ClearTaskStatus::Cleared),
+            ("broken".into(), ClearTaskStatus::Failed),
+            ("not-task".into(), ClearTaskStatus::NotATask),
+            ("missing".into(), ClearTaskStatus::NotFound),
+            ("denied".into(), ClearTaskStatus::SkippedNoPermission),
+            ("last".into(), ClearTaskStatus::Cleared),
+        ]
+    );
 }
