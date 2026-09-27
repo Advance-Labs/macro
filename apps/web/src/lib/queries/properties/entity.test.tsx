@@ -851,7 +851,10 @@ describe('useBulkSaveEntityPropertiesMutation dispositions', () => {
     ],
   };
 
-  it('commits option selections through GraphQL when Soup is GraphQL-backed', async () => {
+  // TEMPORARY: These tests are skipped while tags use the forced REST path.
+  // TODO: Restore these tests once the GraphQL fix is deployed.
+  // See: origin/rahul/tags-graphql-optimistic-first-tag
+  it.skip('commits option selections through GraphQL when Soup is GraphQL-backed', async () => {
     updateGraphqlEntityPropertyOptionsMock.mockResolvedValue([
       { propertyDefinitionId: 'status-def', optionIds: ['doing'] },
     ]);
@@ -868,7 +871,7 @@ describe('useBulkSaveEntityPropertiesMutation dispositions', () => {
     expect(bulkUpdateEntityPropertyOptionsMock).not.toHaveBeenCalled();
   });
 
-  it('rolls back and reports a failed GraphQL option selection', async () => {
+  it.skip('rolls back and reports a failed GraphQL option selection', async () => {
     updateGraphqlEntityPropertyOptionsMock.mockRejectedValue(
       new Error('options failed')
     );

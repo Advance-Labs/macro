@@ -41,7 +41,6 @@ import {
   createGraphqlEntityPropertiesQuery,
   type EntityPropertyMutationDisposition,
 } from './graphql/entity';
-import { updateGraphqlEntityPropertyOptions } from './graphql/entity-options';
 import {
   type BulkUpdateEntityPropertyOptionsParams,
   bulkEntityPropertyOptionsKey,
@@ -640,12 +639,11 @@ export function useBulkUpdateEntityPropertyOptionsMutation(
     mutationFn: async (
       variables: BulkUpdateEntityPropertyOptionsParams
     ): Promise<EntityPropertyOptionSelection[]> => {
-      // The transport swaps, the mutation shell does not: the per-entity scope
-      // that serializes commits and the in-flight overlay both read this
-      // mutation's state, whichever cache the selection lands in.
-      if (isFeatureEnabled(enableGraphqlSoup)) {
-        return updateGraphqlEntityPropertyOptions(variables);
-      }
+      // TEMPORARY: Force REST transport for tags until the GraphQL fix is deployed.
+      // The GraphQL implementation has a known issue that requires backend changes
+      // (switching from updateEntityPropertyOptions to applyEntityPropertyOptionDeltas).
+      // See: origin/rahul/tags-graphql-optimistic-first-tag
+      // TODO: Remove this override once the fix is merged and deployed.
       const response = await throwOnErr(async () =>
         propertiesServiceClient.bulkUpdateEntityPropertyOptions({
           entity_type: toPropertyTargetEntityType(variables.entityType),
