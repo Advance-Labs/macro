@@ -2,6 +2,7 @@ import { createRoot } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readGameLog } from '../core/game-document';
 import { pongRules } from '../core/games/pong';
+import { parseGamePresence } from '../core/presence';
 import { createRandom } from '../core/random';
 import { createLinkedRoomSources } from '../tests/linked-room-sources';
 import { createGameRoom } from './create-game-room';
@@ -105,6 +106,10 @@ describe('createPong', () => {
     await vi.advanceTimersByTimeAsync(1_500);
     expect(ann.pong.court().ball).toBeDefined();
     expect(linked.presence(0)?.court?.ball).toBeDefined();
+    // Snapshots survive the decoder other clients read presence through.
+    expect(parseGamePresence(linked.presence(0)).court).toEqual(
+      linked.presence(0)?.court
+    );
     expect(bob.pong.court().ball).toBeDefined();
     // The host sees Bob's paddle move through his presence.
     expect(ann.pong.court().paddles[1]).toBeLessThan(20);
@@ -140,6 +145,7 @@ describe('createPong', () => {
         round: 0,
         seq: 999_999,
         since: 0,
+        points: 0,
         ball: stale,
         paddles: [30, 30],
       },
@@ -194,7 +200,15 @@ describe('createPong', () => {
         entry.t === 'move' ? [entry] : []
       );
     while (points().length === 0) await vi.advanceTimersByTimeAsync(16);
+    const last = linked.presence(0)?.court;
+    if (!last) throw new Error('tab A never streamed a court');
     close(0);
+    // Tab A's last snapshot may predate the point and still show the ball
+    // that scored, heading off the court.
+    linked.setPresence(0, {
+      activity: 'playing',
+      court: { ...last, points: 0, ball: { x: 99, y: 30, vx: 80, vy: 0 } },
+    });
 
     // Tab B takes over once tab A's court stops changing, before the next
     // serve is due.
@@ -208,6 +222,8 @@ describe('createPong', () => {
     const ball = tabB.pong.court().ball;
     expect(ball).toBeDefined();
     expect(Math.sign(ball?.vx ?? 0)).toBe(scorer === 0 ? 1 : -1);
+    // The old rally was not played on, so the point counts once.
+    expect(points()).toHaveLength(1);
   });
 
   it('plays a local practice game against the computer without writing', async () => {

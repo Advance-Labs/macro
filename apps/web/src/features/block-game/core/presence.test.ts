@@ -8,7 +8,14 @@ describe('parseGamePresence', () => {
         activity: 'playing',
         score: 120,
         paddle: 22,
-        court: { round: 1, seq: 9, since: 5, ball: null, paddles: [30, 31] },
+        court: {
+          round: 1,
+          seq: 9,
+          since: 5,
+          points: 2,
+          ball: null,
+          paddles: [30, 31],
+        },
         extra: 'ignored',
       })
     ).toEqual({
@@ -19,6 +26,7 @@ describe('parseGamePresence', () => {
         round: 1,
         seq: 9,
         since: 5,
+        points: 2,
         ball: undefined,
         paddles: [30, 31],
       },

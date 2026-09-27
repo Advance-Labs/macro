@@ -107,6 +107,13 @@ export function createPong(
   };
   const playing = () => phase().t === 'playing';
   const seat = () => match.mySeat();
+  /** Points played so far in the current round. */
+  const pointsPlayed = () => {
+    const current = phase();
+    return current.t === 'lobby'
+      ? 0
+      : current.state.scores[0] + current.state.scores[1];
+  };
 
   const courtChanged = createChangeTracker();
   const paddleChanged = createChangeTracker();
@@ -242,7 +249,14 @@ export function createPong(
       seq += 1;
       room.setPresence({
         activity: 'playing',
-        court: { round: round(), seq, since: self.since, ball, paddles },
+        court: {
+          round: round(),
+          seq,
+          since: self.since,
+          points: pointsPlayed(),
+          ball,
+          paddles,
+        },
       });
     }
   };
@@ -274,8 +288,14 @@ export function createPong(
       stream.changedAt === undefined
         ? 0
         : Math.min(MAX_EXTRAPOLATION_MS, t - stream.changedAt) / 1000;
+    // A snapshot from before the latest point still shows the ball that
+    // scored; that rally is over.
+    const rallyOver = snapshot.points < pointsPlayed();
     setCourt({
-      ball: snapshot.ball ? extrapolateBall(snapshot.ball, age) : undefined,
+      ball:
+        snapshot.ball && !rallyOver
+          ? extrapolateBall(snapshot.ball, age)
+          : undefined,
       paddles: isGuest ? [snapshot.paddles[0], own] : snapshot.paddles,
     });
   };
@@ -350,6 +370,7 @@ export function createPong(
     on(pointKey, (key) => {
       const current = phase();
       if (key === undefined || current.t !== 'playing') return;
+      ball = undefined;
       serveToward = nextServe(current.state, current.round);
       serveAt = now() + SERVE_DELAY_MS;
     })

@@ -210,6 +210,11 @@ export type PongCourtSnapshot = {
    * two tabs at once, the one open longest keeps it.
    */
   since: number;
+  /**
+   * Points played in the round when the snapshot was taken. A ball from
+   * before the latest point belongs to a rally that already ended.
+   */
+  points: number;
   ball: PongBall | undefined;
   paddles: [number, number];
 };
@@ -219,12 +224,14 @@ export function parseCourtSnapshot(
   value: unknown
 ): PongCourtSnapshot | undefined {
   if (!isRecord(value)) return undefined;
-  const { round, seq, since, ball, paddles } = value;
+  const { round, seq, since, points, ball, paddles } = value;
   if (
     !isFiniteNumber(round) ||
     round < 0 ||
     !isFiniteNumber(seq) ||
-    !isFiniteNumber(since)
+    !isFiniteNumber(since) ||
+    !isFiniteNumber(points) ||
+    points < 0
   )
     return undefined;
   if (
@@ -250,6 +257,7 @@ export function parseCourtSnapshot(
     round: Math.floor(round),
     seq,
     since,
+    points: Math.floor(points),
     ball: parsedBall,
     paddles: [clampPaddle(paddles[0]), clampPaddle(paddles[1])],
   };
