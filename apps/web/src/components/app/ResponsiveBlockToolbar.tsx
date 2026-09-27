@@ -135,9 +135,10 @@ export function ResponsiveBlockToolbar(props: BlockToolbarProps) {
     if (!props.menuTools) return visibleTools();
 
     const menuToolLabels = new Set(props.menuTools.map(getToolLabel));
-    const missingShareTools = visibleTools().filter(
-      (tool) => isShareTool(tool) && !menuToolLabels.has(getToolLabel(tool))
-    );
+    const missingShareTools = visibleTools().filter((tool) => {
+      const label = getToolLabel(tool);
+      return label === 'Share' && !menuToolLabels.has(label);
+    });
 
     return [...props.menuTools, ...missingShareTools];
   };
