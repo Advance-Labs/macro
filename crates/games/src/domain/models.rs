@@ -42,8 +42,18 @@ pub const MAX_PLAYERS: usize = 8;
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum GameKind {
+    /// Two players; ranked by matches won.
+    Pong,
+    /// Solo; score is points from bricks broken.
+    BrickBreaker,
     /// Solo; score is points from apples eaten.
     Snake,
+    /// Solo; score is points from cleared lines and drops.
+    FallingBlocks,
+    /// Solo; score is points from invaders shot down.
+    Invaders,
+    /// Solo; score is pipes passed.
+    Flappy,
     /// Solo; score is the sum of merged tiles.
     TwentyFortyEight,
     /// Solo; score is the clear time in milliseconds, lower is better.
@@ -75,23 +85,36 @@ impl GameKind {
     /// How this game ranks its players.
     pub fn scoring(self) -> GameScoring {
         match self {
-            Self::Snake | Self::TwentyFortyEight | Self::TypingRace => GameScoring::HighScore,
+            Self::BrickBreaker
+            | Self::Snake
+            | Self::FallingBlocks
+            | Self::Invaders
+            | Self::Flappy
+            | Self::TwentyFortyEight
+            | Self::TypingRace => GameScoring::HighScore,
             Self::Minesweeper => GameScoring::LowScore,
-            Self::TicTacToe | Self::ConnectFour | Self::DotsAndBoxes => GameScoring::Wins,
+            Self::Pong | Self::TicTacToe | Self::ConnectFour | Self::DotsAndBoxes => {
+                GameScoring::Wins
+            }
         }
     }
 
     /// Scores a finished run can plausibly reach; `None` for win-ranked games.
     pub fn score_range(self) -> Option<RangeInclusive<i64>> {
         match self {
+            // Levels repeat without end; far beyond a long session.
+            Self::BrickBreaker | Self::Invaders => Some(0..=1_000_000),
             // 10 points per apple on a 20×20 board.
             Self::Snake => Some(0..=4_000),
+            // Line clears multiply by level, so strong players score high.
+            Self::FallingBlocks => Some(0..=10_000_000),
+            Self::Flappy => Some(0..=100_000),
             // Above the theoretical maximum of a 4×4 board.
             Self::TwentyFortyEight => Some(0..=4_000_000),
             // A clear takes at least a click; a day is the most we keep.
             Self::Minesweeper => Some(1..=86_400_000),
             Self::TypingRace => Some(0..=300),
-            Self::TicTacToe | Self::ConnectFour | Self::DotsAndBoxes => None,
+            Self::Pong | Self::TicTacToe | Self::ConnectFour | Self::DotsAndBoxes => None,
         }
     }
 

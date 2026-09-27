@@ -13,7 +13,12 @@ export type GameKind = (typeof GameKind)[keyof typeof GameKind];
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const GameKind = {
+  pong: 'pong',
+  brick_breaker: 'brick_breaker',
   snake: 'snake',
+  falling_blocks: 'falling_blocks',
+  invaders: 'invaders',
+  flappy: 'flappy',
   twenty_forty_eight: 'twenty_forty_eight',
   minesweeper: 'minesweeper',
   tic_tac_toe: 'tic_tac_toe',

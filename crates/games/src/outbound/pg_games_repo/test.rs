@@ -1,10 +1,11 @@
 use macro_db_migrator::MACRO_DB_MIGRATIONS;
 use macro_user_id::user_id::MacroUserIdStr;
 use sqlx::PgPool;
+use strum::IntoEnumIterator;
 use uuid::Uuid;
 
 use super::PgGamesRepo;
-use crate::domain::models::{GameKind, LeaderboardScope, NewRoundResult, RoundWrite};
+use crate::domain::models::{GameKind, GameScoring, LeaderboardScope, NewRoundResult, RoundWrite};
 use crate::domain::ports::GamesRepo;
 
 const ANN: &str = "macro|games-ann@macro.com";
@@ -244,4 +245,36 @@ async fn rejects_rounds_for_unknown_rooms_or_players(pool: PgPool) {
             .unwrap(),
         RoundWrite::UnknownReference
     );
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn stores_results_for_every_game(pool: PgPool) {
+    let team_id = seed_players(&pool).await;
+    let room = insert_room(&pool, ANN).await;
+    let repo = PgGamesRepo::new(pool);
+
+    // Every kind the service knows must exist in the `game_kind` enum.
+    for (index, kind) in GameKind::iter().enumerate() {
+        match kind.scoring() {
+            GameScoring::Wins => {
+                let result = NewRoundResult {
+                    kind,
+                    ..round(&room, index as i32, Some(ANN))
+                };
+                assert_eq!(
+                    repo.record_round(&result).await.unwrap(),
+                    RoundWrite::Recorded,
+                    "{kind}"
+                );
+            }
+            GameScoring::HighScore | GameScoring::LowScore => {
+                repo.record_best_score(&user(ANN), kind, 10).await.unwrap();
+            }
+        }
+    }
+
+    let scope = LeaderboardScope::Team(team_id);
+    let stored = repo.best_scores(&scope).await.unwrap().len()
+        + repo.win_tallies(&scope).await.unwrap().len();
+    assert_eq!(stored, GameKind::iter().count());
 }

@@ -5878,7 +5878,7 @@ export type ForeignEntityFilters = {
  * Every game offered in Macro. Spellings match the web catalog and the
  * `game_kind` Postgres enum.
  */
-export type GameKind = 'snake' | 'twenty_forty_eight' | 'minesweeper' | 'tic_tac_toe' | 'connect_four' | 'dots_and_boxes' | 'typing_race';
+export type GameKind = 'pong' | 'brick_breaker' | 'snake' | 'falling_blocks' | 'invaders' | 'flappy' | 'twenty_forty_eight' | 'minesweeper' | 'tic_tac_toe' | 'connect_four' | 'dots_and_boxes' | 'typing_race';
 
 /**
  * The ranking of one game.

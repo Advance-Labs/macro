@@ -24688,7 +24688,12 @@
         "type": "string",
         "description": "Every game offered in Macro. Spellings match the web catalog and the\n`game_kind` Postgres enum.",
         "enum": [
+          "pong",
+          "brick_breaker",
           "snake",
+          "falling_blocks",
+          "invaders",
+          "flappy",
           "twenty_forty_eight",
           "minesweeper",
           "tic_tac_toe",

@@ -20,7 +20,12 @@ fn every_kind_has_its_catalog_and_database_spelling() {
     assert_eq!(
         spellings,
         [
+            "pong",
+            "brick_breaker",
             "snake",
+            "falling_blocks",
+            "invaders",
+            "flappy",
             "twenty_forty_eight",
             "minesweeper",
             "tic_tac_toe",

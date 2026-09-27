@@ -5,6 +5,7 @@ use entity_access::domain::models::EntityAccessReceipt;
 use macro_user_id::user_id::MacroUserIdStr;
 use model_entity::EntityType;
 use models_permissions::share_permission::access_level::EditAccessLevel;
+use strum::IntoEnumIterator;
 use uuid::Uuid;
 
 use super::GamesServiceImpl;
@@ -145,7 +146,7 @@ async fn ranks_each_game_by_its_own_order_with_ties_to_the_earliest() {
     let boards = service.leaderboards(&receipt).await.unwrap();
 
     assert_eq!(boards.team_id, Some(team_id));
-    assert_eq!(boards.games.len(), 7);
+    assert_eq!(boards.games.len(), GameKind::iter().count());
     let board = |kind: GameKind| boards.games.iter().find(|g| g.kind == kind).unwrap();
     let order = |kind: GameKind| {
         board(kind)

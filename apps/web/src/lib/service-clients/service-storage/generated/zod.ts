@@ -9847,7 +9847,12 @@ export const getGameLeaderboardsResponse = zod
               .describe('The best players, at most [`LEADERBOARD_SIZE`].'),
             kind: zod
               .enum([
+                'pong',
+                'brick_breaker',
                 'snake',
+                'falling_blocks',
+                'invaders',
+                'flappy',
                 'twenty_forty_eight',
                 'minesweeper',
                 'tic_tac_toe',
@@ -9909,7 +9914,12 @@ export const reportGameRoundBody = zod
       .describe('The only kind of entity a round is reported for.'),
     kind: zod
       .enum([
+        'pong',
+        'brick_breaker',
         'snake',
+        'falling_blocks',
+        'invaders',
+        'flappy',
         'twenty_forty_eight',
         'minesweeper',
         'tic_tac_toe',
@@ -9945,7 +9955,12 @@ export const submitGameScoreBody = zod
   .object({
     kind: zod
       .enum([
+        'pong',
+        'brick_breaker',
         'snake',
+        'falling_blocks',
+        'invaders',
+        'flappy',
         'twenty_forty_eight',
         'minesweeper',
         'tic_tac_toe',

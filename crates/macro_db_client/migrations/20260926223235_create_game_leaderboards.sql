@@ -1,7 +1,12 @@
 -- Team leaderboards for the mini games. Game state itself lives in each game
 -- room document on the sync service; these tables only rank results.
 CREATE TYPE game_kind AS ENUM (
+    'pong',
+    'brick_breaker',
     'snake',
+    'falling_blocks',
+    'invaders',
+    'flappy',
     'twenty_forty_eight',
     'minesweeper',
     'tic_tac_toe',
