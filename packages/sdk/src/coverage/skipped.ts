@@ -308,6 +308,8 @@ export const storageExcluded = [
   'getDocumentLocationV3',
   'getDocumentProcessingResult',
   'getDocumentViewsHandler',
+  // Games are an in-app pastime; the game UI reports its own results.
+  'getGameLeaderboards',
   'getHistoryHandler',
   'getInstructionsHandler',
   'getItemsSoup',
@@ -337,7 +339,9 @@ export const storageExcluded = [
   'postItemsSoupAst',
   'postItemsSoupAstGrouped',
   'removeBotFromChannelByBot',
+  'reportGameRound',
   'resolveChannelMessage',
+  'submitGameScore',
   // Composer dictation is an app-internal, user-only upload flow.
   'transcribeDictation',
   'uploadExtractFolderHandler',
