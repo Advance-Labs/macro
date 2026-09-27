@@ -159,13 +159,18 @@ export function createFallingBlocksRun(options: RunOptions) {
   createEffect(
     on(level, (current) => {
       if (current === undefined) return;
+      let stopped = false;
       let timer: ReturnType<typeof setTimeout>;
       const tick = () => {
         run.update(tickBlocks(run.state(), random));
-        timer = setTimeout(tick, gravityMs(run.state().level));
+        // Ending the run or reaching a new level restarts this effect.
+        if (!stopped) timer = setTimeout(tick, gravityMs(run.state().level));
       };
       timer = setTimeout(tick, gravityMs(current));
-      onCleanup(() => clearTimeout(timer));
+      onCleanup(() => {
+        stopped = true;
+        clearTimeout(timer);
+      });
     })
   );
 

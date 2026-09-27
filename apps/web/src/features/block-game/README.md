@@ -44,7 +44,10 @@ that shows a game picker to editors.
   each point in the log (so the score replays like any turn game); it streams
   the ball and both paddles as presence about fifteen times a second. The
   second seat streams only its paddle and draws its own paddle immediately.
-  Everyone else draws the host's snapshots, extrapolated between updates.
+  Everyone else draws the host's snapshots, extrapolated between updates. A
+  snapshot counts only while it keeps changing, so a closed tab's lingering
+  presence is ignored; if the first seat has the room open in several tabs,
+  the one open longest runs the ball and another takes over when it closes.
   Practice against the computer is local and never touches the log.
 - **Arcade games** (Brick Breaker, Falling Blocks, Invaders, Flappy) run
   locally on an animation-frame loop and record a `run` when they end, like

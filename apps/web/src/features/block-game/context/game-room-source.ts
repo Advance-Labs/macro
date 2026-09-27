@@ -7,6 +7,8 @@ export type { GamePresence };
 export type GameConnectionStatus = 'connecting' | 'connected' | 'offline';
 
 export type GamePeer = {
+  /** One client of the room; a person with two tabs open has two. */
+  peerId: string;
   userId: string | undefined;
   color: string;
   presence: GamePresence;
@@ -14,6 +16,8 @@ export type GamePeer = {
 
 /** The room owns game rules; its host owns transport and persistence. */
 export type GameRoomSource = {
+  /** This client's presence id, comparable with `GamePeer.peerId`. */
+  peerId: string;
   doc: Accessor<LoroDoc | undefined>;
   ready: Accessor<boolean>;
   error: Accessor<string | undefined>;

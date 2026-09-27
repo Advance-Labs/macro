@@ -204,22 +204,28 @@ describe('pong', () => {
       parseCourtSnapshot({
         round: 0,
         seq: 3,
+        since: 1_700_000_000_000,
         ball: { x: 1, y: 2, vx: 3, vy: 4 },
         paddles: [30, 999],
       })
     ).toEqual({
       round: 0,
       seq: 3,
+      since: 1_700_000_000_000,
       ball: { x: 1, y: 2, vx: 3, vy: 4 },
       paddles: [30, PONG_COURT.height - 6],
     });
     expect(
-      parseCourtSnapshot({ round: 0, seq: 1, paddles: [1] })
+      parseCourtSnapshot({ round: 0, seq: 1, since: 1, paddles: [1] })
+    ).toBeUndefined();
+    expect(
+      parseCourtSnapshot({ round: 0, seq: 1, paddles: [1, 2] })
     ).toBeUndefined();
     expect(
       parseCourtSnapshot({
         round: 0,
         seq: 1,
+        since: 1,
         ball: { x: 'a' },
         paddles: [1, 2],
       })

@@ -134,8 +134,11 @@ export function createGameSession(
   }
   const persistenceReady = preparePersistence();
 
+  // Presence is keyed by the id the session started with, even if recovery
+  // later replaces the document.
+  const presenceId = manager.peerIdStr;
   const awareness = createAwareness<GamePresence, GamePresence>(
-    manager.peerIdStr,
+    presenceId,
     options.userId,
     { encode: (presence) => presence, decode: parseGamePresence }
   );
@@ -305,6 +308,7 @@ export function createGameSession(
   });
 
   return {
+    peerId: presenceId,
     doc,
     ready,
     error,
@@ -318,6 +322,7 @@ export function createGameSession(
         peer.selection
           ? [
               {
+                peerId: peer.user.peerId,
                 userId: peer.user.userId,
                 color: peer.user.color,
                 presence: peer.selection,

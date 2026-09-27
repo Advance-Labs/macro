@@ -79,6 +79,24 @@ describe('arcade runs', () => {
     });
   });
 
+  it('keeps one gravity timer after a game ends on its own and restarts', async () => {
+    fakeFrames();
+    const onFinish = vi.fn();
+    const run = inRoot(() =>
+      createFallingBlocksRun({ onFinish, random: createRandom(4) })
+    );
+    run.start();
+    // Untouched pieces stack in the middle until one lands at the top.
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(run.phase()).toBe('over');
+    expect(onFinish).toHaveBeenCalledTimes(1);
+
+    run.start();
+    const top = run.state().piece.y;
+    await vi.advanceTimersByTimeAsync(gravityMs(1) * 2 + 10);
+    expect(run.state().piece.y).toBe(top + 2);
+  });
+
   it('launches Brick Breaker from the paddle and moves it with held keys', async () => {
     fakeFrames();
     const run = inRoot(() =>

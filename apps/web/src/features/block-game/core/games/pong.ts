@@ -192,6 +192,11 @@ export type PongCourtSnapshot = {
   round: number;
   /** Increments with every update, so a repeated heartbeat is not news. */
   seq: number;
+  /**
+   * When the sending tab opened (epoch ms). If the first seat runs the ball in
+   * two tabs at once, the one open longest keeps it.
+   */
+  since: number;
   ball: PongBall | undefined;
   paddles: [number, number];
 };
@@ -201,8 +206,13 @@ export function parseCourtSnapshot(
   value: unknown
 ): PongCourtSnapshot | undefined {
   if (!isRecord(value)) return undefined;
-  const { round, seq, ball, paddles } = value;
-  if (!isFiniteNumber(round) || round < 0 || !isFiniteNumber(seq))
+  const { round, seq, since, ball, paddles } = value;
+  if (
+    !isFiniteNumber(round) ||
+    round < 0 ||
+    !isFiniteNumber(seq) ||
+    !isFiniteNumber(since)
+  )
     return undefined;
   if (
     !Array.isArray(paddles) ||
@@ -226,6 +236,7 @@ export function parseCourtSnapshot(
   return {
     round: Math.floor(round),
     seq,
+    since,
     ball: parsedBall,
     paddles: [clampPaddle(paddles[0]), clampPaddle(paddles[1])],
   };

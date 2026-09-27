@@ -43,6 +43,8 @@ export type GameRoom = {
   canPlay: Accessor<boolean>;
   /** Whether the current user wrote the latest log entry. */
   wroteLatest: Accessor<boolean>;
+  /** This client's presence id; other clients appear in `peers`. */
+  peerId: string;
   peers: Accessor<GamePeer[]>;
   setPresence: (presence: GamePresence | undefined) => void;
   /** Append an action as the current user; false when they cannot play. */
@@ -117,6 +119,7 @@ export function createGameRoom(options: {
       const latest = log().at(-1);
       return latest !== undefined && latest.by === options.userId();
     },
+    peerId: source.peerId,
     peers: source.peers,
     setPresence: source.setPresence,
     append: (action) => {

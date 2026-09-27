@@ -27,10 +27,22 @@ export function createStatusPublisher(options: {
   publish: (status: GameStatus) => Promise<boolean>;
 }) {
   let published: GameStatus | undefined;
+  let settled: GameStatus | undefined;
+  let queue: Promise<void> = Promise.resolve();
 
-  async function publishIfChanged(status: GameStatus) {
-    if (status === published) return;
-    if (await options.publish(status)) published = status;
+  // Writes run one at a time and each sends the latest settled value, so a
+  // slow earlier write can never land after a newer one.
+  function publishSettled() {
+    queue = queue.then(async () => {
+      const status = settled;
+      if (!status || status === published) return;
+      try {
+        if (await options.publish(status)) published = status;
+      } catch (cause) {
+        // The next change retries; a failure must not stall later writes.
+        console.error('Failed to publish game status', cause);
+      }
+    });
   }
 
   // Memoized so the settle timer restarts only when the value changes, not
@@ -43,7 +55,8 @@ export function createStatusPublisher(options: {
       if (!status || status === published) return;
       const delay = options.leads() ? STATUS_SETTLE_MS : STATUS_FALLBACK_MS;
       const timer = setTimeout(() => {
-        void publishIfChanged(status);
+        settled = status;
+        publishSettled();
       }, delay);
       onCleanup(() => clearTimeout(timer));
     })

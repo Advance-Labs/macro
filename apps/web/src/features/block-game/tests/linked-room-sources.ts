@@ -3,38 +3,51 @@ import { createSignal } from 'solid-js';
 import type { GamePresence, GameRoomSource } from '../context/game-room-source';
 
 /**
- * Two clients of one room: document updates are relayed between two LoroDocs
- * the way the sync service would, and each sees the other's presence.
+ * Clients of one room, one per entry in `users` (a user may appear twice, as
+ * two tabs). Document updates are relayed between their LoroDocs the way the
+ * sync service would, and each client sees every other client's presence.
  */
-export function createLinkedRoomSources(users: readonly [string, string]) {
-  const docs = [new LoroDoc(), new LoroDoc()] as const;
-  docs[0].subscribeLocalUpdates((update) => docs[1].import(update));
-  docs[1].subscribeLocalUpdates((update) => docs[0].import(update));
-  const presences = [
-    createSignal<GamePresence>(),
-    createSignal<GamePresence>(),
-  ] as const;
+export function createLinkedRoomSources(users: readonly string[]) {
+  const docs = users.map(() => new LoroDoc());
+  docs.forEach((doc, index) =>
+    doc.subscribeLocalUpdates((update) => {
+      docs.forEach((other, target) => {
+        if (target !== index) other.import(update);
+      });
+    })
+  );
+  const presences = users.map(() => createSignal<GamePresence>());
+  const peerId = (index: number) => `peer-${index}`;
 
-  const source = (index: 0 | 1): GameRoomSource => {
-    const other = index === 0 ? 1 : 0;
-    return {
-      doc: () => docs[index],
-      ready: () => true,
-      error: () => undefined,
-      status: () => 'connected',
-      peers: () => {
-        const presence = presences[other][0]();
-        return presence
-          ? [{ userId: users[other], color: 'currentColor', presence }]
+  const source = (index: number): GameRoomSource => ({
+    peerId: peerId(index),
+    doc: () => docs[index],
+    ready: () => true,
+    error: () => undefined,
+    status: () => 'connected',
+    peers: () =>
+      presences.flatMap(([presence], other) => {
+        const current = presence();
+        return other !== index && current
+          ? [
+              {
+                peerId: peerId(other),
+                userId: users[other],
+                color: 'currentColor',
+                presence: current,
+              },
+            ]
           : [];
-      },
-      setPresence: (next) => presences[index][1](() => next),
-    };
-  };
+      }),
+    setPresence: (next) => presences[index][1](() => next),
+  });
 
   return {
-    sources: [source(0), source(1)] as const,
+    sources: users.map((_, index) => source(index)),
     docs,
-    presence: (index: 0 | 1) => presences[index][0](),
+    presence: (index: number) => presences[index][0](),
+    /** Publish presence for a client that runs no game, such as a closed tab. */
+    setPresence: (index: number, next: GamePresence | undefined) =>
+      presences[index][1](() => next),
   };
 }

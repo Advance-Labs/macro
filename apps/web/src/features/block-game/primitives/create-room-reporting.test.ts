@@ -57,6 +57,43 @@ describe('createStatusPublisher', () => {
     expect(published).toEqual(['waiting', 'in_progress', 'waiting']);
   });
 
+  it('never lets a slow earlier write land after a newer one', async () => {
+    const pending: { status: GameStatus; resolve: (ok: boolean) => void }[] =
+      [];
+    const [status, setStatus] = createSignal<GameStatus>('waiting');
+    createRoot((disposeRoot) => {
+      dispose = disposeRoot;
+      createStatusPublisher({
+        status,
+        enabled: () => true,
+        leads: () => true,
+        publish: (next) =>
+          new Promise<boolean>((resolve) =>
+            pending.push({ status: next, resolve })
+          ),
+      });
+    });
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    setStatus('in_progress');
+    await vi.advanceTimersByTimeAsync(2_000);
+    setStatus('finished');
+    await vi.advanceTimersByTimeAsync(2_000);
+    // Only the first write is in flight; later ones wait their turn.
+    expect(pending.map((write) => write.status)).toEqual(['waiting']);
+
+    pending[0].resolve(true);
+    await vi.advanceTimersByTimeAsync(0);
+    // The queued write sends the latest value, skipping the stale one.
+    expect(pending.map((write) => write.status)).toEqual([
+      'waiting',
+      'finished',
+    ]);
+    pending[1].resolve(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(pending).toHaveLength(2);
+  });
+
   it('lets the client that caused a change publish it first', async () => {
     const publish = vi.fn(async (_status: GameStatus) => true);
     createRoot((disposeRoot) => {

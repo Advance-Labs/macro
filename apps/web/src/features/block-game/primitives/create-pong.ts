@@ -1,5 +1,4 @@
 import { createEffect, createMemo, createSignal, on } from 'solid-js';
-import type { GamePeer } from '../context/game-room-source';
 import {
   centeredPaddles,
   clampPaddle,
@@ -28,6 +27,11 @@ const RESEND_EVERY_MS = 1_000;
 const SERVE_DELAY_MS = 1_200;
 /** Extrapolate at most this far past the host's last update. */
 const MAX_EXTRAPOLATION_MS = 300;
+/**
+ * A stream counts as live while it keeps changing this recently. A closed or
+ * reloaded tab lingers in presence for a few seconds with its last value.
+ */
+const LIVE_MS = 1_000;
 
 export type PongCourtView = {
   ball: PongBall | undefined;
@@ -39,15 +43,49 @@ type Practice = {
   winner: PongSeat | undefined;
 };
 
-function peerFor(peers: GamePeer[], userId: string | undefined) {
-  return userId ? peers.filter((peer) => peer.userId === userId) : [];
+type Stream<T> = {
+  peerId: string;
+  value: T;
+  /** When this client saw the value change; undefined until it does. */
+  changedAt: number | undefined;
+};
+
+/**
+ * Remembers when each client's streamed value last changed. A value that has
+ * not changed since this client first saw it may be a closed tab's last
+ * update, so it has no change time.
+ */
+function createChangeTracker() {
+  const seen = new Map<string, { value: number; at: number | undefined }>();
+  return (peerId: string, value: number, t: number) => {
+    const previous = seen.get(peerId);
+    const at = !previous
+      ? undefined
+      : previous.value === value
+        ? previous.at
+        : t;
+    seen.set(peerId, { value, at });
+    return at;
+  };
+}
+
+const changedAtOrNever = (changedAt: number | undefined) =>
+  changedAt ?? Number.NEGATIVE_INFINITY;
+
+type HostKey = { since: number; peerId: string };
+
+/** The first seat's longest-open tab runs the ball; ties go to the lower id. */
+function outranks(a: HostKey, b: HostKey): boolean {
+  return a.since !== b.since ? a.since < b.since : a.peerId < b.peerId;
 }
 
 /**
  * Real-time play for a Pong room. The first seat's client runs the ball and
  * records each point in the room log; the second seat streams its paddle;
  * everyone else draws the first seat's snapshots, extrapolated between
- * updates. Alone in the lobby, a player can practice against the computer.
+ * updates. If the first seat has several tabs open, the one open longest
+ * runs the ball and the others watch until it stops. Alone in the lobby, a
+ * player can practice against the computer.
  */
 export function createPong(
   room: GameRoom,
@@ -58,6 +96,8 @@ export function createPong(
   const now = options.now ?? (() => performance.now());
   const keys = createHeldKeys();
   let pointer: number | undefined;
+  /** Sent with each snapshot so the first seat's tabs agree on who hosts. */
+  const self: HostKey = { since: Date.now(), peerId: room.peerId };
 
   const phase = match.phase;
   const round = () => {
@@ -67,26 +107,82 @@ export function createPong(
   const playing = () => phase().t === 'playing';
   const seat = () => match.mySeat();
 
-  const hostSnapshot = createMemo((): PongCourtSnapshot | undefined => {
-    const snapshots = peerFor(room.peers(), match.match().seats[0]).flatMap(
-      (peer) => {
-        const snapshot = peer.presence.court;
-        return snapshot && snapshot.round === round() ? [snapshot] : [];
-      }
-    );
-    return snapshots.sort((a, b) => b.seq - a.seq)[0];
+  const courtChanged = createChangeTracker();
+  const paddleChanged = createChangeTracker();
+
+  /** Courts streamed by the first seat's clients for this round. */
+  const hostStreams = (t: number): Stream<PongCourtSnapshot>[] => {
+    const host = match.match().seats[0];
+    return room.peers().flatMap((peer) => {
+      const snapshot = peer.presence.court;
+      if (!host || peer.userId !== host || snapshot?.round !== round())
+        return [];
+      return [
+        {
+          peerId: peer.peerId,
+          value: snapshot,
+          changedAt: courtChanged(peer.peerId, snapshot.seq, t),
+        },
+      ];
+    });
+  };
+  const isLive = (stream: Stream<unknown>, t: number) =>
+    stream.changedAt !== undefined && t - stream.changedAt <= LIVE_MS;
+  const hostKey = (stream: Stream<PongCourtSnapshot>): HostKey => ({
+    since: stream.value.since,
+    peerId: stream.peerId,
   });
-  const guestPaddle = createMemo(() =>
-    peerFor(room.peers(), match.match().seats[1])
-      .map((peer) => peer.presence.paddle)
-      .find((paddle) => paddle !== undefined)
-  );
+
+  /** The court to follow: the top-ranked live host, else the freshest. */
+  const activeCourt = (t: number) => {
+    const streams = hostStreams(t);
+    const live = streams.filter((stream) => isLive(stream, t));
+    if (live.length > 0)
+      return live.reduce((best, stream) =>
+        outranks(hostKey(stream), hostKey(best)) ? stream : best
+      );
+    return streams.reduce<Stream<PongCourtSnapshot> | undefined>(
+      (best, stream) =>
+        !best ||
+        changedAtOrNever(stream.changedAt) > changedAtOrNever(best.changedAt)
+          ? stream
+          : best,
+      undefined
+    );
+  };
+
+  /** A longer-open tab of the first seat is running the ball. */
+  const outranked = (t: number) =>
+    hostStreams(t).some(
+      (stream) => isLive(stream, t) && outranks(hostKey(stream), self)
+    );
+
+  /** The second seat's paddle from whichever of its clients moved last. */
+  const guestPaddle = (t: number): number | undefined => {
+    const guest = match.match().seats[1];
+    let latest: { value: number; at: number } | undefined;
+    for (const peer of room.peers()) {
+      const paddle = peer.presence.paddle;
+      if (!guest || peer.userId !== guest || paddle === undefined) continue;
+      const at = changedAtOrNever(paddleChanged(peer.peerId, paddle, t));
+      if (!latest || at > latest.at) latest = { value: paddle, at };
+    }
+    return latest?.value;
+  };
 
   const [court, setCourt] = createSignal<PongCourtView>({
     ball: undefined,
     paddles: centeredPaddles(),
   });
   const [practice, setPractice] = createSignal<Practice>();
+  /** This first-seat client is watching another of its tabs run the ball. */
+  const [deferring, setDeferring] = createSignal(false);
+  const defer = (next: boolean) => {
+    if (next === deferring()) return;
+    setDeferring(next);
+    // Stop advertising a court this tab no longer runs.
+    if (next) room.setPresence({ activity: 'playing' });
+  };
 
   // Mutable simulation state, published to `court` once per frame.
   let own = centeredPaddles()[0];
@@ -97,8 +193,6 @@ export function createPong(
   let lastSent = Number.NEGATIVE_INFINITY;
   let sentPaddle: number | undefined;
   let seq = 0;
-  let seenSeq: number | undefined;
-  let receivedAt = 0;
 
   const resetCourt = (toward: PongSeat) => {
     own = centeredPaddles()[0];
@@ -137,7 +231,7 @@ export function createPong(
 
   const hostFrame = (t: number, dtSec: number) => {
     moveOwnPaddle(dtSec);
-    other = guestPaddle() ?? other;
+    other = guestPaddle(t) ?? other;
     const paddles: [number, number] = [own, other];
     const scorer = runBall(t, dtSec, paddles);
     if (scorer !== undefined) match.move({ scorer });
@@ -147,7 +241,7 @@ export function createPong(
       seq += 1;
       room.setPresence({
         activity: 'playing',
-        court: { round: round(), seq, ball, paddles },
+        court: { round: round(), seq, since: self.since, ball, paddles },
       });
     }
   };
@@ -166,19 +260,19 @@ export function createPong(
         room.setPresence({ activity: 'playing', paddle: own });
       }
     }
-    const snapshot = hostSnapshot();
-    if (!snapshot) {
+    const stream = activeCourt(t);
+    if (!stream) {
       setCourt({
         ball: undefined,
         paddles: isGuest ? [centeredPaddles()[0], own] : centeredPaddles(),
       });
       return;
     }
-    if (snapshot.seq !== seenSeq) {
-      seenSeq = snapshot.seq;
-      receivedAt = t;
-    }
-    const age = Math.min(MAX_EXTRAPOLATION_MS, t - receivedAt) / 1000;
+    const snapshot = stream.value;
+    const age =
+      stream.changedAt === undefined
+        ? 0
+        : Math.min(MAX_EXTRAPOLATION_MS, t - stream.changedAt) / 1000;
     setCourt({
       ball: snapshot.ball ? extrapolateBall(snapshot.ball, age) : undefined,
       paddles: isGuest ? [snapshot.paddles[0], own] : snapshot.paddles,
@@ -212,13 +306,23 @@ export function createPong(
     running: () => playing() || practicing(),
     onFrame: (dtMs, t) => {
       const dtSec = dtMs / 1000;
-      if (playing()) {
-        const mine = seat();
-        if (mine === 0) hostFrame(t, dtSec);
-        else followerFrame(t, dtSec, mine === 1);
+      if (!playing()) {
+        practiceFrame(t, dtSec);
         return;
       }
-      practiceFrame(t, dtSec);
+      const mine = seat();
+      defer(mine === 0 && outranked(t));
+      if (mine === 0 && !deferring()) {
+        hostFrame(t, dtSec);
+        return;
+      }
+      followerFrame(t, dtSec, mine === 1);
+      if (deferring()) {
+        // Keep up with the running tab so a takeover continues its rally.
+        const view = court();
+        ball = view.ball;
+        [own, other] = view.paddles;
+      }
     },
   });
 
@@ -255,7 +359,8 @@ export function createPong(
     controlledSeat: (): PongSeat | undefined => {
       if (practicing() || practice()?.winner !== undefined) return 0;
       const mine = seat();
-      return playing() && (mine === 0 || mine === 1) ? mine : undefined;
+      if (!playing() || (mine === 0 && deferring())) return undefined;
+      return mine === 0 || mine === 1 ? mine : undefined;
     },
     pointer: (y: number) => {
       pointer = y;

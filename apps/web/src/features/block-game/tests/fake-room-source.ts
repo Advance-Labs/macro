@@ -16,6 +16,7 @@ export function createFakeRoomSource(options: { ready?: boolean } = {}) {
   const [peers, setPeers] = createSignal<GamePeer[]>([]);
   const presence: (GamePresence | undefined)[] = [];
   const source: GameRoomSource = {
+    peerId: 'local',
     doc: () => (ready() ? doc : undefined),
     ready,
     error: () => undefined,
