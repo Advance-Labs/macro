@@ -212,7 +212,9 @@ where
     ))
 }
 
-/// Record a finished round of a game room the caller can edit and played in.
+/// Report a finished round of a game room the caller can edit and played in.
+/// The round counts on leaderboards once two of its players report the same
+/// result.
 #[utoipa::path(
     post,
     tag = "games",

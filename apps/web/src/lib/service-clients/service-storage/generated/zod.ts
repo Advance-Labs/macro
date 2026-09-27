@@ -9904,7 +9904,9 @@ export const getGameLeaderboardsResponse = zod
   );
 
 /**
- * @summary Record a finished round of a game room the caller can edit and played in.
+ * @summary Report a finished round of a game room the caller can edit and played in.
+The round counts on leaderboards once two of its players report the same
+result.
  */
 export const reportGameRoundBody = zod
   .object({
@@ -9943,7 +9945,7 @@ export const reportGameRoundResponse = zod
     recorded: zod
       .boolean()
       .describe(
-        "Whether this report stored the round; false when another player's\nreport arrived first."
+        'Whether this report made the round count. A round counts once two of\nits players report the same result, so the first report returns false.'
       ),
   })
   .describe('Outcome of reporting a finished round.');

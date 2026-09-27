@@ -295,8 +295,10 @@ pub struct RoundReport {
 /// A validated round, ready to persist.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewRoundResult {
-    /// Row id (UUIDv7).
+    /// Row id (UUIDv7) for the round, used if this report makes it count.
     pub id: Uuid,
+    /// The player reporting the round.
+    pub reporter: MacroUserIdStr<'static>,
     /// The game room.
     pub document_id: String,
     /// Zero-based round index within the room.
@@ -310,9 +312,12 @@ pub struct NewRoundResult {
 /// What persisting a round did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RoundWrite {
-    /// This report stored the round.
+    /// This report agreed with another player's, so the round now counts.
     Recorded,
-    /// Another player already reported this round.
+    /// The report is stored; the round counts once another of its players
+    /// reports the same result.
+    Pending,
+    /// The round already counts.
     AlreadyRecorded,
     /// The room or a player no longer exists.
     UnknownReference,
@@ -323,8 +328,8 @@ pub enum RoundWrite {
 #[cfg_attr(feature = "inbound", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RoundRecorded {
-    /// Whether this report stored the round; false when another player's
-    /// report arrived first.
+    /// Whether this report made the round count. A round counts once two of
+    /// its players report the same result, so the first report returns false.
     pub recorded: bool,
 }
 

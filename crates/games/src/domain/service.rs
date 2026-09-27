@@ -186,6 +186,7 @@ fn validate_round(
     }
     Ok(NewRoundResult {
         id: Uuid::now_v7(),
+        reporter: reporter.clone(),
         document_id: receipt.entity().entity_id.clone(),
         round: report.round,
         kind: report.kind,
@@ -251,7 +252,9 @@ where
             .map_err(anyhow::Error::from)?;
         match write {
             RoundWrite::Recorded => Ok(RoundRecorded { recorded: true }),
-            RoundWrite::AlreadyRecorded => Ok(RoundRecorded { recorded: false }),
+            RoundWrite::Pending | RoundWrite::AlreadyRecorded => {
+                Ok(RoundRecorded { recorded: false })
+            }
             RoundWrite::UnknownReference => Err(GamesError::BadRequest(
                 "the room or one of its players no longer exists".to_string(),
             )),

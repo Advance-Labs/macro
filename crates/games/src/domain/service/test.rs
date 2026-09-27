@@ -32,6 +32,7 @@ fn at(minute: i64) -> DateTime<Utc> {
 struct FakeRepo {
     best: Mutex<Vec<BestScore>>,
     wins: Vec<WinTally>,
+    reports: Mutex<Vec<NewRoundResult>>,
     rounds: Mutex<Vec<NewRoundResult>>,
 }
 
@@ -76,12 +77,25 @@ impl GamesRepo for FakeRepo {
     }
 
     async fn record_round(&self, round: &NewRoundResult) -> anyhow::Result<RoundWrite> {
-        let mut rounds = self.rounds.lock().unwrap();
-        if rounds
+        let same_round =
+            |r: &NewRoundResult| r.document_id == round.document_id && r.round == round.round;
+        let mut reports = self.reports.lock().unwrap();
+        if !reports
             .iter()
-            .any(|r| r.document_id == round.document_id && r.round == round.round)
+            .any(|r| same_round(r) && r.reporter == round.reporter)
         {
+            reports.push(round.clone());
+        }
+        let agreeing = reports
+            .iter()
+            .filter(|r| same_round(r) && r.kind == round.kind && r.winner == round.winner)
+            .count();
+        let mut rounds = self.rounds.lock().unwrap();
+        if rounds.iter().any(same_round) {
             return Ok(RoundWrite::AlreadyRecorded);
+        }
+        if agreeing < 2 {
+            return Ok(RoundWrite::Pending);
         }
         rounds.push(round.clone());
         Ok(RoundWrite::Recorded)
@@ -239,24 +253,36 @@ async fn submits_scores_within_each_games_bounds() {
 }
 
 #[tokio::test]
-async fn records_a_round_once_for_its_room() {
+async fn counts_a_round_once_two_of_its_players_agree() {
     let service = GamesServiceImpl::new(FakeRepo::default());
+    let connect_four =
+        |round, winner| report(GameKind::ConnectFour, round, Some(winner), &[ANN, BOB]);
+
+    // Ann alone cannot make her win count, however often she reports it.
+    for _ in 0..2 {
+        let lone = service
+            .report_round(room_receipt(ANN), connect_four(0, ANN))
+            .await
+            .unwrap();
+        assert!(!lone.recorded);
+    }
+    // Bob saw himself win instead, so the round stays uncounted.
+    let disputed = service
+        .report_round(room_receipt(BOB), connect_four(0, BOB))
+        .await
+        .unwrap();
+    assert!(!disputed.recorded);
+
     let first = service
-        .report_round(
-            room_receipt(ANN),
-            report(GameKind::ConnectFour, 0, Some(BOB), &[ANN, BOB]),
-        )
+        .report_round(room_receipt(ANN), connect_four(1, BOB))
         .await
         .unwrap();
-    assert!(first.recorded);
-    let echo = service
-        .report_round(
-            room_receipt(BOB),
-            report(GameKind::ConnectFour, 0, Some(BOB), &[ANN, BOB]),
-        )
+    assert!(!first.recorded);
+    let agreed = service
+        .report_round(room_receipt(BOB), connect_four(1, BOB))
         .await
         .unwrap();
-    assert!(!echo.recorded);
+    assert!(agreed.recorded);
 }
 
 #[tokio::test]

@@ -59,18 +59,19 @@ that shows a game picker to editors.
   as the document's system Status. The client that caused a change publishes it
   after it settles. Other editors follow up later only if the stored value still
   differs, because every property write is recorded as document activity.
-- **Results.** Finished solo runs and races submit a score. Players' clients
-  report each finished versus round; the server keeps the first report of a
-  round, so both players reporting it is harmless.
+- **Results.** Finished solo runs and races submit a score. Every player's
+  client reports each finished versus round, and a round counts once two of its
+  players report the same result, so no one can record a win alone.
 
 ## Leaderboards and trust
 
 `crates/games` owns scores and round wins (`game_best_score`,
-`game_round_result`) behind `/games/*` on the document storage service.
-Leaderboards rank the viewer's team's current members; a player without a team
-sees only their own results. Scores are reported by the game client, as in any
-casual in-browser game. The server bounds them per game, only accepts rounds
-from editors of the room who played in it, and records each round once.
+`game_round_report`, `game_round_result`) behind `/games/*` on the document
+storage service. Leaderboards rank the viewer's team's current members; a
+player without a team sees only their own results. Scores are reported by the
+game client, as in any casual in-browser game. The server bounds them per game,
+only accepts rounds from editors of the room who played in it, keeps one report
+per player, and counts a round once, when two players' reports agree.
 
 ## Layers
 

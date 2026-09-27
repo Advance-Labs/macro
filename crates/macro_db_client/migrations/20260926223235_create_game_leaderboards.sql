@@ -26,10 +26,22 @@ CREATE TABLE game_best_score (
     PRIMARY KEY (user_id, game_kind)
 );
 
--- One row per finished round of a two-player or party game room. Every
--- player's client reports the same round, so `(document_id, round)` keeps the
--- first report only. Deleting a room keeps its history (the reference is
--- cleared); deleting a winner's account removes their wins.
+-- Each player's report of a finished round in a two-player or party game
+-- room: every player's client reports the rounds it saw finish, once each.
+CREATE TABLE game_round_report (
+    document_id TEXT NOT NULL REFERENCES "Document"(id) ON DELETE CASCADE,
+    round INTEGER NOT NULL CHECK (round >= 0),
+    reporter_user_id TEXT NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
+    game_kind game_kind NOT NULL,
+    winner_user_id TEXT REFERENCES "User"(id) ON DELETE CASCADE,
+    reported_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (document_id, round, reporter_user_id)
+);
+
+-- One row per counted round. A round counts once two of its players report
+-- the same result, so no one can record a win alone, and `(document_id,
+-- round)` keeps the first agreed result. Deleting a room keeps its history
+-- (the reference is cleared); deleting a winner's account removes their wins.
 CREATE TABLE game_round_result (
     id UUID PRIMARY KEY,
     document_id TEXT REFERENCES "Document"(id) ON DELETE SET NULL,

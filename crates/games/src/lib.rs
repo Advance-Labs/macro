@@ -7,12 +7,14 @@
 //!
 //! - High-score games keep each player's best result; a team leaderboard
 //!   ranks the team's current members. Players without a team see their own.
-//! - Two-player and party rooms report each finished round once, keyed by
-//!   room and round; team leaderboards count outright wins.
+//! - Two-player and party rooms report each finished round from every
+//!   player's client. A round counts once, keyed by room and round, when two
+//!   of its players report the same result; team leaderboards count outright
+//!   wins.
 //!
 //! Results are reported by players' clients, as in any casual web game. The
-//! service validates bounds, room edit access, and player membership, but it
-//! cannot replay a room's moves.
+//! service validates bounds, room edit access, and player membership, and no
+//! player can make a round count alone, but it cannot replay a room's moves.
 //!
 //! # Architecture
 //!

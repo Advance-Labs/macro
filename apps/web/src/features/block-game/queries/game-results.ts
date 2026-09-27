@@ -23,7 +23,14 @@ export async function submitGameScore(
   return { best: result.value.best, improved: result.value.improved };
 }
 
-/** Report a finished round; the server keeps the first report of each round. */
+/** Another player's report of the same round usually lands within moments. */
+const CONFIRMATION_REFRESH_MS = 5_000;
+
+/**
+ * Report a finished round. It counts once two of its players report the same
+ * result, so when this report is not the deciding one, the leaderboards
+ * refresh a little later, once the other player's report has likely landed.
+ */
 export async function reportGameRound(outcome: RoundOutcome): Promise<void> {
   const result = await storageServiceClient.games.reportRound({
     entityType: 'document',
@@ -37,5 +44,7 @@ export async function reportGameRound(outcome: RoundOutcome): Promise<void> {
     console.error('Failed to report game round', result.error);
     return;
   }
-  if (result.value.recorded && outcome.winner) void invalidateLeaderboards();
+  if (!outcome.winner) return;
+  if (result.value.recorded) void invalidateLeaderboards();
+  else setTimeout(() => void invalidateLeaderboards(), CONFIRMATION_REFRESH_MS);
 }

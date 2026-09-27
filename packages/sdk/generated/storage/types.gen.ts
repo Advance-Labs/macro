@@ -8507,8 +8507,8 @@ export type RingStatusResponse = {
  */
 export type RoundRecorded = {
     /**
-     * Whether this report stored the round; false when another player's
-     * report arrived first.
+     * Whether this report made the round count. A round counts once two of
+     * its players report the same result, so the first report returns false.
      */
     recorded: boolean;
 };

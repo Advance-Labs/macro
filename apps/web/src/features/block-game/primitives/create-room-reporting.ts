@@ -66,7 +66,7 @@ export function createStatusPublisher(options: {
 /**
  * Report each finished round once per visit, from its players' clients. Rounds
  * that finished before this visit were reported by whoever watched them, so
- * only the latest is retried; the server keeps the first report of a round.
+ * only the latest is retried; a round counts once two players' reports agree.
  */
 export function createRoundReporter(options: {
   results: Accessor<RoundResult[]>;

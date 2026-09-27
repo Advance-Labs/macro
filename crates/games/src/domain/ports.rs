@@ -37,7 +37,8 @@ pub trait GamesRepo: Send + Sync + 'static {
         score: i64,
     ) -> impl Future<Output = Result<(BestScore, bool), Self::Err>> + Send;
 
-    /// Store a round once per room and round index.
+    /// Store a player's report of a round, once per player. The round counts,
+    /// once per room and round index, when two of its players' reports agree.
     fn record_round(
         &self,
         round: &NewRoundResult,
@@ -60,8 +61,9 @@ pub trait GamesService: Send + Sync + 'static {
         score: i64,
     ) -> impl Future<Output = Result<ScoreSubmission, GamesError>> + Send;
 
-    /// Record a finished round of a win-ranked game. The receipt proves the
-    /// reporter can edit the room; the reporter must be one of its players.
+    /// Record a player's report of a finished round of a win-ranked game. The
+    /// receipt proves the reporter can edit the room; the reporter must be one
+    /// of its players. The round counts once another player agrees.
     fn report_round(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,

@@ -76,9 +76,11 @@ async fn seed_players(pool: &PgPool) -> Uuid {
     insert_team(pool, &[ANN, BOB]).await
 }
 
-fn round(document_id: &str, round: i32, winner: Option<&str>) -> NewRoundResult {
+/// `reporter`'s report of a Connect Four round.
+fn report(document_id: &str, round: i32, reporter: &str, winner: Option<&str>) -> NewRoundResult {
     NewRoundResult {
         id: Uuid::now_v7(),
+        reporter: user(reporter),
         document_id: document_id.to_string(),
         round,
         kind: GameKind::ConnectFour,
@@ -171,32 +173,50 @@ async fn team_scope_ranks_only_current_members(pool: PgPool) {
     assert_eq!(after.len(), 1);
 }
 
-#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn records_each_round_once_and_tallies_outright_wins(pool: PgPool) {
-    let team_id = seed_players(&pool).await;
-    let room = insert_room(&pool, ANN).await;
-    let repo = PgGamesRepo::new(pool.clone());
-
+/// Both players of a round report the same result.
+async fn agree(repo: &PgGamesRepo, room: &str, round: i32, winner: Option<&str>) {
+    repo.record_round(&report(room, round, ANN, winner))
+        .await
+        .unwrap();
     assert_eq!(
-        repo.record_round(&round(&room, 0, Some(ANN)))
+        repo.record_round(&report(room, round, BOB, winner))
             .await
             .unwrap(),
         RoundWrite::Recorded
     );
-    // The opponent's client reports the same round.
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn counts_rounds_once_two_players_agree_and_tallies_outright_wins(pool: PgPool) {
+    let team_id = seed_players(&pool).await;
+    let room = insert_room(&pool, ANN).await;
+    let repo = PgGamesRepo::new(pool.clone());
+
+    // One player's report, even repeated, waits for another player.
+    for _ in 0..2 {
+        assert_eq!(
+            repo.record_round(&report(&room, 0, ANN, Some(ANN)))
+                .await
+                .unwrap(),
+            RoundWrite::Pending
+        );
+    }
     assert_eq!(
-        repo.record_round(&round(&room, 0, Some(ANN)))
+        repo.record_round(&report(&room, 0, BOB, Some(ANN)))
+            .await
+            .unwrap(),
+        RoundWrite::Recorded
+    );
+    // Later reports of a counted round change nothing.
+    assert_eq!(
+        repo.record_round(&report(&room, 0, CAT, Some(ANN)))
             .await
             .unwrap(),
         RoundWrite::AlreadyRecorded
     );
-    repo.record_round(&round(&room, 1, Some(BOB)))
-        .await
-        .unwrap();
-    repo.record_round(&round(&room, 2, None)).await.unwrap();
-    repo.record_round(&round(&room, 3, Some(ANN)))
-        .await
-        .unwrap();
+    agree(&repo, &room, 1, Some(BOB)).await;
+    agree(&repo, &room, 2, None).await;
+    agree(&repo, &room, 3, Some(ANN)).await;
 
     let mut tallies = repo
         .win_tallies(&LeaderboardScope::Team(team_id))
@@ -228,23 +248,65 @@ async fn records_each_round_once_and_tallies_outright_wins(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn never_counts_a_lone_or_disputed_result(pool: PgPool) {
+    let team_id = seed_players(&pool).await;
+    let room = insert_room(&pool, ANN).await;
+    let repo = PgGamesRepo::new(pool);
+
+    // Ann and Bob each claim round 0, so it never counts.
+    for reporter in [ANN, BOB] {
+        assert_eq!(
+            repo.record_round(&report(&room, 0, reporter, Some(reporter)))
+                .await
+                .unwrap(),
+            RoundWrite::Pending
+        );
+    }
+    // Ann claims round 1 before it is played; the players who saw Bob win it
+    // still agree on the real result.
+    repo.record_round(&report(&room, 1, ANN, Some(ANN)))
+        .await
+        .unwrap();
+    repo.record_round(&report(&room, 1, BOB, Some(BOB)))
+        .await
+        .unwrap();
+    assert_eq!(
+        repo.record_round(&report(&room, 1, CAT, Some(BOB)))
+            .await
+            .unwrap(),
+        RoundWrite::Recorded
+    );
+
+    let tallies = repo
+        .win_tallies(&LeaderboardScope::Team(team_id))
+        .await
+        .unwrap();
+    assert_eq!(
+        tallies
+            .iter()
+            .map(|tally| (tally.user_id.to_string(), tally.wins))
+            .collect::<Vec<_>>(),
+        vec![(BOB.to_string(), 1)]
+    );
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn rejects_rounds_for_unknown_rooms_or_players(pool: PgPool) {
     seed_players(&pool).await;
     let room = insert_room(&pool, ANN).await;
     let repo = PgGamesRepo::new(pool);
 
-    assert_eq!(
-        repo.record_round(&round("missing-room", 0, Some(ANN)))
-            .await
-            .unwrap(),
-        RoundWrite::UnknownReference
-    );
-    assert_eq!(
-        repo.record_round(&round(&room, 0, Some("macro|nobody@macro.com")))
-            .await
-            .unwrap(),
-        RoundWrite::UnknownReference
-    );
+    let nobody = "macro|nobody@macro.com";
+    for unknown in [
+        report("missing-room", 0, ANN, Some(ANN)),
+        report(&room, 0, ANN, Some(nobody)),
+        report(&room, 0, nobody, Some(ANN)),
+    ] {
+        assert_eq!(
+            repo.record_round(&unknown).await.unwrap(),
+            RoundWrite::UnknownReference
+        );
+    }
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
@@ -257,15 +319,13 @@ async fn stores_results_for_every_game(pool: PgPool) {
     for (index, kind) in GameKind::iter().enumerate() {
         match kind.scoring() {
             GameScoring::Wins => {
-                let result = NewRoundResult {
-                    kind,
-                    ..round(&room, index as i32, Some(ANN))
-                };
-                assert_eq!(
-                    repo.record_round(&result).await.unwrap(),
-                    RoundWrite::Recorded,
-                    "{kind}"
-                );
+                for reporter in [ANN, BOB] {
+                    let result = NewRoundResult {
+                        kind,
+                        ..report(&room, index as i32, reporter, Some(ANN))
+                    };
+                    repo.record_round(&result).await.unwrap();
+                }
             }
             GameScoring::HighScore | GameScoring::LowScore => {
                 repo.record_best_score(&user(ANN), kind, 10).await.unwrap();

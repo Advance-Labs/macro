@@ -1748,7 +1748,9 @@ export class Sdk extends HeyApiClient {
     }
     
     /**
-     * Record a finished round of a game room the caller can edit and played in.
+     * Report a finished round of a game room the caller can edit and played in.
+     * The round counts on leaderboards once two of its players report the same
+     * result.
      */
     public reportGameRound<ThrowOnError extends boolean = false>(options: Options<ReportGameRoundData, ThrowOnError>): RequestResult<ReportGameRoundResponses, ReportGameRoundErrors, ThrowOnError> {
         return (options.client ?? this.client).post<ReportGameRoundResponses, ReportGameRoundErrors, ThrowOnError>({

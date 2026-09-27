@@ -277,25 +277,74 @@ impl GamesRepo for PgGamesRepo {
 
     #[tracing::instrument(err, skip(self))]
     async fn record_round(&self, round: &NewRoundResult) -> Result<RoundWrite, Self::Err> {
-        let result = sqlx::query!(
+        let kind = round.kind.to_string();
+        let winner = round.winner.as_ref().map(|winner| winner.as_ref());
+        // A player reports each round once; reporting again changes nothing.
+        let reported = sqlx::query!(
+            r#"
+            INSERT INTO game_round_report
+                (document_id, round, reporter_user_id, game_kind, winner_user_id)
+            VALUES ($1, $2, $3, $4::text::game_kind, $5)
+            ON CONFLICT (document_id, round, reporter_user_id) DO NOTHING
+            "#,
+            round.document_id,
+            round.round,
+            round.reporter.as_ref(),
+            kind,
+            winner,
+        )
+        .execute(&self.pool)
+        .await;
+        match reported {
+            Ok(_) => {}
+            Err(error) if is_foreign_key_violation(&error) => {
+                return Ok(RoundWrite::UnknownReference);
+            }
+            Err(error) => return Err(error.into()),
+        }
+
+        // The round counts once two players' reports agree. Each statement
+        // commits on its own, so whichever report lands second sees both.
+        let counted = sqlx::query!(
             r#"
             INSERT INTO game_round_result (id, document_id, round, game_kind, winner_user_id)
-            VALUES ($1, $2, $3, $4::text::game_kind, $5)
+            SELECT $1::uuid, $2::text, $3::int4, $4::text::game_kind, $5::text
+            WHERE (
+                SELECT COUNT(*)
+                FROM game_round_report
+                WHERE document_id = $2
+                  AND round = $3
+                  AND game_kind = $4::text::game_kind
+                  AND winner_user_id IS NOT DISTINCT FROM $5
+            ) >= 2
             ON CONFLICT (document_id, round) DO NOTHING
             "#,
             round.id,
             round.document_id,
             round.round,
-            round.kind.to_string(),
-            round.winner.as_ref().map(|winner| winner.as_ref()),
+            kind,
+            winner,
         )
         .execute(&self.pool)
-        .await;
-        match result {
-            Ok(done) if done.rows_affected() == 1 => Ok(RoundWrite::Recorded),
-            Ok(_) => Ok(RoundWrite::AlreadyRecorded),
-            Err(error) if is_foreign_key_violation(&error) => Ok(RoundWrite::UnknownReference),
-            Err(error) => Err(error.into()),
+        .await?;
+        if counted.rows_affected() == 1 {
+            return Ok(RoundWrite::Recorded);
         }
+        let settled = sqlx::query_scalar!(
+            r#"
+            SELECT EXISTS (
+                SELECT 1 FROM game_round_result WHERE document_id = $1 AND round = $2
+            ) AS "settled!"
+            "#,
+            round.document_id,
+            round.round,
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(if settled {
+            RoundWrite::AlreadyRecorded
+        } else {
+            RoundWrite::Pending
+        })
     }
 }
