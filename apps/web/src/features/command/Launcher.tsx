@@ -1,6 +1,10 @@
 import { openAgentComposer } from '@app/features/agents-view/primitives/open-composer';
 import { startPendingSession } from '@app/features/block-agent/context/pending-session';
 import { AGENT_INPUT_TEXT_AREA_ID } from '@app/features/block-agent/ui/AgentInput';
+import {
+  isGamesEnabledForCurrentUser,
+  useGamesAccess,
+} from '@app/features/block-game/games-access';
 import { useSpreadsheetAccess } from '@app/features/block-spreadsheet/primitives/use-spreadsheet-access';
 import { createSpreadsheetDocument } from '@app/features/block-spreadsheet/queries/create-spreadsheet';
 import { isSpreadsheetEnabledForCurrentUser } from '@app/features/block-spreadsheet/queries/spreadsheet-access';
@@ -412,6 +416,14 @@ export function runCreateAction(
         shouldInsert,
       });
       return;
+    case 'game':
+      // A room needs its game first, so open the hub to pick one.
+      if (!isGamesEnabledForCurrentUser()) return;
+      createComponent({
+        componentId: 'games',
+        shouldInsert,
+      });
+      return;
     case 'automation':
       setCreateMenuOpen(false, false);
       setAutomationComposerOpen(true, false);
@@ -675,6 +687,21 @@ export const CREATABLE_BLOCKS: CreatableBlock[] = [
     },
   },
   {
+    label: 'Game',
+    enabled: isGamesEnabledForCurrentUser,
+    icon: getIconConfig('game').icon,
+    description: 'Play a game',
+    launcherHint: 'Snake, 2048, Connect Four and more with your team',
+    keywords: ['play', 'games', 'fun', 'break', 'arcade', 'leaderboard'],
+    blockName: 'game',
+    hotkeyToken: TOKENS.create.game,
+    hotkey: 'p',
+    keyDownHandler: () => {
+      runCreateAction('game', { shouldInsert: pressedKeys().has('shift') });
+      return true;
+    },
+  },
+  {
     label: 'Folder',
     icon: getIconConfig('project').icon,
     description: 'Create folder',
@@ -730,6 +757,7 @@ export function useCreateMenuBlocks(
 ): Accessor<CreatableBlock[]> {
   const commands = useCreateCommands();
   const spreadsheets = useSpreadsheetAccess();
+  const games = useGamesAccess();
   const snippetsFlag = useFeatureFlag(enableSnippets);
   // Subscribed to rather than left to the block's own `enabled`, which reads
   // PostHog without tracking it: this memo has no other reason to re-run, so a
@@ -741,6 +769,7 @@ export function useCreateMenuBlocks(
     agentsFlag();
     return (source() ?? commands).filter((block) => {
       if (block.blockName === 'spreadsheet') return spreadsheets();
+      if (block.blockName === 'game') return games();
       if (block.blockName === 'snippet') return snippetsFlag().enabled;
       return block.enabled?.() ?? true;
     });

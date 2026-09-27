@@ -283,6 +283,40 @@ client. A viewer's edit must fail; a concurrent manual edit must force a fresh
 read. These tool calls require the updated AI backend, AI editing worker, and sync
 service; the frontend alone cannot test their hosted path.
 
+## Games
+
+Games are controlled by the `enable-games` PostHog flag (on by default in local
+development). **Create → Game** (`P`) opens the Games hub at `/app/games`: one
+card per game (Snake, 2048, Minesweeper, Tic-Tac-Toe, Connect Four, Dots and
+Boxes, Typing Race) with the team record. **New game** creates a native `.game`
+document and opens it beside the hub; the room is an ordinary document for
+sharing, channels, favorites, moving, and search. Game rooms use a violet game
+controller icon.
+
+Editors play and viewers watch ("You're watching. Ask the owner for edit access
+to play."). Sharing a room to a channel defaults to edit access so members can
+play. In two-player and party games, each player clicks **Join game** (**Join
+race** for Typing Race). Tic-Tac-Toe and Connect Four start when both seats
+fill; Dots and Boxes and Typing Race wait for **Start** / **Start race**. The
+line under the header says whose turn it is, and the finished state offers
+**Rematch** and **Change players**. Typing Race counts down from 5 and accepts
+typing only in its **Type the passage** field; pasting is blocked. Snake starts
+with **Start** or an arrow key and 2048 with the first slide; both take arrow
+keys, WASD, and swipes. Minesweeper starts on the first click and flags with
+right-click, long-press, or **Flag mode**.
+
+The room header shows **Waiting for players** (**Ready to play** for solo
+games), **In progress** (**Playing now**), or **Finished**. Lists, previews, and
+channel mentions show the same state from the document's Status as **Not
+started**, **In progress**, or **Finished**, about 1.5 seconds after play
+settles. Those badges are read-only; the room recomputes its Status. The sidebar
+shows the room's own results and the team leaderboard, which ranks current
+members of the viewer's team (personal results without a team). A room opened
+before its game was recorded shows **Pick a game for this room.** to editors.
+Leaderboards and room creation need the updated document storage service and
+sync service; the dev backend lacks the `/games` endpoints until they are
+deployed.
+
 ## Create and type
 
 Pasting a Macro `/app/agents/<uuid>` session URL into a Markdown editor converts
