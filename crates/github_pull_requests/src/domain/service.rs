@@ -15,7 +15,8 @@ use super::{
     models::{
         EnrichedGithubPullRequest, GITHUB_PULL_REQUEST_FOREIGN_ENTITY_SOURCE,
         GithubPullRequestError, GithubPullRequestFacets, GithubPullRequestRow,
-        GithubPullRequestStatus, GithubPullRequestWrite, GithubRepositoryIdentity,
+        GithubPullRequestSortDirection, GithubPullRequestStatus, GithubPullRequestWrite,
+        GithubRepositoryIdentity,
         UpsertGithubPullRequest, UpsertedGithubPullRequest,
     },
     ports::{
@@ -303,6 +304,7 @@ where
         limit: u32,
         query: ForeignEntityListQuery,
         github_pull_request_filter: LiteralTree<GithubPullRequestLiteral>,
+        sort_direction: GithubPullRequestSortDirection,
     ) -> Result<Vec<ForeignEntity>, GithubPullRequestError> {
         if source_ids.is_empty() {
             return Ok(Vec::new());
@@ -319,6 +321,7 @@ where
             limit,
             query,
             github_pull_request_filter,
+            sort_direction,
         )
         .await
         .map_err(repository_error)

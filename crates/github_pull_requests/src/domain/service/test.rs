@@ -24,7 +24,8 @@ use crate::domain::{
     models::{
         EnrichedGithubPullRequest, GITHUB_PULL_REQUEST_FOREIGN_ENTITY_SOURCE,
         GithubPullRequestError, GithubPullRequestFacets, GithubPullRequestReviewDecision,
-        GithubPullRequestRow, GithubPullRequestStatus, GithubPullRequestWrite,
+        GithubPullRequestRow, GithubPullRequestSortDirection, GithubPullRequestStatus,
+        GithubPullRequestWrite,
         GithubRepositoryIdentity, UpsertGithubPullRequest,
     },
     ports::{
@@ -185,6 +186,7 @@ struct ListingCall {
     cursor_id: Option<Uuid>,
     cursor_value: Option<DateTime<Utc>>,
     github_pull_request_filter: Option<String>,
+    sort_direction: GithubPullRequestSortDirection,
 }
 
 impl StubPullRequestRows {
@@ -265,6 +267,7 @@ impl GithubPullRequestListingRepository for StubPullRequestRows {
         limit: u32,
         query: ForeignEntityListQuery,
         github_pull_request_filter: LiteralTree<GithubPullRequestLiteral>,
+        sort_direction: GithubPullRequestSortDirection,
     ) -> Result<Vec<ForeignEntity>, Self::Err> {
         if *self.fail_listings.lock().unwrap() {
             anyhow::bail!("listing failed");
@@ -279,6 +282,7 @@ impl GithubPullRequestListingRepository for StubPullRequestRows {
             cursor_value: cursor_value.copied(),
             github_pull_request_filter: github_pull_request_filter
                 .map(|filter| format!("{filter:?}")),
+            sort_direction,
         });
         Ok(Vec::new())
     }
@@ -728,6 +732,7 @@ async fn listing_without_sources_skips_the_repository() {
             10,
             listing_query(),
             None,
+            GithubPullRequestSortDirection::Desc,
         )
         .await
         .unwrap();
@@ -737,7 +742,7 @@ async fn listing_without_sources_skips_the_repository() {
 }
 
 #[tokio::test]
-async fn listing_forwards_the_caller_sources_limit_query_and_pull_request_filter() {
+async fn listing_forwards_the_caller_sources_limit_query_filter_and_direction() {
     let rows = StubPullRequestRows::default();
     let service = service(&StubForeignEntityService::default(), &rows);
     let cursor_id = Uuid::new_v4();
@@ -759,6 +764,7 @@ async fn listing_forwards_the_caller_sources_limit_query_and_pull_request_filter
                 filter: None,
             }),
             Some(draft.clone()),
+            GithubPullRequestSortDirection::Asc,
         )
         .await
         .unwrap();
@@ -773,6 +779,7 @@ async fn listing_forwards_the_caller_sources_limit_query_and_pull_request_filter
             cursor_id: Some(cursor_id),
             cursor_value: Some(cursor_value),
             github_pull_request_filter: Some(format!("{draft:?}")),
+            sort_direction: GithubPullRequestSortDirection::Asc,
         }]
     );
 }
@@ -789,6 +796,7 @@ async fn listing_rejects_blank_sources() {
             10,
             listing_query(),
             None,
+            GithubPullRequestSortDirection::Desc,
         )
         .await
         .unwrap_err();
@@ -810,7 +818,14 @@ async fn listing_reports_repository_failures() {
     let service = service(&StubForeignEntityService::default(), &rows);
 
     let error = service
-        .list_pull_requests(None, vec![user()], 10, listing_query(), None)
+        .list_pull_requests(
+            None,
+            vec![user()],
+            10,
+            listing_query(),
+            None,
+            GithubPullRequestSortDirection::Desc,
+        )
         .await
         .unwrap_err();
 
