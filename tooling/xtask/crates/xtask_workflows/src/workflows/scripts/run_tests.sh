@@ -15,6 +15,10 @@ set -euo pipefail
 # Unconstrained `-p` still runs that package's tests.
 
 : "${RUST_PACKAGES:?RUST_PACKAGES is required}"
+# shellcheck source=ci_probe.sh
+source tooling/xtask/crates/xtask_workflows/src/workflows/scripts/ci_probe.sh
+trap ci_probe_stop EXIT
+ci_probe
 common=(--all-features --no-tests=pass --test-threads "$NEXTEST_TEST_THREADS")
 
 if [ "$RUST_PACKAGES" = "all" ]; then

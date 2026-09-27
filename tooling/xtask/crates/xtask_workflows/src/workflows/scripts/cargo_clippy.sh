@@ -6,6 +6,11 @@ set -euo pipefail
 
 packages="${RUST_PACKAGES:-}"
 
+# shellcheck source=ci_probe.sh
+source tooling/xtask/crates/xtask_workflows/src/workflows/scripts/ci_probe.sh
+trap ci_probe_stop EXIT
+ci_probe
+
 clippy_sync_service() {
   cargo clippy -p sync_service -- \
     -A clippy::unnecessary_map_or \

@@ -1,6 +1,25 @@
 use super::*;
 
 #[test]
+fn compile_jobs_are_capped_to_runner_memory() {
+    for script in [
+        include_str!("../scripts/run_tests.sh"),
+        include_str!("../scripts/cargo_clippy.sh"),
+    ] {
+        assert!(
+            script.contains(
+                "source tooling/xtask/crates/xtask_workflows/src/workflows/scripts/ci_probe.sh"
+            ),
+            "test and check must cap cargo jobs from the runner probe: {script}"
+        );
+        assert!(script.contains("ci_probe"), "{script}");
+    }
+    let probe = include_str!("../scripts/ci_probe.sh");
+    assert!(probe.contains("CARGO_BUILD_JOBS"), "{probe}");
+    assert!(probe.contains("ci-heartbeat"), "{probe}");
+}
+
+#[test]
 fn package_selection_does_not_pass_lib() {
     let script = include_str!("../scripts/run_tests.sh");
     assert!(
