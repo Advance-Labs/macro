@@ -601,6 +601,8 @@ pub(crate) struct ApiContext {
     pub user_api_key_state: DssUserApiKeyState,
     pub reminders_state: DssRemindersState,
     pub initiative_state: DssInitiativeState,
+    pub graphql_initiative_context: graphql_initiative::InitiativeGraphqlContext,
+    pub graphql_initiative_entity_loader: graphql_initiative::InitiativeEntityLoader,
     pub collab_surface_state: DssCollabSurfaceState,
     pub foreign_entity_state: DssForeignEntityState,
     pub macro_event_broker: DssEventBroker,
