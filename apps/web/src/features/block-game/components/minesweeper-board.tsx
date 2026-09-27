@@ -1,4 +1,4 @@
-import { For, Match, Switch } from 'solid-js';
+import { For, Match, onCleanup, Switch } from 'solid-js';
 import type { MinesweeperState } from '../core/games/minesweeper';
 
 const LONG_PRESS_MS = 400;
@@ -24,6 +24,7 @@ export function MinesweeperBoard(props: {
     props.state.status === 'won' || props.state.status === 'lost';
   let pressTimer: ReturnType<typeof setTimeout> | undefined;
   let longPressed = false;
+  onCleanup(() => clearTimeout(pressTimer));
 
   const activate = (index: number) => {
     if (longPressed) {
@@ -89,7 +90,13 @@ export function MinesweeperBoard(props: {
             onPointerDown={(event) => {
               longPressed = false;
               clearTimeout(pressTimer);
-              if (event.pointerType !== 'touch' || cell.revealed) return;
+              if (
+                event.pointerType !== 'touch' ||
+                cell.revealed ||
+                props.disabled ||
+                over()
+              )
+                return;
               pressTimer = setTimeout(() => {
                 longPressed = true;
                 props.onFlag(index());

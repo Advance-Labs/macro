@@ -1,4 +1,4 @@
-import { For, Show } from 'solid-js';
+import { createMemo, For, Show } from 'solid-js';
 import type {
   DotsAndBoxesMove,
   DotsAndBoxesState,
@@ -20,15 +20,15 @@ type Edge = {
   y2: number;
 };
 
-function edgesOf(state: DotsAndBoxesState): Edge[] {
+function edgesOf(rows: number, cols: number): Edge[] {
   const edges: Edge[] = [];
-  for (let row = 0; row <= state.rows; row += 1) {
-    for (let col = 0; col < state.cols; col += 1) {
+  for (let row = 0; row <= rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
       const x = MARGIN + col * SPACING;
       const y = MARGIN + row * SPACING;
       edges.push({
         edge: 'h',
-        index: row * state.cols + col,
+        index: row * cols + col,
         x1: x,
         y1: y,
         x2: x + SPACING,
@@ -36,13 +36,13 @@ function edgesOf(state: DotsAndBoxesState): Edge[] {
       });
     }
   }
-  for (let row = 0; row < state.rows; row += 1) {
-    for (let col = 0; col <= state.cols; col += 1) {
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col <= cols; col += 1) {
       const x = MARGIN + col * SPACING;
       const y = MARGIN + row * SPACING;
       edges.push({
         edge: 'v',
-        index: row * (state.cols + 1) + col,
+        index: row * (cols + 1) + col,
         x1: x,
         y1: y,
         x2: x,
@@ -64,8 +64,11 @@ export function DotsAndBoxesBoard(props: {
 }) {
   const width = () => props.state.cols * SPACING + MARGIN * 2;
   const height = () => props.state.rows * SPACING + MARGIN * 2;
-  // The board shape only changes between rounds.
-  const edges = () => edgesOf(props.state);
+  // The board shape only changes between rounds. Keeping the same edges
+  // across moves lets <For> keep each line's element, and keyboard focus.
+  const rows = createMemo(() => props.state.rows);
+  const cols = createMemo(() => props.state.cols);
+  const edges = createMemo(() => edgesOf(rows(), cols()));
   const drawnBy = (edge: Edge) =>
     (edge.edge === 'h' ? props.state.horizontal : props.state.vertical)[
       edge.index

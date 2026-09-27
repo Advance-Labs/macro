@@ -71,8 +71,9 @@ export function createSnakeRun(options: {
       setState((current) => turnSnake(current, direction));
       if (phase() === 'ready') setPhase('playing');
     },
+    /** Begin playing; any run already under way starts over. */
     start: () => {
-      if (phase() === 'over') reset();
+      if (phase() !== 'ready') reset();
       setPhase('playing');
     },
     togglePause: () => {
