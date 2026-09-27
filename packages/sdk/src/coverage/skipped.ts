@@ -412,6 +412,8 @@ export const storageBacklog = [
   'getDocumentVersion',
   'getEntityPermission',
   'getGithubPullRequest',
+  'getGithubPullRequestChanges',
+  'getGithubPullRequestChangesPatch',
   'getProjectPermissionsV2',
   'getProjectUserAccessLevel',
   'getHarnessPairing',
