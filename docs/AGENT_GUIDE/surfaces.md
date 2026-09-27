@@ -1267,6 +1267,46 @@ or remove the signature.
 The inbox row's trash icon removes the inbox through the existing confirmation;
 it is separate from the signature editor's close control.
 
+### Notification snoozes
+
+Open **Settings → Notifications** to see **Snoozed items** and their local resume
+times. **Change time** opens the same searchable time picker used by entity
+actions; **Resume** cancels a snooze immediately. Permanent mutes appear separately
+under **Muted items**, with **Snooze instead** to replace one with a timed pause.
+
+The Chat detail pane also supplies these commands for its current channel or DM;
+focus the conversation before opening the command menu.
+
+To snooze an entity, right-click its row (long-press on mobile) and choose
+**Snooze notifications…**, or select/open the entity and search for that command
+in Cmd/Ctrl+K. Multi-selection applies the chosen deadline to all selected items.
+Use arrow keys and Enter, click a preset, or type a future date/time such as
+`2h` or `tomorrow 10am`. The next morning means the next local 9 AM; the weekend
+preset resumes on Monday at 9 AM. The picker displays the exact local date and
+time before saving. Escape closes the picker; before choosing a time, it makes
+no changes.
+
+Snoozing pauses notifications only: it does not hide, archive, mark read, or mark
+done. Channel message/thread rows target their parent channel, matching mute.
+The server enforces expiration even when no client is open. Displayed snooze
+state refreshes when the window regains focus or a mute/snooze changes; the
+client does not poll. A failed save keeps the picker open for retry; a successful
+save appears in notification settings.
+If only some selected items save, the picker shows the saved count and retries
+only the remaining items. Closing it keeps any snoozes already saved.
+
+On phones, long-press opens the entity actions drawer. The snooze time picker
+uses the same responsive `Dialog`, width, and `CommandMenuShell` as Cmd/Ctrl+K,
+with larger touch targets and tap instructions. Swipe the preset list when the
+viewport is short. In **More views → Settings → Notifications**, item names and
+deadlines sit above **Change time** and **Resume**. Saving or cancelling a picker
+returns to the settings sheet. Start new snoozes from an entity's actions or
+Cmd/Ctrl+K; Settings manages existing snoozes and mutes.
+
+Design references: [Slack notification pause/resume](https://slack.com/help/articles/214908388-Pause-your-Slack-notifications)
+and [Superhuman's keyboard-driven Remind Me picker](https://new.superhuman.com/remind-me-29124).
+Macro applies the temporary pause per entity and keeps the entity visible.
+
 ### Team membership
 
 Team membership has no size cap, including free teams. Invitations and domain
