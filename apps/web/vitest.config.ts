@@ -34,7 +34,11 @@ export default defineConfig({
         extends: false,
         test: {
           environment: 'node',
-          include: ['src/lib/email-render-cache/**/*.test.ts'],
+          include: [
+            'src/lib/email-render-cache/**/*.test.ts',
+            'src/features/email-thread/preparation.test.ts',
+            'src/features/email-view/preparation-window.test.ts',
+          ],
           name: 'email-render-cache',
         },
       },
@@ -166,6 +170,10 @@ export default defineConfig({
           include: [
             'src/features/{block-email,email-message,email-thread,email-compose}/**/*.{test,spec}.{ts,tsx}',
           ],
+          exclude: [
+            ...configDefaults.exclude,
+            'src/features/email-thread/preparation.test.ts',
+          ],
           name: 'email',
         },
       },
@@ -214,6 +222,7 @@ export default defineConfig({
           exclude: [
             ...configDefaults.exclude,
             'src/components/view-shell/**/*',
+            'src/features/email-view/preparation-window.test.ts',
             'src/features/{theme,block-channel,block-call,block-pr,block-md,channel,notifications,block-email,email-message,email-thread,email-compose}/**/*',
           ],
           include: [

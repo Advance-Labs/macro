@@ -19,16 +19,13 @@ import {
   untrack,
   useContext,
 } from 'solid-js';
-import { createPreparationExecutor } from './executor';
 import { registerEmailPreparationHints } from './hints';
-import { IndexedDbArtifacts } from './indexeddb';
-import { digest } from './keys';
 import {
   invalidateEmailRenders,
   registerEmailRenderInvalidation,
 } from './lifecycle';
-import { EmailRenderCache } from './service';
-import { storageDeadline } from './store';
+import type { EmailRenderCache } from './service';
+import { createEmailRenderSession } from './session-runtime';
 
 const SessionContext = createContext<Accessor<EmailRenderCache | undefined>>(
   () => undefined
@@ -72,160 +69,48 @@ export function EmailRenderCacheProvider(props: ParentProps) {
     // Keep namespace/logout ownership even when the feature is disabled: cold
     // artifacts and another tab's enabled cache still belong to this viewer.
     const enabled = flag().enabled;
-    const scope = getOrCreateCacheScope();
-    const namespace = digest(
-      JSON.stringify([location.origin, import.meta.env.MODE, scope, identity])
-    );
-    let store: IndexedDbArtifacts | undefined;
-    let invalidated = false;
-    let sentSessionEnd = false;
-    let channel: BroadcastChannel | undefined;
-    let disposed = false;
-    const service = new EmailRenderCache({
-      memoryBytes: (untrack(isMobile) ? 8 : 16) * 1024 * 1024,
-      // Native ships memory-only until IDB and worker origins are verified on
-      // actual Tauri/WebKit targets. No eager module worker construction.
-      executor: createPreparationExecutor(!isTauri()),
-      store: isTauri()
-        ? undefined
-        : async () => {
-            await barrier;
-            const name = await namespace;
-            if (
-              disposed ||
-              localStorage.getItem(`email-render-quarantine:${name}`)
-            )
-              return;
-            let budget = (isMobile() ? 32 : 128) * 1024 * 1024;
-            const estimate = await storageDeadline(
-              navigator.storage?.estimate?.() ?? Promise.resolve(undefined),
-              50
-            );
-            if (estimate?.quota)
-              budget = Math.min(
-                budget,
-                Math.max(0, (estimate.quota - (estimate.usage ?? 0)) / 4)
-              );
-            if (disposed || budget < 1024 * 1024) return;
-            store ??= new IndexedDbArtifacts(name, budget);
-            return store;
-          },
+    const native = isTauri();
+    const sessionEnded = () =>
+      user.isAuthenticated() !== true || user.userId() !== identity;
+    const session = createEmailRenderSession({
+      origin: location.origin,
+      environment: import.meta.env.MODE,
+      profileScope: getOrCreateCacheScope(),
+      viewerId: identity,
+      enabled,
+      native,
+      mobile: untrack(isMobile),
+      waitForInvalidation: () => barrier,
+      onRemoteInvalidation(ended, clearing) {
+        barrier = Promise.allSettled([barrier, clearing]);
+        // End auth before cached source can be reused under a cleared generation.
+        if (ended) {
+          setEndedViewer(identity);
+          void clearLocalAuthSession();
+        } else setEpoch((value) => value + 1);
+      },
     });
-    // Quota estimation and opening IDB must not start only after a clicked
-    // message has been hashed. No parsing or source fetch is triggered here.
-    if (enabled) service.initializeStorage();
     const isLeader =
-      !enabled || isTauri() || !navigator.locks
+      !enabled || native || !navigator.locks
         ? () => false
         : createTabLeaderSignal('email-render-cache:preparation');
     let releaseHydration = () => {};
     onCleanup(
       registerEmailPreparationHints((ids) => {
-        if (!enabled || !isLeader() || disposed) return;
+        if (!enabled || !isLeader()) return;
         releaseHydration();
-        releaseHydration = prepareEmailThreads(service, ids, 4, true);
+        releaseHydration = prepareEmailThreads(session.cache, ids, 4, true);
       })
     );
 
-    async function broadcastInvalidation(sessionEnded: boolean) {
-      if (sessionEnded && sentSessionEnd) return;
-      if (sessionEnded) sentSessionEnd = true;
-      const name = await namespace;
-      try {
-        const sender = new BroadcastChannel(`email-render:${name}`);
-        sender.postMessage({ kind: 'invalidate', sessionEnded });
-        sender.close();
-      } catch {
-        /* Storage quarantine still protects subsequent sessions. */
-      }
-    }
-
-    async function clear(
-      broadcast: boolean,
-      sessionEnded = false
-    ): Promise<void> {
-      if (invalidated) {
-        // A preceding source reset must not swallow a subsequent logout.
-        if (broadcast && sessionEnded) await broadcastInvalidation(true);
-        return;
-      }
-      invalidated = true;
-      service.dispose();
-      if (!broadcast) {
-        store?.close();
-        return;
-      }
-      const name = await namespace;
-      await broadcastInvalidation(sessionEnded);
-      if (isTauri()) return;
-      // A failed/blocked clear leaves this namespace ineligible next session.
-      try {
-        localStorage.setItem(`email-render-quarantine:${name}`, '1');
-      } catch {
-        // Persistence is disabled when this storage gate is unavailable, but
-        // still attempt to clear artifacts created by an earlier session.
-      }
-      const target = store ?? new IndexedDbArtifacts(name, 0);
-      try {
-        const result = await storageDeadline(
-          (async () => {
-            await target.invalidate();
-            return true;
-          })(),
-          2000
-        );
-        if (result) localStorage.removeItem(`email-render-quarantine:${name}`);
-      } catch {
-        /* Quarantine remains when storage is inaccessible. */
-      } finally {
-        target.close();
-      }
-    }
-
-    async function connect(): Promise<void> {
-      const name = await namespace;
-      if (disposed || typeof BroadcastChannel === 'undefined') return;
-      try {
-        channel = new BroadcastChannel(`email-render:${name}`);
-      } catch {
-        return;
-      }
-      channel.onmessage = (event: MessageEvent<unknown>) => {
-        const message = event.data as {
-          kind?: string;
-          sessionEnded?: boolean;
-        } | null;
-        if (message?.kind !== 'invalidate') return;
-        barrier = clear(false);
-        // Another tab ending this identity must not repersist its cached source
-        // under the newly cleared generation while auth revalidation catches up.
-        if (message.sessionEnded) {
-          setEndedViewer(identity);
-          void clearLocalAuthSession();
-        } else setEpoch((value) => value + 1);
-      };
-    }
-    void connect();
-    resetCurrent = (sessionEnded) =>
-      clear(
-        true,
-        sessionEnded ||
-          user.isAuthenticated() !== true ||
-          user.userId() !== identity
-      );
+    resetCurrent = (ended) => session.invalidate(ended || sessionEnded());
     onCleanup(() => {
-      disposed = true;
       releaseHydration();
-      service.dispose();
-      // Account switches and gate changes must clear cold entries too. A normal
-      // browser reload does not run Solid disposal and retains persistence.
-      const sessionEnded =
-        user.isAuthenticated() !== true || user.userId() !== identity;
-      if (!invalidated || sessionEnded)
-        barrier = Promise.allSettled([barrier, clear(true, sessionEnded)]);
-      channel?.close();
+      // Account switches and owner disposal clear cold artifacts too. Browser
+      // reloads do not run Solid cleanup and therefore retain persistence.
+      barrier = Promise.allSettled([barrier, session.dispose(sessionEnded())]);
     });
-    return enabled ? service : undefined;
+    return enabled ? session.cache : undefined;
   });
   return (
     <SessionContext.Provider value={cache}>

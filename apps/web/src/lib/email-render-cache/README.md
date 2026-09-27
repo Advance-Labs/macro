@@ -6,6 +6,17 @@ a pending completion promise, and a release function. Standalone views use direc
 preparation. The PostHog flag is `enable-email-render-cache`, with the local
 override `VITE_ENABLE_EMAIL_RENDER_CACHE`. It defaults on only for local stacks.
 
+The cache engine and coordination run without Solid. `session-runtime.ts` owns
+browser storage, quarantine, cross-tab invalidation, and disposal from explicit
+session inputs. The Solid provider reads auth/flag state, wires app events, and
+registers cleanup. `email-view/preparation-window.ts` owns neighbor selection,
+intent delay, and source retention; its Solid adapter only passes current values.
+`email-thread/preparation.ts` selects and prepares bodies using an injected source
+reader and image policy, with production queries supplied by its adapter.
+These modules run in the Node test project without a Solid owner or DOM. The
+session runtime uses browser APIs in production; framework-independent does not
+mean side-effect-free.
+
 Exact primitive body fields select a bounded message binding. WebCrypto hashes the
 framed source tuple; preparation version, image/quote policy hash, and mailbox
 hash select an immutable artifact. The database namespace hashes origin,
