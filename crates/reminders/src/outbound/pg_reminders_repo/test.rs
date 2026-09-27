@@ -47,6 +47,7 @@ fn soup_query(limit: i64) -> SoupReminderQuery<'static> {
         entities: &[],
         completed: None,
         fired: None,
+        attached: None,
         order: SoupOrder::LatestFirst,
         limit,
     }
@@ -237,6 +238,77 @@ async fn an_unfiltered_list_includes_standalone_reminders(pool: PgPool) {
     let listed = listed_descriptions(&repo, &ReminderFilter::default()).await;
     assert_eq!(listed.len(), 4);
     assert!(listed.contains(&"standalone".to_string()));
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn the_list_filters_on_whether_a_reminder_is_attached(pool: PgPool) {
+    let repo = seed_filterable_reminders(&pool).await;
+    let listed = |attached| {
+        let repo = &repo;
+        async move {
+            let mut listed = listed_descriptions(
+                repo,
+                &ReminderFilter {
+                    attached,
+                    ..Default::default()
+                },
+            )
+            .await;
+            listed.sort();
+            listed
+        }
+    };
+
+    assert_eq!(listed(Some(false)).await, vec!["standalone"]);
+    assert_eq!(
+        listed(Some(true)).await,
+        vec!["on channel doc-2", "on doc-1", "on doc-2"]
+    );
+    // Standalone and attached to a document at once cannot both hold.
+    assert!(
+        listed_descriptions(
+            &repo,
+            &ReminderFilter {
+                entity_types: vec![EntityType::Document],
+                attached: Some(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .is_empty()
+    );
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn the_soup_read_filters_on_whether_a_reminder_is_attached(pool: PgPool) {
+    let repo = seed_filterable_reminders(&pool).await;
+    let described = |attached| {
+        let repo = &repo;
+        async move {
+            let mut described: Vec<String> = repo
+                .list_reminders_for_soup(
+                    &user(USER_A),
+                    SoupReminderQuery {
+                        attached,
+                        ..soup_query(100)
+                    },
+                )
+                .await
+                .expect("soup list should succeed")
+                .into_iter()
+                .map(|found| found.reminder.description)
+                .collect();
+            described.sort();
+            described
+        }
+    };
+
+    assert_eq!(described(Some(false)).await, vec!["standalone"]);
+    assert_eq!(
+        described(Some(true)).await,
+        vec!["on channel doc-2", "on doc-1", "on doc-2"]
+    );
+    assert_eq!(described(None).await.len(), 4);
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]

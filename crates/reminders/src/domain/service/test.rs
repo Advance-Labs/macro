@@ -274,6 +274,11 @@ impl RemindersRepo for FakeRemindersRepo {
                             .any(|wanted| wanted.to_string() == entity_id)
                     })
             })
+            .filter(|reminder| {
+                filter
+                    .attached
+                    .is_none_or(|attached| reminder.entity().is_some() == attached)
+            })
             .collect();
         found.sort_by_key(sort_key);
         if let Some(cursor) = filter.cursor {
@@ -310,6 +315,7 @@ impl RemindersRepo for FakeRemindersRepo {
             entities,
             completed,
             fired,
+            attached,
             order,
             limit,
         } = query;
@@ -333,6 +339,9 @@ impl RemindersRepo for FakeRemindersRepo {
             .filter(|reminder| match fired {
                 Some(fired) => (reminder.next_run_at <= Utc::now()) == fired,
                 None => true,
+            })
+            .filter(|reminder| {
+                attached.is_none_or(|attached| reminder.entity().is_some() == attached)
             })
             .filter(|reminder| !self.is_unreadable(reminder.id))
             .collect();
@@ -2137,4 +2146,106 @@ async fn occurrences_can_be_narrowed_to_standalone_or_attached_reminders() {
     assert_eq!(reminder_ids(Some(false)).await, vec![standalone.id]);
     assert_eq!(reminder_ids(Some(true)).await, vec![attached.id]);
     assert_eq!(reminder_ids(None).await, vec![standalone.id, attached.id]);
+}
+
+#[tokio::test]
+async fn lists_only_standalone_or_only_attached_reminders() {
+    let service = service();
+    let standalone = service
+        .create_reminder(&user(USER_A), create_request(once(future())), None)
+        .await
+        .expect("created");
+    let on_doc = service
+        .create_reminder(
+            &user(USER_A),
+            create_request(once(future() + Duration::hours(1))),
+            Some(doc_receipt(DOC_1)),
+        )
+        .await
+        .expect("created");
+
+    let service = &service;
+    let listed_ids = |attached| async move {
+        service
+            .list_reminders(
+                &user(USER_A),
+                ReminderFilter {
+                    attached,
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("list should succeed")
+            .reminders
+            .into_iter()
+            .map(|reminder| reminder.id)
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(listed_ids(Some(false)).await, vec![standalone.id]);
+    assert_eq!(listed_ids(Some(true)).await, vec![on_doc.id]);
+    assert_eq!(listed_ids(None).await, vec![standalone.id, on_doc.id]);
+}
+
+#[tokio::test]
+async fn standalone_and_an_entity_constraint_match_nothing() {
+    let service = service();
+    service
+        .create_reminder(
+            &user(USER_A),
+            create_request(once(future())),
+            Some(doc_receipt(DOC_1)),
+        )
+        .await
+        .expect("created");
+
+    let page = service
+        .list_reminders(
+            &user(USER_A),
+            ReminderFilter {
+                entity_types: vec![EntityType::Document],
+                attached: Some(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("list should succeed");
+
+    assert!(page.reminders.is_empty());
+}
+
+#[tokio::test]
+async fn soup_reads_can_be_narrowed_to_standalone_reminders() {
+    let service = service();
+    let standalone = service
+        .create_reminder(&user(USER_A), create_request(once(future())), None)
+        .await
+        .expect("created");
+    service
+        .create_reminder(
+            &user(USER_A),
+            create_request(once(future())),
+            Some(doc_receipt(DOC_1)),
+        )
+        .await
+        .expect("created");
+
+    let found = service
+        .list_reminders_for_soup(
+            &user(USER_A),
+            SoupReminderQuery {
+                ids: &[],
+                entities: &[],
+                completed: None,
+                fired: None,
+                attached: Some(false),
+                order: SoupOrder::SoonestFirst,
+                limit: 100,
+            },
+        )
+        .await
+        .expect("soup list should succeed");
+
+    let ids: Vec<_> = found.iter().map(|item| item.reminder.id).collect();
+    assert_eq!(ids, vec![standalone.id]);
 }

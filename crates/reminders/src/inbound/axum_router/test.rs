@@ -262,6 +262,7 @@ enum ServiceCall {
         entity_types: Vec<EntityType>,
         entity_ids: Vec<Uuid>,
         include_completed: bool,
+        attached: Option<bool>,
         limit: Option<u32>,
         cursor: Option<ReminderCursor>,
     },
@@ -367,6 +368,7 @@ impl RemindersService for FakeRemindersService {
             entity_types: filter.entity_types.clone(),
             entity_ids: filter.entity_ids.clone(),
             include_completed: filter.include_completed,
+            attached: filter.attached,
             limit: filter.limit,
             cursor: filter.cursor,
         });
@@ -723,6 +725,7 @@ async fn list_passes_filters_and_paging_through() {
             entity_types: vec![EntityType::Document],
             entity_ids: vec![ACCESSIBLE_DOC.parse().expect("valid uuid")],
             include_completed: true,
+            attached: None,
             limit: Some(25),
             cursor: Some(cursor),
         }],
@@ -756,10 +759,32 @@ async fn list_collects_repeated_entity_keys_into_both_dimensions() {
                 FORBIDDEN_DOC.parse().expect("valid uuid"),
             ],
             include_completed: false,
+            attached: None,
             limit: None,
             cursor: None,
         }]
     );
+}
+
+#[tokio::test]
+async fn list_passes_the_attachment_filter_through() {
+    for (param, attached) in [("false", Some(false)), ("true", Some(true))] {
+        let service = FakeRemindersService::default();
+        let response = build_router(service.clone(), FakeEntityAccessService::default())
+            .oneshot(
+                authed(axum::http::Request::get(format!("/?attached={param}")))
+                    .body(axum::body::Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        match service.calls().first() {
+            Some(ServiceCall::List { attached: got, .. }) => assert_eq!(*got, attached),
+            other => panic!("expected a list call, got {other:?}"),
+        }
+    }
 }
 
 #[tokio::test]
@@ -794,6 +819,7 @@ async fn a_list_filter_with_only_one_dimension_is_accepted() {
                 entity_types: vec![EntityType::Document],
                 entity_ids: Vec::new(),
                 include_completed: false,
+                attached: None,
                 limit: None,
                 cursor: None,
             },
@@ -801,6 +827,7 @@ async fn a_list_filter_with_only_one_dimension_is_accepted() {
                 entity_types: Vec::new(),
                 entity_ids: vec![ACCESSIBLE_DOC.parse().expect("valid uuid")],
                 include_completed: false,
+                attached: None,
                 limit: None,
                 cursor: None,
             },
@@ -1121,6 +1148,7 @@ async fn an_oversized_limit_clamps_instead_of_failing_to_parse() {
             entity_types: Vec::new(),
             entity_ids: Vec::new(),
             include_completed: false,
+            attached: None,
             limit: Some(999_999),
             cursor: None,
         }],

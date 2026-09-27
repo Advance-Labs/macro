@@ -179,6 +179,10 @@ pub struct ListRemindersParams {
     /// Include reminders that have already fired.
     #[serde(default)]
     pub include_completed: bool,
+    /// `true` for only reminders attached to an entity, `false` for only
+    /// standalone ones. Omit for both. `false` alongside `entityType` or
+    /// `entityId` matches nothing.
+    pub attached: Option<bool>,
     /// Page size. Defaults to 100; larger values are capped at 500. A value
     /// that is not a non-negative integer is rejected by the query extractor.
     pub limit: Option<u32>,
@@ -311,6 +315,7 @@ where
         entity_types: params.entity_type,
         entity_ids: parse_filter_entity_ids(params.entity_id)?,
         include_completed: params.include_completed,
+        attached: params.attached,
         cursor: params
             .cursor
             .as_deref()

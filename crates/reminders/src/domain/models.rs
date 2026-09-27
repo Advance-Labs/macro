@@ -472,6 +472,8 @@ pub struct SoupReminderQuery<'a> {
     pub completed: Option<bool>,
     /// Filter on whether it has come due. `None` returns both.
     pub fired: Option<bool>,
+    /// Filter on whether it is attached to an entity. `None` returns both.
+    pub attached: Option<bool>,
     /// Which end of the `next_run_at` ordering `limit` rows come from.
     pub order: SoupOrder,
     /// Upper bound on rows returned.
@@ -656,6 +658,9 @@ pub struct ReminderFilter {
     pub entity_ids: Vec<Uuid>,
     /// Include reminders that have already fired.
     pub include_completed: bool,
+    /// Filter on whether the reminder is attached to an entity. `None` returns
+    /// both. `Some(false)` alongside an entity constraint matches nothing.
+    pub attached: Option<bool>,
     /// Resume after this position in the ordering.
     pub cursor: Option<ReminderCursor>,
     /// Page size requested by the caller. `None` uses [`DEFAULT_PAGE_SIZE`];

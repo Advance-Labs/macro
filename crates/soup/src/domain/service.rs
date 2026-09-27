@@ -1208,6 +1208,7 @@ where
                     entities: &entities,
                     completed,
                     fired,
+                    attached: None,
                     order,
                     limit,
                 },

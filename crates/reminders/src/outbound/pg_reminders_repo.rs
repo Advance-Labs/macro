@@ -367,6 +367,7 @@ impl RemindersRepo for PgRemindersRepo {
               -- dimension excludes it.
               AND ($2::text[] IS NULL OR entity_type = ANY($2))
               AND ($3::uuid[] IS NULL OR entity_id = ANY($3))
+              AND ($9::bool IS NULL OR (entity_id IS NOT NULL) = $9)
               AND ($4::bool OR completed_at IS NULL)
               -- Keyset: resume strictly after the cursor position in the same
               -- (next_run_at, created_at, id) order the query returns.
@@ -385,6 +386,7 @@ impl RemindersRepo for PgRemindersRepo {
             cursor_created_at,
             cursor_id,
             limit,
+            filter.attached,
         )
         .fetch_all(&self.pool)
         .await?;
@@ -426,6 +428,7 @@ impl RemindersRepo for PgRemindersRepo {
             entities,
             completed,
             fired,
+            attached,
             order,
             limit,
         } = query;
@@ -476,6 +479,7 @@ impl RemindersRepo for PgRemindersRepo {
               -- cannot pass a timestamp: it would land in the client's query
               -- cache key and change on every render.
               AND ($5::bool IS NULL OR (r.next_run_at <= now()) = $5)
+              AND ($8::bool IS NULL OR (r.entity_id IS NOT NULL) = $8)
             -- Order in whichever direction Soup will merge in, so the LIMIT
             -- keeps the same rows Soup would keep after merging every item
             -- type. The first two keys collapse to a constant NULL when $6 is
@@ -495,6 +499,7 @@ impl RemindersRepo for PgRemindersRepo {
             fired,
             soonest_first,
             limit,
+            attached,
         )
         .fetch_all(&self.pool)
         .await?;
