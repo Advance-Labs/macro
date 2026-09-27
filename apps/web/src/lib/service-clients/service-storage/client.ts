@@ -163,6 +163,7 @@ import type { SlackCreateRequest } from './generated/schemas/slackCreateRequest'
 import type { SlackRegisterRequest } from './generated/schemas/slackRegisterRequest';
 import type { SmartTagPreview } from './generated/schemas/smartTagPreview';
 import type { SoupPage } from './generated/schemas/soupPage';
+import type { StoredGithubPullRequest } from './generated/schemas/storedGithubPullRequest';
 import type { SyncServiceVersionID } from './generated/schemas/syncServiceVersionID';
 import type { TeamOutOfOfficeResponse } from './generated/schemas/teamOutOfOfficeResponse';
 import type { TypedSuccessResponse } from './generated/schemas/typedSuccessResponse';
@@ -1763,6 +1764,20 @@ export const storageServiceClient = {
   > {
     return await dssFetch<GithubPullRequestFacets>(
       '/github_pull_requests/facets',
+      { method: 'GET' }
+    );
+  },
+
+  /** The pull request behind a foreign entity record the caller can view. */
+  async getGithubPullRequest({
+    id,
+  }: {
+    id: string;
+  }): Promise<
+    Result<StoredGithubPullRequest, ResultError<FetchWithTokenErrorCode>[]>
+  > {
+    return await dssFetch<StoredGithubPullRequest>(
+      `/github_pull_requests/${id}`,
       { method: 'GET' }
     );
   },
