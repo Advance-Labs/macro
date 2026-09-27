@@ -117,6 +117,8 @@ pub enum RingStatus {
     Ringing,
     /// This user joined the call on some device — stop ringing (answered elsewhere).
     Answered,
+    /// This user declined the call on some device — stop ringing (declined elsewhere).
+    Declined,
     /// The call is over (or was replaced by a newer call) — stop ringing (remote ended).
     Ended,
 }
