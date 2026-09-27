@@ -63,6 +63,8 @@ use teams::{inbound::toolset::TeamToolContext, outbound::team_repo::TeamReposito
 use tokio_util::task::TaskTracker;
 
 mod activity_metadata;
+mod initiatives;
+pub use initiatives::{ToolInitiativeToolContext, build_initiative_tool_context};
 
 use activity_metadata::ToolActivityMetadataResolver;
 pub use ai_toolset::RequestContext;
@@ -1489,6 +1491,8 @@ pub struct ToolServiceContext {
     pub channel_tool_context: ToolChannelToolContext,
     pub bot_tool_context: ToolBotToolContext,
     pub project_tool_context: ToolProjectToolContext,
+    /// Native task project lifecycle, properties, sharing and history.
+    pub initiative_tool_context: ToolInitiativeToolContext,
     pub team_tool_context: ToolTeamToolContext,
     pub crm_tool_context: ToolCrmToolContext,
     pub skill_tool_context: ToolSkillToolContext,
@@ -1510,6 +1514,7 @@ impl ToolServiceContext {
         self.document_tool_context = self.document_tool_context.with_actor(actor);
         self.properties_tool_context = self.properties_tool_context.with_actor(actor);
         self.project_tool_context = self.project_tool_context.with_actor(actor);
+        self.initiative_tool_context = self.initiative_tool_context.with_actor(actor);
         self.channel_tool_context = self.channel_tool_context.with_actor(actor);
         self
     }
