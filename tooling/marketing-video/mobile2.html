@@ -1,0 +1,889 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Macro for iPhone: tour</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* Macro mobile demo 2: a tour of the dock, then the channel → doc → task flow.
+   UI: apps/web/src/components/app/mobile/* (MobileDockRow: 46px buttons, 27px icons,
+   views that don't fit go to the More drawer), PillTabs, narrow list rows, calendar day grid,
+   MobileDrawer. The dock is liquid glass: backdrop refraction, blur, rim and press shimmer. */
+@font-face { font-family: "Inter"; src: url("fonts/inter-variable.woff2") format("woff2"); font-weight: 100 900; font-display: block; }
+@font-face { font-family: "display"; src: url("fonts/roboto-slab-variable.woff2") format("woff2"); font-weight: 100 900; font-display: block; }
+:root {
+  --c0: #ffffff; --c1: #dedede; --c2: #bebebe; --c3: #9e9e9e; --c4: #808080;
+  --a0: #61a3e6;                 /* accent oklch(0.7 0.12 250) */
+  --success: #23cf63; --task: #23cf63; --chat: #3fc3d6; --note: #b590ff; --warn: #e2b646; --fail: #f06a6a;
+  --doc: #b590ff;
+  --panel: #0f0f10;
+  --edge-muted: #1f2022;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #000; }
+body { display: flex; align-items: center; justify-content: center; min-height: 100vh; overflow: hidden; }
+html.render body { display: block; min-height: 0; }
+#stage { position: relative; overflow: hidden; flex: none; background: #000; color: var(--c1);
+  font-family: "Inter", system-ui, sans-serif; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; font-feature-settings: "cv11", "ss01"; }
+#rings { position: absolute; width: 3000px; height: 3000px; margin: -1500px 0 0 -1500px; transform-origin: 50% 50%;
+  background: repeating-radial-gradient(circle at 50% 50%, transparent 0 37px, rgba(255,255,255,.05) 37px 38px), radial-gradient(circle at 50% 50%, rgba(255,255,255,.03), transparent 45%);
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 10%, rgba(0,0,0,.5) 28%, transparent 50%); mask-image: radial-gradient(circle at 50% 50%, #000 10%, rgba(0,0,0,.5) 28%, transparent 50%); }
+#world { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
+#shape { position: absolute; overflow: hidden; transform-origin: 50% 50%; }
+.layer, .a { position: absolute; }
+.flex { display: flex; align-items: center; }
+.nowrap { white-space: nowrap; }
+.ic { display: inline-block; flex: none; }
+.rim::after, .glass::after, .isl::after, .lg::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; padding: 1px;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+.glass::after { background: linear-gradient(135deg, rgba(222,222,222,.2) 0%, transparent 24%, transparent 76%, rgba(222,222,222,.13) 100%); }
+/* @utility island (dark): glass with the continuous two-reflection rim */
+.isl { position: relative; }
+.a.isl { position: absolute; }
+.isl { border-radius: 999px; background: rgba(40,41,45,.62); backdrop-filter: blur(12px) saturate(1.5);
+  box-shadow: inset 0 1px 0 rgba(222,222,222,.06), inset 0 -1px 0 rgba(0,0,0,.4), 0 14px 32px -22px rgba(0,0,0,.55); }
+.isl::after, .lg::after { background: linear-gradient(135deg, rgba(222,222,222,.28) 0%, rgba(222,222,222,.12) 18%, rgba(222,222,222,.04) 42%, rgba(222,222,222,.04) 58%, rgba(222,222,222,.12) 82%, rgba(222,222,222,.28) 100%); }
+/* the dock: liquid glass (refraction + light blur + saturation) so the content under it reads through */
+.lg { position: absolute; border-radius: 999px; background: rgba(34,35,39,.34);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.14), inset 0 -1px 0 rgba(0,0,0,.35), inset 0 0 14px rgba(255,255,255,.04), 0 16px 34px -18px rgba(0,0,0,.8); }
+.lg::after { z-index: 2; }
+.av { display: flex; align-items: center; justify-content: center; border-radius: 50%; font-weight: 600; flex: none; background: #2a2a2c; color: var(--c1); box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+.pill { color: var(--a0); text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 30%, transparent); text-underline-offset: 3px; white-space: nowrap; }
+.ref { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.ref u { text-decoration-color: rgba(222,222,222,.3); text-decoration-thickness: 1px; text-underline-offset: 3px; color: var(--c1); }
+.badge { font-size: 10px; font-weight: 500; color: var(--c3); background: rgba(255,255,255,.07); border-radius: 4px; padding: 3px 5px; line-height: 1; }
+.caret { display: inline-block; width: 2px; height: 20px; background: var(--a0); border-radius: 1px; margin-left: 1px; }
+.hair { height: 1px; background: rgba(255,255,255,.07); }
+/* PillTabs */
+.ptabs { position: absolute; left: 12px; top: 67px; display: flex; gap: 8px; white-space: nowrap; }
+.ptab { height: 40px; padding: 0 14px; display: flex; align-items: center; font-size: 12px; font-weight: 500; color: var(--c4); }
+.ptab.on { background: var(--a0); color: #0f0f10; }
+.ptab.on::after { display: none; }
+/* narrow list row (narrow-layout.tsx): 44px, unread rail, icon, title, time */
+.lrow { position: absolute; left: 0; width: 393px; height: 44px; display: flex; align-items: center; font-size: 14px; }
+.lrow .ico { width: 25px; margin-left: 8px; margin-right: 8px; display: flex; justify-content: center; }
+.lrow .tt { font-weight: 600; color: var(--c0); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lrow .rt { margin-right: 16px; display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 300; color: var(--c4); white-space: nowrap; }
+/* inbox row (narrow-inbox-layout.tsx) */
+.erow { position: absolute; left: 0; width: 393px; height: 82px; }
+.erow .dot { position: absolute; left: 7px; top: 22px; width: 11px; height: 11px; border-radius: 50%; background: var(--a0); }
+.erow .eav { position: absolute; left: 25px; top: 12px; width: 44px; height: 44px; border-radius: 50%; background: var(--edge-muted); display: flex; align-items: center; justify-content: center; }
+.erow .l1 { position: absolute; left: 81px; top: 12px; font-size: 14px; font-weight: 600; color: var(--c0); white-space: nowrap; }
+.erow .tm { position: absolute; right: 16px; top: 13px; font-size: 12px; font-weight: 300; color: var(--c4); }
+.erow .l2 { position: absolute; left: 81px; top: 32px; right: 16px; font-size: 14px; color: var(--c1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.erow .l3 { position: absolute; left: 81px; top: 52px; right: 16px; font-size: 14px; font-weight: 500; color: rgba(255,255,255,.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.erow .dv { position: absolute; left: 81px; right: 0; bottom: 0; height: 1px; background: rgba(255,255,255,.07); }
+/* ConversationCard */
+.crow { position: absolute; left: 0; width: 393px; height: 84px; border-bottom: 1px solid rgba(31,32,34,.9); }
+.crow .cav { position: absolute; left: 24px; top: 16px; width: 36px; height: 36px; border-radius: 50%; background: #18181a; box-shadow: inset 0 0 0 1px #2a2b2e; display: flex; align-items: center; justify-content: center; color: var(--c2); }
+.crow .cn { position: absolute; left: 72px; top: 15px; font-size: 14px; font-weight: 500; color: var(--c0); white-space: nowrap; display: flex; gap: 8px; align-items: baseline; }
+.crow .cn span { font-size: 12px; font-weight: 400; color: var(--c4); }
+.crow .cp { position: absolute; left: 72px; top: 36px; right: 14px; font-size: 14px; line-height: 19px; color: var(--c3); max-height: 38px; overflow: hidden; }
+.crow .cp b { font-weight: 500; color: var(--c2); }
+.crow .ud { position: absolute; left: 8px; top: 30px; width: 8px; height: 8px; border-radius: 50%; background: var(--a0); }
+/* channel message */
+.msg { left: 0; width: 393px; }
+.mname { left: 52px; top: 0; font-size: 14px; font-weight: 500; color: var(--c0); white-space: nowrap; display: flex; gap: 6px; align-items: center; }
+.mname span.t { font-size: 12px; color: var(--c4); font-weight: 400; }
+.mbody { left: 52px; top: 21px; width: 325px; font-size: 16px; line-height: 23px; color: var(--c1); }
+/* MobileDrawer rows */
+.drow { position: absolute; left: 16px; width: 345px; height: 44px; border-radius: 20px; display: flex; align-items: center; gap: 12px; padding: 0 12px; font-size: 14px; color: var(--c0); white-space: nowrap; }
+.srow { left: 12px; width: 353px; height: 48px; border-radius: 20px; display: flex; align-items: center; gap: 12px; padding: 0 14px; font-size: 16px; color: var(--c0); white-space: nowrap; }
+/* calendar events */
+.ev { position: absolute; left: 66px; width: 321px; border-radius: 6px; box-shadow: 0 0 0 1px var(--panel); color: #1d1d1f; padding: 5px 8px; overflow: hidden; }
+.ev b { display: block; font-size: 14px; font-weight: 500; line-height: 17px; white-space: nowrap; }
+.ev i { display: block; font-style: normal; font-size: 12px; line-height: 16px; opacity: .85; white-space: nowrap; }
+#labels .lab { position: absolute; left: 0; right: 0; text-align: center; font-family: display; font-weight: 330; line-height: 1; letter-spacing: -0.035em; color: var(--c0); white-space: nowrap; }
+#labels .lab.side { display: flex; align-items: center; text-align: left; white-space: normal; line-height: 1.05; }
+#touch { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
+#touch div { position: absolute; border-radius: 50%; }
+</style>
+<script src="icons.js"></script>
+<script src="phx.js"></script>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs id="fdefs"></defs></svg>
+<div id="stage">
+  <div id="rings"></div>
+  <div id="world"><div id="shape"></div></div>
+  <div id="lscrim" style="position:absolute;left:0;top:0;right:0;pointer-events:none"></div>
+  <div id="labels"></div>
+  <div id="touch"><div id="tRing"></div></div>
+</div>
+<script>
+"use strict";
+// ---------- format: 9:16 (default), 1:1, 16:9 ----------
+const FMT = new URLSearchParams(location.search).get("fmt") || "916";
+const [W, H] = { "916": [1080, 1920], "11": [1440, 1440], "169": [1920, 1080] }[FMT];
+const SIDE = FMT !== "916";
+const LABEL = { "916": { top: 150, size: 96, room: 270 }, "11": { top: 0, size: 92, room: 0 }, "169": { top: 0, size: 100, room: 0 } }[FMT];
+
+// ---------- music-driven timing ----------
+// Funk: "Gimme that Groove!" (Mixkit 872), 112 BPM, downbeat 18.750 s. 44 beats = 11 bars.
+//             dock cal em mo ag mo tsk mo crm ch  #l  @  pick send rep doc task sh done end
+const MUSIC = [["funk", 112.0, [4, 3, 2, 1, 2, 1, 3, 1, 3, 2, 2, 1, 2, 2, 2, 3, 3, 2, 2, 3]]];
+const STEP_T = [0];
+for (const [, bpm, beats] of MUSIC) for (const n of beats) STEP_T.push(STEP_T[STEP_T.length - 1] + (n * 60) / bpm);
+const BEATS = STEP_T.length - 1, T = STEP_T[BEATS];
+function B(x) { const k = Math.floor(x / BEATS), r = x - k * BEATS, i = Math.min(BEATS - 1, Math.floor(r)); return k * T + STEP_T[i] + (r - i) * (STEP_T[i + 1] - STEP_T[i]); }
+function stepAt(t) { let i = 0; while (i < BEATS - 1 && STEP_T[i + 1] <= t) i++; return i + (t - STEP_T[i]) / (STEP_T[i + 1] - STEP_T[i]); }
+
+// ---------- math ----------
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, p) => a + (b - a) * p;
+const sm = (x) => { x = clamp(x); return x * x * (3 - 2 * x); };
+const TAU = Math.PI * 2;
+
+// Closed-form unit step response of a damped spring.
+// resp = undamped period (s), damp = damping ratio (<1 gives a tiny overshoot).
+function spr(t, resp = 0.42, damp = 0.82) {
+  if (t <= 0) return 0;
+  const w = TAU / resp;
+  if (damp >= 1) { const e = Math.exp(-w * t); return 1 - e * (1 + w * t); }
+  const wd = w * Math.sqrt(1 - damp * damp), e = Math.exp(-damp * w * t);
+  return 1 - e * (Math.cos(wd * t) + (damp * w / wd) * Math.sin(wd * t));
+}
+// Free response from displacement x0 and velocity v0 (used after a drag release).
+function free(t, x0, v0, resp, damp) {
+  const w = TAU / resp, wd = w * Math.sqrt(1 - damp * damp), e = Math.exp(-damp * w * t);
+  return e * (x0 * Math.cos(wd * t) + ((v0 + damp * w * x0) / wd) * Math.sin(wd * t));
+}
+const mj = (x) => { x = clamp(x); return x * x * x * (10 + x * (-15 + 6 * x)); }; // minimum-jerk
+const bell = (x) => (x <= 0 || x >= 1 ? 0 : 16 * x * x * (1 - x) * (1 - x));
+
+// A value that changes target many times is the sum of one spring per change.
+// Periodic: every change also contributes from the previous loop (t + T), so the
+// last frame flows into the first with matching position and velocity.
+function Track(evs, resp = 0.42, damp = 0.82) {
+  const E = evs.map(([bt, v, r, d]) => ({ t: B(bt), v, r: r ?? resp, d: d ?? damp }));
+  const n = E.length;
+  E.forEach((e, i) => { e.dv = e.v - E[(i + n - 1) % n].v; });
+  const base = E[n - 1].v;
+  const f = (t) => {
+    let v = base;
+    for (const e of E) if (e.dv !== 0) v += e.dv * (spr(t - e.t, e.r, e.d) + spr(t + T - e.t, e.r, e.d));
+    return v;
+  };
+  f.target = (t) => {
+    let best = -Infinity, v = base;
+    for (const e of E) for (const tt of [e.t, e.t - T]) if (tt <= t && tt > best) { best = tt; v = e.v; }
+    return v;
+  };
+  return f;
+}
+
+// Cursor path: sum of minimum-jerk moves, each with a slight perpendicular arc.
+function Path(segs) {
+  const S = segs.map(([b0, b1, x, y, bow]) => ({ t0: B(b0), t1: B(b1), x, y, bow: bow ?? 0.07 }));
+  const n = S.length;
+  S.forEach((s, i) => { const p = S[(i + n - 1) % n]; s.dx = s.x - p.x; s.dy = s.y - p.y; });
+  const bx = S[n - 1].x, by = S[n - 1].y;
+  return (t) => {
+    let x = bx, y = by;
+    for (const s of S) for (const tt of [t, t + T]) {
+      const u = (tt - s.t0) / (s.t1 - s.t0);
+      if (u <= 0) continue;
+      const m = mj(u), bb = bell(u) * s.bow;
+      x += s.dx * m - s.dy * bb;
+      y += s.dy * m + s.dx * bb;
+    }
+    return [x, y];
+  };
+}
+
+// Content enter/exit: its own timing, so swapped text never overlaps.
+function visAmt(t, tin, tout, inResp = 0.3) {
+  const f = (tt) => {
+    if (tt < tin) return null;
+    const pin = spr(tt - tin, inResp, 1);
+    const pout = tout == null ? 0 : sm((tt - tout) / 0.11);
+    return { pin, pout, o: pin * (1 - pout) };
+  };
+  let r = f(t) || { pin: 0, pout: 0, o: 0 };
+  if (tout != null && tout > T) { // only windows that wrap past the loop point
+    const r2 = f(t + T);
+    if (r2 && r2.o > r.o) r = r2;
+  }
+  return r;
+}
+
+
+
+// ---------- color & icons ----------
+const PH = { // Phosphor (regular) stroke paths, 256 grid, stroke 16
+  caretLeft: '<path d="M160 208 80 128l80-80"/>',
+  caretDown: '<path d="m208 96-80 80-80-80"/>',
+  info: '<circle cx="128" cy="128" r="96"/><path d="M120 120h8v56h8"/><circle cx="126" cy="84" r="4" fill="currentColor"/>',
+  phone: '<path d="M92.5 39.9a8 8 0 0 0-9.4-5.8L50 40.8A16 16 0 0 0 36 56.6C36 150 106 220 199.4 220a16 16 0 0 0 15.9-14l6.7-33.2a8 8 0 0 0-5.8-9.4l-40-10a8 8 0 0 0-8 2.3l-15 17.3a124 124 0 0 1-58-58l17.3-15a8 8 0 0 0 2.3-8Z"/>',
+};
+const ph = (n, size, color = "currentColor") =>
+  `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 256 256" fill="none" stroke="${color}" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" style="display:block">${PH[n]}</svg>`;
+// Phosphor core assets (regular + fill), filled outlines
+const px_ = (n, size, color = "currentColor", extra = "") => `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 256 256" fill="${color}" style="display:block;${extra}">${window.PHX[n]}</svg>`;
+const ic = (name, size, color = "currentColor") => `<span class="ic" style="width:${size}px;height:${size}px;color:${color}">${window.ICONS[name]}</span>`;
+const MARK = ["M0 10.014v6.801a.75.75 0 0 0 .225.513l2.742 2.644 2.002-.8v-7.099l-2.97-2.859z", "M4.078 4.8v5.786l1.36 1.309v1.313L12.481 20l2.002-.8-.001-7.1L6.078 4z", "M13.594 4.8v5.786l1.36 1.311-.013 1.3L22 20 24 19.2V12.42a.75.75 0 0 0-.225-.533L15.595 4z"];
+const markSVG = (size, color) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="${color}" style="display:block">${MARK.map((d) => `<path d="${d}"/>`).join("")}</svg>`;
+const avatar = (ch, size, bg) => `<div class="av" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.42)}px${bg ? ";background:" + bg : ""}">${ch}</div>`;
+const macroAv = (size) => `<div class="av" style="width:${size}px;height:${size}px;background:#000;border-radius:${Math.round(size * 0.3)}px">${markSVG(Math.round(size * 0.56), "#fff")}</div>`;
+const docRef = (label) => `<span class="ref">${ic("wide-file-md", 17, "var(--doc)")}<u>${label}</u></span>`;
+const taskRef = (label) => `<span class="ref">${px_("list-checks", 17, "var(--task)")}<u>${label}</u></span>`;
+const isl = (w, h, inner, extra = "") => `<div class="a isl flex" style="width:${w}px;height:${h}px;justify-content:center;${extra}">${inner}</div>`;
+
+// ---------- world geometry: the phone screen is 393×852 pt, centered at 0,0 ----------
+const PW = 393, PH_ = 852, PX = -PW / 2, PY = -PH_ / 2;
+const S = (x, y) => [PX + x, PY + y];
+const R = (x0, y0, x1, y1) => [PX + x0, PY + y0, PX + x1, PY + y1];
+const PHONE = R(0, 0, PW, PH_);
+const DOCK_Y = PH_ - 28 - 46;              // MobileDockRow: 46px chrome, 12px gutter
+const NAV_W = PW - 12 - 12 - 12 - 46;       // grouped island width (Search on its own island)
+const BTN = 46, NB = 6, BGAP = (NAV_W - NB * BTN) / (NB - 1);
+const btnX = (i) => 12 + i * (BTN + BGAP) + BTN / 2;   // screen x of dock button i center
+const SEARCH_X = PW - 12 - 23;
+const DOCK_RECT = R(12, DOCK_Y, PW - 12, DOCK_Y + 46);
+
+// ---------- camera ----------
+// Intro/outro: tight on the dock (fills the width, phone bottom near the frame bottom).
+// Tour: the whole phone, with room for the label.
+const FOCUS = [ // [step, rect | "dock"]
+  [0, "dock"], [1, PHONE], [11, R(0, 360, PW, PH_)], [14, PHONE], [19, "dock"],
+];
+const tourOn = (bt) => bt >= 0.9 && bt < 19.0;
+function camTarget(t) {
+  const bt = stepAt(t); let rc = FOCUS[0][1];
+  for (const [b0, r] of FOCUS) if (b0 <= bt) rc = r;
+  if (rc === "dock") {
+    const d = DOCK_RECT, s = (W * 0.94) / (d[2] - d[0] + 26), dcy = (d[1] + d[3]) / 2;
+    const cy = Math.min(dcy, PY + PH_ + 34 - H / (2 * s));
+    return [Math.log(s), (d[0] + d[2]) / 2, cy];
+  }
+  const lab = tourOn(bt), w = rc[2] - rc[0] + 50, h = rc[3] - rc[1] + 36;
+  if (SIDE) {
+    const availW = lab ? W * 0.52 : W * 0.9, availH = H - 60;
+    const s = Math.min(availW / w, availH / h);
+    const sxc = lab ? W * 0.7 : W / 2;
+    return [Math.log(s), (rc[0] + rc[2]) / 2 - (sxc - W / 2) / s, (rc[1] + rc[3]) / 2];
+  }
+  const top = lab ? LABEL.room : 60, availH = H - top - 70;
+  const s = Math.min((W * 0.9) / w, availH / h);
+  const cx = (rc[0] + rc[2]) / 2, cy = (rc[1] + rc[3]) / 2 - ((top - 70) / 2) / s;
+  return [Math.log(s), cx, cy];
+}
+const CAM_RATE = 240, CAM_N = Math.round(T * CAM_RATE), CR = 0.6, CD = 0.95;
+const camEv = [[], [], []];
+let camBase;
+function buildCam() {
+  camBase = camTarget((CAM_N - 1) / CAM_RATE); let prev = camBase;
+  for (let i = 0; i < CAM_N; i++) { const tt = i / CAM_RATE, v = camTarget(tt); for (let k = 0; k < 3; k++) { const dv = v[k] - prev[k]; if (Math.abs(dv) > 1e-9) camEv[k].push([tt, dv]); } prev = v; }
+}
+function camAt(t) { const out = [0, 0, 0]; for (let k = 0; k < 3; k++) { let v = camBase[k]; for (const [te, dv] of camEv[k]) v += dv * (spr(t - te, CR, CD) + spr(t + T - te, CR, CD)); out[k] = v; } return out; }
+
+// ---------- labels (none on the first slide) ----------
+const LABELS = [[1, 2, "Calendar"], [2, 3, "Email"], [3, 5, "AI agents"], [5, 7, "Tasks"], [7, 9, "CRM"], [9, 11, "Team chat"],
+  [11, 15, "@mention agents"], [15, 16, "Docs"], [16, 19, "Tasks + PRs"]];
+
+// ---------- the More views drawer (MobileDrawer, bottom) ----------
+const DR_H = 346, DR_TOP = PH_ - 8 - DR_H;
+const DR_ROWS = { settings: 24, crm: 77, calls: 125, tasks: 173, agents: 221 }; // row tops in the sheet
+const DRAWER = Track([[1, 0], [3, 1], [4, 0], [5, 1], [6, 0], [7, 1], [8, 0]], 0.36, 0.9);
+const drawerRowY = (k) => DR_TOP + DR_ROWS[k] + 22;
+
+// ---------- touch: a fingertip indicator (world-anchored) ----------
+// [step of the tap, screen x, y]; the finger arrives just before the beat and presses on it.
+const TAPS_AT = [
+  [1, btnX(1), DOCK_Y + 23],            // Calendar
+  [2, btnX(2), DOCK_Y + 23],            // Email
+  [3, btnX(5), DOCK_Y + 23],            // More
+  [4, 118, drawerRowY("agents")],       // Agents
+  [5, btnX(5), DOCK_Y + 23],
+  [6, 118, drawerRowY("tasks")],        // Tasks
+  [7, btnX(5), DOCK_Y + 23],
+  [8, 118, drawerRowY("crm")],          // CRM
+  [9, btnX(3), DOCK_Y + 23],            // Channels
+  [10, 200, 161],                       // #launch
+  [11, 170, 741],                       // composer
+  [12, 120, 681],                       // Macro in the mentions menu
+  [13, 356, 741],                       // send
+  [15, 175, 631],                       // the doc reference
+  [16, 92, 356],                        // the Press kit task in the checklist
+  [17, 75, 183],                        // status chip
+  [18, 196, 738],                       // Done in the sheet
+  [19, btnX(1), DOCK_Y + 23],           // back to Calendar
+];
+const TOUCH = (() => {
+  const segs = [];
+  segs.push([B(0.55), B(0.95), ...S(btnX(1) + 40, DOCK_Y - 70), 0.05]);
+  for (const [k, x, y] of TAPS_AT) {
+    const te = B(k) - 0.035, dur = Math.min(0.42, (B(k) - B(k - 1)) * 0.75);
+    segs.push([te - dur, te, ...S(x, y), 0.07]);
+    if (k === 13) segs.push([B(13.3), B(13.9), ...S(300, 520), 0.07]);
+  }
+  segs.push([B(19) + 0.22, B(19) + 0.62, ...S(btnX(1) + 40, DOCK_Y - 70), 0.05]);
+  const Sg = segs.map(([t0, t1, x, y, bow]) => ({ t0, t1, x, y, bow }));
+  const n = Sg.length;
+  Sg.forEach((s, i) => { const p = Sg[(i + n - 1) % n]; s.dx = s.x - p.x; s.dy = s.y - p.y; });
+  const bx = Sg[n - 1].x, by = Sg[n - 1].y;
+  return (t) => {
+    let x = bx, y = by;
+    for (const s of Sg) for (const tt of [t, t + T]) {
+      const u = (tt - s.t0) / (s.t1 - s.t0); if (u <= 0) continue;
+      const m = mj(u), bb = bell(u) * s.bow; x += s.dx * m - s.dy * bb; y += s.dy * m + s.dx * bb;
+    }
+    return [x, y];
+  };
+})();
+const TAPS = TAPS_AT.map(([k]) => B(k) - 0.02);
+function touchPress(t) { let p = 0; for (const c of TAPS) p += spr(t - c + 0.03, 0.1, 1) - spr(t - c - 0.08, 0.16, 0.9); return clamp(p, 0, 1.1); }
+function touchVis(t) { const a = B(0.6), b = B(19) + 0.55; return t < a - 0.3 ? 0 : sm((t - a) * 5) * (1 - sm((t - b) * 5)); }
+const tap = (t, at, depth) => depth * (spr(t - at + 0.025, 0.12, 1) - spr(t - at - 0.08, 0.2, 0.8));
+
+// ---------- dock state ----------
+// active view: accent + fill glyph. Agents/Tasks/CRM live in More, so no dock button is active there.
+const ACT = [
+  Track([[0.5, 0], [1.5, 0]], 0.2, 1),                          // Notifications (never active here)
+  Track([[2, 0], [19, 1]], 0.18, 1),                             // Calendar
+  Track([[2, 1], [4, 0]], 0.18, 1),                              // Email
+  Track([[9, 1], [19, 0]], 0.18, 1),                             // Channels
+];
+const DOCK_TAPS = TAPS_AT.filter(([, , y]) => y === DOCK_Y + 23).map(([k, x]) => [B(k) - 0.02, x]);
+// glassPress: a wide group grows ≤3px per edge, its glyphs scale 1.08, and a shimmer blooms at the touch
+function dockPress(t) {
+  let p = 0, light = 0, spread = 0.45, x = btnX(1);
+  for (const [tp, bx] of DOCK_TAPS) for (const tt of [t, t + T]) {
+    const d = tt - tp; if (d < -0.05 || d > 0.9) continue;
+    const pp = spr(d + 0.03, 0.12, 1) - spr(d - 0.12, 0.3, 1);
+    if (pp > p) p = pp;
+    const l = spr(d + 0.02, 0.08, 1) * Math.exp(-Math.max(0, d - 0.12) / 0.22);
+    if (l > light) { light = l; x = bx; spread = 0.45 + 0.55 * spr(d, 0.35, 1); }
+  }
+  return { p: clamp(p), light: clamp(light), spread, x };
+}
+// intro: a sheen of light crosses the glass and each view lifts as it passes (8th notes)
+const SHEEN_T = [0, 1, 2, 3, 4, 5, 6].map((i) => 0.09 + i * 0.125);
+function sheenAt(bt) {
+  if (bt > 1.02 && bt < 18.9) return null;
+  const b = bt >= 18.9 ? bt - BEATS : bt;                   // steps are periodic
+  const u = (b - 0.03) / 0.84; if (u < -0.1 || u > 1.12) return null;
+  return { x: lerp(-10, PW + 8, u), a: sm(u * 6) * (1 - sm((u - 0.9) * 6)) };
+}
+const lift = (bt, i) => { const d = (bt - SHEEN_T[i]) / 0.07; return Math.exp(-d * d); };
+
+// ---------- calendar: scrolls to now on open ----------
+const HOUR = 64, GRID_TOP = 162;
+const calScrollAt = (t) => {
+  const a = B(19) + 0.05, L_ = T - a + B(1.4), w = (((t - a) % T) + T) % T;
+  const u = clamp(w / L_); return lerp(40, 200, 1 - Math.pow(1 - u, 2.2));
+};
+
+// ---------- screens ----------
+// visibility windows [in, out] in steps; tab switches cross-fade, pushes slide
+const NAV = {
+  chl: Track([[5, 0], [10, -110]], 0.5, 0.92),
+  chan: Track([[5, PW], [10, 0], [15, -110]], 0.5, 0.92),
+  doc: Track([[5, PW], [15, 0], [16, -110]], 0.5, 0.92),
+  task: Track([[5, PW], [16, 0]], 0.5, 0.92),
+};
+const STATUS_IND = Track([[1, 1], [18, 2]], 0.3, 0.86);
+const SHEET = Track([[1, 0], [17, 1], [18.35, 0]], 0.36, 0.9);
+const H_JAC = Track([[1, 0], [13, 80]], 0.46, 0.84), H_MAC = Track([[1, 0], [14, 104]], 0.46, 0.84);
+const TYPE1 = "@mac", T1 = [11.12, 11.28, 11.42, 11.56];
+const TYPE2 = " draft the launch plan", T2 = [...TYPE2].map((_, i) => 12.08 + i * 0.035);
+const typed = (bt, ts) => ts.filter((x) => x <= bt).length;
+
+// ---------- sound cues ----------
+const CUES = [];
+const cue = (bt, type, gain = 1, extra = {}) => CUES.push({ t: B(bt), type, gain, ...extra });
+SHEEN_T.forEach((b, i) => cue(b, "tick", 0.32 + 0.03 * i, { pitch: [1, 1.122, 1.26, 1.335, 1.498, 1.682, 2][i] }));
+for (const [k] of TAPS_AT) cue(k, "click", 0.75);
+[1, 2, 4, 6, 8, 9, 19].forEach((k) => cue(k + 0.02, "swish", 0.45));
+[3, 5, 7].forEach((k) => cue(k + 0.02, "swoosh", 0.5));
+cue(10.02, "swish", 0.6);
+T1.forEach((x, i) => cue(x, "key", 0.5, { seed: i })); cue(11.14, "blip", 0.4); cue(12, "pop");
+T2.forEach((x, i) => cue(x, "key", 0.3, { seed: 9 + i })); cue(13, "enter"); cue(13.02, "swish", 0.5);
+cue(14, "blip", 0.7); cue(15.02, "swish", 0.6); cue(16.02, "swish", 0.55); cue(17.02, "swoosh", 0.55);
+cue(18.03, "chime", 0.8);
+
+// =====================================================================
+// DOM
+// =====================================================================
+const $ = (id) => document.getElementById(id);
+const stage = $("stage"), world = $("world"), shape = $("shape"), rings = $("rings"), labelsEl = $("labels");
+stage.style.width = W + "px"; stage.style.height = H + "px";
+rings.style.left = W / 2 + "px"; rings.style.top = H / 2 + "px";
+
+// Liquid-glass refraction maps: R/G encode x/y displacement, neutral (0.5) in the middle,
+// bending toward the rim over the edge band.
+function lensFilter(id, w, h, band, scale) {
+  const bx = ((band / w) * 100).toFixed(2), by = ((band / h) * 100).toFixed(2);
+  const img = (dir, ch) => {
+    const col = (v) => (ch === "r" ? `rgb(${v},0,0)` : `rgb(0,${v},0)`);
+    const g = dir === "x" ? `x1='0' x2='1' y1='0' y2='0'` : `x1='0' x2='0' y1='0' y2='1'`;
+    const b = dir === "x" ? bx : by;
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}'><defs><linearGradient id='g' ${g}><stop offset='0' stop-color='${col(255)}'/><stop offset='${b}%' stop-color='${col(128)}'/><stop offset='${100 - b}%' stop-color='${col(128)}'/><stop offset='1' stop-color='${col(0)}'/></linearGradient></defs><rect width='${w}' height='${h}' fill='url(#g)'/></svg>`;
+    return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+  };
+  return `<filter id="${id}" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feImage href="${img("x", "r")}" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="none" result="mx"/>
+    <feImage href="${img("y", "g")}" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="none" result="my"/>
+    <feComposite in="mx" in2="my" operator="arithmetic" k1="0" k2="1" k3="1" k4="0" result="m"/>
+    <feDisplacementMap in="SourceGraphic" in2="m" scale="${scale}" xChannelSelector="R" yChannelSelector="G"/></filter>`;
+}
+$("fdefs").innerHTML = lensFilter("lgNav", NAV_W, 46, 22, 26) + lensFilter("lgBtn", 46, 46, 20, 24);
+
+const L = {};
+function layer(name, html, z = 1) {
+  const el = document.createElement("div"); el.className = "layer"; el.id = "L-" + name;
+  el.style.width = PW + "px"; el.style.height = PH_ + "px"; el.style.zIndex = z; el.style.left = "0px"; el.style.top = "0px";
+  el.innerHTML = html; shape.appendChild(el); L[name] = el;
+}
+
+const statusBar = `
+  <div class="a nowrap" style="left:44px;top:17px;font-size:17px;font-weight:600;color:#fff">9:41</div>
+  <div class="a" style="left:133px;top:11px;width:126px;height:37px;border-radius:19px;background:#000"></div>
+  <div class="a flex" style="right:30px;top:20px;gap:6px">
+    <svg width="18" height="12" viewBox="0 0 18 12"><rect x="0" y="8" width="3" height="4" rx="1" fill="#fff"/><rect x="5" y="5.5" width="3" height="6.5" rx="1" fill="#fff"/><rect x="10" y="3" width="3" height="9" rx="1" fill="#fff"/><rect x="15" y="0" width="3" height="12" rx="1" fill="#fff"/></svg>
+    <svg width="17" height="12" viewBox="0 0 17 12"><path d="M8.5 2.2c2.4 0 4.6.9 6.3 2.5l1.1-1.1A10.4 10.4 0 0 0 8.5.6 10.4 10.4 0 0 0 1.1 3.6l1.1 1.1A8.9 8.9 0 0 1 8.5 2.2Zm0 3.2c1.5 0 2.9.6 4 1.6l1.1-1.1a7.3 7.3 0 0 0-10.2 0L4.5 7a5.7 5.7 0 0 1 4-1.6Zm0 3.2c.7 0 1.3.3 1.8.7L8.5 11 6.7 9.3c.5-.4 1.1-.7 1.8-.7Z" fill="#fff"/></svg>
+    <svg width="27" height="13" viewBox="0 0 27 13"><rect x=".5" y=".5" width="23" height="12" rx="3.8" fill="none" stroke="rgba(255,255,255,.4)"/><rect x="2" y="2" width="20" height="9" rx="2.5" fill="#fff"/><path d="M25 4.5v4c.8-.3 1.3-1.1 1.3-2s-.5-1.7-1.3-2Z" fill="rgba(255,255,255,.45)"/></svg>
+  </div>`;
+const topFade = `<div class="a" style="left:0;top:0;width:${PW}px;height:62px;background:linear-gradient(to bottom, var(--panel) 55%, transparent)"></div>`;
+const bottomFade = `<div class="a" style="left:0;top:${PH_ - 96}px;width:${PW}px;height:96px;background:linear-gradient(to top, rgba(15,15,16,.55), transparent)"></div>`;
+const header = (title, right) => `
+  ${isl(40, 40, ph("caretLeft", 18, "var(--c1)"), "left:12px;top:56px")}
+  <div class="a isl flex nowrap" style="left:60px;top:56px;height:40px;padding:0 12px;gap:6px;font-size:15px;font-weight:600;color:#fff">${title}${ph("caretDown", 13, "var(--c3)")}</div>
+  ${isl(40, 40, right, "right:12px;top:56px")}`;
+const ptabs = (tabs, on, filter = true) => `<div class="ptabs">${filter ? `<div class="isl flex" style="width:40px;height:40px;justify-content:center">${px_("sliders-horizontal", 18, "var(--c2)")}</div>` : ""}${tabs.map((x, i) => `<div class="ptab isl${i === on ? " on" : ""}">${x}</div>`).join("")}</div>`;
+
+// --- Calendar: single day grid (timeGridDay) ---
+const EVC = { blue: "#79b4f2", violet: "#b7a0ff", green: "#5fd694", cyan: "#58cfe0", pink: "#f197c4", amber: "#e9c461" };
+const EVENTS = [ // [start h, end h, title, meta, color]
+  [9, 9.5, "Standup", "9–9:30am", "cyan"], [10, 11, "Launch review", "10–11am · Dana, Julia", "violet"],
+  [11.5, 12.5, "Press briefing", "11:30am–12:30pm · Zoom", "blue"], [13, 14, "Lunch with Austin", "1–2pm", "green"],
+  [14.5, 15.5, "Northwind onboarding", "2:30–3:30pm · Maya", "pink"], [16, 16.5, "Ship Q3 launch", "4–4:30pm", "blue"],
+  [17, 18, "Retro", "5–6pm · #launch", "violet"], [18.5, 20, "Dinner with Dana’s team", "6:30–8pm · Nopa", "green"],
+  [20, 21, "Deploy window", "8–9pm · iOS 2.4", "cyan"], [21.25, 22, "Press list final", "9:15–10pm", "amber"],
+];
+const hy = (h) => (h - 8) * HOUR;
+const hl = (h) => (h === 12 ? "12pm" : h > 12 ? `${h - 12}pm` : `${h}am`);
+layer("cal", `
+  <div class="a" style="inset:0;background:var(--panel)"></div>
+  <div class="a" id="calGrid" style="left:0;top:${GRID_TOP}px;width:${PW}px;height:${PH_ - GRID_TOP}px;overflow:hidden">
+    <div class="a" id="calIn" style="left:0;top:0;width:${PW}px;height:${hy(23)}px">
+      ${Array.from({ length: 15 }, (_, i) => 8 + i).map((h) => `<div class="a" style="left:60px;top:${hy(h)}px;width:${PW - 60}px;height:1px;background:#1f2022"></div>
+        <div class="a nowrap" style="right:${PW - 52}px;top:${hy(h) - 7}px;font-size:11px;color:var(--c4)">${hl(h)}</div>`).join("")}
+      ${EVENTS.map(([a, b, tt, m, c], i) => `<div class="ev" id="ev${i}" style="top:${hy(a) + 1}px;height:${(b - a) * HOUR - 2}px;background:${EVC[c]}"><b>${tt}</b>${b - a > 0.5 ? `<i>${m}</i>` : ""}</div>`).join("")}
+      <div class="a" style="left:60px;top:${hy(15.2)}px;width:${PW - 60}px;height:1px;background:var(--a0)"></div>
+      <div class="a" style="left:56px;top:${hy(15.2) - 6}px;width:10px;height:12px;background:var(--a0);clip-path:polygon(0 0,60% 0,100% 50%,60% 100%,0 100%)"></div>
+    </div>
+  </div>
+  <div class="a" style="left:0;top:0;width:${PW}px;height:${GRID_TOP}px;background:var(--panel)"></div>
+  ${statusBar}
+  <div class="a isl flex nowrap" style="left:12px;top:60px;height:40px;padding:0 14px;gap:6px;font-size:16px;font-weight:600;color:#fff">September 2026${ph("caretDown", 12, "var(--c3)")}</div>
+  <div class="a isl flex" style="right:12px;top:60px;height:40px;padding:0 4px">
+    <div class="flex" style="position:relative;width:36px;height:36px;justify-content:center">${px_("calendar-blank", 21, "var(--c1)")}<div class="a" style="left:0;right:0;top:15px;text-align:center;font-size:8px;font-weight:700;color:var(--c1)">24</div></div>
+    <div class="flex" style="width:36px;height:36px;justify-content:center">${px_("plus", 20, "var(--c1)")}</div>
+    <div class="flex" style="width:36px;height:36px;justify-content:center">${px_("phone-call", 20, "var(--c1)")}</div>
+  </div>
+  <div class="a flex nowrap" style="left:66px;top:112px;gap:10px"><span style="font-size:18px;color:var(--c3)">Thu</span>
+    <span style="display:flex;align-items:center;justify-content:center;width:36px;height:34px;border-radius:6px;background:var(--a0);color:#0f0f10;font-size:18px;font-weight:600">24</span></div>
+  ${bottomFade}`, 7);
+
+// --- Email: Signal tab, narrow inbox rows ---
+const MAIL = [
+  ["Dana Whitfield", "9:38 AM", "Re: Rollout", "Can we add my whole team to Thursday?", 1],
+  ["GitHub", "9:36 AM", "[macro-inc/macro] feat(site): press kit page (#5120)", "Julia requested your review", 1],
+  ["Austin Barrón", "9:20 AM", "Launch video, cut 3", "Pacing is better. Two notes on the ending.", 1],
+  ["Julia Westphal", "9:02 AM", "Press list for Thursday", "42 outlets, embargo until 9am ET", 0],
+  ["Maya Chen", "8:47 AM", "Northwind pilot", "They want SSO before the trial starts", 0],
+  ["Calendar", "8:30 AM", "Invitation: Launch review", "Thu Sep 24 · 10am · Dana, Julia, Jacob", 0],
+  ["Jacob", "Yesterday", "iOS 2.4 release notes", "Dock, calendar and CRM on mobile", 0],
+  ["Dana Whitfield", "Yesterday", "Kickoff notes", "Owners and dates for the rollout", 0],
+];
+const mailTop = (i) => 146 + i * 82 + (i >= 6 ? 30 : 0);
+layer("mail", `
+  <div class="a" style="inset:0;background:var(--panel)"></div>
+  <div class="a nowrap" id="mailG0" style="left:81px;top:124px;font-size:12px;color:rgba(128,128,128,.8)">Today</div>
+  <div class="a nowrap" id="mailG1" style="left:81px;top:${mailTop(6) - 22}px;font-size:12px;color:rgba(128,128,128,.8)">Yesterday</div>
+  ${MAIL.map(([f, tm, s, sn, u], i) => `<div class="erow" id="em${i}" style="top:${mailTop(i)}px">${u ? '<div class="dot"></div>' : ""}
+    <div class="eav">${px_("envelope", 24, "var(--c2)")}</div><div class="l1">${f}</div><div class="tm">${tm}</div>
+    <div class="l2">${s}</div><div class="l3">${sn}</div><div class="dv"></div></div>`).join("")}
+  ${topFade}${statusBar}${ptabs(["Signal", "Noise", "Sent", "Scheduled", "Calendar", "Drafts"], 0)}
+  ${bottomFade}`, 2);
+
+// --- Agents: Owned tab ---
+const AGENTS = [
+  ["Draft Q3 launch email", "Running", 1], ["Triage PR reviews", "9:40 AM"], ["Summarize Thursday call", "9:31 AM"],
+  ["Weekly metrics digest", "9:05 AM"], ["Prep Northwind pilot", "8:52 AM"], ["Press list cleanup", "8:40 AM"],
+  ["Changelog from merged PRs", "Yesterday"], ["Onboarding email sequence", "Yesterday"], ["Churn risk review", "Yesterday"],
+  ["Standup notes → tasks", "Mon"], ["Pricing page copy", "Mon"], ["Retro themes", "Mon"], ["Hiring loop recap", "Sun"],
+  ["Support inbox triage", "Sun"], ["Board update draft", "Sat"],
+];
+layer("agents", `
+  <div class="a" style="inset:0;background:var(--panel)"></div>
+  ${AGENTS.map(([tt, tm, run], i) => `<div class="lrow" id="ag${i}" style="top:${119 + i * 44}px">
+    <div class="ico">${px_("sparkle", 16, "var(--chat)")}</div><div class="tt">${tt}</div>
+    <div class="rt"${run ? ' style="color:var(--a0);font-weight:500"' : ""}>${tm}</div></div>`).join("")}
+  ${topFade}${statusBar}${ptabs(["Owned", "Running", "Shared", "Automations", "Skills"], 0)}
+  ${bottomFade}`, 3);
+
+// --- Tasks: My tasks, grouped by priority ---
+const ST = { todo: ["square-task-created-circle", "var(--task)"], prog: ["square-task-in-progress-circle", "var(--warn)"],
+  rev: ["square-task-in-review-circle", "var(--note)"], done: ["square-task-done-circle", "var(--a0)"] };
+const PRI = { Urgent: ["wide-priority-urgent", "var(--a0)"], High: ["wide-priority-high", "var(--c4)"], Medium: ["wide-priority-medium", "var(--c4)"], Low: ["wide-priority-low", "var(--c4)"] };
+const TASKS = [
+  ["Urgent", [["Fix calendar sync on iOS", "prog", "J"], ["Press kit", "rev", "J"]]],
+  ["High", [["Launch email", "prog", "M"], ["Changelog", "todo", "J"], ["App Store screenshots", "done", "A"]]],
+  ["Medium", [["Onboarding checklist", "todo", "D"], ["Pricing page copy", "prog", "J"], ["Northwind SSO", "todo", "M"], ["Retro notes", "todo", "D"]]],
+  ["Low", [["Clean up old flags", "todo", "J"], ["Update brand kit", "todo", "A"]]],
+];
+let tasksHTML = "", ty = 119, tn = 0, tr = 0;
+const AVC = { J: "#3a3550", M: "#233a44", A: "#40302a", D: "#2b3d31" };
+for (const [g, rows] of TASKS) {
+  tasksHTML += `<div class="a flex nowrap" id="tg${tn}" style="left:4px;top:${ty + 2}px;width:385px;height:30px;border-radius:8px;box-shadow:inset 0 0 0 1px #1f2022;padding:0 8px;gap:7px;font-size:12px;font-weight:600;color:var(--c1)">
+    ${px_("caret-right", 10, "var(--c3)", "transform:rotate(90deg)")}${ic(PRI[g][0], 14, PRI[g][1])}${g}<span style="border-radius:999px;background:rgba(255,255,255,.1);padding:1px 6px;font-weight:500;color:var(--c2)">${rows.length}</span></div>`;
+  ty += 36;
+  for (const [tt, st, who] of rows) {
+    tasksHTML += `<div class="lrow" id="tk${tr++}" style="top:${ty}px"><div class="ico">${px_("list-checks", 16, "var(--task)")}</div><div class="tt">${tt}</div>
+      <div class="rt">${ic(ST[st][0], 16, ST[st][1])}${ic(PRI[g][0], 16, PRI[g][1])}${who === "M" ? macroAv(20) : avatar(who, 20, AVC[who])}</div></div>`;
+    ty += 44;
+  }
+  tn++;
+}
+layer("tasks", `
+  <div class="a" style="inset:0;background:var(--panel)"></div>
+  <div class="a" id="tkAll" style="left:0;top:0;width:${PW}px;height:${PH_}px">${tasksHTML}</div>
+  ${topFade}${statusBar}${ptabs(["My tasks", "Created by me", "All tasks"], 0)}
+  ${bottomFade}`, 4);
+
+// --- CRM: companies with deal stages ---
+const STAGE = { Lead: "var(--c3)", Qualified: "var(--task)", Demo: "var(--note)", Trial: "var(--warn)", Negotiation: "var(--a0)", Customer: "var(--success)", Churned: "var(--fail)" };
+const COS = [["Northwind", "Negotiation", "Maya"], ["Lumen Labs", "Trial", "Dana"], ["Halcyon Health", "Demo", "Maya"], ["Brightline", "Customer", "Julia"],
+  ["Kestrel Robotics", "Qualified", "Dana"], ["Parallax", "Lead", "Jacob"], ["Orbital Foods", "Customer", "Austin"], ["Tidewater", "Demo", "Maya"],
+  ["Fieldnote", "Trial", "Dana"], ["Arbor & Co", "Lead", "Julia"], ["Meridian", "Churned", "Jacob"], ["Solace", "Qualified", "Austin"],
+  ["Juniper Bio", "Negotiation", "Maya"], ["Vantage", "Lead", "Dana"], ["Cobalt Freight", "Customer", "Julia"]];
+layer("crm", `
+  <div class="a" style="inset:0;background:var(--panel)"></div>
+  ${COS.map(([n, st, own], i) => `<div class="lrow" id="co${i}" style="top:${119 + i * 44}px">
+    <div class="ico">${px_("building-office", 16, "var(--c2)")}</div><div class="tt">${n}</div>
+    <div class="rt"><span style="color:var(--c3);font-weight:400">${own}</span><span class="flex" style="gap:6px;width:92px;color:var(--c1);font-weight:400"><span style="width:12px;height:12px;border-radius:50%;background:${STAGE[st]}"></span>${st}</span></div></div>`).join("")}
+  ${topFade}${statusBar}
+  ${isl(40, 40, px_("list", 24, "var(--c1)"), "left:12px;top:67px")}
+  <div class="a isl flex nowrap" style="left:60px;top:67px;height:40px;padding:0 14px;gap:6px;font-size:14px;font-weight:600;color:#fff">${px_("building-office", 16, "var(--c2)")}Companies</div>
+  <div class="a flex nowrap" style="left:193px;top:67px;gap:8px"><div class="ptab isl on">Pipeline</div><div class="ptab isl">All</div></div>
+  ${bottomFade}`, 5);
+
+// --- Channels list: Recent ---
+const CHL = [
+  ["#launch", "9:40 AM", "Julia", "Still on for Thursday? Dana’s team is in.", 1],
+  ["Dana Whitfield", "9:30 AM", "Dana", "Can my whole team join the Thursday call?", 1, "D"],
+  ["#design", "9:12 AM", "Austin", "New dock glass is in. Try it on device.", 0],
+  ["#eng", "8:58 AM", "Jacob", "iOS 2.4 is on TestFlight, with calendar and CRM", 0],
+  ["#sales", "8:40 AM", "Maya", "Northwind wants SSO before the trial", 0],
+  ["Julia Westphal", "Yesterday", "Julia", "Sent you the press list", 0, "J"],
+  ["#general", "Yesterday", "Macro", "Weekly summary is ready", 0],
+  ["#support", "Mon", "Dana", "Two tickets about calendar sync, both fixed", 0],
+  ["#hiring", "Mon", "Austin", "Loop for the design role is Friday", 0],
+];
+layer("chl", `
+  <div class="a" style="inset:0;background:var(--panel);box-shadow:0 0 0 0 transparent"></div>
+  ${CHL.map(([n, tm, who, p, u, dm], i) => `<div class="crow" id="cl${i}" style="top:${119 + i * 84}px">${u ? '<div class="ud"></div>' : ""}
+    <div class="cav">${dm ? avatar(dm, 36) : px_("hash-straight", 18, "var(--c2)")}</div>
+    <div class="cn">${n}<span>${tm}</span></div><div class="cp"><b>${who}:</b> ${p}</div></div>`).join("")}
+  <div class="a" id="clHl" style="left:0;top:119px;width:${PW}px;height:84px;background:#fff;opacity:0"></div>
+  ${topFade}${statusBar}${ptabs(["Recent", "Channels", "DMs"], 0, false)}
+  ${bottomFade}`, 6);
+
+// --- #launch channel ---
+const msg = (id, av, name, body, extra = "") => `<div class="a msg" id="${id}"><div class="a" style="left:12px;top:2px">${av}</div>
+  <div class="a mname">${name}${extra}</div><div class="a mbody">${body}</div></div>`;
+layer("chan", `
+  <div class="a" style="inset:0;background:var(--panel);box-shadow:-24px 0 40px rgba(0,0,0,.5)"></div>
+  ${msg("mAus", avatar("A", 32), `Austin <span class="t">9:12 AM</span>`, `Rollout doc is ready for review ${docRef("Rollout")}`)}
+  ${msg("mDan", avatar("D", 32), `Dana <span class="t">9:30 AM</span>`, "Can my whole team join the Thursday call?")}
+  ${msg("mJul", avatar("J", 32), `Julia <span class="t">9:40 AM</span>`, "Still on for Thursday? Dana’s team is in.")}
+  ${msg("mJac", avatar("J", 32), `Jacob <span class="t">9:41 AM</span>`, `<span class="pill">@Macro</span> draft the launch plan`)}
+  ${msg("mMac", macroAv(32), `Macro <span class="badge">Agent</span><span class="t">9:41 AM</span>`, `<div id="macTxt">Drafted ${docRef("Q3 launch plan")} with owners and dates. Julia has the press kit.</div>
+      <div class="a flex" id="dots" style="left:2px;top:6px;gap:6px">${[0, 1, 2].map((k) => `<div id="dot${k}" style="width:8px;height:8px;border-radius:50%;background:var(--a0)"></div>`).join("")}</div>`)}
+  <div class="a" style="left:0;top:0;width:${PW}px;height:110px;background:linear-gradient(to bottom, var(--panel) 30%, transparent)"></div>${statusBar}
+  ${header(`${px_("hash-straight", 16, "var(--c2)")}launch`, ph("phone", 18, "var(--c1)"))}
+  <div class="a" style="left:0;top:${PH_ - 200}px;width:${PW}px;height:200px;background:linear-gradient(to top, var(--panel) 30%, transparent)"></div>
+  <div class="a isl" id="comp" style="left:12px;top:${DOCK_Y - 12 - 50}px;width:369px;height:50px">
+    <div class="a" style="left:12px;top:13px;width:23px;height:23px;color:var(--c3)">${window.ICONS["paperclip"]}</div>
+    <div class="a flex nowrap" style="left:44px;top:12px;height:26px;font-size:16px;color:#fff"><span id="cph" style="color:var(--c4)">Message #launch</span><span id="cpre" style="color:var(--a0)"></span><span class="pill" id="cchip" style="margin-right:4px">@Macro</span><span id="crest"></span><span class="caret" id="ccar"></span></div>
+    <div class="a" id="csend" style="right:5px;top:5px;width:40px;height:40px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center">${ic("arrow-up", 18, "#0a0a0a")}</div>
+  </div>
+  <div class="a glass" id="menu" style="left:12px;width:369px;border-radius:13px;background:rgb(30,31,34);box-shadow:0 10px 28px -8px rgba(0,0,0,.4);overflow:hidden">
+    <div class="a nowrap" style="left:14px;top:10px;font-size:12px;font-weight:500;color:var(--c4)">All</div>
+    <div class="a" id="msel" style="left:6px;top:32px;width:357px;height:38px;border-radius:7px;background:rgba(255,255,255,.08)"></div>
+    <div class="a flex nowrap" id="mi0" style="left:14px;top:32px;height:38px;gap:10px;font-size:16px;font-weight:500;color:#fff">${macroAv(22)}Macro<span class="badge">Agent</span></div>
+    <div class="a flex nowrap" id="mi1" style="left:14px;top:70px;height:38px;gap:10px;font-size:16px;font-weight:500;color:#fff">${avatar("M", 22)}Maya Chen</div>
+    <div class="a flex nowrap" id="mi2" style="left:14px;top:108px;height:38px;gap:10px;font-size:16px;font-weight:500;color:#fff">${ic("wide-file-md", 20, "var(--doc)")}Marketing brief</div>
+  </div>`, 8);
+
+// --- doc ---
+layer("doc", `
+  <div class="a" style="inset:0;background:var(--panel);box-shadow:-24px 0 40px rgba(0,0,0,.5)"></div>
+  <div class="a nowrap" id="dTitle" style="left:20px;top:118px;font-size:30px;font-weight:620;letter-spacing:-0.03em;color:#fff">Q3 launch plan</div>
+  <div class="a flex nowrap" id="dMeta" style="left:20px;top:162px;gap:8px;font-size:14px;color:var(--c4)">${macroAv(20)}Drafted by Macro · linked to #launch</div>
+  ${["Ship Thursday. Email, messages, docs and", "tasks in one app, with agents that already", "know the work. Owners are tagged below."].map((l, i) =>
+    `<div class="a nowrap" id="dl${i}" style="left:20px;top:${206 + i * 27}px;font-size:17px;color:var(--c2)">${l}</div>`).join("")}
+  <div class="a nowrap" id="dHead" style="left:20px;top:306px;font-size:20px;font-weight:600;color:#fff">Checklist</div>
+  ${[[taskRef("Press kit"), "@Julia"], ["Changelog", "@Jacob"], ["Launch email", "@Macro"]].map(([a, b], i) =>
+    `<div class="a flex nowrap" id="di${i}" style="left:20px;top:${346 + i * 42}px;gap:10px;font-size:17px;color:var(--c1)"><div style="width:19px;height:19px;border-radius:6px;box-shadow:inset 0 0 0 1.5px var(--c4)"></div>${a}<span class="pill">${b}</span></div>`).join("")}
+  ${topFade}${statusBar}
+  ${header(`${ic("wide-file-md", 16, "var(--doc)")}Q3 launch plan`, ph("info", 19, "var(--c1)"))}
+  ${bottomFade}`, 9);
+
+// --- task, with its linked PR ---
+layer("task", `
+  <div class="a" style="inset:0;background:var(--panel);box-shadow:-24px 0 40px rgba(0,0,0,.5)"></div>
+  <div class="a nowrap" style="left:20px;top:116px;font-size:30px;font-weight:620;letter-spacing:-0.03em;color:#fff">Press kit</div>
+  <div class="a flex nowrap" style="left:20px;top:166px;gap:8px">
+    <div class="isl flex" id="tStat" style="height:34px;padding:0 12px;gap:7px;font-size:14px;font-weight:500;color:var(--c1)">
+      <span id="tStatIc0">${ic("square-task-in-review-circle", 15, "var(--note)")}</span><span id="tStatIc1" style="display:none">${ic("square-task-done-circle", 15, "var(--a0)")}</span><span id="tStatTx">In review</span></div>
+    <div class="isl flex" style="height:34px;padding:0 12px;gap:7px;font-size:14px;font-weight:500;color:var(--c1)">${ic("wide-priority-urgent", 15, "var(--a0)")}Urgent</div>
+    <div class="isl flex" style="height:34px;padding:0 12px 0 5px;gap:7px;font-size:14px;font-weight:500;color:var(--c1)">${avatar("J", 24, AVC.J)}Julia</div>
+  </div>
+  <div class="a flex nowrap" style="left:20px;top:222px;gap:8px;font-size:14px;color:var(--c3)">${ic("git-pull-request", 16, "var(--c2)")}<span style="color:var(--c1)">feat(site): press kit page</span><span>macro-inc/macro#5120</span></div>
+  <div class="a flex nowrap" style="left:44px;top:246px;gap:8px;font-size:13px"><span style="color:#23cf63">+124</span><span style="color:#ff6b6b">−4</span><span style="color:var(--c4)">· checks passing</span></div>
+  <div class="a" style="left:20px;top:290px;width:353px;font-size:17px;line-height:25px;color:var(--c2)">Logo files, screenshots and the founder quote for Thursday. Linked from ${docRef("Q3 launch plan")}.</div>
+  ${topFade}${statusBar}
+  ${header(`${px_("list-checks", 16, "var(--task)")}Task`, ph("info", 19, "var(--c1)"))}
+  ${bottomFade}`, 10);
+
+// --- the dock (above every screen) ---
+const dockGlyphs = [["bell", "bell-fill"], ["calendar", "calendar-fill"], ["envelope", "envelope-fill"], ["hash-straight", "hash-straight-fill"], ["files", "files-fill"], ["caret-up", null]];
+layer("dock", `
+  <div class="a lg" id="dNav" style="left:12px;top:${DOCK_Y}px;width:${NAV_W}px;height:46px;backdrop-filter:url(#lgNav) blur(3px) saturate(1.9) brightness(1.06)">
+    <div class="a" id="dNavShim" style="inset:0;border-radius:inherit"></div>
+    ${dockGlyphs.map(([a, b], i) => `<div class="a" id="db${i}" style="left:${btnX(i) - 12 - 23}px;top:0;width:46px;height:46px">
+      <div class="a flex" id="db${i}r" style="inset:0;justify-content:center;color:#e4e4e4">${px_(a, 27)}</div>
+      ${b ? `<div class="a flex" id="db${i}f" style="inset:0;justify-content:center;color:var(--a0)">${px_(b, 27)}</div>` : ""}</div>`).join("")}
+  </div>
+  <div class="a lg flex" id="dSearch" style="left:${PW - 12 - 46}px;top:${DOCK_Y}px;width:46px;height:46px;justify-content:center;backdrop-filter:url(#lgBtn) blur(3px) saturate(1.9) brightness(1.06)">
+    <div class="a" id="dSearchShim" style="inset:0;border-radius:inherit"></div>
+    <div class="flex" id="dSearchIc" style="position:relative;color:#e4e4e4">${px_("magnifying-glass", 27)}</div></div>
+  <div class="a" style="left:131px;top:${PH_ - 8}px;width:131px;height:5px;border-radius:3px;background:rgba(255,255,255,.6)"></div>`, 20);
+
+// --- sheets (above the dock): More views drawer, status sheet ---
+layer("sheets", `
+  <div class="a" id="scrim" style="inset:0;background:rgba(0,0,0,.1);background-image:radial-gradient(120% 90% at 50% -12%, rgba(97,163,230,.06), rgba(97,163,230,.02) 40%, transparent 68%);backdrop-filter:blur(2px) saturate(1.05)"></div>
+  <div class="a glass" id="drawer" style="left:8px;width:377px;height:${DR_H}px;border-radius:44px;background:rgba(33,34,37,.88);backdrop-filter:blur(8px) saturate(1.25);box-shadow:0 14px 32px -22px rgba(0,0,0,.6)">
+    <div class="a" style="left:170px;top:8px;width:36px;height:4px;border-radius:2px;background:rgba(255,255,255,.15)"></div>
+    <div class="a" id="drHl" style="left:16px;width:345px;height:44px;border-radius:20px;background:rgba(255,255,255,.09);opacity:0"></div>
+    <div class="drow" style="top:${DR_ROWS.settings}px">${px_("gear", 16)}Settings</div>
+    <div class="a" style="left:16px;top:${DR_ROWS.settings + 48}px;width:345px;height:1px;background:rgba(255,255,255,.08)"></div>
+    <div class="drow" id="drCrm" style="top:${DR_ROWS.crm}px">${px_("building-office", 16)}CRM</div>
+    <div class="drow" style="top:${DR_ROWS.calls}px">${px_("phone-call", 16)}Calls</div>
+    <div class="drow" id="drTasks" style="top:${DR_ROWS.tasks}px">${px_("list-checks", 16)}Tasks</div>
+    <div class="drow" id="drAgents" style="top:${DR_ROWS.agents}px">${px_("sparkle", 16)}Agents</div>
+    <div class="a" style="left:16px;top:${DR_ROWS.agents + 48}px;width:345px;height:1px;background:rgba(255,255,255,.08)"></div>
+    <div class="a flex nowrap" style="left:16px;top:${DR_ROWS.agents + 53}px;height:36px;padding:0 12px;font-size:14px;font-weight:500;color:var(--c3)">Views</div>
+  </div>
+  <div class="a glass" id="sheet" style="left:8px;width:377px;height:278px;border-radius:44px;background:rgba(34,35,38,.97);box-shadow:0 -10px 40px rgba(0,0,0,.4)">
+    <div class="a" style="left:170px;top:8px;width:36px;height:4px;border-radius:2px;background:rgba(255,255,255,.18)"></div>
+    <div class="a nowrap" style="left:24px;top:28px;font-size:12px;font-weight:500;color:var(--c4)">Status</div>
+    <div class="a" style="left:12px;top:48px;width:353px;height:204px;border-radius:24px;background:rgba(255,255,255,.03)"></div>
+    <div class="a" id="sHl" style="left:16px;width:345px;height:48px;border-radius:20px;background:rgba(255,255,255,.1)"></div>
+    ${[["square-task-in-progress-circle", "In progress", "var(--warn)"], ["square-task-in-review-circle", "In review", "var(--note)"], ["square-task-done-circle", "Done", "var(--a0)"], ["square-task-cancelled-circle", "Canceled", "var(--c3)"]].map(([i, l, c], k) =>
+      `<div class="a srow" style="top:${52 + k * 48}px">${ic(i, 18, c)}${l}</div>`).join("")}
+  </div>`, 30);
+
+const E = {};
+document.querySelectorAll("#shape [id]").forEach((el) => { E[el.id] = el; });
+labelsEl.innerHTML = LABELS.map(([, , txt], i) => SIDE
+  ? `<div class="lab side" id="lab${i}" style="top:0;height:${H}px;left:${Math.round(W * 0.07)}px;right:auto;width:${Math.round(W * 0.36)}px;font-size:${LABEL.size}px">${txt}</div>`
+  : `<div class="lab" id="lab${i}" style="top:${LABEL.top}px;font-size:${LABEL.size}px">${txt}</div>`).join("");
+const tRing = $("tRing"), lscrim = $("lscrim");
+if (SIDE) { lscrim.style.height = H + "px"; lscrim.style.width = W * 0.5 + "px"; lscrim.style.right = "auto";
+  lscrim.style.background = "linear-gradient(to right, #000 0%, #000 70%, rgba(0,0,0,0) 100%)"; }
+else { lscrim.style.height = LABEL.room + 90 + "px"; lscrim.style.background = "linear-gradient(to bottom, #000 0%, #000 55%, rgba(0,0,0,0) 100%)"; }
+
+// fixed phone shape
+Object.assign(shape.style, { left: PX + "px", top: PY + "px", width: PW + "px", height: PH_ + "px", borderRadius: "55px", background: "#0f0f10",
+  boxShadow: "0 0 0 12px #1b1b1e, 0 0 0 13.5px #3a3a40, 0 30px 90px rgba(0,0,0,.7)" });
+
+// =====================================================================
+// seek(t)
+// =====================================================================
+let BLUR = 3;
+const px = (v) => v.toFixed(3) + "px";
+function show(el, o) { if (o <= 0.002) { el.style.display = "none"; return false; } el.style.display = ""; el.style.opacity = Math.min(1, o).toFixed(4); return true; }
+function fx(el, o, blur, tr) { if (!show(el, o)) return false; el.style.filter = blur > 0.04 ? `blur(${blur.toFixed(3)}px)` : "none"; el.style.transform = tr || "none"; return true; }
+function swap(el, t, bin, bout, dy = 6) {
+  const r = visAmt(t, B(bin), bout == null ? null : B(bout));
+  fx(el, r.o, ((1 - r.pin) + r.pout * 0.9) * BLUR, `translate3d(0,${px((1 - r.pin) * dy)},0) scale(${((0.97 + 0.03 * r.pin) * (1 - 0.02 * r.pout)).toFixed(4)})`);
+  return r.o;
+}
+function write(el, t, b0, b1) { const p = sm((t - B(b0)) / (B(b1) - B(b0))); if (!show(el, p > 0 ? 0.25 + 0.75 * p : 0)) return; el.style.clipPath = p >= 1 ? "none" : `inset(-8px ${((1 - p) * 100).toFixed(2)}% -8px -8px)`; }
+// wraps: a window that ends past the loop point
+const win = (a, b) => [B(a), b < a ? B(b) + T : B(b)];
+// a tab screen: cross-fades in with a short blur; its rows settle in a stagger
+function tabScreen(el, t, a, b, rows) {
+  const [tin, tout] = win(a, b);
+  const v = visAmt(t, tin + 0.02, tout, 0.26);
+  if (!fx(el, v.o, (1 - v.pin) * BLUR * 0.8 + v.pout * BLUR)) return false;
+  if (rows) {
+    let since = t - tin; if (since < -1) since += T;
+    rows.forEach((r, k) => { const p = spr(since - 0.02 - k * 0.022, 0.34, 1); r.style.opacity = (0.001 + p).toFixed(3); r.style.transform = `translate3d(0,${px((1 - p) * 10)},0)`; });
+  }
+  return true;
+}
+const ROWS = {
+  mail: [E.mailG0, ...MAIL.map((_, i) => E["em" + i]), E.mailG1],
+  agents: AGENTS.map((_, i) => E["ag" + i]),
+  tasks: [...Array(tn).keys()].map((i) => E["tg" + i]).concat([...Array(11).keys()].map((i) => E["tk" + i])).sort((a, b) => parseFloat(a.style.top) - parseFloat(b.style.top)),
+  crm: COS.map((_, i) => E["co" + i]),
+  chl: CHL.map((_, i) => E["cl" + i]),
+};
+
+function seek(tIn) {
+  const t = ((tIn % T) + T) % T, bt = stepAt(t);
+  const [ls, cx, cy] = camAt(t), s = Math.exp(ls);
+  BLUR = 9 / s;
+  world.style.transform = `translate(${W / 2}px,${H / 2}px) scale(${s.toFixed(5)}) translate(${px(-cx)},${px(-cy)})`;
+  rings.style.transform = `scale(${Math.pow(s / 1.6, 0.35).toFixed(4)})`;
+
+  // ----- tab screens -----
+  tabScreen(L.cal, t, 19, 2); E.calIn.style.transform = `translate3d(0,${px(-calScrollAt(t))},0)`;
+  tabScreen(L.mail, t, 2, 4, ROWS.mail);
+  tabScreen(L.agents, t, 4, 6, ROWS.agents);
+  tabScreen(L.tasks, t, 6, 8, ROWS.tasks);
+  tabScreen(L.crm, t, 8, 9.02, ROWS.crm);
+  const chlV = visAmt(t, B(9) + 0.02, B(10.7), 0.26);
+  if (fx(L.chl, chlV.o, (1 - chlV.pin) * BLUR * 0.8 + chlV.pout * BLUR, `translate3d(${px(NAV.chl(t))},0,0)`)) {
+    let since = t - B(9);
+    ROWS.chl.forEach((r, k) => { const p = spr(since - 0.02 - k * 0.022, 0.34, 1); r.style.opacity = (0.001 + p).toFixed(3); r.style.transform = `translate3d(0,${px((1 - p) * 10)},0)`; });
+    E.clHl.style.opacity = (0.06 * clamp(tap(t, B(10) - 0.02, 1))).toFixed(3);
+  }
+
+  // ----- channel -----
+  const chanV = visAmt(t, B(9.98), B(16.02), 0.2);
+  if (fx(L.chan, chanV.o * (bt < 10 ? 0 : 1), chanV.pout * BLUR, `translate3d(${px(NAV.chan(t))},0,0)`)) {
+    const bottom = DOCK_Y - 12 - 50 - 14;
+    const hJ = H_JAC(t), hM = H_MAC(t), macTop = bottom - hM, jacTop = macTop - hJ, julTop = jacTop - 80;
+    E.mJul.style.top = px(julTop); E.mDan.style.top = px(julTop - 80); E.mAus.style.top = px(julTop - 160); E.mJac.style.top = px(jacTop); E.mMac.style.top = px(macTop);
+    swap(E.mJac, t, 13, null, 14); swap(E.mMac, t, 14, null, 14);
+    const dv = visAmt(t, B(14.02), B(14.4));
+    if (fx(E.dots, dv.o, dv.pout * BLUR)) [0, 1, 2].forEach((k) => {
+      const ph_ = ((bt - 14) * 3 - k * 0.22) % 1, pulse = Math.pow(Math.max(0, Math.sin(Math.PI * ((ph_ + 1) % 1))), 3);
+      E["dot" + k].style.opacity = (0.35 + 0.65 * pulse).toFixed(3);
+    });
+    write(E.macTxt, t, 14.4, 14.85);
+    E.macTxt.style.transform = `scale(${(1 - tap(t, B(15) - 0.02, 0.02)).toFixed(4)})`;
+    const n1 = typed(bt, T1), n2 = typed(bt, T2), chip = bt >= 12, sent = bt >= 13;
+    E.cph.style.display = n1 === 0 || sent ? "" : "none";
+    E.cpre.style.display = !chip && n1 > 0 && !sent ? "" : "none"; E.cpre.textContent = TYPE1.slice(0, n1);
+    const cp = spr(t - B(12), 0.3, 0.72);
+    E.cchip.style.display = chip && !sent ? "" : "none"; E.cchip.style.opacity = clamp(cp * 1.4).toFixed(3);
+    E.crest.style.display = chip && !sent ? "" : "none"; E.crest.textContent = TYPE2.slice(0, n2).replace(/^ /, "");
+    E.ccar.style.opacity = bt > 11.02 && !sent && (((bt >= 11 && bt < 11.7) || (bt >= 12 && bt < 13)) || (t * 1.8) % 1 < 0.5) ? "1" : "0";
+    const armed = n1 > 0 && !sent;
+    fx(E.csend, armed ? 1 : 0, 0, `scale(${(1 - tap(t, B(13) - 0.02, 0.1)).toFixed(4)})`);
+    E.comp.style.boxShadow = bt > 11 && bt < 13 ? "0 0 0 1.5px rgba(97,163,230,.5)" : "";
+    const mv = visAmt(t, B(11.14), B(12.0), 0.26);
+    if (fx(E.menu, mv.o, (1 - mv.pin + mv.pout) * BLUR, `translate3d(0,${px((1 - mv.pin) * 10)},0)`)) {
+      const n = typed(bt, [11.28, 11.42]), mh = n >= 2 ? 78 : n === 1 ? 116 : 154;
+      E.menu.style.height = px(mh); E.menu.style.top = px(DOCK_Y - 12 - 50 - 8 - mh);
+      fx(E.mi2, 1 - sm((bt - 11.28) * 12), 0); fx(E.mi1, 1 - sm((bt - 11.42) * 12), 0);
+      E.msel.style.background = `rgba(255,255,255,${(0.08 + 0.08 * clamp(tap(t, B(12) - 0.02, 1))).toFixed(3)})`;
+    }
+  }
+
+  // ----- doc -----
+  const docV = visAmt(t, B(14.95), B(19.05), 0.2);
+  if (fx(L.doc, docV.o * (bt < 15.0 ? 0 : 1), docV.pout * BLUR, `translate3d(${px(NAV.doc(t))},0,0)`)) {
+    write(E.dTitle, t, 15.1, 15.4); write(E.dMeta, t, 15.3, 15.5);
+    write(E.dl0, t, 15.4, 15.65); write(E.dl1, t, 15.55, 15.8); write(E.dl2, t, 15.7, 15.92);
+    swap(E.dHead, t, 15.75, null, 6); swap(E.di0, t, 15.8, null, 6); swap(E.di1, t, 15.86, null, 6); swap(E.di2, t, 15.92, null, 6);
+    E.di0.style.transform = `scale(${(1 - tap(t, B(16) - 0.02, 0.03)).toFixed(4)})`;
+  }
+
+  // ----- task -----
+  const taskV = visAmt(t, B(15.95), B(19.05), 0.2);
+  if (fx(L.task, taskV.o * (bt < 16.0 ? 0 : 1), taskV.pout * BLUR, `translate3d(${px(NAV.task(t))},0,0)`)) {
+    const done = bt >= 18.05;
+    E.tStatIc0.style.display = done ? "none" : ""; E.tStatIc1.style.display = done ? "" : "none";
+    E.tStatTx.textContent = done ? "Done" : "In review";
+    E.tStat.style.transform = `scale(${(1 - tap(t, B(17) - 0.02, 0.05) + tap(t, B(18.35), -0.06)).toFixed(4)})`;
+  }
+
+  // ----- dock: liquid glass -----
+  const dp = dockPress(t), ex = 3 * dp.p;
+  const nav = E.dNav.style;
+  nav.left = px(12 - ex); nav.top = px(DOCK_Y - ex); nav.width = px(NAV_W + 2 * ex); nav.height = px(46 + 2 * ex);
+  const sh = sheenAt(bt);
+  const shims = [];
+  if (dp.light > 0.002) { const r = Math.max(100, Math.min(260, 46 * 3)) * dp.spread / 2; shims.push(`radial-gradient(circle ${px(r)} at ${px(dp.x - 12 + ex)} ${px(23 + ex)}, rgba(222,222,222,${(0.12 * dp.light).toFixed(3)}), rgba(222,222,222,${(0.05 * dp.light).toFixed(3)}) 45%, transparent 100%)`); }
+  if (sh) shims.push(`radial-gradient(circle 64px at ${px(sh.x - 12 + ex)} 30%, rgba(255,255,255,${(0.2 * sh.a).toFixed(3)}), rgba(255,255,255,${(0.06 * sh.a).toFixed(3)}) 45%, transparent 100%)`);
+  E.dNavShim.style.background = shims.length ? shims.join(",") : "none";
+  E.dSearchShim.style.background = sh ? `radial-gradient(circle 64px at ${px(sh.x - (PW - 58))} 30%, rgba(255,255,255,${(0.2 * sh.a).toFixed(3)}), rgba(255,255,255,${(0.06 * sh.a).toFixed(3)}) 45%, transparent 100%)` : "none";
+  const bb = sh ? bt >= 18.9 ? bt - BEATS : bt : -9;
+  for (let i = 0; i < NB; i++) {
+    const act = i < 4 ? clamp(ACT[i](t)) : 0, lf = lift(bb, i);
+    const pressed = Math.abs(dp.x - btnX(i)) < 1 ? dp.p : 0;
+    E["db" + i].style.left = px(btnX(i) - 12 - 23 + ex);
+    E["db" + i].style.top = px(ex);
+    E["db" + i].style.transform = `scale(${(1 + 0.08 * pressed + 0.12 * lf).toFixed(4)})`;
+    E["db" + i + "r"].style.opacity = (1 - act).toFixed(3);
+    E["db" + i + "r"].style.color = mixc([228, 228, 228], WHITE, lf);
+    if (E["db" + i + "f"]) E["db" + i + "f"].style.opacity = act.toFixed(3);
+  }
+  E.dSearchIc.style.transform = `scale(${(1 + 0.12 * lift(bb, 6)).toFixed(4)})`;
+  E.dSearchIc.style.color = mixc([228, 228, 228], WHITE, lift(bb, 6));
+
+  // ----- More views drawer -----
+  const dr = DRAWER(t);
+  const drOn = dr > 0.003;
+  E.drawer.style.display = drOn ? "" : "none";
+  E.drawer.style.top = px(DR_TOP + (1 - dr) * (DR_H + 24));
+  const statSh = SHEET(t);
+  show(E.scrim, Math.max(clamp(dr), clamp(statSh)));
+  if (drOn) {
+    E.drAgents.style.color = bt >= 5 && bt < 6.5 ? "var(--a0)" : "var(--c0)";
+    E.drTasks.style.color = bt >= 7 && bt < 8.5 ? "var(--a0)" : "var(--c0)";
+    E.drCrm.style.color = "var(--c0)";
+    const hlk = bt < 4.6 ? "agents" : bt < 6.6 ? "tasks" : "crm";
+    const hk = hlk === "agents" ? B(4) : hlk === "tasks" ? B(6) : B(8);
+    E.drHl.style.top = px(DR_ROWS[hlk]);
+    E.drHl.style.opacity = clamp(tap(t, hk - 0.02, 1)).toFixed(3);
+  }
+  // status sheet
+  E.sheet.style.display = statSh > 0.003 ? "" : "none";
+  E.sheet.style.top = px(PH_ - 8 - 278 + (1 - statSh) * 300);
+  E.sHl.style.top = px(52 + 48 * STATUS_IND(t));
+
+  // ----- labels -----
+  let lmax = 0;
+  LABELS.forEach(([a, b]) => { const rr = visAmt(t, B(a) - 0.1, B(b) + 0.1, 0.4); lmax = Math.max(lmax, rr.o); });
+  lscrim.style.opacity = lmax.toFixed(3);
+  LABELS.forEach(([a, b], i) => {
+    const rr = visAmt(t, B(a) + 0.06, B(b) - 0.02, 0.34);
+    fx($("lab" + i), rr.o, (1 - rr.pin) * 12 + rr.pout * 10, `translate3d(0,${px((1 - rr.pin) * 14)},0)`);
+  });
+
+  // ----- fingertip -----
+  const [wx, wy] = TOUCH(t), sx = W / 2 + (wx - cx) * s, sy = H / 2 + (wy - cy) * s;
+  const pr = touchPress(t), v = touchVis(t), d = 44 * s * (1 - 0.18 * pr);
+  if (show(tRing, v * (0.55 + 0.45 * pr)))
+    Object.assign(tRing.style, { left: px(sx - d / 2), top: px(sy - d / 2), width: px(d), height: px(d),
+      background: `rgba(255,255,255,${(0.16 + 0.22 * pr).toFixed(3)})`, boxShadow: `inset 0 0 0 ${px(1.5 * s)} rgba(255,255,255,.55), 0 ${px(4 * s)} ${px(14 * s)} rgba(0,0,0,.35)` });
+}
+
+// ---------- boot ----------
+const mixc = (a, b, p) => `rgb(${Math.round(lerp(a[0], b[0], p))},${Math.round(lerp(a[1], b[1], p))},${Math.round(lerp(a[2], b[2], p))})`;
+const WHITE = [255, 255, 255];
+buildCam();
+window.SONGS = { funk: ["song-funk-gimme-that-groove.mp3", 18.750] }; // Mixkit 872, "Gimme that Groove!"
+window.seek = seek; window.DURATION = T; window.CUES = CUES; window.B = B; window.MUSIC = MUSIC; window.FMT = [W, H];
+window.probe = (t) => { t = ((t % T) + T) % T; const c = camAt(t), u = TOUCH(t); return [Math.exp(c[0]), c[1], c[2], u[0], u[1], DRAWER(t), SHEET(t), calScrollAt(t), 0, 0, 0, 0, 0]; };
+window.ready = Promise.all(['300 20px "Inter"', '400 20px "Inter"', '500 20px "Inter"', '600 20px "Inter"', '330 40px "display"'].map((f) => document.fonts.load(f))).then(() => document.fonts.ready).then(() => { seek(0); return true; });
+const params = new URLSearchParams(location.search);
+if (params.has("render")) document.documentElement.classList.add("render");
+else {
+  const fit = () => { const k = Math.min(innerWidth / W, innerHeight / H); Object.assign(stage.style, { position: "fixed", left: "50%", top: "50%", transformOrigin: "50% 50%", transform: `translate(-50%,-50%) scale(${k})` }); };
+  addEventListener("resize", fit); fit();
+  const at = params.has("t") ? parseFloat(params.get("t")) : null;
+  window.ready.then(() => { if (at != null) { seek(at); return; } const t0 = performance.now(); const loop = () => { seek((performance.now() - t0) / 1000); requestAnimationFrame(loop); }; requestAnimationFrame(loop); });
+}
+</script>
+</body>
+</html>

@@ -6,6 +6,7 @@ change on a 120 BPM grid: 28 steps, one every other beat (14 bars), so each mome
 
 - `VIBE=ambient|funk OUT=name ./build.sh` renders one single-vibe cut (1440 master and 1080)
 - `mobile.html` + `mbuild.sh`: the Macro for iPhone ad (9:16, 1:1, 16:9 from one scene; `FMT=916|11|169`), X copy in `macro-mobile-X.md`
+- `mobile2.html`: the mobile tour (liquid-glass dock intro, then Calendar, Email, More → Agents / Tasks / CRM, Team chat → @Macro → doc → task + PR). Build with `PAGE=mobile2.html OUT=macro-mobile-tour ./mbuild.sh`; Phosphor glyphs in `phx.js`
 - `PROMPT.md`: the template for new feature videos; `ROUTINE.md`: the weekday routine
 - `trailer.html`: the source. Open it in a browser to watch it play live; click to start the audio.
   Add `?t=7.25` to freeze on any time. If your browser blocks fonts over `file://`, run `npx serve .`

@@ -3,7 +3,7 @@ try { ({ chromium } = await import("playwright")); } catch { ({ chromium } = awa
 import path from "node:path"; import crypto from "node:crypto";
 const b = await chromium.launch({ args: ["--force-color-profile=srgb", "--font-render-hinting=none", "--disable-lcd-text"] });
 const ctx = await b.newContext({ viewport: { width: 1440, height: 1440 } }); const p = await ctx.newPage();
-await p.goto("file://" + path.resolve("trailer.html") + "?render=1"); await p.evaluate(() => window.ready);
+await p.goto("file://" + path.resolve(process.env.PAGE || "trailer.html") + "?render=1" + (process.env.FMT ? "&fmt=" + process.env.FMT : "")); await p.evaluate(() => window.ready);
 const cdp = await ctx.newCDPSession(p);
 const snap = async (t) => { await p.evaluate((tt) => window.seek(tt), t); const { data } = await cdp.send("Page.captureScreenshot", { format: "png", optimizeForSpeed: true }); return crypto.createHash("md5").update(data).digest("hex"); };
 const T = await p.evaluate(() => window.DURATION);
