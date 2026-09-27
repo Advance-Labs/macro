@@ -7,7 +7,7 @@ use crate::domain::{
     error::{HarnessError, Result},
     model::{
         AnnounceOrigin, CommentAnchor, ContextMessage, ContextThread, ConversationContext,
-        MarkedPassage, ReplyTarget,
+        MarkedPassage, ReplyTarget, StaticFileLinks,
     },
     ports::MessagePromptContext,
 };
@@ -108,6 +108,9 @@ pub struct MessagePromptContextAdapter<Access, Lexical = LexicalClient> {
     messages: Arc<dyn MessageReader>,
     access: Arc<Access>,
     lexical: Arc<Lexical>,
+    /// Where static image attachments are fetched from. Empty until the
+    /// composition root supplies the deployment's file service.
+    file_links: StaticFileLinks,
 }
 
 impl<Access, Lexical> MessagePromptContextAdapter<Access, Lexical> {
@@ -122,7 +125,17 @@ impl<Access, Lexical> MessagePromptContextAdapter<Access, Lexical> {
             messages,
             access,
             lexical,
+            file_links: StaticFileLinks::new(""),
         }
+    }
+
+    /// Resolve image attachments in earlier messages to URLs the prompt can
+    /// carry. Without this, a reply sees the words above it and not the
+    /// pictures.
+    #[must_use]
+    pub fn with_file_links(mut self, file_links: StaticFileLinks) -> Self {
+        self.file_links = file_links;
+        self
     }
 }
 
@@ -218,6 +231,7 @@ impl<Access: ContextAuthorizer, Lexical: MarkReader + QuoteReader> MessagePrompt
             origin,
             &prompt,
             access,
+            &self.file_links,
         )
         .await
         {
@@ -228,11 +242,13 @@ impl<Access: ContextAuthorizer, Lexical: MarkReader + QuoteReader> MessagePrompt
             },
         };
 
-        let mut channel = channel_threads(&recent, origin.thread_id);
+        let mut channel = channel_threads(&recent, origin.thread_id, &self.file_links);
         if top_level {
             channel.push(ContextThread {
                 root_id: prompt.id,
-                messages: context_message(&prompt).into_iter().collect(),
+                messages: context_message(&prompt, &self.file_links)
+                    .into_iter()
+                    .collect(),
                 messages_omitted: false,
             });
         }
@@ -241,7 +257,8 @@ impl<Access: ContextAuthorizer, Lexical: MarkReader + QuoteReader> MessagePrompt
             anchor,
             reply_target: Some(reply_target),
             prompt_message_id: Some(prompt.id),
-            thread: discussion.map(|discussion| prompt_thread(discussion, &prompt)),
+            thread: discussion
+                .map(|discussion| prompt_thread(discussion, &prompt, &self.file_links)),
             channel,
         })
     }
@@ -306,6 +323,7 @@ async fn quote(
     origin: &AnnounceOrigin,
     prompt: &Message,
     access: EntityAccessReceipt<MessageView>,
+    links: &StaticFileLinks,
 ) -> Option<ReplyTarget> {
     let quoted = lexical
         .quoted(&prompt.content)
@@ -339,7 +357,7 @@ async fn quote(
             })
             .ok()
             .filter(|message| message.deleted_at.is_none() && message.parent == origin.parent)
-            .and_then(|message| context_message(&message))
+            .and_then(|message| context_message(&message, links))
     } else {
         None
     };
@@ -353,14 +371,18 @@ async fn quote(
 
 /// The prompt's discussion from its root through the prompt. Replies posted
 /// after the prompt belong to later turns and are left out.
-fn prompt_thread(discussion: MessageThread, prompt: &Message) -> ContextThread {
+fn prompt_thread(
+    discussion: MessageThread,
+    prompt: &Message,
+    links: &StaticFileLinks,
+) -> ContextThread {
     let root_id = discussion.state.root_id;
     let mut messages = Vec::new();
     let mut reached_prompt = false;
     for message in std::iter::once(discussion.root).chain(discussion.replies) {
         let is_prompt = message.id == prompt.id;
         if message.deleted_at.is_none()
-            && let Some(message) = context_message(&message)
+            && let Some(message) = context_message(&message, links)
         {
             messages.push(message);
         }
@@ -369,7 +391,7 @@ fn prompt_thread(discussion: MessageThread, prompt: &Message) -> ContextThread {
             break;
         }
     }
-    if !reached_prompt && let Some(message) = context_message(prompt) {
+    if !reached_prompt && let Some(message) = context_message(prompt, links) {
         messages.push(message);
     }
 
@@ -391,14 +413,18 @@ fn prompt_thread(discussion: MessageThread, prompt: &Message) -> ContextThread {
 
 /// Channel messages outside the prompt's discussion, grouped by the
 /// discussion each belongs to, in the order the discussions first appear.
-fn channel_threads(recent: &[Message], prompt_root: Uuid) -> Vec<ContextThread> {
+fn channel_threads(
+    recent: &[Message],
+    prompt_root: Uuid,
+    links: &StaticFileLinks,
+) -> Vec<ContextThread> {
     let mut threads: Vec<ContextThread> = Vec::new();
     for message in recent {
         let root_id = message.root_id();
         if message.deleted_at.is_some() || root_id == prompt_root {
             continue;
         }
-        let Some(entry) = context_message(message) else {
+        let Some(entry) = context_message(message, links) else {
             continue;
         };
         match threads.iter_mut().find(|thread| thread.root_id == root_id) {
@@ -414,14 +440,27 @@ fn channel_threads(recent: &[Message], prompt_root: Uuid) -> Vec<ContextThread> 
     threads
 }
 
-/// A live message as context; `None` when its body is blank.
-fn context_message(message: &Message) -> Option<ContextMessage> {
-    let content = message.content.trim();
+/// A live message as context; `None` when it has neither text nor an image.
+///
+/// Image attachments are not part of the body. Their public file URLs are
+/// appended so they land in the lexical context node, where a later reply
+/// can still hand them to the agent as pictures.
+fn context_message(message: &Message, links: &StaticFileLinks) -> Option<ContextMessage> {
+    let mut content = message.content.trim().to_owned();
+    for attachment in &message.attachments {
+        let Some(url) = links.image_file_url(&attachment.entity_type, &attachment.entity_id) else {
+            continue;
+        };
+        if !content.is_empty() {
+            content.push('\n');
+        }
+        content.push_str(&url);
+    }
     (!content.is_empty()).then(|| ContextMessage {
         id: message.id,
         sender_id: message.sender_id.as_ref().to_owned(),
         author: author(message),
-        content: content.to_owned(),
+        content,
         posted_at: message.created_at,
     })
 }

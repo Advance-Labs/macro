@@ -89,14 +89,11 @@ impl HttpPromptImageFetcher {
                 }
             };
             if response.status().is_redirection() {
-                let Some(next) = response
+                let next = response
                     .headers()
                     .get(LOCATION)
                     .and_then(|value| value.to_str().ok())
-                    .and_then(|location| resolve_redirect(&current, location))
-                else {
-                    return None;
-                };
+                    .and_then(|location| resolve_redirect(&current, location))?;
                 current = next;
                 continue;
             }

@@ -84,6 +84,49 @@ fn magic_bytes_name_the_image_when_the_type_does_not() {
 }
 
 #[test]
+fn an_image_link_inside_the_agent_context_node_is_taken() {
+    let url = "https://static.example/file/d0b2430c-6826-44a1-9a8d-c8aab90703c7";
+    let payload = serde_json::json!({
+        "version": 1,
+        "text": format!("<message>see below\n{url}</message>"),
+    })
+    .to_string()
+    .replace('<', "\\u003c");
+    let prompt = format!("<m-agent-context>{payload}</m-agent-context>\n\nbump");
+    assert_eq!(linked_image_urls(&[text(&prompt)]), vec![url.to_owned()]);
+}
+
+#[test]
+fn a_context_image_is_kept_ahead_of_ordinary_links() {
+    let shot = "https://cdn.example/shot.png";
+    let payload = serde_json::json!({
+        "version": 1,
+        "text": shot,
+    })
+    .to_string();
+    let mut prompt = format!("<m-agent-context>{payload}</m-agent-context>\n\n");
+    for index in 0..super::MAX_LINK_FETCHES {
+        prompt.push_str(&format!("https://news.example/story-{index} "));
+    }
+    let urls = linked_image_urls(&[text(&prompt)]);
+    assert_eq!(urls[0], shot);
+    assert_eq!(urls.len(), super::MAX_LINK_FETCHES);
+}
+
+#[test]
+fn a_markdown_image_in_the_context_is_taken_without_an_extension() {
+    let url = "https://cdn.example/render?id=1";
+    let payload = serde_json::json!({
+        "version": 1,
+        "text": format!("![canvas]({url})"),
+    })
+    .to_string()
+    .replace('<', "\\u003c");
+    let prompt = format!("<m-agent-context>{payload}</m-agent-context>\n\nbump");
+    assert_eq!(linked_image_urls(&[text(&prompt)]), vec![url.to_owned()]);
+}
+
+#[test]
 fn a_fetched_image_is_an_acp_image_frame_named_by_its_url() {
     let image = CursorPromptImage {
         data: "aW1n".to_owned(),

@@ -770,7 +770,8 @@ async fn run() -> anyhow::Result<()> {
         message_service,
         Arc::clone(&entity_access),
         Arc::new(lexical.clone()),
-    );
+    )
+    .with_file_links(static_file_links.clone());
     let prompt_composer = LexicalAgentPromptComposer::new(lexical);
 
     // One connection per harness, shared by every session of every agent

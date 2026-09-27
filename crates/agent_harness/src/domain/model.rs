@@ -89,6 +89,19 @@ impl StaticFileLinks {
             .filter_map(|attachment| self.prompt_attachment(attachment))
             .collect()
     }
+
+    /// Public URL of a static image attachment, when `entity_type` is one.
+    ///
+    /// Earlier messages keep their pictures as attachments, not in the body.
+    /// The conversation context has only that body, so the URL has to be
+    /// written into it or a later reply never shows the agent the image.
+    #[must_use]
+    pub fn image_file_url(&self, entity_type: &str, entity_id: &str) -> Option<String> {
+        if self.base_url.is_empty() || entity_type != Self::STATIC_IMAGE {
+            return None;
+        }
+        Some(format!("{}/file/{entity_id}", self.base_url))
+    }
 }
 
 /// Open a new session for a mention.

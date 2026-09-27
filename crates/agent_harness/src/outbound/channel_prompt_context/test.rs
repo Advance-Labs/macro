@@ -4,7 +4,7 @@ use entity_access::domain::models::{AccessLevel, Entity, EntityPermission};
 use macro_uuid::Uuid;
 use messages::domain::{
     api::MockMessageReader,
-    models::{Message, MessageThread, ThreadState},
+    models::{Message, MessageAttachment, MessageThread, ThreadState},
 };
 
 /// The lexical service's lookups, each answering one fixed result.
@@ -130,7 +130,7 @@ fn message() -> Message {
     )
 }
 fn context_of(message: &Message) -> ContextMessage {
-    context_message(message).unwrap()
+    context_message(message, &StaticFileLinks::new("")).unwrap()
 }
 
 #[tokio::test]
@@ -404,6 +404,66 @@ async fn a_channel_thread_reply_is_about_its_thread_not_the_latest_message() {
         })
     );
     assert_eq!(context.prompt_message_id, Some(prompt.id));
+}
+
+#[tokio::test]
+async fn an_image_higher_in_the_thread_is_a_url_in_the_context() {
+    let parent = channel();
+    let mut shot = posted(
+        &parent,
+        10,
+        None,
+        "jacob@example.com",
+        "see below in case you cannot open the canvas",
+        0,
+    );
+    shot.attachments = vec![MessageAttachment {
+        id: Uuid::from_u128(90),
+        entity_type: "static/image".to_owned(),
+        entity_id: "d0b2430c-6826-44a1-9a8d-c8aab90703c7".to_owned(),
+        width: None,
+        height: None,
+        created_at: at(0),
+    }];
+    let prompt = posted(&parent, 11, Some(10), "wolf@example.com", "@Cursor bump", 5);
+    let origin = AnnounceOrigin {
+        parent: parent.clone(),
+        thread_id: shot.id,
+        message_id: prompt.id,
+    };
+
+    let mut source = MockMessageReader::new();
+    let prompt_message = prompt.clone();
+    source
+        .expect_get()
+        .returning(move |_, _| Ok(prompt_message.clone()));
+    let thread = discussion(shot.clone(), vec![prompt.clone()], None);
+    source
+        .expect_get_thread()
+        .once()
+        .return_once(move |_, _| Ok(thread));
+    source
+        .expect_preceding()
+        .once()
+        .returning(|_, _, _| Ok(vec![]));
+
+    let context = MessagePromptContextAdapter::new(
+        Arc::new(source),
+        Arc::new(Authorizer { allowed: true }),
+        Arc::new(Lexical::none()),
+    )
+    .with_file_links(StaticFileLinks::new("https://static.example"))
+    .conversation_context(&actor(), &origin)
+    .await
+    .unwrap();
+
+    let thread = context.thread.unwrap();
+    assert_eq!(thread.messages.len(), 2);
+    assert_eq!(
+        thread.messages[0].content,
+        "see below in case you cannot open the canvas\nhttps://static.example/file/d0b2430c-6826-44a1-9a8d-c8aab90703c7"
+    );
+    assert_eq!(thread.messages[1].content, "@Cursor bump");
 }
 
 #[tokio::test]
