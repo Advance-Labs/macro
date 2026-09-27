@@ -15,8 +15,8 @@ use uuid::Uuid;
 
 use crate::domain::models::{
     Advance, Completion, DueFiring, DueReminder, InvalidCron, NewReminder, Reminder, ReminderBatch,
-    ReminderCron, ReminderCursor, ReminderFilter, ReminderForSoup, ReminderReference,
-    ReminderSchedule, ReminderUpdate, SoupOrder, SoupReminderQuery,
+    ReminderCron, ReminderCursor, ReminderFilter, ReminderForSoup, ReminderOccurrenceQuery,
+    ReminderReference, ReminderSchedule, ReminderUpdate, SoupOrder, SoupReminderQuery,
 };
 use crate::domain::ports::{ReminderDispatchRepo, RemindersRepo};
 
@@ -534,6 +534,66 @@ impl RemindersRepo for PgRemindersRepo {
                     reminder,
                     reference,
                 })
+            })
+            .collect())
+    }
+
+    #[tracing::instrument(err, skip(self, user_id))]
+    async fn list_reminders_firing_within(
+        &self,
+        user_id: &MacroUserIdStr<'_>,
+        query: &ReminderOccurrenceQuery,
+    ) -> Result<Vec<Reminder>, Self::Err> {
+        let ReminderOccurrenceQuery { window, attached } = query;
+        // Unbounded like `due_firings`, but scoped to one user's live rows. The
+        // domain caps the firings it expands from them; a LIMIT here would drop
+        // reminders silently instead.
+        let rows = sqlx::query_as!(
+            ReminderRow,
+            r#"
+            SELECT
+                id,
+                description,
+                entity_type,
+                entity_id,
+                remind_at,
+                cron,
+                timezone,
+                next_run_at,
+                enabled,
+                completed_at,
+                created_at,
+                updated_at
+            FROM reminder
+            WHERE user_id = $1
+              AND enabled
+              AND (
+                  -- Completion settles one firing of a series, not the series,
+                  -- so it does not exclude one. See `due_firings`.
+                  (cron IS NOT NULL AND created_at < $3)
+                  OR (completed_at IS NULL AND remind_at >= $2 AND remind_at < $3)
+              )
+              AND ($4::bool IS NULL OR (entity_id IS NOT NULL) = $4)
+            ORDER BY created_at, id
+            "#,
+            user_id.as_ref(),
+            window.starts_at(),
+            window.ends_at(),
+            *attached,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        // Undecodable rows are skipped rather than failing the read, matching
+        // `list_reminders`.
+        Ok(rows
+            .into_iter()
+            .filter_map(|row| {
+                row.into_reminder()
+                    .inspect_err(|e| {
+                        tracing::error!(error=?e, "skipping unreadable reminder");
+                    })
+                    .ok()
             })
             .collect())
     }

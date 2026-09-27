@@ -358,6 +358,35 @@ impl RemindersRepo for FakeRemindersRepo {
             .collect())
     }
 
+    async fn list_reminders_firing_within(
+        &self,
+        user_id: &MacroUserIdStr<'_>,
+        query: &ReminderOccurrenceQuery,
+    ) -> Result<Vec<Reminder>, Self::Err> {
+        self.check_failing()?;
+        let window = query.window;
+        let in_window = |at: DateTime<Utc>| window.starts_at() <= at && at < window.ends_at();
+        Ok(self
+            .rows()
+            .into_iter()
+            .filter(|(owner, _)| owner == user_id.as_ref())
+            .map(|(_, reminder)| reminder)
+            .filter(|reminder| reminder.enabled)
+            .filter(|reminder| match &reminder.schedule {
+                ReminderSchedule::Recurring { .. } => reminder.created_at < window.ends_at(),
+                ReminderSchedule::Once { remind_at } => {
+                    reminder.completed_at.is_none() && in_window(*remind_at)
+                }
+            })
+            .filter(|reminder| {
+                query
+                    .attached
+                    .is_none_or(|attached| reminder.entity().is_some() == attached)
+            })
+            .filter(|reminder| !self.is_unreadable(reminder.id))
+            .collect())
+    }
+
     async fn update_reminder(
         &self,
         user_id: &MacroUserIdStr<'_>,
@@ -1855,4 +1884,257 @@ async fn rescheduling_floors_the_firing_to_the_minute() {
 
     assert_eq!(reminder.next_run_at, future() + Duration::hours(1));
     assert_eq!(reminder.schedule, once(future() + Duration::hours(1)));
+}
+
+fn at(month: u32, day: u32, hour: u32) -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(2026, month, day, hour, 0, 0)
+        .single()
+        .expect("unambiguous instant")
+}
+
+/// An occurrence read of `[starts_at, ends_at)` with no attachment filter.
+fn in_window(starts_at: DateTime<Utc>, ends_at: DateTime<Utc>) -> ReminderOccurrenceQuery {
+    ReminderOccurrenceQuery {
+        window: OccurrenceWindow::new(starts_at, ends_at).expect("valid window"),
+        attached: None,
+    }
+}
+
+fn firing_times(occurrences: &[ReminderOccurrence]) -> Vec<DateTime<Utc>> {
+    occurrences
+        .iter()
+        .map(|occurrence| occurrence.scheduled_for)
+        .collect()
+}
+
+#[tokio::test]
+async fn occurrences_list_a_one_shot_inside_the_window_and_skip_one_outside() {
+    let service = service();
+    let inside = service
+        .create_reminder(
+            &user(USER_A),
+            create_request(once(at(7, 3, 15))),
+            Some(doc_receipt(DOC_1)),
+        )
+        .await
+        .expect("created");
+    service
+        .create_reminder(&user(USER_A), create_request(once(at(7, 20, 15))), None)
+        .await
+        .expect("created");
+
+    let occurrences = service
+        .list_reminder_occurrences(&user(USER_A), in_window(at(7, 1, 0), at(7, 8, 0)))
+        .await
+        .expect("occurrences should list");
+
+    assert_eq!(occurrences.len(), 1);
+    let occurrence = &occurrences[0];
+    assert_eq!(occurrence.reminder_id, inside.id);
+    assert_eq!(occurrence.scheduled_for, at(7, 3, 15));
+    assert_eq!(occurrence.description, "follow up");
+    assert_eq!(occurrence.entity_type, Some(EntityType::Document));
+    assert_eq!(occurrence.entity_id.as_deref(), Some(DOC_1));
+}
+
+#[tokio::test]
+async fn occurrences_expand_every_firing_of_a_series_not_just_its_next() {
+    let service = service();
+    let daily = service
+        .create_reminder(&user(USER_A), create_request(recurring()), None)
+        .await
+        .expect("created");
+    // Delivered through the 4th, as dispatch would leave it.
+    {
+        let mut rows = service.repo.rows.lock().expect("rows lock poisoned");
+        let (_, reminder) = rows
+            .iter_mut()
+            .find(|(_, reminder)| reminder.id == daily.id)
+            .expect("reminder exists");
+        reminder.next_run_at = at(7, 5, 13);
+    }
+
+    let occurrences = service
+        .list_reminder_occurrences(&user(USER_A), in_window(at(7, 1, 0), at(7, 8, 0)))
+        .await
+        .expect("occurrences should list");
+
+    // 09:00 New York is 13:00Z in July.
+    assert_eq!(
+        firing_times(&occurrences),
+        (1..=7).map(|day| at(7, day, 13)).collect::<Vec<_>>()
+    );
+    assert!(
+        occurrences
+            .iter()
+            .all(|occurrence| occurrence.reminder_id == daily.id
+                && occurrence.schedule == recurring())
+    );
+}
+
+#[tokio::test]
+async fn occurrences_do_not_invent_firings_before_a_series_existed() {
+    let service = service();
+    service
+        .create_reminder(&user(USER_A), create_request(recurring()), None)
+        .await
+        .expect("created");
+
+    let occurrences = service
+        .list_reminder_occurrences(&user(USER_A), in_window(at(6, 24, 0), at(7, 2, 0)))
+        .await
+        .expect("occurrences should list");
+
+    assert_eq!(firing_times(&occurrences), vec![at(7, 1, 13)]);
+}
+
+#[tokio::test]
+async fn occurrences_are_the_callers_live_reminders_only() {
+    let service = service();
+    let completed_series = service
+        .create_reminder(&user(USER_A), create_request(recurring()), None)
+        .await
+        .expect("created");
+    complete(&service, completed_series.id);
+
+    let completed_one_shot = service
+        .create_reminder(&user(USER_A), create_request(once(at(7, 1, 20))), None)
+        .await
+        .expect("created");
+    complete(&service, completed_one_shot.id);
+
+    let disabled = service
+        .create_reminder(&user(USER_A), create_request(once(at(7, 1, 21))), None)
+        .await
+        .expect("created");
+    service
+        .update_reminder(
+            owner_receipt(USER_A, disabled.id),
+            ReminderPatch {
+                enabled: Some(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("disabled");
+
+    service
+        .create_reminder(&user(USER_B), create_request(once(at(7, 1, 22))), None)
+        .await
+        .expect("created");
+
+    let occurrences = service
+        .list_reminder_occurrences(&user(USER_A), in_window(at(7, 1, 0), at(7, 3, 0)))
+        .await
+        .expect("occurrences should list");
+
+    // Ticking off a series settles one firing; it keeps coming due.
+    assert_eq!(firing_times(&occurrences), vec![at(7, 1, 13), at(7, 2, 13)]);
+    assert!(
+        occurrences
+            .iter()
+            .all(|occurrence| occurrence.reminder_id == completed_series.id)
+    );
+}
+
+#[tokio::test]
+async fn occurrences_interleave_reminders_soonest_first() {
+    let service = service();
+    let daily = service
+        .create_reminder(&user(USER_A), create_request(recurring()), None)
+        .await
+        .expect("created");
+    let evening = service
+        .create_reminder(&user(USER_A), create_request(once(at(7, 1, 20))), None)
+        .await
+        .expect("created");
+
+    let occurrences = service
+        .list_reminder_occurrences(&user(USER_A), in_window(at(7, 1, 0), at(7, 3, 0)))
+        .await
+        .expect("occurrences should list");
+
+    let order: Vec<_> = occurrences
+        .iter()
+        .map(|occurrence| (occurrence.scheduled_for, occurrence.reminder_id))
+        .collect();
+    assert_eq!(
+        order,
+        vec![
+            (at(7, 1, 13), daily.id),
+            (at(7, 1, 20), evening.id),
+            (at(7, 2, 13), daily.id),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn occurrences_past_the_cap_are_rejected_rather_than_truncated() {
+    let service = service();
+    let every_five_minutes = ReminderSchedule::Recurring {
+        cron: ReminderCron::parse("0 */5 * * * *").expect("valid cron"),
+        timezone: New_York,
+    };
+    service
+        .create_reminder(&user(USER_A), create_request(every_five_minutes), None)
+        .await
+        .expect("five minutes is the shortest interval allowed");
+
+    // 288 firings a day, so a week is past the cap.
+    let err = service
+        .list_reminder_occurrences(&user(USER_A), in_window(now(), now() + Duration::days(7)))
+        .await
+        .expect_err("more than the cap should be rejected");
+
+    assert!(matches!(err, ReminderError::BadRequest(_)));
+    assert!(err.to_string().contains(&MAX_OCCURRENCES.to_string()));
+}
+
+#[tokio::test]
+async fn occurrences_surface_a_repository_failure_as_internal() {
+    let service = service();
+    service.repo.start_failing();
+
+    let err = service
+        .list_reminder_occurrences(&user(USER_A), in_window(at(7, 1, 0), at(7, 8, 0)))
+        .await
+        .expect_err("a repository failure should surface");
+
+    assert!(matches!(err, ReminderError::Internal(_)));
+}
+
+#[tokio::test]
+async fn occurrences_can_be_narrowed_to_standalone_or_attached_reminders() {
+    let service = service();
+    let standalone = service
+        .create_reminder(&user(USER_A), create_request(once(at(7, 2, 15))), None)
+        .await
+        .expect("created");
+    let attached = service
+        .create_reminder(
+            &user(USER_A),
+            create_request(once(at(7, 3, 15))),
+            Some(doc_receipt(DOC_1)),
+        )
+        .await
+        .expect("created");
+
+    let service = &service;
+    let reminder_ids = |attached| async move {
+        let query = ReminderOccurrenceQuery {
+            attached,
+            ..in_window(at(7, 1, 0), at(7, 8, 0))
+        };
+        service
+            .list_reminder_occurrences(&user(USER_A), query)
+            .await
+            .expect("occurrences should list")
+            .into_iter()
+            .map(|occurrence| occurrence.reminder_id)
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(reminder_ids(Some(false)).await, vec![standalone.id]);
+    assert_eq!(reminder_ids(Some(true)).await, vec![attached.id]);
+    assert_eq!(reminder_ids(None).await, vec![standalone.id, attached.id]);
 }
