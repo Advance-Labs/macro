@@ -163,6 +163,7 @@ export function CalendarGrid(props: CalendarGridProps) {
         ...(event.eventType === 'out_of_office'
           ? ['calendar-event-out-of-office']
           : []),
+        ...(event.reminderId ? ['calendar-event-reminder'] : []),
       ];
       return {
         ...mapped,
@@ -251,10 +252,20 @@ export function CalendarGrid(props: CalendarGridProps) {
       slotLabelFormat={CALENDAR_TIME_FORMAT_OPTIONS[props.settings.timeFormat]}
       eventTimeFormat={CALENDAR_TIME_FORMAT_OPTIONS[props.settings.timeFormat]}
       events={renderedEvents()}
-      eventAllow={() =>
-        props.onEventTimeChange !== undefined &&
-        props.eventTimeChangePending !== true
-      }
+      eventAllow={(dropInfo, draggedEvent) => {
+        if (
+          props.onEventTimeChange === undefined ||
+          props.eventTimeChangePending === true
+        ) {
+          return false;
+        }
+        // A reminder fires at a time of day, so it cannot land on the all-day
+        // row.
+        const dragged = draggedEvent
+          ? eventByRenderId(calendarEventRenderId(draggedEvent))
+          : undefined;
+        return !(dragged?.reminderId && dropInfo.allDay);
+      }}
       eventResizableFromStart
       eventDragStart={handleEventInteractionStart}
       eventDragStop={handleEventInteractionStop}

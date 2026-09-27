@@ -498,6 +498,47 @@
 	display: none;
 }
 
+/* Reminders are instants rather than blocks of time, so they draw as a tinted
+   chip instead of a calendar's filled block. */
+.calendar-view .fc .fc-event.calendar-event-reminder {
+	--fc-event-bg-color: color-mix(in oklch, var(--color-reminder) 16%, var(--color-panel));
+	--fc-event-border-color: color-mix(in oklch, var(--color-reminder) 45%, var(--color-panel));
+	--fc-event-text-color: var(--color-ink);
+}
+
+.calendar-view .fc .calendar-event-reminder .calendar-event-reminder-icon {
+	color: var(--color-reminder);
+}
+
+/* A dragged reminder keeps its own look, lifted off the grid, rather than the
+   selection fill an event's drag mirror takes. */
+.calendar-view .fc .fc-event-mirror.calendar-event-reminder {
+	--fc-event-bg-color: color-mix(in oklch, var(--color-reminder) 28%, var(--color-panel));
+	--fc-event-border-color: var(--color-reminder);
+	--fc-event-text-color: var(--color-ink);
+	border-color: var(--fc-event-border-color);
+	background: var(--fc-event-bg-color);
+	color: var(--fc-event-text-color);
+	box-shadow: var(--shadow-menu);
+}
+
+.calendar-view
+	.fc
+	.fc-event-mirror.calendar-event-reminder
+	.calendar-event-content {
+	color: var(--fc-event-text-color);
+}
+
+/* The month grid's dot treatment sets its colors directly, so the tint must
+   too. */
+.calendar-view
+	.fc
+	.fc-dayGridMonth-view
+	.fc-daygrid-dot-event.calendar-event-reminder {
+	background-color: var(--fc-event-bg-color);
+	color: var(--fc-event-text-color);
+}
+
 .calendar-view .fc .fc-event:hover {
 	z-index: 4;
 }

@@ -812,7 +812,9 @@ neutral styling. Reduced-motion preferences skip the crossfade and spin.
 Collapsible `Upcoming events` and `Calendars` sections follow; calendar
 account rows use Drive-style trailing disclosure buttons and animated nested
 branches. Their 14px visibility checkboxes precede the swatch and label, with
-separate account and individual-calendar visibility controls. `Team out of office`
+separate account and individual-calendar visibility controls. A feature-gated
+`Reminders` row follows, with a bell and a switch that toggles reminder chips
+on the grid. `Team out of office`
 is feature-gated and lists teammates with 24px avatars; its section switch
 toggles the entire grid overlay. Clicking a teammate's row navigates to that
 date, opens read-only event details, and marks the row active. The icon-only
@@ -965,6 +967,18 @@ has a checkbox in its header row toggling the whole overlay on or off — all te
 none — and lists the next 90 days of teammate absences; clicking a row navigates the grid to
 that date. Coverage depends on each teammate having connected their own calendar and using
 Google's out-of-office event type.
+
+With the `enable-reminders` flag on, your standalone reminders (ones not attached to a
+document, chat, or other item) overlay the grid as read-only chips at each firing time; a
+repeating reminder shows once per firing. They draw as violet-tinted chips with a bell before
+the title, and show only a start time. In the month grid the bell takes the place of the event
+dot. Clicking one opens the `Edit reminder` dialog, the New reminder dialog seeded with the
+reminder and saving with `Save`, rather than event details. Dragging a chip to a new time
+reschedules it; while dragging it keeps its violet look, lifted with a shadow, and its time
+follows the pointer. It cannot land on the all-day row, and a one-shot cannot move into the past.
+Dragging one firing of a repeating reminder moves every firing to that time of day, shifted by
+the same number of days. Reminders have no duration, so chips cannot be resized, and a repeating
+reminder on a custom cron the picker cannot express stays fixed.
 
 A calendar event mentioned in a channel message opens the calendar focused on the viewer's
 own copy of the meeting. When the sender holds the event on their own calendar, the mention
