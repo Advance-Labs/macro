@@ -6,7 +6,7 @@ import {
   type TargetExpr,
 } from '@app/features/soup/filters';
 import { useGlobalNotificationSource } from '@components/app/GlobalAppState';
-import { type GithubPullRequestEntity, isGithubPrEntity } from '@entity';
+import { isGithubPrEntity } from '@entity';
 import { useSoupAstItemsQuery } from '@queries/soup/items';
 import type { Accessor } from 'solid-js';
 import type {
