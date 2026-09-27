@@ -31,7 +31,8 @@ export type GamesContext = {
   createLeaderboards(): LeaderboardsSource;
   /** Record a finished solo run or race; resolves undefined when it fails. */
   submitScore(kind: GameKind, score: number): Promise<ScoreOutcome | undefined>;
-  reportRound(outcome: RoundOutcome): Promise<void>;
+  /** Report a finished round; resolves false when it did not get through. */
+  reportRound(outcome: RoundOutcome): Promise<boolean>;
   /**
    * Publish a room's state as its document Status for lists and channels.
    * Resolves true once stored, false when the write failed.

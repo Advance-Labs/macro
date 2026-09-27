@@ -31,7 +31,7 @@ const CONFIRMATION_REFRESH_MS = 5_000;
  * result, so when this report is not the deciding one, the leaderboards
  * refresh a little later, once the other player's report has likely landed.
  */
-export async function reportGameRound(outcome: RoundOutcome): Promise<void> {
+export async function reportGameRound(outcome: RoundOutcome): Promise<boolean> {
   const result = await storageServiceClient.games.reportRound({
     entityType: 'document',
     entityId: outcome.documentId,
@@ -42,9 +42,12 @@ export async function reportGameRound(outcome: RoundOutcome): Promise<void> {
   });
   if (result.isErr()) {
     console.error('Failed to report game round', result.error);
-    return;
+    return false;
   }
-  if (!outcome.winner) return;
-  if (result.value.recorded) void invalidateLeaderboards();
-  else setTimeout(() => void invalidateLeaderboards(), CONFIRMATION_REFRESH_MS);
+  if (outcome.winner) {
+    if (result.value.recorded) void invalidateLeaderboards();
+    else
+      setTimeout(() => void invalidateLeaderboards(), CONFIRMATION_REFRESH_MS);
+  }
+  return true;
 }

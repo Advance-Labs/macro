@@ -32,6 +32,7 @@ export function createTestGamesContext(
     },
     reportRound: async (outcome) => {
       rounds.push(outcome);
+      return true;
     },
     publishStatus: async (documentId, status) => {
       statuses.push({ documentId, status });

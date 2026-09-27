@@ -8,6 +8,7 @@ import { type GameKind, gameDefinition } from '../core/catalog';
 import type { TurnRules } from '../core/turn-match';
 import type { GameRoom } from '../primitives/create-game-room';
 import {
+  createRoundLedger,
   createRoundReporter,
   createStatusPublisher,
 } from '../primitives/create-room-reporting';
@@ -49,8 +50,17 @@ export function TurnRoom<State, Move>(props: {
   });
   createRoundReporter({
     results: () => match.match().results,
+    seatedRound: () => {
+      const current = match.phase();
+      return current.t === 'playing' && match.mySeat() >= 0
+        ? current.round
+        : undefined;
+    },
     userId: props.room.userId,
     enabled: props.room.canPlay,
+    ledger: createRoundLedger(
+      () => `macro.games.rounds.${props.documentId}.${props.room.userId()}`
+    ),
     report: (result) =>
       games.reportRound({
         documentId: props.documentId,

@@ -3,8 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GameStatus } from '../core/status';
 import type { RoundResult } from '../core/turn-match';
 import {
+  createRoundLedger,
   createRoundReporter,
   createStatusPublisher,
+  type RoundLedger,
 } from './create-room-reporting';
 
 const ANN = 'macro|ann@macro.com';
@@ -128,33 +130,130 @@ describe('createStatusPublisher', () => {
   });
 });
 
+/** A ledger kept in memory, as when storage is unavailable. */
+function memoryLedger(initial: number[] = []) {
+  const rounds = new Set(initial);
+  const ledger: RoundLedger = {
+    has: (round) => rounds.has(round),
+    add: (round) => {
+      rounds.add(round);
+    },
+    delete: (round) => {
+      rounds.delete(round);
+    },
+  };
+  return { rounds, ledger };
+}
+
 describe('createRoundReporter', () => {
-  it('reports the latest earlier round, then each new round once, from players only', () => {
+  it('vouches only for rounds its player was seen playing, even ones that ended while away', async () => {
     const reported: number[] = [];
+    // Round 1 was in progress on an earlier visit; round 0 never was here.
+    const { rounds, ledger } = memoryLedger([1]);
     const [results, setResults] = createSignal<RoundResult[]>([
       result(0),
       result(1),
     ]);
+    const [seatedRound, setSeatedRound] = createSignal<number>();
     const [userId, setUserId] = createSignal<string | undefined>(ANN);
     createRoot((disposeRoot) => {
       dispose = disposeRoot;
       createRoundReporter({
         results,
+        seatedRound,
         userId,
         enabled: () => true,
+        ledger,
         report: async (round) => {
           reported.push(round.round);
+          return true;
         },
       });
     });
+    await vi.advanceTimersByTimeAsync(0);
     expect(reported).toEqual([1]);
+    expect(rounds.has(1)).toBe(false);
 
+    // Round 2 is played here and finishes; it is reported once.
+    setSeatedRound(2);
+    setSeatedRound(undefined);
     setResults([result(0), result(1), result(2)]);
     setResults([result(0), result(1), result(2)]);
+    await vi.advanceTimersByTimeAsync(0);
     expect(reported).toEqual([1, 2]);
 
-    setUserId(CAT);
+    // A round that shows up already finished was never seen in progress.
     setResults([result(0), result(1), result(2), result(3)]);
+    await vi.advanceTimersByTimeAsync(0);
     expect(reported).toEqual([1, 2]);
+
+    // Only the round's players report it.
+    setUserId(CAT);
+    setSeatedRound(4);
+    setResults([result(0), result(1), result(2), result(3), result(4)]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reported).toEqual([1, 2]);
+  });
+
+  it('retries a report that did not get through and keeps the round until one does', async () => {
+    let failures = 2;
+    const attempts: number[] = [];
+    const { rounds, ledger } = memoryLedger([0]);
+    createRoot((disposeRoot) => {
+      dispose = disposeRoot;
+      createRoundReporter({
+        results: () => [result(0)],
+        seatedRound: () => undefined,
+        userId: () => ANN,
+        enabled: () => true,
+        ledger,
+        report: async (round) => {
+          attempts.push(round.round);
+          if (failures === 0) return true;
+          failures -= 1;
+          return false;
+        },
+      });
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(attempts).toEqual([0]);
+    expect(rounds.has(0)).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(attempts).toEqual([0, 0]);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(attempts).toEqual([0, 0, 0]);
+    expect(rounds.has(0)).toBe(false);
+  });
+});
+
+describe('createRoundLedger', () => {
+  it('remembers rounds across visits until they are delivered', () => {
+    const key = () => 'test.games.rounds.room-1.ann';
+    createRoundLedger(key).add(3);
+    const nextVisit = createRoundLedger(key);
+    expect(nextVisit.has(3)).toBe(true);
+    nextVisit.delete(3);
+    expect(createRoundLedger(key).has(3)).toBe(false);
+  });
+
+  it('keeps working in memory when storage is unavailable', () => {
+    const blocked = () => {
+      throw new Error('storage blocked');
+    };
+    const getItem = vi
+      .spyOn(Storage.prototype, 'getItem')
+      .mockImplementation(blocked);
+    const setItem = vi
+      .spyOn(Storage.prototype, 'setItem')
+      .mockImplementation(blocked);
+    try {
+      const ledger = createRoundLedger(() => 'test.games.rounds.blocked');
+      ledger.add(1);
+      expect(ledger.has(1)).toBe(true);
+    } finally {
+      getItem.mockRestore();
+      setItem.mockRestore();
+    }
   });
 });

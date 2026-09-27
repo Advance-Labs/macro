@@ -61,7 +61,10 @@ that shows a game picker to editors.
   differs, because every property write is recorded as document activity.
 - **Results.** Finished solo runs and races submit a score. Every player's
   client reports each finished versus round, and a round counts once two of its
-  players report the same result, so no one can record a win alone.
+  players report the same result, so no one can record a win alone. A client
+  vouches only for rounds it saw in progress with its player seated; it keeps
+  them in local storage until reported, so a round that ends while a player is
+  away is confirmed on their next visit, and failed reports are retried.
 
 ## Leaderboards and trust
 

@@ -12,6 +12,10 @@ import type { RoundResult } from '../core/turn-match';
 const STATUS_SETTLE_MS = 1_500;
 /** Other editors publish later, only in case the leading client could not. */
 const STATUS_FALLBACK_MS = 6_000;
+/** A round report that did not get through is retried after these delays. */
+const REPORT_RETRY_MS = [2_000, 10_000, 30_000];
+/** How many unreported rounds a room remembers for its player. */
+const LEDGER_LIMIT = 50;
 
 /**
  * Publish the room's status whenever it settles on a new value. Every editor
@@ -63,35 +67,116 @@ export function createStatusPublisher(options: {
   );
 }
 
+/** Rounds a client saw its player take part in and has not yet reported. */
+export type RoundLedger = {
+  has(round: number): boolean;
+  add(round: number): void;
+  delete(round: number): void;
+};
+
 /**
- * Report each finished round once per visit, from its players' clients. Rounds
- * that finished before this visit were reported by whoever watched them, so
- * only the latest is retried; a round counts once two players' reports agree.
+ * A round ledger kept in local storage, so a round that ends while its player
+ * is away can still be reported on their next visit. Falls back to memory
+ * when storage is unavailable.
+ */
+export function createRoundLedger(key: Accessor<string>): RoundLedger {
+  const memory = new Map<string, number[]>();
+  const load = (): number[] => {
+    const cached = memory.get(key());
+    if (cached) return cached;
+    let rounds: number[] = [];
+    try {
+      const parsed: unknown = JSON.parse(localStorage.getItem(key()) ?? '[]');
+      if (Array.isArray(parsed))
+        rounds = parsed.filter((round): round is number =>
+          Number.isInteger(round)
+        );
+    } catch {
+      // Unreadable or unavailable storage starts empty.
+    }
+    memory.set(key(), rounds);
+    return rounds;
+  };
+  const save = (rounds: number[]) => {
+    const kept = rounds.slice(-LEDGER_LIMIT);
+    memory.set(key(), kept);
+    try {
+      localStorage.setItem(key(), JSON.stringify(kept));
+    } catch {
+      // The memory copy still covers this visit.
+    }
+  };
+  return {
+    has: (round) => load().includes(round),
+    add: (round) => {
+      const rounds = load();
+      if (!rounds.includes(round)) save([...rounds, round]);
+    },
+    delete: (round) => save(load().filter((kept) => kept !== round)),
+  };
+}
+
+/**
+ * Report finished rounds from their players' clients; a round counts once two
+ * players' reports agree. A client vouches only for rounds it saw in progress
+ * with its player seated, so opening a room never confirms a result written
+ * while the player was away, yet a round that ended in their absence is still
+ * reported on their next visit. A report that does not get through is retried
+ * a few times, and the round stays in the ledger until one does.
  */
 export function createRoundReporter(options: {
   results: Accessor<RoundResult[]>;
+  /** The round being played while this client's player holds a seat. */
+  seatedRound: Accessor<number | undefined>;
   userId: Accessor<string | undefined>;
   enabled: Accessor<boolean>;
-  report: (result: RoundResult) => Promise<void>;
+  ledger: RoundLedger;
+  /** Resolves false when the report did not get through. */
+  report: (result: RoundResult) => Promise<boolean>;
 }) {
-  const handled = new Set<number>();
-  let primed = false;
+  const sent = new Set<number>();
+  const retries = new Set<ReturnType<typeof setTimeout>>();
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+    for (const retry of retries) clearTimeout(retry);
+  });
+
+  const send = async (result: RoundResult, attempt: number) => {
+    const delivered = await options.report(result).catch(() => false);
+    if (delivered) {
+      options.ledger.delete(result.round);
+      return;
+    }
+    if (disposed || attempt >= REPORT_RETRY_MS.length) return;
+    const retry = setTimeout(() => {
+      retries.delete(retry);
+      void send(result, attempt + 1);
+    }, REPORT_RETRY_MS[attempt]);
+    retries.add(retry);
+  };
+
+  createEffect(
+    on(
+      () => (options.enabled() ? options.seatedRound() : undefined),
+      (round) => {
+        if (round !== undefined) options.ledger.add(round);
+      }
+    )
+  );
 
   createEffect(
     on(
       () => (options.enabled() ? options.results() : undefined),
       (results) => {
         if (!results) return;
-        if (!primed) {
-          for (const result of results.slice(0, -1)) handled.add(result.round);
-          primed = true;
-        }
         const userId = options.userId();
         for (const result of results) {
-          if (handled.has(result.round)) continue;
-          handled.add(result.round);
-          if (userId && result.players.includes(userId))
-            void options.report(result);
+          if (sent.has(result.round) || !options.ledger.has(result.round))
+            continue;
+          if (!userId || !result.players.includes(userId)) continue;
+          sent.add(result.round);
+          void send(result, 0);
         }
       }
     )
