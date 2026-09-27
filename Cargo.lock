@@ -3156,7 +3156,7 @@ dependencies = [
 
 [[package]]
 name = "cache-wasm"
-version = "0.6.19"
+version = "0.6.24"
 dependencies = [
  "async-lock",
  "cache-core",
@@ -4094,6 +4094,7 @@ dependencies = [
  "graphql_email",
  "graphql_entity_mutation",
  "graphql_favorite",
+ "graphql_initiative",
  "graphql_notification",
  "graphql_permission",
  "graphql_properties",
@@ -5650,6 +5651,7 @@ dependencies = [
  "futures",
  "games",
  "github",
+ "graphql_initiative",
  "graphql_soup",
  "harnesses",
  "hex",
@@ -7769,6 +7771,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "graphql_initiative"
+version = "0.1.0"
+dependencies = [
+ "async-graphql",
+ "chrono",
+ "entity_access",
+ "futures",
+ "graphql_common",
+ "graphql_permission",
+ "graphql_soup",
+ "initiative",
+ "macro_user_id",
+ "model-entity",
+ "model_owner",
+ "models_pagination",
+ "models_permissions",
+ "models_properties",
+ "models_soup",
+ "rootcause",
+ "serde",
+ "soup",
+ "tokio",
+ "tracing",
+ "uuid",
+ "workspace-hack",
+]
+
+[[package]]
 name = "graphql_notification"
 version = "0.1.0"
 dependencies = [
@@ -9164,11 +9194,14 @@ dependencies = [
  "model-error-response",
  "model_user",
  "models_permissions",
+ "models_properties",
+ "properties",
  "rootcause",
  "serde",
  "serde_json",
  "share_permission_db_utils",
  "sqlx",
+ "system_properties",
  "thiserror 2.0.18",
  "tokio",
  "tower 0.5.3",
