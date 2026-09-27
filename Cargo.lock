@@ -5654,6 +5654,7 @@ dependencies = [
  "hex",
  "http-body-util",
  "initiative",
+ "initiative_documents",
  "jsonwebtoken 10.3.0",
  "last_online_tracker",
  "lazy_static",
@@ -5862,6 +5863,7 @@ dependencies = [
  "lexical_client",
  "macro_authorization",
  "macro_aws_config",
+ "macro_db_client",
  "macro_db_migrator",
  "macro_entrypoint",
  "macro_env_var",
@@ -5894,6 +5896,7 @@ dependencies = [
  "sha2 0.10.9",
  "share_permission_db_utils",
  "sqlx",
+ "sqs_client",
  "sync_service_client",
  "system_skills",
  "task_dedup",
@@ -9142,6 +9145,17 @@ dependencies = [
  "unicode-segmentation",
  "utoipa",
  "uuid",
+ "workspace-hack",
+]
+
+[[package]]
+name = "initiative_documents"
+version = "0.1.0"
+dependencies = [
+ "documents",
+ "initiative",
+ "rootcause",
+ "tracing",
  "workspace-hack",
 ]
 
