@@ -156,8 +156,21 @@ export function computerPaddle(
   return clampPaddle(paddleY + Math.max(-reach, Math.min(reach, delta)));
 }
 
-export type PongScore = { scores: [number, number] };
+export type PongScore = {
+  scores: [number, number];
+  /** Who won the latest point, if any has been played. */
+  lastScorer?: PongSeat;
+};
 export type PongPoint = { scorer: PongSeat };
+
+/**
+ * The seat that receives the next serve: whoever lost the latest point, and
+ * at the start of a match, alternating sides round by round.
+ */
+export function nextServe(state: PongScore, round: number): PongSeat {
+  if (state.lastScorer === undefined) return round % 2 === 0 ? 1 : 0;
+  return state.lastScorer === 0 ? 1 : 0;
+}
 
 /**
  * A match is a series of points recorded by the first seat, whose client runs
@@ -174,7 +187,7 @@ export const pongRules: TurnRules<PongScore, PongPoint> = {
   apply: (state, move) => {
     const scores: [number, number] = [...state.scores];
     scores[move.scorer] += 1;
-    return { scores };
+    return { scores, lastScorer: move.scorer };
   },
   progress: (state) => {
     const winner = state.scores.findIndex(

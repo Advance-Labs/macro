@@ -44,6 +44,7 @@ import {
 import {
   computerPaddle,
   extrapolateBall,
+  nextServe,
   PONG_BALL_RADIUS,
   PONG_COURT,
   PONG_POINTS_TO_WIN,
@@ -197,6 +198,15 @@ describe('pong', () => {
     expect(match.phase.t).toBe('over');
     expect(match.results[0]?.winners).toEqual(['bob']);
     expect(pongRules.parseMove({ scorer: 2 })).toBeUndefined();
+  });
+
+  it('serves to whoever lost the last point, alternating sides by round', () => {
+    expect(nextServe(pongRules.initial(2, 0), 0)).toBe(1);
+    expect(nextServe(pongRules.initial(2, 1), 1)).toBe(0);
+    const afterBob = pongRules.apply(pongRules.initial(2, 0), { scorer: 1 }, 0);
+    expect(afterBob && nextServe(afterBob, 0)).toBe(0);
+    const afterAnn = afterBob && pongRules.apply(afterBob, { scorer: 0 }, 0);
+    expect(afterAnn && nextServe(afterAnn, 0)).toBe(1);
   });
 
   it('accepts only well-formed court snapshots', () => {

@@ -4,6 +4,7 @@ import {
   clampPaddle,
   computerPaddle,
   extrapolateBall,
+  nextServe,
   PONG_PADDLE_SPEED,
   PONG_POINTS_TO_WIN,
   type PongBall,
@@ -334,6 +335,23 @@ export function createPong(
       if (key === undefined) return;
       setPractice(undefined);
       resetCourt(key % 2 === 0 ? 1 : 0);
+    })
+  );
+
+  // Every client schedules the next serve from the log, so a tab that takes
+  // over the ball serves when and where the running tab would have.
+  const pointKey = createMemo(() => {
+    const current = phase();
+    if (current.t !== 'playing') return undefined;
+    const [left, right] = current.state.scores;
+    return `${current.round}:${left + right}`;
+  });
+  createEffect(
+    on(pointKey, (key) => {
+      const current = phase();
+      if (key === undefined || current.t !== 'playing') return;
+      serveToward = nextServe(current.state, current.round);
+      serveAt = now() + SERVE_DELAY_MS;
     })
   );
 

@@ -181,6 +181,35 @@ describe('createPong', () => {
     expect(points.every((entry) => entry.by === ANN)).toBe(true);
   });
 
+  it('keeps the serve on schedule when another tab takes over after a point', async () => {
+    fakeFrames();
+    const { linked, clients, close } = setupRoom([ANN, ANN, BOB]);
+    const [tabA, tabB, bob] = clients;
+    if (!tabA || !tabB || !bob) throw new Error('clients missing');
+    tabA.match.join();
+    bob.match.join();
+    bob.pong.keyDown('ArrowUp');
+    const points = () =>
+      readGameLog(linked.docs[2]).flatMap((entry) =>
+        entry.t === 'move' ? [entry] : []
+      );
+    while (points().length === 0) await vi.advanceTimersByTimeAsync(16);
+    close(0);
+
+    // Tab B takes over once tab A's court stops changing, before the next
+    // serve is due.
+    await vi.advanceTimersByTimeAsync(1_100);
+    expect(tabB.pong.controlledSeat()).toBe(0);
+    expect(tabB.pong.court().ball).toBeUndefined();
+
+    // The serve comes on time, toward whoever lost the point.
+    await vi.advanceTimersByTimeAsync(300);
+    const scorer = (points()[0].move as { scorer: number }).scorer;
+    const ball = tabB.pong.court().ball;
+    expect(ball).toBeDefined();
+    expect(Math.sign(ball?.vx ?? 0)).toBe(scorer === 0 ? 1 : -1);
+  });
+
   it('plays a local practice game against the computer without writing', async () => {
     fakeFrames();
     const { linked, ann } = setupMatch();
