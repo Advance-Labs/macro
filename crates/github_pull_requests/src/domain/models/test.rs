@@ -41,6 +41,8 @@ fn pull_request_details(
         assignees: None,
         labels: None,
         reviews: None,
+        base: None,
+        head: None,
     }
 }
 
@@ -179,6 +181,8 @@ fn pull_request_response_serializes_with_camel_case_fields() {
             assignees: None,
             labels: None,
             reviews: None,
+            base: None,
+            head: None,
         }],
     };
 
@@ -315,6 +319,8 @@ fn pull_request_enrichment_copies_details_fields() {
         assignees: None,
         labels: None,
         reviews: None,
+        base: None,
+        head: None,
     };
 
     let enriched = EnrichedGithubPullRequest::from_details(reference.clone(), details);
@@ -373,6 +379,8 @@ fn pull_request_foreign_entity_metadata_serializes_enriched_pull_request() {
         assignees: None,
         labels: None,
         reviews: None,
+        base: None,
+        head: None,
     };
     let enriched = EnrichedGithubPullRequest::from_details(reference, details);
 
@@ -501,6 +509,8 @@ fn pull_request_foreign_entity_metadata_keeps_fresh_arrays() {
         assignees: None,
         labels: None,
         reviews: None,
+        base: None,
+        head: None,
     };
     let enriched = EnrichedGithubPullRequest::from_details(pull_request_reference(), details);
     let existing_metadata = serde_json::json!({
@@ -1054,4 +1064,31 @@ fn stored_comment_author_ids_intentionally_remain_json_integers() {
     let wire = serde_json::to_value(response).unwrap();
     assert_eq!(wire["authorGithubUserId"], "583231");
     assert_eq!(wire["comments"][0]["authorId"], serde_json::json!(583231));
+}
+#[test]
+fn stored_refs_carry_forward_when_a_write_omits_them() {
+    let mut stored = EnrichedGithubPullRequest::from_reference(pull_request_reference());
+    stored.base = Some(GitRef {
+        name: Some("main".to_string()),
+        sha: Some("base-sha".to_string()),
+    });
+    stored.head = Some(GitRef {
+        name: Some("feature".to_string()),
+        sha: Some("head-sha".to_string()),
+    });
+    let existing = stored.foreign_entity_metadata(None).unwrap();
+
+    let merged = EnrichedGithubPullRequest::from_reference(pull_request_reference())
+        .foreign_entity_metadata(Some(&existing))
+        .unwrap();
+    let row = GithubPullRequestRow::from_metadata(&merged).unwrap();
+
+    assert_eq!(
+        row.base.and_then(|base| base.sha).as_deref(),
+        Some("base-sha")
+    );
+    assert_eq!(
+        row.head.and_then(|head| head.name).as_deref(),
+        Some("feature")
+    );
 }
