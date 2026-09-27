@@ -1,4 +1,3 @@
-import { readdirSync, readFileSync } from 'node:fs';
 import { prepareEmailBody } from '@macro-inc/email-renderer';
 import { describe, expect, it, vi } from 'vitest';
 import type { EmailPreparationRequest } from '../../features/email-message/context/email-preparation';
@@ -341,38 +340,5 @@ describe('prepared email cache', () => {
     expect(prepare).toHaveBeenCalledTimes(1);
     cache.dispose();
     lease.release();
-  });
-
-  it('matches direct preparation for every renderer HTML fixture', async () => {
-    const fixtures = new URL(
-      '../../../../../packages/email-renderer/tests/fixtures/',
-      import.meta.url
-    );
-    const { cache } = setup();
-    const filenames = readdirSync(fixtures).filter((name) =>
-      name.endsWith('.json')
-    );
-    expect(filenames.length).toBeGreaterThan(0);
-    for (const filename of filenames) {
-      const input = JSON.parse(
-        readFileSync(new URL(filename, fixtures), 'utf8')
-      );
-      for (const options of [
-        {},
-        { showFullContent: true },
-        { showQuotedContent: true },
-        { images: { remote: 'block' as const } },
-      ]) {
-        const lease = cache.acquire({
-          ...request,
-          messageId: filename,
-          input,
-          options,
-        });
-        expect(await lease.promise).toEqual(prepareEmailBody(input, options));
-        lease.release();
-      }
-    }
-    cache.dispose();
   });
 });

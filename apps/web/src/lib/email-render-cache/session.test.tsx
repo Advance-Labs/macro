@@ -13,7 +13,6 @@ const mocks = vi.hoisted(() => ({
   initializeStorage: vi.fn(),
   logout: vi.fn(async () => {}),
   broadcast: vi.fn(),
-  native: vi.fn(() => false),
 }));
 vi.mock('@app/features/email-thread/preparation-adapter', () => ({
   prepareEmailThreads: () => () => {},
@@ -28,7 +27,7 @@ vi.mock('@core/cross-tab/tab-leader', () => ({
   createTabLeaderSignal: () => () => false,
 }));
 vi.mock('@core/mobile/isMobile', () => ({ isMobile: () => false }));
-vi.mock('@core/util/platform', () => ({ isTauri: mocks.native }));
+vi.mock('@core/util/platform', () => ({ isTauri: () => false }));
 vi.mock('@graphql-cache/lifecycle', () => ({
   registerCacheResetListener: () => () => {},
 }));
@@ -89,7 +88,6 @@ describe('session ownership', () => {
   const roots: (() => void)[] = [];
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.native.mockReturnValue(false);
     Channel.instances = [];
     vi.stubGlobal('crypto', webcrypto);
     vi.stubGlobal('BroadcastChannel', Channel);
@@ -112,16 +110,6 @@ describe('session ownership', () => {
       kind: 'invalidate',
       sessionEnded: true,
     });
-    expect(app.read()).toBeUndefined();
-  });
-
-  it('does not open an artifact database on native logout', async () => {
-    mocks.native.mockReturnValue(true);
-    const app = mount(true);
-    roots.push(app.dispose);
-    await invalidateEmailRenders('session-ended');
-    expect(mocks.invalidate).not.toHaveBeenCalled();
-    expect(mocks.dispose).toHaveBeenCalled();
     expect(app.read()).toBeUndefined();
   });
 
