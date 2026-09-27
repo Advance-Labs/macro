@@ -16151,6 +16151,7 @@ dependencies = [
  "either",
  "email",
  "entity_access",
+ "favorites",
  "filter_ast",
  "foreign_entity",
  "frecency",
