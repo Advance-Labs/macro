@@ -1,3 +1,5 @@
+// Touches a root crate so cloud-storage test/check compile the reverse-dep
+// graph while the runner probe is measured. Drop this comment after that.
 use anyhow::{Result, anyhow};
 pub use uuid::Uuid;
 use uuid::{NoContext, Timestamp};
