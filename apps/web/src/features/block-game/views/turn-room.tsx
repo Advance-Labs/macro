@@ -31,6 +31,10 @@ export function TurnRoom<State, Move>(props: {
   marker?: (seat: number) => JSX.Element;
   /** Live per-seat detail, such as boxes claimed. */
   detail?: (state: State, seat: number) => string | undefined;
+  /** Replaces the turn message while a round is played, for real-time games. */
+  playingMessage?: (state: State) => string;
+  /** Highlight the seat to move; off for games without turns. */
+  showTurn?: boolean;
 }) {
   const games = useGamesContext();
   const definition = gameDefinition(props.kind);
@@ -84,7 +88,9 @@ export function TurnRoom<State, Move>(props: {
 
   const turnSeat = () => {
     const current = phase();
-    return current.t === 'playing' ? current.turn : undefined;
+    return current.t === 'playing' && props.showTurn !== false
+      ? current.turn
+      : undefined;
   };
   const winners = () => {
     const current = phase();
@@ -104,6 +110,7 @@ export function TurnRoom<State, Move>(props: {
         : 'Ready when you are. Anyone seated can start.';
     }
     if (current.t === 'playing') {
+      if (props.playingMessage) return props.playingMessage(current.state);
       if (match.isMyTurn()) return 'Your turn';
       return `${name(match.match().seats[current.turn])}'s turn`;
     }

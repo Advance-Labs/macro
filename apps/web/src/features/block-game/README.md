@@ -8,7 +8,12 @@ keeps a team leaderboard.
 
 | Game | Players | Leaderboard |
 | --- | --- | --- |
+| Pong | 2, or practice against the computer | Team match wins |
+| Brick Breaker | Solo | Team high score (points) |
 | Snake | Solo | Team high score (points) |
+| Falling Blocks | Solo | Team high score (points) |
+| Invaders | Solo | Team high score (points) |
+| Flappy | Solo | Team high score (pipes passed) |
 | 2048 | Solo | Team high score (points) |
 | Minesweeper | Solo | Team fastest clear |
 | Tic-Tac-Toe | 2 | Team round wins |
@@ -35,6 +40,16 @@ that shows a game picker to editors.
   racing for the last seat, or a move sent after the opponent already moved.
 - **Race progress** lives in a separate `raceProgress` map so typing never
   rewrites the log.
+- **Pong** is real time. The first seat's client runs the ball and records
+  each point in the log (so the score replays like any turn game); it streams
+  the ball and both paddles as presence about fifteen times a second. The
+  second seat streams only its paddle and draws its own paddle immediately.
+  Everyone else draws the host's snapshots, extrapolated between updates.
+  Practice against the computer is local and never touches the log.
+- **Arcade games** (Brick Breaker, Falling Blocks, Invaders, Flappy) run
+  locally on an animation-frame loop and record a `run` when they end, like
+  Snake. They pause when the board loses focus or the tab is hidden; Enter or
+  **New game** starts over after a game ends.
 - **Presence** (playing or watching, a solo player's live score) is ephemeral
   awareness, not document state.
 - **Status.** Each room derives waiting, in progress or finished and stores it
@@ -65,7 +80,7 @@ from editors of the room who played in it, and records each round once.
 | `core/` | Catalog, log vocabulary, game rules and replay. Pure and framework-free. |
 | `context/` | The room source and games capability contracts. |
 | `queries/` | Loro session, API calls, leaderboard query, status publishing. |
-| `primitives/` | Room state, turn matches, races, solo runs, reporting. |
+| `primitives/` | Room state, turn matches, races, solo and arcade runs, Pong, frame loop, held keys, reporting. |
 | `components/` | Boards, seats, leaderboard rows, cards. |
 | `views/` | The hub, each room, and the team leaderboard panel. |
 | `tests/` | An in-memory room source and a recording games context. |
@@ -76,8 +91,10 @@ from editors of the room who played in it, and records each round once.
    `GameKind` plus the `game_kind` enum in `crates/games` (new migration). Give
    score-ranked games a server-side bound in `GameKind::score_range`.
 2. Turn-based games implement `TurnRules` (`core/turn-match.ts`); the shared
-   `TurnRoom` view provides seats, turns, rematches and reporting. Solo games
-   record a `run` entry and reuse the solo room shell.
+   `TurnRoom` view provides seats, turns, rematches and reporting (Pong reuses
+   it with the first seat as the only one that "moves"). Solo games record a
+   `run` entry and reuse `views/solo-room-shell.tsx`; real-time ones step a pure
+   engine from `createFrameLoop`.
 3. Add a board component and a room view, register it in
    `views/game-room-view.tsx`, and cover the rules with core tests.
 

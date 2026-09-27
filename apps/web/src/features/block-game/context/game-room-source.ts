@@ -1,14 +1,10 @@
 import type { LoroDoc } from 'loro-crdt';
 import type { Accessor } from 'solid-js';
+import type { GamePresence } from '../core/presence';
+
+export type { GamePresence };
 
 export type GameConnectionStatus = 'connecting' | 'connected' | 'offline';
-
-/** What a peer is doing in the room, shared as ephemeral presence. */
-export type GamePresence = {
-  activity: 'playing' | 'watching';
-  /** A solo player's live score, shown to spectators. */
-  score?: number;
-};
 
 export type GamePeer = {
   userId: string | undefined;

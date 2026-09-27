@@ -5,7 +5,12 @@ import type { GameDefinition, GameKind } from '../core/catalog';
 
 function gameEmoji(kind: GameKind): string {
   return match(kind)
+    .with('pong', () => '🏓')
+    .with('brick_breaker', () => '🧱')
     .with('snake', () => '🐍')
+    .with('falling_blocks', () => '🟦')
+    .with('invaders', () => '👾')
+    .with('flappy', () => '🐤')
     .with('twenty_forty_eight', () => '🔢')
     .with('minesweeper', () => '💣')
     .with('tic_tac_toe', () => '⭕')

@@ -9,6 +9,18 @@ import {
 } from '../core/catalog';
 import { teamRecord } from '../core/leaderboard';
 
+/** Games people play together, then games to play alone, in catalog order. */
+const SECTIONS = [
+  {
+    title: 'Play together',
+    kinds: GAME_KINDS.filter((kind) => GAME_CATALOG[kind].category !== 'solo'),
+  },
+  {
+    title: 'Solo',
+    kinds: GAME_KINDS.filter((kind) => GAME_CATALOG[kind].category === 'solo'),
+  },
+];
+
 /** Every game with its team record; the host decides how new rooms open. */
 export function GamesHubView(props: {
   creating: GameKind | undefined;
@@ -38,18 +50,27 @@ export function GamesHubView(props: {
             share with people or a channel: editors play, everyone else watches.
           </p>
         </header>
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <For each={GAME_KINDS}>
-            {(kind) => (
-              <GameCard
-                definition={GAME_CATALOG[kind]}
-                record={record(kind)}
-                creating={props.creating === kind}
-                onCreate={() => props.onCreate(kind)}
-              />
-            )}
-          </For>
-        </div>
+        <For each={SECTIONS}>
+          {(section) => (
+            <section class="flex flex-col gap-3">
+              <h2 class="font-semibold text-ink-subtle text-xs uppercase tracking-wide">
+                {section.title}
+              </h2>
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <For each={section.kinds}>
+                  {(kind) => (
+                    <GameCard
+                      definition={GAME_CATALOG[kind]}
+                      record={record(kind)}
+                      creating={props.creating === kind}
+                      onCreate={() => props.onCreate(kind)}
+                    />
+                  )}
+                </For>
+              </div>
+            </section>
+          )}
+        </For>
       </div>
     </div>
   );

@@ -27,6 +27,7 @@ import { type Accessor, createSignal, onCleanup } from 'solid-js';
 import { match } from 'ts-pattern';
 import type { GamePresence, GameRoomSource } from '../context/game-room-source';
 import { GAME_FORMAT_VERSION, readGameMeta } from '../core/game-document';
+import { parseGamePresence } from '../core/presence';
 
 /** The mirror only projects state; game rules read and write Loro directly. */
 const GAME_LORO_SCHEMA = schema({
@@ -70,15 +71,6 @@ function serializeSnapshotOperation<T>(
       snapshotOperations.delete(documentId);
   });
   return pending;
-}
-
-function decodePresence(value: GamePresence): GamePresence {
-  const activity = value.activity === 'playing' ? 'playing' : 'watching';
-  const score =
-    typeof value.score === 'number' && Number.isFinite(value.score)
-      ? value.score
-      : undefined;
-  return score === undefined ? { activity } : { activity, score };
 }
 
 /** The same Loro, local snapshot, WAL and live transport as other native documents. */
@@ -145,7 +137,7 @@ export function createGameSession(
   const awareness = createAwareness<GamePresence, GamePresence>(
     manager.peerIdStr,
     options.userId,
-    { encode: (presence) => presence, decode: decodePresence }
+    { encode: (presence) => presence, decode: parseGamePresence }
   );
   // Awareness expires after ten seconds; keep an idle player visible while
   // connected, and let disconnected clients disappear for everyone else.

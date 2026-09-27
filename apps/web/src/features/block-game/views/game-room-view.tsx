@@ -3,6 +3,13 @@ import { For, Match, Show, Switch } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { GAME_KINDS, type GameKind, gameDefinition } from '../core/catalog';
 import type { GameRoom } from '../primitives/create-game-room';
+import {
+  BrickBreakerRoom,
+  FallingBlocksRoom,
+  FlappyRoom,
+  InvadersRoom,
+} from './arcade-rooms';
+import { PongRoom } from './pong-room';
 import { MinesweeperRoom, SnakeRoom, TwentyFortyEightRoom } from './solo-rooms';
 import { TypingRaceRoom } from './typing-race-room';
 import {
@@ -18,7 +25,12 @@ const ROOM_VIEWS: Record<
     documentId: string;
   }) => ReturnType<typeof SnakeRoom>
 > = {
+  pong: PongRoom,
+  brick_breaker: BrickBreakerRoom,
   snake: SnakeRoom,
+  falling_blocks: FallingBlocksRoom,
+  invaders: InvadersRoom,
+  flappy: FlappyRoom,
   twenty_forty_eight: TwentyFortyEightRoom,
   minesweeper: MinesweeperRoom,
   tic_tac_toe: TicTacToeRoom,

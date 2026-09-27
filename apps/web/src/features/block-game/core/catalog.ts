@@ -2,7 +2,12 @@ import { match } from 'ts-pattern';
 
 /** Wire, database and route spelling of every game. Matches the backend enum. */
 export const GAME_KINDS = [
+  'pong',
+  'brick_breaker',
   'snake',
+  'falling_blocks',
+  'invaders',
+  'flappy',
   'twenty_forty_eight',
   'minesweeper',
   'tic_tac_toe',
@@ -37,6 +42,56 @@ export type GameDefinition = {
 };
 
 export const GAME_CATALOG: Record<GameKind, GameDefinition> = {
+  pong: {
+    kind: 'pong',
+    title: 'Pong',
+    tagline: 'Two paddles, one ball. First to 7 wins.',
+    howToPlay:
+      'Move your paddle with the mouse, touch, or the up and down arrow keys (W and S work too). Get the ball past your opponent to score; first to 7 wins. On your own? Practice against the computer.',
+    category: 'versus',
+    players: { min: 2, max: 2 },
+    scoring: { t: 'wins' },
+  },
+  brick_breaker: {
+    kind: 'brick_breaker',
+    title: 'Brick Breaker',
+    tagline: 'Bounce the ball and smash every brick.',
+    howToPlay:
+      'Move the paddle with the mouse, touch, or the arrow keys, and click or press Space to launch. Clear every brick to reach the next level. You have three balls.',
+    category: 'solo',
+    players: { min: 1, max: 1 },
+    scoring: { t: 'high-score', order: 'desc', unit: 'points' },
+  },
+  falling_blocks: {
+    kind: 'falling_blocks',
+    title: 'Falling Blocks',
+    tagline: 'Rotate the falling pieces and clear full lines.',
+    howToPlay:
+      'Left and right move, Up rotates, Down drops faster, and Space drops instantly. Clearing several lines at once scores more, and the pace picks up every ten lines. On touch screens, tap to rotate and swipe to move or drop.',
+    category: 'solo',
+    players: { min: 1, max: 1 },
+    scoring: { t: 'high-score', order: 'desc', unit: 'points' },
+  },
+  invaders: {
+    kind: 'invaders',
+    title: 'Invaders',
+    tagline: 'Hold the line against waves of descending aliens.',
+    howToPlay:
+      'Move with the arrow keys, mouse, or touch, and fire with Space or a click. Clear a wave to face a faster one. You have three lives, and the game ends if the aliens land.',
+    category: 'solo',
+    players: { min: 1, max: 1 },
+    scoring: { t: 'high-score', order: 'desc', unit: 'points' },
+  },
+  flappy: {
+    kind: 'flappy',
+    title: 'Flappy',
+    tagline: 'Flap through the gaps between the pipes.',
+    howToPlay:
+      'Click, tap, or press Space to flap. Fly through the gaps; every pipe you pass is a point.',
+    category: 'solo',
+    players: { min: 1, max: 1 },
+    scoring: { t: 'high-score', order: 'desc', unit: 'points' },
+  },
   snake: {
     kind: 'snake',
     title: 'Snake',
