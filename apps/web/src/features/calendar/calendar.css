@@ -274,14 +274,16 @@
 
 .calendar-view .fc .fc-event-mirror,
 .calendar-view .fc .fc-highlight,
-.calendar-view .fc .calendar-multi-day-selection-preview-event {
+.calendar-view .fc .calendar-multi-day-selection-preview-event,
+.calendar-view .fc .calendar-timed-selection-preview-event {
 	border: 1px solid var(--calendar-selection-color, var(--color-accent));
 	border-radius: 0.375rem;
 	background: var(--calendar-selection-color, var(--color-accent));
 	box-shadow: none;
 }
 
-.calendar-view .fc .calendar-multi-day-selection-preview-event {
+.calendar-view .fc .calendar-multi-day-selection-preview-event,
+.calendar-view .fc .calendar-timed-selection-preview-event {
 	color: var(--calendar-selection-color, var(--color-accent));
 	pointer-events: none;
 }
@@ -310,7 +312,7 @@
 	display: none;
 }
 
-/* Timed selections already render an event mirror; hide its backing fill. */
+/* Timed selections already render as a preview event; hide the backing fill. */
 .calendar-view .fc .fc-timegrid-col-bg .fc-highlight {
 	inset: 0;
 	border: 0;
@@ -323,7 +325,8 @@
 }
 
 .calendar-view .fc .fc-event-mirror .fc-event-main,
-.calendar-view .fc .calendar-multi-day-selection-preview-event .fc-event-main {
+.calendar-view .fc .calendar-multi-day-selection-preview-event .fc-event-main,
+.calendar-view .fc .calendar-timed-selection-preview-event .fc-event-main {
 	color: inherit;
 }
 
@@ -336,6 +339,10 @@
 .calendar-view
 	.fc
 	.calendar-multi-day-selection-preview-event
+	.calendar-event-selection-preview,
+.calendar-view
+	.fc
+	.calendar-timed-selection-preview-event
 	.calendar-event-selection-preview {
 	filter: invert(1) grayscale(1) contrast(100);
 }
@@ -550,7 +557,7 @@
 }
 
 @media (hover: hover) {
-	.calendar-view .fc .fc-event:hover:not(.fc-event-mirror):not(.calendar-multi-day-selection-preview-event):not(:has(.calendar-event-content-selected)) {
+	.calendar-view .fc .fc-event:hover:not(.fc-event-mirror):not(.calendar-multi-day-selection-preview-event):not(.calendar-timed-selection-preview-event):not(:has(.calendar-event-content-selected)) {
 		filter: brightness(0.94);
 	}
 

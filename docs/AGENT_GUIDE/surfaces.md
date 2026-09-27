@@ -930,6 +930,10 @@ name, per-calendar checkbox). Accounts start collapsed. Subscribed system calend
 warning icon whose tooltip shows the provider error; the account keeps syncing its other
 calendars and the badge clears on its own once that calendar syncs again.
 
+Dragging a timed range on the grid draws a `New event` preview that takes part in overlap
+layout: where it crosses existing events they share the slot side by side, the same way two
+overlapping events do, rather than the preview covering them. Nothing blocks the drag.
+
 The `New event` composer (also opened by dragging a range on the grid) has an `Event kind`
 pill choosing between `Event` and `Out of office`. Picking `Out of office` hides the guests,
 conferencing, and location pills and the description field (Google rejects them on this
