@@ -1210,6 +1210,7 @@ export * from './sessionIdentity';
 export * from './sessionIdentityOrigin';
 export * from './sessionMentionedMetadata';
 export * from './sessionMentionedMetadataMentionedBy';
+export * from './sessionMentionedMetadataOriginMessageId';
 export * from './sessionOpenedMetadata';
 export * from './sessionRenamedMetadata';
 export * from './sessionSettledMetadata';
