@@ -372,7 +372,7 @@ export const ENABLE_CALLKIT = defineFlag({
 
 export const ENABLE_MARKDOWN_SIDE_PANEL = defineFlag({
   env: 'ENABLE_MARKDOWN_SIDE_PANEL',
-  default: false,
+  default: true,
 }).enabled;
 
 export const ENABLE_REFOCUS_HIGHLIGHT = defineFlag({
