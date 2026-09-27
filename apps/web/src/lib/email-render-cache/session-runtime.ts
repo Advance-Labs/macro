@@ -16,6 +16,10 @@ export interface EmailRenderSessionOptions {
   onRemoteInvalidation(sessionEnded: boolean, clearing: Promise<void>): void;
 }
 
+const quarantineKey = (namespace: string) =>
+  `email-render-quarantine:${namespace}`;
+const channelName = (namespace: string) => `email-render:${namespace}`;
+
 /** Browser cache lifetime with explicit inputs; no reactive owner or app hooks. */
 export function createEmailRenderSession(options: EmailRenderSessionOptions) {
   const namespace = digest(
@@ -44,7 +48,7 @@ export function createEmailRenderSession(options: EmailRenderSessionOptions) {
           if (
             disposed ||
             invalidated ||
-            localStorage.getItem(`email-render-quarantine:${name}`)
+            localStorage.getItem(quarantineKey(name))
           )
             return;
           let budget = (options.mobile ? 32 : 128) * 1024 * 1024;
@@ -70,7 +74,7 @@ export function createEmailRenderSession(options: EmailRenderSessionOptions) {
     if (sessionEnded) sentSessionEnd = true;
     const name = await namespace;
     try {
-      const sender = new BroadcastChannel(`email-render:${name}`);
+      const sender = new BroadcastChannel(channelName(name));
       sender.postMessage({ kind: 'invalidate', sessionEnded });
       sender.close();
     } catch {
@@ -88,7 +92,7 @@ export function createEmailRenderSession(options: EmailRenderSessionOptions) {
     if (options.native) return;
     // Failed clears make this namespace ineligible for subsequent sessions.
     try {
-      localStorage.setItem(`email-render-quarantine:${name}`, '1');
+      localStorage.setItem(quarantineKey(name), '1');
     } catch {
       // Still clear cold artifacts when the quarantine store is unavailable.
     }
@@ -101,7 +105,7 @@ export function createEmailRenderSession(options: EmailRenderSessionOptions) {
         })(),
         2000
       );
-      if (result) localStorage.removeItem(`email-render-quarantine:${name}`);
+      if (result) localStorage.removeItem(quarantineKey(name));
     } catch {
       /* Quarantine remains when storage is inaccessible. */
     } finally {
@@ -130,7 +134,7 @@ export function createEmailRenderSession(options: EmailRenderSessionOptions) {
     if (disposed || invalidated || typeof BroadcastChannel === 'undefined')
       return;
     try {
-      channel = new BroadcastChannel(`email-render:${name}`);
+      channel = new BroadcastChannel(channelName(name));
     } catch {
       return;
     }
@@ -151,8 +155,8 @@ export function createEmailRenderSession(options: EmailRenderSessionOptions) {
     invalidate: (sessionEnded = false) => clear(true, sessionEnded),
     dispose(sessionEnded = false) {
       disposed = true;
-      cache.dispose();
       channel?.close();
+      // clear() disposes the cache synchronously, or already has.
       return clear(true, sessionEnded);
     },
   };

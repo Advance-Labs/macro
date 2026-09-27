@@ -16,9 +16,14 @@ import {
   ARTIFACT_SCHEMA_VERSION,
   type Artifact,
   type ArtifactStore,
+  artifactBytes,
   storageDeadline,
   validArtifact,
 } from './store';
+
+function variantBytes(policy: string): number {
+  return policy.length * 2 + 512;
+}
 
 interface Variant {
   key?: string;
@@ -94,7 +99,7 @@ export class EmailRenderCache implements EmailPreparation {
     if (!variant) {
       variant = { consumers: 0, priority: request.priority ?? 0 };
       binding.variants.set(policy, variant);
-      const bytes = policy.length * 2 + 512;
+      const bytes = variantBytes(policy);
       binding.bytes += bytes;
       this.bindingBytes += bytes;
     }
@@ -117,9 +122,7 @@ export class EmailRenderCache implements EmailPreparation {
       if (released || this.disposed || !source.current) throw cancelled();
       // Another lease can trigger trimming between publication and delivery.
       // Republish before pinning so every active value stays byte-accounted.
-      const retained =
-        this.memory.get(selected.key!) ??
-        this.memory.publish(selected.key!, body);
+      const retained = this.memory.publish(selected.key!, body);
       releaseMemory ??= this.memory.retain(selected.key!);
       this.trim();
       return retained;
@@ -228,7 +231,8 @@ export class EmailRenderCache implements EmailPreparation {
       if (!job) {
         // Artifact work is shared across messages. A disappearing initiator
         // cannot cancel another message's lease for identical content.
-        const artifactValid = () => !this.disposed && this.hasConsumers(key);
+        const artifactValid = () =>
+          !this.disposed && this.priorityFor(key) < Infinity;
         const artifactPriority = () => this.priorityFor(key);
         job = this.load(
           key,
@@ -258,16 +262,7 @@ export class EmailRenderCache implements EmailPreparation {
     return body;
   }
 
-  private hasConsumers(key: string): boolean {
-    return [...this.bindings.values()].some(
-      (binding) =>
-        binding.current &&
-        [...binding.variants.values()].some(
-          (variant) => variant.key === key && variant.consumers > 0
-        )
-    );
-  }
-
+  /** Infinity when no current consumer holds this artifact. */
   private priorityFor(key: string): number {
     let priority = Infinity;
     for (const binding of this.bindings.values())
@@ -342,7 +337,7 @@ export class EmailRenderCache implements EmailPreparation {
       policyHash,
       schema: ARTIFACT_SCHEMA_VERSION,
       version: PREPARE_VERSION,
-      bytes: 2 * body.html.length + 1024,
+      bytes: artifactBytes(body),
       lastUsed: Date.now(),
     };
     const persist = async () => {
@@ -386,7 +381,7 @@ export class EmailRenderCache implements EmailPreparation {
         if (binding.variants.size <= 8) break;
         if (variant.consumers || variant.pending) continue;
         binding.variants.delete(policy);
-        const bytes = policy.length * 2 + 512;
+        const bytes = variantBytes(policy);
         binding.bytes -= bytes;
         this.bindingBytes -= bytes;
       }

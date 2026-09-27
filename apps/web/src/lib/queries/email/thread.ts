@@ -6,11 +6,7 @@ import {
   isFeatureEnabled,
 } from '@core/constant/featureFlags';
 import { DEFAULT_THREAD_MESSAGES_LIMIT } from '@core/constant/pagination';
-import {
-  catchToResult,
-  thrownResultErrorHasCode,
-  throwOnErr,
-} from '@core/util/result';
+import { catchToResult, throwOnErr } from '@core/util/result';
 import { Telemetry } from '@macro-inc/observability';
 import ArrowCounterClockwise from '@phosphor-icons/core/regular/arrow-counter-clockwise.svg?component-solid';
 import { emailClient } from '@service-email/client';
@@ -44,6 +40,7 @@ import {
 import { invalidateAllSoup } from '../soup/normalized-cache';
 import { type UndoHandle, useUndoableMutation } from '../undo';
 import { type MutationCallbacks, withCallbacks } from '../utils';
+import { isEmailAccessDenied } from './access-denied';
 import {
   createGraphqlEmailThreadQuery,
   fetchGraphqlEmailThread,
@@ -114,12 +111,7 @@ export async function readCachedEmailThread(
   }
   const queryKey = emailKeys.threadMessages(threadId).queryKey;
   const error = queryClient.getQueryState(queryKey)?.error;
-  if (
-    ['FORBIDDEN', 'UNAUTHORIZED', 'NOT_FOUND'].some((code) =>
-      thrownResultErrorHasCode(error, code)
-    )
-  )
-    throw error;
+  if (isEmailAccessDenied(error)) throw error;
   const pages =
     queryClient.getQueryData<InfiniteData<Thread, number>>(queryKey);
   return pages?.pages.length ? selectThreadQueryData(pages) : undefined;

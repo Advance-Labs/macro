@@ -1,9 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import {
-  createPreparationExecutor,
-  type WorkerRequest,
-  type WorkerResponse,
-} from './executor';
+import { createPreparationExecutor } from './executor';
+import type { WorkerRequest, WorkerResponse } from './worker-protocol';
 
 afterEach(() => vi.unstubAllGlobals());
 

@@ -55,7 +55,11 @@ import {
   DEFAULT_EMAIL_LIST_STATE,
   type EmailListStateSnapshot,
 } from '../persistence';
-import { usePrepareEmailNeighbors } from '../preparation-adapter';
+import {
+  emailThreadId,
+  emailThreadIds,
+  usePrepareEmailNeighbors,
+} from '../preparation-adapter';
 import type { EmailDataSourceItem } from '../queries/use-email-query';
 import { useEmailListHotkeys } from '../use-email-list-hotkeys';
 import { EmailDateGroupHeader } from './EmailDateGroupHeader';
@@ -77,20 +81,8 @@ export function EmailList(props: EmailListProps) {
     useEmailView();
   const panel = useSplitPanelOrThrow();
   usePrepareEmailNeighbors(
-    () =>
-      source
-        .items()
-        .flatMap((row) =>
-          row.kind === 'entity' && row.entity.type === 'email'
-            ? [row.entity.id]
-            : []
-        ),
-    () => {
-      const row = list.focus.result()?.item;
-      return row?.kind === 'entity' && row.entity.type === 'email'
-        ? row.entity.id
-        : undefined;
-    }
+    () => emailThreadIds(source.items()),
+    () => emailThreadId(list.focus.result()?.item)
   );
 
   function openEntity(

@@ -20,6 +20,10 @@ function complete(transaction: IDBTransaction): Promise<void> {
   });
 }
 
+function recordBytes(record: Association): number {
+  return 2 * JSON.stringify(record).length;
+}
+
 /** Separate disposable database; namespace is a digest, never an email address. */
 export class IndexedDbArtifacts implements ArtifactStore {
   private database?: Promise<IDBDatabase>;
@@ -107,23 +111,33 @@ export class IndexedDbArtifacts implements ArtifactStore {
     return value;
   }
 
+  /** Runs `body` synchronously inside one read-write transaction. */
+  private async transact(
+    stores: string | string[],
+    body: (transaction: IDBTransaction) => void
+  ): Promise<void> {
+    const db = await this.open();
+    const transaction = db.transaction(stores, 'readwrite');
+    const done = complete(transaction);
+    body(transaction);
+    await done;
+  }
+
   private async touch(): Promise<void> {
     this.touchTimer = undefined;
     const keys = [...this.touched];
     this.touched.clear();
     try {
-      const db = await this.open();
-      const transaction = db.transaction('artifacts', 'readwrite');
-      const done = complete(transaction);
-      const store = transaction.objectStore('artifacts');
-      for (const key of keys) {
-        const read = store.get(key);
-        read.onsuccess = () => {
-          const value = read.result as Artifact | undefined;
-          if (value) store.put({ ...value, lastUsed: Date.now() });
-        };
-      }
-      await done;
+      await this.transact('artifacts', (transaction) => {
+        const store = transaction.objectStore('artifacts');
+        for (const key of keys) {
+          const read = store.get(key);
+          read.onsuccess = () => {
+            const value = read.result as Artifact | undefined;
+            if (value) store.put({ ...value, lastUsed: Date.now() });
+          };
+        }
+      });
     } catch {
       /* Disposable metadata. */
     }
@@ -135,145 +149,128 @@ export class IndexedDbArtifacts implements ArtifactStore {
     association: Association
   ): Promise<void> {
     if (artifact.bytes > this.budget) return;
-    const db = await this.open();
     // All checks and writes share a transaction with invalidation. No async
     // hashing or worker await is permitted inside this transaction.
-    const transaction = db.transaction(
+    await this.transact(
       ['artifacts', 'messageAssociations', 'namespaceState'],
-      'readwrite'
-    );
-    const done = complete(transaction);
-    const states = transaction.objectStore('namespaceState');
-    const artifacts = transaction.objectStore('artifacts');
-    const associations = transaction.objectStore('messageAssociations');
-    const readState = states.get('state');
-    readState.onsuccess = () => {
-      const state = readState.result as NamespaceState;
-      if (state.generation !== generation) return;
-      const readArtifact = artifacts.get(artifact.key);
-      readArtifact.onsuccess = () => {
-        const previous = readArtifact.result as Artifact | undefined;
-        state.bytes += artifact.bytes - (previous?.bytes ?? 0);
-        artifacts.put(artifact);
-        const readAssociation = associations.get(association.id);
-        readAssociation.onsuccess = () => {
-          const old = readAssociation.result as Association | undefined;
-          const keys =
-            old?.sourceHash === association.sourceHash ? old.keys : [];
-          // There are four quote/full variants per image policy. Cap policy
-          // history too, so changing proxy settings cannot grow associations.
-          const next = {
-            ...association,
-            keys: [...new Set([...keys, artifact.key])].slice(-8),
-          };
-          state.bytes +=
-            2 * JSON.stringify(next).length -
-            (old ? 2 * JSON.stringify(old).length : 0);
-          associations.put(next);
-          if (state.bytes <= this.budget) {
-            states.put(state, 'state');
-            return;
-          }
-          const cursor = artifacts.index('lastUsed').openCursor();
-          cursor.onsuccess = () => {
-            const row = cursor.result;
-            if (!row || state.bytes <= this.budget) {
-              states.put(state, 'state');
-              return;
-            }
-            const value = row.value as Artifact;
-            state.bytes -= value.bytes;
-            row.delete();
-            const references = associations
-              .index('artifacts')
-              .openCursor(value.key);
-            references.onsuccess = () => {
-              const reference = references.result;
-              if (!reference) {
-                row.continue();
+      (transaction) => {
+        const states = transaction.objectStore('namespaceState');
+        const artifacts = transaction.objectStore('artifacts');
+        const associations = transaction.objectStore('messageAssociations');
+        const readState = states.get('state');
+        readState.onsuccess = () => {
+          const state = readState.result as NamespaceState;
+          if (state.generation !== generation) return;
+          const readArtifact = artifacts.get(artifact.key);
+          readArtifact.onsuccess = () => {
+            const previous = readArtifact.result as Artifact | undefined;
+            state.bytes += artifact.bytes - (previous?.bytes ?? 0);
+            artifacts.put(artifact);
+            const readAssociation = associations.get(association.id);
+            readAssociation.onsuccess = () => {
+              const old = readAssociation.result as Association | undefined;
+              const keys =
+                old?.sourceHash === association.sourceHash ? old.keys : [];
+              // There are four quote/full variants per image policy. Cap policy
+              // history too, so changing proxy settings cannot grow associations.
+              const next = {
+                ...association,
+                keys: [...new Set([...keys, artifact.key])].slice(-8),
+              };
+              state.bytes += recordBytes(next) - (old ? recordBytes(old) : 0);
+              associations.put(next);
+              if (state.bytes <= this.budget) {
+                states.put(state, 'state');
                 return;
               }
-              const old = reference.value as Association;
-              const next = {
-                ...old,
-                keys: old.keys.filter((key) => key !== value.key),
+              const cursor = artifacts.index('lastUsed').openCursor();
+              cursor.onsuccess = () => {
+                const row = cursor.result;
+                if (!row || state.bytes <= this.budget) {
+                  states.put(state, 'state');
+                  return;
+                }
+                const value = row.value as Artifact;
+                state.bytes -= value.bytes;
+                row.delete();
+                const references = associations
+                  .index('artifacts')
+                  .openCursor(value.key);
+                references.onsuccess = () => {
+                  const reference = references.result;
+                  if (!reference) {
+                    row.continue();
+                    return;
+                  }
+                  const old = reference.value as Association;
+                  const next = {
+                    ...old,
+                    keys: old.keys.filter((key) => key !== value.key),
+                  };
+                  state.bytes -= recordBytes(old);
+                  if (next.keys.length) {
+                    reference.update(next);
+                    state.bytes += recordBytes(next);
+                  } else reference.delete();
+                  reference.continue();
+                };
               };
-              state.bytes -= 2 * JSON.stringify(old).length;
-              if (next.keys.length) {
-                reference.update(next);
-                state.bytes += 2 * JSON.stringify(next).length;
-              } else reference.delete();
-              reference.continue();
             };
           };
         };
-      };
-    };
-    await done;
+      }
+    );
   }
 
   async remove(key: string): Promise<void> {
-    const db = await this.open();
-    const transaction = db.transaction(
-      ['artifacts', 'namespaceState'],
-      'readwrite'
-    );
-    const done = complete(transaction);
-    const store = transaction.objectStore('artifacts');
-    const states = transaction.objectStore('namespaceState');
-    const read = store.get(key);
-    read.onsuccess = () => {
-      const value = read.result as Artifact | undefined;
-      store.delete(key);
-      const stateRead = states.get('state');
-      stateRead.onsuccess = () => {
-        const state = stateRead.result as NamespaceState;
-        state.bytes = Math.max(
-          0,
-          state.bytes - (Number.isFinite(value?.bytes) ? value!.bytes : 0)
-        );
-        states.put(state, 'state');
+    await this.transact(['artifacts', 'namespaceState'], (transaction) => {
+      const store = transaction.objectStore('artifacts');
+      const states = transaction.objectStore('namespaceState');
+      const read = store.get(key);
+      read.onsuccess = () => {
+        const value = read.result as Artifact | undefined;
+        store.delete(key);
+        const stateRead = states.get('state');
+        stateRead.onsuccess = () => {
+          const state = stateRead.result as NamespaceState;
+          state.bytes = Math.max(
+            0,
+            state.bytes - (Number.isFinite(value?.bytes) ? value!.bytes : 0)
+          );
+          states.put(state, 'state');
+        };
       };
-    };
-    await done;
+    });
   }
 
-  async invalidate(): Promise<void> {
-    const db = await this.open();
-    const transaction = db.transaction(
-      ['artifacts', 'messageAssociations', 'namespaceState'],
-      'readwrite'
-    );
-    const done = complete(transaction);
-    const states = transaction.objectStore('namespaceState');
-    const read = states.get('state');
-    read.onsuccess = () => {
-      const state = read.result as NamespaceState;
-      states.put({ generation: state.generation + 1, bytes: 0 }, 'state');
-      transaction.objectStore('artifacts').clear();
-      transaction.objectStore('messageAssociations').clear();
-    };
-    await done;
+  invalidate(): Promise<void> {
+    return this.reset(1);
   }
 
   /** One bounded quota recovery: discard this derived tier, preserving generation. */
-  async evict(): Promise<void> {
-    const db = await this.open();
-    const transaction = db.transaction(
-      ['artifacts', 'messageAssociations', 'namespaceState'],
-      'readwrite'
-    );
-    const done = complete(transaction);
+  evict(): Promise<void> {
     // Quota is origin-wide. Discard only our derived tier and retry once; source
     // databases and mutation queues are never opened by this adapter.
-    const states = transaction.objectStore('namespaceState');
-    const read = states.get('state');
-    read.onsuccess = () => {
-      states.put({ ...(read.result as NamespaceState), bytes: 0 }, 'state');
-      transaction.objectStore('artifacts').clear();
-      transaction.objectStore('messageAssociations').clear();
-    };
-    await done;
+    return this.reset(0);
+  }
+
+  private async reset(generationStep: 0 | 1): Promise<void> {
+    await this.transact(
+      ['artifacts', 'messageAssociations', 'namespaceState'],
+      (transaction) => {
+        const states = transaction.objectStore('namespaceState');
+        const read = states.get('state');
+        read.onsuccess = () => {
+          const state = read.result as NamespaceState;
+          states.put(
+            { generation: state.generation + generationStep, bytes: 0 },
+            'state'
+          );
+          transaction.objectStore('artifacts').clear();
+          transaction.objectStore('messageAssociations').clear();
+        };
+      }
+    );
   }
 
   close(): void {

@@ -5,6 +5,11 @@ import {
   prepareEmailBody,
 } from '@macro-inc/email-renderer';
 import { digest, sourceBytes, sourceTuple } from './keys';
+import {
+  runWorkerRequest,
+  type WorkerRequest,
+  type WorkerResponse,
+} from './worker-protocol';
 
 export interface PreparationExecutor {
   hash(tuple: string): Promise<string>;
@@ -15,17 +20,6 @@ export interface PreparationExecutor {
     priority?: number
   ): Promise<PreparedEmailBody>;
   dispose(): void;
-}
-
-export type WorkerRequest = { id: number } & (
-  | { kind: 'hash'; tuple: string }
-  | { kind: 'source'; input: EmailBodyInput }
-  | { kind: 'prepare'; input: EmailBodyInput; options: BodyOptions }
-);
-export interface WorkerResponse {
-  id: number;
-  result?: string | PreparedEmailBody;
-  error?: string;
 }
 
 export const directExecutor: PreparationExecutor = {
@@ -66,6 +60,11 @@ export function createPreparationExecutor(
     pending.clear();
   }
 
+  function fail(): void {
+    failed = true;
+    stop();
+  }
+
   async function execute(
     request: WorkerRequest,
     preferDirect = false
@@ -87,20 +86,11 @@ export function createPreparationExecutor(
               job.reject(new Error('Email preparation worker failed'));
             else job.resolve(data.result);
           };
-          worker.onerror = () => {
-            failed = true;
-            stop();
-          };
-          worker.onmessageerror = () => {
-            failed = true;
-            stop();
-          };
+          worker.onerror = fail;
+          worker.onmessageerror = fail;
         }
         return await new Promise((resolve, reject) => {
-          const timer = setTimeout(() => {
-            failed = true;
-            stop();
-          }, 15000);
+          const timer = setTimeout(fail, 15000);
           pending.set(request.id, {
             resolve,
             reject,
@@ -109,23 +99,18 @@ export function createPreparationExecutor(
           worker!.postMessage(request);
         });
       } catch {
-        failed = true;
-        stop();
+        fail();
       }
     }
     if (disposed) throw new Error('Preparation executor disposed');
-    if (request.kind === 'hash') return await digest(request.tuple);
-    if (request.kind === 'source')
-      return await digest(sourceTuple(request.input));
-    return prepareEmailBody(request.input, request.options);
+    return await runWorkerRequest(request);
   }
 
   return {
     async hash(tuple) {
-      return (await execute(
-        { id: ++sequence, kind: 'hash', tuple },
-        true
-      )) as string;
+      // Policy and mailbox tuples are tiny; they never need the worker.
+      if (disposed) throw new Error('Preparation executor disposed');
+      return await digest(tuple);
     },
     async hashSource(input, priority = 0) {
       // WebCrypto is already asynchronous. Starting a parser worker just to

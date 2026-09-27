@@ -1777,7 +1777,6 @@ export async function hydrateGraphqlSoup<
       ? {
           preparationIds: soup.preparationIds
             .filter((item) => item.__typename === 'GraphqlSoupEmailThread')
-            .slice(0, 5)
             .map((item) => item.id),
         }
       : {}),

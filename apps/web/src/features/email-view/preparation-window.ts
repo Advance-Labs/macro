@@ -68,8 +68,6 @@ export function createPreparationWindow(prepare: PrepareThread) {
       if (disposed) return;
       disposed = true;
       clear();
-      owner = undefined;
-      selected = [];
     },
   };
 }

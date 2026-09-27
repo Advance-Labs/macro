@@ -1,4 +1,4 @@
-import { thrownResultErrorHasCode } from '@core/util/result';
+import { isEmailAccessDenied } from '@queries/email/access-denied';
 import { revokeCachedEmailThread } from '@queries/email/cached-access';
 import type { ThreadQueryData, ThreadQueryResult } from '@queries/email/thread';
 import type { ApiThread } from '@service-email/generated/schemas';
@@ -93,11 +93,7 @@ export function createEmailThreadSource(
   query: ThreadQueryResult<ThreadQueryData>
 ): EmailThreadSource {
   const accessDenied = createMemo(
-    () =>
-      query.isError &&
-      ['FORBIDDEN', 'UNAUTHORIZED', 'NOT_FOUND'].some((code) =>
-        thrownResultErrorHasCode(query.error, code)
-      )
+    () => query.isError && isEmailAccessDenied(query.error)
   );
   let revokedId: string | undefined;
   createEffect(() => {

@@ -58,12 +58,13 @@ export function validArtifact(
     (body.kind === 'html' || body.kind === 'text') &&
     typeof body.hasTable === 'boolean' &&
     typeof body.hasHiddenContent === 'boolean' &&
-    typeof artifact.bytes === 'number' &&
-    Number.isFinite(artifact.bytes) &&
-    artifact.bytes === 2 * body.html.length + 1024 &&
-    typeof artifact.lastUsed === 'number' &&
+    artifact.bytes === artifactBytes(body) &&
     Number.isFinite(artifact.lastUsed)
   );
+}
+
+export function artifactBytes(body: PreparedEmailBody): number {
+  return 2 * body.html.length + 1024;
 }
 
 /** Storage failure/latency must never gate a foreground body indefinitely. */

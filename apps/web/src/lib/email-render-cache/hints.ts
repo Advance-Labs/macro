@@ -9,6 +9,5 @@ export function registerEmailPreparationHints(
 
 /** At most one hydration page; never return body strings into page state. */
 export function offerEmailPreparationHints(threadIds: readonly string[]): void {
-  const bounded = threadIds.slice(0, 5);
-  for (const listener of listeners) listener(bounded);
+  for (const listener of listeners) listener(threadIds);
 }

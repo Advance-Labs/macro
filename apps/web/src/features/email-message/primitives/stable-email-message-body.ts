@@ -104,7 +104,6 @@ export function createStableEmailMessageBody(
       rendered: undefined as PreparedEmailBody | undefined,
       presentation: '',
       disposed: false,
-      imagePolicy: '',
       preparation: undefined as EmailPreparation | undefined,
     };
     onCleanup(() => {
@@ -114,6 +113,13 @@ export function createStableEmailMessageBody(
     });
     return current;
   });
+  function unmount(current: ReturnType<typeof state>) {
+    current.renderer?.dispose();
+    current.renderer = undefined;
+    current.rendered = undefined;
+    current.setHost(undefined);
+  }
+
   // Keep the existing Markdown/HTML route while a quote variant is pending.
   const showFullHTML = () => state().fullHTML();
   const setShowFullHTML = (value: boolean) =>
@@ -131,21 +137,13 @@ export function createStableEmailMessageBody(
     if (context.canRender?.() === false) return;
     const selected = request();
     const preparation = context.preparation;
-    const imagePolicy = JSON.stringify(selected.options.images);
-    if (
-      (current.imagePolicy && current.imagePolicy !== imagePolicy) ||
-      current.preparation !== preparation
-    ) {
-      current.renderer?.dispose();
-      current.renderer = undefined;
-      current.rendered = undefined;
-      current.setHost(undefined);
+    if (current.preparation !== preparation) {
+      unmount(current);
       current.setBody(undefined);
       current.setFullHTML(false);
       current.lease?.release();
       current.lease = undefined;
     }
-    current.imagePolicy = imagePolicy;
     current.preparation = preparation;
     let active = true;
     let lease: PreparedEmailLease | undefined;
@@ -216,10 +214,7 @@ export function createStableEmailMessageBody(
       !(!showFullHTML() && props.message.body_macro) &&
       !!props.message.body_html_sanitized;
     if (!htmlEnabled) {
-      current.renderer?.dispose();
-      current.renderer = undefined;
-      current.rendered = undefined;
-      current.setHost(undefined);
+      unmount(current);
       return;
     }
     if (!body) return;

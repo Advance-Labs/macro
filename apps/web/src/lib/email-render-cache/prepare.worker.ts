@@ -1,17 +1,13 @@
-import { prepareEmailBody } from '@macro-inc/email-renderer';
-import type { WorkerRequest, WorkerResponse } from './executor';
-import { digest, sourceTuple } from './keys';
+import {
+  runWorkerRequest,
+  type WorkerRequest,
+  type WorkerResponse,
+} from './worker-protocol';
 
 self.onmessage = async ({ data }: MessageEvent<WorkerRequest>) => {
   let response: WorkerResponse;
   try {
-    const result =
-      data.kind === 'hash'
-        ? await digest(data.tuple)
-        : data.kind === 'source'
-          ? await digest(sourceTuple(data.input))
-          : prepareEmailBody(data.input, data.options);
-    response = { id: data.id, result };
+    response = { id: data.id, result: await runWorkerRequest(data) };
   } catch {
     response = {
       id: data.id,

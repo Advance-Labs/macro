@@ -6,6 +6,7 @@ import {
   graphqlCacheEnabled,
 } from '@service-storage/graphql-soup';
 import { pipe, subscribe } from 'wonka';
+import { EMAIL_ACCESS_DENIED_CODES } from '../access-denied';
 import { revokeCachedEmailThread } from '../cached-access';
 import { mapGraphqlEmailThreadPage } from './mapper';
 
@@ -51,9 +52,7 @@ export function retainGraphqlEmailThread(
         try {
           const denied =
             result.error?.graphQLErrors.some((error) =>
-              ['FORBIDDEN', 'UNAUTHORIZED', 'NOT_FOUND'].includes(
-                String(error.extensions.code)
-              )
+              EMAIL_ACCESS_DENIED_CODES.includes(String(error.extensions.code))
             ) ||
             (result.data?.user.emailThread === null && !result.error);
           if (denied) {
