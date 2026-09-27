@@ -4,9 +4,9 @@ import { onCleanup } from 'solid-js';
 import { match, P } from 'ts-pattern';
 
 /**
- * Cross-tab fan-out of terminal incoming-call states ("answered"/"ended"), so
- * a ring resolved in one tab stops in every tab even when a background tab
- * missed the one-shot websocket event.
+ * Cross-tab fan-out of terminal incoming-call states ("answered", "declined",
+ * "ended"), so a ring resolved in one tab stops in every tab even when a
+ * background tab missed the one-shot websocket event.
  *
  * Resolutions publish over the shared cross-tab bus — see `cross-tab-bus.ts`
  * for the transport (BroadcastChannel with a localStorage `storage` event
@@ -23,6 +23,15 @@ export type CallResolution =
       answeredBy: string;
     }
   | {
+      /**
+       * The user declined on one of their devices. Per-user like `answered`:
+       * other channel members keep ringing.
+       */
+      type: 'declined';
+      callId: string;
+      declinedBy: string;
+    }
+  | {
       type: 'ended';
       callId: string;
       channelId: string;
@@ -30,10 +39,33 @@ export type CallResolution =
 
 type CallResolutionHandler = (resolution: CallResolution) => void;
 
+/**
+ * Whether the resolution ends `userId`'s ring: `ended` applies to everyone,
+ * while `answered` and `declined` only to the user who acted.
+ */
+export function resolvesRingFor(
+  resolution: CallResolution,
+  userId: string | null | undefined
+): boolean {
+  return match(resolution)
+    .with({ type: 'answered' }, ({ answeredBy }) => answeredBy === userId)
+    .with({ type: 'declined' }, ({ declinedBy }) => declinedBy === userId)
+    .with({ type: 'ended' }, () => true)
+    .exhaustive();
+}
+
 function getResolutionKey(resolution: CallResolution) {
-  return resolution.type === 'answered'
-    ? `${resolution.type}:${resolution.callId}:${resolution.answeredBy}`
-    : `${resolution.type}:${resolution.callId}`;
+  return match(resolution)
+    .with(
+      { type: 'answered' },
+      ({ type, callId, answeredBy }) => `${type}:${callId}:${answeredBy}`
+    )
+    .with(
+      { type: 'declined' },
+      ({ type, callId, declinedBy }) => `${type}:${callId}:${declinedBy}`
+    )
+    .with({ type: 'ended' }, ({ type, callId }) => `${type}:${callId}`)
+    .exhaustive();
 }
 
 function parseCallResolution(value: unknown): CallResolution | null {
@@ -41,6 +73,10 @@ function parseCallResolution(value: unknown): CallResolution | null {
     .with(
       { type: 'answered', callId: P.string, answeredBy: P.string },
       ({ type, callId, answeredBy }) => ({ type, callId, answeredBy })
+    )
+    .with(
+      { type: 'declined', callId: P.string, declinedBy: P.string },
+      ({ type, callId, declinedBy }) => ({ type, callId, declinedBy })
     )
     .with(
       { type: 'ended', callId: P.string, channelId: P.string },

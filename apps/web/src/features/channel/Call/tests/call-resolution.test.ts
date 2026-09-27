@@ -80,19 +80,27 @@ describe('call resolution signaling', () => {
       channelId: 'channel-1',
       callId: 'call-2',
     };
+    const declined = {
+      type: 'declined',
+      callId: 'call-3',
+      declinedBy: 'macro|person@example.com',
+    };
 
     MockBroadcastChannel.instance?.emit(answered);
     MockBroadcastChannel.instance?.emit({ type: 'answered' });
+    MockBroadcastChannel.instance?.emit({ type: 'declined', callId: 'call-3' });
     window.dispatchEvent(
       new StorageEvent('storage', {
         key: 'macro.call-resolution',
         newValue: JSON.stringify(ended),
       })
     );
+    MockBroadcastChannel.instance?.emit(declined);
 
     expect(handler).toHaveBeenNthCalledWith(1, answered);
     expect(handler).toHaveBeenNthCalledWith(2, ended);
-    expect(handler).toHaveBeenCalledTimes(2);
+    expect(handler).toHaveBeenNthCalledWith(3, declined);
+    expect(handler).toHaveBeenCalledTimes(3);
     unsubscribe();
   });
 
@@ -117,6 +125,33 @@ describe('call resolution signaling', () => {
 
     expect(handler).toHaveBeenCalledTimes(1);
     expect(handler).toHaveBeenCalledWith(whileMounted);
+  });
+});
+
+describe('resolvesRingFor', () => {
+  it('scopes answered and declined to the acting user and ended to everyone', async () => {
+    const { resolvesRingFor } = await import('../call-resolution');
+    const me = 'macro|person@example.com';
+    const other = 'macro|someone-else@example.com';
+
+    expect(
+      resolvesRingFor({ type: 'answered', callId: 'c', answeredBy: me }, me)
+    ).toBe(true);
+    expect(
+      resolvesRingFor({ type: 'answered', callId: 'c', answeredBy: other }, me)
+    ).toBe(false);
+    expect(
+      resolvesRingFor({ type: 'declined', callId: 'c', declinedBy: me }, me)
+    ).toBe(true);
+    expect(
+      resolvesRingFor({ type: 'declined', callId: 'c', declinedBy: other }, me)
+    ).toBe(false);
+    expect(
+      resolvesRingFor({ type: 'declined', callId: 'c', declinedBy: me }, null)
+    ).toBe(false);
+    expect(
+      resolvesRingFor({ type: 'ended', callId: 'c', channelId: 'ch' }, me)
+    ).toBe(true);
   });
 });
 
