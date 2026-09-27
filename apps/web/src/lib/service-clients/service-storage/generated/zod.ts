@@ -2682,12 +2682,24 @@ export const getRingStatusParams = zod.object({
 export const getRingStatusResponse = zod
   .object({
     status: zod
-      .enum(['ringing', 'answered', 'ended'])
+      .enum(['ringing', 'answered', 'declined', 'ended'])
       .describe(
         'Per-user status of an incoming-call ring, as reported by the\nring-status endpoint while a native client is ringing.'
       ),
   })
   .describe('Response body for `GET \/call\/ring-status\/{call_id}`.');
+
+/**
+ * Declines a ringing call from a native client, e.g. the iPhone lock-screen
+decline button, so the user's other devices stop ringing. Authorized like
+[`ring_status_handler`]: the bearer credential is the recipient's LiveKit
+JWT from the VoIP push payload, which identifies both the room and the
+declining user.
+ * @summary Handler for `POST /call/ring-status/{call_id}/decline`.
+ */
+export const declineRingParams = zod.object({
+  call_id: zod.uuid().describe('Call ID'),
+});
 
 /**
  * Gets or creates a call for the channel. If a call already exists, joins it;
@@ -2749,6 +2761,16 @@ export const checkActiveCallResponse = zod
     createdBy: zod.string().describe('User who created the call.'),
   })
   .describe('Response indicating whether an active call exists for a channel.');
+
+/**
+ * Declines the channel's active call for the caller without joining it.
+The caller's other devices are told to stop ringing (`call_declined`);
+the call continues for everyone else.
+ * @summary Handler for `POST /call/{channel_id}/decline`.
+ */
+export const declineCallParams = zod.object({
+  channel_id: zod.uuid().describe('Channel ID'),
+});
 
 /**
  * Receives transcript segments from the transcription agent.

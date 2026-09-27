@@ -2405,6 +2405,61 @@
         }
       }
     },
+    "/call/ring-status/{call_id}/decline": {
+      "post": {
+        "tags": ["call::inbound::axum_router"],
+        "summary": "Handler for `POST /call/ring-status/{call_id}/decline`.",
+        "description": "Declines a ringing call from a native client, e.g. the iPhone lock-screen\ndecline button, so the user's other devices stop ringing. Authorized like\n[`ring_status_handler`]: the bearer credential is the recipient's LiveKit\nJWT from the VoIP push payload, which identifies both the room and the\ndeclining user.",
+        "operationId": "decline_ring",
+        "parameters": [
+          {
+            "name": "call_id",
+            "in": "path",
+            "description": "Call ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Decline recorded"
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The call is no longer ringing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/call/webhook": {
       "post": {
         "tags": ["call::inbound::axum_router"],
@@ -2576,6 +2631,61 @@
           },
           "401": {
             "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/call/{channel_id}/decline": {
+      "post": {
+        "tags": ["call::inbound::axum_router"],
+        "summary": "Handler for `POST /call/{channel_id}/decline`.",
+        "description": "Declines the channel's active call for the caller without joining it.\nThe caller's other devices are told to stop ringing (`call_declined`);\nthe call continues for everyone else.",
+        "operationId": "decline_call",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "description": "Channel ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Decline recorded"
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No active call",
             "content": {
               "application/json": {
                 "schema": {
@@ -28742,7 +28852,7 @@
       "RingStatus": {
         "type": "string",
         "description": "Per-user status of an incoming-call ring, as reported by the\nring-status endpoint while a native client is ringing.",
-        "enum": ["ringing", "answered", "ended"]
+        "enum": ["ringing", "answered", "declined", "ended"]
       },
       "RingStatusResponse": {
         "type": "object",

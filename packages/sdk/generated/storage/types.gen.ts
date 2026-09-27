@@ -8430,7 +8430,7 @@ export type RequestedHarnessScope = 'private' | 'team';
  * Per-user status of an incoming-call ring, as reported by the
  * ring-status endpoint while a native client is ringing.
  */
-export type RingStatus = 'ringing' | 'answered' | 'ended';
+export type RingStatus = 'ringing' | 'answered' | 'declined' | 'ended';
 
 /**
  * Response body for `GET /call/ring-status/{call_id}`.
@@ -12139,6 +12139,41 @@ export type GetRingStatusResponses = {
 
 export type GetRingStatusResponse = GetRingStatusResponses[keyof GetRingStatusResponses];
 
+export type DeclineRingData = {
+    body?: never;
+    path: {
+        /**
+         * Call ID
+         */
+        call_id: string;
+    };
+    query?: never;
+    url: '/call/ring-status/{call_id}/decline';
+};
+
+export type DeclineRingErrors = {
+    /**
+     * Missing or invalid bearer token
+     */
+    401: ErrorResponse;
+    /**
+     * The call is no longer ringing
+     */
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type DeclineRingError = DeclineRingErrors[keyof DeclineRingErrors];
+
+export type DeclineRingResponses = {
+    /**
+     * Decline recorded
+     */
+    204: void;
+};
+
+export type DeclineRingResponse = DeclineRingResponses[keyof DeclineRingResponses];
+
 export type CallWebhookData = {
     body?: never;
     path?: never;
@@ -12245,6 +12280,38 @@ export type CheckActiveCallResponses = {
 };
 
 export type CheckActiveCallResponse = CheckActiveCallResponses[keyof CheckActiveCallResponses];
+
+export type DeclineCallData = {
+    body?: never;
+    path: {
+        /**
+         * Channel ID
+         */
+        channel_id: string;
+    };
+    query?: never;
+    url: '/call/{channel_id}/decline';
+};
+
+export type DeclineCallErrors = {
+    401: ErrorResponse;
+    /**
+     * No active call
+     */
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type DeclineCallError = DeclineCallErrors[keyof DeclineCallErrors];
+
+export type DeclineCallResponses = {
+    /**
+     * Decline recorded
+     */
+    204: void;
+};
+
+export type DeclineCallResponse = DeclineCallResponses[keyof DeclineCallResponses];
 
 export type IngestTranscriptData = {
     body: TranscriptSegmentRequest;
