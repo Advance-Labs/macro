@@ -1060,7 +1060,8 @@ async fn run() -> anyhow::Result<()> {
                     initiative::outbound::PgInitiativeRepo::new(db.clone()),
                 ),
                 properties_service.clone(),
-            ),
+            )
+            .with_crm(crm::outbound::lookup::PgCrmParentReader::new(db.clone())),
         messages::outbound::entity_access_audience::EntityAccessMessageAudience(
             (*entity_access_service).clone(),
         ),
@@ -1081,7 +1082,8 @@ async fn run() -> anyhow::Result<()> {
             messages::outbound::pg_message_repo::PgMessageRepository::new(db.clone())
                 .with_initiatives(initiative::domain::lookup::InitiativeLookup::new(
                     initiative::outbound::PgInitiativeRepo::new(db.clone()),
-                )),
+                ))
+                .with_crm(crm::outbound::lookup::PgCrmParentReader::new(db.clone())),
             messages::domain::effects::MessageEffects::new(
                 messages::outbound::broker::BrokerMessagePublisher::new(macro_event_broker.clone()),
                 channel_bots::outbound::conversation::LocalBotPublisher::new(bot_trigger_sender),

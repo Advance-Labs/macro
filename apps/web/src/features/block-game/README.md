@@ -21,7 +21,7 @@ keeps a team leaderboard.
 | Dots and Boxes | 2–4 | Team round wins |
 | Typing Race | 1–8 | Team best WPM |
 
-Start a room from **Create → Game** (`P`), which opens the Games hub at
+Start a room from **Create → Game** (`Y`), which opens the Games hub at
 `/app/games`, then pick a game. The room opens beside the hub; share it with
 people or a channel to invite players. Rollout is gated by the `enable-games`
 PostHog flag (`ENABLE_GAMES` locally; on by default in development).

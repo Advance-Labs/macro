@@ -294,7 +294,7 @@ service; the frontend alone cannot test their hosted path.
 ## Games
 
 Games are controlled by the `enable-games` PostHog flag (on by default in local
-development). **Create → Game** (`P`) opens the Games hub at `/app/games`, with
+development). **Create → Game** (`Y`) opens the Games hub at `/app/games`, with
 a card per game and its team record in two sections: **Play together** (Pong,
 Tic-Tac-Toe, Connect Four, Dots and Boxes, Typing Race) and **Solo** (Brick
 Breaker, Snake, Falling Blocks, Invaders, Flappy, 2048, Minesweeper). **New

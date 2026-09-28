@@ -13,6 +13,7 @@ import type { BlockAlias, BlockName } from '@core/block';
 import { resolveBlockAlias } from '@core/constant/allBlocks';
 import {
   enableCalendarUi,
+  enableProjects,
   enableReminders,
   isFeatureEnabled,
   USE_MACRO_PR_SUMMARY_BLOCK,
@@ -23,6 +24,7 @@ import { getNotificationById } from '@queries/notification/user-notifications';
 import { getReminderById } from '@queries/reminders/reminders';
 import { errAsync, ResultAsync } from 'neverthrow';
 import { match, P } from 'ts-pattern';
+import { projectRouteId } from '../projects/core/route';
 import {
   getDocumentCommentLocation,
   type NotificationEntityOverride,
@@ -267,6 +269,27 @@ function getSupportedHandler(
           openExternalUrl(url);
         };
       })
+      .with('initiative_discussion', () => {
+        if (!isFeatureEnabled(enableProjects)) return null;
+        const meta = notification.notification_metadata;
+        if (
+          meta.tag !== 'initiative_discussion' ||
+          notification.entity_type !== 'initiative'
+        )
+          return null;
+        return async (lm: SplitManager, newSplit = false) => {
+          openSplitIfNotOpen(
+            lm,
+            'component',
+            projectRouteId({
+              id: notification.entity_id,
+              section: 'overview',
+              discussionId: meta.content.messageId,
+            }),
+            { newSplit, sourceHandle }
+          );
+        };
+      })
       .with(
         P.union(
           'mentioned_in_document_comment',
@@ -345,7 +368,16 @@ function getSupportedHandler(
           );
         };
       })
-      .with('inbox_reauth_required', 'initiative_discussion', () => null)
+      .with('crm_discussion', () => {
+        const blockName =
+          notification.entity_type === 'crm_contact' ? 'contact' : 'company';
+        return async (lm: SplitManager, newSplit: boolean = false) =>
+          openSplitIfNotOpen(lm, blockName, notification.entity_id, {
+            newSplit,
+            sourceHandle,
+          });
+      })
+      .with('inbox_reauth_required', () => null)
       .exhaustive()
   );
 }
