@@ -338,20 +338,18 @@ fn restore_dropped_host(headers: &mut HeaderMap, uri: &Uri, allowed: &[String]) 
     if headers.contains_key(header::HOST) {
         return;
     }
-    if let Some(value) = headers.get("x-forwarded-host") {
-        if let Ok(host) = value.to_str() {
-            if host_name_allowed(host, allowed) {
-                headers.insert(header::HOST, value.clone());
-                return;
-            }
-        }
+    if let Some(value) = headers.get("x-forwarded-host")
+        && let Ok(host) = value.to_str()
+        && host_name_allowed(host, allowed)
+    {
+        headers.insert(header::HOST, value.clone());
+        return;
     }
-    if let Some(authority) = uri.authority() {
-        if host_name_allowed(authority.as_str(), allowed) {
-            if let Ok(value) = HeaderValue::from_str(authority.as_str()) {
-                headers.insert(header::HOST, value);
-            }
-        }
+    if let Some(authority) = uri.authority()
+        && host_name_allowed(authority.as_str(), allowed)
+        && let Ok(value) = HeaderValue::from_str(authority.as_str())
+    {
+        headers.insert(header::HOST, value);
     }
 }
 
