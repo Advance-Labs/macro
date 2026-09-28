@@ -48,8 +48,9 @@ that shows a game picker to editors.
   snapshot counts only while it keeps changing, so a closed tab's lingering
   presence is ignored; if the first seat has the room open in several tabs,
   the one open longest runs the ball and another takes over when it closes
-  or goes to the background. A tab back from the background rejoins as the
-  newest and watches for a running tab before it may run the ball again.
+  or goes to the background. A tab that missed part of a round (hidden,
+  asleep, or opened in the background) rejoins as the newest and watches for
+  a running tab before it may run the ball.
   Practice against the computer is local and never touches the log.
 - **Arcade games** (Brick Breaker, Falling Blocks, Invaders, Flappy) run
   locally on an animation-frame loop and record a `run` when they end, like

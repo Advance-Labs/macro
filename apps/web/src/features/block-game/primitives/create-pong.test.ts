@@ -36,11 +36,15 @@ function fakeFrames() {
 
 /**
  * Clients of one Pong room, one per user entry (a user may have two tabs).
- * Clients listed in `idle` publish presence but run nothing.
+ * Clients listed in `idle` publish presence but run nothing; clients listed
+ * in `hidden` open in a background tab.
  */
 function setupRoom(
   users: readonly string[],
-  { idle = [] }: { idle?: readonly number[] } = {}
+  {
+    idle = [],
+    hidden = [],
+  }: { idle?: readonly number[]; hidden?: readonly number[] } = {}
 ) {
   const linked = createLinkedRoomSources(users);
   const roots = new Map<number, () => void>();
@@ -57,7 +61,7 @@ function setupRoom(
         requestedKind: () => 'pong',
       });
       const match = createTurnMatch(room, pongRules);
-      const [visible, setVisible] = createSignal(true);
+      const [visible, setVisible] = createSignal(!hidden.includes(index));
       shown.set(index, setVisible);
       const pong = createPong(room, match, {
         random: createRandom(3),
@@ -222,6 +226,54 @@ describe('createPong', () => {
       expect(tabB.pong.controlledSeat()).toBe(0);
     }
     expect(await expectFollowing(tabB, bob, 20)).toBeGreaterThan(5);
+  });
+
+  it('leaves the ball with the running tab when a tab opened in the background is shown', async () => {
+    fakeFrames();
+    const { linked, clients, setVisible } = setupRoom([ANN, ANN, BOB], {
+      hidden: [0],
+    });
+    const [tabA, tabB, bob] = clients;
+    if (!tabA || !tabB || !bob) throw new Error('clients missing');
+    tabB.match.join();
+    bob.match.join();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(tabB.pong.controlledSeat()).toBe(0);
+
+    // Tab A opened as early as tab B and wins that tie, but it missed the
+    // start of this round, so it watches tab B instead of taking over.
+    setVisible(0, true);
+    for (let step = 0; step < 30; step += 1) {
+      await vi.advanceTimersByTimeAsync(100);
+      expect(tabA.pong.controlledSeat()).toBeUndefined();
+      expect(linked.presence(0)?.court).toBeUndefined();
+      expect(tabB.pong.controlledSeat()).toBe(0);
+    }
+  });
+
+  it('leaves the ball with the running tab after a rematch starts while a tab is hidden', async () => {
+    fakeFrames();
+    const { linked, clients, setVisible } = setupRoom([ANN, ANN, BOB]);
+    const [tabA, tabB, bob] = clients;
+    if (!tabA || !tabB || !bob) throw new Error('clients missing');
+    tabA.match.join();
+    bob.match.join();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(tabA.pong.controlledSeat()).toBe(0);
+
+    setVisible(0, false);
+    bob.match.forfeit();
+    bob.match.rematch();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(tabB.pong.controlledSeat()).toBe(0);
+
+    setVisible(0, true);
+    for (let step = 0; step < 30; step += 1) {
+      await vi.advanceTimersByTimeAsync(100);
+      expect(tabA.pong.controlledSeat()).toBeUndefined();
+      expect(linked.presence(0)?.court).toBeUndefined();
+      expect(tabB.pong.controlledSeat()).toBe(0);
+    }
   });
 
   it('resumes the ball on a lone host tab once it is shown again', async () => {

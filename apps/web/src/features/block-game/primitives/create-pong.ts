@@ -228,12 +228,10 @@ export function createPong(
   let lastSent = Number.NEGATIVE_INFINITY;
   let sentPaddle: number | undefined;
   let seq = 0;
+  /** When the current round began on this client. */
+  let roundStartedAt = Number.NEGATIVE_INFINITY;
   /** When this client last ran a frame of the current round. */
   let lastFrameAt: number | undefined;
-  /** When this tab was last hidden, while it stays hidden. */
-  let hiddenAt: number | undefined;
-  /** This tab came back from being hidden; its next frame rejoins. */
-  let returned = false;
   /** A first-seat tab that rejoined only watches until then. */
   let watchUntil = Number.NEGATIVE_INFINITY;
 
@@ -367,13 +365,14 @@ export function createPong(
         return;
       }
       // A hidden or sleeping tab gets no frames, so another of the first
-      // seat's tabs takes over the ball. Back from that, this tab ranks as
-      // the newest and watches for a running tab before it may run the ball.
-      if (
-        returned ||
-        (lastFrameAt !== undefined && t - lastFrameAt > LIVE_MS)
-      ) {
-        returned = false;
+      // seat's tabs may have taken over the ball. A tab that missed part of
+      // the round ranks as the newest and watches for a running tab before
+      // it may run the ball.
+      const away =
+        lastFrameAt === undefined
+          ? t - roundStartedAt > LIVE_MS
+          : t - lastFrameAt > LIVE_MS;
+      if (away) {
         self.since = Date.now();
         watchUntil = t + LIVE_MS;
       }
@@ -401,29 +400,12 @@ export function createPong(
   createEffect(
     on(roundKey, (key) => {
       if (key === undefined) return;
-      // The loop stops between rounds; that pause is not time away.
+      // The loop stops between rounds; only time into this round counts.
+      roundStartedAt = now();
       lastFrameAt = undefined;
       setPractice(undefined);
       resetCourt(key % 2 === 0 ? 1 : 0);
     })
-  );
-
-  // Frames stop while the tab is hidden, even across rounds, so the next
-  // frame after a long absence rejoins as above.
-  createEffect(
-    on(
-      visible,
-      (isVisible) => {
-        if (!isVisible) {
-          hiddenAt = now();
-          return;
-        }
-        if (hiddenAt !== undefined && now() - hiddenAt > LIVE_MS)
-          returned = true;
-        hiddenAt = undefined;
-      },
-      { defer: true }
-    )
   );
 
   // Every client schedules the next serve from the log, so a tab that takes
