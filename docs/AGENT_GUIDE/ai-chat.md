@@ -4,6 +4,13 @@ User-sent messages in chat and agent transcripts use an ink-colored bubble with
 `InvertUtil` in light themes. Dark themes use `Layer depth={3}` for the slightly
 lighter bubble with the normal text palette. Preview Markdown and controls at
 `/app/debug/ui?ui=invert-util` under **User-sent AI message**.
+The local `/app/debug/agent-ui` gallery also includes a channel prompt with
+**Context**, inline code, a mention, a quote, and a fenced code block. Expand and
+collapse Context with both the mouse and keyboard, then select prompt text in
+light and dark themes: code backgrounds and selection should remain visible
+against the bubble. Context opens as indented text beside a rule, with a downward
+caret; it can scroll when long. This gallery is gated to the local dev server.
+
 
 ## Uploading files with AI
 
