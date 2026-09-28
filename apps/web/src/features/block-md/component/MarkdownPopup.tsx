@@ -16,7 +16,6 @@ import {
   INSERT_LINK_COMMAND,
   LIST_TO_TABLE_COMMAND,
   NODE_TRANSFORM,
-  normalizeLinkUrl,
   registerRootEventListener,
 } from '@core/component/LexicalMarkdown/plugins';
 import {
@@ -53,6 +52,7 @@ import { debouncedDependent } from '@core/util/debounce';
 import { getScrollParentElement } from '@core/util/scrollParent';
 import type { NodeIdMappings } from '@macro-inc/lexical-core';
 import { $getId } from '@macro-inc/lexical-core/plugins/nodeIdPlugin';
+import { normalizeLinkUrl } from '@macro-inc/lexical-core/utils/links';
 import ArrowUp from '@phosphor/arrow-up.svg';
 import ChatTeardrop from '@phosphor/chat-teardrop.svg';
 import GridIcon from '@phosphor/grid-four.svg';

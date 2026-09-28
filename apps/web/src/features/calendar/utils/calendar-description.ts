@@ -1,8 +1,8 @@
-import { findNextAutoLinkMatch } from '@core/component/LexicalMarkdown/plugins/links/linksPlugin';
 import { editorIsEmpty } from '@core/component/LexicalMarkdown/utils';
 import { convertDocumentMentionsToLinks } from '@core/component/LexicalMarkdown/utils/convertDocumentMentionsToLinks';
 import { getWebOrigin } from '@core/util/webOrigin';
 import { $generateHtmlFromNodes } from '@lexical/html';
+import { findNextAutoLinkMatch } from '@macro-inc/lexical-core/utils/links';
 import type { LexicalEditor } from 'lexical';
 
 /**

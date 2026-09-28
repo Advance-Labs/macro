@@ -2,6 +2,7 @@ import type { PortalScope } from '@core/component/ScopedPortal';
 import { isNativeMobilePlatform } from '@core/mobile/isNativeMobilePlatform';
 import type { ChannelWithParticipants } from '@core/user';
 import type { EditorType } from '@macro-inc/lexical-core';
+import type { AutoLinkMatchMode } from '@macro-inc/lexical-core/utils/links';
 import type { HistoryItem } from '@queries/history/types';
 import { onElementConnect } from '@solid-primitives/lifecycle';
 import { isIOS } from '@solid-primitives/platform';
@@ -30,7 +31,6 @@ import {
   LexicalWrapperContext,
 } from '../../context/LexicalWrapperContext';
 import {
-  type AutoLinkMatchMode,
   autoRegister,
   awaitPlugin,
   codePlugin,

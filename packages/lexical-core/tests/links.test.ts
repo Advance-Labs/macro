@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { findNextAutoLinkMatch, normalizeLinkUrl } from './linksPlugin';
+import { findNextAutoLinkMatch, normalizeLinkUrl } from '../utils/links';
 
 describe('normalizeLinkUrl', () => {
   it('normalizes bare hosts to HTTPS', () => {

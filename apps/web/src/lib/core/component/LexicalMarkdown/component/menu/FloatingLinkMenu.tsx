@@ -5,6 +5,7 @@ import clickOutside from '@core/directive/clickOutside';
 import { useUnfurl } from '@core/signal/unfurl';
 import { openExternalUrl } from '@core/util/url';
 import { mergeRegister } from '@lexical/utils';
+import type { AutoLinkMatchMode } from '@macro-inc/lexical-core/utils/links';
 import NewTab from '@phosphor/arrow-square-out.svg';
 import Check from '@phosphor/check-circle.svg';
 import Copy from '@phosphor/copy.svg';
@@ -40,7 +41,6 @@ import { LexicalWrapperContext } from '../../context/LexicalWrapperContext';
 import { floatWithElement } from '../../directive/floatWithElement';
 import { floatWithSelection } from '../../directive/floatWithSelection';
 import {
-  type AutoLinkMatchMode,
   type ILinkInfo,
   INSERT_LINK_COMMAND,
   linksPlugin,

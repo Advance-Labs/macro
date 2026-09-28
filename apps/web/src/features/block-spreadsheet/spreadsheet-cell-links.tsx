@@ -1,5 +1,5 @@
 import { LinkWithPreview } from '@core/component/LexicalMarkdown/component/core/LinkWithPreview';
-import { findNextAutoLinkMatch } from '@core/component/LexicalMarkdown/plugins/links/linksPlugin';
+import { findNextAutoLinkMatch } from '@macro-inc/lexical-core/utils/links';
 import { For } from 'solid-js';
 export function SpreadsheetCellLinks(props: { value: string }) {
   const parts = () => {
