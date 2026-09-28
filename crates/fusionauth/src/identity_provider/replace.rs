@@ -43,6 +43,12 @@ pub(super) async fn replace_identity_provider_grant(
             fusion_user_id = %link_owner_id,
             "grant replacement found no matching link on the resolved owner"
         );
+        // Legacy callers select by a mutable display name and historically leave
+        // the existing grant untouched when it cannot be found. Only verified
+        // subject selection can treat a missing match as a definite failure.
+        if subject.is_none() {
+            return Ok(());
+        }
         return Err(server_error(
             "no matching identity-provider grant on its resolved owner".to_string(),
         ));

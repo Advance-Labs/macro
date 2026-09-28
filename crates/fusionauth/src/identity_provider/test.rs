@@ -199,3 +199,28 @@ async fn a_provided_subject_never_falls_back_to_display_name() {
     );
     assert_eq!(server.received_requests().await.unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn legacy_display_name_refresh_preserves_the_best_effort_fallback() {
+    for links in [vec![], vec![link()]] {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/identity-provider/link"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({"identityProviderLinks": links})),
+            )
+            .mount(&server)
+            .await;
+        client(&server)
+            .replace_identity_provider_grant(
+                "gmail-idp",
+                "old-owner",
+                "renamed@example.com",
+                None,
+                "fresh-token",
+            )
+            .await
+            .unwrap();
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    }
+}
