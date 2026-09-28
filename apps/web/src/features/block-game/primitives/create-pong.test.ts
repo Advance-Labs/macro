@@ -1,4 +1,4 @@
-import { createRoot } from 'solid-js';
+import { createRoot, createSignal, type Setter } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readGameLog } from '../core/game-document';
 import { pongRules } from '../core/games/pong';
@@ -44,6 +44,7 @@ function setupRoom(
 ) {
   const linked = createLinkedRoomSources(users);
   const roots = new Map<number, () => void>();
+  const shown = new Map<number, Setter<boolean>>();
   const clients = users.map((user, index) => {
     if (idle.includes(index)) return undefined;
     return createRoot((dispose) => {
@@ -56,13 +57,21 @@ function setupRoom(
         requestedKind: () => 'pong',
       });
       const match = createTurnMatch(room, pongRules);
-      const pong = createPong(room, match, { random: createRandom(3) });
+      const [visible, setVisible] = createSignal(true);
+      shown.set(index, setVisible);
+      const pong = createPong(room, match, {
+        random: createRandom(3),
+        visible,
+      });
       return { room, match, pong };
     });
   });
   /** Stop a client like a closed tab; its last presence lingers a while. */
   const close = (index: number) => roots.get(index)?.();
-  return { linked, clients, close };
+  /** Background or foreground a client's tab; hidden tabs get no frames. */
+  const setVisible = (index: number, visible: boolean) =>
+    shown.get(index)?.(visible);
+  return { linked, clients, close, setVisible };
 }
 
 function setupMatch() {
@@ -185,6 +194,53 @@ describe('createPong', () => {
       (entry) => entry.t === 'move'
     );
     expect(points.every((entry) => entry.by === ANN)).toBe(true);
+  });
+
+  it('leaves the ball with the tab that took over when a hidden tab returns', async () => {
+    fakeFrames();
+    const { linked, clients, setVisible } = setupRoom([ANN, ANN, BOB]);
+    const [tabA, tabB, bob] = clients;
+    if (!tabA || !tabB || !bob) throw new Error('clients missing');
+    tabA.match.join();
+    bob.match.join();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(tabA.pong.controlledSeat()).toBe(0);
+    expect(tabB.pong.controlledSeat()).toBeUndefined();
+
+    // Tab A goes to the background, so tab B takes over the match.
+    setVisible(0, false);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(tabB.pong.controlledSeat()).toBe(0);
+
+    // Back in front, tab A watches tab B rather than running its stale
+    // rally, so only one tab records the points.
+    setVisible(0, true);
+    for (let step = 0; step < 30; step += 1) {
+      await vi.advanceTimersByTimeAsync(100);
+      expect(tabA.pong.controlledSeat()).toBeUndefined();
+      expect(linked.presence(0)?.court).toBeUndefined();
+      expect(tabB.pong.controlledSeat()).toBe(0);
+    }
+    expect(await expectFollowing(tabB, bob, 20)).toBeGreaterThan(5);
+  });
+
+  it('resumes the ball on a lone host tab once it is shown again', async () => {
+    fakeFrames();
+    const { linked, clients, setVisible } = setupRoom([ANN, BOB]);
+    const [ann, bob] = clients;
+    if (!ann || !bob) throw new Error('clients missing');
+    ann.match.join();
+    bob.match.join();
+    await vi.advanceTimersByTimeAsync(2_000);
+    setVisible(0, false);
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    // With no other tab running the ball, the watch ends and play resumes.
+    setVisible(0, true);
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(ann.pong.controlledSeat()).toBe(0);
+    expect(linked.presence(0)?.court).toBeDefined();
+    expect(await expectFollowing(ann, bob, 20)).toBeGreaterThan(5);
   });
 
   it('keeps the serve on schedule when another tab takes over after a point', async () => {

@@ -1,4 +1,11 @@
-import { createEffect, createMemo, createSignal, on } from 'solid-js';
+import {
+  type Accessor,
+  createEffect,
+  createMemo,
+  createSignal,
+  on,
+  onCleanup,
+} from 'solid-js';
 import {
   centeredPaddles,
   clampPaddle,
@@ -73,6 +80,21 @@ function createChangeTracker() {
 const changedAtOrNever = (changedAt: number | undefined) =>
   changedAt ?? Number.NEGATIVE_INFINITY;
 
+/** Whether this tab is showing; a hidden tab gets no animation frames. */
+function createPageVisible(): Accessor<boolean> {
+  const showing = () =>
+    typeof document === 'undefined' || document.visibilityState !== 'hidden';
+  const [visible, setVisible] = createSignal(showing());
+  if (typeof document !== 'undefined') {
+    const onVisibility = () => setVisible(showing());
+    document.addEventListener('visibilitychange', onVisibility);
+    onCleanup(() =>
+      document.removeEventListener('visibilitychange', onVisibility)
+    );
+  }
+  return visible;
+}
+
 type HostKey = { since: number; peerId: string };
 
 /** The first seat's longest-open tab runs the ball; ties go to the lower id. */
@@ -91,10 +113,15 @@ function outranks(a: HostKey, b: HostKey): boolean {
 export function createPong(
   room: GameRoom,
   match: TurnMatchState<PongScore, PongPoint>,
-  options: { random?: Random; now?: () => number } = {}
+  options: {
+    random?: Random;
+    now?: () => number;
+    visible?: Accessor<boolean>;
+  } = {}
 ) {
   const random = options.random ?? createRandom(randomSeed());
   const now = options.now ?? (() => performance.now());
+  const visible = options.visible ?? createPageVisible();
   const keys = createHeldKeys();
   let pointer: number | undefined;
   /** Sent with each snapshot so the first seat's tabs agree on who hosts. */
@@ -201,6 +228,14 @@ export function createPong(
   let lastSent = Number.NEGATIVE_INFINITY;
   let sentPaddle: number | undefined;
   let seq = 0;
+  /** When this client last ran a frame of the current round. */
+  let lastFrameAt: number | undefined;
+  /** When this tab was last hidden, while it stays hidden. */
+  let hiddenAt: number | undefined;
+  /** This tab came back from being hidden; its next frame rejoins. */
+  let returned = false;
+  /** A first-seat tab that rejoined only watches until then. */
+  let watchUntil = Number.NEGATIVE_INFINITY;
 
   const resetCourt = (toward: PongSeat) => {
     own = centeredPaddles()[0];
@@ -324,21 +359,34 @@ export function createPong(
   };
 
   createFrameLoop({
-    running: () => playing() || practicing(),
+    running: () => visible() && (playing() || practicing()),
     onFrame: (dtMs, t) => {
       const dtSec = dtMs / 1000;
       if (!playing()) {
         practiceFrame(t, dtSec);
         return;
       }
+      // A hidden or sleeping tab gets no frames, so another of the first
+      // seat's tabs takes over the ball. Back from that, this tab ranks as
+      // the newest and watches for a running tab before it may run the ball.
+      if (
+        returned ||
+        (lastFrameAt !== undefined && t - lastFrameAt > LIVE_MS)
+      ) {
+        returned = false;
+        self.since = Date.now();
+        watchUntil = t + LIVE_MS;
+      }
+      lastFrameAt = t;
       const mine = seat();
-      defer(mine === 0 && outranked(t));
+      const behind = mine === 0 && outranked(t);
+      defer(mine === 0 && (behind || t < watchUntil));
       if (mine === 0 && !deferring()) {
         hostFrame(t, dtSec);
         return;
       }
       followerFrame(t, dtSec, mine === 1);
-      if (deferring()) {
+      if (behind) {
         // Keep up with the running tab so a takeover continues its rally.
         const view = court();
         ball = view.ball;
@@ -353,9 +401,29 @@ export function createPong(
   createEffect(
     on(roundKey, (key) => {
       if (key === undefined) return;
+      // The loop stops between rounds; that pause is not time away.
+      lastFrameAt = undefined;
       setPractice(undefined);
       resetCourt(key % 2 === 0 ? 1 : 0);
     })
+  );
+
+  // Frames stop while the tab is hidden, even across rounds, so the next
+  // frame after a long absence rejoins as above.
+  createEffect(
+    on(
+      visible,
+      (isVisible) => {
+        if (!isVisible) {
+          hiddenAt = now();
+          return;
+        }
+        if (hiddenAt !== undefined && now() - hiddenAt > LIVE_MS)
+          returned = true;
+        hiddenAt = undefined;
+      },
+      { defer: true }
+    )
   );
 
   // Every client schedules the next serve from the log, so a tab that takes
