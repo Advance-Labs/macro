@@ -10,6 +10,7 @@ import wasm from 'vite-plugin-wasm';
 import tsconfigpaths from 'vite-tsconfig-paths';
 // @ts-ignore
 import { version } from './package.json';
+import { hostedDevProxy } from './scripts/hosted-dev-proxy';
 import { keepImportMetaDev } from './scripts/keep-import-meta-dev';
 import { localDevServer } from './scripts/local-dev-server';
 
@@ -84,6 +85,7 @@ export const createAppViteConfig = (): UserConfigFn => {
         },
       },
       plugins: [
+        hostedDevProxy(),
         // solidDevtools({ autoname: true }),
         solid(),
         wasm(),
