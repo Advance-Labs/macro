@@ -17060,6 +17060,10 @@
           "ef": {
             "description": "the filters that should be applied to the email entity (raw AST\ntree only; CRM scope is carried by the `ecd` / `eca` sibling\nfields). On this endpoint the email filter stays a bare tree,\nunlike the materialized [`EntityFilterAst`] used for cursors."
           },
+          "favorites_only": {
+            "type": ["boolean", "null"],
+            "description": "Restrict to the authenticated viewer's favorites before pagination when true."
+          },
           "fef": {
             "description": "the filters that should be applied to foreign entity records"
           },
@@ -22203,6 +22207,10 @@
           "document_name"
         ],
         "properties": {
+          "actor": {
+            "type": ["string", "null"],
+            "description": "Who mechanically created the copy."
+          },
           "document_id": {
             "type": "string",
             "description": "The id of the newly created copy."
@@ -22219,6 +22227,17 @@
               {
                 "$ref": "#/components/schemas/FileType",
                 "description": "File type of the document, when known."
+              }
+            ]
+          },
+          "on_behalf_of": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MacroUserIdStr",
+                "description": "The user whose feed this copy belongs on, when different from the actor."
               }
             ]
           },
@@ -23635,6 +23654,10 @@
           "email_filters": {
             "$ref": "#/components/schemas/EmailFilters",
             "description": "the bundled [EmailFilters]"
+          },
+          "favorites_only": {
+            "type": ["boolean", "null"],
+            "description": "Restrict results to the authenticated viewer's favorites when true."
           },
           "foreign_entity_filters": {
             "$ref": "#/components/schemas/ForeignEntityFilters",
@@ -26875,6 +26898,22 @@
                 "enum": ["document"]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "An initiative, presented as a project in the application.",
+            "required": ["id", "type"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "An initiative, presented as a project in the application."
+              },
+              "type": {
+                "type": "string",
+                "enum": ["initiative"]
+              }
+            }
           }
         ],
         "description": "The entity whose permissions and lifecycle govern a message."
@@ -29286,6 +29325,11 @@
                 "description": "Who wrote the prompt, absent when a bot acted on nobody's behalf."
               }
             ]
+          },
+          "origin_message_id": {
+            "type": ["string", "null"],
+            "format": "uuid",
+            "description": "The channel or document message the prompt was posted as, when it\narrived from a thread rather than the session view. That message\nalready notified the users it named when it was posted."
           }
         }
       },
@@ -31973,7 +32017,7 @@
       },
       "ThreadPatch": {
         "type": "object",
-        "description": "Partial changes to the lifecycle and placement of a document discussion.",
+        "description": "Partial changes to discussion lifecycle or document anchor placement.",
         "properties": {
           "detach_anchor": {
             "type": "boolean",

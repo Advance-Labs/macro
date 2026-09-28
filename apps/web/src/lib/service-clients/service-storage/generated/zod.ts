@@ -15116,6 +15116,12 @@ export const postItemsSoupBody = zod
       .describe(
         'The email filters used to filter down what emails you search over.'
       ),
+    favorites_only: zod
+      .boolean()
+      .nullish()
+      .describe(
+        "Restrict results to the authenticated viewer's favorites when true."
+      ),
     foreign_entity_filters: zod
       .object({
         foreign_entity_ids: zod
@@ -19075,6 +19081,12 @@ export const postItemsSoupAstBody = zod
       .describe(
         'the filters that should be applied to the email entity (raw AST\ntree only; CRM scope is carried by the `ecd` \/ `eca` sibling\nfields). On this endpoint the email filter stays a bare tree,\nunlike the materialized [`EntityFilterAst`] used for cursors.'
       ),
+    favorites_only: zod
+      .boolean()
+      .nullish()
+      .describe(
+        "Restrict to the authenticated viewer's favorites before pagination when true."
+      ),
     fef: zod
       .unknown()
       .optional()
@@ -22856,6 +22868,12 @@ export const postItemsSoupAstGroupedBody = zod
           .describe(
             'the filters that should be applied to the email entity (raw AST\ntree only; CRM scope is carried by the `ecd` \/ `eca` sibling\nfields). On this endpoint the email filter stays a bare tree,\nunlike the materialized [`EntityFilterAst`] used for cursors.'
           ),
+        favorites_only: zod
+          .boolean()
+          .nullish()
+          .describe(
+            "Restrict to the authenticated viewer's favorites before pagination when true."
+          ),
         fef: zod
           .unknown()
           .optional()
@@ -23023,6 +23041,12 @@ export const postItemsSoupAstGroupedBody = zod
           .optional()
           .describe(
             'the filters that should be applied to the email entity (raw AST\ntree only; CRM scope is carried by the `ecd` \/ `eca` sibling\nfields). On this endpoint the email filter stays a bare tree,\nunlike the materialized [`EntityFilterAst`] used for cursors.'
+          ),
+        favorites_only: zod
+          .boolean()
+          .nullish()
+          .describe(
+            "Restrict to the authenticated viewer's favorites before pagination when true."
           ),
         fef: zod
           .unknown()
@@ -30851,6 +30875,18 @@ export const messageTimelineResponse = zod
                     type: zod.enum(['document']),
                   })
                   .describe('A document, including tasks and PDFs.'),
+                zod
+                  .object({
+                    id: zod
+                      .uuid()
+                      .describe(
+                        'An initiative, presented as a project in the application.'
+                      ),
+                    type: zod.enum(['initiative']),
+                  })
+                  .describe(
+                    'An initiative, presented as a project in the application.'
+                  ),
               ])
               .describe(
                 'The entity whose permissions and lifecycle govern a message.'
@@ -31101,6 +31137,18 @@ export const messageTimelineResponse = zod
                                 })
                                 .describe(
                                   'A document, including tasks and PDFs.'
+                                ),
+                              zod
+                                .object({
+                                  id: zod
+                                    .uuid()
+                                    .describe(
+                                      'An initiative, presented as a project in the application.'
+                                    ),
+                                  type: zod.enum(['initiative']),
+                                })
+                                .describe(
+                                  'An initiative, presented as a project in the application.'
                                 ),
                             ])
                             .describe(
@@ -31393,6 +31441,18 @@ export const entityMessageCreateResponse = zod
             type: zod.enum(['document']),
           })
           .describe('A document, including tasks and PDFs.'),
+        zod
+          .object({
+            id: zod
+              .uuid()
+              .describe(
+                'An initiative, presented as a project in the application.'
+              ),
+            type: zod.enum(['initiative']),
+          })
+          .describe(
+            'An initiative, presented as a project in the application.'
+          ),
       ])
       .describe('The entity whose permissions and lifecycle govern a message.'),
     reactions: zod
@@ -31517,6 +31577,18 @@ export const entityMessageGetMessageResponse = zod
             type: zod.enum(['document']),
           })
           .describe('A document, including tasks and PDFs.'),
+        zod
+          .object({
+            id: zod
+              .uuid()
+              .describe(
+                'An initiative, presented as a project in the application.'
+              ),
+            type: zod.enum(['initiative']),
+          })
+          .describe(
+            'An initiative, presented as a project in the application.'
+          ),
       ])
       .describe('The entity whose permissions and lifecycle govern a message.'),
     reactions: zod
@@ -31645,6 +31717,18 @@ export const entityMessageDeleteMessageResponse = zod
             type: zod.enum(['document']),
           })
           .describe('A document, including tasks and PDFs.'),
+        zod
+          .object({
+            id: zod
+              .uuid()
+              .describe(
+                'An initiative, presented as a project in the application.'
+              ),
+            type: zod.enum(['initiative']),
+          })
+          .describe(
+            'An initiative, presented as a project in the application.'
+          ),
       ])
       .describe('The entity whose permissions and lifecycle govern a message.'),
     reactions: zod
@@ -31869,6 +31953,18 @@ export const entityMessageEditResponse = zod
             type: zod.enum(['document']),
           })
           .describe('A document, including tasks and PDFs.'),
+        zod
+          .object({
+            id: zod
+              .uuid()
+              .describe(
+                'An initiative, presented as a project in the application.'
+              ),
+            type: zod.enum(['initiative']),
+          })
+          .describe(
+            'An initiative, presented as a project in the application.'
+          ),
       ])
       .describe('The entity whose permissions and lifecycle govern a message.'),
     reactions: zod
@@ -32001,6 +32097,18 @@ export const entityMessageReactResponse = zod
             type: zod.enum(['document']),
           })
           .describe('A document, including tasks and PDFs.'),
+        zod
+          .object({
+            id: zod
+              .uuid()
+              .describe(
+                'An initiative, presented as a project in the application.'
+              ),
+            type: zod.enum(['initiative']),
+          })
+          .describe(
+            'An initiative, presented as a project in the application.'
+          ),
       ])
       .describe('The entity whose permissions and lifecycle govern a message.'),
     reactions: zod
@@ -32132,6 +32240,18 @@ export const entityMessageLegacyResponse = zod
             type: zod.enum(['document']),
           })
           .describe('A document, including tasks and PDFs.'),
+        zod
+          .object({
+            id: zod
+              .uuid()
+              .describe(
+                'An initiative, presented as a project in the application.'
+              ),
+            type: zod.enum(['initiative']),
+          })
+          .describe(
+            'An initiative, presented as a project in the application.'
+          ),
       ])
       .describe('The entity whose permissions and lifecycle govern a message.'),
     reactions: zod
@@ -32279,6 +32399,18 @@ export const entityMessageGetThreadResponse = zod
                     type: zod.enum(['document']),
                   })
                   .describe('A document, including tasks and PDFs.'),
+                zod
+                  .object({
+                    id: zod
+                      .uuid()
+                      .describe(
+                        'An initiative, presented as a project in the application.'
+                      ),
+                    type: zod.enum(['initiative']),
+                  })
+                  .describe(
+                    'An initiative, presented as a project in the application.'
+                  ),
               ])
               .describe(
                 'The entity whose permissions and lifecycle govern a message.'
@@ -32408,6 +32540,18 @@ export const entityMessageGetThreadResponse = zod
                 type: zod.enum(['document']),
               })
               .describe('A document, including tasks and PDFs.'),
+            zod
+              .object({
+                id: zod
+                  .uuid()
+                  .describe(
+                    'An initiative, presented as a project in the application.'
+                  ),
+                type: zod.enum(['initiative']),
+              })
+              .describe(
+                'An initiative, presented as a project in the application.'
+              ),
           ])
           .describe(
             'The entity whose permissions and lifecycle govern a message.'
@@ -32636,7 +32780,7 @@ export const entityMessagePatchThreadBody = zod
       ),
   })
   .describe(
-    'Partial changes to the lifecycle and placement of a document discussion.'
+    'Partial changes to discussion lifecycle or document anchor placement.'
   );
 
 export const entityMessagePatchThreadResponse = zod

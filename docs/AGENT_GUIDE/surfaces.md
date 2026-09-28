@@ -313,9 +313,10 @@ connected account. Search is `Ctrl+F` within the surface.
 Noise, and archived mail. It respects the selected inboxes and filters; search
 within the tab is also restricted to favorites. Removing a star removes the row
 from this view. The tab persists across reloads. With `enable-graphql-soup` on,
-favorite membership comes from the filtered GraphQL favorites query, then thread
-IDs scope the paginated GraphQL Soup query. With the flag off, the same scope
-uses the REST queries. An empty favorites list shows `No favorite emails`.
+the paginated GraphQL Soup query uses `favoritesOnly: true`. With the flag off,
+REST Soup uses `favorites_only: true`. Starring changes membership without
+changing the list query. Text search still resolves favorite IDs for the search
+service. An empty favorites list shows `No favorite emails`.
 
 On desktop, a favorited email keeps a filled, muted star just before its
 timestamp. Other rows reserve only that small star slot. Hovering reveals
@@ -1047,6 +1048,9 @@ Guests enter `Your name`, choose their microphone and camera preferences, and
 press `Join call`. Setup requests device
 permissions and previews video locally; sharing starts only after joining.
 Permission denial leaves the affected device off and still allows joining.
+The preview and full-width join button retain their size while joining.
+Copying the meeting URL is available after joining, in the in-call header.
+
 The creator presses `Start call`; invitees press `Join call`. Loading the page or
 completing authentication never joins automatically, including old `?join=true`
 URLs. `Back to Macro` exits setup.
@@ -1069,12 +1073,32 @@ call without gaining access to the channel.
 
 The join screen, in-call participant tiles, and incoming direct-call badges use
 profile pictures; initials are the fallback when no photo is available.
-The join screen uses small switches for Microphone and Camera. Join and
-`Copy Meeting Url` use gray buttons; the copy action includes a copy icon.
-The in-call header uses the same copy button and shows the current local time
-before the call name. Owners can click the name to rename it, then Save or press
-Enter; Cancel or Escape discards the edit. Guests and other participants see a
+The join screen has microphone, camera, and background effects buttons over the
+preview, with pill selectors below for microphone, speaker, camera, and
+backgrounds. The background button over the preview toggles the selected effect
+off and back on; when no effect has been selected, it enables Strong blur.
+Backgrounds use a simple menu with None, Light blur, Strong blur, and image upload
+(JPG, PNG, or WebP, up to 10 MB). Dot icons distinguish the two blur strengths.
+Selected devices and backgrounds carry into the call; unsupported browsers use
+the system speaker. If a background cannot be applied, the camera stays off
+until the user retries or chooses None. The screen uses a gray join
+button. The in-call header has a gray `Copy Meeting Url` button with a copy icon
+and shows the current local time before the call name. Owners can click the name
+to rename it, then Save or press Enter; Cancel or Escape discards the edit. Guests and other participants see a
 read-only name.
+
+Join-preview and in-call controls use the standard Macro icon buttons. Pause
+over the microphone, camera, or background group to reveal an animated settings popover
+above the call toolbar; click its caret to keep it open. Brief pointer passes
+do not open settings, and moving into the popover keeps it open. Settings
+respect reduced-motion preferences.
+Audio settings include microphone, speaker, and noise suppression. Camera
+settings include the camera selector. Clicking the background icon toggles the
+selected effect off/on, restoring the last blur strength or image (Strong blur
+by default). Its hover panel contains the same None, Light blur, Strong blur,
+and image-upload menu as the join screen; the caret pins this panel for keyboard
+and touch access. Click outside or press Escape to close the settings.
+The controls also work by keyboard and touch.
 
 ### Sharing a call
 
@@ -1254,6 +1278,12 @@ use a glass sheet with a title, description, Close confirmation button, and
 side-by-side cancel and confirm actions. Pending actions disable both buttons
 and prevent dismissal; canceling leaves the underlying data unchanged.
 
+## Setup plan step — `/app/onboarding`
+
+The plan step shows two cards: Free and Premium. Premium starts Stripe Checkout.
+The step has no Max card or Max checkout path. A returning account that already
+has Max still sees Max named as its active plan.
+
 ## Settings — `/app/settings/<section>`
 
 ### Email signatures
@@ -1350,13 +1380,14 @@ list / delete personal keys; the secret is shown only once and is sent as
 backend), paid plans show an **AI usage** card with the period meter, credit
 balance, credit-pack buttons `$10`/`$25`/`$50`/`$100` that redirect to Stripe
 Checkout, and a `Usage billing` toggle with per-period limit pills; these
-controls and usage-billing promotional copy are hidden outside dev; an
-`Upgrade`/`Upgrade to Max` card, or a `Switch to Premium` link on Max; on a team
-the plan change moves only the viewer's own seat),
+controls and usage-billing promotional copy are hidden outside dev; an `Upgrade`
+card for Free users to buy Premium, no Max purchase or upgrade control, and a
+`Switch to Premium` link on Max; on a team the downgrade moves only the viewer's
+own seat),
 `Appearance`, `Agents`, `Mobile App`, `Shortcuts` (interactive keyboard visualization, not a list);
 Workspace → `Team` (members list; on a paid team each row shows the seat's plan,
-and admins/owners change it with the `Seat plan` menu: `Premium` or `Max`,
-prorated at once), `Tags`, `CRM` (enable/disable; once enabled, a `Deal stages` section
+and admins/owners can move an existing Max seat to Premium with the `Seat plan`
+menu; Premium seats have no Max option; moves are prorated at once), `Tags`, `CRM` (enable/disable; once enabled, a `Deal stages` section
 with `Customize stages`, inline rename, reorder by drag handle or arrow keys (up/down
 buttons on touch), delete, `Add stage`, `Reset to defaults`, and `Closed stages`
 checkboxes, editable by the role set as `edit_stages_role`),
@@ -1497,3 +1528,32 @@ default root size. Supporting `text-sm` text is 14px and `text-xs` is 12px.
 Desktop and mobile share this scale, with accessibility text scaling preserved.
 
 Desktop channel and AI composers use an `Attach files` paperclip that opens the file picker directly, without a plus menu. Comment composers open the image picker directly. Channels and DMs always open in message mode; create tasks through the task creation dialog. Shift+Enter, including an empty new line, expands channel and AI inputs so text starts above the toolbar at the left inset. Sent AI message bubbles use the ink fill with a contrasting foreground in each theme.
+
+### Calendar invitations in email
+
+In `/app/component/mail`, open an invitation message; the same card appears in
+`/app/email/:threadId`. Saved details appear below the sender without waiting for calendar
+sync. Expand guests and descriptions with their explicit controls. `View original email`
+is an accessible disclosure that starts closed; attachments remain below it.
+Related recurring components are grouped behind their own disclosure. Only mail synced
+after the feature shipped gets a card; older invitations render as plain email.
+A newly arrived scheduling update shows RSVP and Join only once its calendar state has
+been checked. A series invitation shows its current or next live occurrence.
+
+A connected, resolved invitation shows the responding address and Yes / Maybe / No.
+Local verification requires both email and calendar services: email supplies saved
+snapshots and resolves them against the synced calendar, while calendar service handles
+the RSVP write. With calendar service's `CALENDAR_SYNC_ENABLED` off, its RSVP route is
+not mounted, so a response fails with an error. Seeded local accounts have no Google
+token, so an RSVP there fails at the provider write and rolls back.
+The selected response remains pressed while a save is pending. Recurring invitations ask
+for `This event` or `All events`. Failures keep the card in place and report a retryable
+error; offline responses are not sent. Cancellation and response/proposal notifications
+do not offer RSVP or Join. Disconnected, ambiguous, and syncing states explain why an
+action is unavailable.
+
+`Open in calendar` focuses the current occurrence, even if its date changed.
+`View your day` opens a compact agenda without changing the active split; Close returns
+focus to its trigger. Busy overlapping events are labeled, while cancelled, declined,
+and free events do not count as conflicts. Calendar 12/24-hour preferences apply to
+already-open invitation cards as well as the calendar view.

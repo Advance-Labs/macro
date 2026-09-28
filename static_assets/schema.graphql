@@ -380,7 +380,7 @@ The typed activity-action vocabulary. One member per durable action, plus
 with an undecodable payload) surface with their raw tag and payload
 instead of failing the page.
 """
-union GraphqlActivityAction = GraphqlActivityCreated | GraphqlActivityEdited | GraphqlActivityOpened | GraphqlActivityDeleted | GraphqlActivityMessaged | GraphqlActivitySent | GraphqlActivityPropertyChanged | GraphqlActivityParticipantAdded | GraphqlActivityParticipantRemoved | GraphqlActivityCallStarted | GraphqlActivityUnknownAction
+union GraphqlActivityAction = GraphqlActivityCreated | GraphqlActivityEdited | GraphqlActivityOpened | GraphqlActivityDeleted | GraphqlActivityMessaged | GraphqlActivitySent | GraphqlActivityPropertyChanged | GraphqlActivityParticipantAdded | GraphqlActivityParticipantRemoved | GraphqlActivityCallStarted | GraphqlActivityTaskAdded | GraphqlActivityTaskRemoved | GraphqlActivityUnknownAction
 
 """
 A call was started in the entity.
@@ -618,6 +618,26 @@ type GraphqlActivityPropertyChanged {
 An email message was sent on the thread.
 """
 type GraphqlActivitySent {
+	"""
+	this object has nothing as a field but we need at least 1 field
+	"""
+	nothing: Boolean!
+}
+
+"""
+A task was added to a project.
+"""
+type GraphqlActivityTaskAdded {
+	"""
+	this object has nothing as a field but we need at least 1 field
+	"""
+	nothing: Boolean!
+}
+
+"""
+A task was removed from a project.
+"""
+type GraphqlActivityTaskRemoved {
 	"""
 	this object has nothing as a field but we need at least 1 field
 	"""
@@ -2155,6 +2175,10 @@ GraphQL input mirroring `item_filters::ast::EntityFilterAst`.
 """
 input GraphqlEntityFilterAst {
 	"""
+	Restrict results to the authenticated viewer's favorites when true.
+	"""
+	favoritesOnly: Boolean
+	"""
 	The calendar event filter to apply.
 	"""
 	calendarEventFilter: GraphqlCalendarEventExpr
@@ -3159,6 +3183,66 @@ type GraphqlInitiativeDescriptionSubType {
 }
 
 """
+Metadata for a discussion in a project.
+"""
+type GraphqlInitiativeDiscussionMetadata {
+	"""
+	Project display name.
+	"""
+	projectName: String!
+	"""
+	Project owner principal.
+	"""
+	owner: String!
+	"""
+	Notification reason.
+	"""
+	reason: GraphqlInitiativeDiscussionReason!
+	"""
+	Shared message identifier.
+	"""
+	messageId: ID!
+	"""
+	Shared discussion root identifier.
+	"""
+	threadId: ID!
+	"""
+	Comment Markdown.
+	"""
+	text: String!
+	"""
+	Public bot display name, if applicable.
+	"""
+	senderDisplayName: String
+	"""
+	Sender avatar URL.
+	"""
+	senderProfilePictureUrl: String
+}
+
+"""
+Why a project discussion notification was sent.
+"""
+enum GraphqlInitiativeDiscussionReason {
+	"""
+	Explicit user mention.
+	"""
+	MENTION
+	"""
+	Reply to a discussion.
+	"""
+	REPLY
+	"""
+	Comment on an assigned project.
+	"""
+	ASSIGNEE
+	"""
+	Comment on an owned project.
+	"""
+	OWNER
+}
+
+"""
 A recursive `InitiativeFilterExpr` filter expression.
 """
 input GraphqlInitiativeExpr @oneOf {
@@ -3410,7 +3494,7 @@ type GraphqlNewNotification {
 """
 Typed GraphQL union containing every supported notification event payload.
 """
-union GraphqlNotifEvent = GraphqlChannelMentionMetadata | GraphqlDocumentMentionMetadata | GraphqlMentionedInDocumentCommentMetadata | GraphqlRepliedToDocumentCommentThreadMetadata | GraphqlCommentedOnDocumentMetadata | GraphqlChannelInviteMetadata | GraphqlChannelMessageSendMetadata | GraphqlChannelReplyMetadata | GraphqlCallStartedMetadata | GraphqlNewEmailMetadata | GraphqlInboxReauthRequiredMetadata | GraphqlInviteToTeamMetadata | GraphqlTaskAssignedMetadata | GraphqlReminderMetadata | GraphqlCalendarEventReminderMetadata | GraphqlAiResponseMetadata | GraphqlGithubPrStatusChangedMetadata | GraphqlGithubPrCheckRunMetadata | GraphqlGithubReviewRequestedMetadata | GraphqlGithubPrCommentMetadata | GraphqlGithubPrMentionMetadata | GraphqlGithubPrReviewMetadata | GraphqlAgentSessionSettledMetadata | GraphqlAgentSessionWaitingForInputMetadata | GraphqlAgentSessionMentionedMetadata
+union GraphqlNotifEvent = GraphqlChannelMentionMetadata | GraphqlDocumentMentionMetadata | GraphqlMentionedInDocumentCommentMetadata | GraphqlRepliedToDocumentCommentThreadMetadata | GraphqlCommentedOnDocumentMetadata | GraphqlInitiativeDiscussionMetadata | GraphqlChannelInviteMetadata | GraphqlChannelMessageSendMetadata | GraphqlChannelReplyMetadata | GraphqlCallStartedMetadata | GraphqlNewEmailMetadata | GraphqlInboxReauthRequiredMetadata | GraphqlInviteToTeamMetadata | GraphqlTaskAssignedMetadata | GraphqlReminderMetadata | GraphqlCalendarEventReminderMetadata | GraphqlAiResponseMetadata | GraphqlGithubPrStatusChangedMetadata | GraphqlGithubPrCheckRunMetadata | GraphqlGithubReviewRequestedMetadata | GraphqlGithubPrCommentMetadata | GraphqlGithubPrMentionMetadata | GraphqlGithubPrReviewMetadata | GraphqlAgentSessionSettledMetadata | GraphqlAgentSessionWaitingForInputMetadata | GraphqlAgentSessionMentionedMetadata
 
 """
 A notification associated with a Soup entity.
@@ -5397,6 +5481,10 @@ type GraphqlSoupEmailLabel {
 An adaptively hydrated email content projection for Soup queries.
 """
 type GraphqlSoupEmailMessage {
+	"""
+	Immutable scheduling snapshots; JSON keeps both transports identical.
+	"""
+	calendarInvitations: JSON!
 	"""
 	The unique message identifier.
 	"""

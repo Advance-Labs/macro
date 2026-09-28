@@ -925,6 +925,10 @@ export type ApiEntityFilterAst = {
      */
     ef?: unknown;
     /**
+     * Restrict to the authenticated viewer's favorites before pagination when true.
+     */
+    favorites_only?: boolean | null;
+    /**
      * the filters that should be applied to foreign entity records
      */
     fef?: unknown;
@@ -4608,6 +4612,10 @@ export type DocumentContentUploadedMetadata = {
  */
 export type DocumentCopiedMetadata = {
     /**
+     * Who mechanically created the copy.
+     */
+    actor?: string | null;
+    /**
      * The id of the newly created copy.
      */
     document_id: string;
@@ -4616,6 +4624,7 @@ export type DocumentCopiedMetadata = {
      */
     document_name: string;
     file_type?: null | FileType;
+    on_behalf_of?: null | MacroUserIdStr;
     /**
      * The principal who owns the new copy.
      */
@@ -5471,6 +5480,10 @@ export type EntityFilters = {
      * the bundled [EmailFilters]
      */
     email_filters?: EmailFilters;
+    /**
+     * Restrict results to the authenticated viewer's favorites when true.
+     */
+    favorites_only?: boolean | null;
     /**
      * the bundled [ForeignEntityFilters]
      */
@@ -7321,6 +7334,12 @@ export type MessageParent = {
      */
     id: DocumentId;
     type: 'document';
+} | {
+    /**
+     * An initiative, presented as a project in the application.
+     */
+    id: string;
+    type: 'initiative';
 };
 
 /**
@@ -8691,6 +8710,12 @@ export type SessionMentionedMetadata = {
      */
     mentioned: Array<MacroUserIdStr>;
     mentioned_by?: null | MacroUserIdStr;
+    /**
+     * The channel or document message the prompt was posted as, when it
+     * arrived from a thread rather than the session view. That message
+     * already notified the users it named when it was posted.
+     */
+    origin_message_id?: string | null;
 };
 
 /**
@@ -10485,7 +10510,7 @@ export type ThreadOrigin = {
 };
 
 /**
- * Partial changes to the lifecycle and placement of a document discussion.
+ * Partial changes to discussion lifecycle or document anchor placement.
  */
 export type ThreadPatch = {
     /**
