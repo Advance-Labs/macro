@@ -25,6 +25,9 @@ bytes = { workspace = true }
 static_file_service_client = { path = "../static_file_service_client" }
 futures = { workspace = true }
 macro_env_var = { path = "../macro_env_var" }
+# The mention rules the native agent session puts in its system prompt; this
+# crate restates them in the prompt text, the only place Cursor lets it.
+prompt = { path = "../prompt" }
 # `stream` on top of the workspace features: the run stream is consumed as
 # `bytes_stream`, which reqwest gates behind it.
 reqwest = { workspace = true, features = ["stream"] }

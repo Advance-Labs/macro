@@ -23,6 +23,9 @@ pub mod slash_commands;
 /// The capabilities the domain requires from the outside.
 pub mod ports;
 
+/// The reply-formatting rules appended to every prompt Cursor receives.
+pub mod response_format;
+
 /// The session service: prompts in, translated updates out.
 pub mod service;
 

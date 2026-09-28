@@ -50,6 +50,7 @@ use crate::domain::ports::{
     ArtifactStore, CursorAgents, CursorArtifacts, RepositoryChooser, RunStream, SessionIntent,
     SessionNotifier, StreamConnectError,
 };
+use crate::domain::response_format::{strip_response_format, with_response_format};
 use agent_client_protocol::schema::v1::{
     ContentBlock, SessionId, SessionUpdate, StopReason, TextContent,
 };
@@ -943,9 +944,15 @@ where
             Some(agent) => {
                 // Queue behind any run still going (the same agent advances
                 // from cursor.com too) instead of failing the prompt.
-                self.create_run_when_free(&session, &agent, prompt, model.as_ref(), &cancel)
-                    .await
-                    .map(|run| (agent, run))
+                self.create_run_when_free(
+                    &session,
+                    &agent,
+                    &with_response_format(prompt),
+                    model.as_ref(),
+                    &cancel,
+                )
+                .await
+                .map(|run| (agent, run))
             }
             None => {
                 // Snapshotted out of the lock: `create_agent` is a network
@@ -989,7 +996,7 @@ where
                         }
                         self.cursor
                             .create_agent(
-                                &prompt_with_rejected(&rejected, prompt),
+                                &with_response_format(&prompt_with_rejected(&rejected, prompt)),
                                 intent.repository.as_ref(),
                                 intent.open_pull_request,
                                 &mcp_servers,
@@ -2554,6 +2561,10 @@ where
                 tracing::warn!(%run, "no Cursor conversation line names this run's prompt");
                 continue;
             };
+            // Cursor's record has the prompt as it was sent, rules and all;
+            // the journal holds what the person wrote, and this entry must
+            // read like every other.
+            let prompt = strip_response_format(prompt).unwrap_or(prompt);
             let blocks = vec![ContentBlock::Text(TextContent::new(prompt))];
             if let Err(error) = self
                 .capture(id, session, None, JournalInput::Prompt(blocks), false)

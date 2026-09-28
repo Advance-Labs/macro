@@ -7,6 +7,9 @@ use crate::domain::model::{
     RunOutcome, RunStatus,
 };
 use crate::domain::ports::{NoArtifactStore, StreamConnectError};
+use crate::domain::response_format::{
+    RESPONSE_FORMAT_TAG, response_format, strip_response_format, with_response_format,
+};
 use crate::testing::{CursorCall, FakeCursor, FixedChooser, RecordingNotifier};
 use agent_client_protocol::schema::v1::{SessionUpdate, StopReason, ToolCallStatus};
 use std::path::Path;
@@ -154,7 +157,7 @@ async fn first_prompt_creates_the_agent_with_the_session_repo() {
     assert_eq!(
         cursor.calls(),
         vec![CursorCall::CreateAgent(
-            "do it".to_owned(),
+            with_response_format("do it"),
             Some(repo),
             true,
             Vec::new(),
@@ -164,6 +167,147 @@ async fn first_prompt_creates_the_agent_with_the_session_repo() {
     let updates = notifier.updates();
     assert_eq!(updates.len(), 1);
     assert!(matches!(updates[0].1, SessionUpdate::AgentMessageChunk(_)));
+}
+
+/// A prompt as the harness composes it: the agent context first, with a
+/// channel message whose mention the XML builder escaped, then the person's
+/// words with a live mention. Cursor gets all of it untouched, followed by
+/// the mention rules; the journal — and so the transcript — keeps only what
+/// the person sent.
+#[tokio::test]
+async fn cursor_receives_the_prompt_verbatim_with_the_mention_rules_appended() {
+    let (service, cursor, _notifier) = service(None);
+    let session = service.new_session(Path::new(""), Vec::new());
+    let context = "<m-agent-context>{\"version\":1,\"text\":\"\\u003cconversation type=\\\"channel\\\" id=\\\"ch-1\\\">\
+        \\n  \\u003cchannel_recent>\\n    \\u003cmessage id=\\\"m1\\\" author=\\\"julia@macro.com\\\">\
+        ping &lt;m-user-mention&gt;{&quot;userId&quot;:&quot;macro|wolf@macro.com&quot;}&lt;/m-user-mention&gt;\
+        \\u003c/message>\\n  \\u003c/channel_recent>\\n\\u003c/conversation>\"}</m-agent-context>";
+    let prompt = format!(
+        "{context}\n\n<m-user-mention>{{\"userId\":\"bot|c5c5\",\"email\":\"Cursor\",\"displayName\":\"Cursor\"}}</m-user-mention> \
+         link the plan doc for wolf"
+    );
+
+    let events = cursor.script_stream();
+    events.send(finished("run-fake-1")).expect("stream open");
+    events.send(CursorEvent::Done).expect("stream open");
+    service
+        .prompt(&session, &prompt)
+        .await
+        .expect("prompt runs");
+
+    let calls = cursor.calls();
+    let [CursorCall::CreateAgent(sent, ..)] = calls.as_slice() else {
+        panic!("expected one create_agent, got {calls:?}");
+    };
+    assert_eq!(*sent, with_response_format(&prompt));
+    assert!(
+        sent.starts_with(&prompt),
+        "the context, escaped mention included, and the live mention round-trip byte for byte"
+    );
+    assert!(
+        sent.contains(
+            "&lt;m-user-mention&gt;{&quot;userId&quot;:&quot;macro|wolf@macro.com&quot;}"
+        )
+    );
+    let rules = &sent[prompt.len()..];
+    assert!(rules.contains(&format!("<{RESPONSE_FORMAT_TAG}>")));
+    assert!(
+        rules.contains(r#"<m-user-mention>{"userId":"{id}","email":"{email}"}</m-user-mention>"#),
+        "the rules carry the shared mention schema: {rules}"
+    );
+    assert!(
+        rules.contains(
+            "override any earlier or default instruction to write URLs as Markdown links"
+        )
+    );
+
+    let entries = service.journal.read(&session).await.expect("journal");
+    let journaled = entries
+        .iter()
+        .find_map(|e| match &e.input {
+            JournalInput::Prompt(blocks) => Some(blocks.clone()),
+            _ => None,
+        })
+        .expect("the prompt is journaled");
+    assert_eq!(
+        journaled,
+        vec![ContentBlock::Text(TextContent::new(prompt.clone()))],
+        "the journal keeps what the person sent, without the rules"
+    );
+}
+
+/// A prompt recovered from Cursor's conversation record is one Macro sent,
+/// rules and all, whenever the journal write behind it failed. The journal
+/// entry it becomes must read like every other: the person's words alone.
+#[tokio::test(start_paused = true)]
+async fn a_recovered_prompt_is_journaled_without_the_mention_rules() {
+    let (service, cursor, notifier) = service(None);
+    let session = service.new_session(Path::new(""), Vec::new());
+    let events = cursor.script_stream();
+    events.send(finished("run-fake-1")).expect("stream open");
+    events.send(CursorEvent::Done).expect("stream open");
+    service.prompt(&session, "first").await.expect("first turn");
+
+    cursor.script_run_listings(vec![
+        RunListing {
+            id: CursorRunId::new("run-lost-1"),
+            status: RunStatus::Finished,
+        },
+        RunListing {
+            id: CursorRunId::new("run-fake-1"),
+            status: RunStatus::Finished,
+        },
+    ]);
+    cursor.script_run_result(RunOutcome {
+        status: RunStatus::Finished,
+        text: Some("linked it".to_owned()),
+    });
+    service.sync_foreign_runs().await;
+
+    cursor.script_conversation(vec![
+        line(
+            ConversationSpeaker::User,
+            &with_response_format("link the plan doc"),
+        ),
+        line(ConversationSpeaker::Agent, "linked it"),
+    ]);
+    service
+        .replay_session(&session)
+        .await
+        .expect("load")
+        .complete();
+
+    let entries = service.journal.read(&session).await.expect("journal");
+    let recovered = entries
+        .iter()
+        .filter_map(|e| match &e.input {
+            JournalInput::Prompt(blocks) if e.run.is_none() => Some(blocks),
+            _ => None,
+        })
+        .flat_map(|blocks| blocks.iter())
+        .filter_map(|b| match b {
+            ContentBlock::Text(t) => Some(t.text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        recovered.contains(&"link the plan doc"),
+        "the person's words are recovered: {recovered:?}"
+    );
+    assert!(
+        !recovered
+            .iter()
+            .any(|text| text.contains(response_format())),
+        "and the rules are not: {recovered:?}"
+    );
+    assert!(
+        !notifier.updates().iter().any(|(_, update)| matches!(
+            update,
+            SessionUpdate::UserMessageChunk(c)
+                if matches!(&c.content, ContentBlock::Text(t) if t.text.contains(RESPONSE_FORMAT_TAG))
+        )),
+        "nothing the load publishes shows the rules"
+    );
 }
 
 #[tokio::test]
@@ -816,7 +960,7 @@ async fn session_mcp_servers_reach_agent_creation() {
     assert_eq!(
         cursor.calls(),
         vec![CursorCall::CreateAgent(
-            "go".to_owned(),
+            with_response_format("go"),
             None,
             false,
             servers,
@@ -840,7 +984,7 @@ async fn a_session_without_mcp_servers_forwards_none() {
     assert_eq!(
         cursor.calls(),
         vec![CursorCall::CreateAgent(
-            "go".to_owned(),
+            with_response_format("go"),
             None,
             false,
             Vec::new(),
@@ -879,7 +1023,7 @@ async fn a_restored_session_prompts_its_existing_agent() {
         cursor.calls(),
         vec![CursorCall::CreateRun(
             CursorAgentId::new("bc-restored"),
-            "continue".to_owned(),
+            with_response_format("continue"),
             None
         )]
     );
@@ -1855,9 +1999,10 @@ async fn durable_multiturn_load_replays_full_history_and_supports_continuation()
     tx.send(finished("run-fake-3")).unwrap();
     tx.send(CursorEvent::Done).unwrap();
     restored.prompt(&id, "continue").await.unwrap();
-    assert!(
-        matches!(cursor.calls().last(), Some(CursorCall::CreateRun(_, prompt, _)) if prompt == "continue")
-    );
+    assert!(matches!(
+        cursor.calls().last(),
+        Some(CursorCall::CreateRun(_, prompt, _)) if *prompt == with_response_format("continue")
+    ));
 }
 
 #[derive(Debug, Default)]
@@ -2813,8 +2958,12 @@ async fn a_refused_create_keeps_its_repository_and_carries_the_prompt_forward() 
         Some(&repo),
         "the follow-up is created against the same repository"
     );
-    assert_eq!(creates[0].0, "fix the notification grouping bug");
-    let carried = &creates[1].0;
+    assert_eq!(
+        creates[0].0,
+        with_response_format("fix the notification grouping bug")
+    );
+    let carried = strip_response_format(&creates[1].0)
+        .expect("the formatting rules close the create, after everything carried");
     assert!(
         carried.contains("fix the notification grouping bug"),
         "the refused prompt rides along: {carried}"
@@ -2826,6 +2975,11 @@ async fn a_refused_create_keeps_its_repository_and_carries_the_prompt_forward() 
     assert!(
         carried.ends_with("what's the error?"),
         "the current prompt is last, marked as the one to answer: {carried}"
+    );
+    assert_eq!(
+        creates[1].0.matches("<m-response-format>").count(),
+        1,
+        "the carried refusals bring no second copy of the rules"
     );
 
     // Once an agent exists nothing is carried any more: the conversation is
@@ -2846,7 +3000,7 @@ async fn a_refused_create_keeps_its_repository_and_carries_the_prompt_forward() 
             _ => None,
         })
         .expect("a run was created");
-    assert_eq!(follow_up, "thanks");
+    assert_eq!(follow_up, with_response_format("thanks"));
 }
 
 #[tokio::test]
