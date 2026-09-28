@@ -772,6 +772,10 @@ export type ApiEntityFilterAst = {
      */
     fef?: unknown;
     /**
+     * the filters that should be applied to GitHub pull request records, on top of `fef`
+     */
+    ghprf?: unknown;
+    /**
      * the filters that should be applied to the project entity
      */
     pf?: unknown;

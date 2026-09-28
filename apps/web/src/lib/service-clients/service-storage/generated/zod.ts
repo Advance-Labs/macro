@@ -23370,6 +23370,12 @@ export const postItemsSoupAstBody = zod
       .unknown()
       .optional()
       .describe('the filters that should be applied to foreign entity records'),
+    ghprf: zod
+      .unknown()
+      .optional()
+      .describe(
+        'the filters that should be applied to GitHub pull request records, on top of `fef`'
+      ),
     pf: zod
       .unknown()
       .optional()
@@ -27547,6 +27553,12 @@ export const postItemsSoupAstGroupedBody = zod
           .describe(
             'the filters that should be applied to foreign entity records'
           ),
+        ghprf: zod
+          .unknown()
+          .optional()
+          .describe(
+            'the filters that should be applied to GitHub pull request records, on top of `fef`'
+          ),
         pf: zod
           .unknown()
           .optional()
@@ -27720,6 +27732,12 @@ export const postItemsSoupAstGroupedBody = zod
           .optional()
           .describe(
             'the filters that should be applied to foreign entity records'
+          ),
+        ghprf: zod
+          .unknown()
+          .optional()
+          .describe(
+            'the filters that should be applied to GitHub pull request records, on top of `fef`'
           ),
         pf: zod
           .unknown()
