@@ -276,30 +276,20 @@ async fn init_user(
             InitError::BadRequest("link has not completed authentication yet".to_string())
         })?;
 
-        // Dispatch on whether the linked email already belongs to another macro user.
-        // Same-user → fall through to the data-source path. Cross-user → add a graph
-        // edge instead of creating a duplicate email_links row.
-        //
-        // Distinguish "no user with this email" (Ok(None)) from a transient DB error
-        // (Err) — collapsing the latter to None would silently fall through to the
-        // data-source upsert path and create a duplicate email_links row.
-        let existing_owner =
-            match macro_db_client::user::get::get_user_id_by_email(ctx.db.clone(), &linked_email)
-                .await
-            {
-                Ok(macro_id) => Some(macro_id),
-                Err(sqlx::Error::RowNotFound) => None,
-                Err(e) => {
-                    return Err(InitError::DatabaseError(
-                        anyhow::Error::from(e)
-                            .context("Failed to look up existing macro user by linked_email"),
-                    ));
-                }
-            };
+        let existing_owner = ctx
+            .inbox_owners
+            .resolve(
+                &linked_email,
+                in_progress.google_grant_owner_id,
+                in_progress.macro_user_id,
+            )
+            .await
+            .map_err(|error| InitError::DatabaseError(anyhow::anyhow!("{error:?}")))?;
 
-        if let Some(child_macro_id) = existing_owner.as_deref()
-            && child_macro_id != user_context.user_id
+        if let Some(owner) = existing_owner.as_ref()
+            && owner.macro_id.as_ref() != user_context.user_id
         {
+            let child_macro_id = owner.macro_id.as_ref();
             // Graph path: the linked email belongs to a different macro user. Look the
             // child's inbox up before mutating any state so the in_progress row is only
             // consumed once we know how to proceed.
@@ -348,26 +338,14 @@ async fn init_user(
                     .into_response());
             }
 
-            // Self-link bootstrap: the child macro_user exists but never connected an inbox.
-            // Provision its email_links row entirely under the child's identity: the OAuth
-            // grant (FA IdP link) is attached to the child's fusion user at the OAuth
-            // callback — it is also the child's login identity, so it cannot live under the
-            // primary — and token resolution, scoping, and backfill rate-limiting key off it.
-            // Access for the primary comes from the macro_user_links edge alone.
-            let child_macro_id_owned = MacroUserIdStr::try_from(child_macro_id.to_string())?;
-
-            // `existing_owner` proved a User row exists for this email, so a miss here means
-            // the child account vanished mid-flight. Abort rather than fall back to the
-            // requester's fusion id, which would provision the link under the wrong identity.
-            let child_fusion_id =
-                macro_db_client::user::get::get_macro_user_id_by_email(&ctx.db, &linked_email)
-                    .await
-                    .context("Failed to look up child's fusion id for self-link bootstrap")?
-                    .context("child macro user disappeared before self-link bootstrap")?
-                    .to_string();
-
-            let provisional_link =
-                new_gmail_link(child_fusion_id, child_macro_id_owned, linked_email.clone())?;
+            // Bootstrap the authorized mailbox under the existing grant owner's profile.
+            // The mailbox can be a secondary address with no User row of its own.
+            // Only this mailbox is delegated; the owner's other inboxes remain private.
+            let provisional_link = new_gmail_link(
+                owner.fusionauth_id.to_string(),
+                owner.macro_id.clone(),
+                linked_email.clone(),
+            )?;
             let subscription = ctx
                 .email_api
                 .register_subscription_without_cache(&provisional_link)
