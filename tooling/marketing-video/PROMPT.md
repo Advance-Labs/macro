@@ -46,6 +46,8 @@ Build every piece from a real component, reading the source before drawing it:
 - Composer: a fully rounded pill with the paperclip, the text, a mic, and a round send button (white when armed).
 - Command menu: `features/command/CommandItem.tsx` (a 20px icon slot, "G then E" key hints, a footer).
 - Tasks: the status circles (`square-task-*-circle`) and the real property chips.
+- Mobile: `apps/web/src/components/app/mobile/*` (MobileDockRow: 46px buttons, 27px icons; views that
+  don't fit go in the More drawer), PillTabs, the narrow list rows, MobileDrawer sheets.
 - Home feed, calendar, email compose, CRM and so on: find the component or its site recreation first.
 Nested corners must be concentric: outer radius = inner radius + inset.
 Use believable content with the team's names (Julia, Jacob, Austin, Dana). Never use real customer data.
@@ -73,7 +75,7 @@ One vibe per video. Alternate between days (Austin's direction), never within a 
 - funk: drum-focused, funky, upbeat, restless, about 110 BPM (Tue / Thu)
 Pick fresh Mixkit tracks (Free License) that match, or reuse the defaults: "Kodama Night Town"
 (Mixkit 114, 78.01 BPM, downbeat 11.619 s) and "Are U Ready For This?" (Mixkit 1127,
-109.95 BPM, downbeat 17.861 s). Measure tempo and downbeats with numpy (`audio/analyze.py`,
+109.95 BPM, downbeat 17.861 s), or "Gimme that Groove!" (Mixkit 872, 112 BPM, downbeat 18.750 s). Measure tempo and downbeats with numpy (`audio/analyze.py`,
 `structure.py`, `tempo2.py`) and check the waveform against the grid by eye. Every step lasts a
 whole number of beats and the video is whole bars, so every change lands on a beat.
 There's no fade at the end. Keep the synthesized click, key, pop and whoosh sounds,
@@ -103,5 +105,8 @@ Linear, GitHub). Either one post, or a 2–3 post thread with one video per post
 <gotchas>
 Never put will-change on anything the camera scales. Elements outside the shape (menus, labels)
 must be hidden explicitly every frame, or they leak state between frames. An element with no exit
-time must not be checked against the previous loop.
+time must not be checked against the previous loop. A class that sets `position: relative` (like a
+glass/island utility) overrides `.a { position: absolute }`; scope it (`.a.isl`). backdrop-filter only
+reads as glass with content moving under it; an SVG displacement map (`backdrop-filter: url(#lens)
+blur() saturate()`) gives real edge refraction in Chromium.
 </gotchas>
