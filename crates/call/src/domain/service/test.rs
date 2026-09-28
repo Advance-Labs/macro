@@ -1516,6 +1516,7 @@ fn call_record_for_mutation() -> CallRecord {
         is_active: false,
         status: None,
         user_access_level: None,
+        viewer_has_declined: false,
         participants: Vec::new(),
         guests: Vec::new(),
         transcript: Vec::new(),
@@ -2654,6 +2655,7 @@ fn summarized_call_record(custom_name: Option<&str>) -> CallRecord {
         is_active: false,
         status: None,
         user_access_level: None,
+        viewer_has_declined: false,
         participants: Vec::new(),
         guests: Vec::new(),
         transcript: vec![CallRecordTranscriptSegment {
@@ -3431,8 +3433,8 @@ fn ring_token_client(identity: &'static str, room: Option<&'static str>) -> Mock
 #[tokio::test]
 async fn decline_call_records_decline_and_notifies_only_the_declining_user() {
     let mut repo = MockCallRepository::new();
-    repo.expect_get_call_by_channel_id()
-        .withf(|channel_id| *channel_id == DECLINE_CHANNEL_ID)
+    repo.expect_get_call_by_id()
+        .withf(|call_id| *call_id == DECLINE_CALL_ID)
         .times(1)
         .returning(|_| Box::pin(async { Ok(Some(declinable_call())) }));
     expect_recorded_decline(&mut repo, "callee@example.com");
@@ -3445,7 +3447,7 @@ async fn decline_call_records_decline_and_notifies_only_the_declining_user() {
     );
 
     service
-        .decline_call(&DECLINE_CHANNEL_ID, user("callee@example.com"))
+        .decline_call(&DECLINE_CALL_ID, user("callee@example.com"))
         .await
         .expect("declining an active call succeeds");
 
@@ -3472,7 +3474,8 @@ async fn decline_call_records_decline_and_notifies_only_the_declining_user() {
 #[tokio::test]
 async fn decline_call_without_an_active_call_is_not_found() {
     let mut repo = MockCallRepository::new();
-    repo.expect_get_call_by_channel_id()
+    repo.expect_get_call_by_id()
+        .withf(|call_id| *call_id == DECLINE_CALL_ID)
         .times(1)
         .returning(|_| Box::pin(async { Ok(None) }));
     repo.expect_record_decline().times(0);
@@ -3485,7 +3488,32 @@ async fn decline_call_without_an_active_call_is_not_found() {
     );
 
     let result = service
-        .decline_call(&DECLINE_CHANNEL_ID, user("callee@example.com"))
+        .decline_call(&DECLINE_CALL_ID, user("callee@example.com"))
+        .await;
+
+    assert!(matches!(result, Err(CallError::NotFound(_))));
+    assert!(connection_service.messages().is_empty());
+}
+
+#[tokio::test]
+async fn decline_call_ignores_a_stale_call_id_after_the_channel_moved_on() {
+    let mut repo = MockCallRepository::new();
+    let stale_call_id = Uuid::from_u128(0xdead);
+    repo.expect_get_call_by_id()
+        .withf(move |call_id| *call_id == stale_call_id)
+        .times(1)
+        .returning(|_| Box::pin(async { Ok(None) }));
+    repo.expect_record_decline().times(0);
+    let connection_service = RecordingConnectionService::default();
+    let service = build_get_or_create_service(
+        repo,
+        connection_service.clone(),
+        RecordingEventBroker::default(),
+        false,
+    );
+
+    let result = service
+        .decline_call(&stale_call_id, user("callee@example.com"))
         .await;
 
     assert!(matches!(result, Err(CallError::NotFound(_))));

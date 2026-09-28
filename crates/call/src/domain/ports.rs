@@ -837,15 +837,16 @@ pub trait CallService: Send + Sync + 'static {
         user_id: MacroUserIdStr<'a>,
     ) -> impl Future<Output = Result<LeaveCallResponse, CallError>> + Send;
 
-    /// Decline the channel's active call for this user without joining it.
+    /// Decline a specific active call for this user without joining it.
     ///
     /// Records the decline and notifies the user's other connected clients
     /// (`call_declined`) so they stop ringing; the call itself keeps going
-    /// for everyone else. Returns [`CallError::NotFound`] when the channel
-    /// has no active call.
+    /// for everyone else. Bound to `call_id` so a stale ring for a replaced
+    /// call cannot decline the channel's newer active call. Returns
+    /// [`CallError::NotFound`] when that call is no longer active.
     fn decline_call<'a>(
         &self,
-        channel_id: &Uuid,
+        call_id: &Uuid,
         user_id: MacroUserIdStr<'a>,
     ) -> impl Future<Output = Result<(), CallError>> + Send;
 

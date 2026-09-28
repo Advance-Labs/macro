@@ -1158,15 +1158,15 @@ impl<
     #[tracing::instrument(err, skip(self))]
     async fn decline_call(
         &self,
-        channel_id: &Uuid,
+        call_id: &Uuid,
         user_id: MacroUserIdStr<'_>,
     ) -> Result<(), CallError> {
         let call = self
             .repo
-            .get_call_by_channel_id(channel_id)
+            .get_call_by_id(call_id)
             .await
             .map_err(|e| CallError::Internal(e.into()))?
-            .ok_or_else(|| CallError::NotFound(channel_id.to_string()))?;
+            .ok_or_else(|| CallError::NotFound(call_id.to_string()))?;
 
         self.decline_active_call(&call, user_id).await
     }
@@ -1516,6 +1516,17 @@ impl<
                 .await
                 .map_err(|e| CallError::Internal(e.into()))?,
             None => None,
+        };
+
+        // Only active calls keep decline rows; archived calls drop them with
+        // the call, and an inactive record already resolves as ended.
+        record.viewer_has_declined = if record.is_active {
+            self.repo
+                .has_declined(&call_id, user_id.as_ref())
+                .await
+                .map_err(|e| CallError::Internal(e.into()))?
+        } else {
+            false
         };
 
         Ok(record)

@@ -102,7 +102,7 @@ impl<S, Svc, Auth> FromRef<CallRouterState<S, Svc, Auth>> for MacroAuthorization
 /// - `GET /{channel_id}/active` — check if an active call exists
 /// - `GET /active` — list all active calls in channels the caller is a member of
 /// - `DELETE /{channel_id}` — leave or end a call
-/// - `POST /{channel_id}/decline` — decline the channel's ringing call on every device
+/// - `POST /record/{call_id}/decline` — decline a ringing call on every device
 /// - `GET /record/{call_id}` — get a full call record (transcript + participants)
 /// - `PATCH /record/{call_id}` — edit a call record (share permissions, team sharing, name)
 /// - `PATCH /record/{call_id}/transcript` — set per-diarized-speaker custom_speaker overrides
@@ -156,14 +156,14 @@ where
             "/{channel_id}/active",
             get(check_active_call_handler::<S, Svc, Auth>),
         )
-        .route(
-            "/{channel_id}/decline",
-            post(decline_call_handler::<S, Svc, Auth>),
-        )
         .route("/active", get(get_active_calls_handler::<S, Svc, Auth>))
         .route(
             "/record/preview",
             post(get_batch_call_record_preview_handler::<S, Svc, Auth>),
+        )
+        .route(
+            "/record/{call_id}/decline",
+            post(decline_call_handler::<S, Svc, Auth>),
         )
         .route(
             "/record/{call_id}",
@@ -694,22 +694,23 @@ pub async fn leave_or_end_call_handler<
     Ok(Json(response))
 }
 
-/// Handler for `POST /call/{channel_id}/decline`.
+/// Handler for `POST /call/record/{call_id}/decline`.
 ///
-/// Declines the channel's active call for the caller without joining it.
-/// The caller's other devices are told to stop ringing (`call_declined`);
-/// the call continues for everyone else.
+/// Declines the identified active call for the caller without joining it.
+/// Bound to `call_id` so a stale incoming-call UI cannot decline a newer call
+/// that replaced it in the same channel. The caller's other devices are told
+/// to stop ringing (`call_declined`); the call continues for everyone else.
 #[utoipa::path(
     post,
     operation_id = "decline_call",
-    path = "/call/{channel_id}/decline",
+    path = "/call/record/{call_id}/decline",
     params(
-        ("channel_id" = Uuid, Path, description = "Channel ID"),
+        ("call_id" = Uuid, Path, description = "Call ID"),
     ),
     responses(
         (status = 204, description = "Decline recorded"),
         (status = 401, body = ErrorResponse),
-        (status = 404, body = ErrorResponse, description = "No active call"),
+        (status = 404, body = ErrorResponse, description = "The call is no longer active"),
         (status = 500, body = ErrorResponse),
     )
 )]
@@ -720,14 +721,15 @@ pub async fn decline_call_handler<
     Auth: MacroAuthorizationService,
 >(
     State(state): State<CallRouterState<S, Svc, Auth>>,
-    access: CallWithChannelIdAccessLevelExtractor<MemberParticipantRole, Svc, Auth>,
+    access: CallAccessLevelExtractor<MemberParticipantRole, Svc, Auth>,
     user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
 ) -> Result<StatusCode, CallError> {
-    let channel_id = access.channel_id;
+    let call_id = Uuid::parse_str(&access.entity_access_receipt.entity().entity_id)
+        .map_err(|_| CallError::Internal(anyhow::anyhow!("invalid call_id in receipt")))?;
 
     state
         .service
-        .decline_call(&channel_id, user.authorization.user.macro_user_id.clone())
+        .decline_call(&call_id, user.authorization.user.macro_user_id.clone())
         .await?;
 
     Ok(StatusCode::NO_CONTENT)

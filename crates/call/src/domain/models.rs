@@ -513,6 +513,11 @@ pub struct CallRecord {
     /// single-record read; `None` in list contexts.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_access_level: Option<AccessLevel>,
+    /// Whether the authenticated viewer has declined this call on any device.
+    /// Set on the single-record read so clients that missed `call_declined`
+    /// can still stop ringing via reconciliation; `false` in list contexts.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub viewer_has_declined: bool,
     /// Macro-account participants (both active and historic).
     pub participants: Vec<CallRecordParticipant>,
     /// Non-account guests (both active and historic). Guests only ever exist
