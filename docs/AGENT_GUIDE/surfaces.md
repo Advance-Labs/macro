@@ -153,7 +153,7 @@ labels the top left of the block, matching the **Email**, **Tasks**, **Chat**, a
 starting pane; it does not create a chat. Email and Tasks have matching top pills
 for **New email** and **New task**.
 
-The Inbox provider honors an explicit initial tab, search, grouping, and facet
+The Home provider honors an explicit initial tab, search, grouping, and facet
 selection. Filters persist per user across reloads and fresh Home navigation;
 split history restores that entry's filter selection. An explicit facet selection
 overrides saved filters. Returning through split history resets navigation to Signal.
@@ -672,6 +672,17 @@ without resetting its selections.
 Sidebar `Search` button → `/app/.../component/search` with a focused query box. Results
 (including a `Featured Results` group) filter live as you type; no Enter needed. `Ctrl+K` is
 usually faster for jump-to-entity; `/` opens workspace search when no editor is focused.
+
+On touch devices, the dock's **Search** button opens a persistent input. Type a
+query, then switch the scope pills between **All**, **Notifications**, **Email**,
+**Channels**, **Files**, **Agents**, and **Tasks**. The selected view searches with
+the same query and retains its tab/facet restrictions. Channels searches
+conversation names. Clearing the
+input restores the current scope's unsearched list; **Close search** ends the
+session. Switching scopes keeps the input mounted and focused. The dock query is
+not saved into the view's desktop search or restored entry state. Home and
+top-level Tasks use this same overlay; embedded project task lists retain their
+own search while the dock is open.
 
 Agent-session results use the robot icon and show a highlighted transcript snippet.
 `Show more [N]` expands additional matches, labeled **User / Agent · Turn N**.

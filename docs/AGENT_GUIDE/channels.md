@@ -492,7 +492,23 @@ conversation cards on `Recent`. Switching tabs preserves the active search and
 query, then scrolls the results to the selected channel when present or to the
 start. Closing search restores the active tab and applies the same scroll
 behavior to its lists. An empty result uses the standard search empty state
-artwork and wraps long queries.
+artwork and wraps long queries. Desktop and the mobile dock use the same channel
+name search: local fuzzy matches plus service results, deduplicated by channel
+ID. Desktop searches across channels and DMs; mobile retains its Recent,
+Channels, or DMs scope. An empty query shows the ordinary list. Scrolling search
+results loads the next search page; clearing the query restores ordinary list
+pagination. Check both surfaces with a matching query, a query with no matches,
+and a clear/reopen cycle.
+On mobile, a nonempty query with no matches shows **No results**, echoes the
+query, and offers **Clear search**. Clearing restores the selected tab's list
+and keeps the dock search session open. The tab's usual empty state and create
+actions appear only when no search text is entered; loading and request errors
+keep their own states.
+Recent search includes both channels and DMs, including service hits without
+message previews. It does not require message metadata or an importance filter.
+Loaded conversation metadata is preserved when a service hit has the same ID.
+Pending and placeholder service results never appear as current hits. Ordinary
+list errors do not affect an active search.
 Collapsing a section does not discard its loaded pages. Recent has its own
 pagination cursor. Each list is virtualized, so offscreen conversations may not
 exist in the DOM.
