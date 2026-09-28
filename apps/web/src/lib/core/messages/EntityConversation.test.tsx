@@ -3,7 +3,7 @@ import type { MessageListItem } from '@service-storage/messages';
 import { cleanup, fireEvent, render } from '@solidjs/testing-library';
 import { type Accessor, createSignal, For, type ParentProps } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DocumentConversation } from './DocumentConversation';
+import { EntityConversation } from './EntityConversation';
 
 const mocks = vi.hoisted(() => ({
   timeline: vi.fn(),
@@ -124,7 +124,7 @@ function discussion(
   return {
     setPages,
     ...render(() => (
-      <DocumentConversation
+      <EntityConversation
         parent={{ type: 'document', id: 'document' }}
         canWrite={options.canWrite ?? false}
         targetId={targetId}
@@ -135,7 +135,7 @@ function discussion(
   };
 }
 
-describe('DocumentConversation placement', () => {
+describe('EntityConversation placement', () => {
   it('renders the Discussion disclosure as an icon instead of a text glyph', () => {
     const view = discussion([[]]);
     const button = view.getByRole('button', { name: 'Discussion' });
@@ -248,7 +248,7 @@ describe('DocumentConversation placement', () => {
   });
 });
 
-describe('DocumentConversation linked message highlight', () => {
+describe('EntityConversation linked message highlight', () => {
   it('releases the highlight while keeping the linked view around its root', () => {
     const [cleared, setCleared] = createSignal(false);
     mocks.timeline.mockReturnValue({
@@ -256,7 +256,7 @@ describe('DocumentConversation linked message highlight', () => {
       data: { pages: [{ items: [thread('root-of-reply', null)] }] },
     });
     const view = render(() => (
-      <DocumentConversation
+      <EntityConversation
         parent={{ type: 'document', id: 'document' }}
         canWrite={false}
         targetId="reply"
@@ -293,7 +293,7 @@ it('retains loaded comments on a pagination failure and removes them immediately
     fetchNextPage: loadMore,
   });
   const view = render(() => (
-    <DocumentConversation
+    <EntityConversation
       parent={{ type: 'initiative', id: 'project' }}
       canWrite
     />
@@ -330,7 +330,7 @@ it('hides cached comments when a linked message denies access and retries the li
     refetch,
   });
   const view = render(() => (
-    <DocumentConversation
+    <EntityConversation
       parent={{ type: 'initiative', id: 'project' }}
       targetId="linked-message"
       canWrite
