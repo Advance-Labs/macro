@@ -117,12 +117,13 @@ export function createCallResolutionsEffect(handler: CallResolutionHandler) {
 /**
  * Converts authoritative call-record state into a terminal ring resolution.
  * A historic participant row still counts as answered even if the user has
- * since left while the call remains active.
+ * since left while the call remains active. A viewer decline recovers rings
+ * that missed the one-shot `call_declined` websocket event.
  */
 export function getCallRecordResolution(
   record: Pick<
     CallRecord,
-    'callId' | 'channelId' | 'isActive' | 'participants'
+    'callId' | 'channelId' | 'isActive' | 'participants' | 'viewerHasDeclined'
   >,
   userId: string
 ): CallResolution | null {
@@ -143,6 +144,14 @@ export function getCallRecordResolution(
       type: 'answered',
       callId: record.callId,
       answeredBy: userId,
+    };
+  }
+
+  if (record.viewerHasDeclined) {
+    return {
+      type: 'declined',
+      callId: record.callId,
+      declinedBy: userId,
     };
   }
 

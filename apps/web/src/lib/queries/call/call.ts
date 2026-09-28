@@ -31,12 +31,13 @@ export function requestCallToken(channelId: string) {
 }
 
 /**
- * Declines the channel's ringing call for this user so their other devices
- * stop ringing. Nothing to cache: the call stays active for other members, and
- * the caller's own ring is already dismissed locally.
+ * Declines this ringing call for the user so their other devices stop ringing.
+ * Bound to `callId` so a stale incoming-call UI cannot decline a replacement
+ * call. Nothing to cache: the call stays active for other members, and the
+ * caller's own ring is already dismissed locally.
  */
-export function declineChannelCall(channelId: string) {
-  return throwOnErr(() => callServiceClient.declineCall(channelId));
+export function declineCall(callId: string) {
+  return throwOnErr(() => callServiceClient.declineCall(callId));
 }
 
 /**

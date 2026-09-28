@@ -165,6 +165,7 @@ describe('getCallRecordResolution', () => {
           channelId: null,
           isActive: false,
           participants: [],
+          viewerHasDeclined: false,
         },
         'macro|person@example.com'
       )
@@ -186,6 +187,7 @@ describe('getCallRecordResolution', () => {
               leftAt: '2026-08-10T10:01:00.000Z',
             },
           ],
+          viewerHasDeclined: false,
         },
         'macro|person@example.com'
       )
@@ -212,10 +214,59 @@ describe('getCallRecordResolution', () => {
               leftAt: '2026-08-10T10:01:00.000Z',
             },
           ],
+          viewerHasDeclined: false,
         },
         'macro|person@example.com'
       )
     ).toBeNull();
+  });
+
+  it('resolves a viewer decline when the websocket event was missed', async () => {
+    const { getCallRecordResolution } = await import('../call-resolution');
+
+    expect(
+      getCallRecordResolution(
+        {
+          callId: 'call-1',
+          channelId: 'channel-1',
+          isActive: true,
+          participants: [],
+          viewerHasDeclined: true,
+        },
+        'macro|person@example.com'
+      )
+    ).toEqual({
+      type: 'declined',
+      callId: 'call-1',
+      declinedBy: 'macro|person@example.com',
+    });
+  });
+
+  it('prefers answered over an earlier viewer decline', async () => {
+    const { getCallRecordResolution } = await import('../call-resolution');
+
+    expect(
+      getCallRecordResolution(
+        {
+          callId: 'call-1',
+          channelId: 'channel-1',
+          isActive: true,
+          participants: [
+            {
+              userId: 'macro|person@example.com',
+              joinedAt: '2026-08-10T10:00:00.000Z',
+              leftAt: null,
+            },
+          ],
+          viewerHasDeclined: true,
+        },
+        'macro|person@example.com'
+      )
+    ).toEqual({
+      type: 'answered',
+      callId: 'call-1',
+      answeredBy: 'macro|person@example.com',
+    });
   });
 
   it('resolves an inactive call as ended and leaves an unanswered call alone', async () => {
@@ -225,6 +276,7 @@ describe('getCallRecordResolution', () => {
       channelId: 'channel-1',
       isActive: true,
       participants: [],
+      viewerHasDeclined: false,
     };
 
     expect(

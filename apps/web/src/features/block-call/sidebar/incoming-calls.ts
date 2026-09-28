@@ -15,7 +15,7 @@ import { DEV_MODE_ENV } from '@core/constant/featureFlags';
 import { useChannelsContext } from '@core/context/channels';
 import { useUserId } from '@core/context/user';
 import { isTabFocused } from '@core/signal/tabFocus';
-import { declineChannelCall, fetchCallRecord } from '@queries/call/call';
+import { declineCall, fetchCallRecord } from '@queries/call/call';
 import {
   type Accessor,
   createEffect,
@@ -73,7 +73,8 @@ export function dismissIncomingCall(callId: string) {
 }
 
 /**
- * Declines an incoming call: dismisses it in this tab, silences its audible
+ * Declines an incoming call: dismisses it in this tab, publishes a local
+ * `declined` resolution so sibling tabs stop immediately, silences its audible
  * ring in every tab — the tab making noise may be a sibling (see
  * `ring-coordination.ts`) — and tells the backend, which stops the ring on
  * the user's other devices (phone, other browsers) via `call_declined`. Use
@@ -84,19 +85,25 @@ export function dismissIncomingCall(callId: string) {
  * Dev-only debug calls (`window.macroDebugIncomingCall`) have no server
  * record, so they are only dismissed locally.
  */
-export function dismissIncomingCallEverywhere(callId: string) {
+export function dismissIncomingCallEverywhere(
+  callId: string,
+  declinedBy?: string | null
+) {
   const call = incomingCalls().find((candidate) => candidate.callId === callId);
   silenceIncomingCallRing(callId);
   dismissIncomingCall(callId);
+  if (declinedBy) {
+    publishCallResolution({ type: 'declined', callId, declinedBy });
+  }
   if (!call || isDebugIncomingCall(call)) return;
-  void declineOnOtherDevices(call.channelId);
+  void declineOnOtherDevices(call.callId);
 }
 
 // Best-effort: the local dismissal already happened, and a lost request only
-// leaves the other devices ringing until their own timeout.
-async function declineOnOtherDevices(channelId: string) {
+// leaves the other devices ringing until reconciliation or their own timeout.
+async function declineOnOtherDevices(callId: string) {
   try {
-    await declineChannelCall(channelId);
+    await declineCall(callId);
   } catch (error) {
     console.warn('failed to decline incoming call', error);
   }
