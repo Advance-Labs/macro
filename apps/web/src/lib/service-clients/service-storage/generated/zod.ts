@@ -2479,6 +2479,12 @@ export const getCallRecordResponse = zod
           .describe('Ordered from least to most access top -> bottom'),
       ])
       .optional(),
+    viewerHasDeclined: zod
+      .boolean()
+      .optional()
+      .describe(
+        'Whether the authenticated viewer has declined this call on any device.\nSet on the single-record read so clients that missed `call_declined`\ncan still stop ringing via reconciliation; `false` in list contexts.'
+      ),
   })
   .describe(
     'Full record of a call, unifying rows from `calls` (active) and\n`call_records` (archived) into a single response shape.'
@@ -2575,6 +2581,17 @@ export const editCallRecordBody = zod
       ),
   })
   .describe('Edit call request, as supplied by inbound callers.');
+
+/**
+ * Declines the identified active call for the caller without joining it.
+Bound to `call_id` so a stale incoming-call UI cannot decline a newer call
+that replaced it in the same channel. The caller's other devices are told
+to stop ringing (`call_declined`); the call continues for everyone else.
+ * @summary Handler for `POST /call/record/{call_id}/decline`.
+ */
+export const declineCallParams = zod.object({
+  call_id: zod.uuid().describe('Call ID'),
+});
 
 /**
  * @summary Handle `POST /call/record/{call_id}/link` through the call domain service.
@@ -2761,16 +2778,6 @@ export const checkActiveCallResponse = zod
     createdBy: zod.string().describe('User who created the call.'),
   })
   .describe('Response indicating whether an active call exists for a channel.');
-
-/**
- * Declines the channel's active call for the caller without joining it.
-The caller's other devices are told to stop ringing (`call_declined`);
-the call continues for everyone else.
- * @summary Handler for `POST /call/{channel_id}/decline`.
- */
-export const declineCallParams = zod.object({
-  channel_id: zod.uuid().describe('Channel ID'),
-});
 
 /**
  * Receives transcript segments from the transcription agent.

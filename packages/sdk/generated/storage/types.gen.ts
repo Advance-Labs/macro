@@ -2069,6 +2069,12 @@ export type CallRecord = {
      */
     transcript: Array<CallRecordTranscriptSegment>;
     userAccessLevel?: null | AccessLevel;
+    /**
+     * Whether the authenticated viewer has declined this call on any device.
+     * Set on the single-record read so clients that missed `call_declined`
+     * can still stop ringing via reconciliation; `false` in list contexts.
+     */
+    viewerHasDeclined?: boolean;
 };
 
 /**
@@ -12024,6 +12030,38 @@ export type EditCallRecordResponses = {
 
 export type EditCallRecordResponse = EditCallRecordResponses[keyof EditCallRecordResponses];
 
+export type DeclineCallData = {
+    body?: never;
+    path: {
+        /**
+         * Call ID
+         */
+        call_id: string;
+    };
+    query?: never;
+    url: '/call/record/{call_id}/decline';
+};
+
+export type DeclineCallErrors = {
+    401: ErrorResponse;
+    /**
+     * The call is no longer active
+     */
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type DeclineCallError = DeclineCallErrors[keyof DeclineCallErrors];
+
+export type DeclineCallResponses = {
+    /**
+     * Decline recorded
+     */
+    204: void;
+};
+
+export type DeclineCallResponse = DeclineCallResponses[keyof DeclineCallResponses];
+
 export type MeetingShareData = {
     body?: never;
     path: {
@@ -12280,38 +12318,6 @@ export type CheckActiveCallResponses = {
 };
 
 export type CheckActiveCallResponse = CheckActiveCallResponses[keyof CheckActiveCallResponses];
-
-export type DeclineCallData = {
-    body?: never;
-    path: {
-        /**
-         * Channel ID
-         */
-        channel_id: string;
-    };
-    query?: never;
-    url: '/call/{channel_id}/decline';
-};
-
-export type DeclineCallErrors = {
-    401: ErrorResponse;
-    /**
-     * No active call
-     */
-    404: ErrorResponse;
-    500: ErrorResponse;
-};
-
-export type DeclineCallError = DeclineCallErrors[keyof DeclineCallErrors];
-
-export type DeclineCallResponses = {
-    /**
-     * Decline recorded
-     */
-    204: void;
-};
-
-export type DeclineCallResponse = DeclineCallResponses[keyof DeclineCallResponses];
 
 export type IngestTranscriptData = {
     body: TranscriptSegmentRequest;

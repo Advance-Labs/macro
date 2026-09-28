@@ -433,6 +433,18 @@ export class Sdk extends HeyApiClient {
     }
     
     /**
+     * Handler for `POST /call/record/{call_id}/decline`.
+     *
+     * Declines the identified active call for the caller without joining it.
+     * Bound to `call_id` so a stale incoming-call UI cannot decline a newer call
+     * that replaced it in the same channel. The caller's other devices are told
+     * to stop ringing (`call_declined`); the call continues for everyone else.
+     */
+    public declineCall<ThrowOnError extends boolean = false>(options: Options<DeclineCallData, ThrowOnError>): RequestResult<DeclineCallResponses, DeclineCallErrors, ThrowOnError> {
+        return (options.client ?? this.client).post<DeclineCallResponses, DeclineCallErrors, ThrowOnError>({ url: '/call/record/{call_id}/decline', ...options });
+    }
+    
+    /**
      * Handle `POST /call/record/{call_id}/link` through the call domain service.
      */
     public meetingShare<ThrowOnError extends boolean = false>(options: Options<MeetingShareData, ThrowOnError>): RequestResult<MeetingShareResponses, MeetingShareErrors, ThrowOnError> {
@@ -532,17 +544,6 @@ export class Sdk extends HeyApiClient {
      */
     public checkActiveCall<ThrowOnError extends boolean = false>(options: Options<CheckActiveCallData, ThrowOnError>): RequestResult<CheckActiveCallResponses, CheckActiveCallErrors, ThrowOnError> {
         return (options.client ?? this.client).get<CheckActiveCallResponses, CheckActiveCallErrors, ThrowOnError>({ url: '/call/{channel_id}/active', ...options });
-    }
-    
-    /**
-     * Handler for `POST /call/{channel_id}/decline`.
-     *
-     * Declines the channel's active call for the caller without joining it.
-     * The caller's other devices are told to stop ringing (`call_declined`);
-     * the call continues for everyone else.
-     */
-    public declineCall<ThrowOnError extends boolean = false>(options: Options<DeclineCallData, ThrowOnError>): RequestResult<DeclineCallResponses, DeclineCallErrors, ThrowOnError> {
-        return (options.client ?? this.client).post<DeclineCallResponses, DeclineCallErrors, ThrowOnError>({ url: '/call/{channel_id}/decline', ...options });
     }
     
     /**
