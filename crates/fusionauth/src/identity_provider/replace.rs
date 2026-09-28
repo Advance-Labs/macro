@@ -16,6 +16,7 @@ pub(super) async fn replace_identity_provider_grant(
     identity_provider_id: &str,
     link_owner_id: &str,
     display_name: &str,
+    subject: Option<&str>,
     fresh_refresh_token: &str,
 ) -> crate::Result<()> {
     let server_error =
@@ -34,10 +35,10 @@ pub(super) async fn replace_identity_provider_grant(
         .await
         .map_err(|error| server_error(format!("unable to read existing links {error}")))?;
 
-    let Some(existing_link) = existing_links
-        .into_iter()
-        .find(|link| link.display_name == display_name)
-    else {
+    let Some(existing_link) = existing_links.into_iter().find(|link| match subject {
+        Some(subject) => link.identity_provider_user_id == subject,
+        None => link.display_name == display_name,
+    }) else {
         tracing::warn!(
             fusion_user_id = %link_owner_id,
             "grant replacement found no matching link on the resolved owner"

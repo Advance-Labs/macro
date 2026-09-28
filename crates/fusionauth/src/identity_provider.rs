@@ -48,12 +48,14 @@ impl FusionAuthClient {
     }
 
     /// Replaces a grant on its current owner, restoring the previous grant on failure.
+    /// Prefer the immutable provider subject; legacy callers may select by display name.
     #[tracing::instrument(skip(self, display_name, fresh_refresh_token), err)]
     pub async fn replace_identity_provider_grant(
         &self,
         identity_provider_id: &str,
         link_owner_id: &str,
         display_name: &str,
+        subject: Option<&str>,
         fresh_refresh_token: &str,
     ) -> Result<()> {
         replace::replace_identity_provider_grant(
@@ -61,6 +63,7 @@ impl FusionAuthClient {
             identity_provider_id,
             link_owner_id,
             display_name,
+            subject,
             fresh_refresh_token,
         )
         .await

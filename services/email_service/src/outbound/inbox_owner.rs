@@ -60,14 +60,14 @@ impl InboxOwnerRepository for PgInboxOwners {
             return Ok(false);
         }
         let requester = self.by_fusionauth_id(requester).await?;
-        Ok(macro_db_client::macro_user_links::edge_exists(
+        macro_db_client::macro_user_links::edge_exists(
             &self.0,
             requester.macro_id.as_ref(),
             link.macro_id.as_ref(),
             link.id,
         )
         .await
-        .map_err(|error| rootcause::report!("{error:?}"))?)
+        .map_err(|error| rootcause::report!("{error:?}"))
     }
 
     async fn by_fusionauth_id(&self, id: Uuid) -> Result<InboxOwner, Report> {

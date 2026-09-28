@@ -51,6 +51,7 @@ pub(super) async fn replace_identity_provider_grant(
             identity_provider_id,
             link_owner_id,
             display_name,
+            None,
             fresh_refresh_token,
         )
         .await

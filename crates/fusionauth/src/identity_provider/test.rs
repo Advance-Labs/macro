@@ -100,6 +100,7 @@ async fn missing_grant_on_resolved_owner_is_an_error() {
                 "gmail-idp",
                 "old-owner",
                 "secondary@example.com",
+                Some("google-subject"),
                 "fresh-token"
             )
             .await
@@ -110,14 +111,31 @@ async fn missing_grant_on_resolved_owner_is_an_error() {
 
 #[tokio::test]
 async fn grant_refresh_and_rollback_keep_the_existing_login_identity() {
-    for replacement_status in [200, 500] {
+    for (replacement_status, subject) in [
+        (200, None),
+        (500, None),
+        (200, Some("google-subject")),
+        (500, Some("google-subject")),
+    ] {
+        let mut existing_link = link();
+        let mut unrelated_link = link();
+        unrelated_link["identityProviderUserId"] = json!("other-subject");
+        if subject.is_some() {
+            // The display name can be stale and another link can now use that name.
+            existing_link["displayName"] = json!("Previous.Address@example.com");
+        }
+        let existing_links = if subject.is_some() {
+            vec![unrelated_link, existing_link]
+        } else {
+            vec![existing_link]
+        };
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/api/identity-provider/link"))
             .and(query_param("userId", "old-owner"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_body_json(json!({"identityProviderLinks": [link()]})),
+                    .set_body_json(json!({"identityProviderLinks": existing_links})),
             )
             .expect(1)
             .mount(&server)
@@ -149,9 +167,35 @@ async fn grant_refresh_and_rollback_keep_the_existing_login_identity() {
                 "gmail-idp",
                 "old-owner",
                 "secondary@example.com",
+                subject,
                 "fresh-token",
             )
             .await;
         assert_eq!(result.is_ok(), replacement_status == 200);
     }
+}
+
+#[tokio::test]
+async fn a_provided_subject_never_falls_back_to_display_name() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/identity-provider/link"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"identityProviderLinks": [link()]})),
+        )
+        .mount(&server)
+        .await;
+    assert!(
+        client(&server)
+            .replace_identity_provider_grant(
+                "gmail-idp",
+                "old-owner",
+                "secondary@example.com",
+                Some("different-subject"),
+                "fresh-token"
+            )
+            .await
+            .is_err()
+    );
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
 }

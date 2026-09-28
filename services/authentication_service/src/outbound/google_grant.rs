@@ -53,6 +53,7 @@ impl GoogleGrantClient for FusionAuthGoogleGrants {
                 grant.identity_provider_id,
                 &owner.to_string(),
                 grant.email,
+                Some(grant.subject),
                 grant.refresh_token,
             )
             .await
