@@ -27,9 +27,8 @@ export function useReminderOccurrencesQuery(
     const request = params();
 
     return {
-      queryKey: reminderKeys.occurrences(
-        request ?? { start: '', end: '' }
-      ).queryKey,
+      queryKey: reminderKeys.occurrences(request ?? { start: '', end: '' })
+        .queryKey,
       queryFn: async ({ signal }: { signal?: AbortSignal }) => {
         if (!request) {
           throw new Error('Reminder occurrence window is unavailable');
@@ -45,8 +44,7 @@ export function useReminderOccurrencesQuery(
       },
       enabled: request !== undefined && options?.().enabled !== false,
       staleTime: REMINDER_OCCURRENCES_STALE_TIME,
-      placeholderData: (previous: ReminderOccurrence[] | undefined) =>
-        previous,
+      placeholderData: (previous: ReminderOccurrence[] | undefined) => previous,
       refetchOnWindowFocus: options?.().refetchOnWindowFocus ?? true,
     };
   });

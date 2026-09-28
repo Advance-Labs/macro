@@ -295,9 +295,7 @@ export function ReminderComposerModal() {
           {(reminderId) => (
             <ReminderEditForm
               reminderId={reminderId}
-              onSubmit={(values, reminder) =>
-                void submitEdit(values, reminder)
-              }
+              onSubmit={(values, reminder) => void submitEdit(values, reminder)}
               onDelete={(reminder) => void requestDelete(reminder)}
               onCancel={() => void requestClose()}
               onDirtyChange={setDirty}

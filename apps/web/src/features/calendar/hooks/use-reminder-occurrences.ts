@@ -83,7 +83,8 @@ export function useReminderEvents(
   const occurrenceWindow = createMemo(() => {
     const range = options.range();
     if (!range || !isCalendarRangeSupported(range)) return undefined;
-    const span = new Date(range.end).getTime() - new Date(range.start).getTime();
+    const span =
+      new Date(range.end).getTime() - new Date(range.start).getTime();
     if (span <= 0 || span > MAX_REMINDER_WINDOW_MS) return undefined;
     return { start: range.start, end: range.end, attached: false };
   });
