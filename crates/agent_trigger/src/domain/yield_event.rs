@@ -36,15 +36,10 @@ pub enum NoEventReason {
         /// Session already evaluated for this message.
         session_id: AgentSessionId,
     },
-    /// The message sat in a session's thread without a mention, and neither
-    /// an explicit reply to the agent nor the model judged it addressed.
+    /// The message sat in a thread with live agent sessions without a
+    /// mention, and neither an explicit reply nor the judge matched it to
+    /// any of their agents.
     NotAddressedToAgent {
-        /// Session whose thread carried the message.
-        session_id: AgentSessionId,
-    },
-    /// Several agents are live in the thread and nothing said which one the
-    /// message was for.
-    AmbiguousAgentSessions {
         /// How many agent-backed sessions the thread carried.
         candidates: usize,
     },

@@ -1,5 +1,6 @@
 use super::*;
 
+use bot_id::BotId;
 use chrono::TimeZone as _;
 use macro_user_id::cowlike::CowLike as _;
 use macro_user_id::user_id::MacroUserIdStr;
@@ -130,23 +131,50 @@ fn bot_thread() -> Vec<ThreadMessage> {
     messages
 }
 
+fn agent(bot_id: BotId, label: &str) -> CandidateAgent {
+    CandidateAgent {
+        bot_id,
+        label: label.to_owned(),
+    }
+}
+
 #[test]
-fn a_rendered_transcript_marks_the_agents_own_messages() {
+fn a_rendered_transcript_labels_the_agents_own_messages() {
     let messages = bot_thread();
 
     let rendered = render_transcript(
         &thread_window(&messages, &anchors(&[1]), 2, 60),
-        BotId::TEST_A,
+        &[agent(BotId::TEST_A, "Cursor")],
     );
 
     assert_eq!(
         rendered,
         format!(
             "[user macro|thread-window-test@macro.com] message 0\n\
-             [agent] message 1\n\
+             [agent Cursor] message 1\n\
              [bot {}] message 2\n",
             BotId::TEST_B.into_storage_id()
         )
+    );
+}
+
+#[test]
+fn a_rendered_transcript_tells_several_agents_apart() {
+    let messages = bot_thread();
+
+    let rendered = render_transcript(
+        &thread_window(&messages, &anchors(&[1, 2]), 2, 60),
+        &[
+            agent(BotId::TEST_A, "Cursor"),
+            agent(BotId::TEST_B, "Macro"),
+        ],
+    );
+
+    assert_eq!(
+        rendered,
+        "[user macro|thread-window-test@macro.com] message 0\n\
+         [agent Cursor] message 1\n\
+         [agent Macro] message 2\n"
     );
 }
 
@@ -156,7 +184,7 @@ fn a_rendered_transcript_says_where_messages_were_dropped() {
 
     let rendered = render_transcript(
         &thread_window(&messages, &anchors(&[15]), 1, 60),
-        BotId::TEST_A,
+        &[agent(BotId::TEST_A, "Cursor")],
     );
 
     assert!(
@@ -171,7 +199,7 @@ fn a_single_dropped_message_reads_as_one() {
 
     let rendered = render_transcript(
         &thread_window(&messages, &anchors(&[1]), 0, 60),
-        BotId::TEST_A,
+        &[agent(BotId::TEST_A, "Cursor")],
     );
 
     assert!(

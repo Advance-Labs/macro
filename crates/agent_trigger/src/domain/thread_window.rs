@@ -2,10 +2,11 @@
 
 use std::fmt::Write as _;
 
-use bot_id::BotId;
 use channel_sender::ChannelSender;
 use chrono::{DateTime, Utc};
 use macro_uuid::Uuid;
+
+use crate::domain::service::CandidateAgent;
 
 #[cfg(test)]
 mod test;
@@ -87,15 +88,19 @@ pub fn thread_window<'a>(
     entries
 }
 
-/// Renders a transcript for a judge reading the thread, labelling `agent`'s own
-/// messages so it can tell which participant it is deciding about.
+/// Renders a transcript for a judge reading the thread, labelling each
+/// candidate agent's own messages with its label so the judge can tell which
+/// participant said what, and answer with the same label.
 ///
-/// Other bots keep their raw ids: a second bot in the thread is a participant
-/// like any other, and mislabelling it as the agent would invite the judge to
-/// answer about the wrong one.
+/// Other bots keep their raw ids: a bot without a live session in the thread
+/// is a participant like any other, and labelling it as an agent would invite
+/// the judge to answer about one it cannot route to.
 #[must_use]
-pub fn render_transcript(entries: &[TranscriptEntry<'_>], agent: BotId) -> String {
-    let agent = agent.into_storage_id();
+pub fn render_transcript(entries: &[TranscriptEntry<'_>], agents: &[CandidateAgent]) -> String {
+    let agents: Vec<_> = agents
+        .iter()
+        .map(|agent| (agent.bot_id.into_storage_id(), agent.label.as_str()))
+        .collect();
     let mut rendered = String::new();
     for entry in entries {
         match entry {
@@ -105,8 +110,13 @@ pub fn render_transcript(entries: &[TranscriptEntry<'_>], agent: BotId) -> Strin
             }
             TranscriptEntry::Message(message) => {
                 let speaker = match (message.sender.as_bot(), message.sender.as_user()) {
-                    (Some(bot), _) if bot.as_ref() == agent.as_ref() => "agent".to_owned(),
-                    (Some(bot), _) => format!("bot {bot}"),
+                    (Some(bot), _) => match agents
+                        .iter()
+                        .find(|(agent, _)| agent.as_ref() == bot.as_ref())
+                    {
+                        Some((_, label)) => format!("agent {label}"),
+                        None => format!("bot {bot}"),
+                    },
                     (None, Some(user)) => format!("user {user}"),
                     // A sender is one or the other; a future third kind should
                     // still appear in the transcript rather than vanish.
