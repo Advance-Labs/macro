@@ -775,7 +775,10 @@ const HorizontalRule: TypedRenderableEntity<HorizontalRuleNode> = {
 };
 
 const Link: TypedRenderableElement<LinkNode> = {
-  guard: (node: LexicalNode): node is LinkNode => node.__type === 'link',
+  // A bare URL in the markdown converts to an autolink, the same node the
+  // editor's own autolinking produces; both render as the link they are.
+  guard: (node: LexicalNode): node is LinkNode =>
+    node.__type === 'link' || node.__type === 'autolink',
   render: (props) => (
     <LinkWithPreview
       url={props.node.__url}

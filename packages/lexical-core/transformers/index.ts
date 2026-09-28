@@ -1,5 +1,6 @@
 import type { Transformer } from '@lexical/markdown';
 import { I_AGENT_CONTEXT } from './agentContext';
+import { I_AUTOLINK } from './autolink';
 import { I_AWAIT_NODE } from './await';
 import { HTML_BLOCKQUOTE, I_MACRO_QUOTE } from './classedBlock';
 import { CUSTOM_TRANSFORMERS } from './customTransformers';
@@ -66,6 +67,7 @@ export const INTERNAL_TRANSFORMERS: Transformer[] = [
   I_HTML_RENDER,
   PRESERVE_LINES,
   LINK_XML, // Prefer internal xml link to handle []() in link text
+  I_AUTOLINK, // Bare URLs that were never typed into an editor
   MARK_XML,
   SEARCH_MATCH,
   HR,
@@ -102,6 +104,7 @@ export const INTERNAL_TRANSFORMERS: Transformer[] = [
  */
 export const EXTERNAL_TRANSFORMERS: Transformer[] = [
   HR,
+  I_AUTOLINK,
   MARK_XML,
   I_VIDEO,
   IMAGE,
@@ -145,6 +148,7 @@ export const ALL_TRANSFORMERS: Transformer[] = [
   E_PASTE_NODE,
   PRESERVE_LINES,
   LINK_XML, // Prefer internal xml link to handle []() in link text
+  I_AUTOLINK, // Bare URLs that were never typed into an editor
   MARK_XML,
   SEARCH_MATCH,
   HR,
