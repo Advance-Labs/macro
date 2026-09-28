@@ -39,6 +39,26 @@ final class ChromeUITests: XCTestCase {
         XCTAssertEqual(app.buttons["Calls"].frame.minY - app.buttons["CRM"].frame.maxY, 4.25, accuracy: 1)
         attach(app, "More views drawer")
     }
+    func testDockSelectionMovesBetweenTabsWithoutChangingGeometry() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-testing", "--workspace-testing"]; app.launch()
+        let home = app.buttons["dock-home"], files = app.buttons["dock-files"]
+        XCTAssertTrue(home.waitForExistence(timeout: 5)); XCTAssertTrue(home.isSelected)
+        let frame = files.frame
+        files.tap(); XCTAssertTrue(app.buttons["pill-myFiles"].waitForExistence(timeout: 4))
+        XCTAssertTrue(files.isSelected); XCTAssertFalse(home.isSelected)
+        assertSameFrame(files.frame, frame)
+        attach(app, "Native moving glass dock selection on Files")
+        home.tap(); XCTAssertTrue(app.buttons["pill-signal"].waitForExistence(timeout: 4))
+        XCTAssertTrue(home.isSelected); XCTAssertFalse(files.isSelected)
+        assertSameFrame(files.frame, frame)
+        attach(app, "Native moving glass dock selection returns Home")
+    }
+    private func assertSameFrame(_ actual: CGRect, _ expected: CGRect) {
+        XCTAssertEqual(actual.minX, expected.minX, accuracy: 0.001)
+        XCTAssertEqual(actual.minY, expected.minY, accuracy: 0.001)
+        XCTAssertEqual(actual.width, expected.width, accuracy: 0.001)
+        XCTAssertEqual(actual.height, expected.height, accuracy: 0.001)
+    }
     private func attach(_ app: XCUIApplication, _ name: String) {
         let value = XCTAttachment(screenshot: app.screenshot()); value.name = name; value.lifetime = .keepAlways; add(value)
     }

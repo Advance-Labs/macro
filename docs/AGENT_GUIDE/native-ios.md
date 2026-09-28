@@ -41,6 +41,8 @@ selected dock item returns that view to its root. Native Back and the leading-ed
 swipe return from details. The dock floats above scrolling content; the last row,
 reader actions, and composers must be able to move clear of it. With the keyboard
 open, the composer remains visible above the keyboard and the dock is hidden.
+The dock keeps white filled active icons and moves a gray glass selection surface between
+tabs without haptic feedback. Reduce Motion disables that movement.
 
 Top-left controls expose each view's filters. Notifications separates Signal and
 Noise; Files, Email, and Channels have their own scope controls. Server
@@ -84,7 +86,12 @@ attachments, pending sends, and retries are independent of the main channel
 composer. An explicit access denial removes cached channel/thread content and
 drafts; a temporary network error retains pending work.
 
-Check repeated open/back and edge-swipe navigation, multiline and consecutive
+On iOS 26, rightward swipes can begin anywhere in the channel content to move back
+interactively; a short, slow swipe cancels and preserves the draft and reading
+position. Earlier iOS versions retain edge-swipe navigation. Messages only move
+left for Reply, never right independently of the page.
+
+Check repeated open/back, content and edge-swipe navigation, multiline and consecutive
 sends, retry, mention selection, attachment-only sends, and incoming messages
 while reading older history. Loading earlier messages must preserve the reading
 position. Verify slow drags and fast flings through expanded threads, grouped

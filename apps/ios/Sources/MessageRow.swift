@@ -126,12 +126,14 @@ struct MessageRow: View {
             .simultaneousGesture(DragGesture(minimumDistance: 18)
                 .onChanged { value in
                     guard reply != nil, abs(value.translation.width) > abs(value.translation.height) * 1.3 else { return }
-                    swipeOffset = value.translation.width < 0 ? max(-130, value.translation.width) : min(12, value.translation.width * 0.1)
+                    // Rightward drags belong to back navigation, never to the message.
+                    swipeOffset = min(0, max(-130, value.translation.width))
                     let crossed = swipeOffset < -75
                     if crossed != crossedThreshold { UIImpactFeedbackGenerator(style: .light).impactOccurred(); crossedThreshold = crossed }
                 }
-                .onEnded { _ in
-                    let activate = crossedThreshold
+                .onEnded { value in
+                    let activate = reply != nil && value.translation.width < -75
+                        && abs(value.translation.width) > abs(value.translation.height) * 1.3
                     withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) { swipeOffset = 0; crossedThreshold = false }
                     if activate { reply?() }
                 })

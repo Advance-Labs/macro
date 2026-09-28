@@ -233,11 +233,15 @@ private struct NativeConversation: UIViewControllerRepresentable {
     let actions: ConversationActions
     @Environment(\.nativeChromeBottom) private var chromeBottom
     @Environment(\.nativeChromeTop) private var chromeTop
+    @Environment(\.nativeNavigationDetailVisibleAction) private var navigationDetailVisible
 
     func makeUIViewController(context: Context) -> ConversationController {
-        ConversationController(store: store, channel: channel, actions: actions)
+        let controller = ConversationController(store: store, channel: channel, actions: actions)
+        controller.onNavigationVisible = navigationDetailVisible
+        return controller
     }
     func updateUIViewController(_ controller: ConversationController, context: Context) {
+        controller.onNavigationVisible = navigationDetailVisible
         controller.updateChannel(channel)
         controller.setNavigationTarget(targetMessageID)
         controller.updateChromeBottom(chromeBottom)
@@ -251,6 +255,8 @@ private struct NativeConversation: UIViewControllerRepresentable {
 
 @MainActor
 final class ConversationController: UIViewController, UITextViewDelegate, UITableViewDelegate {
+    var onNavigationVisible: () -> Void = {}
+    private var appearedBefore = false
     private let store: ChatStore
     private var channel: Channel
     private let actions: ConversationActions
@@ -783,8 +789,17 @@ final class ConversationController: UIViewController, UITextViewDelegate, UITabl
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        navigationController?.interactivePopGestureRecognizer?.delegate = nil
-        navigationController?.interactivePopGestureRecognizer?.isEnabled = true
+        NativeNavigationBackGestures.enable(in: self)
+        onNavigationVisible()
+        if appearedBefore, store.selectedChannelID == nil {
+            Task { @MainActor [weak self] in
+                guard let self, self.view.window != nil,
+                      self.store.selectedChannelID == nil,
+                      !self.store.isChannelInaccessible(self.channel.id) else { return }
+                await self.store.open(self.channel)
+            }
+        }
+        appearedBefore = true
     }
 
     override func viewDidDisappear(_ animated: Bool) {

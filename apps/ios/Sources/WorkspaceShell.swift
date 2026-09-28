@@ -43,6 +43,9 @@ enum NativeTab: String, CaseIterable, Identifiable {
 struct WorkspaceShell: View {
     let session: NativeSession
     let store: ChatStore
+    @Namespace private var dockSelection
+    @State private var dockSelectionMoving = false
+    @State private var dockSelectionSettle: Task<Void, Never>?
     @State private var selected: NativeTab
     @State private var visited: Set<NativeTab>
     @State private var resetIDs: [NativeTab: Int] = [:]
@@ -118,6 +121,7 @@ struct WorkspaceShell: View {
                     .onPreferenceChange(NativeCognitionDockPreference.self) { active in
                         if active { cognitionTabs.insert(tab) } else { cognitionTabs.remove(tab) }
                     }
+                    .environment(\.nativeNavigationDetailVisibleAction, { detail(true, tab: tab) })
                     .environment(\.nativeChromeTop, geometry.safeAreaInsets.top)
                     .environment(\.nativeChromeBottom, keyboardVisible ? 0 : max(0, (detailTabs.contains(tab) ? 58 : 116) + 16 - geometry.safeAreaInsets.bottom))
                     .id("\(tab.id)-\(resetIDs[tab, default: 0])")
@@ -204,7 +208,14 @@ struct WorkspaceShell: View {
     }
 
     private func select(_ tab: NativeTab) {
-        UISelectionFeedbackGenerator().selectionChanged()
+        dockSelectionSettle?.cancel()
+        if tab != selected && !reduceMotion {
+            withAnimation(.easeOut(duration: 0.07)) { dockSelectionMoving = true }
+            dockSelectionSettle = Task { @MainActor in
+                do { try await Task.sleep(for: .milliseconds(220)) } catch { return }
+                withAnimation(.spring(duration: 0.20, bounce: 0.12)) { dockSelectionMoving = false }
+            }
+        } else { dockSelectionMoving = false }
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         if tab != selected, let channelID = store.selectedChannelID {
             parkedChannels[selected] = channelID; store.close(channelID)
@@ -223,16 +234,18 @@ struct WorkspaceShell: View {
                 ForEach(Array(NativeTab.allCases.prefix(count))) { tab in
                     Button { select(tab) } label: {
                         MacroIcon(name: tab.dockIcon(selected: (!emailCompositionActive && !cognitionTabs.contains(selected) && selected == tab)))
-                            .foregroundStyle((!emailCompositionActive && !cognitionTabs.contains(selected) && selected == tab) ? MacroTheme.accent : .primary)
+                            .foregroundStyle((!emailCompositionActive && !cognitionTabs.contains(selected) && selected == tab) ? Color.white : .primary)
                             .frame(maxWidth: .infinity).frame(height: 46)
 
-                    }.buttonStyle(MacroDockButtonStyle(tab: tab, selected: (!emailCompositionActive && !cognitionTabs.contains(selected) && selected == tab))).accessibilityLabel(tab.title).accessibilityIdentifier("dock-\(tab.id)").accessibilityAddTraits((!emailCompositionActive && !cognitionTabs.contains(selected) && selected == tab) ? .isSelected : [])
+                    }.buttonStyle(MacroDockButtonStyle(tab: tab, selected: (!emailCompositionActive && !cognitionTabs.contains(selected) && selected == tab), selectionNamespace: dockSelection, moving: dockSelectionMoving)).accessibilityLabel(tab.title).accessibilityIdentifier("dock-\(tab.id)").accessibilityAddTraits((!emailCompositionActive && !cognitionTabs.contains(selected) && selected == tab) ? .isSelected : [])
                     Spacer(minLength: 0)
                 }
                 Button { showMore = true } label: {
                     MacroIcon(name: "caret-up").frame(width: 46, height: 46).contentShape(Circle())
                 }.buttonStyle(.plain).accessibilityLabel("More views").accessibilityIdentifier("dock-more")
             }.nativeGlass()
+                .animation(reduceMotion ? nil : .spring(duration: 0.34, bounce: 0.08), value: selected)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: !emailCompositionActive && !cognitionTabs.contains(selected))
             Button { showSearch = true } label: {
                 MacroIcon(name: "magnifying-glass").frame(width: 46, height: 46).contentShape(Circle())
             }.buttonStyle(.plain).nativeGlass().accessibilityLabel("Search Macro").accessibilityIdentifier("dock-search")
