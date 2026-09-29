@@ -43,6 +43,9 @@ Switching tabs or navigating an in-app route is not a back/forward-cache restore
 | `/app/agents/chat/<uuid>` | Legacy AI chat opened in the Agents workspace (`/app/agent-chats/<uuid>` remains a compatibility alias) |
 | `/app/calls` | Calls list |
 | `/app/companies` | Customers (CRM; needs a team) |
+| `/app/companies/company/<uuid>` | Customers with a company opened; a discussion target uses `sN.crm-detail.commentId` |
+| `/app/companies/company/<uuid>/contact/<uuid>` | A contact opened from its company, retaining the company breadcrumb |
+| `/app/companies/contact/<uuid>` | A directly linked CRM contact when no company route context is available |
 | `/app/activity` | Activity heatmap + feed |
 | `/app/calendar/<month-or-week-or-day>` | Calendar; the focused event, its occurrence, and the locator range use `sN.calendar.*` |
 | `/app/<document-type>/<uuid>` | Legacy document URL (including `md`, `pdf`, `canvas`, `spreadsheet`, and the other Drive document types); redirects to `/app/drive/<document-type>/<uuid>` |
@@ -132,7 +135,7 @@ headings. Tags and folders have a separate disclosure button on the **right** of
 the row: clicking the label selects the destination; clicking Expand/Collapse
 only opens or closes its children. Selecting a Drive folder or tab closes an
 inline detail into that destination; it does not navigate back to Drive's root.
-Home, Email, Tasks, Channels, and Drive keep their workspace provider mounted
+Home, Email, Tasks, Channels, Drive, and Customers keep their workspace provider mounted
 while typed child routes own the accepted inline detail. Tasks and Email replace
 the list with detail, capturing its focus and scroll state before disposal. Their child
 selection participates in browser Back/Forward independently per pane. Explicit

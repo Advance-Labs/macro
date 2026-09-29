@@ -1192,7 +1192,7 @@ Standalone instant and scheduled calls are excluded from team memory. They have 
 Signed-in participants keep direct access to their recordings, transcripts, and summaries;
 joining a standalone call never makes its content available to the wider team.
 
-## Customers (CRM) — `/app/component/companies`
+## Customers (CRM) — `/app/companies`
 
 On desktop, the local sidebar uses the same navigation primitives as Email and Tasks.
 Board and List share a horizontal segmented toggle at the top of the sidebar; the
@@ -1214,22 +1214,24 @@ On touch devices, Customers uses the same full-frame list layout as the other
 mobile views: floating CRM-navigation and filter buttons with Board/List pills,
 List as the fresh default, and the global **+ Company** action above the dock.
 The navigation button opens the CRM views and lists; the desktop toolbar and
-embedded detail stack stay out of the mobile flow, so selecting a row navigates
-in place.
+embedded detail stack stay out of the mobile flow. Selecting a row navigates the
+same Customers pane to its routed, full-pane record detail.
 
 On desktop, clicking a company in Board or List (or pressing Enter on a focused list row)
 opens its details inside the CRM workspace, keeping the left navigation visible.
 The top breadcrumb reads `<current view or list> > <company>`; click the first
 segment to return with the same filters, layout, and list scroll position. Selecting
 another sidebar view or switching Board/List closes the company details.
-Shift-click still opens the company in a separate split. Direct company links use
-the standalone company page.
+Shift-click still opens the company in a separate split. Company details use
+`/app/companies/company/<companyId>`; legacy `/app/company/<companyId>` links
+upgrade to that route.
 Clicking a contact in an embedded company's Contacts section appends a third
 breadcrumb: `<current view or list> > <company> > <contact>`. The CRM sidebar stays
 visible. Click the company breadcrumb or the contact's Company link to return to
 the company; click the first breadcrumb to return directly to the originating
-view. Shift-click still opens a contact in a separate split. Direct contact links
-use the standalone contact page.
+view. Shift-click still opens a contact in a separate split. Nested contacts use
+`/app/companies/company/<companyId>/contact/<contactId>`; direct links use
+`/app/companies/contact/<contactId>`.
 Company and contact headers have `Copy link` beside the side-panel toggle.
 It copies the record's direct URL and shows a confirmation toast; this is also
 available in the embedded company and contact breadcrumb header.
@@ -1237,9 +1239,10 @@ available in the embedded company and contact breadcrumb header.
 Company and contact pages have a **Discussion** section built from the same
 message conversation as a document's Discussion: threaded replies, reactions,
 attachments, and edit/delete from the message menu. `@` suggests the team's
-members and agents. A message's copied link is the standalone record URL
-with `comment_id`; opening it, or a CRM discussion notification, scrolls to and
-highlights that message. Deleting a thread's first comment deletes the thread.
+members and agents. A message's copied link is the routed record URL with
+`comment_id`; ingress migrates that target to the pane-owned
+`sN.crm-detail.commentId`. Opening it, or a CRM discussion notification, scrolls
+to and highlights that message. Deleting a thread's first comment deletes the thread.
 
 Company selection actions **Set owner** and **Set revenue** remain available
 while team deal-stage definitions are loading. **Set stage** waits for the active
