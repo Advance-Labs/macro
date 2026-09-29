@@ -13,9 +13,11 @@ use email::domain::models::UserProvider;
 use email::domain::ports::EmailRepo;
 use email::outbound::EmailPgRepo;
 use email_api_client::domain::models::{EmailApiError, TokenFreshness};
+use email_api_client::domain::ports::{ProviderRateLimiter, ProviderTokenSource};
 use email_service::pubsub::publish_email_event;
-use macro_authorization::{MacroAuthorizationExtractor, UserOrInternal};
+use macro_authorization::{MacroAuthorizationExtractor, MacroUserAuthentication, UserOrInternal};
 use macro_db_client::in_progress_user_link::InProgressUserLink;
+use macro_event_broker::MacroEventBroker;
 use macro_user_id::email::EmailStr;
 use macro_user_id::user_id::MacroUserIdStr;
 use model::response::ErrorResponse;
@@ -29,8 +31,10 @@ use thiserror::Error;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+mod context;
 #[cfg(test)]
 mod test;
+use context::InitContext;
 
 #[derive(Debug, Error, AsRefStr)]
 pub enum InitError {
@@ -198,12 +202,25 @@ pub async fn handler(
     query: Query<InitParams>,
     authorization: MacroAuthorizationExtractor<AuthorizationService, UserOrInternal>,
 ) -> Result<Response, InitError> {
+    complete_init(
+        &InitContext::from(ctx),
+        query,
+        authorization.authorization.user,
+    )
+    .await
+}
+
+async fn complete_init<T: ProviderTokenSource, L: ProviderRateLimiter, B: MacroEventBroker>(
+    ctx: &InitContext<T, L, B>,
+    query: Query<InitParams>,
+    user: MacroUserAuthentication,
+) -> Result<Response, InitError> {
     // Init runs on every authentication, so its expected no-op outcomes (400s)
     // must not error-log. The span skips the auto err event and the result is
     // classified here, inside the span, where user fields still attach.
     let link_id = query.link_id;
     let db = ctx.db.clone();
-    let result = init_user(ctx, query, authorization).await;
+    let result = init_user(ctx, query, user).await;
     if let Err(e) = &result {
         let status = e.status_code();
         if status.is_server_error() {
@@ -243,16 +260,16 @@ async fn cleanup_in_progress_link_on_failure(
     }
 }
 
-async fn init_user(
-    ctx: ApiContext,
+async fn init_user<T: ProviderTokenSource, L: ProviderRateLimiter, B: MacroEventBroker>(
+    ctx: &InitContext<T, L, B>,
     Query(InitParams {
         link_id,
         force_share,
     }): Query<InitParams>,
-    authorization: MacroAuthorizationExtractor<AuthorizationService, UserOrInternal>,
+    user: MacroUserAuthentication,
 ) -> Result<Response, InitError> {
-    let macro_user_id = authorization.authorization.user.macro_user_id.clone();
-    let user_context = authorization.authorization.user.user_context.clone();
+    let macro_user_id = user.macro_user_id;
+    let user_context = user.user_context;
     let mut completed_google_grant: Option<CompletedGoogleGrant> = None;
     tracing::info!(user_id = %user_context.user_id, ?link_id, "Init called");
 
@@ -325,7 +342,7 @@ async fn init_user(
                     .await
                     .context("Failed to commit graph delegation transaction")?;
 
-                apply_and_consume_calendar_grant(&ctx, child_link.id, link_id, &completed_grant)
+                apply_and_consume_calendar_grant(ctx, child_link.id, link_id, &completed_grant)
                     .await?;
 
                 return Ok((
@@ -392,7 +409,7 @@ async fn init_user(
                 .context("Failed to check existing link by email")?
             {
                 let applied = apply_and_consume_calendar_grant(
-                    &ctx,
+                    ctx,
                     existing_link.id,
                     link_id,
                     &completed_grant,
@@ -517,7 +534,7 @@ async fn init_user(
                     }
                 }
 
-                apply_and_consume_calendar_grant(&ctx, promoted.link_id, link_id, &completed_grant)
+                apply_and_consume_calendar_grant(ctx, promoted.link_id, link_id, &completed_grant)
                     .await?;
 
                 return Ok((
@@ -604,9 +621,9 @@ async fn init_user(
     };
 
     if let (Some(grant), Some(link_id)) = (completed_google_grant.as_ref(), link_id) {
-        apply_and_consume_calendar_grant(&ctx, link.id, link_id, grant).await?;
+        apply_and_consume_calendar_grant(ctx, link.id, link_id, grant).await?;
     } else if completed_google_grant.is_none() {
-        apply_grant_discovered_from_token(&ctx, &link).await;
+        apply_grant_discovered_from_token(ctx, &link).await;
     }
 
     // Concurrent /email/init calls for the same inbox upsert the same link (ON CONFLICT)
@@ -741,7 +758,14 @@ async fn has_unrecorded_google_grant(db: &sqlx::PgPool, link_id: Uuid) -> bool {
 /// the scopes from Google's tokeninfo endpoint using the link's own token so
 /// SSO-only users still receive calendar sync. Best-effort: a failure here
 /// must never fail authentication, and the next init retries it.
-async fn apply_grant_discovered_from_token(ctx: &ApiContext, link: &link::Link) {
+async fn apply_grant_discovered_from_token<
+    T: ProviderTokenSource,
+    L: ProviderRateLimiter,
+    B: MacroEventBroker,
+>(
+    ctx: &InitContext<T, L, B>,
+    link: &link::Link,
+) {
     if !has_unrecorded_google_grant(&ctx.db, link.id).await {
         return;
     }
@@ -854,8 +878,8 @@ async fn apply_calendar_grant(
         })
 }
 
-async fn apply_and_consume_calendar_grant(
-    ctx: &ApiContext,
+async fn apply_and_consume_calendar_grant<T, L, B>(
+    ctx: &InitContext<T, L, B>,
     email_link_id: Uuid,
     in_progress_link_id: Uuid,
     grant: &CompletedGoogleGrant,
