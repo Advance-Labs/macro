@@ -227,17 +227,19 @@ pub struct GithubPullRequestReview {
 }
 
 impl GithubPullRequestReview {
-    /// Whether this review replaces `current` as its reviewer's latest. A comment does not
-    /// replace an approval, a change request, or a dismissal, as on GitHub. Otherwise the later
-    /// submission wins, a review with no submission time loses to one with a time, and a tie goes
-    /// to this review.
+    /// Whether this review replaces `current` as its reviewer's latest. An approval, change
+    /// request, or dismissal always outranks a comment, regardless of input order or submission
+    /// time. Otherwise the later submission wins, a review with no submission time loses to one
+    /// with a time, and a tie goes to this review.
     fn supersedes(&self, current: &Self) -> bool {
-        if self.state == GithubPullRequestReviewState::Commented
-            && current.state != GithubPullRequestReviewState::Commented
-        {
-            return false;
+        match (
+            self.state == GithubPullRequestReviewState::Commented,
+            current.state == GithubPullRequestReviewState::Commented,
+        ) {
+            (true, false) => false,
+            (false, true) => true,
+            _ => self.submitted_at >= current.submitted_at,
         }
-        self.submitted_at >= current.submitted_at
     }
 }
 

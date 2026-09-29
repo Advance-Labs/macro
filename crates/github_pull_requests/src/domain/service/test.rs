@@ -21,8 +21,9 @@ use super::GithubPullRequestServiceImpl;
 use crate::domain::{
     models::{
         EnrichedGithubPullRequest, GITHUB_PULL_REQUEST_FOREIGN_ENTITY_SOURCE,
-        GithubPullRequestError, GithubPullRequestFacets, GithubPullRequestRow,
-        GithubPullRequestStatus, GithubRepositoryIdentity, UpsertGithubPullRequest,
+        GithubPullRequestError, GithubPullRequestFacets, GithubPullRequestReviewDecision,
+        GithubPullRequestRow, GithubPullRequestStatus, GithubRepositoryIdentity,
+        UpsertGithubPullRequest,
     },
     ports::{
         GithubPullRequestFacetRepository, GithubPullRequestFacetService,
@@ -605,7 +606,7 @@ async fn upsert_writes_the_row_from_the_merged_metadata() {
             assignees: Vec::new(),
             labels: Vec::new(),
             reviews: Vec::new(),
-            review_decision: None,
+            review_decision: Some(GithubPullRequestReviewDecision::ReviewRequired),
         }]
     );
 }

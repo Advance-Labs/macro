@@ -630,6 +630,91 @@ fn review(
 }
 
 #[test]
+fn decisions_outrank_comments_in_both_orders() {
+    use GithubPullRequestReviewState::{Approved, ChangesRequested, Commented, Dismissed};
+
+    for state in [Approved, ChangesRequested, Dismissed] {
+        for (decision_minute, comment_minute) in [(1, 2), (2, 1)] {
+            let decision = review("8", state, decision_minute);
+            let comment = review("8", Commented, comment_minute);
+            for reviews in [
+                [decision.clone(), comment.clone()],
+                [comment.clone(), decision.clone()],
+            ] {
+                assert_eq!(latest_reviews(reviews), vec![decision.clone()]);
+            }
+        }
+    }
+}
+
+#[test]
+fn decisions_outrank_comments_with_missing_timestamps() {
+    use GithubPullRequestReviewState::{Approved, ChangesRequested, Commented, Dismissed};
+
+    for state in [Approved, ChangesRequested, Dismissed] {
+        for (decision_missing_time, comment_missing_time) in
+            [(true, false), (false, true), (true, true)]
+        {
+            let mut decision = review("8", state, 1);
+            let mut comment = review("8", Commented, 2);
+            if decision_missing_time {
+                decision.submitted_at = None;
+            }
+            if comment_missing_time {
+                comment.submitted_at = None;
+            }
+            for reviews in [
+                [decision.clone(), comment.clone()],
+                [comment.clone(), decision.clone()],
+            ] {
+                assert_eq!(latest_reviews(reviews), vec![decision.clone()]);
+            }
+        }
+    }
+}
+
+#[test]
+fn decisions_keep_timestamp_ordering_in_both_orders() {
+    use GithubPullRequestReviewState::{Approved, ChangesRequested, Dismissed};
+
+    for (earlier, later) in [
+        (Approved, ChangesRequested),
+        (ChangesRequested, Dismissed),
+        (Dismissed, Approved),
+    ] {
+        let earlier = review("8", earlier, 1);
+        let later = review("8", later, 2);
+        for reviews in [
+            [earlier.clone(), later.clone()],
+            [later.clone(), earlier.clone()],
+        ] {
+            assert_eq!(latest_reviews(reviews), vec![later.clone()]);
+        }
+    }
+}
+
+#[test]
+fn timed_decisions_outrank_untimed_decisions_in_both_orders() {
+    use GithubPullRequestReviewState::{Approved, ChangesRequested, Dismissed};
+
+    for (untimed, timed) in [
+        (Approved, ChangesRequested),
+        (ChangesRequested, Dismissed),
+        (Dismissed, Approved),
+    ] {
+        let mut untimed = review("8", untimed, 1);
+        untimed.submitted_at = None;
+        let timed = review("8", timed, 2);
+        for reviews in [
+            [untimed.clone(), timed.clone()],
+            [timed.clone(), untimed.clone()],
+        ] {
+            assert_eq!(latest_reviews(reviews), vec![timed.clone()]);
+        }
+    }
+}
+
+#[test]
 fn a_later_comment_does_not_replace_an_approval() {
     let latest = latest_reviews([
         review("8", GithubPullRequestReviewState::Approved, 1),
@@ -715,4 +800,37 @@ fn stored_reviews_merge_per_reviewer() {
         row.review_decision,
         Some(GithubPullRequestReviewDecision::ChangesRequested)
     );
+}
+
+#[test]
+fn stored_comments_do_not_hide_incoming_review_decisions() {
+    use GithubPullRequestReviewState::{Approved, ChangesRequested, Commented, Dismissed};
+
+    for (state, expected_decision) in [
+        (Approved, Some(GithubPullRequestReviewDecision::Approved)),
+        (
+            ChangesRequested,
+            Some(GithubPullRequestReviewDecision::ChangesRequested),
+        ),
+        (Dismissed, None),
+    ] {
+        let decision = review("8", state, 1);
+        let comment = review("8", Commented, 2);
+        for (stored, incoming) in [
+            (comment.clone(), decision.clone()),
+            (decision.clone(), comment.clone()),
+        ] {
+            let mut existing = EnrichedGithubPullRequest::from_reference(pull_request_reference());
+            existing.reviews = Some(vec![stored]);
+            let existing = existing.foreign_entity_metadata(None).unwrap();
+            let mut updated = EnrichedGithubPullRequest::from_reference(pull_request_reference());
+            updated.reviews = Some(vec![incoming]);
+
+            let metadata = updated.foreign_entity_metadata(Some(&existing)).unwrap();
+            let row = GithubPullRequestRow::from_metadata(&metadata).unwrap();
+
+            assert_eq!(row.reviews, vec![decision.clone()]);
+            assert_eq!(row.review_decision, expected_decision);
+        }
+    }
 }
