@@ -37,7 +37,7 @@ use rootcause::prelude::ResultExt;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;

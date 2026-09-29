@@ -1916,6 +1916,54 @@ async fn test_legacy_duplicate_restores_original_recipient_before_mute_filter(po
     assert_eq!(queue.get_published().len(), 1);
 }
 
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn test_legacy_duplicate_restores_original_recipient_before_future_snooze_filter(
+    pool: sqlx::PgPool,
+) {
+    let notification_id = Uuid::now_v7();
+    let recipient = test_user_id("legacy-snoozed@example.com");
+    let repository = DbNotificationRepository::new(pool.clone());
+    repository
+        .create_notification(
+            SendNotificationRequestBuilder {
+                notification_entity: EntityType::Document.with_entity_str("delivery-test"),
+                secondary_notification_entity: None,
+                notification: TaggedContent::new(TestNotification {
+                    message: "legacy".to_string(),
+                }),
+                sender_id: None,
+                recipient_ids: HashSet::from([recipient.clone()]),
+            },
+            notification_id,
+            "test",
+            None,
+        )
+        .await
+        .unwrap();
+    sqlx::query(
+        r#"
+        INSERT INTO user_notification_item_unsubscribe
+            (user_id, item_id, item_type, snoozed_until)
+        VALUES ($1, 'delivery-test', 'document', NOW() + INTERVAL '1 hour')
+        "#,
+    )
+    .bind(recipient.as_ref())
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let queue = Arc::new(MockQueue::new());
+    let service = NotificationIngressService::new(repository, queue.clone(), MockStateMachine);
+    let result = service
+        .send_notification(conn_request(notification_id, recipient.clone()))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(result.notified_recipients, HashSet::from([recipient]));
+    assert_eq!(queue.get_published().len(), 1);
+}
+
 #[tokio::test]
 async fn test_digest_replay_after_ingest_before_intent_persistence_reuses_generation() {
     let notification_id = Uuid::now_v7();
