@@ -27,16 +27,14 @@ Pick the type from what the values actually are, not from how they were typed at
 / Maybe / Declined\" is a `select`, not `text`; \"$1,200\" is a `number`; \"Aug 13\" is a \
 `date`. Use `text` only when the values really are free-form.\n\
 \n\
-- `isMultiSelect: true` makes the column hold several values at once. In SQL it reads as a \
-JSON array and also gets a companion `table__column(row_id, linked_id)` junction table; \
-`col HAS 'x'` tests membership.\n\
-- `linkToTableId` makes it a **link column** pointing at another table, so rows on one side \
-reference rows on the other. Link columns are many-to-many and junction-backed; join through \
-the junction rather than comparing the JSON array. The response's relation metadata gives \
-the target and exact junction names. Write edges through that junction, never the projected \
-column. QueryDatabase can insert a row and its relationship edges atomically in one call.\n\
-- `entity` columns hold references to Macro things (people, documents). Their values are typed \
-ids, and joining them against the `people` or `documents` magic table is how you get names.\n\
+- `isMultiSelect: true` makes the column hold several values at once. In SQL it is written \
+as a list (`['a', 'b']`) and `col HAS 'x'` tests membership.\n\
+- `linkToTableId` makes it a **relation column** pointing at another table, so rows on one \
+side reference rows on the other by row id. Write it as a list of row ids and join through \
+it (`JOIN guests g ON i.guest = g.row_id`). The response's relation metadata gives the \
+target table.\n\
+- `entity` columns hold references to Macro things (people, documents). Their values are \
+typed ids such as `macro|sam@example.com`.\n\
 \n\
 Select and tag columns take their options as **explicit schema**: pass every label the column \
 should accept in `options`. SQL only accepts those labels — a select column created with no \
@@ -61,7 +59,7 @@ pub struct AddColumn {
     /// Display name of the new column.
     #[schemars(
         description = "Display name of the column, as the user would head it — e.g. \"Dietary \
-                       Needs\". The SQL name is derived from it."
+                       Needs\". SQL refers to it by this name, quoted."
     )]
     pub name: String,
 
@@ -76,8 +74,8 @@ pub struct AddColumn {
     /// Whether the column holds several values at once.
     #[schemars(
         description = "True if a cell can hold several values at once. Defaults to false. \
-                       Multi-valued cells read as JSON arrays in SQL and get a junction table; \
-                       test membership with `col HAS 'x'`."
+                       Multi-valued cells are written as lists in SQL; test membership \
+                       with `col HAS 'x'`."
     )]
     #[serde(default)]
     pub is_multi_select: bool,

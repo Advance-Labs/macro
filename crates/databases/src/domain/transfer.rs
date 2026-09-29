@@ -1,6 +1,6 @@
 //! Bounded, retry-safe table imports. CSV syntax is decoded by the client library.
 
-use super::models::{DatabaseError, DatabaseId, PropertyDefinitionId, Table, Viewer};
+use super::models::{DatabaseError, DatabaseId, PropertyDefinitionId, RowId, Table, Viewer};
 use entity_access::domain::models::{EditAccessLevel, EntityAccessReceipt};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -21,8 +21,15 @@ pub struct ImportTable {
 
 /// Atomic persistence outcome; only a created result has consumed the definitions.
 pub enum ImportOutcome {
-    /// Created the table and every cell in one transaction.
-    Created(Table),
+    /// Created the table, its columns and its rows in one transaction. The
+    /// rows' cells are the service's to write next, in the order of
+    /// [`ImportTable::rows`].
+    Created {
+        /// The new table.
+        table: Table,
+        /// One row id per imported row, in request order.
+        rows: Vec<RowId>,
+    },
     /// The same request already committed.
     Replayed(Table),
     /// A different request already used this table name.
@@ -43,7 +50,8 @@ pub trait DatabaseTransferRepo: Send + Sync + 'static {
         database_id: DatabaseId,
         request_id: Uuid,
     ) -> impl Future<Output = Result<Option<(Table, String)>, Self::Err>> + Send;
-    /// Create all placements and rows together, serializing on the database.
+    /// Create all placements and empty rows together, serializing on the
+    /// database.
     fn import_table(
         &self,
         database_id: DatabaseId,

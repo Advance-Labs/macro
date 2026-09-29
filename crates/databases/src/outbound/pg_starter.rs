@@ -9,6 +9,7 @@ use models_properties::service::property_value::PropertyValue;
 use properties::domain::database_definition_writer::{
     DatabaseDefinitionWriter, NewDatabaseDefinition,
 };
+use properties::domain::ports::PropertiesRepo;
 use saved_views::TransactionalViewStorage;
 use sqlx::{PgPool, Postgres, Transaction};
 
@@ -24,9 +25,9 @@ pub enum PgStarterError {
     /// Property definition or saved-view writer failed.
     #[error("starter dependency failed: {0}")]
     Dependency(#[source] Box<dyn std::error::Error + Send + Sync>),
-    /// Seed cell serialization failed.
-    #[error(transparent)]
-    Json(#[from] serde_json::Error),
+    /// The seed rows' cells could not be written after the rows committed.
+    #[error("starter cells failed: {0}")]
+    Cells(#[source] anyhow::Error),
 }
 
 /// Composition receives owning property and saved-view ports, never constructs them.
@@ -53,7 +54,8 @@ fn dependency(error: impl std::error::Error + Send + Sync + 'static) -> PgStarte
 
 impl<P, V> DatabaseStarterRepo for PgDatabaseStarterRepo<P, V>
 where
-    P: DatabaseDefinitionWriter<Transaction = Transaction<'static, Postgres>>,
+    P: DatabaseDefinitionWriter<Transaction = Transaction<'static, Postgres>>
+        + PropertiesRepo<Err = anyhow::Error>,
     V: TransactionalViewStorage<Transaction = Transaction<'static, Postgres>>,
 {
     type Err = PgStarterError;
@@ -147,21 +149,22 @@ where
             sqlx::query!("INSERT INTO database_columns (id, table_id, property_definition_id, position, infer_type) VALUES ($1, $2, $3, $4, false)", column_id, table_id, definition_id, position)
                 .execute(&mut *transaction).await?;
         }
+        let mut seeded = Vec::with_capacity(blueprint.rows.len());
         for (index, (name, stage_index)) in blueprint.rows.iter().enumerate() {
             let row_id = macro_uuid::generate_uuid_v7();
             let position = format!("{:012}", index + 1);
-            let cells = serde_json::to_value(std::collections::HashMap::from([
-                (
-                    title.definition.id.to_string(),
-                    PropertyValue::Str((*name).into()),
-                ),
-                (
-                    stage.definition.id.to_string(),
-                    PropertyValue::SelectOption(vec![stage.property_options[*stage_index].id]),
-                ),
-            ]))?;
-            sqlx::query!("INSERT INTO database_rows (id, table_id, position, cells, created_by) VALUES ($1, $2, $3, $4, $5)", row_id, table_id, position, cells, user_id)
+            sqlx::query!("INSERT INTO database_rows (id, table_id, position, created_by) VALUES ($1, $2, $3, $4)", row_id, table_id, position, user_id)
                 .execute(&mut *transaction).await?;
+            seeded.push((
+                row_id,
+                [
+                    (title.definition.id, PropertyValue::Str((*name).into())),
+                    (
+                        stage.definition.id,
+                        PropertyValue::SelectOption(vec![stage.property_options[*stage_index].id]),
+                    ),
+                ],
+            ));
         }
         let mut board_id = None;
         for view in blueprint.views(user_id, stage_column_id) {
@@ -190,6 +193,21 @@ where
         .execute(&mut *transaction)
         .await?;
         transaction.commit().await?;
+        // Cells are entity properties of the rows, so they follow the rows'
+        // commit through the properties system's own writer.
+        for (row_id, cells) in seeded {
+            for (definition_id, value) in cells {
+                self.properties
+                    .upsert_entity_property(
+                        &row_id.to_string(),
+                        models_properties::EntityType::DatabaseRow,
+                        definition_id,
+                        Some(value),
+                    )
+                    .await
+                    .map_err(PgStarterError::Cells)?;
+            }
+        }
         Ok(StarterDatabase {
             database_id: Some(database_id),
             table_id: Some(table_id),

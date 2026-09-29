@@ -1,5 +1,5 @@
-//! Driven adapters: Postgres persistence, the rusqlite executor, magic-table
-//! sources, and the table-event publisher.
+//! Driven adapters: Postgres persistence, cells through the properties
+//! adapter, and the table-event publisher.
 
 #[cfg(feature = "postgres")]
 pub mod pg_access_directory;
@@ -14,17 +14,14 @@ pub mod pg_definition_store;
 #[cfg(feature = "postgres")]
 pub mod pg_starter;
 
-#[cfg(feature = "sqlite")]
-pub mod rusqlite_executor;
-
 #[cfg(feature = "postgres")]
-pub mod magic;
+pub mod pg_cell_store;
 
 #[cfg(feature = "gateway")]
 pub mod gateway_event_publisher;
 
-#[cfg(all(feature = "postgres", feature = "sqlite"))]
+#[cfg(feature = "postgres")]
 pub mod build;
 
-#[cfg(all(feature = "postgres", feature = "sqlite"))]
-pub use build::{build_service, build_service_with_limits, executor_limits_from_env};
+#[cfg(feature = "postgres")]
+pub use build::build_service;

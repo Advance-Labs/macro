@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn relation_schema_preserves_target_and_exact_junction_names() {
+fn relation_schema_names_the_target_table() {
     let mut database = detail(AccessGrant::Owner);
     let target = Uuid::new_v4();
     let column = &mut database.tables[0].columns[0];
@@ -14,9 +14,6 @@ fn relation_schema_preserves_target_and_exact_junction_names() {
         table_id: target,
     });
     column.writable = false;
-    column.junction_sql_name = Some("_macro_storage_junction_collision".into());
-    column.read_junction_sql_name = Some("_macro_table_source__customer".into());
-    column.junction_writable = true;
     let schema = serde_json::to_value(ToolDatabaseSchema::from(database)).unwrap();
     let column = &schema["tables"][0]["columns"][0];
     assert_eq!(column["isMultiSelect"], true);
@@ -27,9 +24,6 @@ fn relation_schema_preserves_target_and_exact_junction_names() {
         serde_json::json!({
             "databaseId": DATABASE_ID,
             "tableId": target,
-            "junctionSqlName": "_macro_storage_junction_collision",
-            "readJunctionSqlName": "_macro_table_source__customer",
-            "writable": true,
         })
     );
 }

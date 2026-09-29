@@ -2,9 +2,9 @@
 //!
 //! All authorization policy (beyond receipt minting at the edge) and all
 //! use-case orchestration live here, behind fake-able ports. The SQL surface
-//! is authorized by construction: the catalog handed to the executor is built
-//! from the viewer's grants, so an unreadable table does not exist and an
-//! unwritable one is compiled read-only.
+//! is authorized by construction: the catalog handed to the engine is built
+//! from the viewer's grants, so an unreadable table does not exist and a
+//! write to an unwritable one is refused before it runs.
 
 mod column_types;
 mod columns;
@@ -14,11 +14,7 @@ mod rename_column;
 mod sharing;
 mod transfer;
 
-#[cfg(test)]
-mod test;
-
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 use activity::Actor;
 use chrono::Utc;
@@ -31,25 +27,22 @@ use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::shared::DataType;
 use uuid::Uuid;
 
-use crate::domain::catalog::{self, JunctionKind, TableEntry};
+use crate::domain::catalog::{self, TableEntry};
 use crate::domain::events::{
     self, DatabaseCreatedMetadata, DatabaseMacroEvent, DatabasePurgedMetadata,
     DatabaseRenamedMetadata, DatabaseRestoredMetadata, DatabaseTablesChangedMetadata,
     DatabaseTrashedMetadata, TableVersionChange,
 };
-use crate::domain::materialize;
 use crate::domain::models::{
-    AccessGrant, AddColumnOptions, Catalog, ColumnBinding, ColumnConfig, ColumnDetail, ColumnId,
+    AccessGrant, AddColumnOptions, ColumnBinding, ColumnConfig, ColumnDetail, ColumnId,
     CreateColumn, CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId,
-    ExecOutcome, ExecRequest, InferColumnType, InferColumnTypeOutcome, ListedDatabase,
-    MaterializedTable, QueryError, RenameColumnOutcome, Row, RowChange, RowId, SqliteSnapshot,
-    Table, TableDeps, TableDetail, TableId, TableMutationOutcome, TableSchema, TableVersion,
-    Viewer,
+    ExecOutcome, ExecRequest, InferColumnType, InferColumnTypeOutcome, ListedDatabase, QueryError,
+    RenameColumnOutcome, Table, TableDetail, TableId, TableMutationOutcome, TableVersion, Viewer,
 };
 use crate::domain::models::{ChangeColumnType, ColumnReplacement, ColumnSchemaOutcome};
 use crate::domain::ports::{
-    AccessDirectory, ColumnDefinitionStore, DatabasesRepo, DatabasesService, MagicTables,
-    SqlExecutor, TableEventPublisher,
+    AccessDirectory, CellStore, ColumnDefinitionStore, DatabasesRepo, DatabasesService,
+    TableEventPublisher,
 };
 
 /// Name of the table every new database starts with.
@@ -58,10 +51,10 @@ const STARTER_TABLE_NAME: &str = "Table 1";
 const MAX_NAME_LEN: usize = 200;
 /// Longest accepted select-option label.
 const MAX_OPTION_LABEL_LEN: usize = 200;
-/// Longest accepted statement text; SQLite enforces the same cap.
+/// Longest accepted statement text.
 const MAX_SQL_LEN: usize = 256 * 1024;
-/// Most rows any one table may contribute to a materialization.
-const MAX_MATERIALIZED_ROWS: usize = 200_000;
+/// Most rows a schema operation converts in one go.
+const MAX_CONVERTED_ROWS: usize = 200_000;
 
 /// Concrete databases service backed by its ports.
 ///
@@ -69,11 +62,10 @@ const MAX_MATERIALIZED_ROWS: usize = 200_000;
 /// carries the durable domain events (`macro.databases`) other domains
 /// consume, activity among them.
 #[derive(Debug, Clone)]
-pub struct DatabasesServiceImpl<Repo, Defs, Magic, Exec, Events, Access, Broker> {
+pub struct DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker> {
     repo: Repo,
     definitions: Defs,
-    magic: Magic,
-    executor: Arc<Exec>,
+    cells: Cells,
     events: Events,
     access: Access,
     broker: Broker,
@@ -216,26 +208,12 @@ fn option_key(label: &str) -> String {
     label.trim().to_lowercase()
 }
 
-/// The viewer's catalog plus the entries needed to materialize and translate.
-struct ViewerCatalog {
-    entries: Vec<TableEntry>,
-    catalog: Catalog,
-}
-
-/// Rows and link edges loaded for a materialization, reused across tables.
-#[derive(Default)]
-struct Loaded {
-    rows: HashMap<TableId, Vec<Row>>,
-    links: HashMap<ColumnId, HashMap<RowId, Vec<RowId>>>,
-}
-
-impl<Repo, Defs, Magic, Exec, Events, Access, Broker>
-    DatabasesServiceImpl<Repo, Defs, Magic, Exec, Events, Access, Broker>
+impl<Repo, Defs, Cells, Events, Access, Broker>
+    DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
 where
     Repo: DatabasesRepo,
     Defs: ColumnDefinitionStore,
-    Magic: MagicTables,
-    Exec: SqlExecutor,
+    Cells: CellStore,
     Events: TableEventPublisher,
     Access: AccessDirectory,
     Broker: MacroEventBroker,
@@ -244,8 +222,7 @@ where
     pub fn new(
         repo: Repo,
         definitions: Defs,
-        magic: Magic,
-        executor: Exec,
+        cells: Cells,
         events: Events,
         access: Access,
         broker: Broker,
@@ -253,8 +230,7 @@ where
         Self {
             repo,
             definitions,
-            magic,
-            executor: Arc::new(executor),
+            cells,
             events,
             access,
             broker,
@@ -270,15 +246,9 @@ where
     }
 
     /// Build catalog entries for a set of databases the viewer holds grants on.
-    ///
-    /// `reserved` are the SQL names bare table names may not claim — the magic
-    /// tables, for anything that shares a namespace with `exec_sql`. A
-    /// self-contained artefact with no magic tables in it (the SQLite
-    /// snapshot) passes an empty list so its tables keep their bare names.
-    async fn entries_for(
+    pub(super) async fn entries_for(
         &self,
         grants: &HashMap<DatabaseId, AccessGrant>,
-        reserved: &[String],
     ) -> Result<Vec<TableEntry>, QueryError> {
         let database_ids: Vec<DatabaseId> = grants.keys().copied().collect();
         let mut databases = self
@@ -313,29 +283,17 @@ where
             .into_iter()
             .map(|d| (d.definition.id, d))
             .collect();
-        Ok(catalog::build_user_tables(
+        Ok(catalog::build_entries(
             &databases,
             &tables,
             &columns,
             &definitions,
             grants,
-            reserved,
         ))
     }
 
-    /// The magic-table names bare user-table names must not shadow.
-    fn reserved_names(&self) -> Vec<String> {
-        self.magic
-            .schemas()
-            .into_iter()
-            .map(|s| s.sql_name)
-            .collect()
-    }
-
     /// Every grant the viewer holds, with `grant` on `database_id` (the one a
-    /// receipt just proved) taking precedence. SQL names are only meaningful
-    /// against the same set of tables `exec_sql` sees, so schema reads must
-    /// name tables against the whole catalog, not one database in isolation.
+    /// receipt just proved) taking precedence.
     async fn viewer_grants(
         &self,
         viewer: &Viewer,
@@ -360,256 +318,6 @@ where
             .collect()
     }
 
-    /// The viewer's whole queryable world — the authorization boundary for SQL.
-    async fn build_catalog(&self, viewer: &Viewer) -> Result<ViewerCatalog, QueryError> {
-        let grants: HashMap<DatabaseId, AccessGrant> = self
-            .access
-            .accessible_databases(viewer)
-            .await
-            .map_err(infra)?
-            .into_iter()
-            .collect();
-        let entries = self.entries_for(&grants, &self.reserved_names()).await?;
-        let mut tables: Vec<TableSchema> = catalog::schemas(&entries).collect();
-        tables.extend(self.magic.schemas());
-        Ok(ViewerCatalog {
-            entries,
-            catalog: Catalog { tables },
-        })
-    }
-
-    /// Load rows and link edges for one table entry (rows once per table).
-    async fn load_table(&self, entry: &TableEntry, loaded: &mut Loaded) -> Result<(), QueryError> {
-        if let std::collections::hash_map::Entry::Vacant(slot) = loaded.rows.entry(entry.table.id) {
-            // One over the cap is enough to know the cap was broken, and stops
-            // an oversized table being pulled into memory just to be refused.
-            let fetched = self
-                .repo
-                .fetch_rows(entry.table.id, MAX_MATERIALIZED_ROWS + 1)
-                .await
-                .map_err(infra)?;
-            if fetched.len() > MAX_MATERIALIZED_ROWS {
-                return Err(QueryError::BudgetExceeded);
-            }
-            slot.insert(fetched);
-        }
-        for junction in &entry.junctions {
-            if junction.kind == JunctionKind::Link
-                && !loaded.links.contains_key(&junction.column_id)
-            {
-                let edges = self
-                    .repo
-                    .fetch_links(junction.column_id, MAX_MATERIALIZED_ROWS + 1)
-                    .await
-                    .map_err(infra)?;
-                if edges.len() > MAX_MATERIALIZED_ROWS {
-                    return Err(QueryError::BudgetExceeded);
-                }
-                let mut by_source: HashMap<RowId, Vec<RowId>> = HashMap::new();
-                for (source, target) in edges {
-                    by_source.entry(source).or_default().push(target);
-                }
-                loaded.links.insert(junction.column_id, by_source);
-            }
-        }
-        Ok(())
-    }
-
-    /// Materialize exactly the tables a statement references (plus the parent
-    /// of any junction, so its foreign key resolves). Returns the tables and
-    /// the names of magic tables that were truncated.
-    async fn materialize_deps(
-        &self,
-        viewer: &Viewer,
-        entries: &[TableEntry],
-        deps: &TableDeps,
-        loaded: &mut Loaded,
-    ) -> Result<(Vec<MaterializedTable>, Vec<String>), QueryError> {
-        let mut out: Vec<MaterializedTable> = Vec::new();
-        let mut truncated: Vec<String> = Vec::new();
-        let mut emitted: HashSet<TableId> = HashSet::new();
-        let mut emitted_junctions: HashSet<ColumnId> = HashSet::new();
-        let mut emitted_magic: HashSet<String> = HashSet::new();
-
-        let mut wanted: Vec<String> = deps.tables.keys().cloned().collect();
-        wanted.sort();
-
-        for name in wanted {
-            if let Some(entry) = entries.iter().find(|e| catalog::entry_answers_to(e, &name)) {
-                if emitted.insert(entry.table.id) {
-                    self.load_table(entry, loaded).await?;
-                    out.push(materialize::user_table(
-                        entry,
-                        &loaded.rows[&entry.table.id],
-                        &loaded.links,
-                    ));
-                }
-                continue;
-            }
-            if let Some((entry, junction)) = entries.iter().find_map(|e| {
-                e.junctions
-                    .iter()
-                    .find(|j| catalog::junction_answers_to(j, &name))
-                    .map(|j| (e, j))
-            }) {
-                // The parent table must exist for the junction's foreign key.
-                if emitted.insert(entry.table.id) {
-                    self.load_table(entry, loaded).await?;
-                    out.push(materialize::user_table(
-                        entry,
-                        &loaded.rows[&entry.table.id],
-                        &loaded.links,
-                    ));
-                }
-                if emitted_junctions.insert(junction.column_id) {
-                    out.push(materialize::junction(
-                        entry,
-                        junction,
-                        &loaded.rows[&entry.table.id],
-                        &loaded.links,
-                    ));
-                }
-                continue;
-            }
-            if !emitted_magic.insert(name.clone()) {
-                continue;
-            }
-            let columns = deps
-                .tables
-                .get(&name)
-                .map(|t| t.read_columns.clone())
-                .unwrap_or_default();
-            let (table, was_truncated) = self
-                .magic
-                .materialize(viewer, &name, &columns)
-                .await
-                .map_err(infra)?;
-            if was_truncated {
-                truncated.push(name);
-            }
-            out.push(table);
-        }
-        Ok((out, truncated))
-    }
-
-    /// Materialize every table and junction of the given entries (snapshots).
-    async fn materialize_all(
-        &self,
-        entries: &[TableEntry],
-    ) -> Result<Vec<MaterializedTable>, QueryError> {
-        let mut loaded = Loaded::default();
-        let mut out = Vec::new();
-        for entry in entries {
-            self.load_table(entry, &mut loaded).await?;
-            out.push(materialize::user_table(
-                entry,
-                &loaded.rows[&entry.table.id],
-                &loaded.links,
-            ));
-            for junction in &entry.junctions {
-                out.push(materialize::junction(
-                    entry,
-                    junction,
-                    &loaded.rows[&entry.table.id],
-                    &loaded.links,
-                ));
-            }
-        }
-        Ok(out)
-    }
-
-    /// Link edges may only connect rows of the junction's own table to rows of
-    /// the column's configured target table; SQL cannot forge either end.
-    async fn validate_links(
-        &self,
-        changes: &[RowChange],
-        entries: &[TableEntry],
-        loaded: &mut Loaded,
-    ) -> Result<(), QueryError> {
-        for change in changes {
-            let (RowChange::Link {
-                column_id,
-                source_row_id,
-                target_row_id,
-            }
-            | RowChange::Unlink {
-                column_id,
-                source_row_id,
-                target_row_id,
-            }) = change
-            else {
-                continue;
-            };
-            let (entry, column) = entries
-                .iter()
-                .find_map(|e| {
-                    e.columns
-                        .iter()
-                        .find(|c| c.column.id == *column_id)
-                        .map(|c| (e, c))
-                })
-                .ok_or_else(|| QueryError::UntranslatableChange("unknown link column".into()))?;
-            let Some(ColumnConfig::Link {
-                table_id: target_table,
-                ..
-            }) = &column.column.config
-            else {
-                return Err(QueryError::UntranslatableChange(format!(
-                    "{} is not a link column",
-                    column.sql_name
-                )));
-            };
-            let target_entry = entries
-                .iter()
-                .find(|e| e.table.id == *target_table)
-                .ok_or_else(|| {
-                    QueryError::ReadOnly(format!(
-                        "link target table of {} is not accessible",
-                        column.sql_name
-                    ))
-                })?;
-            self.load_table(entry, loaded).await?;
-            self.load_table(target_entry, loaded).await?;
-            let has_row = |table: TableId, row: RowId| {
-                let removed = changes.iter().any(|change| {
-                    matches!(
-                        change,
-                        RowChange::Delete { table_id, row_id }
-                            if *table_id == table && *row_id == row
-                    )
-                });
-                if matches!(change, RowChange::Link { .. }) && removed {
-                    return false;
-                }
-                let inserted = changes.iter().any(|change| {
-                    matches!(
-                        change,
-                        RowChange::Insert { table_id, row_id, .. }
-                            if *table_id == table && *row_id == row
-                    )
-                });
-                inserted
-                    || loaded
-                        .rows
-                        .get(&table)
-                        .is_some_and(|rows| rows.iter().any(|r| r.id == row))
-            };
-            if !has_row(entry.table.id, *source_row_id) {
-                return Err(QueryError::UntranslatableChange(format!(
-                    "{source_row_id} is not a row of {}",
-                    entry.schema.sql_name
-                )));
-            }
-            if !has_row(target_entry.table.id, *target_row_id) {
-                return Err(QueryError::UntranslatableChange(format!(
-                    "{target_row_id} is not a row of {}",
-                    target_entry.schema.sql_name
-                )));
-            }
-        }
-        Ok(())
-    }
-
     fn detail(database: Database, grant: AccessGrant, entries: Vec<TableEntry>) -> DatabaseDetail {
         DatabaseDetail {
             database,
@@ -619,36 +327,19 @@ where
     }
 
     fn table_detail(entry: TableEntry) -> TableDetail {
-        let read_sql_name = catalog::read_table_name(entry.table.id);
         let columns = entry
             .columns
             .into_iter()
-            .map(|column| {
-                let junction = entry
-                    .junctions
-                    .iter()
-                    .find(|j| j.column_id == column.column.id);
-                let read_junction = format!("{read_sql_name}__{}", column.sql_name);
-                ColumnDetail {
-                    junction_sql_name: junction.map(|j| j.schema.sql_name.clone()),
-                    read_junction_sql_name: junction.and_then(|j| {
-                        j.schema
-                            .aliases
-                            .iter()
-                            .find(|name| **name == read_junction)
-                            .cloned()
-                    }),
-                    junction_writable: junction.is_some_and(|j| j.schema.writable),
-                    column: column.column,
-                    sql_name: column.sql_name,
-                    definition: column.definition,
-                    writable: column.writable,
-                }
+            .map(|column| ColumnDetail {
+                sql_name: catalog::sql_identifier(column.name()),
+                column: column.column,
+                definition: column.definition,
+                writable: column.writable,
             })
             .collect();
         TableDetail {
-            sql_name: entry.schema.sql_name,
-            read_sql_name,
+            sql_name: catalog::sql_identifier(&entry.table.name),
+            read_sql_name: catalog::sql_identifier(&entry.table.name),
             table: entry.table,
             columns,
         }
@@ -695,18 +386,6 @@ where
         }
     }
 
-    /// Run the CPU-bound executor off the async runtime.
-    async fn blocking<T, F>(&self, f: F) -> Result<T, QueryError>
-    where
-        T: Send + 'static,
-        F: FnOnce(&Exec) -> Result<T, QueryError> + Send + 'static,
-    {
-        let executor = self.executor.clone();
-        tokio::task::spawn_blocking(move || f(&executor))
-            .await
-            .map_err(|e| QueryError::Infrastructure(rootcause::Report::new(e).into_dynamic()))?
-    }
-
     async fn database_for_edit(
         &self,
         receipt: &EntityAccessReceipt<EditAccessLevel>,
@@ -724,8 +403,7 @@ where
         Ok((database, tables))
     }
 
-    /// One column as the client sees it, named against the same catalog the
-    /// query surface uses so its `sql_name` is the one SQL answers to.
+    /// One column as the client sees it.
     async fn column_detail(
         &self,
         viewer: &Viewer,
@@ -739,7 +417,7 @@ where
             .await
             .map_err(repo_err)?;
         let entries = self
-            .entries_for(&grants, &self.reserved_names())
+            .entries_for(&grants)
             .await
             .map_err(|e| DatabaseError::Repo(rootcause::Report::new(e).into_dynamic()))?;
         Self::entries_of(entries, database_id)
@@ -772,13 +450,12 @@ where
     }
 }
 
-impl<Repo, Defs, Magic, Exec, Events, Access, Broker> DatabasesService
-    for DatabasesServiceImpl<Repo, Defs, Magic, Exec, Events, Access, Broker>
+impl<Repo, Defs, Cells, Events, Access, Broker> DatabasesService
+    for DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
 where
     Repo: DatabasesRepo,
     Defs: ColumnDefinitionStore,
-    Magic: MagicTables,
-    Exec: SqlExecutor,
+    Cells: CellStore,
     Events: TableEventPublisher,
     Access: AccessDirectory,
     Broker: MacroEventBroker,
@@ -948,7 +625,7 @@ where
             .await
             .map_err(repo_err)?;
         let entries = self
-            .entries_for(&grants, &self.reserved_names())
+            .entries_for(&grants)
             .await
             .map_err(|e| DatabaseError::Repo(rootcause::Report::new(e).into_dynamic()))?;
         Ok(Self::detail(
@@ -1360,28 +1037,4 @@ where
         .await
     }
 
-    #[tracing::instrument(skip(self, receipt), err)]
-    async fn sqlite_snapshot(
-        &self,
-        receipt: EntityAccessReceipt<ViewAccessLevel>,
-        _viewer: Viewer,
-    ) -> Result<SqliteSnapshot, QueryError> {
-        let database_id = receipt_database_id(&receipt)
-            .map_err(|_| QueryError::Sql("database not found".to_string()))?;
-        // A snapshot is a standalone SQLite file containing exactly one
-        // database and no magic tables, so — unlike the query surface, which
-        // must name tables against the viewer's whole catalog — its tables are
-        // named against that database alone and keep their bare names.
-        let grants = HashMap::from([(database_id, receipt_grant(&receipt, AccessGrant::View))]);
-        let entries = Self::entries_of(self.entries_for(&grants, &[]).await?, database_id);
-        let versions = entries
-            .iter()
-            .map(|e| (e.table.id, e.table.version))
-            .collect();
-        let tables = self.materialize_all(&entries).await?;
-        let bytes = self
-            .blocking(move |exec| exec.serialize_snapshot(tables))
-            .await?;
-        Ok(SqliteSnapshot { bytes, versions })
-    }
 }

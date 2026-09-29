@@ -7,13 +7,12 @@ use models_permissions::share_permission::{
     channel_share_permission::{UpdateChannelSharePermission, UpdateOperation},
 };
 
-impl<Repo, Defs, Magic, Exec, Events, Access, Broker> DatabaseSharingService
-    for DatabasesServiceImpl<Repo, Defs, Magic, Exec, Events, Access, Broker>
+impl<Repo, Defs, Cells, Events, Access, Broker> DatabaseSharingService
+    for DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
 where
     Repo: DatabasesRepo + DatabaseSharingRepo,
     Defs: ColumnDefinitionStore,
-    Magic: MagicTables,
-    Exec: SqlExecutor,
+    Cells: CellStore,
     Events: TableEventPublisher,
     Access: AccessDirectory,
     Broker: MacroEventBroker,

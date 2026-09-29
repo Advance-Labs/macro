@@ -24,10 +24,9 @@ Rename a table — what the user sees as a tab — keeping its id, records, and 
 Use it to give a new database's starter table (\"Table 1\") the name the user asked for \
 instead of creating an extra tab next to it, or when the user asks to rename a tab.\n\
 \n\
-Requires edit access to the database. The table's writable `sqlName` follows its new display \
-name, so use the refreshed schema in the response for later writes; its `readSqlName` never \
-changes. If `database` is null, the rename still succeeded; call DescribeDatabase using \
-databaseId before continuing."
+Requires edit access to the database. The table's `sqlName` is its display name, so use the \
+refreshed schema in the response for later statements. If `database` is null, the rename \
+still succeeded; call DescribeDatabase using databaseId before continuing."
 )]
 pub struct RenameTable {
     /// The database containing the table.

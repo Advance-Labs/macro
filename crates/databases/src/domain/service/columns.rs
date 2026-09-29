@@ -2,13 +2,12 @@ use super::column_types::{ConvertedCell, convert_cell};
 use super::*;
 use models_properties::service::property_value::PropertyValue;
 
-impl<Repo, Defs, Magic, Exec, Events, Access, Broker>
-    DatabasesServiceImpl<Repo, Defs, Magic, Exec, Events, Access, Broker>
+impl<Repo, Defs, Cells, Events, Access, Broker>
+    DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
 where
     Repo: DatabasesRepo,
     Defs: ColumnDefinitionStore,
-    Magic: MagicTables,
-    Exec: SqlExecutor,
+    Cells: CellStore,
     Events: TableEventPublisher,
     Access: AccessDirectory,
     Broker: MacroEventBroker,
@@ -87,27 +86,22 @@ where
                 "A lookup's type comes from its source column.".into(),
             ));
         }
+        let rows = self.rows_with_cells(table.id).await.map_err(|error| {
+            DatabaseError::Repo(rootcause::Report::new(error).into_dynamic())
+        })?;
+        if rows.len() > MAX_CONVERTED_ROWS {
+            return Err(DatabaseError::InvalidSchemaOperation(
+                "This table is too large to validate a type change in one operation.".into(),
+            ));
+        }
         if matches!(detail.column.config, Some(ColumnConfig::Link { .. }))
-            && !self
-                .repo
-                .fetch_links(cmd.column_id, 1)
-                .await
-                .map_err(repo_err)?
-                .is_empty()
+            && rows
+                .iter()
+                .any(|(_, cells)| cells.contains_key(&detail.column.property_definition_id))
         {
             return Err(DatabaseError::InvalidSchemaOperation(
                 "Remove the existing relationships before changing this column's type or target."
                     .into(),
-            ));
-        }
-        let rows = self
-            .repo
-            .fetch_rows(table.id, MAX_MATERIALIZED_ROWS + 1)
-            .await
-            .map_err(repo_err)?;
-        if rows.len() > MAX_MATERIALIZED_ROWS {
-            return Err(DatabaseError::InvalidSchemaOperation(
-                "This table is too large to validate a type change in one operation.".into(),
             ));
         }
         let mut converted = Vec::new();
@@ -128,14 +122,14 @@ where
             }
         }
         if detail.column.config.is_none() {
-            for row in rows {
-                if let Some(value) = row.cells.get(&detail.column.property_definition_id)
+            for (row_id, cells) in &rows {
+                if let Some(value) = cells.get(&detail.column.property_definition_id)
                     && let Some(value) = convert_cell(value, &detail.definition, &cmd)?
                 {
                     if let ConvertedCell::Options(options) = &value {
                         labels.extend(options.iter().cloned());
                     }
-                    converted.push((row.id, value));
+                    converted.push((*row_id, value));
                 }
             }
         }
@@ -197,7 +191,18 @@ where
             values,
         };
         let version = match self.repo.replace_column(table, &replacement).await {
-            Ok(Some(version)) => version,
+            Ok(Some(version)) => {
+                // The placement now names the new definition; the converted
+                // cells follow it, and the old definition's cells are left
+                // behind (no column reads them any more).
+                for (row_id, value) in &replacement.values {
+                    self.cells
+                        .write(*row_id, &[(new_id, Some(value.clone()))])
+                        .await
+                        .map_err(repo_err)?;
+                }
+                version
+            }
             Ok(None) => {
                 if let Err(error) = self.definitions.delete_unused_definition(new_id).await {
                     tracing::warn!(error = ?error, %new_id, "failed to clean up unused column definition");

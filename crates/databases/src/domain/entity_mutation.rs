@@ -17,8 +17,8 @@ use model_entity::Entity;
 use super::{
     models::DatabaseError,
     ports::{
-        AccessDirectory, ColumnDefinitionStore, DatabasesRepo, DatabasesService, MagicTables,
-        SqlExecutor, TableEventPublisher,
+        AccessDirectory, CellStore, ColumnDefinitionStore, DatabasesRepo, DatabasesService,
+        TableEventPublisher,
     },
     service::DatabasesServiceImpl,
 };
@@ -36,13 +36,12 @@ impl From<DatabaseError> for EntityMutationErrorCode {
     }
 }
 
-impl<Repo, Defs, Magic, Exec, Events, Access, Broker> RenameEntity
-    for DatabasesServiceImpl<Repo, Defs, Magic, Exec, Events, Access, Broker>
+impl<Repo, Defs, Cells, Events, Access, Broker> RenameEntity
+    for DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
 where
     Repo: DatabasesRepo,
     Defs: ColumnDefinitionStore,
-    Magic: MagicTables,
-    Exec: SqlExecutor,
+    Cells: CellStore,
     Events: TableEventPublisher,
     Access: AccessDirectory,
     Broker: MacroEventBroker,
@@ -60,13 +59,12 @@ where
     }
 }
 
-impl<Repo, Defs, Magic, Exec, Events, Access, Broker> TrashEntity
-    for DatabasesServiceImpl<Repo, Defs, Magic, Exec, Events, Access, Broker>
+impl<Repo, Defs, Cells, Events, Access, Broker> TrashEntity
+    for DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
 where
     Repo: DatabasesRepo,
     Defs: ColumnDefinitionStore,
-    Magic: MagicTables,
-    Exec: SqlExecutor,
+    Cells: CellStore,
     Events: TableEventPublisher,
     Access: AccessDirectory,
     Broker: MacroEventBroker,
@@ -85,13 +83,12 @@ where
     }
 }
 
-impl<Repo, Defs, Magic, Exec, Events, Access, Broker> RestoreEntity
-    for DatabasesServiceImpl<Repo, Defs, Magic, Exec, Events, Access, Broker>
+impl<Repo, Defs, Cells, Events, Access, Broker> RestoreEntity
+    for DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
 where
     Repo: DatabasesRepo,
     Defs: ColumnDefinitionStore,
-    Magic: MagicTables,
-    Exec: SqlExecutor,
+    Cells: CellStore,
     Events: TableEventPublisher,
     Access: AccessDirectory,
     Broker: MacroEventBroker,
@@ -108,13 +105,12 @@ where
     }
 }
 
-impl<Repo, Defs, Magic, Exec, Events, Access, Broker> DeleteEntityPermanently
-    for DatabasesServiceImpl<Repo, Defs, Magic, Exec, Events, Access, Broker>
+impl<Repo, Defs, Cells, Events, Access, Broker> DeleteEntityPermanently
+    for DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
 where
     Repo: DatabasesRepo,
     Defs: ColumnDefinitionStore,
-    Magic: MagicTables,
-    Exec: SqlExecutor,
+    Cells: CellStore,
     Events: TableEventPublisher,
     Access: AccessDirectory,
     Broker: MacroEventBroker,

@@ -13,7 +13,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use uuid::Uuid;
 
-use crate::domain::catalog::{TableEntry, build_user_tables};
+use crate::domain::catalog::{TableEntry, build_entries};
 use crate::domain::models::{AccessGrant, Column, ColumnConfig, DatabaseId, Table, TableVersion};
 
 /// A property definition of the given type with no options.
@@ -106,13 +106,12 @@ pub fn entries_for(
         created_at: chrono::Utc::now(),
         trashed_at: None,
     };
-    build_user_tables(
+    build_entries(
         std::slice::from_ref(&database),
         std::slice::from_ref(table),
         columns,
         &definitions,
         &grants,
-        &[],
     )
 }
 

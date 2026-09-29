@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use macro_user_id::user_id::MacroUserIdStr;
 use model_entity::EntityType;
-use models_properties::api::requests::SetPropertyValue;
 use models_properties::service::property_value::PropertyValue;
 use models_properties::shared::DataType;
 use serde::{Deserialize, Serialize};
@@ -169,17 +168,14 @@ pub enum ColumnConfig {
     },
 }
 
-/// A row: dense cells keyed by property definition.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Row {
+/// A row's identity and place in its table. Cells are not here: they are
+/// entity properties of the `DATABASE_ROW` entity the id names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowRef {
     /// Identifier.
     pub id: RowId,
-    /// Owning table.
-    pub table_id: TableId,
     /// Fractional index for manual ordering.
     pub position: String,
-    /// Cell values keyed by property definition id.
-    pub cells: HashMap<PropertyDefinitionId, PropertyValue>,
 }
 
 // ===== Schema operations (the structured, non-SQL part of the API) =====
@@ -319,147 +315,6 @@ pub struct ExecRequest {
     pub base_versions: Option<HashMap<TableId, TableVersion>>,
 }
 
-/// SQL name and typed columns of one table in the viewer's catalog.
-#[derive(Debug, Clone)]
-pub struct TableSchema {
-    /// SQL-visible table name (e.g. `guests`, `guests__sessions`, `people`).
-    pub sql_name: String,
-    /// What this table is backed by.
-    pub source: TableSource,
-    /// Typed columns in declaration order. For user tables the first column
-    /// is always `row_id`.
-    pub columns: Vec<ColumnSchema>,
-    /// Columns forming the primary key (compiled into the SQLite DDL).
-    pub primary_key: Vec<String>,
-    /// Foreign keys compiled into the SQLite DDL (junction integrity).
-    pub foreign_keys: Vec<ForeignKey>,
-    /// Whether SQL may write to this table at all (Edit grant on a user table
-    /// or its junctions). Magic tables and View-grant tables are read-only.
-    pub writable: bool,
-    /// Additional read-only names this table answers to (compiled as views),
-    /// e.g. the database-qualified form of a table that also has a bare name.
-    pub aliases: Vec<String>,
-}
-
-/// A foreign-key constraint compiled into the scratch schema.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ForeignKey {
-    /// Column on this table.
-    pub column: String,
-    /// Referenced table's SQL name.
-    pub references_table: String,
-    /// Referenced column.
-    pub references_column: String,
-}
-
-/// SQLite storage class for a materialized column (STRICT table types).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SqlType {
-    /// INTEGER (also booleans as 0/1).
-    Integer,
-    /// REAL.
-    Real,
-    /// TEXT (ids, dates as ISO-8601, JSON arrays for multi-valued cells).
-    Text,
-}
-
-impl SqlType {
-    /// The storage class a property data type materializes as.
-    pub fn for_data_type(data_type: DataType, is_multi_select: bool) -> Self {
-        if is_multi_select {
-            return SqlType::Text;
-        }
-        match data_type {
-            DataType::Boolean => SqlType::Integer,
-            DataType::Number => SqlType::Real,
-            DataType::Date
-            | DataType::String
-            | DataType::Link
-            | DataType::SelectNumber
-            | DataType::SelectString
-            | DataType::Tag
-            | DataType::Entity => SqlType::Text,
-        }
-    }
-
-    /// The type name used in `CREATE TABLE … STRICT`.
-    pub fn ddl_name(self) -> &'static str {
-        match self {
-            SqlType::Integer => "INTEGER",
-            SqlType::Real => "REAL",
-            SqlType::Text => "TEXT",
-        }
-    }
-}
-
-/// What a catalog table is backed by.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TableSource {
-    /// A user table ([`Table`]).
-    UserTable(TableId),
-    /// The junction view generated for a multi link/entity column.
-    Junction {
-        /// Owning user table.
-        table_id: TableId,
-        /// The link column the junction belongs to.
-        column_id: ColumnId,
-    },
-    /// A magic table (platform data, read-only).
-    Magic(String),
-}
-
-/// One column of a catalog table.
-#[derive(Debug, Clone)]
-pub struct ColumnSchema {
-    /// SQL-visible column name.
-    pub sql_name: String,
-    /// SQLite storage class.
-    pub sql_type: SqlType,
-    /// The property data type behind it, when property-backed.
-    pub data_type: Option<DataType>,
-    /// Whether the property holds multiple values (materialized as a JSON
-    /// array, with a companion junction view).
-    pub is_multi_select: bool,
-    /// The property definition behind a user-table column, for translating
-    /// changeset values back into cells.
-    pub definition_id: Option<PropertyDefinitionId>,
-    /// Entity type carried by id values in this column, for chip hydration
-    /// and join type-checking.
-    pub entity_type: Option<EntityType>,
-    /// Whether SQL writes to this column are translatable to a domain command.
-    pub writable: bool,
-    /// Allowed values for select/tag columns, compiled into a `CHECK`
-    /// constraint so SQLite rejects unknown options.
-    pub allowed_values: Option<Vec<String>>,
-    /// Whether NULL is rejected (`row_id`, junction columns).
-    pub not_null: bool,
-}
-
-/// The viewer's whole queryable world: used to prepare statements and as the
-/// authorization boundary (an unreadable table is simply absent).
-#[derive(Debug, Clone)]
-pub struct Catalog {
-    /// Every table the viewer can reference.
-    pub tables: Vec<TableSchema>,
-}
-
-/// Tables and columns a prepared statement references, from the SQLite
-/// authorizer. Doubles as the liveness dependency set.
-#[derive(Debug, Clone)]
-pub struct TableDeps {
-    /// Referenced tables mapped to the columns actually read or written.
-    pub tables: HashMap<String, ReferencedTable>,
-}
-
-/// One referenced table with access details.
-#[derive(Debug, Clone)]
-pub struct ReferencedTable {
-    /// Columns read.
-    pub read_columns: Vec<String>,
-    /// Whether the statement writes to this table.
-    pub written: bool,
-}
-
 /// A value in the SQLite materialization, kept engine-agnostic so the domain
 /// never depends on rusqlite types. Serializes as a plain JSON scalar.
 #[derive(utoipa::ToSchema, Debug, Clone, PartialEq, Serialize)]
@@ -473,16 +328,6 @@ pub enum SqlValue {
     Real(f64),
     /// Text (also ids, dates as ISO-8601, resolved option display values).
     Text(String),
-}
-
-/// One table's rows, ready to load into the scratch SQLite.
-#[derive(Debug, Clone)]
-pub struct MaterializedTable {
-    /// Schema (including compiled constraints).
-    pub schema: TableSchema,
-    /// Row tuples in column order. User tables carry their `row_id` as the
-    /// first column so changesets can be traced back.
-    pub rows: Vec<Vec<SqlValue>>,
 }
 
 /// A SELECT's result set with provenance for hydration and write-through.
@@ -506,87 +351,6 @@ pub struct ResultColumn {
     /// column — the precondition for write-through.
     pub origin: Option<(String, String)>,
 }
-
-/// A row-level change exactly as SQLite's session changeset reports it —
-/// SQL names and storage-class values, before the domain service translates
-/// it into typed cells ([`RowChange`]).
-#[derive(Debug, Clone, PartialEq)]
-pub struct RawRowChange {
-    /// SQL name of the table written.
-    pub table: String,
-    /// What happened.
-    pub op: RawOp,
-    /// Primary-key values of the affected row, by column name. For an insert
-    /// these are the values SQLite assigned or defaulted.
-    pub primary_key: Vec<(String, SqlValue)>,
-    /// New values by column name (inserts: every column; updates: only the
-    /// columns that changed).
-    pub new_values: Vec<(String, SqlValue)>,
-}
-
-/// The kind of a [`RawRowChange`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RawOp {
-    /// Row inserted.
-    Insert,
-    /// Row updated.
-    Update,
-    /// Row deleted.
-    Delete,
-}
-
-/// The row-level changes a statement made, extracted from the SQLite session
-/// changeset and expressed in domain terms.
-#[derive(Debug, Clone, PartialEq)]
-pub enum RowChange {
-    /// A row inserted into a user table.
-    Insert {
-        /// Table written.
-        table_id: TableId,
-        /// Server-minted identity, allocated before resolving same-batch links.
-        row_id: RowId,
-        /// Cell values keyed by definition, already converted and validated.
-        cells: HashMap<PropertyDefinitionId, SetPropertyValue>,
-    },
-    /// Cells updated on an existing row.
-    Update {
-        /// Table written.
-        table_id: TableId,
-        /// Row written.
-        row_id: RowId,
-        /// Changed cells only; `None` clears the cell (SQL `NULL`).
-        cells: HashMap<PropertyDefinitionId, Option<SetPropertyValue>>,
-    },
-    /// A row deleted (membership removed; referenced entities untouched).
-    Delete {
-        /// Table written.
-        table_id: TableId,
-        /// Row removed.
-        row_id: RowId,
-    },
-    /// A link edge added.
-    Link {
-        /// The link column.
-        column_id: ColumnId,
-        /// Source row.
-        source_row_id: RowId,
-        /// Target row.
-        target_row_id: RowId,
-    },
-    /// A link edge removed.
-    Unlink {
-        /// The link column.
-        column_id: ColumnId,
-        /// Source row.
-        source_row_id: RowId,
-        /// Target row.
-        target_row_id: RowId,
-    },
-}
-
-/// Result of applying a translated changeset: minted row ids (in changeset
-/// order) and the new version of every written table.
-pub type AppliedChanges = (Vec<RowId>, HashMap<TableId, TableVersion>);
 
 /// Outcome of an [`ExecRequest`].
 #[derive(utoipa::ToSchema, Debug, Clone, Serialize)]
@@ -613,40 +377,9 @@ pub struct ExecOutcome {
     /// writes. Versions for tables it only reads are ignored.
     #[schema(value_type = HashMap<String, TableVersion>)]
     pub read_versions: HashMap<TableId, TableVersion>,
-    /// Magic tables whose materialization hit its row cap; aggregates over
-    /// them are incomplete.
+    /// Tables whose read hit the engine's row cap; aggregates over them are
+    /// incomplete.
     pub truncated_tables: Vec<String>,
-}
-
-/// Result of applying a changeset under optional compare-and-swap.
-#[derive(Debug, Clone, PartialEq)]
-pub enum ApplyOutcome {
-    /// Every change committed.
-    Applied(AppliedChanges),
-    /// A written table had moved past its expected version; nothing committed.
-    VersionConflict {
-        /// The table that changed underneath the caller.
-        table_id: TableId,
-    },
-}
-
-impl ApplyOutcome {
-    /// The applied changes, if nothing conflicted.
-    pub fn applied(self) -> Option<AppliedChanges> {
-        match self {
-            ApplyOutcome::Applied(applied) => Some(applied),
-            ApplyOutcome::VersionConflict { .. } => None,
-        }
-    }
-}
-
-/// A serialized SQLite snapshot of one database (takeout / local analysis).
-#[derive(Debug, Clone)]
-pub struct SqliteSnapshot {
-    /// The bytes of a complete SQLite database file.
-    pub bytes: Vec<u8>,
-    /// Versions of the contained tables at snapshot time.
-    pub versions: HashMap<TableId, TableVersion>,
 }
 
 // ===== Access & rendering models =====
@@ -715,10 +448,10 @@ pub struct DatabaseDetail {
 pub struct TableDetail {
     /// The table.
     pub table: Table,
-    /// Name to use in SQL (`FROM guests`).
+    /// The name SQL refers to the table by: its display name, quoted when it
+    /// needs it (`FROM "Table 1"`), optionally qualified by the database's.
     pub sql_name: String,
-    /// Immutable read-only name for persisted queries; unaffected by renames
-    /// or the other tables a viewer can access.
+    /// The same name; kept for clients that still distinguish reads.
     pub read_sql_name: String,
     /// Columns in display order.
     pub columns: Vec<ColumnDetail>,
@@ -729,19 +462,14 @@ pub struct TableDetail {
 pub struct ColumnDetail {
     /// The placement.
     pub column: Column,
-    /// Name to use in SQL.
+    /// The name SQL refers to the column by: its display name, quoted when it
+    /// needs it.
     pub sql_name: String,
     /// The bound definition (name, type, options).
     pub definition:
         models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions,
     /// Whether SQL may write this column.
     pub writable: bool,
-    /// Exact junction name for multi-valued or relation columns.
-    pub junction_sql_name: Option<String>,
-    /// Stable read-only junction alias, when it is unambiguous in the catalog.
-    pub read_junction_sql_name: Option<String>,
-    /// Whether this viewer can insert/delete edges in the junction.
-    pub junction_writable: bool,
 }
 
 // ===== Errors =====
@@ -770,13 +498,13 @@ pub enum DatabaseError {
 /// Errors for SQL analysis, execution, and write-back.
 #[derive(Debug, thiserror::Error)]
 pub enum QueryError {
-    /// SQLite rejected the statement (syntax, unknown table/column, or a
-    /// compiled validity constraint). Surfaced verbatim — these errors are
-    /// the product's "broken query" state.
+    /// The statement did not compile or a write was refused (syntax, an
+    /// unknown table or column, a value of the wrong type). Surfaced verbatim
+    /// — these errors are the product's "broken query" state.
     #[error("sql error: {0}")]
     Sql(String),
-    /// The statement writes to a read-only table (magic tables, View-only
-    /// grants, derived columns).
+    /// The statement writes to a read-only table (View-only grants) or was
+    /// sent through the read-only entry point.
     #[error("read-only: {0}")]
     ReadOnly(String),
     /// `base_versions` was set and a written table has moved.
@@ -788,16 +516,6 @@ pub enum QueryError {
     /// The statement exceeded the execution budget (time or row caps).
     #[error("query budget exceeded")]
     BudgetExceeded,
-    /// A write depended on a magic table whose materialization hit its row
-    /// cap, so the statement could not have seen the whole table.
-    #[error(
-        "cannot write from a truncated table: {0} was cut off at its row cap, \
-         so this statement did not see all of it"
-    )]
-    TruncatedDependency(String),
-    /// A changeset row could not be translated to a domain command.
-    #[error("untranslatable change: {0}")]
-    UntranslatableChange(String),
     /// Materialization or apply-side persistence failure.
     #[error("query infrastructure error: {0:?}")]
     Infrastructure(rootcause::Report),

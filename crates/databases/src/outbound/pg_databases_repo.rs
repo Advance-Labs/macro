@@ -1,9 +1,9 @@
-//! Postgres repository for databases, tables, columns, rows, and links.
+//! Postgres repository for databases, tables, columns and row identities.
 //!
 //! Mechanics only: sqlx queries and transactions. Policy lives in the domain
 //! service. Tables: `databases`, `database_tables`, `database_columns`,
-//! `database_rows`, `database_row_links`
-//! (`crates/macro_db_client/migrations/20260908204308_add_databases.up.sql`).
+//! `database_rows`. Cells are not here: they are entity properties, written
+//! through the properties adapter.
 
 mod columns;
 mod sharing;
@@ -11,20 +11,18 @@ mod sharing;
 mod test;
 mod transfer;
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 
-use models_properties::convert_set_property_value_to_property_value;
-use models_properties::service::property_value::PropertyValue;
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use entity_access_db_utils::{AccessLevel, EntityAccessSourceType};
 use model_entity::EntityType;
 
 use crate::domain::models::{
-    ApplyOutcome, Column, ColumnConfig, ColumnId, CreateColumn, CreateDatabase, CreateTable,
-    Database, DatabaseId, PropertyDefinitionId, RenameColumnOutcome, Row, RowChange, RowId, Table,
-    TableId, TableMutationOutcome, TableVersion, Viewer,
+    Column, ColumnConfig, ColumnId, CreateColumn, CreateDatabase, CreateTable, Database,
+    DatabaseId, PropertyDefinitionId, RenameColumnOutcome, RowId, RowRef, Table, TableId,
+    TableMutationOutcome, TableVersion,
 };
 use crate::domain::models::{ColumnReplacement, ColumnSchemaOutcome};
 use crate::domain::ports::DatabasesRepo;
@@ -35,15 +33,6 @@ pub enum PgDatabasesRepoError {
     /// Underlying database failure.
     #[error("database error")]
     Sqlx(#[from] sqlx::Error),
-    /// A link change referenced a column placement that does not exist.
-    #[error("column {0} not found")]
-    ColumnNotFound(ColumnId),
-    /// A stored `cells` object could not be decoded into property values.
-    #[error("invalid cells stored for row {row_id}")]
-    InvalidCells {
-        /// The row carrying the undecodable cells.
-        row_id: RowId,
-    },
     /// A domain value could not be encoded as JSON for storage.
     #[error("failed to encode json for storage")]
     Json(#[from] serde_json::Error),
@@ -67,47 +56,6 @@ fn next_position(max: Option<&str>) -> String {
     format!("{next:0POSITION_WIDTH$}")
 }
 
-/// Encode a changeset's cells as the JSONB object stored in `database_rows`.
-///
-/// Keys are property definition ids as text; values are the same tagged-union
-/// [`PropertyValue`] the rest of the properties system stores.
-fn cells_to_json(
-    cells: &HashMap<PropertyDefinitionId, models_properties::api::requests::SetPropertyValue>,
-) -> Result<serde_json::Value, PgDatabasesRepoError> {
-    let converted: HashMap<String, PropertyValue> = cells
-        .iter()
-        .map(|(definition_id, value)| {
-            (
-                definition_id.to_string(),
-                convert_set_property_value_to_property_value(value),
-            )
-        })
-        .collect();
-    Ok(serde_json::to_value(converted)?)
-}
-
-/// Decode a stored `cells` object back into typed property values.
-fn cells_from_json(
-    row_id: RowId,
-    value: serde_json::Value,
-) -> Result<HashMap<PropertyDefinitionId, PropertyValue>, PgDatabasesRepoError> {
-    let serde_json::Value::Object(object) = value else {
-        return Err(PgDatabasesRepoError::InvalidCells { row_id });
-    };
-
-    object
-        .into_iter()
-        .map(|(key, value)| {
-            let definition_id = key
-                .parse::<Uuid>()
-                .map_err(|_| PgDatabasesRepoError::InvalidCells { row_id })?;
-            let value = serde_json::from_value::<PropertyValue>(value)
-                .map_err(|_| PgDatabasesRepoError::InvalidCells { row_id })?;
-            Ok((definition_id, value))
-        })
-        .collect()
-}
-
 /// [`DatabasesRepo`] backed by MacroDB.
 #[derive(Debug, Clone)]
 pub struct PgDatabasesRepo {
@@ -118,62 +66,6 @@ impl PgDatabasesRepo {
     /// Create a repository over the given pool.
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
-    }
-
-    /// The tables whose versions a change to `column_id`'s edges bumps: the
-    /// table the link column sits on, and the table it points at.
-    ///
-    /// Both ends move because both ends read the edge — the target table's
-    /// rows expose the reverse ("linked from") side, which is computed at read
-    /// time, so a viewer of the target sees stale data until its version says
-    /// otherwise. Returns just the source table when the placement carries no
-    /// link config or points at itself.
-    async fn link_column_tables(
-        transaction: &mut Transaction<'_, Postgres>,
-        column_id: ColumnId,
-    ) -> Result<Vec<TableId>, PgDatabasesRepoError> {
-        let row = sqlx::query!(
-            r#"SELECT table_id, config FROM database_columns WHERE id = $1"#,
-            column_id
-        )
-        .fetch_optional(&mut **transaction)
-        .await?
-        .ok_or(PgDatabasesRepoError::ColumnNotFound(column_id))?;
-
-        let mut tables = vec![row.table_id];
-        let config: Option<ColumnConfig> = row.config.map(serde_json::from_value).transpose()?;
-        if let Some(ColumnConfig::Link { table_id, .. }) = config
-            && table_id != row.table_id
-        {
-            tables.push(table_id);
-        }
-        Ok(tables)
-    }
-
-    /// Insert one row at the end of its table, returning the minted id.
-    async fn insert_row(
-        transaction: &mut Transaction<'_, Postgres>,
-        viewer: &Viewer,
-        table_id: TableId,
-        id: RowId,
-        position: String,
-        cells: serde_json::Value,
-    ) -> Result<RowId, PgDatabasesRepoError> {
-        sqlx::query!(
-            r#"
-            INSERT INTO database_rows (id, table_id, position, cells, created_by)
-            VALUES ($1, $2, $3, $4, $5)
-            "#,
-            id,
-            table_id,
-            position,
-            cells,
-            viewer.user_id.as_ref(),
-        )
-        .execute(&mut **transaction)
-        .await?;
-
-        Ok(id)
     }
 }
 
@@ -599,14 +491,17 @@ impl DatabasesRepo for PgDatabasesRepo {
         let updated = sqlx::query_scalar!(
             r#"UPDATE database_columns SET property_definition_id = $4, infer_type = FALSE
             WHERE id = $1 AND table_id = $2 AND property_definition_id = $3 AND infer_type
-              AND NOT EXISTS (SELECT 1 FROM database_rows WHERE table_id = $2 AND cells ? $5)
-              AND EXISTS (SELECT 1 FROM databases WHERE id = $6 AND trashed_at IS NULL)
+              AND NOT EXISTS (
+                  SELECT 1 FROM entity_properties p
+                  JOIN database_rows r ON r.id::text = p.entity_id
+                  WHERE r.table_id = $2 AND p.property_definition_id = $3
+                    AND p.entity_type = 'DATABASE_ROW')
+              AND EXISTS (SELECT 1 FROM databases WHERE id = $5 AND trashed_at IS NULL)
             RETURNING id"#,
             column.id,
             table.id,
             column.property_definition_id,
             definition_id,
-            column.property_definition_id.to_string(),
             table.database_id,
         )
         .fetch_optional(&mut *transaction)
@@ -625,404 +520,113 @@ impl DatabasesRepo for PgDatabasesRepo {
     }
 
     #[tracing::instrument(err, skip(self))]
-    async fn fetch_rows(&self, table_id: TableId, limit: usize) -> Result<Vec<Row>, Self::Err> {
-        // One sequential scan: cells are dense and always read together.
-        sqlx::query!(
-            r#"
-            SELECT id, table_id, position, cells
-            FROM database_rows
-            WHERE table_id = $1
-            ORDER BY position
-            LIMIT $2
-            "#,
+    async fn row_refs(&self, table_id: TableId) -> Result<Vec<RowRef>, Self::Err> {
+        let rows = sqlx::query!(
+            "SELECT id, position FROM database_rows WHERE table_id = $1 ORDER BY position, id",
             table_id,
-            limit as i64,
         )
         .fetch_all(&self.pool)
-        .await?
-        .into_iter()
-        .map(|row| {
-            Ok(Row {
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| RowRef {
                 id: row.id,
-                table_id: row.table_id,
                 position: row.position,
-                cells: cells_from_json(row.id, row.cells)?,
             })
-        })
-        .collect()
+            .collect())
     }
 
     #[tracing::instrument(err, skip(self))]
-    async fn fetch_links(
+    async fn insert_rows(
         &self,
-        column_id: ColumnId,
-        limit: usize,
-    ) -> Result<Vec<(RowId, RowId)>, Self::Err> {
-        let links = sqlx::query!(
-            r#"
-            SELECT source_row_id, target_row_id
-            FROM database_row_links
-            WHERE link_column_id = $1
-            ORDER BY position NULLS LAST, created_at
-            LIMIT $2
-            "#,
-            column_id,
-            limit as i64,
-        )
-        .fetch_all(&self.pool)
-        .await?
-        .into_iter()
-        .map(|row| (row.source_row_id, row.target_row_id))
-        .collect();
-
-        Ok(links)
-    }
-
-    #[tracing::instrument(err, skip(self, viewer, changes, expected_versions))]
-    async fn apply_changes(
-        &self,
-        viewer: &Viewer,
-        changes: &[RowChange],
-        expected_versions: &HashMap<TableId, TableVersion>,
-    ) -> Result<ApplyOutcome, Self::Err> {
+        table_id: TableId,
+        created_by: &str,
+        count: usize,
+    ) -> Result<Option<Vec<RowRef>>, Self::Err> {
         let mut transaction = self.pool.begin().await?;
-
-        // Every table this changeset writes, resolved up front (links name a
-        // column, not a table) so the version rows can be locked in one go.
-        let mut link_tables: HashMap<ColumnId, Vec<TableId>> = HashMap::new();
-        for change in changes {
-            if let RowChange::Link { column_id, .. } | RowChange::Unlink { column_id, .. } = change
-                && !link_tables.contains_key(column_id)
-            {
-                let tables = Self::link_column_tables(&mut transaction, *column_id).await?;
-                link_tables.insert(*column_id, tables);
-            }
-        }
-        // Sorted so concurrent changesets lock version rows in the same order
-        // and cannot deadlock on each other.
-        let written_tables: BTreeSet<TableId> = changes
-            .iter()
-            .flat_map(|change| match change {
-                RowChange::Insert { table_id, .. }
-                | RowChange::Update { table_id, .. }
-                | RowChange::Delete { table_id, .. } => vec![*table_id],
-                RowChange::Link { column_id, .. } | RowChange::Unlink { column_id, .. } => {
-                    link_tables[column_id].clone()
-                }
-            })
-            .collect();
-        let written: Vec<TableId> = written_tables.iter().copied().collect();
-
-        // Acquire database locks before table locks, matching parent deletion's
-        // lock order. A concurrent trash must finish before this check or wait
-        // until the changeset commits; catalog materialization alone is stale.
-        let databases = sqlx::query!(
-            r#"
-            SELECT t.id AS table_id, d.trashed_at
-            FROM database_tables t
-            JOIN databases d ON d.id = t.database_id
-            WHERE t.id = ANY($1)
-            ORDER BY d.id, t.id
-            FOR SHARE OF d
-            "#,
-            &written,
+        // Row writers and schema writers serialize on the table's version
+        // row, so positions are minted under the same lock.
+        let live = sqlx::query_scalar!(
+            r#"SELECT t.id FROM database_tables t
+               JOIN databases d ON d.id = t.database_id
+               WHERE t.id = $1 AND d.trashed_at IS NULL FOR UPDATE OF t"#,
+            table_id,
         )
-        .fetch_all(&mut *transaction)
+        .fetch_optional(&mut *transaction)
         .await?;
-        for table_id in &written {
-            if !databases
-                .iter()
-                .any(|row| row.table_id == *table_id && row.trashed_at.is_none())
-            {
-                return Ok(ApplyOutcome::VersionConflict {
-                    table_id: *table_id,
-                });
-            }
+        if live.is_none() {
+            return Ok(None);
         }
-
-        // Compare-and-swap inside the transaction: lock the version rows,
-        // then refuse if any expected version has moved.
-        let current = sqlx::query!(
-            r#"
-            SELECT id, version FROM database_tables
-            WHERE id = ANY($1)
-            ORDER BY id
-            FOR UPDATE
-            "#,
-            &written,
+        let max_position = sqlx::query_scalar!(
+            "SELECT MAX(position) FROM database_rows WHERE table_id = $1",
+            table_id
         )
-        .fetch_all(&mut *transaction)
+        .fetch_one(&mut *transaction)
         .await?;
-        for table_id in &written {
-            let actual = current
-                .iter()
-                .find(|r| r.id == *table_id)
-                .map(|r| r.version);
-            let Some(actual) = actual else {
-                return Ok(ApplyOutcome::VersionConflict {
-                    table_id: *table_id,
-                });
-            };
-            if let Some(expected) = expected_versions.get(table_id)
-                && expected.0 != actual
-            {
-                transaction.rollback().await?;
-                return Ok(ApplyOutcome::VersionConflict {
-                    table_id: *table_id,
-                });
-            }
-        }
-
-        // Blind row writes retain cell-level last-write-wins, but must never
-        // write under a definition removed by a concurrent schema rebind.
-        // Table locks keep this binding check and inference mutually exclusive.
-        let mut binding_tables = Vec::new();
-        let mut binding_definitions = Vec::new();
-        for change in changes {
-            match change {
-                RowChange::Insert {
-                    table_id, cells, ..
-                } => {
-                    for id in cells.keys() {
-                        binding_tables.push(*table_id);
-                        binding_definitions.push(*id);
-                    }
-                }
-                RowChange::Update {
-                    table_id, cells, ..
-                } => {
-                    for id in cells.keys() {
-                        binding_tables.push(*table_id);
-                        binding_definitions.push(*id);
-                    }
-                }
-                _ => {}
-            }
-        }
-        let stale_table = sqlx::query_scalar!(
-            r#"SELECT changed.table_id AS "table_id!"
-            FROM UNNEST($1::uuid[], $2::uuid[]) AS changed(table_id, definition_id)
-            WHERE NOT EXISTS (SELECT 1 FROM database_columns
-                WHERE table_id = changed.table_id AND property_definition_id = changed.definition_id)
-            LIMIT 1"#,
-            &binding_tables, &binding_definitions,
-        ).fetch_optional(&mut *transaction).await?;
-        if let Some(table_id) = stale_table {
-            return Ok(ApplyOutcome::VersionConflict { table_id });
-        }
-
-        // Row positions: one MAX per inserted-into table, then increment in
-        // memory rather than a round trip per row.
-        let mut next_positions: HashMap<TableId, String> = HashMap::new();
-        let mut inserted_row_ids = Vec::new();
-
-        for change in changes {
-            match change {
-                RowChange::Insert {
-                    table_id,
-                    row_id,
-                    cells,
-                } => {
-                    if !next_positions.contains_key(table_id) {
-                        let max_position = sqlx::query_scalar!(
-                            r#"SELECT MAX(position) FROM database_rows WHERE table_id = $1"#,
-                            table_id
-                        )
-                        .fetch_one(&mut *transaction)
-                        .await?;
-                        next_positions.insert(*table_id, next_position(max_position.as_deref()));
-                    }
-                    let position = next_positions[table_id].clone();
-                    next_positions.insert(*table_id, next_position(Some(&position)));
-                    let cells = cells_to_json(cells)?;
-                    let row_id = Self::insert_row(
-                        &mut transaction,
-                        viewer,
-                        *table_id,
-                        *row_id,
-                        position,
-                        cells,
-                    )
-                    .await?;
-                    inserted_row_ids.push(row_id);
-                }
-                RowChange::Update {
-                    table_id,
-                    row_id,
-                    cells,
-                } => {
-                    let set: HashMap<
-                        PropertyDefinitionId,
-                        models_properties::api::requests::SetPropertyValue,
-                    > = cells
-                        .iter()
-                        .filter_map(|(id, value)| value.clone().map(|v| (*id, v)))
-                        .collect();
-                    let cleared: Vec<String> = cells
-                        .iter()
-                        .filter(|(_, value)| value.is_none())
-                        .map(|(id, _)| id.to_string())
-                        .collect();
-                    let set = cells_to_json(&set)?;
-                    // Shallow merge scoped to the table: only the changed cells
-                    // are replaced (and NULLed cells removed), so concurrent
-                    // writers to other cells do not clobber.
-                    let updated = sqlx::query!(
-                        r#"
-                        UPDATE database_rows
-                        SET cells = (cells - $3::text[]) || $2::jsonb, updated_at = now()
-                        WHERE id = $1 AND table_id = $4
-                        "#,
-                        row_id,
-                        set,
-                        &cleared,
-                        table_id,
-                    )
-                    .execute(&mut *transaction)
-                    .await?;
-                    if updated.rows_affected() == 0 {
-                        transaction.rollback().await?;
-                        return Ok(ApplyOutcome::VersionConflict {
-                            table_id: *table_id,
-                        });
-                    }
-                }
-                RowChange::Delete { table_id, row_id } => {
-                    // Link edges cascade from the foreign keys.
-                    let deleted = sqlx::query!(
-                        r#"DELETE FROM database_rows WHERE id = $1 AND table_id = $2"#,
-                        row_id,
-                        table_id,
-                    )
-                    .execute(&mut *transaction)
-                    .await?;
-                    if deleted.rows_affected() == 0 {
-                        transaction.rollback().await?;
-                        return Ok(ApplyOutcome::VersionConflict {
-                            table_id: *table_id,
-                        });
-                    }
-                }
-                RowChange::Link {
-                    column_id,
-                    source_row_id,
-                    target_row_id,
-                } => {
-                    let inserted = sqlx::query!(
-                        r#"
-                        INSERT INTO database_row_links (link_column_id, source_row_id, target_row_id)
-                        VALUES ($1, $2, $3)
-                        ON CONFLICT DO NOTHING
-                        "#,
-                        column_id,
-                        source_row_id,
-                        target_row_id,
-                    )
-                    .execute(&mut *transaction)
-                    .await;
-                    if let Err(error) = inserted {
-                        let conflict_table = match &error {
-                            sqlx::Error::Database(database)
-                                if database.code().as_deref() == Some("23503") =>
-                            {
-                                match database.constraint() {
-                                    Some(
-                                        "database_row_links_source_row_id_fkey"
-                                        | "database_row_links_link_column_id_fkey",
-                                    ) => link_tables[column_id].first().copied(),
-                                    Some("database_row_links_target_row_id_fkey") => {
-                                        link_tables[column_id].last().copied()
-                                    }
-                                    _ => None,
-                                }
-                            }
-                            _ => None,
-                        };
-                        if let Some(table_id) = conflict_table {
-                            transaction.rollback().await?;
-                            return Ok(ApplyOutcome::VersionConflict { table_id });
-                        }
-                        return Err(error.into());
-                    }
-                }
-                RowChange::Unlink {
-                    column_id,
-                    source_row_id,
-                    target_row_id,
-                } => {
-                    sqlx::query!(
-                        r#"
-                        DELETE FROM database_row_links
-                        WHERE link_column_id = $1 AND source_row_id = $2 AND target_row_id = $3
-                        "#,
-                        column_id,
-                        source_row_id,
-                        target_row_id,
-                    )
-                    .execute(&mut *transaction)
-                    .await?;
-                }
-            }
-        }
-
-        // SQL/AI/import writes also settle first-value inference. Only actual
-        // values count: clearing a cell or inserting an untouched row does not.
-        let mut valued_tables = Vec::new();
-        let mut valued_definitions = Vec::new();
-        for change in changes {
-            match change {
-                RowChange::Insert {
-                    table_id, cells, ..
-                } => {
-                    for id in cells.keys() {
-                        valued_tables.push(*table_id);
-                        valued_definitions.push(*id);
-                    }
-                }
-                RowChange::Update {
-                    table_id, cells, ..
-                } => {
-                    for (id, value) in cells {
-                        if value.is_some() {
-                            valued_tables.push(*table_id);
-                            valued_definitions.push(*id);
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        if !valued_tables.is_empty() {
+        let mut last = max_position;
+        let mut rows = Vec::with_capacity(count);
+        for _ in 0..count {
+            let position = next_position(last.as_deref());
+            let id = macro_uuid::generate_uuid_v7();
             sqlx::query!(
-                r#"UPDATE database_columns SET infer_type = FALSE
-                WHERE infer_type AND (table_id, property_definition_id) IN
-                    (SELECT * FROM UNNEST($1::uuid[], $2::uuid[]))"#,
-                &valued_tables,
-                &valued_definitions,
+                "INSERT INTO database_rows (id, table_id, position, created_by) VALUES ($1, $2, $3, $4)",
+                id,
+                table_id,
+                position,
+                created_by,
             )
             .execute(&mut *transaction)
             .await?;
+            rows.push(RowRef {
+                id,
+                position: position.clone(),
+            });
+            last = Some(position);
         }
-
-        // Exactly one bump per written table, however many changes touched it.
-        let bumped = sqlx::query!(
-            r#"
-            UPDATE database_tables
-            SET version = version + 1
-            WHERE id = ANY($1)
-            RETURNING id, version
-            "#,
-            &written,
-        )
-        .fetch_all(&mut *transaction)
-        .await?;
-        let new_versions: HashMap<TableId, TableVersion> = bumped
-            .into_iter()
-            .map(|r| (r.id, TableVersion(r.version)))
-            .collect();
-
         transaction.commit().await?;
-        Ok(ApplyOutcome::Applied((inserted_row_ids, new_versions)))
+        Ok(Some(rows))
+    }
+
+    #[tracing::instrument(err, skip(self))]
+    async fn delete_row(&self, table_id: TableId, row_id: RowId) -> Result<bool, Self::Err> {
+        let deleted = sqlx::query!(
+            "DELETE FROM database_rows WHERE id = $1 AND table_id = $2",
+            row_id,
+            table_id,
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(deleted.rows_affected() == 1)
+    }
+
+    #[tracing::instrument(err, skip(self))]
+    async fn row_table(&self, row_id: RowId) -> Result<Option<TableId>, Self::Err> {
+        Ok(sqlx::query_scalar!(
+            "SELECT table_id FROM database_rows WHERE id = $1",
+            row_id
+        )
+        .fetch_optional(&self.pool)
+        .await?)
+    }
+
+    #[tracing::instrument(err, skip(self, definitions))]
+    async fn settle_inference(
+        &self,
+        table_id: TableId,
+        definitions: &[PropertyDefinitionId],
+    ) -> Result<(), Self::Err> {
+        if definitions.is_empty() {
+            return Ok(());
+        }
+        sqlx::query!(
+            "UPDATE database_columns SET infer_type = FALSE
+             WHERE infer_type AND table_id = $1 AND property_definition_id = ANY($2)",
+            table_id,
+            definitions,
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 
     #[tracing::instrument(skip(self), err)]

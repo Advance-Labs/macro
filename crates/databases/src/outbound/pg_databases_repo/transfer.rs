@@ -1,6 +1,6 @@
 use super::*;
+use crate::domain::models::Viewer;
 use crate::domain::transfer::{DatabaseTransferRepo, ImportOutcome, ImportTable};
-use models_properties::service::property_value::PropertyValue;
 
 impl DatabaseTransferRepo for PgDatabasesRepo {
     type Err = PgDatabasesRepoError;
@@ -82,38 +82,36 @@ impl DatabaseTransferRepo for PgDatabasesRepo {
                 column_id, id, definition, position,
             ).execute(&mut *transaction).await?;
         }
-        // Batch rows in a bounded INSERT using Postgres arrays; CSV values are
-        // already parsed strings, never SQL fragments or coerced numbers.
+        // Rows are minted in a bounded INSERT using Postgres arrays; their
+        // cells follow through the properties system once this commits.
+        let mut rows = Vec::with_capacity(request.rows.len());
         for (batch_index, batch) in request.rows.chunks(500).enumerate() {
             let mut row_ids = Vec::with_capacity(batch.len());
             let mut positions = Vec::with_capacity(batch.len());
-            let mut cells = Vec::with_capacity(batch.len());
-            for (index, values) in batch.iter().enumerate() {
+            for index in 0..batch.len() {
                 row_ids.push(macro_uuid::generate_uuid_v7());
                 positions.push(format!(
                     "{:0POSITION_WIDTH$}",
                     batch_index * 500 + index + 1
                 ));
-                let row: HashMap<_, _> = definitions
-                    .iter()
-                    .zip(values)
-                    .map(|(id, value)| (id.to_string(), PropertyValue::Str(value.clone())))
-                    .collect();
-                cells.push(serde_json::to_value(row)?);
             }
             sqlx::query!(
-                r#"INSERT INTO database_rows (id, table_id, position, cells, created_by)
-                   SELECT row_id, $1, position, cells, $2 FROM UNNEST($3::uuid[], $4::text[], $5::jsonb[]) AS data(row_id, position, cells)"#,
-                id, viewer.user_id.as_ref(), &row_ids, &positions, &cells,
+                r#"INSERT INTO database_rows (id, table_id, position, created_by)
+                   SELECT row_id, $1, position, $2 FROM UNNEST($3::uuid[], $4::text[]) AS data(row_id, position)"#,
+                id, viewer.user_id.as_ref(), &row_ids, &positions,
             ).execute(&mut *transaction).await?;
+            rows.extend(row_ids);
         }
         transaction.commit().await?;
-        Ok(ImportOutcome::Created(Table {
-            id: table.id,
-            database_id: table.database_id,
-            name: table.name,
-            position: table.position,
-            version: TableVersion(table.version),
-        }))
+        Ok(ImportOutcome::Created {
+            table: Table {
+                id: table.id,
+                database_id: table.database_id,
+                name: table.name,
+                position: table.position,
+                version: TableVersion(table.version),
+            },
+            rows,
+        })
     }
 }

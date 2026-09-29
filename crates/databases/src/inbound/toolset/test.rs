@@ -28,7 +28,7 @@ mod relations;
 mod saved_views;
 use crate::domain::models::{
     Column, ColumnDetail, Database, ExecOutcome, QueryResult, RenameColumnOutcome, ResultColumn,
-    SqlValue, SqliteSnapshot, Table, TableDetail, TableVersion,
+    SqlValue, Table, TableDetail, TableVersion,
 };
 use saved_views::FakeViews;
 
@@ -63,7 +63,7 @@ struct Calls {
 #[derive(Clone, Default)]
 struct FakeService {
     calls: Arc<Mutex<Calls>>,
-    /// When set, `exec_sql` fails with this SQLite message instead of running.
+    /// When set, `exec_sql` fails with this message instead of running.
     sql_error: Option<String>,
     /// Fail only the post-write schema enrichment.
     schema_error: bool,
@@ -106,7 +106,7 @@ fn status_column() -> ColumnDetail {
             position: "a".to_string(),
             config: None,
         },
-        sql_name: "status".to_string(),
+        sql_name: "\"Status\"".to_string(),
         definition: PropertyDefinitionWithOptions {
             definition: PropertyDefinition {
                 id: Uuid::nil(),
@@ -125,9 +125,6 @@ fn status_column() -> ColumnDetail {
             property_options: vec![option("Going", 0), option("Declined", 1)],
         },
         writable: true,
-        junction_sql_name: None,
-        read_junction_sql_name: None,
-        junction_writable: false,
     }
 }
 
@@ -149,8 +146,8 @@ fn detail(grant: AccessGrant) -> DatabaseDetail {
         grant,
         tables: vec![TableDetail {
             table: table(),
-            sql_name: "guests".to_string(),
-            read_sql_name: crate::domain::catalog::read_table_name(table().id),
+            sql_name: "\"Guests\"".to_string(),
+            read_sql_name: "\"Guests\"".to_string(),
             columns: vec![status_column()],
         }],
     }
@@ -396,14 +393,6 @@ impl DatabasesService for FakeService {
             truncated_tables: vec![],
         })
     }
-
-    async fn sqlite_snapshot(
-        &self,
-        _receipt: EntityAccessReceipt<ViewAccessLevel>,
-        _viewer: Viewer,
-    ) -> Result<SqliteSnapshot, QueryError> {
-        unimplemented!("the toolset does not expose snapshots")
-    }
 }
 
 /// Grants exactly `level`, or nothing at all when `level` is `None`.
@@ -615,7 +604,7 @@ fn query_schema_teaches_the_dialect() {
     let validated =
         generate_validated_input_schema::<QueryDatabase>().expect("schema should validate");
     assert_eq!(validated.name, "QueryDatabase");
-    for expected in ["row_id", "HAS", "DescribeDatabase", "people"] {
+    for expected in ["row_id", "HAS", "DescribeDatabase"] {
         assert!(
             validated.description.contains(expected),
             "description is missing {expected}: {}",
@@ -779,8 +768,8 @@ async fn creating_a_table_with_edit_access_succeeds() {
     assert_eq!(calls.lock().unwrap().created_tables, vec!["Sessions"]);
     assert_eq!(
         response.database.expect("schema refresh succeeds").tables[0].sql_name,
-        "guests",
-        "the SQL name comes from the catalog, not from the display name"
+        "\"Guests\"",
+        "the SQL name is the display name, quoted"
     );
 }
 
@@ -917,7 +906,7 @@ async fn conditional_tool_edits_forward_only_explicit_read_versions() {
     assert!(legacy.base_versions.is_none());
 }
 
-/// SQLite's message is the product's broken-query state: it is what lets a
+/// The compiler's message is the product's broken-query state: it is what lets a
 /// model fix the name and retry, so it has to arrive verbatim.
 #[tokio::test]
 async fn a_sql_error_reaches_the_model_verbatim() {
@@ -947,9 +936,9 @@ async fn a_sql_error_reaches_the_model_verbatim() {
 
 #[test]
 fn a_read_only_table_says_why() {
-    let error = query_error(QueryError::ReadOnly("table people is read-only".into()));
+    let error = query_error(QueryError::ReadOnly("table Guests is read-only".into()));
     assert!(
-        error.description.contains("magic table"),
+        error.description.contains("edit access"),
         "{}",
         error.description
     );
@@ -970,10 +959,7 @@ async fn listing_renders_the_grant() {
     assert_eq!(response.databases[0].name, "Offsite");
     assert_eq!(response.databases[0].tables[0].name, "Guests");
     assert_eq!(response.databases[0].tables[0].id, TABLE_ID);
-    assert_eq!(
-        response.databases[0].tables[0].read_sql_name,
-        crate::domain::catalog::read_table_name(TABLE_ID)
-    );
+    assert_eq!(response.databases[0].tables[0].sql_name, "\"Guests\"");
     assert_eq!(response.summary, "Found 1 database.");
 }
 
@@ -988,29 +974,25 @@ fn an_empty_list_says_so_rather_than_looking_like_a_failure() {
 fn describing_a_database_renders_option_labels() {
     let schema = ToolDatabaseSchema::from(detail(AccessGrant::Owner));
 
-    assert_eq!(schema.tables[0].sql_name, "guests");
-    assert_eq!(
-        schema.tables[0].read_sql_name,
-        crate::domain::catalog::read_table_name(TABLE_ID)
-    );
+    assert_eq!(schema.tables[0].sql_name, "\"Guests\"");
     assert_eq!(schema.tables[0].version, 3);
     assert!(schema.tables[0].writable);
     let column = &schema.tables[0].columns[0];
-    assert_eq!(column.sql_name, "status");
+    assert_eq!(column.sql_name, "\"Status\"");
     assert_eq!(column.data_type, ColumnType::Select);
     assert_eq!(column.options, vec!["Going", "Declined"]);
     assert!(schema.sql_guide.contains("row_id"));
-    assert!(schema.magic_tables.contains("people"));
 }
 
 #[test]
-fn describing_a_renamed_column_supplies_its_current_label_and_original_sql_identifier() {
+fn describing_a_renamed_column_supplies_its_current_label_as_the_sql_identifier() {
     let mut database = detail(AccessGrant::Owner);
     database.tables[0].columns[0].column.display_name = Some("RSVP".into());
+    database.tables[0].columns[0].sql_name = "\"RSVP\"".into();
     let schema = ToolDatabaseSchema::from(database);
     let column = &schema.tables[0].columns[0];
     assert_eq!(column.name, "RSVP");
-    assert_eq!(column.sql_name, "status");
+    assert_eq!(column.sql_name, "\"RSVP\"");
     assert_eq!(column.options, vec!["Going", "Declined"]);
 }
 

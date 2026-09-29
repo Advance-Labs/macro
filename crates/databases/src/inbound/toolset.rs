@@ -31,59 +31,47 @@ mod test;
 /// the three drift apart.
 macro_rules! sql_guide {
     () => {
-        "SQLite dialect, with Macro's own rules on top:\n\
+        "A small SQL subset, compiled by Macro rather than run by a SQL engine. What is \
+         listed here is everything there is:\n\
          \n\
-         - **`row_id` is the primary key** of every user table. It is minted by the server; \
-         never insert one yourself.\n\
-         - **Multi-valued columns are JSON arrays**, and each one also has a companion \
-         junction table `table__column(row_id, linked_id)` for flat joins.\n\
-         - **Relation columns point to database rows, not Macro entities.** Their `relation` \
-         metadata identifies the target database/table and exact junction names. Join source.row_id \
-         to junction.row_id and junction.linked_id to target.row_id; never compare display names \
-         or a JSON array to a target name. Use readJunctionSqlName for saved reads, or json_each \
-         of the relation column if no stable junction alias is available. Insert/delete edges \
-         through junctionSqlName only when relation.writable; the projected column is read-only.\n\
-         - **`col HAS 'x'`** tests membership in a multi-valued column. It is the one piece of \
-         sugar; everything else is plain SQLite.\n\
+         - **Reads:** `SELECT [DISTINCT] items FROM [database.]table [alias] [JOIN [database.]table \
+         [alias] ON a.col = b.col ...] [WHERE cond] [GROUP BY col] [ORDER BY col|agg|position \
+         [ASC|DESC], ...] [LIMIT n [OFFSET m]]`. Items are `*`, column names, or `COUNT(*)`, \
+         `COUNT(col)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`. No expressions, no \
+         aliases on items, no HAVING, no subqueries, no functions beyond those five.\n\
+         - **Conditions:** `col = | != | < | <= | > | >= literal`, `col [NOT] IN ('a', 'b')`, \
+         `col [NOT] LIKE 'pat%'` (case-insensitive), `col IS [NOT] NULL`, `col [NOT] HAS 'x'` \
+         (membership in a multi-valued column), combined with AND, OR and parentheses. \
+         Literals are `'text'`, numbers, TRUE/FALSE, NULL; dates are `'2026-08-13'` or an \
+         ISO date-time.\n\
+         - **Writes:** `INSERT INTO table (col, ...) VALUES (...), (...)` or \
+         `INSERT INTO table DEFAULT VALUES`; `UPDATE table SET col = value, ... WHERE row_id = \
+         '<id>'`; `DELETE FROM table WHERE row_id = '<id>'`. An UPDATE or DELETE names exactly \
+         one row by its id: read the ids first. A multi-valued cell is written as a list: \
+         `tags = ['Urgent', 'Backend']`; `NULL` clears a cell.\n\
+         - **`row_id`** is every row's id. It comes back as the first column of a row-shaped \
+         SELECT and in `insertedRowIds` after an INSERT; never invent one.\n\
          - **Select columns take their option labels as text** (`status = 'Going'`), never \
-         option ids. The options are explicit schema: only the labels the column carries are \
-         accepted, and new ones are added with AddColumnOptions.\n\
-         - **Entity columns hold actual Macro ids.** Resolve people through `people.id` \
-         (often `macro|email`) and documents through `documents.id`; never invent ids or \
-         replace them with names. Respect each column's `specificEntityType`.\n\
-         - **Writes are plain `INSERT` / `UPDATE` / `DELETE`** against the user table and are \
-         validated against the column schema; an unknown select option or a wrong type is \
-         rejected by the statement, not silently coerced.\n\
-         - **Use the exact identifiers returned by DescribeDatabase.** Quote SQL table and \
-         column identifiers with double quotes (escape an embedded quote by doubling it). \
-         A name containing a dot is one quoted identifier, not a schema qualifier. Display \
-         labels can differ from SQL names after a rename.\n\
-         - **Write to `sqlName`; read through `readSqlName`.** The stable read-only alias \
-         survives table renames and name collisions and is the right identifier for saved \
-         queries/charts. INSERT/UPDATE/DELETE must use the table's current `sqlName`.\n\
+         option ids. Only the labels the column carries are accepted; add new ones with \
+         AddColumnOptions.\n\
+         - **Relation columns hold the ids of rows in another table.** Write them as a list \
+         of row ids (`guests = ['<row id>']`), test them with `HAS '<row id>'`, and join through \
+         them: `FROM invites i JOIN guests g ON i.guest = g.row_id`. Never compare a relation \
+         to a name.\n\
+         - **Entity columns hold Macro ids** such as `macro|sam@example.com` for a person. \
+         Respect each column's `specificEntityType`; never invent an id or replace it with \
+         a name.\n\
+         - **Names are display names.** Quote a table or column name with double quotes when \
+         it has spaces or punctuation (`FROM \"Guest List\" WHERE \"Due Date\" < '2026-09-01'`); \
+         names match case-insensitively, and a miss suggests the closest name. \
+         A table may be qualified by its database's name (`FROM \"Offsite\".\"Guests\"`).\n\
          - **Schema uses tools, not SQL DDL.** CreateDatabase, CreateTable, RenameTable, \
-         AddColumn, AddColumnOptions, and SaveDatabaseView change structure/presentation. CREATE TABLE, \
-         ALTER TABLE, and CREATE VIEW are not supported in QueryDatabase.\n\
-         - Tables you only hold view access on are read-only, and magic tables always are."
+         AddColumn, AddColumnOptions and SaveDatabaseView change structure and presentation.\n\
+         - Tables you only hold view access on are read-only."
     };
 }
 
 pub(crate) use sql_guide;
-
-/// The magic tables every caller can join against, described for the model.
-macro_rules! magic_tables_note {
-    () => {
-        "Magic tables expose Macro's own data to SQL, scoped to what the user can see:\n\
-         \n\
-         - `documents(id, title, owner_id, created_at, updated_at)`\n\
-         - `people(id, name, email)`\n\
-         \n\
-         They are read-only, and they are always in scope — join a user table's entity column \
-         against `people.id` or `documents.id` to resolve ids to names."
-    };
-}
-
-pub(crate) use magic_tables_note;
 
 use std::sync::Arc;
 
@@ -99,7 +87,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::domain::catalog::{option_labels, read_table_name};
+use crate::domain::catalog::{option_labels, sql_identifier};
 use crate::domain::models::{
     AccessGrant, ColumnConfig, DatabaseDetail, DatabaseError, ListedDatabase, QueryError, Viewer,
 };
@@ -309,21 +297,20 @@ pub(crate) fn database_error(error: DatabaseError) -> ToolCallError {
 
 /// Turn a SQL error into something the model can act on.
 ///
-/// SQLite's message is passed through verbatim and is the whole point: "no
-/// such column: guests.statuz" tells a model exactly what to fix, where a
-/// generic "query failed" tells it nothing.
+/// The compiler's message is passed through verbatim and is the whole point:
+/// "no column named statuz in guests; did you mean status?" tells a model
+/// exactly what to fix, where a generic "query failed" tells it nothing.
 pub(crate) fn query_error(error: QueryError) -> ToolCallError {
     let description = match &error {
         QueryError::Sql(message) => format!(
             "SQL error: {message}\n\nCall ListDatabases to find the table inside its database, \
-             then DescribeDatabase for exact sqlName/readSqlName and column sqlName identifiers. \
-             Quote identifiers and retry the corrected SQL. A guessed name failing does not \
+             then DescribeDatabase for the exact table and column names. Quote names that \
+             have spaces and retry the corrected SQL. A guessed name failing does not \
              establish that the user's table is missing."
         ),
         QueryError::ReadOnly(message) => format!(
-            "{message}. A magic table or readSqlName alias is always read-only. To edit a \
-             user table, use its current sqlName from DescribeDatabase; the user must also \
-             have edit access to that database."
+            "{message}. Writes need edit access to the table's database, and the read-only \
+             query tool never writes."
         ),
         QueryError::VersionConflict { table_id } => {
             format!("Table {table_id} changed underneath this statement. Re-read it and retry.")
@@ -332,14 +319,6 @@ pub(crate) fn query_error(error: QueryError) -> ToolCallError {
             "The statement exceeded the query budget. Narrow it with a WHERE clause or a LIMIT."
                 .to_string()
         }
-        QueryError::TruncatedDependency(tables) => format!(
-            "This write reads {tables}, which is too large to load in full, so the statement \
-             did not see all of it. Narrow the write to specific rows, or split it up."
-        ),
-        QueryError::UntranslatableChange(message) => format!(
-            "That write could not be applied: {message}. Write to the user table's own columns \
-             with plain INSERT/UPDATE/DELETE."
-        ),
         QueryError::Infrastructure(_) => "The databases service failed.".to_string(),
     };
 
@@ -390,7 +369,7 @@ impl From<AccessGrant> for ToolGrant {
 pub enum ColumnType {
     /// Free text.
     Text,
-    /// A number, stored as SQLite REAL.
+    /// A number.
     Number,
     /// True/false, stored as 0/1.
     Boolean,
@@ -464,8 +443,8 @@ pub struct ToolTableSummary {
     pub id: Uuid,
     /// Display name shown on the table tab.
     pub name: String,
-    /// Stable read-only SQL identifier. DescribeDatabase returns the writable name.
-    pub read_sql_name: String,
+    /// The name to use in SQL, quoted.
+    pub sql_name: String,
 }
 
 impl From<ListedDatabase> for ToolDatabase {
@@ -479,8 +458,8 @@ impl From<ListedDatabase> for ToolDatabase {
                 .into_iter()
                 .map(|table| ToolTableSummary {
                     id: table.id,
+                    sql_name: sql_identifier(&table.name),
                     name: table.name,
-                    read_sql_name: read_table_name(table.id),
                 })
                 .collect(),
         }
@@ -500,12 +479,12 @@ pub struct ToolColumn {
     /// The value type.
     pub data_type: ColumnType,
     /// Required entity kind for an entity column, such as `USER` or `DOCUMENT`.
-    /// Resolve ids from the matching magic table; never invent an id.
+    /// Never invent an id.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<String>")]
     pub specific_entity_type: Option<models_properties::shared::EntityType>,
-    /// Whether the column holds several values. Multi-valued columns are JSON
-    /// arrays in SQL, with a companion `table__column` junction table.
+    /// Whether the column holds several values. Multi-valued cells are written
+    /// as lists (`['a', 'b']`) and tested with `HAS`.
     pub is_multi_select: bool,
     /// For a select or tag column, the labels SQL accepts. Writing anything
     /// else is rejected by the statement.
@@ -518,20 +497,14 @@ pub struct ToolColumn {
     pub relation: Option<ToolRelation>,
 }
 
-/// The target and exact SQL entry points for a database-row relationship.
+/// The target of a database-row relationship.
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolRelation {
     /// Database containing the target rows.
     pub database_id: Uuid,
-    /// Table whose row_id values are stored by this relation.
+    /// Table whose row ids this relation stores.
     pub table_id: Uuid,
-    /// Exact current junction name for authorized link edits.
-    pub junction_sql_name: Option<String>,
-    /// Stable junction alias for saved reads, if available.
-    pub read_junction_sql_name: Option<String>,
-    /// Whether this viewer may insert/delete relationship edges.
-    pub writable: bool,
 }
 
 /// One table of a database, as the model sees it.
@@ -540,10 +513,8 @@ pub struct ToolRelation {
 pub struct ToolTable {
     /// The table's id. Pass this to AddColumn.
     pub id: Uuid,
-    /// The name to use in SQL (`FROM guests`).
+    /// The name to use in SQL, quoted (`FROM "Guests"`).
     pub sql_name: String,
-    /// Immutable read-only SQL name; use this for stored queries and charts.
-    pub read_sql_name: String,
     /// Version at which this schema was described. A new SELECT supplies the
     /// read version for conditional row edits.
     pub version: i64,
@@ -567,9 +538,7 @@ pub struct ToolDatabaseSchema {
     pub grant: ToolGrant,
     /// Tables in tab order.
     pub tables: Vec<ToolTable>,
-    /// The platform tables this SQL can also join against.
-    pub magic_tables: String,
-    /// How the SQL dialect differs from plain SQLite.
+    /// The SQL subset, in full.
     pub sql_guide: String,
 }
 
@@ -586,7 +555,6 @@ impl From<DatabaseDetail> for ToolDatabaseSchema {
                 .map(|table| ToolTable {
                     id: table.table.id,
                     sql_name: table.sql_name,
-                    read_sql_name: table.read_sql_name,
                     version: table.table.version.0,
                     name: table.table.name,
                     writable,
@@ -626,9 +594,6 @@ impl From<DatabaseDetail> for ToolDatabaseSchema {
                                 }) => Some(ToolRelation {
                                     database_id,
                                     table_id,
-                                    junction_sql_name: column.junction_sql_name,
-                                    read_junction_sql_name: column.read_junction_sql_name,
-                                    writable: column.junction_writable,
                                 }),
                                 _ => None,
                             },
@@ -636,7 +601,6 @@ impl From<DatabaseDetail> for ToolDatabaseSchema {
                         .collect(),
                 })
                 .collect(),
-            magic_tables: magic_tables_note!().to_string(),
             sql_guide: sql_guide!().to_string(),
         }
     }

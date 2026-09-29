@@ -7,7 +7,6 @@
 //! - `POST /query` — read-only SQL for live chips and query previews.
 //! - `GET /` — list the caller's databases; `POST /` — create one.
 //! - `GET /{id}` — schema detail (tables, columns, definitions, SQL names).
-//! - `GET /{id}/sqlite` — download a database as a SQLite file (takeout).
 //! - `POST /{id}/tables`, `POST /{id}/tables/{table_id}/columns`,
 //!   `POST /{id}/tables/{table_id}/columns/{column_id}/options` — schema
 //!   operations, which stay structured because property definitions carry
@@ -33,7 +32,7 @@ use std::sync::Arc;
 use axum::{
     Json, Router,
     extract::{FromRef, Path, State},
-    http::{StatusCode, header},
+    http::StatusCode,
     response::IntoResponse,
     routing::{get, patch, post},
 };
@@ -123,7 +122,6 @@ where
         .route("/exec", post(exec_handler::<S, Eas, Auth>))
         .route("/query", post(query_handler::<S, Eas, Auth>))
         .route("/{id}", get(get_database_handler::<S, Eas, Auth>))
-        .route("/{id}/sqlite", get(sqlite_snapshot_handler::<S, Eas, Auth>))
         .route(
             "/{id}/permissions",
             get(sharing::get_permissions_handler::<S, Eas, Auth>)
@@ -302,15 +300,6 @@ pub struct AddColumnOptionsRequest {
     pub labels: Vec<String>,
 }
 
-/// The bytes of a SQLite database file.
-///
-/// Its only job is to make the response body binary in the OpenAPI document;
-/// `Vec<u8>` would be described as an array of integers and generate clients
-/// that parse the file as JSON.
-#[derive(utoipa::ToSchema)]
-#[schema(value_type = String, format = Binary)]
-pub struct SqliteFile(pub Vec<u8>);
-
 /// List the caller's databases.
 #[utoipa::path(
     get,
@@ -479,47 +468,6 @@ where
         .query_sql(viewer_of(&user), req.sql)
         .await
         .map(Json)
-}
-
-/// Download a database as a SQLite file.
-#[utoipa::path(
-    get,
-    tag = "databases",
-    operation_id = "download_database_sqlite",
-    path = "/databases/{id}/sqlite",
-    params(("id" = Uuid, Path, description = "Database id")),
-    responses(
-        (status = 200, description = "A SQLite database file", content_type = "application/vnd.sqlite3", body = SqliteFile),
-        (status = 401, description = "Missing or invalid credentials", body = ErrorResponse),
-        (status = 403, description = "No access to the database", body = ErrorResponse),
-        (status = 500, body = ErrorResponse),
-    )
-)]
-pub async fn sqlite_snapshot_handler<S, Eas, Auth>(
-    access: DatabaseAccessLevelExtractor<ViewAccessLevel, Eas, Auth>,
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
-    Path(DatabasePath { id }): Path<DatabasePath>,
-) -> Result<impl IntoResponse, QueryError>
-where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
-{
-    let snapshot = state
-        .service
-        .sqlite_snapshot(access.entity_access_receipt, viewer_of(&user))
-        .await?;
-    Ok((
-        [
-            (header::CONTENT_TYPE, "application/vnd.sqlite3".to_string()),
-            (
-                header::CONTENT_DISPOSITION,
-                format!("attachment; filename=\"database-{id}.sqlite\""),
-            ),
-        ],
-        snapshot.bytes,
-    ))
 }
 
 /// Create a table in a database.
@@ -871,14 +819,12 @@ impl IntoResponse for DatabaseError {
 impl IntoResponse for QueryError {
     fn into_response(self) -> axum::response::Response {
         let status = match &self {
-            // SQLite's message is the product's "broken query" state — pass it
-            // through verbatim for chips to render.
-            QueryError::Sql(_) | QueryError::UntranslatableChange(_) => StatusCode::BAD_REQUEST,
+            // The engine's message is the product's "broken query" state —
+            // pass it through verbatim for chips to render.
+            QueryError::Sql(_) => StatusCode::BAD_REQUEST,
             QueryError::ReadOnly(_) => StatusCode::FORBIDDEN,
             QueryError::VersionConflict { .. } => StatusCode::CONFLICT,
-            QueryError::BudgetExceeded | QueryError::TruncatedDependency(_) => {
-                StatusCode::UNPROCESSABLE_ENTITY
-            }
+            QueryError::BudgetExceeded => StatusCode::UNPROCESSABLE_ENTITY,
             QueryError::Infrastructure(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
         let message = match &self {

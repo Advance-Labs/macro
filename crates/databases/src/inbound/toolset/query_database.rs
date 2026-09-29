@@ -11,7 +11,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{DatabasesToolContext, magic_tables_note, query_error, sql_guide, viewer_of};
+use super::{DatabasesToolContext, query_error, sql_guide, viewer_of};
 use crate::domain::models::{ExecOutcome, ExecRequest, QueryResult, SqlValue};
 use crate::domain::ports::DatabasesService;
 
@@ -23,56 +23,42 @@ use crate::domain::ports::DatabasesService;
     description = concat!(
         "\
 Run SQL against the current user's Macro databases — the only way to read or change their \
-rows. SELECT to answer a question, INSERT/UPDATE/DELETE to change data; several statements run \
-in one transaction.\n\
+rows. SELECT to answer a question, INSERT/UPDATE/DELETE to change data. One statement per \
+call.\n\
 \n\
 **Every table the user can see is already in scope, across all of their databases.** There is \
-no connecting or selecting a database first, and no `databaseId` argument: the statement is \
-executed as the user, against a scratch database materialized from exactly what they are \
-allowed to read. A table they cannot see simply does not exist, so a query can never leak \
-somebody else's data — and a table they only have view access to is read-only.\n\
+no connecting or selecting a database first, and no `databaseId` argument: the statement runs \
+as the user against exactly what they are allowed to read. A table they cannot see simply does \
+not exist, so a query can never leak somebody else's data — and a table they only have view \
+access to is read-only.\n\
 \n\
 **Call DescribeDatabase first unless you already know the exact table and column names.** \
-Names are derived from what the user typed, so \"Guest List\" is not necessarily `guest_list`, \
-and a failed guess costs a whole round trip. If a statement does fail, the error is SQLite's \
-own (\"no such column: guests.statuz\") — read it, fix the name, retry.\n\
-\n\
-## The magic tables\n\
-\n",
-        magic_tables_note!(),
-        "\n\
+Names are the display names the user typed, so quote the ones with spaces. If a statement \
+fails, the error names what was wrong and suggests the closest name — read it, fix it, retry.\n\
 \n\
 ## Dialect\n\
 \n",
         sql_guide!(),
         "\n\
 \n\
-For a request to change records, first read the relevant rows, then use their returned \
-`readVersions` as `baseVersions` to guard the tables being written. Versions for tables the \
-edit only reads are not checked. A conflict means re-read \
-and reconsider the edit. After changing rows, SELECT the affected records to verify the \
-actual result. On a connection failure, inspect before retrying an INSERT.\n\
-To create a row and link it atomically, INSERT the scalar cells (omit row_id), then INSERT \
-into the relation's exact junctionSqlName (row_id,linked_id) using SELECT row_id from the \
-source table WHERE row_id LIKE 'new:%', all in the same call. A batch with multiple new \
-rows must narrow that SELECT to the intended row. Newly inserted target rows may be \
-selected the same way from their target table. These temporary new: values are scoped to \
-this execution; never save or reuse them in later calls. Only insertedRowIds contains \
-the server's canonical new row IDs. Re-read after commit for final relationship projections.\n\
+To change records, first SELECT the rows you mean (the first column is `row_id`), then \
+UPDATE or DELETE each one by its id. After changing rows, SELECT the affected records to \
+verify the actual result. On a connection failure, inspect before retrying an INSERT.\n\
+To create a row and relate it in one go, INSERT it with the relation column set to the target \
+row ids (`INSERT INTO invites (guest, status) VALUES (['<guest row id>'], 'Sent')`); the new \
+row's id is in `insertedRowIds`.\n\
 \n\
 Results come back as columns and rows. A column whose values are entity ids carries an \
 `entityType`, which is how the app renders it as a clickable chip rather than as raw text — \
 prefer selecting an entity column over stringifying it. Writes report `changesApplied` and, \
-for inserts, the `insertedRowIds` the server minted. SELECT results inside a write batch \
-may still contain temporary new: IDs; use insertedRowIds or a new SELECT after commit."
+for inserts, the `insertedRowIds` the server minted."
     )
 )]
 pub struct QueryDatabase {
     /// The statement(s) to run.
     #[schemars(
-        description = "The SQL to run, as one string. Several statements are allowed and run in \
-                       a single transaction — either all of the writes apply or none do. Use \
-                       the SQL names DescribeDatabase reported, not the names the user says."
+        description = "The statement to run, as one string. Use the table and column names \
+                       DescribeDatabase reported, quoted when they have spaces."
     )]
     pub sql: String,
     /// Optional versions from a previous QueryDatabase read. Reject the write
@@ -108,10 +94,13 @@ pub enum QueryDatabaseDisplay {
 #[serde(rename_all = "camelCase")]
 #[schemars(
     title = "QueryDatabase",
-    description = "Read Macro database records using SQLite SELECT queries. Discover the relevant database with ListDatabases, then call DescribeDatabase to see ALL of its tables and exact columns. Use each table's stable readSqlName, including for joins. This tool cannot change records, schema, or saved views; the domain query service rejects writes regardless of the caller's edit permission. Results are permission-filtered for the current user. Inspect truncatedTables before reporting totals."
+    description = concat!(
+        "Read Macro database records with a SELECT. Discover the relevant database with ListDatabases, then call DescribeDatabase to see ALL of its tables and exact columns. This tool cannot change records, schema, or saved views; the query service rejects writes regardless of the caller's edit permission. Results are permission-filtered for the current user. Inspect truncatedTables before reporting totals.\n\n## Dialect\n\n",
+        sql_guide!(),
+    )
 )]
 pub struct ReadOnlyQueryDatabase {
-    /// Read-only SQL using stable readSqlName identifiers from DescribeDatabase.
+    /// The SELECT to run, using the names DescribeDatabase reported.
     pub sql: String,
 }
 

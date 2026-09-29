@@ -1,4 +1,11 @@
-//! Ports (trait contracts) for the databases domain.
+//! Ports: the contracts between the domain service and its adapters.
+//!
+//! Persistence is split by ownership. [`DatabasesRepo`] owns the databases,
+//! tables, column placements and row identities (`database_rows`: id,
+//! table, position). [`CellStore`] owns nothing: it is the domain's view of
+//! the properties system, where a row's cells live as entity properties of
+//! the `DATABASE_ROW` entity that the row id names. [`ColumnDefinitionStore`]
+//! is the same boundary for the definitions behind columns.
 
 use std::collections::HashMap;
 
@@ -8,80 +15,67 @@ use entity_access::domain::models::{
 };
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
 use models_properties::service::property_option::{PropertyOption, PropertyOptionValue};
+use models_properties::service::property_value::PropertyValue;
 
 use crate::domain::models::{
-    AccessGrant, AddColumnOptions, ApplyOutcome, Catalog, Column, ColumnBinding, ColumnDetail,
-    ColumnId, CreateColumn, CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError,
-    DatabaseId, ExecOutcome, ExecRequest, InferColumnType, InferColumnTypeOutcome, ListedDatabase,
-    MaterializedTable, PropertyDefinitionId, QueryError, QueryResult, RawRowChange,
-    RenameColumnOutcome, Row, RowChange, RowId, SqliteSnapshot, Table, TableDeps, TableId,
-    TableMutationOutcome, TableVersion, Viewer,
+    AccessGrant, AddColumnOptions, Column, ColumnBinding, ColumnDetail, ColumnId, CreateColumn,
+    CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId, ExecOutcome,
+    ExecRequest, InferColumnType, InferColumnTypeOutcome, ListedDatabase, PropertyDefinitionId,
+    QueryError, RenameColumnOutcome, RowId, RowRef, Table, TableId, TableMutationOutcome,
+    TableVersion, Viewer,
 };
 use crate::domain::models::{ChangeColumnType, ColumnReplacement, ColumnSchemaOutcome};
 
-/// Outbound persistence port for databases, tables, column placements, rows,
-/// and link edges. Implemented by the Postgres repository.
-///
-/// The repo stores facts; every policy decision (who may do what, what a
-/// changeset is allowed to contain) lives in the domain service.
+/// Persistence for databases, tables, column placements and row identities.
 pub trait DatabasesRepo: Send + Sync + 'static {
     /// The error type returned by repository operations.
     type Err: std::error::Error + Send + Sync + 'static;
 
-    /// Insert a database, its starter table, and the creator's owner grant in
-    /// one transaction, so a database can never exist without an owner.
+    /// Create a database with its starter table, granting the creator owner
+    /// access.
     fn create_database(
         &self,
         cmd: &CreateDatabase,
         starter_table_name: &str,
     ) -> impl Future<Output = Result<Database, Self::Err>> + Send;
 
-    /// Fetch a database with its tables and column placements.
+    /// A database and its tables, if it exists.
     fn get_database(
         &self,
         id: DatabaseId,
     ) -> impl Future<Output = Result<Option<(Database, Vec<Table>)>, Self::Err>> + Send;
 
-    /// Set a database's display name.
-    ///
-    /// The caller has already checked that the database exists and is not
-    /// trashed; a missing id writes nothing and is not an error here.
+    /// Rename a database.
     fn rename_database(
         &self,
         id: DatabaseId,
         name: &str,
     ) -> impl Future<Output = Result<(), Self::Err>> + Send;
 
-    /// Mark a database trashed (reversible; nothing else is touched).
+    /// Move a database to the trash.
     fn trash_database(
         &self,
         id: DatabaseId,
         trashed_at: DateTime<Utc>,
     ) -> impl Future<Output = Result<(), Self::Err>> + Send;
 
-    /// Clear a database's trashed marker.
+    /// Restore a trashed database.
     fn restore_database(
         &self,
         id: DatabaseId,
     ) -> impl Future<Output = Result<(), Self::Err>> + Send;
 
-    /// Irreversibly delete a database, its tables/columns/rows/links (by
-    /// cascade), and every `entity_access` row pointing at it, in one
-    /// transaction.
+    /// Remove a database permanently.
     fn delete_database(&self, id: DatabaseId)
     -> impl Future<Output = Result<(), Self::Err>> + Send;
 
-    /// Insert a table, atomically reserving its name within the database.
-    /// A name collision is distinct from a missing or trashed database; the
-    /// latter must be checked atomically with the write.
+    /// Add a table to a database.
     fn create_table(
         &self,
         cmd: &CreateTable,
     ) -> impl Future<Output = Result<TableMutationOutcome, Self::Err>> + Send;
 
-    /// Rename only if the previous name still matches and the new name is free.
-    /// A concurrent rename/name collision is distinct from a missing or
-    /// trashed database. Successful renames bump the version atomically.
+    /// Rename a table, guarded by its previous name.
     fn rename_table(
         &self,
         table: &Table,
@@ -89,7 +83,7 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         previous_name: &str,
     ) -> impl Future<Output = Result<TableMutationOutcome, Self::Err>> + Send;
 
-    /// Insert a column placement.
+    /// Bind a definition into a table as a new column placement.
     fn create_column(
         &self,
         table_id: TableId,
@@ -97,9 +91,7 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         cmd: &CreateColumn,
     ) -> impl Future<Output = Result<ColumnId, Self::Err>> + Send;
 
-    /// Change a placement's label only if its table version and previous
-    /// override still match. Bumps the table version atomically; `None` is a
-    /// concurrent change. Property definitions and SQL identifiers stay intact.
+    /// Rename a column placement.
     fn rename_column(
         &self,
         table: &Table,
@@ -107,9 +99,8 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         name: &str,
     ) -> impl Future<Output = Result<Option<RenameColumnOutcome>, Self::Err>> + Send;
 
-    /// Rebind an empty inference-enabled placement and settle its flag, only
-    /// when the table version and old binding still match. Locks the same table
-    /// version as row writes. `None` means a competing write or a nonempty column.
+    /// Settle an untyped column on a definition, provided no row has a value
+    /// in it yet.
     fn infer_column_type(
         &self,
         table: &Table,
@@ -117,77 +108,71 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         definition_id: PropertyDefinitionId,
     ) -> impl Future<Output = Result<Option<TableVersion>, Self::Err>> + Send;
 
-    /// Rebind only this placement and replace its cells under the table CAS.
-    /// Keep its database live until commit; do not change or delete shared definitions.
+    /// Swap a placement onto a fresh definition. The converted cells in the
+    /// replacement are the service's to write afterwards.
     fn replace_column(
         &self,
         table: &Table,
         replacement: &ColumnReplacement,
     ) -> impl Future<Output = Result<Option<TableVersion>, Self::Err>> + Send;
 
-    /// Delete one placement and its table-local cells/edges atomically, preserving
-    /// its property definition and other placements. Lock and bump link endpoints.
+    /// Remove a column placement.
     fn delete_column(
         &self,
         table: &Table,
         column: &Column,
     ) -> impl Future<Output = Result<Option<ColumnSchemaOutcome>, Self::Err>> + Send;
 
-    /// Persist a complete, validated column order under the table CAS.
+    /// Reorder a table's column placements.
     fn reorder_columns(
         &self,
         table: &Table,
         column_ids: &[ColumnId],
     ) -> impl Future<Output = Result<Option<TableVersion>, Self::Err>> + Send;
 
-    /// Bump a table's version and return the new one.
-    ///
-    /// For schema changes that happen outside [`DatabasesRepo::create_column`]
-    /// and [`DatabasesRepo::apply_changes`] — adding a select option rewrites
-    /// the table's compiled `CHECK`, so every materialization keyed on the
-    /// version has to be rebuilt.
+    /// Bump a table's version, answering the new one.
     fn bump_table_version(
         &self,
         table_id: TableId,
     ) -> impl Future<Output = Result<TableVersion, Self::Err>> + Send;
 
-    /// Fetch a table's rows in position order, at most `limit` of them.
-    ///
-    /// The cap is the domain's materialization budget plus one: the service
-    /// refuses a table that comes back over the budget, and the extra row is
-    /// how it tells "exactly at the budget" from "more than the budget"
-    /// without loading the rest.
-    fn fetch_rows(
+    /// Every row of a table, in position order.
+    fn row_refs(
         &self,
         table_id: TableId,
-        limit: usize,
-    ) -> impl Future<Output = Result<Vec<Row>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Vec<RowRef>, Self::Err>> + Send;
 
-    /// Fetch at most `limit` link edges for a link column, in position order.
-    ///
-    /// Materialization requests its budget plus one to detect overflow without
-    /// loading every edge. Existence checks only need a limit of one.
-    fn fetch_links(
+    /// Append `count` empty rows to a table, answering them in order. `None`
+    /// when the table is gone or its database is trashed.
+    fn insert_rows(
         &self,
-        column_id: ColumnId,
-        limit: usize,
-    ) -> impl Future<Output = Result<Vec<(RowId, RowId)>, Self::Err>> + Send;
+        table_id: TableId,
+        created_by: &str,
+        count: usize,
+    ) -> impl Future<Output = Result<Option<Vec<RowRef>>, Self::Err>> + Send;
 
-    /// Apply a translated changeset atomically: inserts (returning minted row
-    /// ids in changeset order), cell updates, deletes, and link edges, bumping
-    /// each written table's version exactly once. When `expected_versions`
-    /// names a written table, the write is refused (nothing committed) if the
-    /// table's version differs — checked inside the transaction. A trashed
-    /// database, removed table, or missing update/delete target also conflicts.
-    /// Keep written databases live until commit, including link endpoints.
-    fn apply_changes(
+    /// Remove one row of a table; `false` if it was not there.
+    fn delete_row(
         &self,
-        viewer: &Viewer,
-        changes: &[RowChange],
-        expected_versions: &HashMap<TableId, TableVersion>,
-    ) -> impl Future<Output = Result<ApplyOutcome, Self::Err>> + Send;
+        table_id: TableId,
+        row_id: RowId,
+    ) -> impl Future<Output = Result<bool, Self::Err>> + Send;
 
-    /// Current versions for a set of tables (compare-and-swap support).
+    /// The table a row belongs to, if the row exists.
+    fn row_table(
+        &self,
+        row_id: RowId,
+    ) -> impl Future<Output = Result<Option<TableId>, Self::Err>> + Send;
+
+    /// A first value landed in these columns: they no longer infer their
+    /// type from it.
+    fn settle_inference(
+        &self,
+        table_id: TableId,
+        definitions: &[PropertyDefinitionId],
+    ) -> impl Future<Output = Result<(), Self::Err>> + Send;
+
+    /// Current versions for a set of tables.
     fn table_versions(
         &self,
         table_ids: &[TableId],
@@ -212,6 +197,33 @@ pub trait DatabasesRepo: Send + Sync + 'static {
     ) -> impl Future<Output = Result<Vec<Column>, Self::Err>> + Send;
 }
 
+/// A row's cells, kept by the properties system as entity properties of the
+/// `DATABASE_ROW` entity the row id names. Authorization is the domain
+/// service's, resolved through the row's database; the store trusts its
+/// caller.
+pub trait CellStore: Send + Sync + 'static {
+    /// The error type returned by the store.
+    type Err: std::error::Error + Send + Sync + 'static;
+
+    /// The cells of these rows, keyed by row then definition. A row with no
+    /// cells is absent from the map.
+    fn cells(
+        &self,
+        rows: &[RowId],
+    ) -> impl Future<Output = Result<HashMap<RowId, HashMap<PropertyDefinitionId, PropertyValue>>, Self::Err>>
+    + Send;
+
+    /// Set (or, with `None`, clear) cells on one row.
+    fn write(
+        &self,
+        row: RowId,
+        cells: &[(PropertyDefinitionId, Option<PropertyValue>)],
+    ) -> impl Future<Output = Result<(), Self::Err>> + Send;
+
+    /// Remove every cell of a row.
+    fn clear(&self, row: RowId) -> impl Future<Output = Result<(), Self::Err>> + Send;
+}
+
 /// Which databases a viewer can reach, and the grant written at creation.
 /// Backed by the shared `entity_access` table; the domain treats it as the
 /// authorization boundary for SQL (the catalog is built from it).
@@ -219,24 +231,20 @@ pub trait AccessDirectory: Send + Sync + 'static {
     /// The error type returned by directory operations.
     type Err: std::error::Error + Send + Sync + 'static;
 
-    /// Every non-trashed database the viewer holds a grant on, with the
-    /// highest grant.
+    /// Every database the viewer can see, with their grant on each.
     fn accessible_databases(
         &self,
         viewer: &Viewer,
     ) -> impl Future<Output = Result<Vec<(DatabaseId, AccessGrant)>, Self::Err>> + Send;
 }
 
-/// Column definitions live in the properties system; this port wraps creating
-/// database-scoped definitions and reading definitions (with options) for
-/// catalog builds and schema compilation.
+/// The definitions behind columns: creating database-owned ones, binding
+/// existing ones, and reading them back with their options.
 pub trait ColumnDefinitionStore: Send + Sync + 'static {
-    /// The error type returned by definition operations.
+    /// The error type returned by the store.
     type Err: std::error::Error + Send + Sync + 'static;
 
-    /// Resolve a binding: create a database-scoped definition, or validate
-    /// that an existing one is visible to the viewer (system-owned, owned by
-    /// the viewer or one of their teams, or owned by this database).
+    /// The definition a column binding names, checked against the viewer.
     fn resolve_binding(
         &self,
         database_id: DatabaseId,
@@ -244,7 +252,7 @@ pub trait ColumnDefinitionStore: Send + Sync + 'static {
         binding: &ColumnBinding,
     ) -> impl Future<Output = Result<PropertyDefinitionId, Self::Err>> + Send;
 
-    /// Create a fresh database-owned definition through the properties domain.
+    /// Create a definition owned by the database.
     fn create_typed_definition(
         &self,
         database_id: DatabaseId,
@@ -254,86 +262,32 @@ pub trait ColumnDefinitionStore: Send + Sync + 'static {
         specific_entity_type: Option<models_properties::EntityType>,
     ) -> impl Future<Output = Result<PropertyDefinitionWithOptions, Self::Err>> + Send;
 
-    /// Remove a replacement definition whose column rebind was refused.
+    /// Remove a definition that no column binds any more.
     fn delete_unused_definition(
         &self,
         id: PropertyDefinitionId,
     ) -> impl Future<Output = Result<(), Self::Err>> + Send;
 
-    /// Append select options to a definition, returning the created rows in
-    /// the order given.
-    ///
-    /// Mechanics only: the caller has already checked that the definition
-    /// takes options and that none of these values is on it yet, and has
-    /// turned each display label into the value the properties system stores
-    /// (a number for [`models_properties::shared::DataType::SelectNumber`], a
-    /// string otherwise).
+    /// Add options to a select definition, answering every option it has.
     fn add_options(
         &self,
         definition_id: PropertyDefinitionId,
         values: &[PropertyOptionValue],
     ) -> impl Future<Output = Result<Vec<PropertyOption>, Self::Err>> + Send;
 
-    /// Fetch the definitions (with options) behind a set of column placements.
+    /// Definitions by id, with their options.
     fn definitions(
         &self,
         ids: &[PropertyDefinitionId],
     ) -> impl Future<Output = Result<Vec<PropertyDefinitionWithOptions>, Self::Err>> + Send;
 }
 
-/// Platform data exposed to SQL, permission-scoped per viewer. One
-/// implementation dispatches across every magic table (`people`, `documents`,
-/// `tasks`, …); the domain never knows which backends exist.
-pub trait MagicTables: Send + Sync + 'static {
-    /// The error type returned by magic-table operations.
-    type Err: std::error::Error + Send + Sync + 'static;
-
-    /// Schemas of every magic table, for the catalog. Cheap and static.
-    fn schemas(&self) -> Vec<crate::domain::models::TableSchema>;
-
-    /// Materialize one magic table for a viewer, restricted to the referenced
-    /// columns, plus whether the row cap truncated it. Never called for tables
-    /// absent from [`MagicTables::schemas`].
-    fn materialize(
-        &self,
-        viewer: &Viewer,
-        sql_name: &str,
-        columns: &[String],
-    ) -> impl Future<Output = Result<(MaterializedTable, bool), Self::Err>> + Send;
-}
-
-/// The embedded SQLite sandbox. Synchronous and CPU-bound; the service runs it
-/// on a blocking pool. Implemented by the rusqlite executor.
-pub trait SqlExecutor: Send + Sync + 'static {
-    /// Prepare `sql` against a schema-only build of `catalog` and report the
-    /// tables/columns it references and writes (via the authorizer), or the
-    /// SQLite error verbatim. No data is loaded and nothing executes.
-    fn analyze(&self, catalog: &Catalog, sql: &str) -> Result<TableDeps, QueryError>;
-
-    /// Load `tables` into a fresh in-memory database whose schema carries the
-    /// compiled validity constraints, execute `sql` inside one transaction
-    /// with a session recording changes, and return SELECT results plus the
-    /// recorded row changes. Enforces read-only tables, statement budget, and
-    /// row caps via the authorizer/interrupt handler.
-    fn execute(
-        &self,
-        catalog: &Catalog,
-        tables: Vec<MaterializedTable>,
-        sql: &str,
-    ) -> Result<(Vec<QueryResult>, Vec<RawRowChange>), QueryError>;
-
-    /// Serialize a set of materialized tables into a complete SQLite database
-    /// file (the takeout snapshot).
-    fn serialize_snapshot(&self, tables: Vec<MaterializedTable>) -> Result<Vec<u8>, QueryError>;
-}
-
-/// Liveness fan-out: announce that a table changed so subscribed surfaces
-/// re-run their queries. Implemented by the Redis publisher.
+/// Liveness: tell open clients a table changed.
 pub trait TableEventPublisher: Send + Sync + 'static {
-    /// The error type returned by publish operations.
+    /// The error type returned by the publisher.
     type Err: std::error::Error + Send + Sync + 'static;
 
-    /// Publish `{database_id, table_id, version}` to the gateway fan-out.
+    /// Announce a table's new version.
     fn table_changed(
         &self,
         database_id: DatabaseId,
@@ -342,63 +296,60 @@ pub trait TableEventPublisher: Send + Sync + 'static {
     ) -> impl Future<Output = Result<(), Self::Err>> + Send;
 }
 
-/// The service trait inbound adapters call. All authorization policy beyond
-/// receipt minting, and all use-case orchestration, lives behind this trait.
+/// The databases domain service.
 pub trait DatabasesService: Send + Sync + 'static {
-    /// Create a database (with one starter table) owned by the viewer.
+    /// Create a database with a starter table.
     fn create_database(
         &self,
         cmd: CreateDatabase,
     ) -> impl Future<Output = Result<Database, DatabaseError>> + Send;
 
-    /// Every database the viewer can reach.
+    /// Every database the viewer can see.
     fn list_databases(
         &self,
         viewer: Viewer,
     ) -> impl Future<Output = Result<Vec<ListedDatabase>, DatabaseError>> + Send;
 
-    /// Fetch a database with tables, columns, definitions, and SQL names.
+    /// A database with its tables and columns.
     fn get_database(
         &self,
         receipt: EntityAccessReceipt<ViewAccessLevel>,
         viewer: Viewer,
     ) -> impl Future<Output = Result<DatabaseDetail, DatabaseError>> + Send;
 
-    /// Rename a database. A trashed database is indistinguishable from a
-    /// missing one.
+    /// Rename a database.
     fn rename_database(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
         name: String,
     ) -> impl Future<Output = Result<Database, DatabaseError>> + Send;
 
-    /// Move a database to the trash. Idempotent: trashing an already-trashed
-    /// database succeeds without changing when it was trashed.
+    /// Move a database to the trash.
     fn trash_database(
         &self,
         receipt: EntityAccessReceipt<OwnerAccessLevel>,
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send;
 
-    /// Restore a trashed database. Idempotent for a live database.
+    /// Restore a trashed database.
     fn restore_database(
         &self,
         receipt: EntityAccessReceipt<OwnerAccessLevel>,
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send;
 
-    /// Irreversibly delete a database and everything under it.
+    /// Remove a database permanently.
     fn delete_database_permanently(
         &self,
         receipt: EntityAccessReceipt<OwnerAccessLevel>,
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send;
 
-    /// Create a table.
+    /// Add a table.
     fn create_table(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
         cmd: CreateTable,
     ) -> impl Future<Output = Result<Table, DatabaseError>> + Send;
 
-    /// Rename a table without changing its identity, records, or column bindings.
+    /// Rename a table.
     fn rename_table(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
@@ -407,8 +358,7 @@ pub trait DatabasesService: Send + Sync + 'static {
         previous_name: String,
     ) -> impl Future<Output = Result<Table, DatabaseError>> + Send;
 
-    /// Create a column: validate the binding and any link target against the
-    /// viewer's world, resolve the definition, insert the placement.
+    /// Add a column.
     fn create_column(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
@@ -416,7 +366,7 @@ pub trait DatabasesService: Send + Sync + 'static {
         cmd: CreateColumn,
     ) -> impl Future<Output = Result<ColumnId, DatabaseError>> + Send;
 
-    /// Rename a column placement without changing its binding or SQL name.
+    /// Rename a column.
     fn rename_column(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
@@ -426,7 +376,7 @@ pub trait DatabasesService: Send + Sync + 'static {
         previous_name: String,
     ) -> impl Future<Output = Result<RenameColumnOutcome, DatabaseError>> + Send;
 
-    /// Settle the type of a new empty column without mutating shared definitions.
+    /// Settle an untyped column's type from its first value.
     fn infer_column_type(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
@@ -434,7 +384,7 @@ pub trait DatabasesService: Send + Sync + 'static {
         cmd: InferColumnType,
     ) -> impl Future<Output = Result<InferColumnTypeOutcome, DatabaseError>> + Send;
 
-    /// Explicitly change a placement's type with validated lossless conversion.
+    /// Convert a column to another type, converting its cells.
     fn change_column_type(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
@@ -442,7 +392,7 @@ pub trait DatabasesService: Send + Sync + 'static {
         cmd: ChangeColumnType,
     ) -> impl Future<Output = Result<ColumnSchemaOutcome, DatabaseError>> + Send;
 
-    /// Delete a placement without affecting its shared definition or other tables.
+    /// Remove a column.
     fn delete_column(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
@@ -451,7 +401,7 @@ pub trait DatabasesService: Send + Sync + 'static {
         base_version: TableVersion,
     ) -> impl Future<Output = Result<ColumnSchemaOutcome, DatabaseError>> + Send;
 
-    /// Save the full column order, rejecting missing, duplicate, or foreign IDs.
+    /// Reorder a table's columns.
     fn reorder_columns(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
@@ -460,11 +410,7 @@ pub trait DatabasesService: Send + Sync + 'static {
         base_version: TableVersion,
     ) -> impl Future<Output = Result<ColumnSchemaOutcome, DatabaseError>> + Send;
 
-    /// Extend a select column's allowed options.
-    ///
-    /// Options are part of the compiled schema (a `CHECK` on the column), so
-    /// this bumps the table's version and announces the change. Add-only, and
-    /// idempotent: a label the column already has is ignored.
+    /// Add options to a select column.
     fn add_column_options(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
@@ -472,29 +418,17 @@ pub trait DatabasesService: Send + Sync + 'static {
         cmd: AddColumnOptions,
     ) -> impl Future<Output = Result<ColumnDetail, DatabaseError>> + Send;
 
-    /// Execute SQL for a viewer — the whole read/write surface.
-    ///
-    /// Pipeline: build catalog → desugar → analyze → check writability &
-    /// `base_versions` → materialize referenced tables → sandboxed execute →
-    /// translate changeset → apply to Postgres → publish version events.
+    /// Run one statement, reads or writes.
     fn exec_sql(
         &self,
         viewer: Viewer,
         req: ExecRequest,
     ) -> impl Future<Output = Result<ExecOutcome, QueryError>> + Send;
 
-    /// Read SQL as the viewer, refusing every write even with an edit grant.
-    /// Stored queries and automatic refreshes must use this surface.
+    /// Run one read-only statement.
     fn query_sql(
         &self,
         viewer: Viewer,
         sql: String,
     ) -> impl Future<Output = Result<ExecOutcome, QueryError>> + Send;
-
-    /// Serialize one database into a SQLite file for takeout/local analysis.
-    fn sqlite_snapshot(
-        &self,
-        receipt: EntityAccessReceipt<ViewAccessLevel>,
-        viewer: Viewer,
-    ) -> impl Future<Output = Result<SqliteSnapshot, QueryError>> + Send;
 }

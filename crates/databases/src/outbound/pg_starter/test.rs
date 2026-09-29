@@ -5,7 +5,10 @@ use saved_views::{PgViewStorage, ViewStorage};
 
 use super::*;
 use crate::{
-    domain::{models::CreateDatabase, ports::DatabasesRepo},
+    domain::{
+        models::CreateDatabase,
+        ports::{CellStore, DatabasesRepo},
+    },
     outbound::pg_databases_repo::PgDatabasesRepo,
 };
 
@@ -64,9 +67,13 @@ async fn concurrent_starter_requests_create_one_complete_editable_example(pool: 
     assert_eq!(tables[0].name, "Ideas");
     let columns = data.columns_for_tables(&[table]).await.unwrap();
     assert_eq!(columns.len(), 2);
-    let rows = data.fetch_rows(table, 10).await.unwrap();
+    let rows = data.row_refs(table).await.unwrap();
     assert_eq!(rows.len(), 3);
-    assert!(rows.iter().all(|row| row.cells.len() == 2));
+    let cells = crate::outbound::pg_cell_store::PgCellStore::new(PropertiesPgRepo::new(pool.clone()))
+        .cells(&rows.iter().map(|row| row.id).collect::<Vec<_>>())
+        .await
+        .unwrap();
+    assert!(rows.iter().all(|row| cells[&row.id].len() == 2));
     let views = PgViewStorage::new(pool.clone())
         .get_views_for_user(USER)
         .await
@@ -102,7 +109,7 @@ async fn concurrent_starter_requests_create_one_complete_editable_example(pool: 
         data.get_database(id).await.unwrap().unwrap().0.name,
         "My ideas"
     );
-    assert_eq!(data.fetch_rows(table, 10).await.unwrap().len(), 3);
+    assert_eq!(data.row_refs(table).await.unwrap().len(), 3);
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]

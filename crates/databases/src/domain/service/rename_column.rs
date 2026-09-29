@@ -1,12 +1,11 @@
 use super::*;
 
-impl<Repo, Defs, Magic, Exec, Events, Access, Broker>
-    DatabasesServiceImpl<Repo, Defs, Magic, Exec, Events, Access, Broker>
+impl<Repo, Defs, Cells, Events, Access, Broker>
+    DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
 where
     Repo: DatabasesRepo,
     Defs: ColumnDefinitionStore,
-    Magic: MagicTables,
-    Exec: SqlExecutor,
+    Cells: CellStore,
     Events: TableEventPublisher,
     Access: AccessDirectory,
     Broker: MacroEventBroker,

@@ -2,6 +2,7 @@ use super::*;
 use crate::domain::transfer::{
     DatabaseTransferRepo, DatabaseTransferService, ImportOutcome, ImportTable,
 };
+use models_properties::service::property_value::PropertyValue;
 use sha2::{Digest, Sha256};
 
 fn validate_import(request: &mut ImportTable) -> Result<String, DatabaseError> {
@@ -48,13 +49,12 @@ fn validate_import(request: &mut ImportTable) -> Result<String, DatabaseError> {
     Ok(format!("{:x}", Sha256::digest(encoded)))
 }
 
-impl<Repo, Defs, Magic, Exec, Events, Access, Broker> DatabaseTransferService
-    for DatabasesServiceImpl<Repo, Defs, Magic, Exec, Events, Access, Broker>
+impl<Repo, Defs, Cells, Events, Access, Broker> DatabaseTransferService
+    for DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
 where
     Repo: DatabasesRepo + DatabaseTransferRepo,
     Defs: ColumnDefinitionStore,
-    Magic: MagicTables,
-    Exec: SqlExecutor,
+    Cells: CellStore,
     Events: TableEventPublisher,
     Access: AccessDirectory,
     Broker: MacroEventBroker,
@@ -99,8 +99,8 @@ where
             {
                 Ok(definition) => definitions.push(definition.definition.id),
                 Err(error) => {
-                    for id in definitions {
-                        let _ = self.definitions.delete_unused_definition(id).await;
+                    for id in &definitions {
+                        let _ = self.definitions.delete_unused_definition(*id).await;
                     }
                     return Err(repo_err(error));
                 }
@@ -119,14 +119,38 @@ where
                 | ImportOutcome::KeyConflict
                 | ImportOutcome::NotFound)
         ) {
-            for id in definitions {
-                if let Err(error) = self.definitions.delete_unused_definition(id).await {
+            for id in &definitions {
+                if let Err(error) = self.definitions.delete_unused_definition(*id).await {
                     tracing::warn!(?error, %id, "could not clean up unused import definition");
                 }
             }
         }
         match outcome.map_err(repo_err)? {
-            ImportOutcome::Created(table) | ImportOutcome::Replayed(table) => {
+            ImportOutcome::Created { table, rows } => {
+                // The values are text, one per header column, and land as the
+                // rows' cells now that their identities are committed.
+                for (row_id, values) in rows.iter().zip(&request.rows) {
+                    let cells: Vec<_> = definitions
+                        .iter()
+                        .zip(values)
+                        .filter(|(_, value)| !value.is_empty())
+                        .map(|(definition, value)| {
+                            (*definition, Some(PropertyValue::Str(value.clone())))
+                        })
+                        .collect();
+                    if !cells.is_empty() {
+                        self.cells.write(*row_id, &cells).await.map_err(repo_err)?;
+                    }
+                }
+                self.publish(
+                    receipt_attribution(&receipt),
+                    &HashMap::from([(table.id, database.id)]),
+                    &HashMap::from([(table.id, table.version)]),
+                )
+                .await;
+                Ok(table)
+            }
+            ImportOutcome::Replayed(table) => {
                 self.publish(
                     receipt_attribution(&receipt),
                     &HashMap::from([(table.id, database.id)]),

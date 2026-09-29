@@ -1,3 +1,5 @@
+use sqlx::{Postgres, Transaction};
+
 use super::*;
 
 impl PgDatabasesRepo {
@@ -63,26 +65,6 @@ impl PgDatabasesRepo {
             tx.rollback().await?;
             return Ok(None);
         }
-        let values: serde_json::Map<String, serde_json::Value> = replacement
-            .values
-            .iter()
-            .map(|(id, value)| Ok((id.to_string(), serde_json::to_value(value)?)))
-            .collect::<Result<_, serde_json::Error>>()?;
-        let values = serde_json::Value::Object(values);
-        let old_key = replacement.column.property_definition_id.to_string();
-        let new_key = replacement.definition_id.to_string();
-        sqlx::query!(
-            "UPDATE database_rows SET cells = (cells - $2::text) ||
-             CASE WHEN $4::jsonb ? id::text THEN jsonb_build_object($3::text, $4::jsonb -> id::text)
-             ELSE '{}'::jsonb END, updated_at = now()
-             WHERE table_id = $1 AND cells ? $2::text",
-            table.id,
-            old_key,
-            new_key,
-            values
-        )
-        .execute(&mut *tx)
-        .await?;
         let version = sqlx::query_scalar!(
             "UPDATE database_tables SET version = version + 1 WHERE id = $1 RETURNING version",
             table.id
@@ -115,15 +97,6 @@ impl PgDatabasesRepo {
             tx.rollback().await?;
             return Ok(None);
         }
-        let key = column.property_definition_id.to_string();
-        sqlx::query!(
-            "UPDATE database_rows SET cells = cells - $2::text, updated_at = now()
-             WHERE table_id = $1 AND cells ? $2::text",
-            table.id,
-            key
-        )
-        .execute(&mut *tx)
-        .await?;
         let versions = sqlx::query!(
             "UPDATE database_tables SET version = version + 1 WHERE id = ANY($1) RETURNING id, version",
             &tables

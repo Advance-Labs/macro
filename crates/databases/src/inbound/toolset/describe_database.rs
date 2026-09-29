@@ -9,10 +9,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use super::{
-    DatabasesToolContext, ToolDatabaseSchema, database_error, magic_tables_note, sql_guide,
-    viewer_of,
-};
+use super::{DatabasesToolContext, ToolDatabaseSchema, database_error, sql_guide, viewer_of};
 use crate::domain::ports::DatabasesService;
 
 /// Read one database's schema.
@@ -22,20 +19,13 @@ use crate::domain::ports::DatabasesService;
     title = "DescribeDatabase",
     description = concat!(
         "\
-Read one database's schema: tables with current writable `sqlName`, stable read-only \
-`readSqlName`, and version, and each table's columns \
-with their SQL names, value types, whether they hold multiple values, and the exact labels a \
-select column accepts, plus specific entity kinds. Use table/column `name` only to match the \
-user's language; use exact quoted SQL identifiers when executing.\n\
+Read one database's schema: its tables with their quoted `sqlName` and version, and each \
+table's columns with their SQL names, value types, whether they hold multiple values, the \
+exact labels a select column accepts, and the target table of a relation column.\n\
 \n\
 **Call this before writing SQL for a database you have not already described in this \
 conversation.** Guessing table or column names is the single most common way a query fails, \
 and the schema is small. Get the `databaseId` from ListDatabases.\n\
-\n\
-## The magic tables\n\
-\n",
-        magic_tables_note!(),
-        "\n\
 \n\
 ## Writing SQL against it\n\
 \n",

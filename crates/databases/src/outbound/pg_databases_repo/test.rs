@@ -1,18 +1,12 @@
-use std::collections::HashMap;
-
 use macro_db_migrator::MACRO_DB_MIGRATIONS;
 use macro_user_id::cowlike::CowLike;
 use macro_user_id::user_id::MacroUserIdStr;
-use models_properties::api::requests::SetPropertyValue;
 use sqlx::PgPool;
 
 use super::*;
+use crate::domain::models::Viewer;
 use crate::domain::models::{ColumnBinding, ColumnConfig};
 
-mod apply_changes;
-mod columns;
-mod infer_column_type;
-mod links;
 mod rename_column;
 mod sharing;
 mod tables;
@@ -117,16 +111,6 @@ async fn fixture(pool: &PgPool) -> (PgDatabasesRepo, Table, Uuid) {
     .expect("column should insert");
 
     (repo, table, definition_id)
-}
-
-fn text(value: &str) -> SetPropertyValue {
-    SetPropertyValue::String {
-        value: value.to_string(),
-    }
-}
-
-fn cells(pairs: Vec<(Uuid, SetPropertyValue)>) -> HashMap<Uuid, SetPropertyValue> {
-    pairs.into_iter().collect()
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
@@ -349,448 +333,34 @@ async fn get_database_is_none_when_missing(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn insert_then_update_merges_cells_and_bumps_version_once(pool: PgPool) {
-    let (repo, table, definition_id) = fixture(&pool).await;
-    let other_definition_id = insert_definition(&pool, "Role").await;
-
-    let (inserted, versions) = repo
-        .apply_changes(
-            &viewer(),
-            &[
-                RowChange::Insert {
-                    row_id: Uuid::now_v7(),
-                    table_id: table.id,
-                    cells: cells(vec![(definition_id, text("Priya"))]),
-                },
-                RowChange::Insert {
-                    row_id: Uuid::now_v7(),
-                    table_id: table.id,
-                    cells: cells(vec![(definition_id, text("Sam"))]),
-                },
-            ],
-            &HashMap::new(),
-        )
+async fn rows_are_minted_in_order_and_deleted_by_their_table(pool: PgPool) {
+    let (repo, table, _) = fixture(&pool).await;
+    let first = repo
+        .insert_rows(table.id, USER, 2)
         .await
-        .expect("inserts should apply")
-        .applied()
-        .expect("no version conflict");
-
-    assert_eq!(inserted.len(), 2);
-    // Two changes, one table: exactly one bump off the column's version of 1.
-    assert_eq!(versions, HashMap::from([(table.id, TableVersion(2))]));
-
-    let rows = repo
-        .fetch_rows(table.id, 100)
+        .unwrap()
+        .expect("the table is live");
+    let second = repo
+        .insert_rows(table.id, USER, 1)
         .await
-        .expect("rows should fetch");
-    assert_eq!(rows.len(), 2);
-    // Positions append, so fetch order matches insert order.
-    assert_eq!(rows[0].id, inserted[0]);
-    assert_eq!(rows[1].id, inserted[1]);
+        .unwrap()
+        .expect("the table is live");
+    let refs = repo.row_refs(table.id).await.unwrap();
     assert_eq!(
-        rows[0].cells.get(&definition_id),
-        Some(&PropertyValue::Str("Priya".to_string()))
+        refs.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![first[0].id, first[1].id, second[0].id]
     );
+    assert!(refs.windows(2).all(|pair| pair[0].position < pair[1].position));
+    assert_eq!(repo.row_table(first[0].id).await.unwrap(), Some(table.id));
 
-    repo.create_column(
-        table.id,
-        other_definition_id,
-        &CreateColumn {
-            table_id: table.id,
-            binding: ColumnBinding::ExistingDefinition(other_definition_id),
-            config: None,
-            infer_type: false,
-        },
-    )
-    .await
-    .expect("the second definition must be bound before writing it");
+    let other = macro_uuid::generate_uuid_v7();
+    assert!(!repo.delete_row(other, first[0].id).await.unwrap());
+    assert!(repo.delete_row(table.id, first[0].id).await.unwrap());
+    assert_eq!(repo.row_table(first[0].id).await.unwrap(), None);
+    assert_eq!(repo.row_refs(table.id).await.unwrap().len(), 2);
 
-    let (minted, versions) = repo
-        .apply_changes(
-            &viewer(),
-            &[RowChange::Update {
-                table_id: table.id,
-                row_id: inserted[0],
-                cells: cells(vec![(other_definition_id, text("host"))])
-                    .into_iter()
-                    .map(|(k, v)| (k, Some(v)))
-                    .collect(),
-            }],
-            &HashMap::new(),
-        )
+    repo.trash_database(table.database_id, chrono::Utc::now())
         .await
-        .expect("update should apply")
-        .applied()
-        .expect("no version conflict");
-
-    assert!(minted.is_empty());
-    assert_eq!(versions, HashMap::from([(table.id, TableVersion(4))]));
-
-    let rows = repo
-        .fetch_rows(table.id, 100)
-        .await
-        .expect("rows should fetch");
-    let updated = &rows[0];
-    // A merge, not a replace: the untouched cell survives.
-    assert_eq!(
-        updated.cells.get(&definition_id),
-        Some(&PropertyValue::Str("Priya".to_string()))
-    );
-    assert_eq!(
-        updated.cells.get(&other_definition_id),
-        Some(&PropertyValue::Str("host".to_string()))
-    );
-}
-
-#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn update_of_a_missing_row_is_a_version_conflict(pool: PgPool) {
-    let (repo, table, definition_id) = fixture(&pool).await;
-    let ghost = macro_uuid::generate_uuid_v7();
-
-    let result = repo
-        .apply_changes(
-            &viewer(),
-            &[RowChange::Update {
-                table_id: table.id,
-                row_id: ghost,
-                cells: cells(vec![(definition_id, text("nobody"))])
-                    .into_iter()
-                    .map(|(k, v)| (k, Some(v)))
-                    .collect(),
-            }],
-            &HashMap::new(),
-        )
-        .await;
-
-    assert!(matches!(
-        result,
-        Ok(ApplyOutcome::VersionConflict { table_id }) if table_id == table.id
-    ));
-    // The transaction rolled back, so the version never moved.
-    let versions = repo
-        .table_versions(&[table.id])
-        .await
-        .expect("versions should fetch");
-    assert_eq!(versions, HashMap::from([(table.id, TableVersion(1))]));
-}
-
-#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn links_are_inserted_idempotently_and_removed(pool: PgPool) {
-    let (repo, table, definition_id) = fixture(&pool).await;
-
-    let link_definition_id = insert_definition(&pool, "Sessions").await;
-    let link_column_id = repo
-        .create_column(
-            table.id,
-            link_definition_id,
-            &CreateColumn {
-                infer_type: false,
-                table_id: table.id,
-                binding: ColumnBinding::ExistingDefinition(link_definition_id),
-                config: Some(ColumnConfig::Link {
-                    database_id: table.database_id,
-                    table_id: table.id,
-                }),
-            },
-        )
-        .await
-        .expect("link column should insert");
-
-    let (rows, _) = repo
-        .apply_changes(
-            &viewer(),
-            &[
-                RowChange::Insert {
-                    row_id: Uuid::now_v7(),
-                    table_id: table.id,
-                    cells: cells(vec![(definition_id, text("Priya"))]),
-                },
-                RowChange::Insert {
-                    row_id: Uuid::now_v7(),
-                    table_id: table.id,
-                    cells: cells(vec![(definition_id, text("Sam"))]),
-                },
-            ],
-            &HashMap::new(),
-        )
-        .await
-        .expect("inserts should apply")
-        .applied()
-        .expect("no version conflict");
-
-    let before = repo
-        .table_versions(&[table.id])
-        .await
-        .expect("versions should fetch")[&table.id];
-
-    let (_, versions) = repo
-        .apply_changes(
-            &viewer(),
-            &[
-                RowChange::Link {
-                    column_id: link_column_id,
-                    source_row_id: rows[0],
-                    target_row_id: rows[1],
-                },
-                // Re-linking the same pair is a no-op, not a conflict.
-                RowChange::Link {
-                    column_id: link_column_id,
-                    source_row_id: rows[0],
-                    target_row_id: rows[1],
-                },
-            ],
-            &HashMap::new(),
-        )
-        .await
-        .expect("links should apply")
-        .applied()
-        .expect("no version conflict");
-
-    // A link change bumps the link column's own table, exactly once. The
-    // column here points back at that same table, so there is nothing else to
-    // bump; see `a_link_bumps_both_ends` for the cross-table case.
-    assert_eq!(
-        versions,
-        HashMap::from([(table.id, TableVersion(before.0 + 1))])
-    );
-    assert_eq!(
-        repo.fetch_links(link_column_id, 100)
-            .await
-            .expect("links should fetch"),
-        vec![(rows[0], rows[1])]
-    );
-
-    repo.apply_changes(
-        &viewer(),
-        &[RowChange::Unlink {
-            column_id: link_column_id,
-            source_row_id: rows[0],
-            target_row_id: rows[1],
-        }],
-        &HashMap::new(),
-    )
-    .await
-    .expect("unlink should apply");
-
-    assert!(
-        repo.fetch_links(link_column_id, 100)
-            .await
-            .expect("links should fetch")
-            .is_empty()
-    );
-}
-
-#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn deleting_a_row_cascades_its_links(pool: PgPool) {
-    let (repo, table, definition_id) = fixture(&pool).await;
-
-    let link_definition_id = insert_definition(&pool, "Sessions").await;
-    let link_column_id = repo
-        .create_column(
-            table.id,
-            link_definition_id,
-            &CreateColumn {
-                infer_type: false,
-                table_id: table.id,
-                binding: ColumnBinding::ExistingDefinition(link_definition_id),
-                config: Some(ColumnConfig::Link {
-                    database_id: table.database_id,
-                    table_id: table.id,
-                }),
-            },
-        )
-        .await
-        .expect("link column should insert");
-
-    let (rows, _) = repo
-        .apply_changes(
-            &viewer(),
-            &[
-                RowChange::Insert {
-                    row_id: Uuid::now_v7(),
-                    table_id: table.id,
-                    cells: cells(vec![(definition_id, text("Priya"))]),
-                },
-                RowChange::Insert {
-                    row_id: Uuid::now_v7(),
-                    table_id: table.id,
-                    cells: cells(vec![(definition_id, text("Sam"))]),
-                },
-            ],
-            &HashMap::new(),
-        )
-        .await
-        .expect("inserts should apply")
-        .applied()
-        .expect("no version conflict");
-
-    repo.apply_changes(
-        &viewer(),
-        &[RowChange::Link {
-            column_id: link_column_id,
-            source_row_id: rows[0],
-            target_row_id: rows[1],
-        }],
-        &HashMap::new(),
-    )
-    .await
-    .expect("link should apply");
-
-    repo.apply_changes(
-        &viewer(),
-        &[RowChange::Delete {
-            table_id: table.id,
-            row_id: rows[1],
-        }],
-        &HashMap::new(),
-    )
-    .await
-    .expect("delete should apply");
-
-    assert_eq!(
-        repo.fetch_rows(table.id, 100)
-            .await
-            .expect("rows should fetch")
-            .len(),
-        1
-    );
-    assert!(
-        repo.fetch_links(link_column_id, 100)
-            .await
-            .expect("links should fetch")
-            .is_empty()
-    );
-}
-
-/// A link edge is read from both ends — the target table exposes the reverse
-/// side — so both tables' versions move and compare-and-set covers both.
-#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn a_link_bumps_both_ends(pool: PgPool) {
-    let (repo, guests, guest_name) = fixture(&pool).await;
-
-    let sessions = applied_table(
-        repo.create_table(&CreateTable {
-            database_id: guests.database_id,
-            name: "Sessions".to_string(),
-        })
-        .await
-        .expect("table insert should succeed"),
-    );
-    let session_name = insert_definition(&pool, "Session name").await;
-    repo.create_column(
-        sessions.id,
-        session_name,
-        &CreateColumn {
-            infer_type: false,
-            table_id: sessions.id,
-            binding: ColumnBinding::ExistingDefinition(session_name),
-            config: None,
-        },
-    )
-    .await
-    .expect("column should insert");
-
-    let link_definition_id = insert_definition(&pool, "Attending").await;
-    let link_column_id = repo
-        .create_column(
-            guests.id,
-            link_definition_id,
-            &CreateColumn {
-                infer_type: false,
-                table_id: guests.id,
-                binding: ColumnBinding::ExistingDefinition(link_definition_id),
-                config: Some(ColumnConfig::Link {
-                    database_id: guests.database_id,
-                    table_id: sessions.id,
-                }),
-            },
-        )
-        .await
-        .expect("link column should insert");
-
-    let (guest_rows, _) = repo
-        .apply_changes(
-            &viewer(),
-            &[RowChange::Insert {
-                row_id: Uuid::now_v7(),
-                table_id: guests.id,
-                cells: cells(vec![(guest_name, text("Priya"))]),
-            }],
-            &HashMap::new(),
-        )
-        .await
-        .expect("insert should apply")
-        .applied()
-        .expect("no version conflict");
-    let (session_rows, _) = repo
-        .apply_changes(
-            &viewer(),
-            &[RowChange::Insert {
-                row_id: Uuid::now_v7(),
-                table_id: sessions.id,
-                cells: cells(vec![(session_name, text("Keynote"))]),
-            }],
-            &HashMap::new(),
-        )
-        .await
-        .expect("insert should apply")
-        .applied()
-        .expect("no version conflict");
-
-    let before = repo
-        .table_versions(&[guests.id, sessions.id])
-        .await
-        .expect("versions should fetch");
-
-    let (_, versions) = repo
-        .apply_changes(
-            &viewer(),
-            &[RowChange::Link {
-                column_id: link_column_id,
-                source_row_id: guest_rows[0],
-                target_row_id: session_rows[0],
-            }],
-            &HashMap::new(),
-        )
-        .await
-        .expect("link should apply")
-        .applied()
-        .expect("no version conflict");
-
-    assert_eq!(
-        versions,
-        HashMap::from([
-            (guests.id, TableVersion(before[&guests.id].0 + 1)),
-            (sessions.id, TableVersion(before[&sessions.id].0 + 1)),
-        ]),
-        "both ends of the edge move"
-    );
-
-    // And because the target is a written table, a stale base version for it
-    // refuses the write.
-    let conflict = repo
-        .apply_changes(
-            &viewer(),
-            &[RowChange::Unlink {
-                column_id: link_column_id,
-                source_row_id: guest_rows[0],
-                target_row_id: session_rows[0],
-            }],
-            &HashMap::from([(sessions.id, before[&sessions.id])]),
-        )
-        .await
-        .expect("apply should not error");
-    assert_eq!(
-        conflict,
-        ApplyOutcome::VersionConflict {
-            table_id: sessions.id
-        }
-    );
-    assert_eq!(
-        repo.fetch_links(link_column_id, 100)
-            .await
-            .expect("links should fetch"),
-        vec![(guest_rows[0], session_rows[0])],
-        "the refused unlink committed nothing"
-    );
+        .unwrap();
+    assert!(repo.insert_rows(table.id, USER, 1).await.unwrap().is_none());
 }

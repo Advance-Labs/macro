@@ -5,37 +5,32 @@
 //! A database is a collection of tables (tabs). Columns are bindings to
 //! `models_properties` property definitions, so the existing property type
 //! system (data types, select options, entity references) carries directly
-//! over; cells are [`models_properties::service::PropertyValue`]s stored as
-//! JSONB per row. Entity cells store references only — display data is
-//! hydrated at read time.
+//! over. A row is a `DATABASE_ROW` entity whose cells are its entity
+//! properties; the `database_rows` table holds only the row's identity and
+//! its place in the table.
 //!
 //! # The SQL-first surface
 //!
-//! There are no cell/row/link CRUD endpoints. The public write and read verb
-//! is SQL, executed against a per-request, permission-scoped, **in-memory
-//! SQLite materialization** of exactly the tables the statement references:
+//! There are no cell/row CRUD endpoints. The public write and read verb is
+//! a small SQL subset, compiled by the `database_sql` crate:
 //!
-//! 1. Build the viewer's catalog (their tables + junction views + magic tables).
-//! 2. Prepare the statement against a schema-only SQLite; the authorizer
-//!    callback yields the referenced tables and columns.
-//! 3. Materialize only those, permission-scoped, with the property model
-//!    compiled to constraints (`STRICT`, `CHECK` from select options, foreign
-//!    keys from links) so SQLite itself enforces validity.
-//! 4. Execute inside a transaction with a session recording the changeset.
-//! 5. Translate the changeset back into typed domain commands and apply them
-//!    to Postgres — the single write path shared with every other surface.
+//! 1. Build the viewer's catalog from their grants — an unreadable table does
+//!    not exist to the statement.
+//! 2. Compile the statement against it: names resolved, literals typed, the
+//!    filter split into what Soup can evaluate and what is folded here.
+//! 3. Read the rows through the row and cell stores and fold the answer, or
+//!    write through them one row at a time.
 //!
-//! Postgres is the only source of truth; the SQLite database is discarded
-//! after every request. Schema operations (create database/table/column)
-//! remain small structured endpoints because property definitions carry
-//! configuration DDL cannot express.
+//! Schema operations (create database/table/column) remain small structured
+//! endpoints because property definitions carry configuration DDL cannot
+//! express.
 //!
 //! # Architecture
 //!
 //! - **domain**: models, ports, and the service implementation (all policy).
-//! - **inbound**: the Axum router (SQL exec, snapshot download, schema ops).
-//! - **outbound**: Postgres repositories, the rusqlite executor, magic-table
-//!   sources, and the table-event publisher.
+//! - **inbound**: the Axum router (SQL exec, schema ops) and the AI toolset.
+//! - **outbound**: Postgres repositories, the cell store over the properties
+//!   adapter, and the table-event publisher.
 
 pub mod domain;
 

@@ -10,7 +10,7 @@ async fn imports_are_atomic_and_retries_do_not_duplicate_rows(pool: PgPool) {
         columns: vec!["Name".into()],
         rows: vec![vec!["00123".into()], vec!["a,\"b\nsecond line".into()]],
     };
-    let ImportOutcome::Created(table) = repo
+    let ImportOutcome::Created { table, rows } = repo
         .import_table(
             existing.database_id,
             &viewer(),
@@ -23,7 +23,16 @@ async fn imports_are_atomic_and_retries_do_not_duplicate_rows(pool: PgPool) {
     else {
         panic!("first import should create")
     };
-    assert_eq!(repo.fetch_rows(table.id, 10).await.unwrap().len(), 2);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(
+        repo.row_refs(table.id)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>(),
+        rows
+    );
     let ImportOutcome::Replayed(replayed) = repo
         .import_table(
             existing.database_id,
@@ -38,7 +47,7 @@ async fn imports_are_atomic_and_retries_do_not_duplicate_rows(pool: PgPool) {
         panic!("retry should replay")
     };
     assert_eq!(replayed.id, table.id);
-    assert_eq!(repo.fetch_rows(table.id, 10).await.unwrap().len(), 2);
+    assert_eq!(repo.row_refs(table.id).await.unwrap().len(), 2);
     assert!(matches!(
         repo.import_table(
             existing.database_id,
@@ -67,11 +76,6 @@ async fn imports_are_atomic_and_retries_do_not_duplicate_rows(pool: PgPool) {
         .unwrap(),
         ImportOutcome::NameConflict
     ));
-    let rows = repo.fetch_rows(table.id, 10).await.unwrap();
-    assert_eq!(
-        rows[0].cells[&definition],
-        models_properties::service::property_value::PropertyValue::Str("00123".into())
-    );
     assert_eq!(
         repo.imported_table(existing.database_id, request.request_id)
             .await
