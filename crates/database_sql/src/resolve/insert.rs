@@ -1,9 +1,12 @@
-//! `INSERT`: columns resolved once, every value typed for its column.
+//! `INSERT` and `UPDATE`: columns resolved once, every value typed for its
+//! column.
 
 use crate::catalog::Table;
-use crate::parse::{Insert, Lit};
+use uuid::Uuid;
 
-use super::{InsertQuery, ResolveError, filter, names};
+use crate::parse::{Insert, Lit, Update};
+
+use super::{InsertQuery, ResolveError, UpdateQuery, filter, names};
 
 pub fn resolve(table: &Table, insert: Insert) -> Result<InsertQuery, ResolveError> {
     let mut columns = Vec::with_capacity(insert.columns.len());
@@ -35,5 +38,34 @@ pub fn resolve(table: &Table, insert: Insert) -> Result<InsertQuery, ResolveErro
     Ok(InsertQuery {
         table: table.id,
         rows,
+    })
+}
+
+pub fn resolve_update(table: &Table, update: Update) -> Result<UpdateQuery, ResolveError> {
+    let mut cells: Vec<(Uuid, Option<super::Value>)> = Vec::with_capacity(update.assignments.len());
+    for (name, value) in update.assignments {
+        let column = names::column(table, &name)?;
+        if cells.iter().any(|(seen, _)| *seen == column.id) {
+            return Err(ResolveError::DuplicateInsertColumn {
+                column: column.name.clone(),
+            });
+        }
+        let value = match value {
+            Lit::Null => None,
+            value => Some(filter::typed(column, value)?),
+        };
+        cells.push((column.id, value));
+    }
+    Ok(UpdateQuery {
+        table: table.id,
+        row_id: row_id(&update.row_id)?,
+        cells,
+    })
+}
+
+/// The row id a write names, which must be a UUID.
+pub fn row_id(written: &str) -> Result<Uuid, ResolveError> {
+    Uuid::parse_str(written).map_err(|_| ResolveError::RowIdNotAnId {
+        written: written.to_owned(),
     })
 }

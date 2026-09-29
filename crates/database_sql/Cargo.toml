@@ -9,6 +9,8 @@ chrono = { workspace = true }
 filter_ast = { path = "../filter_ast" }
 item_filters = { path = "../item_filters", default-features = false }
 logos = { workspace = true }
+maybe_send = { path = "../maybe_send" }
+serde = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }
 
@@ -16,4 +18,5 @@ uuid = { workspace = true }
 uuid = { workspace = true, features = ["js"] }
 
 [dev-dependencies]
+pollster = { workspace = true }
 serde_json = { workspace = true }

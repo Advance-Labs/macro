@@ -18,6 +18,7 @@ pub mod catalog;
 pub mod fold;
 pub mod parse;
 pub mod resolve;
+pub mod run;
 pub mod split;
 #[cfg(test)]
 mod test_support;
@@ -26,4 +27,8 @@ pub use catalog::Catalog;
 pub use fold::{Bin, Cell, Row, Table, fold_bins, fold_rows};
 pub use parse::{ParseError, parse};
 pub use resolve::{CompileError, Query, ResolveError, compile, resolve};
+pub use run::{
+    Outcome, OutcomeColumn, OutcomeKind, Page, RowFailure, RowSource, RowWriter, RunError,
+    SourceError, WriteError, run,
+};
 pub use split::{GqlQuery, Plan, Shape, split};

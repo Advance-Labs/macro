@@ -8,7 +8,7 @@ use crate::test_support::{catalog, *};
 fn select(sql: &str) -> SelectQuery {
     match compile(&catalog(), sql).unwrap() {
         Query::Select(select) => select,
-        Query::Insert(_) => panic!("not a SELECT"),
+        Query::Insert(_) | Query::Update(_) | Query::Delete(_) => panic!("not a SELECT"),
     }
 }
 

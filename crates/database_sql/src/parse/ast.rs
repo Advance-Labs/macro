@@ -13,6 +13,10 @@ pub enum Statement {
     Select(Select),
     /// An `INSERT … VALUES`.
     Insert(Insert),
+    /// An `UPDATE … SET … WHERE row_id = …`.
+    Update(Update),
+    /// A `DELETE FROM … WHERE row_id = …`.
+    Delete(Delete),
 }
 
 /// `SELECT items FROM table [WHERE] [GROUP BY] [ORDER BY]`.
@@ -194,4 +198,24 @@ pub struct Insert {
     pub columns: Vec<Ident>,
     /// The rows; every row has exactly `columns.len()` values.
     pub rows: Vec<Vec<Lit>>,
+}
+
+/// `UPDATE table SET column = value, … WHERE row_id = 'id'`: one row, by id.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Update {
+    /// The table written.
+    pub table: TableName,
+    /// The cells set, in order; a `NULL` value clears the cell.
+    pub assignments: Vec<(Ident, Lit)>,
+    /// The row, as written in the `WHERE`.
+    pub row_id: String,
+}
+
+/// `DELETE FROM table WHERE row_id = 'id'`: one row, by id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Delete {
+    /// The table written.
+    pub table: TableName,
+    /// The row, as written in the `WHERE`.
+    pub row_id: String,
 }

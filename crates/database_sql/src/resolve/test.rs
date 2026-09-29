@@ -1,5 +1,7 @@
 use chrono::{TimeZone, Utc};
 
+use uuid::Uuid;
+
 use super::*;
 use crate::catalog::Catalog;
 use crate::parse::parse;
@@ -212,6 +214,25 @@ fn insert_types_each_cell_and_drops_nulls() {
     assert_eq!(resolve(&catalog(), parse(sql).unwrap()).unwrap(), expected);
 }
 
+#[test]
+fn update_types_cells_and_null_clears() {
+    let sql = "UPDATE crm.deals SET stage = 'won', amount = NULL WHERE row_id = '00000000-0000-0000-0000-0000000000a1'";
+
+    let expected = Query::Update(UpdateQuery {
+        table: DEALS,
+        row_id: Uuid::from_u128(0xa1),
+        cells: vec![(STAGE, Some(Value::Option(WON))), (AMOUNT, None)],
+    });
+    assert_eq!(resolve(&catalog(), parse(sql).unwrap()).unwrap(), expected);
+
+    let sql = "DELETE FROM crm.deals WHERE row_id = '00000000-0000-0000-0000-0000000000a1'";
+    let expected = Query::Delete(DeleteQuery {
+        table: DEALS,
+        row_id: Uuid::from_u128(0xa1),
+    });
+    assert_eq!(resolve(&catalog(), parse(sql).unwrap()).unwrap(), expected);
+}
+
 // ---- rejections: the exact message the agent reads --------------------------
 
 #[test]
@@ -320,6 +341,18 @@ fn rejections_quote_what_the_agent_wrote() {
         (
             "INSERT INTO crm.deals (name, name) VALUES ('a', 'b')",
             "\"name\" is listed twice in the column list",
+        ),
+        (
+            "UPDATE crm.deals SET stage = 'Won' WHERE row_id = 'first'",
+            "'first' is not a row id; row ids are the UUIDs a SELECT returns",
+        ),
+        (
+            "UPDATE crm.deals SET stage = 'Won', stage = 'Lead' WHERE row_id = '00000000-0000-0000-0000-0000000000a1'",
+            "\"stage\" is listed twice in the column list",
+        ),
+        (
+            "UPDATE crm.deals SET amount = 'lots' WHERE row_id = '00000000-0000-0000-0000-0000000000a1'",
+            "\"amount\" is a number column; compare it to a number",
         ),
         (
             "INSERT INTO crm.deals (owner) VALUES ('Sam')",

@@ -64,7 +64,7 @@ fn deals() -> Vec<Row> {
 fn plan(sql: &str) -> Plan {
     match compile(&catalog(), sql).unwrap() {
         Query::Select(select) => split(&catalog(), select),
-        Query::Insert(_) => panic!("not a SELECT"),
+        Query::Insert(_) | Query::Update(_) | Query::Delete(_) => panic!("not a SELECT"),
     }
 }
 

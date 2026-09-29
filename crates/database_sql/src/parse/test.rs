@@ -297,6 +297,35 @@ fn insert_several_rows() {
     assert_eq!(parse(sql).unwrap(), expected);
 }
 
+#[test]
+fn update_and_delete_one_row_by_id() {
+    let sql = "UPDATE crm.deals SET stage = 'Won', amount = 12000, \"closed at\" = NULL WHERE ROW_ID = '00000000-0000-0000-0000-0000000000a1'";
+
+    let expected = Statement::Update(Update {
+        table: TableName {
+            database: Some(Ident("crm".into())),
+            table: Ident("deals".into()),
+        },
+        assignments: vec![
+            (Ident("stage".into()), Lit::Str("Won".into())),
+            (Ident("amount".into()), Lit::Num(12000.0)),
+            (Ident("closed at".into()), Lit::Null),
+        ],
+        row_id: "00000000-0000-0000-0000-0000000000a1".into(),
+    });
+    assert_eq!(parse(sql).unwrap(), expected);
+
+    let sql = "delete from deals where row_id = '00000000-0000-0000-0000-0000000000a1';";
+    let expected = Statement::Delete(Delete {
+        table: TableName {
+            database: None,
+            table: Ident("deals".into()),
+        },
+        row_id: "00000000-0000-0000-0000-0000000000a1".into(),
+    });
+    assert_eq!(parse(sql).unwrap(), expected);
+}
+
 // ---- rejected statements: the span and the exact message the agent reads ---
 
 #[test]
@@ -394,8 +423,28 @@ fn rejections_point_at_the_offending_token() {
         ),
         (
             "UPDATE crm.deals SET stage = 'Won'",
-            0..6,
-            "expected SELECT or INSERT, found \"UPDATE\"",
+            34..34,
+            "expected WHERE row_id = '<id>' (UPDATE changes one row at a time), found end of statement",
+        ),
+        (
+            "UPDATE crm.deals SET stage = 'Won' WHERE stage = 'Lead'",
+            41..46,
+            "expected row_id (UPDATE changes one row at a time), found \"stage\"",
+        ),
+        (
+            "DELETE FROM crm.deals",
+            21..21,
+            "expected WHERE row_id = '<id>' (DELETE changes one row at a time), found end of statement",
+        ),
+        (
+            "DELETE FROM crm.deals WHERE row_id = 'a' AND stage = 'Won'",
+            41..44,
+            "expected end of statement, found AND",
+        ),
+        (
+            "MERGE INTO crm.deals USING x",
+            0..5,
+            "expected SELECT, INSERT, UPDATE or DELETE, found \"MERGE\"",
         ),
     ];
 

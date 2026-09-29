@@ -15,6 +15,7 @@ mod test;
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::catalog::Catalog;
@@ -23,7 +24,8 @@ use crate::split::{Plan, Shape};
 
 /// A cell as fetched. An absent cell is `NULL`; an absent multi-valued cell
 /// is the empty set.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "value", rename_all = "camelCase")]
 pub enum Cell {
     /// Text or link.
     Text(String),

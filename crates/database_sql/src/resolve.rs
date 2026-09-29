@@ -30,6 +30,10 @@ pub enum Query {
     Select(SelectQuery),
     /// Rows to create.
     Insert(InsertQuery),
+    /// Cells to set on one row.
+    Update(UpdateQuery),
+    /// One row to remove.
+    Delete(DeleteQuery),
 }
 
 /// A `SELECT` with every name resolved and every comparison type-checked.
@@ -160,6 +164,26 @@ pub struct InsertQuery {
     pub rows: Vec<Vec<(Uuid, Value)>>,
 }
 
+/// An `UPDATE` of one row with every cell typed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UpdateQuery {
+    /// The table written.
+    pub table: Uuid,
+    /// The row.
+    pub row_id: Uuid,
+    /// The cells to set, in statement order; `None` clears the cell.
+    pub cells: Vec<(Uuid, Option<Value>)>,
+}
+
+/// A `DELETE` of one row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeleteQuery {
+    /// The table written.
+    pub table: Uuid,
+    /// The row.
+    pub row_id: Uuid,
+}
+
 /// Bind a parsed statement to the catalog.
 pub fn resolve(catalog: &Catalog, statement: Statement) -> Result<Query, ResolveError> {
     match statement {
@@ -170,6 +194,17 @@ pub fn resolve(catalog: &Catalog, statement: Statement) -> Result<Query, Resolve
         Statement::Insert(insert) => {
             let table = names::table(catalog, &insert.table)?;
             insert::resolve(table, insert).map(Query::Insert)
+        }
+        Statement::Update(update) => {
+            let table = names::table(catalog, &update.table)?;
+            insert::resolve_update(table, update).map(Query::Update)
+        }
+        Statement::Delete(delete) => {
+            let table = names::table(catalog, &delete.table)?;
+            Ok(Query::Delete(DeleteQuery {
+                table: table.id,
+                row_id: insert::row_id(&delete.row_id)?,
+            }))
         }
     }
 }

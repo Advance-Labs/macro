@@ -53,6 +53,12 @@ pub enum Tok {
     Into,
     #[regex("(?i)values")]
     Values,
+    #[regex("(?i)update")]
+    Update,
+    #[regex("(?i)set")]
+    Set,
+    #[regex("(?i)delete")]
+    Delete,
     #[regex("(?i)count")]
     Count,
     #[regex("(?i)sum")]

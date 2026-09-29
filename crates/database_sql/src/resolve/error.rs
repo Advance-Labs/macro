@@ -106,7 +106,12 @@ pub enum ResolveError {
         /// The column.
         column: String,
     },
-    /// A column named twice in an `INSERT` column list.
+    /// `WHERE row_id = …` with something that is not a row id.
+    RowIdNotAnId {
+        /// The value as written.
+        written: String,
+    },
+    /// A column named twice in an `INSERT` column list or `UPDATE`.
     DuplicateInsertColumn {
         /// The column.
         column: String,
@@ -212,6 +217,10 @@ impl fmt::Display for ResolveError {
             Self::OrderColumnNotGrouped { column } => write!(
                 f,
                 "cannot ORDER BY \"{column}\": it is neither the GROUP BY column nor aggregated"
+            ),
+            Self::RowIdNotAnId { written } => write!(
+                f,
+                "'{written}' is not a row id; row ids are the UUIDs a SELECT returns"
             ),
             Self::DuplicateInsertColumn { column } => {
                 write!(f, "\"{column}\" is listed twice in the column list")

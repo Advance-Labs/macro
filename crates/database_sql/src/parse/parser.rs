@@ -90,7 +90,9 @@ impl<'a> Parser<'a> {
         let statement = match self.peek() {
             Some(Tok::Select) => Statement::Select(self.select()?),
             Some(Tok::Insert) => Statement::Insert(self.insert()?),
-            _ => return Err(self.error("SELECT or INSERT")),
+            Some(Tok::Update) => Statement::Update(self.update()?),
+            Some(Tok::Delete) => Statement::Delete(self.delete()?),
+            _ => return Err(self.error("SELECT, INSERT, UPDATE or DELETE")),
         };
         self.eat(Tok::Semi);
         if !self.at_end() {
@@ -421,6 +423,62 @@ impl<'a> Parser<'a> {
             });
         }
         Ok(values)
+    }
+}
+
+impl Parser<'_> {
+    // ---- update and delete: one row by id ------------------------------
+
+    fn update(&mut self) -> Result<Update, ParseError> {
+        self.expect(Tok::Update, "UPDATE")?;
+        let table = self.table()?;
+        self.expect(Tok::Set, "SET after the table name")?;
+        let mut assignments = vec![self.assignment()?];
+        while self.eat(Tok::Comma) {
+            assignments.push(self.assignment()?);
+        }
+        let row_id = self.row_id_clause("UPDATE")?;
+        Ok(Update {
+            table,
+            assignments,
+            row_id,
+        })
+    }
+
+    fn assignment(&mut self) -> Result<(Ident, Lit), ParseError> {
+        let column = self.ident("a column name to set")?;
+        self.expect(Tok::Eq, &format!("= after \"{}\"", column.0))?;
+        let value = self.lit()?;
+        Ok((column, value))
+    }
+
+    fn delete(&mut self) -> Result<Delete, ParseError> {
+        self.expect(Tok::Delete, "DELETE")?;
+        self.expect(Tok::From, "FROM after DELETE")?;
+        let table = self.table()?;
+        let row_id = self.row_id_clause("DELETE")?;
+        Ok(Delete { table, row_id })
+    }
+
+    /// `WHERE row_id = 'id'`, the only condition a write accepts.
+    fn row_id_clause(&mut self, statement: &str) -> Result<String, ParseError> {
+        let expected = format!("WHERE row_id = '<id>' ({statement} changes one row at a time)");
+        self.expect(Tok::Where, &expected)?;
+        match self.peek() {
+            Some(Tok::Ident(name)) if name.eq_ignore_ascii_case("row_id") => {
+                self.bump();
+            }
+            _ => return Err(self.error(&format!("row_id ({statement} changes one row at a time)"))),
+        }
+        self.expect(Tok::Eq, "= after row_id")?;
+        match self.peek() {
+            Some(Tok::Str(id)) => {
+                let id = id.clone();
+                self.bump();
+                Ok(id)
+            }
+            _ => Err(self.error("a quoted row id")),
+        }
     }
 }
 
