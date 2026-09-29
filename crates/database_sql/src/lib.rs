@@ -24,6 +24,8 @@ pub mod run;
 pub mod split;
 #[cfg(test)]
 mod test_support;
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
 
 pub use catalog::Catalog;
 pub use engine::{Engine, Request, Step};

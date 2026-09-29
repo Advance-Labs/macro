@@ -1,19 +1,23 @@
 //! What the caller can see: tables, their columns, and the columns' types and
 //! select options. Built once per request by the caller from the databases
 //! the viewer has access to; a table that is not in the catalog does not exist
-//! as far as a query is concerned.
+//! as far as a query is concerned. A driver builds it in JSON, in camel
+//! case, and hands it across the wasm boundary.
 
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Every table a statement may name.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Catalog {
     /// The visible tables.
     pub tables: Vec<Table>,
 }
 
 /// One table and its columns, in display order.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Table {
     /// The table id.
     pub id: Uuid,
@@ -24,12 +28,14 @@ pub struct Table {
     /// The columns, in display order.
     pub columns: Vec<Column>,
     /// Where its rows come from.
+    #[serde(default)]
     pub source: TableSource,
 }
 
 /// Where a table's rows come from. The engine only says which; the driver
 /// serving its fetch requests decides how.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum TableSource {
     /// A Macro database table, read through Soup.
     #[default]
@@ -78,7 +84,8 @@ pub fn people_table() -> Table {
 }
 
 /// One column: a property definition bound to the table.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Column {
     /// The property definition id.
     pub id: Uuid,
@@ -90,7 +97,8 @@ pub struct Column {
 
 /// The value type of a column, mirroring the property data types a query can
 /// compare against.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ColumnKind {
     /// Free text.
     Text,
@@ -117,7 +125,8 @@ pub enum ColumnKind {
 }
 
 /// One option of a select column.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SelectOption {
     /// The option id.
     pub id: Uuid,

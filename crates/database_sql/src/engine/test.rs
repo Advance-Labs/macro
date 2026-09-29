@@ -426,6 +426,8 @@ fn steps_and_pages_cross_the_wire_as_json() {
     assert_eq!(json["step"], "fetch");
     assert_eq!(json["query"]["type"], "soup");
     assert_eq!(json["query"]["table"], DEALS.to_string());
+    assert!(json["query"]["keyHint"].is_null());
+    assert!(json["query"].get("key_hint").is_none());
     assert_eq!(json["needs"], serde_json::json!([NAME.to_string()]));
     assert_eq!(json["limit"], PAGE_LIMIT);
     let back: Step = serde_json::from_value(json).unwrap();

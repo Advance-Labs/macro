@@ -5310,10 +5310,14 @@ dependencies = [
  "logos",
  "maybe_send",
  "pollster",
+ "reqwest 0.13.4",
  "serde",
+ "serde-wasm-bindgen",
  "serde_json",
  "thiserror 2.0.18",
+ "tokio",
  "uuid",
+ "wasm-bindgen",
 ]
 
 [[package]]

@@ -74,7 +74,11 @@ pub struct JoinPlan {
 
 /// Every GraphQL query a plan can send.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum GqlQuery {
     /// `Query.soup` scoped to one table, paged to completion.
     Soup {
