@@ -323,7 +323,10 @@ impl PreviewService {
             activity: Mutex::new(Instant::now()),
             tunnel: Mutex::new(None),
             cancel: CancellationToken::new(),
-            requests: Arc::new(Semaphore::new(512)),
+            // Large enough for a Vite cold load's module fan-out; the HTTP
+            // inbound queues on this semaphore instead of rejecting, so the
+            // number bounds file descriptors rather than aborting the page.
+            requests: Arc::new(Semaphore::new(4096)),
             upgrades: Arc::new(Semaphore::new(8)),
         });
         let old = {
@@ -565,17 +568,6 @@ impl PreviewService {
         if !lease.live() {
             return Err(PreviewError::Offline);
         }
-        let _authorization_slot = if activity {
-            Some(
-                lease
-                    .requests
-                    .clone()
-                    .try_acquire_owned()
-                    .map_err(|_| PreviewError::Limited)?,
-            )
-        } else {
-            None
-        };
         self.authority
             .viewer(lease.preview().agent_session_id, &user)
             .await?;
