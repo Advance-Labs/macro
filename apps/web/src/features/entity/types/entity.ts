@@ -1,5 +1,6 @@
 import type { DateValue } from '@core/util/date';
 import type { ApiLabel } from '@service-email/generated/schemas';
+import type { DatabaseGrant } from '@service-storage/databases';
 import type {
   GithubPullRequestCheckRun,
   GithubPullRequestComment,
@@ -374,6 +375,17 @@ export type CrmContactEntity = EntityBase & {
   hidden: boolean;
 };
 
+/**
+ * A Macro Database: SQL-native user tables. Not a Soup entity — rows come
+ * from `GET /databases` and carry no view history, so `createdAt` is the only
+ * timestamp.
+ */
+export type DatabaseEntity = EntityBase & {
+  type: 'database';
+  /** What the viewer may do with the database. */
+  grant: DatabaseGrant;
+};
+
 export type ReminderEntity = EntityBase & {
   type: 'reminder';
   /** What to remind the user about. Doubles as {@link EntityBase.name}. */
@@ -395,7 +407,11 @@ export type ReminderEntity = EntityBase & {
     id: string;
     // Calendar events are excluded alongside reminders: neither has a
     // previewable block, and the mapper yields `undefined` for both.
-    type: Exclude<EntityType, 'reminder' | 'calendar_event' | 'initiative'>;
+    // Databases are not Soup entities, so nothing can point a reminder at one.
+    type: Exclude<
+      EntityType,
+      'reminder' | 'calendar_event' | 'initiative' | 'database'
+    >;
     fileType?: string;
     subType?: string;
   };
@@ -468,6 +484,7 @@ export type EntityData =
   | CallEntity
   | CrmCompanyEntity
   | CrmContactEntity
+  | DatabaseEntity
   | AutomationEntity
   | ReminderEntity
   | CalendarEventEntity
@@ -486,6 +503,7 @@ const ENTITY_TYPE_VALUES = new Set<EntityData['type']>([
   'call',
   'crm_company',
   'crm_contact',
+  'database',
   'automation',
   'reminder',
   'calendar_event',
@@ -613,6 +631,12 @@ export const isCrmContactEntity = (
   entity: EntityData
 ): entity is CrmContactEntity => {
   return entity.type === 'crm_contact';
+};
+
+export const isDatabaseEntity = (
+  entity: EntityData
+): entity is DatabaseEntity => {
+  return entity.type === 'database';
 };
 
 export const isDocumentEntity = (

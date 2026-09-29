@@ -1,6 +1,6 @@
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { itemToSafeName } from '@core/constant/allBlocks';
-import { enableCrm } from '@core/constant/featureFlags';
+import { enableCrm, enableDatabases } from '@core/constant/featureFlags';
 import {
   useChannelsContext,
   useDmActivityByUserId,
@@ -14,6 +14,7 @@ import type { DateValue } from '@core/util/date';
 import type {
   ChannelEntity,
   CrmCompanyEntity,
+  DatabaseEntity,
   SkillEntity,
   SnippetEntity,
 } from '@entity';
@@ -31,6 +32,7 @@ import { useQuickAccessCrmCompaniesQuery } from '@queries/soup/quick-access-crm-
 import { useQuickAccessSkillsQuery } from '@queries/soup/quick-access-skills';
 import { useQuickAccessSnippetsQuery } from '@queries/soup/quick-access-snippets';
 import { useRecentlyViewedSoupQuery } from '@queries/soup/recently-viewed';
+import { useDatabasesQuery } from '@queries/storage/databases';
 import { useInstructionsMdIdQuery } from '@queries/storage/instructions-md';
 import { subscribeToVisibleCacheChanges } from '@queries/subscribe-to-visible-cache-changes';
 import type { ApiChannelWithLatest } from '@service-storage/channel-list-types';
@@ -329,6 +331,8 @@ const RECORD_TYPE_BY_BUCKET: Record<Bucket, string> = {
   project: 'GraphqlSoupProject',
   person: 'GraphqlUser',
   agent_session: 'AgentSession',
+  // Databases come from their REST list, not the Soup cache.
+  database: 'Database',
 };
 
 function compareRecency(a: IndexEntry, b: IndexEntry): number {
@@ -379,6 +383,8 @@ export function createQuickAccessValue(): QuickAccessContextValue {
 
   const { query: agentSessionsQuery, sessions: agentSessionsAccessor } =
     useQuickAccessAgentSessionsQuery();
+  const databasesQuery = useDatabasesQuery();
+  const databasesFlag = useFeatureFlag(enableDatabases);
 
   // globally hidden ids
   const [hiddenIds, setHiddenIds] = createSignal<Set<string>>(new Set());
@@ -793,6 +799,45 @@ export function createQuickAccessValue(): QuickAccessContextValue {
     return sortIndexEntries(entries);
   });
 
+  // Databases are not Soup entities and have no view history, so creation
+  // time is the only timestamp to sort on.
+  const databaseEntries = createLazyMemo(() => {
+    if (!databasesFlag().enabled) return [];
+    const hidden = hiddenIds();
+    const entries: IndexEntry[] = [];
+    const listed = databasesQuery.isSuccess ? databasesQuery.data : [];
+    for (const { database, grant } of listed) {
+      if (database.trashed_at || hidden.has(database.id)) continue;
+      const sortTimestamp = toTimestamp(database.created_at);
+      const entity: DatabaseEntity = {
+        type: 'database',
+        id: database.id,
+        name: database.name,
+        ownerId: database.owner_id,
+        createdAt: database.created_at,
+        grant,
+      };
+      const version = JSON.stringify(entity);
+      const cached = itemCache.get(database.id);
+      if (!cached || cached.version !== version) {
+        itemCache.set(database.id, {
+          version,
+          item: {
+            kind: 'entity',
+            id: database.id,
+            bucket: 'database',
+            searchText: database.name,
+            sortTimestamp,
+            timestamps: { createdAt: database.created_at },
+            data: entity,
+          },
+        });
+      }
+      entries.push({ id: database.id, bucket: 'database', sortTimestamp });
+    }
+    return sortIndexEntries(entries);
+  });
+
   const processedData = createLazyMemo(() => {
     const allEntries = mergeMultipleSortedIndices([
       historyEntries().entries,
@@ -802,6 +847,7 @@ export function createQuickAccessValue(): QuickAccessContextValue {
       snippetEntries(),
       skillEntries(),
       agentSessionEntries(),
+      databaseEntries(),
     ]);
     const seenIds = new Set(allEntries.map((entry) => entry.id));
 
@@ -872,6 +918,7 @@ export function createQuickAccessValue(): QuickAccessContextValue {
         indices.get('skill') ?? [],
         indices.get('chat') ?? [],
         indices.get('project') ?? [],
+        indices.get('database') ?? [],
       ]),
     };
   });
@@ -1087,6 +1134,7 @@ export function createQuickAccessValue(): QuickAccessContextValue {
     snippetsQuery.refetch();
     skillsQuery.refetch();
     void agentSessionsQuery.refetch();
+    if (databasesFlag().enabled) void databasesQuery.refetch();
   };
 
   return {

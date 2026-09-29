@@ -1,7 +1,7 @@
 import { ForwardToChannel } from '@core/component/ForwardToChannel';
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { err, ok } from 'neverthrow';
-import { createSignal, For, type JSX } from 'solid-js';
+import { createSignal, For, type JSX, Suspense } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Permissions } from '../SharePermissions';
 import { ShareModal, ShareOptions, ShareTrigger } from './ShareButton';
@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   getInitiativePermissions: vi.fn(),
   updateInitiativePermissions: vi.fn(),
   getDocumentPermissions: vi.fn(),
+  getDatabasePermissions: vi.fn(),
+  updateDatabasePermissions: vi.fn(),
   getChatPermissions: vi.fn(),
   updateChatPermissions: vi.fn(),
   fetchCallSharePermission: vi.fn(),
@@ -31,6 +33,10 @@ const mocks = vi.hoisted(() => ({
   blockPermissionsRead: vi.fn(),
   blockEditPermissionEnabled: true,
   inBlock: true,
+}));
+vi.mock('@queries/storage/databases', () => ({
+  getDatabaseSharePermissions: mocks.getDatabasePermissions,
+  updateDatabaseSharePermissions: mocks.updateDatabasePermissions,
 }));
 vi.mock('@app/lib/analytics/analytics-context', () => ({
   useAnalytics: () => ({ track: vi.fn() }),
@@ -1198,4 +1204,64 @@ describe('native project sharing', () => {
       'https://macro.com/app/component/initiative-view~initiative-1~overview'
     );
   });
+});
+
+it('database sharing uses its own permission resource and disables public links', async () => {
+  mocks.getDatabasePermissions.mockResolvedValue({
+    isErr: () => false,
+    value: { id: 'database-id', owner: 'owner', channelSharePermissions: [] },
+  });
+  render(() => (
+    <ShareModal
+      id="database-id"
+      itemType="database"
+      blockAlias="database"
+      owner="owner"
+      name="Ideas"
+      userPermissions={Permissions.OWNER}
+      open
+      onOpenChange={() => {}}
+    />
+  ));
+  expect(mocks.blockPermissionsRead).not.toHaveBeenCalled();
+  expect(mocks.getDatabasePermissions).toHaveBeenCalledWith('database-id');
+  expect(screen.queryByText('Anyone with the link')).toBeNull();
+});
+
+it('loading database sharing does not suspend the database page', async () => {
+  mocks.getDatabasePermissions.mockReturnValue(new Promise(() => {}));
+  render(() => (
+    <Suspense fallback={<span>Page suspended</span>}>
+      <span>Database contents</span>
+      <ShareModal
+        id="database-id"
+        itemType="database"
+        blockAlias="database"
+        owner="owner"
+        name="Ideas"
+        userPermissions={Permissions.OWNER}
+        open
+        onOpenChange={() => {}}
+      />
+    </Suspense>
+  ));
+  await Promise.resolve();
+  expect(screen.getByText('Database contents')).toBeTruthy();
+  expect(screen.queryByText('Page suspended')).toBeNull();
+});
+
+it('does not request database sharing details while the dialog is closed', () => {
+  render(() => (
+    <ShareModal
+      id="database-id"
+      itemType="database"
+      blockAlias="database"
+      owner="owner"
+      name="Ideas"
+      userPermissions={Permissions.OWNER}
+      open={false}
+      onOpenChange={() => {}}
+    />
+  ));
+  expect(mocks.getDatabasePermissions).not.toHaveBeenCalled();
 });

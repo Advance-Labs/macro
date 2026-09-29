@@ -84,7 +84,7 @@ export interface ExecOptions {
 export class Database extends MacroEntity<DatabaseDetail> {
   protected async fetch(): Promise<DatabaseDetail> {
     return unwrap(
-      await this.client.storage.getDatabase({ path: { id: this.id } })
+      await this.client.storage.getDatabase({ path: { id: this.id } }),
     );
   }
 
@@ -96,10 +96,10 @@ export class Database extends MacroEntity<DatabaseDetail> {
   /** Create a database owned by the caller. */
   static async create(
     client: MacroClient,
-    opts: { name: string }
+    opts: { name: string },
   ): Promise<Database> {
     const record = unwrap(
-      await client.storage.createDatabase({ body: { name: opts.name } })
+      await client.storage.createDatabase({ body: { name: opts.name } }),
     );
     return new Database(client, record.id);
   }
@@ -117,7 +117,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
    */
   static async exec(
     client: MacroClient,
-    opts: ExecOptions
+    opts: ExecOptions,
   ): Promise<ExecOutcome> {
     return unwrap(
       await client.storage.execDatabaseSql({
@@ -127,7 +127,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
             ? { baseVersions: opts.baseVersions }
             : {}),
         },
-      })
+      }),
     );
   }
 
@@ -149,19 +149,19 @@ export class Database extends MacroEntity<DatabaseDetail> {
 
   /** The user who owns the database. */
   readonly owner = this.mappedField('database', (record) =>
-    User.byId(this.client, record.owner_id)
+    User.byId(this.client, record.owner_id),
   );
 
   /** When the database was created. */
   readonly createdAt = this.mappedField(
     'database',
-    (record) => record.created_at
+    (record) => record.created_at,
   );
 
   /** When the database was trashed, if it has been. */
   readonly trashedAt = this.mappedField(
     'database',
-    (record) => record.trashed_at ?? undefined
+    (record) => record.trashed_at ?? undefined,
   );
 
   /** The caller's access on the database. */
@@ -169,7 +169,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
 
   /** The database's tables, in tab order. */
   readonly tables = this.mappedField('tables', (tables) =>
-    tables.map((table) => DatabaseTable.byId(this, table.table.id))
+    tables.map((table) => DatabaseTable.byId(this, table.table.id)),
   );
 
   /** The table with the given display name, or `undefined` if there is none. */
@@ -185,7 +185,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
       c.storage.createDatabaseTable({
         path: { id: this.id },
         body: { name: opts.name },
-      })
+      }),
     );
     return DatabaseTable.byId(this, table.id);
   }
@@ -196,7 +196,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
       client.storage.importDatabaseTable({
         path: { id: this.id },
         body: request,
-      })
+      }),
     );
     return DatabaseTable.byId(this, table.id);
   }
@@ -206,53 +206,53 @@ export class Database extends MacroEntity<DatabaseDetail> {
     return unwrap(
       await this.client.storage.getDatabasePermissions({
         path: { id: this.id },
-      })
+      }),
     );
   }
 
   /** Add, replace, or remove recipient grants without transferring ownership. */
   updateSharePermissions(
-    request: UpdateDatabasePermissionsRequest
+    request: UpdateDatabasePermissionsRequest,
   ): Promise<DatabaseSharePermissions> {
     return this.mutate((client) =>
       client.storage.updateDatabasePermissions({
         path: { id: this.id },
         body: request,
-      })
+      }),
     );
   }
 
   /** Change one placement's type only when all existing values convert safely. */
   async changeColumnType(
     column: DatabaseColumn,
-    request: ChangeColumnTypeRequest
+    request: ChangeColumnTypeRequest,
   ): Promise<ColumnSchemaOutcome> {
     if (column.table.database.id !== this.id)
       throw new MacroError(
-        `column ${column.id} does not belong to database ${this.id}`
+        `column ${column.id} does not belong to database ${this.id}`,
       );
     return this.mutate((client) =>
       client.storage.changeDatabaseColumnType({
         path: { id: this.id, table_id: column.table.id, column_id: column.id },
         body: request,
-      })
+      }),
     );
   }
 
   /** Remove a column and its cells, guarded by the table version last read. */
   async deleteColumn(
     column: DatabaseColumn,
-    baseVersion: TableVersion
+    baseVersion: TableVersion,
   ): Promise<ColumnSchemaOutcome> {
     if (column.table.database.id !== this.id)
       throw new MacroError(
-        `column ${column.id} does not belong to database ${this.id}`
+        `column ${column.id} does not belong to database ${this.id}`,
       );
     return this.mutate((client) =>
       client.storage.deleteDatabaseColumn({
         path: { id: this.id, table_id: column.table.id, column_id: column.id },
         body: { baseVersion },
-      })
+      }),
     );
   }
 
@@ -260,17 +260,17 @@ export class Database extends MacroEntity<DatabaseDetail> {
   async reorderColumns(
     table: DatabaseTable,
     columnIds: string[],
-    baseVersion: TableVersion
+    baseVersion: TableVersion,
   ): Promise<ColumnSchemaOutcome> {
     if (table.database.id !== this.id)
       throw new MacroError(
-        `table ${table.id} does not belong to database ${this.id}`
+        `table ${table.id} does not belong to database ${this.id}`,
       );
     return this.mutate((client) =>
       client.storage.reorderDatabaseColumns({
         path: { id: this.id, table_id: table.id },
         body: { columnIds, baseVersion },
-      })
+      }),
     );
   }
 
@@ -278,7 +278,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
   async renameTable(table: DatabaseTable, name: string): Promise<void> {
     if (table.database.id !== this.id) {
       throw new MacroError(
-        `table ${table.id} does not belong to database ${this.id}`
+        `table ${table.id} does not belong to database ${this.id}`,
       );
     }
     const previousName = await table.name();
@@ -286,7 +286,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
       client.storage.renameDatabaseTable({
         path: { id: this.id, table_id: table.id },
         body: { name, previousName },
-      })
+      }),
     );
   }
 
@@ -294,7 +294,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
   async renameColumn(column: DatabaseColumn, name: string): Promise<void> {
     if (column.table.database.id !== this.id) {
       throw new MacroError(
-        `column ${column.id} does not belong to database ${this.id}`
+        `column ${column.id} does not belong to database ${this.id}`,
       );
     }
     const previousName = await column.name();
@@ -302,18 +302,18 @@ export class Database extends MacroEntity<DatabaseDetail> {
       client.storage.renameDatabaseColumn({
         path: { id: this.id, table_id: column.table.id, column_id: column.id },
         body: { name, previousName },
-      })
+      }),
     );
   }
 
   /** Adopt a first-value type only while the owned column is empty and inferable. */
   async inferColumnType(
     column: DatabaseColumn,
-    opts: InferColumnTypeOptions
+    opts: InferColumnTypeOptions,
   ): Promise<InferColumnTypeOutcome> {
     if (column.table.database.id !== this.id) {
       throw new MacroError(
-        `column ${column.id} does not belong to database ${this.id}`
+        `column ${column.id} does not belong to database ${this.id}`,
       );
     }
     return this.mutate((client) =>
@@ -326,7 +326,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
             ? { specific_entity_type: opts.specificEntityType }
             : {}),
         },
-      })
+      }),
     );
   }
 
@@ -336,11 +336,11 @@ export class Database extends MacroEntity<DatabaseDetail> {
    */
   async addColumn(
     table: DatabaseTable,
-    opts: AddColumnOptions
+    opts: AddColumnOptions,
   ): Promise<DatabaseColumn> {
     if (table.database.id !== this.id) {
       throw new MacroError(
-        `table ${table.id} belongs to database ${table.database.id}, not ${this.id}`
+        `table ${table.id} belongs to database ${table.database.id}, not ${this.id}`,
       );
     }
     const binding: CreateColumnRequest['binding'] =
@@ -370,7 +370,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
               }
             : {}),
         },
-      })
+      }),
     );
     return DatabaseColumn.byId(table, columnId);
   }
@@ -382,19 +382,19 @@ export class Database extends MacroEntity<DatabaseDetail> {
    */
   async addColumnOptions(
     column: DatabaseColumn,
-    labels: string[]
+    labels: string[],
   ): Promise<ColumnDetail> {
     const table = column.table;
     if (table.database.id !== this.id) {
       throw new MacroError(
-        `column ${column.id} belongs to database ${table.database.id}, not ${this.id}`
+        `column ${column.id} belongs to database ${table.database.id}, not ${this.id}`,
       );
     }
     return this.mutate((c) =>
       c.storage.addDatabaseColumnOptions({
         path: { id: this.id, table_id: table.id, column_id: column.id },
         body: { labels },
-      })
+      }),
     );
   }
 
@@ -415,7 +415,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
       await this.client.storage.downloadDatabaseSqlite({
         path: { id: this.id },
         parseAs: 'arrayBuffer',
-      })
+      }),
     ) as unknown as ArrayBuffer;
     return new Uint8Array(bytes);
   }

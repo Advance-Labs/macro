@@ -4,6 +4,7 @@ import {
   getChannelParams,
   navigateToChannelMessage,
 } from '@block-channel/utils/link';
+import { contentReference } from '@components/app/split-layout/content-reference';
 import type {
   SplitHandle,
   SplitManager,
@@ -70,15 +71,12 @@ function openSplitIfNotOpen(
   if (existing) {
     existing.activate();
   } else {
-    layoutManager.openWithSplit(
-      { type, id },
-      {
-        activate: true,
-        referredFrom: null,
-        preferNewSplit: options.newSplit,
-        handle: options.sourceHandle,
-      }
-    );
+    layoutManager.openWithSplit(contentReference(type, id), {
+      activate: true,
+      referredFrom: null,
+      preferNewSplit: options.newSplit,
+      handle: options.sourceHandle,
+    });
   }
   if (options.params && type !== 'component') {
     goToLocationInSplit(layoutManager, type, id, options.params);

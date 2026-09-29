@@ -23,7 +23,7 @@ export class DatabaseColumn {
     /** The table this column belongs to. */
     readonly table: DatabaseTable,
     /** Identifier of the column placement. */
-    readonly id: string
+    readonly id: string,
   ) {}
 
   /** A handle to a column by id, within a table. Details load on first access. */
@@ -40,7 +40,7 @@ export class DatabaseColumn {
     const found = columns.find((column) => column.column.id === this.id);
     if (!found) {
       throw new MacroNotFoundError(
-        `column ${this.id} is not on table ${this.table.id}`
+        `column ${this.id} is not on table ${this.table.id}`,
       );
     }
     return found;

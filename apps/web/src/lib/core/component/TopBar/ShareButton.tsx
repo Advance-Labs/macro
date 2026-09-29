@@ -57,6 +57,10 @@ import {
   fetchInitiativeSharePermissions,
   updateInitiativeSharePermissions,
 } from '@queries/initiative/share-permissions';
+import {
+  getDatabaseSharePermissions,
+  updateDatabaseSharePermissions,
+} from '@queries/storage/databases';
 import { useCurrentTeamQuery } from '@queries/team/teams';
 import { cognitionApiServiceClient } from '@service-cognition/client';
 import {
@@ -121,7 +125,7 @@ import {
 false && clickOutside;
 
 const isLinkSharingDisabledForItem = (itemType: ShareItemType): boolean =>
-  itemType === 'email' || itemType === 'project';
+  itemType === 'email' || itemType === 'project' || itemType === 'database';
 
 /** Blocks, plus native entities that are shared without one. */
 type ShareBlockType = BlockName | BlockAlias | 'initiative';
@@ -141,6 +145,7 @@ async function fetchSharePermissions(id: string, itemType: ShareItemType) {
   if (itemType === 'initiative') {
     return fetchInitiativeSharePermissions(id);
   }
+  if (itemType === 'database') return getDatabaseSharePermissions(id);
   if (itemType === 'chat') {
     return cognitionApiServiceClient.getChatPermissions({ id });
   }
@@ -755,11 +760,18 @@ export function ShareModal(props: ShareModalProps) {
   const isBlockContext =
     isInBlock() &&
     props.itemType !== 'agent_session' &&
-    props.itemType !== 'initiative';
+    props.itemType !== 'initiative' &&
+    props.itemType !== 'database';
   const [fallbackPermissionsResource, { refetch: refetchFallback }] =
     createResource(
       () => {
-        if (isBlockContext || !props.id) return;
+        if (
+          isBlockContext ||
+          !props.id ||
+          (props.itemType === 'database' &&
+            (!props.open || props.userPermissions !== Permissions.OWNER))
+        )
+          return;
         return { id: props.id, itemType: props.itemType };
       },
       async (source) => {
@@ -884,6 +896,19 @@ export function ShareModal(props: ShareModalProps) {
         });
         console.error(result);
       }
+    } else if (props.itemType === 'database') {
+      const result = await updateDatabaseSharePermissions({
+        id: props.id,
+        channelSharePermissions: [{ operation: 'remove', channelId }],
+      });
+      if (result.isOk()) {
+        await refetch();
+        toast.success('Removed channel access');
+      } else {
+        toast.alert('Failed to remove channel access', {
+          subtext: 'Please try again',
+        });
+      }
     } else if (props.itemType === 'chat') {
       const result = await cognitionApiServiceClient.updateChatPermissions({
         chat_id: props.id,
@@ -974,6 +999,13 @@ export function ShareModal(props: ShareModalProps) {
         });
       } else if (props.itemType === 'initiative') {
         result = await updateInitiativeSharePermissions(props.id, {
+          channelSharePermissions: [
+            { operation: 'replace', accessLevel, channelId },
+          ],
+        });
+      } else if (props.itemType === 'database') {
+        result = await updateDatabaseSharePermissions({
+          id: props.id,
           channelSharePermissions: [
             { operation: 'replace', accessLevel, channelId },
           ],

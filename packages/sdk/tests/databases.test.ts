@@ -32,11 +32,11 @@ function schema(name = 'Tickets', columnName: string | null = 'Summary') {
 }
 
 function intercept(
-  respond: (request: Request) => Response | Promise<Response>
+  respond: (request: Request) => Response | Promise<Response>,
 ) {
   globalThis.fetch = (async (input) =>
     respond(
-      input instanceof Request ? input : new Request(input)
+      input instanceof Request ? input : new Request(input),
     )) as typeof fetch;
 }
 
@@ -63,10 +63,10 @@ describe('Database', () => {
     });
     const macro = client();
     await expect(
-      macro.databases.query('SELECT COUNT(*) FROM tickets')
+      macro.databases.query('SELECT COUNT(*) FROM tickets'),
     ).resolves.toEqual(outcome);
     await expect(
-      macro.databases.byId(databaseId).query('SELECT COUNT(*) FROM tickets')
+      macro.databases.byId(databaseId).query('SELECT COUNT(*) FROM tickets'),
     ).resolves.toEqual(outcome.results);
     expect(requests).toHaveLength(2);
     for (const request of requests) {
@@ -86,7 +86,7 @@ describe('Database', () => {
     intercept(async (request) => {
       if (request.method === 'PATCH') {
         expect(request.url).toBe(
-          `${host}/databases/${databaseId}/tables/${tableId}`
+          `${host}/databases/${databaseId}/tables/${tableId}`,
         );
         renameBody = await request.json();
         currentName = 'Issues';
@@ -111,7 +111,7 @@ describe('Database', () => {
     intercept(async (request) => {
       if (request.method === 'PATCH') {
         expect(request.url).toBe(
-          `${host}/databases/${databaseId}/tables/${tableId}/columns/${columnId}`
+          `${host}/databases/${databaseId}/tables/${tableId}/columns/${columnId}`,
         );
         renameBody = await request.json();
         currentName = 'Summary';
@@ -132,7 +132,7 @@ describe('Database', () => {
     intercept((request) => {
       requests.push(request);
       return Response.json(
-        request.method === 'GET' ? schema() : { version: 8 }
+        request.method === 'GET' ? schema() : { version: 8 },
       );
     });
     const macro = client();
@@ -146,7 +146,7 @@ describe('Database', () => {
       baseVersion: 7,
     });
     expect(requests[1]?.url).toBe(
-      `${host}/databases/${databaseId}/tables/${tableId}/columns/${columnId}/infer-type`
+      `${host}/databases/${databaseId}/tables/${tableId}/columns/${columnId}/infer-type`,
     );
     await expect(requests[1]?.json()).resolves.toEqual({
       data_type: 'ENTITY',
@@ -156,7 +156,7 @@ describe('Database', () => {
     await expect(
       macro.databases
         .byId('other')
-        .inferColumnType(column, { dataType: 'NUMBER', baseVersion: 7 })
+        .inferColumnType(column, { dataType: 'NUMBER', baseVersion: 7 }),
     ).rejects.toThrow('does not belong');
     expect(requests).toHaveLength(2);
   });
@@ -207,7 +207,7 @@ describe('Database', () => {
     await database.schema();
     expect(reads).toBe(2);
     await expect(
-      client().databases.byId('other').deleteColumn(column, 9)
+      client().databases.byId('other').deleteColumn(column, 9),
     ).rejects.toThrow('does not belong');
     expect(writes).toHaveLength(3);
   });
@@ -223,7 +223,7 @@ describe('Database', () => {
       if (request.method !== 'GET')
         writes.push({ url: request.url, body: await request.json() });
       return Response.json(
-        request.url.endsWith('/import') ? { id: tableId } : permissions
+        request.url.endsWith('/import') ? { id: tableId } : permissions,
       );
     });
     const database = client().databases.byId(databaseId);
@@ -239,7 +239,7 @@ describe('Database', () => {
       [0, 1].map(() => ({
         url: `${host}/databases/${databaseId}/import`,
         body: request,
-      }))
+      })),
     );
     expect(await database.sharePermissions()).toEqual(permissions);
     const grants = {

@@ -142,6 +142,7 @@ function favoriteSoupEffects(
     skill: undefined,
     scheduled_action: undefined,
     initiative: 'GraphqlSoupInitiative',
+    database: undefined,
   } as const satisfies Record<FavoriteEntityType, string | undefined>;
   const typename = typenames[args.entityType];
   return typename
