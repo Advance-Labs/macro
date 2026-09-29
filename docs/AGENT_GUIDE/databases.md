@@ -180,19 +180,29 @@ provisioning, and disabled users receive no starter database.
 
 ## AI questions and live answers
 
-Questions are asked from a document (below). The assistant answers from the
-chosen database's schema and proposes a read-only SELECT. It cannot change data
-or schema yet: the database AI toolset (and the header **AI** chat button that
-uses it) is not on this branch, so requests to edit are answered with an
-explanation.
+Open **AI** in the database header to create a native chat in the adjacent split.
+Its bottom composer contains a database mention and private context identifying
+this database, its current table, and all its tables. Nothing sends automatically.
+Type a question or requested change and send it using the normal chat controls.
+Any chat, not only one opened from a database, can build databases: the assistant
+has `ListDatabases`, `DescribeDatabase`, `QueryDatabase`, `CreateDatabase`,
+`CreateTable`, `RenameTable`, `AddColumn` (including relation columns via `linkToTableId`),
+`AddColumnOptions`, and `SaveDatabaseView`. It reads current schema before editing
+and checks actual results before reporting success.
+
+Query tool results render inline. Their display menu switches between a table,
+a scalar answer, or compatible bar, line, and pie charts. A saved-view tool result
+offers **Open view**, which opens that database/table and selects the created view.
+The same tools are exposed to agent sessions through the Macro MCP server.
 
 In a document, `/database` → **Database** opens the question box with the AI prompt focused
 immediately. The empty input rotates through example questions; a selected database
 uses its actual table and column names. Typing hides these hints, and reduced-motion
 preferences keep them static. Use the searchable source picker beside **SQL** to
 choose a database; the entire chosen database is in scope, without a table
-prerequisite. **Automatic** cannot discover databases without the AI toolset, so
-it answers with a request to choose the source explicitly. Type to search the
+prerequisite. **Automatic** finds a relevant accessible database from the question
+with read-only discovery tools and inspects all its tables; if matching sources are
+ambiguous, the assistant asks for clarification. Type to search the
 source menu, use the arrow keys and Enter to choose, or Escape to return without
 changing it. The displayed source is checked against the query's actual table
 dependencies. Single values default to an inline answer; multiple records become a

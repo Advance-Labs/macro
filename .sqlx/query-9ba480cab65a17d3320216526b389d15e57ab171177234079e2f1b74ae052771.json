@@ -72,7 +72,8 @@
                 "COMPANY",
                 "TASK",
                 "CALL_RECORD",
-                "CALENDAR_EVENT"
+                "CALENDAR_EVENT",
+                "INITIATIVE"
               ]
             }
           }
@@ -132,7 +133,8 @@
                 "COMPANY",
                 "TASK",
                 "CALL_RECORD",
-                "CALENDAR_EVENT"
+                "CALENDAR_EVENT",
+                "INITIATIVE"
               ]
             }
           }

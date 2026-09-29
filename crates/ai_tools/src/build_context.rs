@@ -286,6 +286,7 @@ pub async fn build_tool_service_context_from_env(
         sqs: aws_sqs_client,
         macro_event_broker: macro_event_broker.clone(),
     };
+    let databases_gateway = side_effect_clients.connection_gateway.as_ref().clone();
     let channel_tool_context = crate::tool_context::build_channel_tool_context_with_side_effects(
         pool.clone(),
         Arc::new(lexical_client.clone()),
@@ -439,6 +440,16 @@ pub async fn build_tool_service_context_from_env(
         reminders_tool_context: crate::tool_context::build_reminders_tool_context(
             pool.clone(),
             entity_access_service.clone(),
+        ),
+        databases_tool_context: crate::tool_context::build_databases_tool_context(
+            pool.clone(),
+            entity_access_service.clone(),
+            crate::tool_context::ToolTableEventPublisher::Gateway(
+                databases::outbound::gateway_event_publisher::GatewayTableEventPublisher::new(
+                    databases_gateway,
+                ),
+            ),
+            crate::tool_context::ToolDatabasesEventBroker::Real(macro_event_broker.clone()),
         ),
         import_tool_context: ToolImportToolContext::unwired(),
         chat_tool_context,

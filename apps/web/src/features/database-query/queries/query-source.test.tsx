@@ -102,11 +102,10 @@ describe('query schema', () => {
         writable: true,
       },
     });
-    const request = databaseCompletionRequest({
-      prompt: 'Show contacts and their projects',
-      sql: '',
-      schema,
-    });
+    const request = databaseCompletionRequest(
+      { prompt: 'Show contacts and their projects', sql: '', schema },
+      'question'
+    );
     expect(
       JSON.parse(request.prompt).schema.tables[1].columns[0].relation
     ).toEqual(schema.tables[1].columns[0].relation);

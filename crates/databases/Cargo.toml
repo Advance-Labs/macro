@@ -6,6 +6,15 @@ version = "0.1.0"
 
 [features]
 default = []
+# AI tools. A driving adapter like `inbound`, but for the agent loop rather
+# than HTTP, so it needs neither axum nor a router.
+ai_tools = [
+  "dep:ai_toolset",
+  "dep:anyhow",
+  "dep:async-trait",
+  "dep:schemars",
+  "ports",
+]
 # Axum HTTP router: the SQL-first API surface (exec, snapshot, schema ops).
 inbound = [
   "dep:axum",
@@ -39,6 +48,7 @@ sqlite = ["dep:rusqlite", "dep:fallible-streaming-iterator", "outbound"]
 
 [dependencies]
 activity = { path = "../activity", default-features = false }
+ai_toolset = { path = "../ai_toolset", optional = true }
 anyhow = { workspace = true, optional = true }
 async-trait = { workspace = true, optional = true }
 axum = { workspace = true, optional = true }
@@ -61,6 +71,7 @@ models_permissions = { path = "../models_permissions" }
 properties = { path = "../properties", optional = true, default-features = false, features = ["outbound"] }
 rootcause = { workspace = true }
 rusqlite = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
 saved_views = { path = "../saved_views", optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

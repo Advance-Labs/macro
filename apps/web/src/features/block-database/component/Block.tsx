@@ -1,3 +1,5 @@
+import { openChatWithInput } from '@app/features/chat/ChatWithAgentButton';
+import { toQuerySchema } from '@app/features/database-query/queries/query-source';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { makePersistedState } from '@app/lib/persistence';
 import { useGlobalBlockOrchestrator } from '@components/app/GlobalAppState';
@@ -19,6 +21,7 @@ import { deepEqual } from '@core/util/compareUtils';
 import { createUserScopedStorage } from '@core/util/userScopedStorage';
 import DatabaseIcon from '@phosphor/database.svg';
 import LockIcon from '@phosphor/lock-simple.svg';
+import SparkleIcon from '@phosphor/sparkle.svg';
 import { useDatabaseDetailQuery } from '@queries/storage/databases';
 import { useDatabaseTableChangedSync } from '@queries/storage/databases-sync';
 import { getEntityGraphqlClient } from '@service-storage/graphql-soup';
@@ -34,6 +37,7 @@ import {
 } from 'solid-js';
 import { DatabaseTitle } from '../components/database-title';
 import { DatabaseToolbar } from '../components/database-toolbar';
+import { databaseChatContext } from '../core/chat-context';
 import type { DatabaseRelatedDestination } from '../core/database-relations';
 import {
   type DatabaseViewConfig,
@@ -155,6 +159,19 @@ const Block: Component = () => {
     requestedGridEntry = false;
     void gridEntry.focus();
   };
+  const [openingChat, setOpeningChat] = createSignal(false);
+  async function openDatabaseChat() {
+    const current = detail();
+    if (!current || openingChat()) return;
+    setOpeningChat(true);
+    try {
+      await openChatWithInput(
+        databaseChatContext(toQuerySchema(current, activeTableId()))
+      );
+    } finally {
+      setOpeningChat(false);
+    }
+  }
   const tableViews = () => selection().drafts;
   const emptyView = defaultDatabaseView();
 
@@ -413,13 +430,18 @@ const Block: Component = () => {
                 />
               )}
             </Show>
-            {/*
-              TODO(databases): the fable-yolo branch has a "Database AI" header
-              button that opens a native chat with this database's schema as
-              private context (`core/chat-context.ts`). That chat needs the
-              databases AI toolset in the cognition service, which is not on
-              this branch yet, so the button stays out until it lands.
-            */}
+            <Button
+              variant="ghost"
+              size="sm"
+              class="h-8 gap-1.5 px-2 text-xs"
+              disabled={!detail() || openingChat()}
+              aria-label="Database AI"
+              aria-busy={openingChat()}
+              onClick={() => void openDatabaseChat()}
+            >
+              <SparkleIcon class="size-4" />
+              <span>AI</span>
+            </Button>
           </div>
         </header>
         <ErrorBoundary

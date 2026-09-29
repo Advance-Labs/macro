@@ -19,6 +19,7 @@ mod test;
 
 /// Layouts the database UI can persist and render.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ai_tools", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ViewLayout {
     /// Spreadsheet-style table.
@@ -29,6 +30,7 @@ pub enum ViewLayout {
 
 /// Supported database filter operations.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "ai_tools", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FilterOperator {
     /// Text or list contains the value.
@@ -57,6 +59,7 @@ pub enum FilterOperator {
 
 /// One filter, using the stable column placement id.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ai_tools", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ViewFilter {
     /// Column placement id from the database schema.
@@ -70,6 +73,7 @@ pub struct ViewFilter {
 
 /// Sort direction.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "ai_tools", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SortDirection {
     /// Smallest/earliest first.
@@ -80,6 +84,7 @@ pub enum SortDirection {
 
 /// One ordered sort key.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ai_tools", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ViewSort {
     /// Column placement id from the database schema.
@@ -90,6 +95,7 @@ pub struct ViewSort {
 
 /// Presentation configuration shared with the database frontend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ai_tools", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseViewDefinition {
     /// Table or board; chart layouts are not supported by saved database views.
@@ -135,6 +141,7 @@ pub struct SaveDatabaseViewCommand {
 
 /// A persisted personal view acknowledgment.
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ai_tools", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SavedDatabaseView {
     /// Id in the user's saved-view collection.
