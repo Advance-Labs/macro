@@ -223,13 +223,15 @@ impl<F: ForeignEntityService, R: GithubPullRequestRepository> GithubPullRequestS
                 }
             }
         }
+        // A successful subset can omit metadata held only by a failed record. Preserve the
+        // existing typed row rather than replacing it with that incomplete projection.
+        if let Some(error) = first_error {
+            return Err(error);
+        }
         if let Some(latest) = refreshed.iter().max_by_key(|record| record.updated_at) {
             self.store_row(&latest.metadata, None).await;
         }
-        match first_error {
-            Some(error) => Err(error),
-            None => Ok(refreshed),
-        }
+        Ok(refreshed)
     }
 }
 

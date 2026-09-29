@@ -435,6 +435,11 @@ async fn refresh_attempts_later_records_after_a_patch_failure() {
         StubForeignEntityService::with_records(vec![team_record.clone(), user_record.clone()]);
     foreign_entities.state.lock().unwrap().failing_patches = vec![team_record.id];
     let rows = StubPullRequestRows::default();
+    let original_metadata = pull_request(GithubPullRequestStatus::Open)
+        .foreign_entity_metadata(None)
+        .unwrap();
+    let original_row = GithubPullRequestRow::from_metadata(&original_metadata).unwrap();
+    rows.rows.lock().unwrap().push(original_row.clone());
     let service = service(&foreign_entities, &rows);
 
     let result = service
@@ -459,7 +464,7 @@ async fn refresh_attempts_later_records_after_a_patch_failure() {
     assert_eq!(records[0].metadata["status"], "open");
     assert_eq!(records[1].metadata["status"], "closed");
     assert!(foreign_entities.creates().is_empty());
-    assert_eq!(rows.rows()[0].status, Some(GithubPullRequestStatus::Closed));
+    assert_eq!(rows.rows(), vec![original_row]);
 }
 
 #[tokio::test]
