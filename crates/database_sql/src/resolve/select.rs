@@ -259,13 +259,7 @@ fn key_name(scope: &Scope<'_>, key: uuid::Uuid) -> String {
 impl AggFn {
     /// The function as written.
     pub fn name(self) -> &'static str {
-        match self {
-            AggFn::Count => "COUNT",
-            AggFn::Sum => "SUM",
-            AggFn::Avg => "AVG",
-            AggFn::Min => "MIN",
-            AggFn::Max => "MAX",
-        }
+        self.into()
     }
 }
 

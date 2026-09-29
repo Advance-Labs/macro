@@ -142,14 +142,7 @@ fn check_operator(column: &Column, op: CmpOp) -> Result<(), ResolveError> {
 impl CmpOp {
     /// The operator as written.
     pub fn symbol(self) -> &'static str {
-        match self {
-            CmpOp::Eq => "=",
-            CmpOp::Ne => "!=",
-            CmpOp::Lt => "<",
-            CmpOp::Le => "<=",
-            CmpOp::Gt => ">",
-            CmpOp::Ge => ">=",
-        }
+        self.into()
     }
 }
 

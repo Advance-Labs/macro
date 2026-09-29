@@ -8,8 +8,9 @@ use super::ParseError;
 
 /// A token kind. String-carrying variants hold the decoded text (quotes and
 /// escapes removed).
-#[derive(Logos, Debug, Clone, PartialEq)]
+#[derive(Logos, Debug, Clone, PartialEq, strum::IntoStaticStr)]
 #[logos(skip r"[ \t\r\n]+")]
+#[strum(serialize_all = "UPPERCASE")]
 pub enum Tok {
     #[regex("(?i)select")]
     Select,
@@ -124,6 +125,10 @@ pub enum Tok {
     Str(String),
     #[regex(r"([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?", |lex| lex.slice().parse().ok())]
     Num(f64),
+    /// Never produced by the lexer: appended by [`lex`] so every parser sees
+    /// a token at the end of the statement, with the statement's end as its
+    /// span.
+    End,
 }
 
 /// Strip the surrounding quotes and collapse doubled quotes.
@@ -160,6 +165,10 @@ pub fn lex(sql: &str) -> Result<Vec<Token>, ParseError> {
             }
         }
     }
+    tokens.push(Token {
+        kind: Tok::End,
+        span: sql.len()..sql.len(),
+    });
     Ok(tokens)
 }
 
@@ -184,7 +193,8 @@ impl Tok {
             Tok::Star => "*".into(),
             Tok::Minus => "-".into(),
             Tok::Semi => ";".into(),
-            keyword => format!("{keyword:?}").to_uppercase(),
+            Tok::End => "end of statement".into(),
+            keyword => <&'static str>::from(keyword).into(),
         }
     }
 }

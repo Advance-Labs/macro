@@ -106,8 +106,9 @@ pub struct Agg {
     pub arg: Option<ColumnRef>,
 }
 
-/// The aggregate functions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The aggregate functions; the string form is the name as written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::IntoStaticStr)]
+#[strum(serialize_all = "UPPERCASE")]
 pub enum AggFn {
     /// `COUNT`.
     Count,
@@ -173,20 +174,26 @@ pub enum Cond {
     Or(Vec<Cond>),
 }
 
-/// A comparison operator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A comparison operator; the string form is the symbol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::IntoStaticStr)]
 pub enum CmpOp {
     /// `=`.
+    #[strum(serialize = "=")]
     Eq,
     /// `!=` or `<>`.
+    #[strum(serialize = "!=")]
     Ne,
     /// `<`.
+    #[strum(serialize = "<")]
     Lt,
     /// `<=`.
+    #[strum(serialize = "<=")]
     Le,
     /// `>`.
+    #[strum(serialize = ">")]
     Gt,
     /// `>=`.
+    #[strum(serialize = ">=")]
     Ge,
 }
 

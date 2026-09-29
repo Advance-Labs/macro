@@ -53,5 +53,5 @@ pub struct ParseError {
 /// Parse one statement.
 pub fn parse(sql: &str) -> Result<Statement, ParseError> {
     let tokens = lexer::lex(sql)?;
-    parser::Parser::new(sql, tokens).statement()
+    parser::statement(&tokens)
 }

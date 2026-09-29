@@ -96,15 +96,18 @@ pub struct Column {
 }
 
 /// The value type of a column, mirroring the property data types a query can
-/// compare against.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// compare against. The static string form is how the kind reads in an
+/// error message.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, strum::IntoStaticStr)]
 #[serde(tag = "kind", rename_all = "camelCase")]
+#[strum(serialize_all = "lowercase")]
 pub enum ColumnKind {
     /// Free text.
     Text,
     /// A number.
     Number,
     /// A checkbox.
+    #[strum(serialize = "checkbox")]
     Boolean,
     /// A date-time.
     Date,
@@ -145,14 +148,6 @@ impl ColumnKind {
 
     /// How the kind reads in an error message.
     pub fn describe(&self) -> &'static str {
-        match self {
-            ColumnKind::Text => "text",
-            ColumnKind::Number => "number",
-            ColumnKind::Boolean => "checkbox",
-            ColumnKind::Date => "date",
-            ColumnKind::Link => "link",
-            ColumnKind::Select { .. } => "select",
-            ColumnKind::Entity { .. } => "entity",
-        }
+        self.into()
     }
 }

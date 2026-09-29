@@ -14,7 +14,9 @@ filter_ast = { path = "../filter_ast" }
 item_filters = { path = "../item_filters", default-features = false }
 logos = { workspace = true }
 maybe_send = { path = "../maybe_send" }
+nom = { workspace = true }
 serde = { workspace = true }
+strum = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }
 
@@ -27,6 +29,10 @@ wasm-bindgen = { workspace = true }
 
 [dev-dependencies]
 pollster = { workspace = true }
-reqwest = { workspace = true }
 serde_json = { workspace = true }
+
+# The gql example talks to a live stack; the crate's own tests and the wasm
+# build never need these.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+reqwest = { workspace = true }
 tokio = { workspace = true }
