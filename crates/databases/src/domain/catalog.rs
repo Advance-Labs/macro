@@ -158,6 +158,7 @@ pub fn entity_type_for(property_type: PropertyEntityType) -> model_entity::Entit
         PropertyEntityType::Project => E::Project,
         PropertyEntityType::Thread => E::EmailThread,
         PropertyEntityType::CalendarEvent => E::CalendarEvent,
+        PropertyEntityType::Initiative => E::Initiative,
     }
 }
 
