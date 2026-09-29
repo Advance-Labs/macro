@@ -19,19 +19,62 @@ pub enum Statement {
     Delete(Delete),
 }
 
-/// `SELECT items FROM table [WHERE] [GROUP BY] [ORDER BY]`.
+/// `SELECT [DISTINCT] items FROM table [JOIN …] [WHERE] [GROUP BY] [ORDER BY]`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Select {
+    /// `DISTINCT`: drop repeated result rows.
+    pub distinct: bool,
     /// The select list.
     pub items: Vec<Item>,
-    /// The single table read.
-    pub table: TableName,
+    /// The table the `FROM` names.
+    pub from: FromItem,
+    /// The joined tables, in statement order.
+    pub joins: Vec<Join>,
     /// The `WHERE` condition.
     pub where_: Option<Cond>,
     /// The `GROUP BY` column.
-    pub group_by: Option<Ident>,
+    pub group_by: Option<ColumnRef>,
     /// The `ORDER BY` keys, in order.
     pub order_by: Vec<OrderBy>,
+}
+
+/// A table read, with the alias its columns are qualified by.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FromItem {
+    /// The table.
+    pub table: TableName,
+    /// `[AS] alias`; without one, the table name qualifies its columns.
+    pub alias: Option<Ident>,
+}
+
+/// `JOIN table ON left = right [AND left = right]…`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Join {
+    /// Inner or left.
+    pub kind: JoinKind,
+    /// The table joined in.
+    pub table: FromItem,
+    /// The equalities the joined rows must satisfy, all of them.
+    pub on: Vec<(ColumnRef, ColumnRef)>,
+}
+
+/// How unmatched rows are treated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JoinKind {
+    /// Only rows with a match on both sides.
+    Inner,
+    /// Every row of the earlier tables, matched or not.
+    Left,
+}
+
+/// A column as written: `column` or `alias.column`. The name `row_id` refers
+/// to a table's row entity id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ColumnRef {
+    /// The alias qualifying the column, if any.
+    pub table: Option<Ident>,
+    /// The column.
+    pub column: Ident,
 }
 
 /// `[database.]table`.
@@ -49,7 +92,7 @@ pub enum Item {
     /// `*`.
     Star,
     /// A column.
-    Column(Ident),
+    Column(ColumnRef),
     /// An aggregate call.
     Agg(Agg),
 }
@@ -60,7 +103,7 @@ pub struct Agg {
     /// Which aggregate.
     pub func: AggFn,
     /// The column aggregated; `None` only for `COUNT(*)`.
-    pub arg: Option<Ident>,
+    pub arg: Option<ColumnRef>,
 }
 
 /// The aggregate functions.
@@ -84,7 +127,7 @@ pub enum Cond {
     /// `column op value`.
     Cmp {
         /// The column.
-        column: Ident,
+        column: ColumnRef,
         /// The operator.
         op: CmpOp,
         /// The literal compared against.
@@ -93,7 +136,7 @@ pub enum Cond {
     /// `column [NOT] IN (values)`.
     In {
         /// The column.
-        column: Ident,
+        column: ColumnRef,
         /// The literals listed.
         values: Vec<Lit>,
         /// `NOT IN`.
@@ -102,7 +145,7 @@ pub enum Cond {
     /// `column [NOT] HAS value`: membership in a multi-valued column.
     Has {
         /// The column.
-        column: Ident,
+        column: ColumnRef,
         /// The member tested.
         value: Lit,
         /// `NOT HAS`.
@@ -111,14 +154,14 @@ pub enum Cond {
     /// `column IS [NOT] NULL`.
     IsNull {
         /// The column.
-        column: Ident,
+        column: ColumnRef,
         /// `IS NOT NULL`.
         negated: bool,
     },
     /// `column [NOT] LIKE pattern`.
     Like {
         /// The column.
-        column: Ident,
+        column: ColumnRef,
         /// The pattern, with SQL `%` and `_` wildcards.
         pattern: String,
         /// `NOT LIKE`.
@@ -173,7 +216,7 @@ pub struct OrderBy {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OrderKey {
     /// A column.
-    Column(Ident),
+    Column(ColumnRef),
     /// An aggregate that also appears in the select list.
     Agg(Agg),
     /// A 1-based position in the select list.

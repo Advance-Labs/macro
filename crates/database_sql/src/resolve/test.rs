@@ -21,7 +21,13 @@ fn grouped_aggregate_with_mixed_where() {
     ";
 
     let expected = Query::Select(SelectQuery {
-        table: DEALS,
+        distinct: false,
+        relations: vec![Relation {
+            table: DEALS,
+            alias: "deals".into(),
+        }],
+        joins: vec![],
+        bindings: vec![],
         items: vec![
             SelectItem::Column(OWNER),
             SelectItem::Agg {
@@ -62,7 +68,22 @@ fn grouped_aggregate_with_mixed_where() {
         ],
     });
 
-    assert_eq!(resolve(&catalog(), parse(sql).unwrap()).unwrap(), expected);
+    assert_eq!(
+        without_bindings(resolve(&catalog(), parse(sql).unwrap()).unwrap()),
+        expected
+    );
+}
+
+/// The bindings are the scope's bookkeeping; the literal tests check the
+/// rest.
+fn without_bindings(query: Query) -> Query {
+    match query {
+        Query::Select(select) => Query::Select(SelectQuery {
+            bindings: vec![],
+            ..select
+        }),
+        other => other,
+    }
 }
 
 #[test]
@@ -81,7 +102,13 @@ fn star_expands_and_every_column_kind_types_its_literal() {
     ";
 
     let expected = Query::Select(SelectQuery {
-        table: DEALS,
+        distinct: false,
+        relations: vec![Relation {
+            table: DEALS,
+            alias: "deals".into(),
+        }],
+        joins: vec![],
+        bindings: vec![],
         items: vec![
             SelectItem::Column(NAME),
             SelectItem::Column(AMOUNT),
@@ -142,13 +169,15 @@ fn star_expands_and_every_column_kind_types_its_literal() {
     });
 
     assert_eq!(
-        resolve(
-            &Catalog {
-                tables: catalog().tables.into_iter().take(2).collect(),
-            },
-            parse(sql).unwrap()
-        )
-        .unwrap(),
+        without_bindings(
+            resolve(
+                &Catalog {
+                    tables: catalog().tables.into_iter().take(2).collect(),
+                },
+                parse(sql).unwrap()
+            )
+            .unwrap()
+        ),
         expected
     );
 }
@@ -158,7 +187,13 @@ fn order_by_aggregate_resolves_to_its_select_item() {
     let sql = "SELECT stage, MAX(\"closed at\") FROM crm.deals GROUP BY stage ORDER BY MAX(\"closed at\") DESC, stage";
 
     let expected = Query::Select(SelectQuery {
-        table: DEALS,
+        distinct: false,
+        relations: vec![Relation {
+            table: DEALS,
+            alias: "deals".into(),
+        }],
+        joins: vec![],
+        bindings: vec![],
         items: vec![
             SelectItem::Column(STAGE),
             SelectItem::Agg {
@@ -180,7 +215,10 @@ fn order_by_aggregate_resolves_to_its_select_item() {
         ],
     });
 
-    assert_eq!(resolve(&catalog(), parse(sql).unwrap()).unwrap(), expected);
+    assert_eq!(
+        without_bindings(resolve(&catalog(), parse(sql).unwrap()).unwrap()),
+        expected
+    );
 }
 
 #[test]

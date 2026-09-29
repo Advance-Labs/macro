@@ -2,7 +2,7 @@
 
 use uuid::Uuid;
 
-use crate::catalog::{Catalog, Column, ColumnKind, SelectOption, Table};
+use crate::catalog::{Catalog, Column, ColumnKind, SelectOption, Table, TableSource, people_table};
 
 pub const DEALS: Uuid = Uuid::from_u128(0xd0);
 pub const PEOPLE: Uuid = Uuid::from_u128(0xd1);
@@ -19,8 +19,9 @@ pub const LEAD: Uuid = Uuid::from_u128(0x31);
 pub const WON: Uuid = Uuid::from_u128(0x30);
 pub const VIP: Uuid = Uuid::from_u128(0x32);
 
-/// `crm.deals` with one column of every kind, `crm.people`, and a second
-/// `deals` table in another database so bare names can be ambiguous.
+/// `crm.deals` with one column of every kind, `crm.people` (sharing the
+/// `name` definition with `crm.deals`), a second `deals` table in another
+/// database so bare names can be ambiguous, and the platform `macro.people`.
 pub fn catalog() -> Catalog {
     Catalog {
         tables: vec![
@@ -88,6 +89,7 @@ pub fn catalog() -> Catalog {
                         kind: ColumnKind::Link,
                     },
                 ],
+                source: TableSource::Database,
             },
             Table {
                 id: PEOPLE,
@@ -98,13 +100,16 @@ pub fn catalog() -> Catalog {
                     name: "name".into(),
                     kind: ColumnKind::Text,
                 }],
+                source: TableSource::Database,
             },
             Table {
                 id: SALES_DEALS,
                 database: "sales".into(),
                 name: "deals".into(),
                 columns: vec![],
+                source: TableSource::Database,
             },
+            people_table(),
         ],
     }
 }

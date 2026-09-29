@@ -1,5 +1,12 @@
 use super::*;
 
+fn col(name: &str) -> ColumnRef {
+    ColumnRef {
+        table: None,
+        column: Ident(name.into()),
+    }
+}
+
 // ---- accepted statements: one full literal per grammar area ---------------
 
 #[test]
@@ -13,45 +20,50 @@ fn grouped_aggregate_with_mixed_where() {
     ";
 
     let expected = Statement::Select(Select {
+        distinct: false,
         items: vec![
-            Item::Column(Ident("owner".into())),
+            Item::Column(col("owner")),
             Item::Agg(Agg {
                 func: AggFn::Sum,
-                arg: Some(Ident("amount".into())),
+                arg: Some(col("amount")),
             }),
             Item::Agg(Agg {
                 func: AggFn::Count,
                 arg: None,
             }),
         ],
-        table: TableName {
-            database: Some(Ident("crm".into())),
-            table: Ident("deals".into()),
+        from: FromItem {
+            table: TableName {
+                database: Some(Ident("crm".into())),
+                table: Ident("deals".into()),
+            },
+            alias: None,
         },
+        joins: vec![],
         where_: Some(Cond::And(vec![
             Cond::In {
-                column: Ident("stage".into()),
+                column: col("stage"),
                 values: vec![Lit::Str("Won".into()), Lit::Str("Lead".into())],
                 negated: false,
             },
             Cond::Cmp {
-                column: Ident("amount".into()),
+                column: col("amount"),
                 op: CmpOp::Gt,
                 value: Lit::Num(5000.0),
             },
             Cond::IsNull {
-                column: Ident("closed_at".into()),
+                column: col("closed_at"),
                 negated: true,
             },
         ])),
-        group_by: Some(Ident("owner".into())),
+        group_by: Some(col("owner")),
         order_by: vec![
             OrderBy {
                 key: OrderKey::Position(2),
                 dir: Dir::Desc,
             },
             OrderBy {
-                key: OrderKey::Column(Ident("owner".into())),
+                key: OrderKey::Column(col("owner")),
                 dir: Dir::Asc,
             },
         ],
@@ -65,31 +77,36 @@ fn or_binds_looser_than_and_and_parens_override() {
     let sql = "SELECT * FROM deals WHERE a = 1 OR b = 2 AND (c = 3 OR d = 4)";
 
     let expected = Statement::Select(Select {
+        distinct: false,
         items: vec![Item::Star],
-        table: TableName {
-            database: None,
-            table: Ident("deals".into()),
+        from: FromItem {
+            table: TableName {
+                database: None,
+                table: Ident("deals".into()),
+            },
+            alias: None,
         },
+        joins: vec![],
         where_: Some(Cond::Or(vec![
             Cond::Cmp {
-                column: Ident("a".into()),
+                column: col("a"),
                 op: CmpOp::Eq,
                 value: Lit::Num(1.0),
             },
             Cond::And(vec![
                 Cond::Cmp {
-                    column: Ident("b".into()),
+                    column: col("b"),
                     op: CmpOp::Eq,
                     value: Lit::Num(2.0),
                 },
                 Cond::Or(vec![
                     Cond::Cmp {
-                        column: Ident("c".into()),
+                        column: col("c"),
                         op: CmpOp::Eq,
                         value: Lit::Num(3.0),
                     },
                     Cond::Cmp {
-                        column: Ident("d".into()),
+                        column: col("d"),
                         op: CmpOp::Eq,
                         value: Lit::Num(4.0),
                     },
@@ -120,58 +137,63 @@ fn every_atom_form_and_literal_kind() {
     ";
 
     let expected = Statement::Select(Select {
-        items: vec![Item::Column(Ident("name".into()))],
-        table: TableName {
-            database: Some(Ident("crm".into())),
-            table: Ident("deals".into()),
+        distinct: false,
+        items: vec![Item::Column(col("name"))],
+        from: FromItem {
+            table: TableName {
+                database: Some(Ident("crm".into())),
+                table: Ident("deals".into()),
+            },
+            alias: None,
         },
+        joins: vec![],
         where_: Some(Cond::And(vec![
             Cond::In {
-                column: Ident("stage".into()),
+                column: col("stage"),
                 values: vec![Lit::Str("Lost".into())],
                 negated: true,
             },
             Cond::Has {
-                column: Ident("tags".into()),
+                column: col("tags"),
                 value: Lit::Str("vip".into()),
                 negated: false,
             },
             Cond::Has {
-                column: Ident("assignees".into()),
+                column: col("assignees"),
                 value: Lit::Str("macro|a@b.com".into()),
                 negated: true,
             },
             Cond::IsNull {
-                column: Ident("closed_at".into()),
+                column: col("closed_at"),
                 negated: false,
             },
             Cond::Like {
-                column: Ident("name".into()),
+                column: col("name"),
                 pattern: "A%".into(),
                 negated: false,
             },
             Cond::Like {
-                column: Ident("notes".into()),
+                column: col("notes"),
                 pattern: "%draft%".into(),
                 negated: true,
             },
             Cond::Cmp {
-                column: Ident("done".into()),
+                column: col("done"),
                 op: CmpOp::Eq,
                 value: Lit::Bool(true),
             },
             Cond::Cmp {
-                column: Ident("score".into()),
+                column: col("score"),
                 op: CmpOp::Ge,
                 value: Lit::Num(-1500.0),
             },
             Cond::Cmp {
-                column: Ident("Plus ones".into()),
+                column: col("Plus ones"),
                 op: CmpOp::Ne,
                 value: Lit::Num(0.5),
             },
             Cond::Cmp {
-                column: Ident("note".into()),
+                column: col("note"),
                 op: CmpOp::Ne,
                 value: Lit::Str("it's".into()),
             },
@@ -188,28 +210,33 @@ fn order_by_column_aggregate_and_position() {
     let sql = "SELECT stage, MAX(amount) FROM \"My CRM\".\"Big Deals\" GROUP BY stage ORDER BY stage, MAX(amount) DESC, 1 ASC";
 
     let expected = Statement::Select(Select {
+        distinct: false,
         items: vec![
-            Item::Column(Ident("stage".into())),
+            Item::Column(col("stage")),
             Item::Agg(Agg {
                 func: AggFn::Max,
-                arg: Some(Ident("amount".into())),
+                arg: Some(col("amount")),
             }),
         ],
-        table: TableName {
-            database: Some(Ident("My CRM".into())),
-            table: Ident("Big Deals".into()),
+        from: FromItem {
+            table: TableName {
+                database: Some(Ident("My CRM".into())),
+                table: Ident("Big Deals".into()),
+            },
+            alias: None,
         },
+        joins: vec![],
         where_: None,
-        group_by: Some(Ident("stage".into())),
+        group_by: Some(col("stage")),
         order_by: vec![
             OrderBy {
-                key: OrderKey::Column(Ident("stage".into())),
+                key: OrderKey::Column(col("stage")),
                 dir: Dir::Asc,
             },
             OrderBy {
                 key: OrderKey::Agg(Agg {
                     func: AggFn::Max,
-                    arg: Some(Ident("amount".into())),
+                    arg: Some(col("amount")),
                 }),
                 dir: Dir::Desc,
             },
@@ -224,24 +251,100 @@ fn order_by_column_aggregate_and_position() {
 }
 
 #[test]
+fn distinct_aliases_and_joins() {
+    let sql = "
+        SELECT DISTINCT p.email, t.row_id
+        FROM macro.tasks AS t
+        INNER JOIN macro.people p ON t.assignees = p.id
+        LEFT OUTER JOIN crm.deals ON deals.owner = p.id AND deals.name = t.name
+        WHERE t.priority = 'High'
+        GROUP BY p.email
+        ORDER BY p.email
+    ";
+    let qualified = |table: &str, column: &str| ColumnRef {
+        table: Some(Ident(table.into())),
+        column: Ident(column.into()),
+    };
+
+    let expected = Statement::Select(Select {
+        distinct: true,
+        items: vec![
+            Item::Column(qualified("p", "email")),
+            Item::Column(qualified("t", "row_id")),
+        ],
+        from: FromItem {
+            table: TableName {
+                database: Some(Ident("macro".into())),
+                table: Ident("tasks".into()),
+            },
+            alias: Some(Ident("t".into())),
+        },
+        joins: vec![
+            Join {
+                kind: JoinKind::Inner,
+                table: FromItem {
+                    table: TableName {
+                        database: Some(Ident("macro".into())),
+                        table: Ident("people".into()),
+                    },
+                    alias: Some(Ident("p".into())),
+                },
+                on: vec![(qualified("t", "assignees"), qualified("p", "id"))],
+            },
+            Join {
+                kind: JoinKind::Left,
+                table: FromItem {
+                    table: TableName {
+                        database: Some(Ident("crm".into())),
+                        table: Ident("deals".into()),
+                    },
+                    alias: None,
+                },
+                on: vec![
+                    (qualified("deals", "owner"), qualified("p", "id")),
+                    (qualified("deals", "name"), qualified("t", "name")),
+                ],
+            },
+        ],
+        where_: Some(Cond::Cmp {
+            column: qualified("t", "priority"),
+            op: CmpOp::Eq,
+            value: Lit::Str("High".into()),
+        }),
+        group_by: Some(qualified("p", "email")),
+        order_by: vec![OrderBy {
+            key: OrderKey::Column(qualified("p", "email")),
+            dir: Dir::Asc,
+        }],
+    });
+
+    assert_eq!(parse(sql).unwrap(), expected);
+}
+
+#[test]
 fn keywords_are_usable_as_column_names_when_quoted() {
     // `count` unquoted is the aggregate keyword; quoted it is a column.
     let sql = "SELECT \"count\", COUNT(\"order\") FROM stats WHERE \"from\" = 'x'";
 
     let expected = Statement::Select(Select {
+        distinct: false,
         items: vec![
-            Item::Column(Ident("count".into())),
+            Item::Column(col("count")),
             Item::Agg(Agg {
                 func: AggFn::Count,
-                arg: Some(Ident("order".into())),
+                arg: Some(col("order")),
             }),
         ],
-        table: TableName {
-            database: None,
-            table: Ident("stats".into()),
+        from: FromItem {
+            table: TableName {
+                database: None,
+                table: Ident("stats".into()),
+            },
+            alias: None,
         },
+        joins: vec![],
         where_: Some(Cond::Cmp {
-            column: Ident("from".into()),
+            column: col("from"),
             op: CmpOp::Eq,
             value: Lit::Str("x".into()),
         }),
@@ -337,19 +440,29 @@ fn rejections_point_at_the_offending_token() {
             "expected a comparison operator, IN, HAS, IS or LIKE after \"amount\", found *",
         ),
         (
-            "SELECT d.name FROM crm.deals d JOIN crm.people p ON p.id = d.owner",
-            8..9,
-            "expected FROM, found .",
+            "SELECT d.name FROM crm.deals d JOIN crm.people p WHERE p.id = d.owner",
+            49..54,
+            "expected ON after the joined table, found WHERE",
+        ),
+        (
+            "SELECT d.name FROM crm.deals d JOIN crm.people p ON p.id LIKE d.owner",
+            57..61,
+            "expected = between the two join columns, found LIKE",
+        ),
+        (
+            "SELECT d.name FROM crm.deals d LEFT crm.people p ON p.id = d.owner",
+            36..39,
+            "expected JOIN after LEFT, found \"crm\"",
         ),
         (
             "SELECT name AS n FROM crm.deals",
             12..14,
-            "expected FROM, found \"AS\"",
+            "expected FROM, found AS",
         ),
         (
             "SELECT name FROM crm.deals LIMIT 10",
             27..32,
-            "expected end of statement, found \"LIMIT\"",
+            "expected end of statement, found LIMIT",
         ),
         (
             "SELECT stage, SUM(amount) FROM crm.deals GROUP BY stage HAVING SUM(amount) > 1",

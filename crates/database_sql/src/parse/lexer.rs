@@ -13,8 +13,26 @@ use super::ParseError;
 pub enum Tok {
     #[regex("(?i)select")]
     Select,
+    #[regex("(?i)distinct")]
+    Distinct,
     #[regex("(?i)from")]
     From,
+    #[regex("(?i)as")]
+    As,
+    #[regex("(?i)join")]
+    Join,
+    #[regex("(?i)inner")]
+    Inner,
+    #[regex("(?i)left")]
+    Left,
+    #[regex("(?i)outer")]
+    Outer,
+    #[regex("(?i)on")]
+    On,
+    // Reserved so it can never be read as a table alias; the parser rejects
+    // it with a message the agent can act on.
+    #[regex("(?i)limit")]
+    Limit,
     #[regex("(?i)where")]
     Where,
     #[regex("(?i)group")]

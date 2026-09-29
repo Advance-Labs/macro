@@ -18,10 +18,11 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 pub use self::error::ResolveError;
+pub use self::names::ROW_ID;
 use crate::catalog::Catalog;
 use crate::parse::{self, Statement};
 
-pub use crate::parse::{AggFn, CmpOp, Dir};
+pub use crate::parse::{AggFn, CmpOp, Dir, JoinKind};
 
 /// A statement bound to the catalog.
 #[derive(Debug, Clone, PartialEq)]
@@ -37,10 +38,18 @@ pub enum Query {
 }
 
 /// A `SELECT` with every name resolved and every comparison type-checked.
+///
+/// Columns are referred to by *key*, not by property definition id: one
+/// definition can be bound to several of the joined tables, so a key names
+/// a column of one relation. See [`column_key`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectQuery {
-    /// The table read.
-    pub table: Uuid,
+    /// `DISTINCT`: repeated result rows are dropped.
+    pub distinct: bool,
+    /// The tables read: the `FROM` table first, then each join's.
+    pub relations: Vec<Relation>,
+    /// The joins, in statement order; `joins[i]` brings in `relations[i + 1]`.
+    pub joins: Vec<ResolvedJoin>,
     /// The select list; `*` has been expanded to every column.
     pub items: Vec<SelectItem>,
     /// The `WHERE` filter.
@@ -49,6 +58,68 @@ pub struct SelectQuery {
     pub group_by: Option<Uuid>,
     /// The `ORDER BY` keys, in order.
     pub order_by: Vec<Order>,
+    /// What every key the query mentions refers to.
+    pub bindings: Vec<Binding>,
+}
+
+/// One table read by a `SELECT`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Relation {
+    /// The table.
+    pub table: Uuid,
+    /// The alias its columns are qualified by.
+    pub alias: String,
+}
+
+/// A join, resolved: each `on` pair is (a key of an earlier relation, a key
+/// of the joined relation).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedJoin {
+    /// The relation joined in.
+    pub relation: usize,
+    /// Inner or left.
+    pub kind: JoinKind,
+    /// The equalities, all of which must hold.
+    pub on: Vec<(Uuid, Uuid)>,
+}
+
+/// What a key refers to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Binding {
+    /// The key.
+    pub key: Uuid,
+    /// The relation the column belongs to.
+    pub relation: usize,
+    /// The property definition; `None` for the row id.
+    pub column: Option<Uuid>,
+}
+
+/// The key of a column: the definition id itself in the `FROM` table, so a
+/// single-table query is keyed exactly as before, and a name derived from it
+/// in each joined table.
+pub fn column_key(relation: usize, column: Uuid) -> Uuid {
+    if relation == 0 {
+        column
+    } else {
+        Uuid::new_v5(&column, &[relation as u8])
+    }
+}
+
+/// The key of a table's row id.
+pub fn row_id_key(table: Uuid) -> Uuid {
+    Uuid::new_v5(&table, b"row_id")
+}
+
+impl SelectQuery {
+    /// The `FROM` table.
+    pub fn table(&self) -> Uuid {
+        self.relations[0].table
+    }
+
+    /// What a key refers to, if the query mentions it.
+    pub fn binding(&self, key: Uuid) -> Option<&Binding> {
+        self.bindings.iter().find(|binding| binding.key == key)
+    }
 }
 
 /// One entry of the select list.
@@ -147,7 +218,7 @@ pub struct Order {
 /// What an `ORDER BY` key refers to after resolution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OrderKey {
-    /// A column, selected or not.
+    /// A column key, selected or not.
     Column(Uuid),
     /// A 0-based index into the select list; positional keys and aggregates
     /// both resolve to this.
@@ -187,10 +258,7 @@ pub struct DeleteQuery {
 /// Bind a parsed statement to the catalog.
 pub fn resolve(catalog: &Catalog, statement: Statement) -> Result<Query, ResolveError> {
     match statement {
-        Statement::Select(select) => {
-            let table = names::table(catalog, &select.table)?;
-            select::resolve(table, select).map(Query::Select)
-        }
+        Statement::Select(select) => select::resolve(catalog, select).map(Query::Select),
         Statement::Insert(insert) => {
             let table = names::table(catalog, &insert.table)?;
             insert::resolve(table, insert).map(Query::Insert)

@@ -16,7 +16,7 @@ use std::io::{self, BufRead, Write};
 use std::sync::Mutex;
 
 use chrono::{TimeZone, Utc};
-use database_sql::catalog::{Catalog, Column, ColumnKind, SelectOption, Table};
+use database_sql::catalog::{Catalog, Column, ColumnKind, SelectOption, Table, TableSource};
 use database_sql::fold::{Bin, Cell, Row};
 use database_sql::resolve::Value;
 use database_sql::run::{Page, RowSource, RowWriter, SourceError, WriteError, run};
@@ -108,6 +108,7 @@ fn catalog() -> Catalog {
                     kind: ColumnKind::Boolean,
                 },
             ],
+            source: TableSource::Database,
         }],
     }
 }
@@ -207,6 +208,7 @@ impl Memory {
     fn select(&self, query: &GqlQuery) -> Vec<Row> {
         let propf = match query {
             GqlQuery::Soup { propf, .. } | GqlQuery::GroupSoup { propf, .. } => propf,
+            GqlQuery::People { .. } => &None,
         };
         self.rows
             .lock()

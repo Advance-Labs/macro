@@ -2,8 +2,39 @@ use filter_ast::Expr;
 use item_filters::ast::properties::{EntityRefId, PropertiesLiteral, PropertyMatchValue};
 
 use super::*;
-use crate::resolve::{AggFn, CmpOp, Dir, Order, OrderKey, Query, Value, compile};
+use crate::resolve::{AggFn, CmpOp, Dir, Order, OrderKey, Query, Relation, Value, compile};
 use crate::test_support::{catalog, *};
+
+/// A one-table plan with the bindings the query produced.
+fn single(
+    plan: &Plan,
+    table: Uuid,
+    gql: GqlQuery,
+    needs: Vec<Uuid>,
+    residual: Option<Filter>,
+    shape: Shape,
+    order_by: Vec<Order>,
+) -> Plan {
+    let name = catalog()
+        .tables
+        .iter()
+        .find(|candidate| candidate.id == table)
+        .map(|table| table.name.clone())
+        .unwrap();
+    Plan {
+        relations: vec![RelationPlan {
+            relation: Relation { table, alias: name },
+            gql,
+            needs,
+        }],
+        joins: vec![],
+        residual,
+        distinct: false,
+        shape,
+        order_by,
+        bindings: plan.bindings.clone(),
+    }
+}
 
 fn select(sql: &str) -> SelectQuery {
     match compile(&catalog(), sql).unwrap() {
@@ -41,23 +72,26 @@ fn pushable_and_residual_conjuncts_are_divided() {
 
     assert_eq!(
         plan,
-        Plan {
-            gql: GqlQuery::Soup {
+        single(
+            &plan,
+            DEALS,
+            GqlQuery::Soup {
                 table: DEALS,
                 propf: Some(option(STAGE, WON)),
+                key_hint: None,
             },
-            needs: vec![NAME, AMOUNT],
-            residual: Some(Filter::Cmp {
+            vec![NAME, AMOUNT],
+            Some(Filter::Cmp {
                 column: AMOUNT,
                 op: CmpOp::Gt,
                 value: Value::Number(5000.0),
             }),
-            shape: Shape::Rows(vec![NAME, AMOUNT]),
-            order_by: vec![Order {
+            Shape::Rows(vec![NAME, AMOUNT]),
+            vec![Order {
                 key: OrderKey::Column(AMOUNT),
                 dir: Dir::Desc,
             }],
-        }
+        )
     );
 }
 
@@ -70,13 +104,16 @@ fn an_or_with_a_residual_side_pushes_nothing() {
 
     assert_eq!(
         plan,
-        Plan {
-            gql: GqlQuery::Soup {
+        single(
+            &plan,
+            DEALS,
+            GqlQuery::Soup {
                 table: DEALS,
                 propf: None,
+                key_hint: None,
             },
-            needs: vec![NAME, STAGE, AMOUNT],
-            residual: Some(Filter::Or(vec![
+            vec![NAME, STAGE, AMOUNT],
+            Some(Filter::Or(vec![
                 Filter::Cmp {
                     column: STAGE,
                     op: CmpOp::Eq,
@@ -88,9 +125,9 @@ fn an_or_with_a_residual_side_pushes_nothing() {
                     value: Value::Number(5000.0),
                 },
             ])),
-            shape: Shape::Rows(vec![NAME]),
-            order_by: vec![],
-        }
+            Shape::Rows(vec![NAME]),
+            vec![],
+        )
     );
 }
 
@@ -108,8 +145,10 @@ fn in_lists_nested_ors_and_has_push_as_one_expression() {
 
     assert_eq!(
         plan,
-        Plan {
-            gql: GqlQuery::Soup {
+        single(
+            &plan,
+            DEALS,
+            GqlQuery::Soup {
                 table: DEALS,
                 propf: Some(Expr::and(
                     Expr::or(
@@ -118,16 +157,17 @@ fn in_lists_nested_ors_and_has_push_as_one_expression() {
                     ),
                     option(TAGS, VIP),
                 )),
+                key_hint: None,
             },
-            needs: vec![NAME],
-            residual: Some(Filter::Like {
+            vec![NAME],
+            Some(Filter::Like {
                 column: NAME,
                 pattern: "A%".into(),
                 negated: false,
             }),
-            shape: Shape::Rows(vec![NAME]),
-            order_by: vec![],
-        }
+            Shape::Rows(vec![NAME]),
+            vec![],
+        )
     );
 }
 
@@ -143,13 +183,16 @@ fn negations_stay_residual_because_soup_not_keeps_empty_cells() {
 
     assert_eq!(
         plan,
-        Plan {
-            gql: GqlQuery::Soup {
+        single(
+            &plan,
+            DEALS,
+            GqlQuery::Soup {
                 table: DEALS,
                 propf: None,
+                key_hint: None,
             },
-            needs: vec![NAME, STAGE, TAGS, OWNER, DONE],
-            residual: Some(Filter::And(vec![
+            vec![NAME, STAGE, TAGS, OWNER, DONE],
+            Some(Filter::And(vec![
                 Filter::Cmp {
                     column: STAGE,
                     op: CmpOp::Ne,
@@ -171,9 +214,9 @@ fn negations_stay_residual_because_soup_not_keeps_empty_cells() {
                     value: Value::Bool(true),
                 },
             ])),
-            shape: Shape::Rows(vec![NAME]),
-            order_by: vec![],
-        }
+            Shape::Rows(vec![NAME]),
+            vec![],
+        )
     );
 }
 
@@ -188,15 +231,17 @@ fn count_per_select_group_needs_no_rows() {
 
     assert_eq!(
         plan,
-        Plan {
-            gql: GqlQuery::GroupSoup {
+        single(
+            &plan,
+            DEALS,
+            GqlQuery::GroupSoup {
                 table: DEALS,
                 propf: Some(entity(OWNER, "macro|sam@example.com")),
                 group_by: STAGE,
             },
-            needs: vec![],
-            residual: None,
-            shape: Shape::Aggregate {
+            vec![],
+            None,
+            Shape::Aggregate {
                 group_by: Some(STAGE),
                 items: vec![
                     SelectItem::Column(STAGE),
@@ -206,11 +251,11 @@ fn count_per_select_group_needs_no_rows() {
                     },
                 ],
             },
-            order_by: vec![Order {
+            vec![Order {
                 key: OrderKey::Item(1),
                 dir: Dir::Desc,
             }],
-        }
+        )
     );
 }
 
@@ -229,13 +274,16 @@ fn any_other_aggregate_or_a_residual_filter_fetches_rows_and_folds() {
 
     assert_eq!(
         plan,
-        Plan {
-            gql: GqlQuery::Soup {
+        single(
+            &plan,
+            DEALS,
+            GqlQuery::Soup {
                 table: DEALS,
                 propf: Some(Expr::or(option(STAGE, WON), option(STAGE, LEAD))),
+                key_hint: None,
             },
-            needs: vec![OWNER, AMOUNT, CLOSED_AT],
-            residual: Some(Filter::And(vec![
+            vec![OWNER, AMOUNT, CLOSED_AT],
+            Some(Filter::And(vec![
                 Filter::Cmp {
                     column: AMOUNT,
                     op: CmpOp::Gt,
@@ -246,7 +294,7 @@ fn any_other_aggregate_or_a_residual_filter_fetches_rows_and_folds() {
                     negated: true,
                 },
             ])),
-            shape: Shape::Aggregate {
+            Shape::Aggregate {
                 group_by: Some(OWNER),
                 items: vec![
                     SelectItem::Column(OWNER),
@@ -260,7 +308,7 @@ fn any_other_aggregate_or_a_residual_filter_fetches_rows_and_folds() {
                     },
                 ],
             },
-            order_by: vec![
+            vec![
                 Order {
                     key: OrderKey::Item(1),
                     dir: Dir::Desc,
@@ -270,7 +318,7 @@ fn any_other_aggregate_or_a_residual_filter_fetches_rows_and_folds() {
                     dir: Dir::Asc,
                 },
             ],
-        }
+        )
     );
 
     // The same COUNT-only shape over a residual filter must fetch rows too:
@@ -280,13 +328,14 @@ fn any_other_aggregate_or_a_residual_filter_fetches_rows_and_folds() {
         select("SELECT stage, COUNT(*) FROM crm.deals WHERE amount > 5000 GROUP BY stage"),
     );
     assert_eq!(
-        plan.gql,
+        plan.relations[0].gql,
         GqlQuery::Soup {
             table: DEALS,
             propf: None,
+            key_hint: None,
         }
     );
-    assert_eq!(plan.needs, vec![STAGE, AMOUNT]);
+    assert_eq!(plan.relations[0].needs, vec![STAGE, AMOUNT]);
 }
 
 #[test]
@@ -295,16 +344,19 @@ fn a_whole_table_read_pushes_nothing_and_needs_every_column() {
 
     assert_eq!(
         plan,
-        Plan {
-            gql: GqlQuery::Soup {
+        single(
+            &plan,
+            PEOPLE,
+            GqlQuery::Soup {
                 table: PEOPLE,
                 propf: None,
+                key_hint: None,
             },
-            needs: vec![NAME],
-            residual: None,
-            shape: Shape::Rows(vec![NAME]),
-            order_by: vec![],
-        }
+            vec![NAME],
+            None,
+            Shape::Rows(vec![NAME]),
+            vec![],
+        )
     );
 }
 
@@ -316,7 +368,7 @@ fn propf_serializes_to_the_soup_wire_form() {
             "SELECT name FROM crm.deals WHERE stage = 'Won' AND owner = 'macro|sam@example.com'",
         ),
     );
-    let GqlQuery::Soup { propf, .. } = plan.gql else {
+    let GqlQuery::Soup { propf, .. } = plan.relations.into_iter().next().unwrap().gql else {
         panic!("expected a soup query");
     };
 

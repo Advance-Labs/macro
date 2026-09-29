@@ -1,12 +1,15 @@
 //! Stage five: finish a [`Plan`] over the rows (or bins) the server returned.
 //!
-//! Pure: rows in, result rows out. Applies the residual filter, groups and
-//! aggregates or projects, then sorts. SQL semantics where SQL has an
-//! opinion (`NULL` compares false, `COUNT(column)` skips empty cells, `SUM`
-//! of nothing is `NULL`); Macro's where SQL does not (`LIKE` ignores case,
-//! empty cells sort last, select values sort in option order).
+//! Pure: rows in, result rows out. Joins the relations, applies the residual
+//! filter, groups and aggregates or projects, drops repeats for `DISTINCT`,
+//! then sorts. SQL semantics where SQL has an opinion (`NULL` compares
+//! false, `COUNT(column)` skips empty cells, `SUM` of nothing is `NULL`, a
+//! join on a `NULL` matches nothing); Macro's where SQL does not (`LIKE`
+//! ignores case, empty cells sort last, select values sort in option order,
+//! a multi-valued join column matches by membership).
 
 mod aggregate;
+mod join;
 mod predicate;
 mod sort;
 #[cfg(test)]
@@ -41,8 +44,10 @@ pub enum Cell {
     Entities(Vec<String>),
 }
 
-/// One fetched row: the entity id and the cells the plan asked for.
-#[derive(Debug, Clone, PartialEq)]
+/// One fetched row: the entity id and the cells the plan asked for. After
+/// a join, the cells of every matched relation under their keys, with the
+/// `FROM` row's id.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Row {
     /// The row entity id.
     pub id: Uuid,
@@ -51,7 +56,7 @@ pub struct Row {
 }
 
 /// One `groupSoup` bin: the grouped value and how many rows it holds.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Bin {
     /// The group's value; `None` for rows with an empty cell.
     pub key: Option<Cell>,
@@ -63,8 +68,24 @@ pub struct Bin {
 /// select-list order.
 pub type Table = Vec<Vec<Option<Cell>>>;
 
-/// Finish a plan whose query fetched rows.
+/// Finish a plan from the rows fetched for each relation, `FROM` first.
+/// For a row shape, the second value is the `FROM` row behind each result
+/// row, in result order.
+pub fn fold_relations(
+    catalog: &Catalog,
+    plan: &Plan,
+    fetched: Vec<Vec<Row>>,
+) -> (Table, Vec<Uuid>) {
+    fold_joined(catalog, plan, join::join(plan, fetched))
+}
+
+/// Finish a plan over rows that are already joined (or come from one
+/// relation).
 pub fn fold_rows(catalog: &Catalog, plan: &Plan, rows: Vec<Row>) -> Table {
+    fold_joined(catalog, plan, rows).0
+}
+
+fn fold_joined(catalog: &Catalog, plan: &Plan, rows: Vec<Row>) -> (Table, Vec<Uuid>) {
     let rows: Vec<Row> = match &plan.residual {
         Some(filter) => rows
             .into_iter()
@@ -77,21 +98,38 @@ pub fn fold_rows(catalog: &Catalog, plan: &Plan, rows: Vec<Row>) -> Table {
         Shape::Rows(columns) => {
             let mut rows = rows;
             sort::rows(catalog, &mut rows, &plan.order_by);
-            rows.into_iter()
-                .map(|mut row| {
-                    columns
-                        .iter()
-                        .map(|column| row.cells.remove(column))
-                        .collect()
-                })
-                .collect()
+            let projected = rows.into_iter().map(|mut row| {
+                let cells: Vec<Option<Cell>> = columns
+                    .iter()
+                    .map(|column| row.cells.remove(column))
+                    .collect();
+                (row.id, cells)
+            });
+            let (ids, table): (Vec<Uuid>, Table) = if plan.distinct {
+                distinct(projected).unzip()
+            } else {
+                projected.unzip()
+            };
+            (table, ids)
         }
         Shape::Aggregate { group_by, items } => {
             let mut groups = aggregate::groups(rows, *group_by, items);
             sort::groups(catalog, &mut groups, &plan.order_by, *group_by, items);
-            groups.into_iter().map(|group| group.cells).collect()
+            (
+                groups.into_iter().map(|group| group.cells).collect(),
+                Vec::new(),
+            )
         }
     }
+}
+
+/// Keep the first of every set of equal result rows, in order. Cells are
+/// compared by their printed form, which is total where `f64` is not.
+fn distinct(
+    rows: impl Iterator<Item = (Uuid, Vec<Option<Cell>>)>,
+) -> impl Iterator<Item = (Uuid, Vec<Option<Cell>>)> {
+    let mut seen = std::collections::HashSet::new();
+    rows.filter(move |(_, cells)| seen.insert(format!("{cells:?}")))
 }
 
 /// Finish a `GroupSoup` plan from its bins.
