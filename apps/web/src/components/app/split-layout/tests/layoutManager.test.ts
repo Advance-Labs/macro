@@ -1892,20 +1892,32 @@ describe('layoutManager', () => {
     });
 
     it.each(['company', 'contact'])(
-      'keeps a %s discussion link comment for the record page',
+      'upgrades a %s discussion link and scopes its comment to the CRM pane',
       async (type) => {
         const { location, router, dispose } = ingressRouter(
           `/${type}/record-1?comment_id=message-1`
         );
         await router.settled();
-        expect(location.read().pathname).toBe(`/${type}/record-1`);
-        expect(
-          new URLSearchParams(location.read().search).get('comment_id')
-        ).toBe('message-1');
+        expect(location.read().pathname).toBe(`/companies/${type}/record-1`);
+        const search = new URLSearchParams(location.read().search);
+        expect(search.get('comment_id')).toBeNull();
+        expect(search.get('s0.crm-detail.commentId')).toBe('message-1');
         router.dispose();
         dispose();
       }
     );
+
+    it('scopes a shared CRM view to the Customers pane', async () => {
+      const { location, router, dispose } = ingressRouter(
+        '/companies?crmView=encoded-view'
+      );
+      await router.settled();
+      const search = new URLSearchParams(location.read().search);
+      expect(search.get('crmView')).toBeNull();
+      expect(search.get('s0.crm.view')).toBe('encoded-view');
+      router.dispose();
+      dispose();
+    });
 
     it('upgrades renderable legacy details and preserves repeated raw target values', async () => {
       let dispose!: () => void;

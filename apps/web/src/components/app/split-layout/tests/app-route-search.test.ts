@@ -105,6 +105,19 @@ describe('application route mentions', () => {
     }
   });
 
+  it.each([
+    [`companies/company/${mentionId}`, 'company'],
+    [`companies/contact/${mentionId}`, 'contact'],
+  ] as const)('converts a routed CRM %s link', (path, block) => {
+    expect(
+      resolveMention(`https://dev.macro.com/app/${path}?comment_id=message-1`)
+    ).toEqual({
+      id: mentionId,
+      block,
+      params: { comment_id: 'message-1' },
+    });
+  });
+
   it('converts Home PR links with foreign entity IDs', () => {
     const id = 'macro-inc/macro/pull/6303';
     expect(
