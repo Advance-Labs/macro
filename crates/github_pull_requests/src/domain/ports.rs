@@ -21,6 +21,9 @@ pub trait GithubPullRequestService: Send + Sync + 'static {
 
     /// Store a pull request's latest data on every record already stored for it, without
     /// creating any. Returns the updated records.
+    ///
+    /// Attempts every record even when an individual refresh fails. Logs each failed record
+    /// and returns the first error after completing the remaining refreshes.
     fn refresh_pull_request(
         &self,
         pull_request: &EnrichedGithubPullRequest,

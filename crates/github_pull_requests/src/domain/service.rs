@@ -42,6 +42,24 @@ impl<F: ForeignEntityService> GithubPullRequestServiceImpl<F> {
             )
             .await?)
     }
+
+    async fn refresh_record(
+        &self,
+        pull_request: &EnrichedGithubPullRequest,
+        record: &ForeignEntity,
+    ) -> Result<ForeignEntity, GithubPullRequestError> {
+        let metadata = pull_request.foreign_entity_metadata(Some(&record.metadata))?;
+        Ok(self
+            .foreign_entity_service
+            .patch_foreign_entity(
+                record.id,
+                PatchForeignEntity {
+                    metadata: Some(metadata),
+                    ..PatchForeignEntity::default()
+                },
+            )
+            .await?)
+    }
 }
 
 impl<F: ForeignEntityService> GithubPullRequestService for GithubPullRequestServiceImpl<F> {
@@ -115,21 +133,24 @@ impl<F: ForeignEntityService> GithubPullRequestService for GithubPullRequestServ
         pull_request: &EnrichedGithubPullRequest,
     ) -> Result<Vec<ForeignEntity>, GithubPullRequestError> {
         let mut refreshed = Vec::new();
+        let mut first_error = None;
         for record in self.stored_records(&pull_request.github_key).await? {
-            let metadata = pull_request.foreign_entity_metadata(Some(&record.metadata))?;
-            refreshed.push(
-                self.foreign_entity_service
-                    .patch_foreign_entity(
-                        record.id,
-                        PatchForeignEntity {
-                            metadata: Some(metadata),
-                            ..PatchForeignEntity::default()
-                        },
-                    )
-                    .await?,
-            );
+            match self.refresh_record(pull_request, &record).await {
+                Ok(record) => refreshed.push(record),
+                Err(error) => {
+                    tracing::error!(
+                        error=?error,
+                        record_id=%record.id,
+                        "failed to refresh pull request record"
+                    );
+                    first_error.get_or_insert(error);
+                }
+            }
         }
-        Ok(refreshed)
+        match first_error {
+            Some(error) => Err(error),
+            None => Ok(refreshed),
+        }
     }
 }
 

@@ -33,6 +33,7 @@ struct StubState {
     records: Vec<ForeignEntity>,
     creates: Vec<CreateForeignEntity>,
     patches: Vec<(Uuid, PatchForeignEntity)>,
+    failing_patches: Vec<Uuid>,
 }
 
 impl StubForeignEntityService {
@@ -131,6 +132,9 @@ impl ForeignEntityService for StubForeignEntityService {
     ) -> Result<ForeignEntity, ForeignEntityError> {
         let mut state = self.state.lock().unwrap();
         state.patches.push((id, patch.clone()));
+        if state.failing_patches.contains(&id) {
+            return Err(ForeignEntityError::NotFound(id));
+        }
         let record = state
             .records
             .iter_mut()
@@ -323,4 +327,65 @@ async fn refresh_without_stored_records_does_nothing() {
 
     assert!(refreshed.is_empty());
     assert!(foreign_entities.patches().is_empty());
+}
+
+#[tokio::test]
+async fn refresh_attempts_later_records_after_a_patch_failure() {
+    let team_record = stored_record(&team(), serde_json::json!({ "status": "open" }));
+    let user_record = stored_record(&user(), serde_json::json!({ "status": "open" }));
+    let foreign_entities =
+        StubForeignEntityService::with_records(vec![team_record.clone(), user_record.clone()]);
+    foreign_entities.state.lock().unwrap().failing_patches = vec![team_record.id];
+    let service = GithubPullRequestServiceImpl::new(foreign_entities.clone());
+
+    let result = service
+        .refresh_pull_request(&pull_request(GithubPullRequestStatus::Closed))
+        .await;
+
+    assert!(matches!(
+        result,
+        Err(crate::domain::models::GithubPullRequestError::ForeignEntity(
+            ForeignEntityError::NotFound(id)
+        )) if id == team_record.id
+    ));
+    assert_eq!(
+        foreign_entities
+            .patches()
+            .iter()
+            .map(|(id, _)| *id)
+            .collect::<Vec<_>>(),
+        vec![team_record.id, user_record.id]
+    );
+    let records = foreign_entities.records();
+    assert_eq!(records[0].metadata["status"], "open");
+    assert_eq!(records[1].metadata["status"], "closed");
+    assert!(foreign_entities.creates().is_empty());
+}
+
+#[tokio::test]
+async fn refresh_attempts_every_record_when_all_patches_fail() {
+    let records = vec![
+        stored_record(&team(), serde_json::json!({ "status": "open" })),
+        stored_record(&user(), serde_json::json!({ "status": "open" })),
+    ];
+    let ids = records.iter().map(|record| record.id).collect::<Vec<_>>();
+    let foreign_entities = StubForeignEntityService::with_records(records.clone());
+    foreign_entities.state.lock().unwrap().failing_patches = ids.clone();
+    let service = GithubPullRequestServiceImpl::new(foreign_entities.clone());
+
+    assert!(
+        service
+            .refresh_pull_request(&pull_request(GithubPullRequestStatus::Closed))
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        foreign_entities
+            .patches()
+            .iter()
+            .map(|(id, _)| *id)
+            .collect::<Vec<_>>(),
+        ids
+    );
+    assert_eq!(foreign_entities.records(), records);
 }
