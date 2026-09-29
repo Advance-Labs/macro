@@ -18,6 +18,9 @@ export function Contact(props: {
   contactId: string;
   headerToggle?: boolean;
   onOpenCompany?: (companyId: string) => boolean;
+  discussionTargetId?: string;
+  discussionNavigationRequest?: number;
+  buildDiscussionLink?: (messageId: string) => string;
 }) {
   const contactQuery = useContactQuery(() => props.contactId);
   const contact = () => contactQuery.data;
@@ -28,7 +31,12 @@ export function Contact(props: {
       <div class="flex h-full flex-col overflow-y-auto scrollbar-hidden">
         <div class="mx-auto flex w-full max-w-3xl min-w-0 grow flex-col gap-6 px-6 pt-12 pb-12">
           <ContactHeader contact={contact()} />
-          <ContactDiscussionSection contactId={props.contactId} />
+          <ContactDiscussionSection
+            contactId={props.contactId}
+            targetId={props.discussionTargetId}
+            navigationRequest={props.discussionNavigationRequest}
+            buildLink={props.buildDiscussionLink}
+          />
           <ContactEmailsSection contact={contact()} />
         </div>
       </div>

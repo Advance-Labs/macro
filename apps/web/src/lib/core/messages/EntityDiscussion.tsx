@@ -43,17 +43,20 @@ function MobileMessageComposer(props: {
 }
 
 /**
- * An entity's unanchored discussion on the shared message components, opened
- * at the message a `comment_id` link names.
+ * An entity's unanchored discussion on the shared message components. Routed
+ * hosts pass an explicit target; legacy blocks read `comment_id` from params.
  */
 export function EntityDiscussion(props: {
   parent: MessageParent;
   canWrite: boolean;
   /** Where copied message links open: the entity's block and id. */
   link: { type: string; id: string };
-  label?: string;
   /** Override the URL target; null leaves this discussion untargeted. */
   targetId?: string | null;
+  /** Bumps when an already-open route is aimed at the same target again. */
+  navigationRequest?: number;
+  buildLink?: (messageId: string) => string;
+  label?: string;
   /**
    * On touch devices, move the composer to the floating accessory region and
    * show the conversation only once it has roots, as the editor page does.
@@ -76,7 +79,7 @@ export function EntityDiscussion(props: {
     () => {
       const target = commentId();
       if (!target) return undefined;
-      const count = commentNavigationCount();
+      const count = props.navigationRequest ?? commentNavigationCount();
       return {
         commentId: target,
         key: count === 0 ? `url:${target}` : `navigation:${count}`,
@@ -111,6 +114,7 @@ export function EntityDiscussion(props: {
           onClearTarget={() => setClearedKey(scrollRequest()?.key)}
           label={props.label}
           buildLink={(message) =>
+            props.buildLink?.(message.id) ??
             buildSimpleEntityUrl(props.link, {
               [COMMENT_LINK_PARAM]: message.id,
             })

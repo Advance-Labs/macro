@@ -26,6 +26,9 @@ export function Company(props: {
   headerToggle?: boolean;
   onHidden?: () => void;
   onOpenContact?: (contact: CompanyContact) => void;
+  discussionTargetId?: string;
+  discussionNavigationRequest?: number;
+  buildDiscussionLink?: (messageId: string) => string;
 }) {
   const listsFlag = useFeatureFlag(enableCrmLists);
   const { company, contacts } = useCompanyQuery(() => props.companyId);
@@ -35,7 +38,12 @@ export function Company(props: {
       <div class="flex h-full flex-col overflow-y-auto scrollbar-hidden">
         <div class="mx-auto flex w-full max-w-3xl min-w-0 grow flex-col gap-6 px-6 pt-12 pb-12">
           <CompanyHeader company={company()} />
-          <CompanyDiscussionSection companyId={props.companyId} />
+          <CompanyDiscussionSection
+            companyId={props.companyId}
+            targetId={props.discussionTargetId}
+            navigationRequest={props.discussionNavigationRequest}
+            buildLink={props.buildDiscussionLink}
+          />
           <CompanyEmailsSection company={company()} />
         </div>
       </div>

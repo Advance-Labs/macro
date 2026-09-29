@@ -13,6 +13,7 @@
 import { toast } from '@core/component/Toast/Toast';
 import { useUserId } from '@core/context/user';
 import { throwOnErr } from '@core/util/result';
+import { getWebOrigin } from '@core/util/webOrigin';
 import { storageServiceClient } from '@service-storage/client';
 import type { View } from '@service-storage/generated/schemas/view';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/solid-query';
@@ -71,9 +72,9 @@ export function decodeCrmViewParam(param: string): CrmViewConfig | undefined {
   }
 }
 
-/** Share link for a view config: /companies?crmView=<encoded>. */
+/** Share link for a view config: /app/companies?crmView=<encoded>. */
 export function buildCrmViewShareUrl(config: CrmViewConfig): string {
-  const url = new URL('/companies', window.location.origin);
+  const url = new URL('/app/companies', getWebOrigin());
   url.searchParams.set(CRM_VIEW_URL_PARAM, encodeCrmViewParam(config));
   return url.toString();
 }

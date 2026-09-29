@@ -6,6 +6,13 @@ import {
 } from '@app/features/calendar-view/calendar-url';
 import { CALENDAR_VIEW_ID } from '@app/features/calendar-view/types';
 import { channelsSearch } from '@app/features/channels-view/channels-route';
+import { CRM_VIEW_URL_PARAM } from '@app/features/companies/crm/saved-views';
+import {
+  crmCompanyPath,
+  crmContactPath,
+  crmDetailSearch,
+  crmViewSearch,
+} from '@app/features/companies/crm-route';
 import {
   driveDocumentFromContent,
   drivePath,
@@ -20,12 +27,14 @@ import {
   type SplitRouterMiddleware,
   type SplitRouterMiddlewareContext,
   type SplitRouterMiddlewareResult,
+  type SplitSearchState,
 } from '@app/lib/split-router';
 import { replaceSplitSearchParams } from '@app/lib/split-router/search';
 import { URL_PARAMS as CALL_URL_PARAMS } from '@block-call/constants';
 import { URL_PARAMS as CHANNEL_URL_PARAMS } from '@block-channel/constants';
 import { URL_PARAMS as MD_URL_PARAMS } from '@block-md/constants';
 import { URL_PARAMS as PDF_URL_PARAMS } from '@block-pdf/constants';
+import { COMMENT_LINK_PARAM } from '@core/messages/comment-link';
 import { match } from 'ts-pattern';
 import { appSplitRoutes } from './app-routes';
 import { decodeLegacyPair } from './legacy-route';
@@ -85,6 +94,8 @@ function redirectLegacyRoutes(
         ? `/${id}`
         : undefined
     )
+    .with({ type: 'company' }, ({ id }) => crmCompanyPath(id))
+    .with({ type: 'contact' }, ({ id }) => crmContactPath(id))
     .when(
       () => isTouch,
       () => undefined
@@ -107,6 +118,60 @@ function redirectLegacyRoutes(
   return redirect(path);
 }
 
+type LegacySearchMapping = {
+  namespace: string;
+  fields: ReadonlyArray<readonly [string, string]>;
+};
+
+function crmLegacySearchMappings(
+  rootId: string | undefined,
+  leafId: string | undefined
+): LegacySearchMapping[] {
+  const mappings: LegacySearchMapping[] = [];
+  if (rootId === 'view-companies') {
+    mappings.push({
+      namespace: crmViewSearch.namespace,
+      fields: [[CRM_VIEW_URL_PARAM, 'view']],
+    });
+  }
+  if (
+    leafId === 'companies-company' ||
+    leafId === 'companies-company-contact' ||
+    leafId === 'companies-contact'
+  ) {
+    mappings.push({
+      namespace: crmDetailSearch.namespace,
+      fields: [[COMMENT_LINK_PARAM, 'commentId']],
+    });
+  }
+  return mappings;
+}
+
+function mergeLegacySearch(
+  currentSearch: SplitSearchState | undefined,
+  raw: URLSearchParams,
+  mappings: LegacySearchMapping[]
+): SplitSearchState | undefined {
+  const search = { ...currentSearch };
+  let changed = false;
+  for (const { namespace, fields } of mappings) {
+    const current = search[namespace] ?? {};
+    const additions: SerializedSearchParams = {};
+
+    for (const [legacyKey, field] of fields) {
+      // Explicit canonical values, including empty ones, take precedence.
+      if (Object.hasOwn(current, field)) continue;
+      const values = raw.getAll(legacyKey);
+      if (values.length) additions[field] = values;
+    }
+
+    if (!Object.keys(additions).length) continue;
+    changed = true;
+    search[namespace] = { ...current, ...additions };
+  }
+  return changed ? search : undefined;
+}
+
 /** On external entry, copy legacy detail query keys into the destination pane.
  * Keep repeated values and let explicit pane-local values take precedence. */
 function migrateLegacySearch({
@@ -120,6 +185,7 @@ function migrateLegacySearch({
 
   if (!externalSearch) return;
 
+  const rootId = to.location.route.matches[0]?.id;
   const leafId = to.location.route.matches.at(-1)?.id;
   const homeChannel =
     leafId === 'home-channel' ||
@@ -150,7 +216,7 @@ function migrateLegacySearch({
       }
     : undefined;
 
-  const mapping = match(leafId)
+  const detailMapping = match(leafId)
     .with('mail-thread', () => ({
       namespace: EMAIL_DETAIL_SEARCH_NAMESPACE,
       fields: [[EMAIL_URL_PARAMS.messageId, 'messageId']] as const,
@@ -179,29 +245,13 @@ function migrateLegacySearch({
     }))
     .otherwise(() => undefined);
 
-  if (!mapping) return;
-
-  const { namespace, fields } = mapping;
-
   const raw = new URLSearchParams(externalSearch);
-  const current = to.location.search?.[namespace] ?? {};
-  const additions: SerializedSearchParams = {};
+  const mappings = crmLegacySearchMappings(rootId, leafId);
+  if (detailMapping) mappings.push(detailMapping);
+  if (!mappings.length) return;
 
-  for (const [legacyKey, field] of fields) {
-    // Explicit canonical values, including empty ones, take precedence.
-    if (Object.hasOwn(current, field)) continue;
-
-    const values = raw.getAll(legacyKey);
-
-    if (values.length) additions[field] = values;
-  }
-
-  if (!Object.keys(additions).length) return;
-
-  const search = {
-    ...to.location.search,
-    [namespace]: { ...current, ...additions },
-  };
+  const search = mergeLegacySearch(to.location.search, raw, mappings);
+  if (!search) return;
 
   const query = new URLSearchParams();
 

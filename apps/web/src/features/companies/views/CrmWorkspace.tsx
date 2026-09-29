@@ -19,7 +19,14 @@ import {
 } from '@app/features/next-soup/soup-view/views/companies/CompanyViewsMenu';
 import { useApplyCrmView } from '@app/features/next-soup/soup-view/views/companies/use-apply-crm-view';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
+import {
+  createSearchParams,
+  useNavigate,
+  useParams,
+} from '@app/lib/split-router';
 import { usePreference } from '@app/preferences/use-preference';
+import { createPreviewSelectionGuard } from '@components/app/createPreviewSelectionGuard';
+import type { PreviewPanelSelection } from '@components/app/previewTarget';
 import { useSplitPanelOrThrow } from '@components/app/split-layout/layoutUtils';
 import { enableCrmLists } from '@core/constant/featureFlags';
 import { useSettingsState } from '@core/constant/SettingsState';
@@ -32,7 +39,16 @@ import { useCrmLists } from '@queries/crm/lists';
 import { useQuickAccessCrmCompaniesQuery } from '@queries/soup/quick-access-crm-companies';
 import { useCurrentTeamQuery } from '@queries/team/teams';
 import { Button, Dropdown, Tooltip } from '@ui';
-import { createSignal, type JSX, onMount, Show, Suspense } from 'solid-js';
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  type JSX,
+  on,
+  onMount,
+  Show,
+  Suspense,
+} from 'solid-js';
 import { openCreateCompanyModal } from '../CreateCompanyModal';
 import { CrmListDialog } from '../components/CrmListDialog';
 import { CrmSidebar } from '../components/CrmSidebar';
@@ -42,6 +58,12 @@ import {
   usePersonalCrmViews,
   useTeamCrmViews,
 } from '../crm/saved-views';
+import {
+  crmDetailSearch,
+  crmViewSearch,
+  crmViewSearchCodec,
+} from '../crm-route';
+import { companiesRoute, companyContactRoute, companyRoute } from '../route';
 import { CrmCompanyDetail } from './CrmCompanyDetail';
 import { CrmExport } from './CrmExport';
 import { CrmImport } from './CrmImport';
@@ -162,19 +184,45 @@ export function CrmWorkspace(props: {
   }) => JSX.Element;
 }) {
   const view = useSoupView();
-  const panel = useSplitPanelOrThrow();
-  const [selectedCompany, setSelectedCompany] = createSignal<{
-    id: string;
-    name: string;
+  const routeParams = useParams<{
+    companyId?: string;
+    contactId?: string;
   }>();
-  const closeCompany = () => setSelectedCompany(undefined);
+  const routeNavigate = useNavigate();
+  const [routeViewSearch] = createSearchParams(crmViewSearch);
+  const selectPreview = createPreviewSelectionGuard();
+  const rootSearch = () => ({
+    [crmViewSearch.namespace]: crmViewSearchCodec.serialize(routeViewSearch),
+    [crmDetailSearch.namespace]: undefined,
+  });
+  const closeDetail = (replace = false) =>
+    routeNavigate(
+      { route: companiesRoute, params: {} },
+      { replace, search: rootSearch() }
+    );
   const openCompany = (entity: EntityData) => {
     if (!isCrmCompanyEntity(entity)) return false;
+    if (!selectPreview.canSelect(entity)) return true;
     view.soup.focus.set(entity.id);
-    panel.handle.captureEntryState();
-    setSelectedCompany({ id: entity.id, name: entity.name });
+    routeNavigate(
+      { route: companyRoute, params: { companyId: entity.id } },
+      { search: rootSearch() }
+    );
     return true;
   };
+  const selectedRecord = createMemo<PreviewPanelSelection | undefined>(() =>
+    routeParams.contactId
+      ? { type: 'crm_contact', id: routeParams.contactId }
+      : routeParams.companyId
+        ? { type: 'crm_company', id: routeParams.companyId }
+        : undefined
+  );
+  createEffect(
+    on(selectedRecord, (record) => {
+      if (selectPreview(record)) return;
+      closeDetail(true);
+    })
+  );
   const apply = useApplyCrmView();
   const userId = useUserId();
   const { openSettings } = useSettingsState();
@@ -215,9 +263,9 @@ export function CrmWorkspace(props: {
     savedViews().find((v) => v.id === active())?.name ??
     CRM_VIEWS.find((v) => v.id === active())?.label ??
     'Companies';
-  const navigate = (id: string) => {
+  const selectView = (id: string) => {
     if (!listsFlag().enabled && id.startsWith('list:')) id = 'active';
-    closeCompany();
+    closeDetail();
     const saved = savedViews().find((v) => v.id === id);
     if (saved) {
       apply({ ...saved.config, viewMode: view.viewMode() });
@@ -260,14 +308,14 @@ export function CrmWorkspace(props: {
   };
   onMount(() => {
     if (!listsFlag().enabled && active().startsWith('list:'))
-      navigate('active');
+      selectView('active');
   });
   const sidebar = () => (
     <CrmSidebar
       active={active()}
       viewMode={view.viewMode()}
       onViewModeChange={(mode) => {
-        closeCompany();
+        closeDetail();
         view.setViewMode(mode);
       }}
       lists={lists.lists().map((list) => ({
@@ -280,7 +328,7 @@ export function CrmWorkspace(props: {
       listsLoading={lists.query.isLoading}
       listsError={lists.query.isError}
       canCreateList={!!teamId()}
-      onNavigate={navigate}
+      onNavigate={selectView}
       onCreate={openCreateCompanyModal}
       onNewList={() => setEditing({ name: '', companyIds: [] })}
       onImport={() => setImporting(true)}
@@ -299,12 +347,101 @@ export function CrmWorkspace(props: {
         </Suspense>
       </ViewShell.Aside>
       <ViewShell.Main>
-        <Show when={selectedCompany()}>
-          {(company) => (
+        <Show
+          keyed
+          when={selectedRecord()}
+          fallback={
+            <>
+              <Show when={!isTouchDevice()}>
+                <div class="flex h-12 shrink-0 items-center gap-3 border-b border-edge-muted px-4">
+                  <NavigationToggle onExpand={() => setCollapsed(false)}>
+                    <Suspense>{sidebar()}</Suspense>
+                  </NavigationToggle>
+                  <h1
+                    class="flex h-7 min-w-0 flex-1 items-center px-1 text-sm font-semibold tracking-[-0.03em]"
+                    title={title()}
+                  >
+                    <span class="truncate">{title()}</span>
+                  </h1>
+                </div>
+                <ViewShell.Header>
+                  <div class="flex min-w-0 items-center justify-between gap-3">
+                    <CrmSearchBar />
+                    <div class="ml-auto flex shrink-0 items-center gap-2 [&_button]:h-8 [&_button]:min-w-8 [&_button]:rounded-lg [&_button>svg]:size-4!">
+                      <SoupViewContextSort />
+                      <SoupViewContextGroup hideLabel />
+                      <UnifiedFilterDropdown hideLabel />
+                      <CompanyDisplayMenu />
+                      <Suspense>
+                        <CompanyViewsMenu hideLabel />
+                      </Suspense>
+                      <Show when={listsFlag().enabled && activeList()}>
+                        {(list) => (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              setEditing({
+                                id: list().id,
+                                name: list().name,
+                                companyIds: [...list().config.companyIds],
+                              })
+                            }
+                          >
+                            Edit list
+                          </Button>
+                        )}
+                      </Show>
+                    </div>
+                  </div>
+                </ViewShell.Header>
+                <Suspense>
+                  <CrmFilterChips onReset={() => selectView(active())} />
+                </Suspense>
+              </Show>
+              <div class="min-h-0 min-w-0 flex-1">
+                {props.children({
+                  onOpenEntity: openCompany,
+                  mobileHeaderLeading: isTouchDevice() ? (
+                    <NavigationToggle onExpand={() => setCollapsed(false)}>
+                      <Suspense>{sidebar()}</Suspense>
+                    </NavigationToggle>
+                  ) : undefined,
+                })}
+              </div>
+            </>
+          }
+        >
+          {() => (
             <CrmCompanyDetail
-              company={company()}
+              companyId={routeParams.companyId}
+              contactId={routeParams.contactId}
               viewName={title()}
-              onClose={closeCompany}
+              onClose={closeDetail}
+              onOpenContact={(contact) => {
+                const companyId = routeParams.companyId;
+                if (!companyId) return;
+                if (
+                  !selectPreview.canSelect({
+                    type: 'crm_contact',
+                    id: contact.id,
+                  })
+                )
+                  return;
+                routeNavigate(
+                  {
+                    route: companyContactRoute,
+                    params: { companyId, contactId: contact.id },
+                  },
+                  { search: rootSearch() }
+                );
+              }}
+              onOpenCompany={(companyId) => {
+                routeNavigate(
+                  { route: companyRoute, params: { companyId } },
+                  { search: rootSearch() }
+                );
+              }}
               navigation={
                 <NavigationToggle onExpand={() => setCollapsed(false)}>
                   <Suspense>{sidebar()}</Suspense>
@@ -312,65 +449,6 @@ export function CrmWorkspace(props: {
               }
             />
           )}
-        </Show>
-        <Show when={!selectedCompany()}>
-          <Show when={!isTouchDevice()}>
-            <div class="flex h-12 shrink-0 items-center gap-3 border-b border-edge-muted px-4">
-              <NavigationToggle onExpand={() => setCollapsed(false)}>
-                <Suspense>{sidebar()}</Suspense>
-              </NavigationToggle>
-              <h1
-                class="flex h-7 min-w-0 flex-1 items-center px-1 text-sm font-semibold tracking-[-0.03em]"
-                title={title()}
-              >
-                <span class="truncate">{title()}</span>
-              </h1>
-            </div>
-            <ViewShell.Header>
-              <div class="flex min-w-0 items-center justify-between gap-3">
-                <CrmSearchBar />
-                <div class="ml-auto flex shrink-0 items-center gap-2 [&_button]:h-8 [&_button]:min-w-8 [&_button]:rounded-lg [&_button>svg]:size-4!">
-                  <SoupViewContextSort />
-                  <SoupViewContextGroup hideLabel />
-                  <UnifiedFilterDropdown hideLabel />
-                  <CompanyDisplayMenu />
-                  <Suspense>
-                    <CompanyViewsMenu hideLabel />
-                  </Suspense>
-                  <Show when={listsFlag().enabled && activeList()}>
-                    {(list) => (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          setEditing({
-                            id: list().id,
-                            name: list().name,
-                            companyIds: [...list().config.companyIds],
-                          })
-                        }
-                      >
-                        Edit list
-                      </Button>
-                    )}
-                  </Show>
-                </div>
-              </div>
-            </ViewShell.Header>
-            <Suspense>
-              <CrmFilterChips onReset={() => navigate(active())} />
-            </Suspense>
-          </Show>
-          <div class="min-h-0 min-w-0 flex-1">
-            {props.children({
-              onOpenEntity: isTouchDevice() ? undefined : openCompany,
-              mobileHeaderLeading: isTouchDevice() ? (
-                <NavigationToggle onExpand={() => setCollapsed(false)}>
-                  <Suspense>{sidebar()}</Suspense>
-                </NavigationToggle>
-              ) : undefined,
-            })}
-          </div>
         </Show>
       </ViewShell.Main>
       <Show when={listsFlag().enabled && editing()}>
@@ -390,13 +468,13 @@ export function CrmWorkspace(props: {
                   name,
                   companyIds,
                 });
-                navigate(`list:${id}`);
+                selectView(`list:${id}`);
               }}
               onDelete={
                 initial().id
                   ? async () => {
                       await lists.remove.mutateAsync(initial().id!);
-                      navigate('active');
+                      selectView('active');
                     }
                   : undefined
               }

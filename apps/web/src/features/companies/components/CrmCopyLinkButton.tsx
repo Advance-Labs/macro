@@ -1,7 +1,7 @@
 import { toast } from '@core/component/Toast/Toast';
-import { buildSimpleEntityUrl } from '@core/util/url';
 import LinkIcon from '@phosphor/link.svg';
 import { Button } from '@ui';
+import { buildCrmCompanyUrl, buildCrmContactUrl } from '../crm-route';
 
 export function CrmCopyLinkButton(props: {
   id: string;
@@ -10,7 +10,9 @@ export function CrmCopyLinkButton(props: {
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(
-        buildSimpleEntityUrl({ id: props.id, type: props.type })
+        props.type === 'company'
+          ? buildCrmCompanyUrl(props.id)
+          : buildCrmContactUrl(props.id)
       );
       toast.success('Link copied to clipboard');
     } catch {
