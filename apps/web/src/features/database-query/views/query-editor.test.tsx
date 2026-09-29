@@ -361,13 +361,13 @@ describe('question editor', () => {
       {
         id: 'tickets',
         name: 'Tickets',
-        sqlName: '_macro_table_tickets',
+        sqlName: '"Tickets"',
         columns: [],
       },
       {
         id: 'customers',
         name: 'Customers',
-        sqlName: '_macro_table_customers',
+        sqlName: '"Customers"',
         columns: [],
       },
     ];
@@ -377,7 +377,7 @@ describe('question editor', () => {
       tables,
     };
     const generate = vi.fn(async () => ({
-      sql: 'SELECT COUNT(*) FROM "_macro_table_tickets"',
+      sql: 'SELECT COUNT(*) FROM "Tickets"',
       explanation: 'Counts tickets.',
       source,
     }));

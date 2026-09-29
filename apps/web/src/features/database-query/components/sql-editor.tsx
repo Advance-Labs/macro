@@ -1,10 +1,17 @@
 import { macroThemeExtension } from '@block-code/component/cmTheme';
-import { SQLite, sql } from '@codemirror/lang-sql';
+import { SQLDialect, sql } from '@codemirror/lang-sql';
 import { Compartment, EditorState, Prec } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { basicSetup } from 'codemirror';
 import { createEffect, onCleanup, onMount } from 'solid-js';
-import type { QuerySchema } from '../core/query';
+import { type QuerySchema, unquoteIdentifier } from '../core/query';
+
+/** The Macro Databases subset (`crates/database_sql`): its keywords and nothing more. */
+const macroDialect = SQLDialect.define({
+  keywords:
+    'select distinct from join on where and or not in has is null like group by order asc desc limit offset true false count sum avg min max',
+  identifierQuotes: '"',
+});
 
 /** CodeMirror owns editing; the host owns query state and execution. */
 export function SqlEditor(props: {
@@ -25,13 +32,13 @@ export function SqlEditor(props: {
   ];
   const completion = () =>
     sql({
-      dialect: SQLite,
+      dialect: macroDialect,
       schema: Object.fromEntries(
         props.schema.tables.map((table) => [
-          table.sqlName,
+          unquoteIdentifier(table.sqlName),
           [
             table.primaryKey ?? 'row_id',
-            ...table.columns.map((column) => column.sqlName),
+            ...table.columns.map((column) => unquoteIdentifier(column.sqlName)),
           ],
         ])
       ),

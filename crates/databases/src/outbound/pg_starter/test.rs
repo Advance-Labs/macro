@@ -69,10 +69,11 @@ async fn concurrent_starter_requests_create_one_complete_editable_example(pool: 
     assert_eq!(columns.len(), 2);
     let rows = data.row_refs(table).await.unwrap();
     assert_eq!(rows.len(), 3);
-    let cells = crate::outbound::pg_cell_store::PgCellStore::new(PropertiesPgRepo::new(pool.clone()))
-        .cells(&rows.iter().map(|row| row.id).collect::<Vec<_>>())
-        .await
-        .unwrap();
+    let cells =
+        crate::outbound::pg_cell_store::PgCellStore::new(PropertiesPgRepo::new(pool.clone()))
+            .cells(&rows.iter().map(|row| row.id).collect::<Vec<_>>())
+            .await
+            .unwrap();
     assert!(rows.iter().all(|row| cells[&row.id].len() == 2));
     let views = PgViewStorage::new(pool.clone())
         .get_views_for_user(USER)

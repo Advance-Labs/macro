@@ -4,8 +4,8 @@ use macro_user_id::user_id::MacroUserIdStr;
 use sqlx::PgPool;
 
 use super::*;
+use crate::domain::models::ColumnBinding;
 use crate::domain::models::Viewer;
-use crate::domain::models::{ColumnBinding, ColumnConfig};
 
 mod rename_column;
 mod sharing;
@@ -350,7 +350,10 @@ async fn rows_are_minted_in_order_and_deleted_by_their_table(pool: PgPool) {
         refs.iter().map(|row| row.id).collect::<Vec<_>>(),
         vec![first[0].id, first[1].id, second[0].id]
     );
-    assert!(refs.windows(2).all(|pair| pair[0].position < pair[1].position));
+    assert!(
+        refs.windows(2)
+            .all(|pair| pair[0].position < pair[1].position)
+    );
     assert_eq!(repo.row_table(first[0].id).await.unwrap(), Some(table.id));
 
     let other = macro_uuid::generate_uuid_v7();

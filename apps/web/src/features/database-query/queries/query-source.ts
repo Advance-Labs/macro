@@ -8,34 +8,21 @@ export function toQuerySchema(
   detail: DatabaseDetail,
   activeTableId?: string
 ): QuerySchema {
+  // The one platform table the dialect exposes: `macro.people`, every
+  // person the viewer can see, keyed by entity id so entity columns join to it.
   const platformTables: QuerySchema['tables'] = [
     {
       id: 'platform:people',
       name: 'People in your teams',
-      sqlName: 'people',
+      sqlName: 'macro.people',
       primaryKey: 'id',
-      columns: ['name', 'email'].map((name) => ({
+      columns: ['id', 'name', 'email'].map((name) => ({
         name,
-        sqlName: name,
+        sqlName: `"${name}"`,
         type: 'String',
         multiple: false,
         options: [],
       })),
-    },
-    {
-      id: 'platform:documents',
-      name: 'Documents you can access',
-      sqlName: 'documents',
-      primaryKey: 'id',
-      columns: ['title', 'owner_id', 'created_at', 'updated_at'].map(
-        (name) => ({
-          name,
-          sqlName: name,
-          type: 'String',
-          multiple: false,
-          options: [],
-        })
-      ),
     },
   ];
   return {
@@ -47,7 +34,7 @@ export function toQuerySchema(
       ...detail.tables.map((table) => ({
         id: table.table.id,
         name: table.table.name,
-        sqlName: table.read_sql_name ?? table.sql_name,
+        sqlName: table.sql_name,
         primaryKey: 'row_id',
         columns: table.columns.map((column) => ({
           name:
@@ -63,10 +50,7 @@ export function toQuerySchema(
               ? {
                   databaseId: column.column.config.database_id,
                   tableId: column.column.config.table_id,
-                  junctionSqlName: column.junction_sql_name ?? undefined,
-                  readJunctionSqlName:
-                    column.read_junction_sql_name ?? undefined,
-                  writable: column.junction_writable === true,
+                  writable: column.writable,
                 }
               : undefined,
           options: column.definition.property_options.map((option) =>

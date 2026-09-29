@@ -11,7 +11,6 @@ import DownloadIcon from '@phosphor/download-simple.svg';
 import PencilIcon from '@phosphor/pencil-line.svg';
 import TrashIcon from '@phosphor/trash-simple.svg';
 import UploadIcon from '@phosphor/upload-simple.svg';
-import { downloadDatabaseSnapshot } from '@queries/storage/databases';
 import type {
   DatabaseDetail,
   DatabaseTableDetail,
@@ -78,27 +77,18 @@ export function DatabasePageActions(props: {
       if (fileInput) fileInput.value = '';
     }
   }
-  async function exportFile(format: 'csv' | 'sqlite') {
-    if (exporting()) return;
-    setExporting(true);
+  async function exportCsv() {
     const table = props.table;
+    if (exporting() || !table) return;
+    setExporting(true);
     try {
-      if (format === 'csv') {
-        if (!table) return;
-        downloadFile(
-          await exportDatabaseTableCsv(table),
-          `${table.table.name}.csv`
-        );
-      } else
-        downloadFile(
-          await downloadDatabaseSnapshot(props.detail.database.id),
-          `${props.detail.database.name}.sqlite`
-        );
+      downloadFile(
+        await exportDatabaseTableCsv(table),
+        `${table.table.name}.csv`
+      );
     } catch (error) {
       toast.failure(
-        error instanceof Error
-          ? error.message
-          : 'Could not export the database.'
+        error instanceof Error ? error.message : 'Could not export this table.'
       );
     } finally {
       setExporting(false);
@@ -185,15 +175,9 @@ export function DatabasePageActions(props: {
               <Dropdown.SubContent class="w-56">
                 <Dropdown.Item
                   disabled={!props.table || exporting()}
-                  onSelect={() => void exportFile('csv')}
+                  onSelect={() => void exportCsv()}
                 >
                   Current table as CSV
-                </Dropdown.Item>
-                <Dropdown.Item
-                  disabled={exporting()}
-                  onSelect={() => void exportFile('sqlite')}
-                >
-                  Database as SQLite
                 </Dropdown.Item>
               </Dropdown.SubContent>
             </Dropdown.Sub>

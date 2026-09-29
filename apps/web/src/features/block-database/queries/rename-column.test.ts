@@ -70,7 +70,6 @@ const detail: DatabaseDetail = {
         version: 5,
       },
       sql_name: 'tasks',
-      read_sql_name: 'stable_tasks',
       columns: [column],
     },
   ],

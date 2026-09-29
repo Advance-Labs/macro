@@ -36,8 +36,6 @@ export type QuerySchema = {
       relation?: {
         databaseId: string;
         tableId: string;
-        junctionSqlName?: string;
-        readJunctionSqlName?: string;
         writable: boolean;
       };
     }[];
@@ -88,8 +86,15 @@ export class QueryOutcomeUnknownError extends Error {
   }
 }
 
-export function quoteIdentifier(value: string): string {
-  return `"${value.replaceAll('"', '""')}"`;
+/**
+ * A schema name as it appears in the SQL text — `sqlName` arrives from the
+ * API already double-quoted, e.g. `"Guest List"` — reduced to the plain name
+ * completion offers and results carry.
+ */
+export function unquoteIdentifier(sqlName: string): string {
+  return sqlName.startsWith('"') && sqlName.endsWith('"')
+    ? sqlName.slice(1, -1).replaceAll('""', '"')
+    : sqlName;
 }
 
 export function queryFocusTable(schema: QuerySchema) {
@@ -98,31 +103,36 @@ export function queryFocusTable(schema: QuerySchema) {
     : schema.tables[0];
 }
 
+/**
+ * Ready-made questions in the Macro Databases dialect: names are used as the
+ * schema spells them, select items carry no aliases, and a result column is
+ * named by the column's display name or the aggregate text (`COUNT(*)`).
+ */
 export function queryStarters(schema: QuerySchema) {
   const table = queryFocusTable(schema);
   if (!table) return [];
-  const name = quoteIdentifier(table.sqlName);
+  const name = table.sqlName;
   const starters = [
     {
       label: 'Count records',
       prompt: `How many records are in ${table.name}?`,
-      sql: `SELECT COUNT(*) AS "Total records" FROM ${name}`,
+      sql: `SELECT COUNT(*) FROM ${name}`,
     },
     {
       label: 'Preview records',
       prompt: `Show me the records in ${table.name}`,
-      sql: `SELECT ${table.columns.length ? table.columns.map((column) => quoteIdentifier(column.sqlName)).join(', ') : quoteIdentifier(table.primaryKey ?? 'row_id')} FROM ${name} LIMIT 50`,
+      sql: `SELECT * FROM ${name} LIMIT 50`,
     },
   ];
   const group = table.columns.find(
     (column) => column.options.length && !column.multiple
   );
   if (group) {
-    const column = quoteIdentifier(group.sqlName);
+    const column = group.sqlName;
     starters.push({
       label: `Count by ${group.name.toLowerCase()}`,
       prompt: `How many records have each ${group.name.toLowerCase()}?`,
-      sql: `SELECT ${column}, COUNT(*) AS "Records" FROM ${name} GROUP BY ${column} ORDER BY COUNT(*) DESC`,
+      sql: `SELECT ${column}, COUNT(*) FROM ${name} GROUP BY ${column} ORDER BY COUNT(*) DESC`,
     });
   }
   return starters;
@@ -153,14 +163,14 @@ export function looksLikeReadQuery(sql: string): boolean {
   const start = sql
     .replace(/^(?:\s|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)+/, '')
     .trimStart();
-  return /^(SELECT|WITH|EXPLAIN)\b/i.test(start);
+  return /^SELECT\b/i.test(start);
 }
 
 export function queryErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  if (/no such table/i.test(message))
+  if (/no such table|unknown table/i.test(message))
     return 'This table is no longer available. Choose a database and update the question.';
-  if (/no such column/i.test(message))
+  if (/no such column|unknown column/i.test(message))
     return 'A property in this question has changed. Try asking again with its current name.';
   if (/read.?only|not authorized|forbidden/i.test(message))
     return 'Questions can only read data you have access to. Edit records in the table or board.';

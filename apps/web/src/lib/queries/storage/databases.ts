@@ -214,11 +214,6 @@ export async function addDatabaseColumnOptions(params: {
   return updated;
 }
 
-/** Fetch a database's SQLite snapshot as a blob. */
-export function downloadDatabaseSnapshot(databaseId: string): Promise<Blob> {
-  return storageServiceClient.databases.downloadSqlite({ id: databaseId });
-}
-
 /**
  * Create a database and return its id.
  *

@@ -13,10 +13,10 @@ import type { Table } from './table';
 export interface TableDetail {
   /** Columns in display order. */
   columns: ColumnDetail[];
-  /** Immutable read-only name for persisted queries; unaffected by renames
-or the other tables a viewer can access. */
+  /** The same name; kept for clients that still distinguish reads. */
   read_sql_name: string;
-  /** Name to use in SQL (`FROM guests`). */
+  /** The name SQL refers to the table by: its display name, quoted when it
+needs it (`FROM "Table 1"`), optionally qualified by the database's. */
   sql_name: string;
   /** The table. */
   table: Table;

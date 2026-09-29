@@ -1276,9 +1276,9 @@ export type ReadThreadReadContent =
  *
  * Pick the type from what the values actually are, not from how they were typed at you: "Going / Maybe / Declined" is a `select`, not `text`; "$1,200" is a `number`; "Aug 13" is a `date`. Use `text` only when the values really are free-form.
  *
- * - `isMultiSelect: true` makes the column hold several values at once. In SQL it reads as a JSON array and also gets a companion `table__column(row_id, linked_id)` junction table; `col HAS 'x'` tests membership.
- * - `linkToTableId` makes it a **link column** pointing at another table, so rows on one side reference rows on the other. Link columns are many-to-many and junction-backed; join through the junction rather than comparing the JSON array. The response's relation metadata gives the target and exact junction names. Write edges through that junction, never the projected column. QueryDatabase can insert a row and its relationship edges atomically in one call.
- * - `entity` columns hold references to Macro things (people, documents). Their values are typed ids, and joining them against the `people` or `documents` magic table is how you get names.
+ * - `isMultiSelect: true` makes the column hold several values at once. In SQL it is written as a list (`['a', 'b']`) and `col HAS 'x'` tests membership.
+ * - `linkToTableId` makes it a **relation column** pointing at another table, so rows on one side reference rows on the other by row id. Write it as a list of row ids and join through it (`JOIN guests g ON i.guest = g.row_id`). The response's relation metadata gives the target table.
+ * - `entity` columns hold references to Macro things (people, documents). Their values are typed ids such as `macro|sam@example.com`.
  *
  * Select and tag columns take their options as **explicit schema**: pass every label the column should accept in `options`. SQL only accepts those labels — a select column created with no options accepts nothing — and more can be added later with AddColumnOptions.
  *
@@ -1294,12 +1294,12 @@ export interface AddColumn {
    */
   tableId: string;
   /**
-   * Display name of the column, as the user would head it — e.g. "Dietary Needs". The SQL name is derived from it.
+   * Display name of the column, as the user would head it — e.g. "Dietary Needs". SQL refers to it by this name, quoted.
    */
   name: string;
   dataType: ColumnType;
   /**
-   * True if a cell can hold several values at once. Defaults to false. Multi-valued cells read as JSON arrays in SQL and get a junction table; test membership with `col HAS 'x'`.
+   * True if a cell can hold several values at once. Defaults to false. Multi-valued cells are written as lists in SQL; test membership with `col HAS 'x'`.
    */
   isMultiSelect?: boolean;
   /**
@@ -1354,11 +1354,7 @@ export interface ToolDatabaseSchema {
    */
   tables: ToolTable[];
   /**
-   * The platform tables this SQL can also join against.
-   */
-  magicTables: string;
-  /**
-   * How the SQL dialect differs from plain SQLite.
+   * The SQL subset, in full.
    */
   sqlGuide: string;
 }
@@ -1371,13 +1367,9 @@ export interface ToolTable {
    */
   id: string;
   /**
-   * The name to use in SQL (`FROM guests`).
+   * The name to use in SQL, quoted (`FROM "Guests"`).
    */
   sqlName: string;
-  /**
-   * Immutable read-only SQL name; use this for stored queries and charts.
-   */
-  readSqlName: string;
   /**
    * Version at which this schema was described. A new SELECT supplies the
    * read version for conditional row edits.
@@ -1415,12 +1407,12 @@ export interface ToolColumn {
   dataType: ColumnType;
   /**
    * Required entity kind for an entity column, such as `USER` or `DOCUMENT`.
-   * Resolve ids from the matching magic table; never invent an id.
+   * Never invent an id.
    */
   specificEntityType?: string | null;
   /**
-   * Whether the column holds several values. Multi-valued columns are JSON
-   * arrays in SQL, with a companion `table__column` junction table.
+   * Whether the column holds several values. Multi-valued cells are written
+   * as lists (`['a', 'b']`) and tested with `HAS`.
    */
   isMultiSelect: boolean;
   /**
@@ -1438,7 +1430,7 @@ export interface ToolColumn {
   relation?: ToolRelation | null;
 }
 /**
- * The target and exact SQL entry points for a database-row relationship.
+ * The target of a database-row relationship.
  */
 export interface ToolRelation {
   /**
@@ -1446,21 +1438,9 @@ export interface ToolRelation {
    */
   databaseId: string;
   /**
-   * Table whose row_id values are stored by this relation.
+   * Table whose row ids this relation stores.
    */
   tableId: string;
-  /**
-   * Exact current junction name for authorized link edits.
-   */
-  junctionSqlName?: string | null;
-  /**
-   * Stable junction alias for saved reads, if available.
-   */
-  readJunctionSqlName?: string | null;
-  /**
-   * Whether this viewer may insert/delete relationship edges.
-   */
-  writable: boolean;
 }
 /**
  * Add allowed labels to a select, select_number, or tag column. A select column's options are explicit schema: SQL accepts exactly the labels the column carries and rejects everything else, so a value that does not exist yet has to be added here before it can be written.
@@ -3689,34 +3669,24 @@ export interface DeleteTagResponse {
   message: string;
 }
 /**
- * Read one database's schema: tables with current writable `sqlName`, stable read-only `readSqlName`, and version, and each table's columns with their SQL names, value types, whether they hold multiple values, and the exact labels a select column accepts, plus specific entity kinds. Use table/column `name` only to match the user's language; use exact quoted SQL identifiers when executing.
+ * Read one database's schema: its tables with their quoted `sqlName` and version, and each table's columns with their SQL names, value types, whether they hold multiple values, the exact labels a select column accepts, and the target table of a relation column.
  *
  * **Call this before writing SQL for a database you have not already described in this conversation.** Guessing table or column names is the single most common way a query fails, and the schema is small. Get the `databaseId` from ListDatabases.
  *
- * ## The magic tables
- *
- * Magic tables expose Macro's own data to SQL, scoped to what the user can see:
- *
- * - `documents(id, title, owner_id, created_at, updated_at)`
- * - `people(id, name, email)`
- *
- * They are read-only, and they are always in scope — join a user table's entity column against `people.id` or `documents.id` to resolve ids to names.
- *
  * ## Writing SQL against it
  *
- * SQLite dialect, with Macro's own rules on top:
+ * A small SQL subset, compiled by Macro rather than run by a SQL engine. What is listed here is everything there is:
  *
- * - **`row_id` is the primary key** of every user table. It is minted by the server; never insert one yourself.
- * - **Multi-valued columns are JSON arrays**, and each one also has a companion junction table `table__column(row_id, linked_id)` for flat joins.
- * - **Relation columns point to database rows, not Macro entities.** Their `relation` metadata identifies the target database/table and exact junction names. Join source.row_id to junction.row_id and junction.linked_id to target.row_id; never compare display names or a JSON array to a target name. Use readJunctionSqlName for saved reads, or json_each of the relation column if no stable junction alias is available. Insert/delete edges through junctionSqlName only when relation.writable; the projected column is read-only.
- * - **`col HAS 'x'`** tests membership in a multi-valued column. It is the one piece of sugar; everything else is plain SQLite.
- * - **Select columns take their option labels as text** (`status = 'Going'`), never option ids. The options are explicit schema: only the labels the column carries are accepted, and new ones are added with AddColumnOptions.
- * - **Entity columns hold actual Macro ids.** Resolve people through `people.id` (often `macro|email`) and documents through `documents.id`; never invent ids or replace them with names. Respect each column's `specificEntityType`.
- * - **Writes are plain `INSERT` / `UPDATE` / `DELETE`** against the user table and are validated against the column schema; an unknown select option or a wrong type is rejected by the statement, not silently coerced.
- * - **Use the exact identifiers returned by DescribeDatabase.** Quote SQL table and column identifiers with double quotes (escape an embedded quote by doubling it). A name containing a dot is one quoted identifier, not a schema qualifier. Display labels can differ from SQL names after a rename.
- * - **Write to `sqlName`; read through `readSqlName`.** The stable read-only alias survives table renames and name collisions and is the right identifier for saved queries/charts. INSERT/UPDATE/DELETE must use the table's current `sqlName`.
- * - **Schema uses tools, not SQL DDL.** CreateDatabase, CreateTable, RenameTable, AddColumn, AddColumnOptions, and SaveDatabaseView change structure/presentation. CREATE TABLE, ALTER TABLE, and CREATE VIEW are not supported in QueryDatabase.
- * - Tables you only hold view access on are read-only, and magic tables always are.
+ * - **Reads:** `SELECT [DISTINCT] items FROM [database.]table [alias] [JOIN [database.]table [alias] ON a.col = b.col ...] [WHERE cond] [GROUP BY col] [ORDER BY col|agg|position [ASC|DESC], ...] [LIMIT n [OFFSET m]]`. Items are `*`, column names, or `COUNT(*)`, `COUNT(col)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`. No expressions, no aliases on items, no HAVING, no subqueries, no functions beyond those five.
+ * - **Conditions:** `col = | != | < | <= | > | >= literal`, `col [NOT] IN ('a', 'b')`, `col [NOT] LIKE 'pat%'` (case-insensitive), `col IS [NOT] NULL`, `col [NOT] HAS 'x'` (membership in a multi-valued column), combined with AND, OR and parentheses. Literals are `'text'`, numbers, TRUE/FALSE, NULL; dates are `'2026-08-13'` or an ISO date-time.
+ * - **Writes:** `INSERT INTO table (col, ...) VALUES (...), (...)` or `INSERT INTO table DEFAULT VALUES`; `UPDATE table SET col = value, ... WHERE row_id = '<id>'`; `DELETE FROM table WHERE row_id = '<id>'`. An UPDATE or DELETE names exactly one row by its id: read the ids first. A multi-valued cell is written as a list: `tags = ['Urgent', 'Backend']`; `NULL` clears a cell.
+ * - **`row_id`** is every row's id. It comes back as the first column of a row-shaped SELECT and in `insertedRowIds` after an INSERT; never invent one.
+ * - **Select columns take their option labels as text** (`status = 'Going'`), never option ids. Only the labels the column carries are accepted; add new ones with AddColumnOptions.
+ * - **Relation columns hold the ids of rows in another table.** Write them as a list of row ids (`guests = ['<row id>']`), test them with `HAS '<row id>'`, and join through them: `FROM invites i JOIN guests g ON i.guest = g.row_id`. Never compare a relation to a name.
+ * - **Entity columns hold Macro ids** such as `macro|sam@example.com` for a person. Respect each column's `specificEntityType`; never invent an id or replace it with a name.
+ * - **Names are display names.** Quote a table or column name with double quotes when it has spaces or punctuation (`FROM "Guest List" WHERE "Due Date" < '2026-09-01'`); names match case-insensitively, and a miss suggests the closest name. A table may be qualified by its database's name (`FROM "Offsite"."Guests"`).
+ * - **Schema uses tools, not SQL DDL.** CreateDatabase, CreateTable, RenameTable, AddColumn, AddColumnOptions and SaveDatabaseView change structure and presentation.
+ * - Tables you only hold view access on are read-only.
  */
 export interface DescribeDatabase {
   /**
@@ -4612,9 +4582,9 @@ export interface ToolTableSummary {
    */
   name: string;
   /**
-   * Stable read-only SQL identifier. DescribeDatabase returns the writable name.
+   * The name to use in SQL, quoted.
    */
-  readSqlName: string;
+  sqlName: string;
 }
 /**
  * Browse the user's Macro workspace to see recent items they have access to. Returns Macro documents, AI conversations, projects, emails, chat channels, call records, and foreign entities. Use this to get an overview of what the user has been working on or to find items by type. Start here for activity-summary questions such as "what happened today", "what's going on", "catch me up", or "what happened in standup today"; apply precise time, type, channel, or mailbox filters when the user gives that scope. For Macro task requests such as "list my tasks", "tasks assigned to me", or "tasks I completed yesterday", prefer this tool over external task trackers such as Linear unless the user explicitly asks for Linear. Macro tasks are document items with df subtype {"l":{"dst":"task"}} and includeTypes ["document"]. Filter task Status and Assignees through propf using entity_type TASK: Status property 00000001-0000-0000-0000-000000000002, Completed option 00000001-0000-0000-0002-000000000004, Assignees property 00000001-0000-0000-0000-000000000001. The current user's assignee entity id is their Macro user id, usually macro|<their email address from context>. For "completed yesterday", combine status Completed, assigned-to-me, and a df updatedAt yesterday window with ua gte/lt ISO timestamps. Returned documents, AI chats, projects, emails, and call records include the tags visible to the user as {label, scope} pairs. To filter by tag (e.g. "my items tagged bug-report"), pass the tag labels in the tags argument — ListTags shows which tags exist. For finding specific items by name or content, use the search tool instead.
@@ -5392,45 +5362,35 @@ export interface NameSearch {
   tagsMatch?: TagMatch;
 }
 /**
- * Run SQL against the current user's Macro databases — the only way to read or change their rows. SELECT to answer a question, INSERT/UPDATE/DELETE to change data; several statements run in one transaction.
+ * Run SQL against the current user's Macro databases — the only way to read or change their rows. SELECT to answer a question, INSERT/UPDATE/DELETE to change data. One statement per call.
  *
- * **Every table the user can see is already in scope, across all of their databases.** There is no connecting or selecting a database first, and no `databaseId` argument: the statement is executed as the user, against a scratch database materialized from exactly what they are allowed to read. A table they cannot see simply does not exist, so a query can never leak somebody else's data — and a table they only have view access to is read-only.
+ * **Every table the user can see is already in scope, across all of their databases.** There is no connecting or selecting a database first, and no `databaseId` argument: the statement runs as the user against exactly what they are allowed to read. A table they cannot see simply does not exist, so a query can never leak somebody else's data — and a table they only have view access to is read-only.
  *
- * **Call DescribeDatabase first unless you already know the exact table and column names.** Names are derived from what the user typed, so "Guest List" is not necessarily `guest_list`, and a failed guess costs a whole round trip. If a statement does fail, the error is SQLite's own ("no such column: guests.statuz") — read it, fix the name, retry.
- *
- * ## The magic tables
- *
- * Magic tables expose Macro's own data to SQL, scoped to what the user can see:
- *
- * - `documents(id, title, owner_id, created_at, updated_at)`
- * - `people(id, name, email)`
- *
- * They are read-only, and they are always in scope — join a user table's entity column against `people.id` or `documents.id` to resolve ids to names.
+ * **Call DescribeDatabase first unless you already know the exact table and column names.** Names are the display names the user typed, so quote the ones with spaces. If a statement fails, the error names what was wrong and suggests the closest name — read it, fix it, retry.
  *
  * ## Dialect
  *
- * SQLite dialect, with Macro's own rules on top:
+ * A small SQL subset, compiled by Macro rather than run by a SQL engine. What is listed here is everything there is:
  *
- * - **`row_id` is the primary key** of every user table. It is minted by the server; never insert one yourself.
- * - **Multi-valued columns are JSON arrays**, and each one also has a companion junction table `table__column(row_id, linked_id)` for flat joins.
- * - **Relation columns point to database rows, not Macro entities.** Their `relation` metadata identifies the target database/table and exact junction names. Join source.row_id to junction.row_id and junction.linked_id to target.row_id; never compare display names or a JSON array to a target name. Use readJunctionSqlName for saved reads, or json_each of the relation column if no stable junction alias is available. Insert/delete edges through junctionSqlName only when relation.writable; the projected column is read-only.
- * - **`col HAS 'x'`** tests membership in a multi-valued column. It is the one piece of sugar; everything else is plain SQLite.
- * - **Select columns take their option labels as text** (`status = 'Going'`), never option ids. The options are explicit schema: only the labels the column carries are accepted, and new ones are added with AddColumnOptions.
- * - **Entity columns hold actual Macro ids.** Resolve people through `people.id` (often `macro|email`) and documents through `documents.id`; never invent ids or replace them with names. Respect each column's `specificEntityType`.
- * - **Writes are plain `INSERT` / `UPDATE` / `DELETE`** against the user table and are validated against the column schema; an unknown select option or a wrong type is rejected by the statement, not silently coerced.
- * - **Use the exact identifiers returned by DescribeDatabase.** Quote SQL table and column identifiers with double quotes (escape an embedded quote by doubling it). A name containing a dot is one quoted identifier, not a schema qualifier. Display labels can differ from SQL names after a rename.
- * - **Write to `sqlName`; read through `readSqlName`.** The stable read-only alias survives table renames and name collisions and is the right identifier for saved queries/charts. INSERT/UPDATE/DELETE must use the table's current `sqlName`.
- * - **Schema uses tools, not SQL DDL.** CreateDatabase, CreateTable, RenameTable, AddColumn, AddColumnOptions, and SaveDatabaseView change structure/presentation. CREATE TABLE, ALTER TABLE, and CREATE VIEW are not supported in QueryDatabase.
- * - Tables you only hold view access on are read-only, and magic tables always are.
+ * - **Reads:** `SELECT [DISTINCT] items FROM [database.]table [alias] [JOIN [database.]table [alias] ON a.col = b.col ...] [WHERE cond] [GROUP BY col] [ORDER BY col|agg|position [ASC|DESC], ...] [LIMIT n [OFFSET m]]`. Items are `*`, column names, or `COUNT(*)`, `COUNT(col)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`. No expressions, no aliases on items, no HAVING, no subqueries, no functions beyond those five.
+ * - **Conditions:** `col = | != | < | <= | > | >= literal`, `col [NOT] IN ('a', 'b')`, `col [NOT] LIKE 'pat%'` (case-insensitive), `col IS [NOT] NULL`, `col [NOT] HAS 'x'` (membership in a multi-valued column), combined with AND, OR and parentheses. Literals are `'text'`, numbers, TRUE/FALSE, NULL; dates are `'2026-08-13'` or an ISO date-time.
+ * - **Writes:** `INSERT INTO table (col, ...) VALUES (...), (...)` or `INSERT INTO table DEFAULT VALUES`; `UPDATE table SET col = value, ... WHERE row_id = '<id>'`; `DELETE FROM table WHERE row_id = '<id>'`. An UPDATE or DELETE names exactly one row by its id: read the ids first. A multi-valued cell is written as a list: `tags = ['Urgent', 'Backend']`; `NULL` clears a cell.
+ * - **`row_id`** is every row's id. It comes back as the first column of a row-shaped SELECT and in `insertedRowIds` after an INSERT; never invent one.
+ * - **Select columns take their option labels as text** (`status = 'Going'`), never option ids. Only the labels the column carries are accepted; add new ones with AddColumnOptions.
+ * - **Relation columns hold the ids of rows in another table.** Write them as a list of row ids (`guests = ['<row id>']`), test them with `HAS '<row id>'`, and join through them: `FROM invites i JOIN guests g ON i.guest = g.row_id`. Never compare a relation to a name.
+ * - **Entity columns hold Macro ids** such as `macro|sam@example.com` for a person. Respect each column's `specificEntityType`; never invent an id or replace it with a name.
+ * - **Names are display names.** Quote a table or column name with double quotes when it has spaces or punctuation (`FROM "Guest List" WHERE "Due Date" < '2026-09-01'`); names match case-insensitively, and a miss suggests the closest name. A table may be qualified by its database's name (`FROM "Offsite"."Guests"`).
+ * - **Schema uses tools, not SQL DDL.** CreateDatabase, CreateTable, RenameTable, AddColumn, AddColumnOptions and SaveDatabaseView change structure and presentation.
+ * - Tables you only hold view access on are read-only.
  *
- * For a request to change records, first read the relevant rows, then use their returned `readVersions` as `baseVersions` to guard the tables being written. Versions for tables the edit only reads are not checked. A conflict means re-read and reconsider the edit. After changing rows, SELECT the affected records to verify the actual result. On a connection failure, inspect before retrying an INSERT.
- * To create a row and link it atomically, INSERT the scalar cells (omit row_id), then INSERT into the relation's exact junctionSqlName (row_id,linked_id) using SELECT row_id from the source table WHERE row_id LIKE 'new:%', all in the same call. A batch with multiple new rows must narrow that SELECT to the intended row. Newly inserted target rows may be selected the same way from their target table. These temporary new: values are scoped to this execution; never save or reuse them in later calls. Only insertedRowIds contains the server's canonical new row IDs. Re-read after commit for final relationship projections.
+ * To change records, first SELECT the rows you mean (the first column is `row_id`), then UPDATE or DELETE each one by its id. After changing rows, SELECT the affected records to verify the actual result. On a connection failure, inspect before retrying an INSERT.
+ * To create a row and relate it in one go, INSERT it with the relation column set to the target row ids (`INSERT INTO invites (guest, status) VALUES (['<guest row id>'], 'Sent')`); the new row's id is in `insertedRowIds`.
  *
- * Results come back as columns and rows. A column whose values are entity ids carries an `entityType`, which is how the app renders it as a clickable chip rather than as raw text — prefer selecting an entity column over stringifying it. Writes report `changesApplied` and, for inserts, the `insertedRowIds` the server minted. SELECT results inside a write batch may still contain temporary new: IDs; use insertedRowIds or a new SELECT after commit.
+ * Results come back as columns and rows. A column whose values are entity ids carries an `entityType`, which is how the app renders it as a clickable chip rather than as raw text — prefer selecting an entity column over stringifying it. Writes report `changesApplied` and, for inserts, the `insertedRowIds` the server minted.
  */
 export interface QueryDatabase {
   /**
-   * The SQL to run, as one string. Several statements are allowed and run in a single transaction — either all of the writes apply or none do. Use the SQL names DescribeDatabase reported, not the names the user says.
+   * The statement to run, as one string. Use the table and column names DescribeDatabase reported, quoted when they have spaces.
    */
   sql: string;
   /**
@@ -6626,7 +6586,7 @@ export interface RenameDocumentResponse {
  *
  * Use it to give a new database's starter table ("Table 1") the name the user asked for instead of creating an extra tab next to it, or when the user asks to rename a tab.
  *
- * Requires edit access to the database. The table's writable `sqlName` follows its new display name, so use the refreshed schema in the response for later writes; its `readSqlName` never changes. If `database` is null, the rename still succeeded; call DescribeDatabase using databaseId before continuing.
+ * Requires edit access to the database. The table's `sqlName` is its display name, so use the refreshed schema in the response for later statements. If `database` is null, the rename still succeeded; call DescribeDatabase using databaseId before continuing.
  */
 export interface RenameTable {
   /**

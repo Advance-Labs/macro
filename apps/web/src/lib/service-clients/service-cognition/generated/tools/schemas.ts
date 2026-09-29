@@ -76,7 +76,6 @@ export const AddColumnResponse = z.object({
           z.object({
             id: z.string().uuid(),
             sqlName: z.string(),
-            readSqlName: z.string(),
             version: z.number().int(),
             name: z.string(),
             writable: z.boolean(),
@@ -123,13 +122,6 @@ export const AddColumnResponse = z.object({
                     z.object({
                       databaseId: z.string().uuid(),
                       tableId: z.string().uuid(),
-                      junctionSqlName: z
-                        .union([z.string(), z.null()])
-                        .optional(),
-                      readJunctionSqlName: z
-                        .union([z.string(), z.null()])
-                        .optional(),
-                      writable: z.boolean(),
                     }),
                     z.null(),
                   ])
@@ -138,7 +130,6 @@ export const AddColumnResponse = z.object({
             ),
           })
         ),
-        magicTables: z.string(),
         sqlGuide: z.string(),
       }),
       z.null(),
@@ -191,7 +182,6 @@ export const AddColumnOptionsResponse = z.object({
           z.object({
             id: z.string().uuid(),
             sqlName: z.string(),
-            readSqlName: z.string(),
             version: z.number().int(),
             name: z.string(),
             writable: z.boolean(),
@@ -238,13 +228,6 @@ export const AddColumnOptionsResponse = z.object({
                     z.object({
                       databaseId: z.string().uuid(),
                       tableId: z.string().uuid(),
-                      junctionSqlName: z
-                        .union([z.string(), z.null()])
-                        .optional(),
-                      readJunctionSqlName: z
-                        .union([z.string(), z.null()])
-                        .optional(),
-                      writable: z.boolean(),
                     }),
                     z.null(),
                   ])
@@ -253,7 +236,6 @@ export const AddColumnOptionsResponse = z.object({
             ),
           })
         ),
-        magicTables: z.string(),
         sqlGuide: z.string(),
       }),
       z.null(),
@@ -1960,7 +1942,6 @@ export const CreateDatabaseResponse = z.object({
           z.object({
             id: z.string().uuid(),
             sqlName: z.string(),
-            readSqlName: z.string(),
             version: z.number().int(),
             name: z.string(),
             writable: z.boolean(),
@@ -2007,13 +1988,6 @@ export const CreateDatabaseResponse = z.object({
                     z.object({
                       databaseId: z.string().uuid(),
                       tableId: z.string().uuid(),
-                      junctionSqlName: z
-                        .union([z.string(), z.null()])
-                        .optional(),
-                      readJunctionSqlName: z
-                        .union([z.string(), z.null()])
-                        .optional(),
-                      writable: z.boolean(),
                     }),
                     z.null(),
                   ])
@@ -2022,7 +1996,6 @@ export const CreateDatabaseResponse = z.object({
             ),
           })
         ),
-        magicTables: z.string(),
         sqlGuide: z.string(),
       }),
       z.null(),
@@ -2301,7 +2274,6 @@ export const CreateTableResponse = z.object({
           z.object({
             id: z.string().uuid(),
             sqlName: z.string(),
-            readSqlName: z.string(),
             version: z.number().int(),
             name: z.string(),
             writable: z.boolean(),
@@ -2348,13 +2320,6 @@ export const CreateTableResponse = z.object({
                     z.object({
                       databaseId: z.string().uuid(),
                       tableId: z.string().uuid(),
-                      junctionSqlName: z
-                        .union([z.string(), z.null()])
-                        .optional(),
-                      readJunctionSqlName: z
-                        .union([z.string(), z.null()])
-                        .optional(),
-                      writable: z.boolean(),
                     }),
                     z.null(),
                   ])
@@ -2363,7 +2328,6 @@ export const CreateTableResponse = z.object({
             ),
           })
         ),
-        magicTables: z.string(),
         sqlGuide: z.string(),
       }),
       z.null(),
@@ -2560,7 +2524,6 @@ export const ToolDatabaseSchema = z.object({
     z.object({
       id: z.string().uuid(),
       sqlName: z.string(),
-      readSqlName: z.string(),
       version: z.number().int(),
       name: z.string(),
       writable: z.boolean(),
@@ -2607,9 +2570,6 @@ export const ToolDatabaseSchema = z.object({
               z.object({
                 databaseId: z.string().uuid(),
                 tableId: z.string().uuid(),
-                junctionSqlName: z.union([z.string(), z.null()]).optional(),
-                readJunctionSqlName: z.union([z.string(), z.null()]).optional(),
-                writable: z.boolean(),
               }),
               z.null(),
             ])
@@ -2618,7 +2578,6 @@ export const ToolDatabaseSchema = z.object({
       ),
     })
   ),
-  magicTables: z.string(),
   sqlGuide: z.string(),
 });
 
@@ -3492,7 +3451,7 @@ export const ListDatabasesResponse = z.object({
         z.object({
           id: z.string().uuid(),
           name: z.string(),
-          readSqlName: z.string(),
+          sqlName: z.string(),
         })
       ),
     })
@@ -6002,7 +5961,6 @@ export const RenameTableResponse = z.object({
           z.object({
             id: z.string().uuid(),
             sqlName: z.string(),
-            readSqlName: z.string(),
             version: z.number().int(),
             name: z.string(),
             writable: z.boolean(),
@@ -6049,13 +6007,6 @@ export const RenameTableResponse = z.object({
                     z.object({
                       databaseId: z.string().uuid(),
                       tableId: z.string().uuid(),
-                      junctionSqlName: z
-                        .union([z.string(), z.null()])
-                        .optional(),
-                      readJunctionSqlName: z
-                        .union([z.string(), z.null()])
-                        .optional(),
-                      writable: z.boolean(),
                     }),
                     z.null(),
                   ])
@@ -6064,7 +6015,6 @@ export const RenameTableResponse = z.object({
             ),
           })
         ),
-        magicTables: z.string(),
         sqlGuide: z.string(),
       }),
       z.null(),

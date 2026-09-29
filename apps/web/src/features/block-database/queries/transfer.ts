@@ -6,7 +6,7 @@ import type {
   SqlValue,
 } from '@service-storage/databases';
 import { encodeDatabaseCsv } from '../core/csv';
-import { exportPageStatement } from '../sql';
+import { exportPageStatement, resultColumnName } from '../sql';
 
 /** Request IDs survive a transport error; retrying resolves the original import. */
 export async function importDatabaseTable(
@@ -40,12 +40,10 @@ export async function exportDatabaseTableCsv(
   );
   for (let offset = 0; ; offset += 5000) {
     const outcome = await querySql(
-      exportPageStatement(table.read_sql_name ?? table.sql_name, offset, 5000)
+      exportPageStatement(table.sql_name, offset, 5000)
     );
     if (outcome.truncated_tables.length)
-      throw new Error(
-        'This table is too large for CSV export. Download SQLite instead.'
-      );
+      throw new Error('This table is too large for CSV export.');
     const current = outcome.read_versions[table.table.id];
     if (current === undefined || (version !== undefined && version !== current))
       throw new Error('The table changed during export. Please try again.');
@@ -53,7 +51,9 @@ export async function exportDatabaseTableCsv(
     const result = outcome.results[0];
     if (!result) throw new Error('The table could not be exported.');
     const indexes = columns.map((column) =>
-      result.columns.findIndex((field) => field.name === column.sql_name)
+      result.columns.findIndex(
+        (field) => field.name === resultColumnName(column)
+      )
     );
     if (indexes.some((index) => index < 0))
       throw new Error(

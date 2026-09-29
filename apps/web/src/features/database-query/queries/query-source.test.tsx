@@ -18,7 +18,7 @@ const outcome: ExecOutcome = {
 };
 afterEach(() => vi.useRealTimers());
 describe('query schema', () => {
-  it('uses immutable read aliases while preserving human table names and older-server support', () => {
+  it('carries the pre-quoted SQL names and relation metadata into starters and the prompt', () => {
     const detail: DatabaseDetail = {
       database: {
         id: 'db',
@@ -37,7 +37,7 @@ describe('query schema', () => {
             position: 'a',
             version: 1,
           },
-          sql_name: 'projects',
+          sql_name: '"Projects"',
           columns: [],
         },
         {
@@ -48,8 +48,7 @@ describe('query schema', () => {
             position: 'b',
             version: 1,
           },
-          sql_name: 'contacts',
-          read_sql_name: 'stable_contacts_uuid',
+          sql_name: '"Contacts"',
           columns: [],
         },
       ],
@@ -62,11 +61,8 @@ describe('query schema', () => {
         position: 'a',
         config: { kind: 'link', database_id: 'db', table_id: 'legacy' },
       },
-      sql_name: 'projects',
+      sql_name: '"Projects"',
       writable: false,
-      junction_sql_name: '_macro_storage_junction_collision',
-      read_junction_sql_name: 'stable_contacts_uuid__projects',
-      junction_writable: true,
       definition: {
         definition: {
           id: 'relation-definition',
@@ -85,21 +81,23 @@ describe('query schema', () => {
     });
     const schema = toQuerySchema(detail, 'contacts');
     expect(queryFocusTable(schema)?.name).toBe('Contacts');
-    expect(queryFocusTable(schema)?.sqlName).toBe('stable_contacts_uuid');
+    expect(queryFocusTable(schema)?.sqlName).toBe('"Contacts"');
     expect(queryStarters(schema)[0]).toMatchObject({
       prompt: 'How many records are in Contacts?',
-      sql: 'SELECT COUNT(*) AS "Total records" FROM "stable_contacts_uuid"',
+      sql: 'SELECT COUNT(*) FROM "Contacts"',
     });
-    expect(schema.tables[0].sqlName).toBe('projects');
-    expect(detail.tables[1].sql_name).toBe('contacts');
+    expect(schema.tables[0].sqlName).toBe('"Projects"');
+    expect(schema.tables.map((table) => table.sqlName)).toEqual([
+      '"Projects"',
+      '"Contacts"',
+      'macro.people',
+    ]);
     expect(schema.tables[1].columns[0]).toMatchObject({
       multiple: true,
       relation: {
         databaseId: 'db',
         tableId: 'legacy',
-        junctionSqlName: '_macro_storage_junction_collision',
-        readJunctionSqlName: 'stable_contacts_uuid__projects',
-        writable: true,
+        writable: false,
       },
     });
     const request = databaseCompletionRequest(
@@ -110,10 +108,13 @@ describe('query schema', () => {
       JSON.parse(request.prompt).schema.tables[1].columns[0].relation
     ).toEqual(schema.tables[1].columns[0].relation);
     expect(request.additional_instructions).toContain(
-      'junction.linked_id = target.row_id'
+      'FROM invites i JOIN guests g ON i.guest = g.row_id'
     );
     expect(request.additional_instructions).toContain(
-      'Never join by matching display names'
+      'never compare a relation to a name, join by matching display names'
+    );
+    expect(request.additional_instructions).not.toMatch(
+      /json_each|strftime|junction|readSqlName|SQLite/
     );
   });
 });

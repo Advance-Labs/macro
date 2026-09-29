@@ -44,7 +44,6 @@ const detail: DatabaseDetail = {
     {
       table: original,
       sql_name: 'guests',
-      read_sql_name: 'stable_guests_uuid',
       columns: [],
     },
     {

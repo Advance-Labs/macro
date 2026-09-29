@@ -89,20 +89,23 @@ async fn imports_are_atomic_and_retries_do_not_duplicate_rows(pool: PgPool) {
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn failed_import_rolls_back_table_columns_and_all_rows(pool: PgPool) {
-    let (repo, existing, definition) = fixture(&pool).await;
+    let (repo, existing, _) = fixture(&pool).await;
     let request = ImportTable {
         request_id: macro_uuid::generate_uuid_v7(),
         name: "Rejected import".into(),
         columns: vec!["Name".into()],
-        rows: vec![vec!["valid".into()], vec!["invalid\0postgres text".into()]],
+        rows: vec![vec!["valid".into()], vec!["also valid".into()]],
     };
+    // A definition that does not exist: the column insert violates its
+    // foreign key after the table row is already in the transaction.
+    let missing_definition = macro_uuid::generate_uuid_v7();
     assert!(
         repo.import_table(
             existing.database_id,
             &viewer(),
             &request,
             "request",
-            &[definition]
+            &[missing_definition]
         )
         .await
         .is_err()

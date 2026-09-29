@@ -11,7 +11,7 @@ import { useQueries } from '@tanstack/solid-query';
 import { type Accessor, createMemo } from 'solid-js';
 import type { DatabaseRelationSource } from '../context/relation-source';
 import type { DatabaseRelatedRow } from '../core/database-relations';
-import { ROW_ID_COLUMN, selectAllStatement } from '../sql';
+import { ROW_ID_COLUMN, resultColumnName, selectAllStatement } from '../sql';
 
 export function relatedRows(
   table: DatabaseTableDetail,
@@ -34,7 +34,7 @@ export function relatedRows(
     (column) => column.name === ROW_ID_COLUMN
   );
   const titleIndex = result.columns.findIndex(
-    (column) => column.name === title?.sql_name
+    (column) => !!title && column.name === resultColumnName(title)
   );
   return result.rows.flatMap((row) =>
     typeof row[rowIndex] === 'string'
@@ -91,10 +91,7 @@ export function createDatabaseRelations(props: {
       return {
         queryKey: databasesKeys.rows(target.databaseId, target.tableId)
           .queryKey,
-        queryFn: () =>
-          props.exec({
-            sql: selectAllStatement(table!.read_sql_name ?? table!.sql_name),
-          }),
+        queryFn: () => props.exec({ sql: selectAllStatement(table!.sql_name) }),
         enabled: !!table,
         throwOnError: false,
       };

@@ -13,11 +13,11 @@ const schema: QuerySchema = {
     {
       id: 'table',
       name: 'Projects',
-      sqlName: 'my"projects',
+      sqlName: '"my""projects"',
       columns: [
         {
           name: 'Status',
-          sqlName: 'status',
+          sqlName: '"Status"',
           type: 'SelectString',
           options: ['In progress', 'Done'],
           multiple: false,
@@ -41,21 +41,25 @@ describe('database questions', () => {
         {
           id: 'people',
           name: 'People',
-          sqlName: 'team_people',
+          sqlName: '"People"',
           columns: [],
         },
       ],
     };
     const starters = queryStarters(focused);
     expect(starters[0].prompt).toBe('How many records are in People?');
-    expect(starters[0].sql).toContain('FROM "team_people"');
-    expect(starters[1].sql).toContain('FROM "team_people"');
+    expect(starters[0].sql).toBe('SELECT COUNT(*) FROM "People"');
+    expect(starters[1].sql).toBe('SELECT * FROM "People" LIMIT 50');
     expect(focused.tables).toHaveLength(2);
   });
 
-  it('builds starters from actual SQL names and only groups scalar options', () => {
-    expect(queryStarters(schema)[0].sql).toContain('"my""projects"');
-    expect(queryStarters(schema)[2].sql).toContain('GROUP BY "status"');
+  it('uses pre-quoted SQL names verbatim, no aliases, and only groups scalar options', () => {
+    expect(queryStarters(schema)[0].sql).toBe(
+      'SELECT COUNT(*) FROM "my""projects"'
+    );
+    expect(queryStarters(schema)[2].sql).toBe(
+      'SELECT "Status", COUNT(*) FROM "my""projects" GROUP BY "Status" ORDER BY COUNT(*) DESC'
+    );
     expect(
       queryStarters({
         ...schema,
@@ -79,6 +83,12 @@ describe('database questions', () => {
       parseQueryProposal({
         sql: 'DELETE FROM projects',
         explanation: 'Deletes projects.',
+      })
+    ).toThrow('Ask a question');
+    expect(() =>
+      parseQueryProposal({
+        sql: 'WITH open AS (SELECT * FROM projects) SELECT COUNT(*) FROM open',
+        explanation: 'Counts open projects.',
       })
     ).toThrow('Ask a question');
     expect(() => parseQueryProposal({ sql: 'SELECT 1' })).toThrow('incomplete');

@@ -10,16 +10,13 @@
  * generation covers the databases routes; once `bun gen-api cloud-storage`
  * emits them, replace the declarations below with the generated schemas.
  */
-import { ENABLE_BEARER_TOKEN_AUTH } from '@core/constant/featureFlags';
 import { SERVER_HOSTS } from '@core/constant/servers';
 import {
   type FetchWithTokenErrorCode,
   type FetchWithTokenInit,
-  fetchToken,
   fetchWithToken,
 } from '@core/util/fetchWithToken';
 import type { ObjectLike, ResultError } from '@core/util/result';
-import { getMacroApiToken } from '@service-auth/fetch';
 import type { DataType } from '@service-properties/generated/schemas/dataType';
 import type { EntityType } from '@service-properties/generated/schemas/entityType';
 import type { PropertyOption } from '@service-properties/generated/schemas/propertyOption';
@@ -114,25 +111,18 @@ export interface DatabasePropertyDefinitionWithOptions {
 /** One column placement with the definition behind it (`ColumnDetail`). */
 export interface DatabaseColumnDetail {
   column: DatabaseColumn;
-  /** Name to use in SQL. */
+  /** The display name, already double-quoted for SQL (`"Guest List"`). */
   sql_name: string;
   definition: DatabasePropertyDefinitionWithOptions;
-  /** Whether SQL may write this column. */
+  /** Whether SQL may write this column (relations included). */
   writable: boolean;
-  /** Exact catalog names: relation junctions may be disambiguated. */
-  junction_sql_name?: string | null;
-  read_junction_sql_name?: string | null;
-  /** Relation cells are projections; edit through the writable junction. */
-  junction_writable?: boolean;
 }
 
 /** One table with its columns and SQL name (`TableDetail`). */
 export interface DatabaseTableDetail {
   table: DatabaseTable;
-  /** Physical name used by SQL writes (`INSERT INTO guests`). */
+  /** The display name, already double-quoted for SQL (`"Guests"`). */
   sql_name: string;
-  /** Immutable read-only alias, available even when display names change. */
-  read_sql_name?: string;
   columns: DatabaseColumnDetail[];
 }
 
@@ -143,7 +133,11 @@ export interface DatabaseDetail {
   tables: DatabaseTableDetail[];
 }
 
-/** A cell value as the SQLite materialization produced it. */
+/**
+ * A result cell: text, number, a checkbox as 0/1, a date as RFC 3339, a
+ * select label, or a JSON-array string for a multi-valued cell (labels, entity
+ * ids, or related row ids).
+ */
 export type SqlValue = string | number | null;
 
 /** One result column with its origin. */
@@ -272,7 +266,9 @@ function databasesFetch<
 /**
  * Why `POST /databases/exec` refused a statement, mirroring the status codes
  * `QueryError` maps to. The message is the service's `ErrorResponse.message`:
- * for `SQL_ERROR` that is SQLite's own message, verbatim.
+ * for `SQL_ERROR` that is the compiler's message, verbatim, often with a
+ * suggestion (`did you mean "Status"?`). Writes no longer produce
+ * `VERSION_CONFLICT`; it remains for the schema routes.
  */
 export type ExecErrorCode =
   | 'SQL_ERROR'
@@ -592,34 +588,5 @@ export const databasesClient = {
       body: JSON.stringify(request),
       errorResponseHandler: execErrorResponseHandler,
     });
-  },
-
-  /**
-   * Fetch the SQLite snapshot of a database.
-   *
-   * Not routed through `dssFetch`: `safeFetch` parses every non-text,
-   * non-octet-stream response as JSON, and the snapshot comes back as
-   * `application/vnd.sqlite3`.
-   */
-  async downloadSqlite({ id }: { id: string }): Promise<Blob> {
-    const url = `${dssHost}/databases/${id}/sqlite`;
-    if (ENABLE_BEARER_TOKEN_AUTH) {
-      const apiToken = await getMacroApiToken();
-      if (!apiToken) throw new Error('No Macro API token');
-      const response = await fetch(url, {
-        headers: { Authorization: `Bearer ${apiToken}` },
-      });
-      if (!response.ok) {
-        throw new Error(`Snapshot download failed (${response.status})`);
-      }
-      return await response.blob();
-    }
-
-    await fetchToken();
-    const response = await fetch(url, { credentials: 'include' });
-    if (!response.ok) {
-      throw new Error(`Snapshot download failed (${response.status})`);
-    }
-    return await response.blob();
   },
 };

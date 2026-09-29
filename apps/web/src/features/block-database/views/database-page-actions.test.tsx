@@ -16,7 +16,6 @@ import { DatabasePageActions } from './database-page-actions';
 
 const mocks = vi.hoisted(() => ({
   download: vi.fn(),
-  snapshot: vi.fn(),
   csv: vi.fn(),
 }));
 vi.mock('@core/component/LiveIndicators', () => ({
@@ -34,9 +33,6 @@ vi.mock('@core/component/TopBar/ShareButton', () => ({
   ShareModal: () => null,
 }));
 vi.mock('@filesystem/download', () => ({ downloadFile: mocks.download }));
-vi.mock('@queries/storage/databases', () => ({
-  downloadDatabaseSnapshot: mocks.snapshot,
-}));
 vi.mock('../queries/transfer', () => ({
   exportDatabaseTableCsv: mocks.csv,
   importDatabaseTable: vi.fn(),
@@ -51,7 +47,6 @@ beforeEach(() => {
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
   Element.prototype.scrollIntoView = vi.fn();
   mocks.download.mockReset();
-  mocks.snapshot.mockReset().mockResolvedValue(new Blob(['sqlite']));
   mocks.csv.mockReset().mockResolvedValue(new Blob(['Name\nAcme']));
 });
 afterEach(() => {
@@ -133,13 +128,16 @@ describe('database page actions', () => {
       expect(screen.getByRole('menuitem', { name: 'Download' })).toBeTruthy();
     }
   );
-  it('downloads the selected format from the nested native menu', async () => {
+  it('downloads the current table as CSV from the nested menu, with no other format', async () => {
     setup();
     await openMenu();
     fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Download' }), {
       key: 'ArrowRight',
     });
     await screen.findByRole('menuitem', { name: 'Current table as CSV' });
+    expect(
+      screen.queryByRole('menuitem', { name: 'Database as SQLite' })
+    ).toBeNull();
     selectItem('Current table as CSV');
     await waitFor(() =>
       expect(mocks.download).toHaveBeenCalledWith(
@@ -147,7 +145,6 @@ describe('database page actions', () => {
         'Contacts.csv'
       )
     );
-    expect(mocks.snapshot).not.toHaveBeenCalled();
   });
   it('opens CSV import from the menu and returns focus to the persistent ellipsis', async () => {
     setup();

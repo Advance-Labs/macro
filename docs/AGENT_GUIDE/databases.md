@@ -16,8 +16,9 @@ Text column (**Unnamed 2**, and so on if that name exists), selects its name in 
 header, and lets you type immediately. Enter saves; Escape keeps the default name.
 There is no creation dialog. Double-click a header, press F2 while it is focused,
 or choose **Rename column** from its arrow or right-click menu to rename it later.
-Its type icon stays in place while editing. Labels may change without breaking
-existing SQL identifiers or saved queries.
+Its type icon stays in place while editing. SQL refers to tables and columns by
+their display names (double-quoted), so a rename changes the name a saved query
+must use.
 
 The header arrow menu groups schema and view actions. **Change type** offers Text,
 Number, Select, Multi-select, Date, Checkbox, URL, People, Documents, Tasks, and
@@ -236,11 +237,11 @@ database.
 The header's **Database actions** (`…`) menu contains **Rename**, **Import CSV**,
 **Download**, and owner-only **Delete**. Rename focuses the existing inline title;
 Delete opens the standard confirmation dialog. Share and AI stay in the header.
-**Download** offers **Current table as CSV** or **Database as SQLite**.
+**Download** offers **Current table as CSV**.
 Exports contain all records, regardless of the current filters. CSV uses column
-labels and preserves text, quoted commas, and line breaks; SQLite contains the
-whole database. A table that changes during CSV export must be downloaded again
-so the file does not mix different versions.
+labels and preserves text, quoted commas, and line breaks. A table that changes
+during CSV export must be downloaded again so the file does not mix different
+versions.
 
 **Import CSV** in the `…` menu opens a preview and focuses the new table's name.
 Confirm **Import** to create a table with the CSV's columns and records. Imported

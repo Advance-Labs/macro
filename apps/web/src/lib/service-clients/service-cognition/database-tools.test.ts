@@ -19,7 +19,6 @@ const database = {
       id: tableId,
       name: 'Tickets',
       sqlName: 'tickets',
-      readSqlName: '_macro_table_01a0c45ab57271578dd7c328b6b3e472',
       version: 1,
       writable: true,
       columns: [

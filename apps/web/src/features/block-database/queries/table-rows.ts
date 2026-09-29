@@ -20,14 +20,17 @@ import {
   inferDatabaseNumber,
 } from '../core/column-inference';
 import { relatedRowIds } from '../core/database-relations';
-import type { DatabaseViewColumn } from '../core/database-view';
+import type {
+  DatabaseCellValue,
+  DatabaseViewColumn,
+} from '../core/database-view';
 import type { DatabaseRowMutation } from '../core/table';
 import {
   deleteRowStatement,
-  insertRelatedRowsStatement,
   insertRowStatement,
   ROW_ID_COLUMN,
-  replaceRelatedRowsStatement,
+  resultColumnName,
+  type SqlWriteValue,
   selectAllStatement,
   updateCellStatement,
 } from '../sql';
@@ -44,7 +47,7 @@ export function toViewColumn(column: DatabaseColumnDetail): DatabaseViewColumn {
     options: column.definition.property_options.map((option) =>
       String(option.value.value)
     ),
-    writable: relation ? !!column.junction_writable : column.writable,
+    writable: column.writable,
     ...(relation
       ? {
           relation: {
@@ -56,6 +59,46 @@ export function toViewColumn(column: DatabaseColumnDetail): DatabaseViewColumn {
     specificEntityType: column.definition.definition.specific_entity_type,
     inferType: column.column.infer_type ?? false,
   };
+}
+
+/** Cell values a multi-valued column holds, as the grid's JSON-array string. */
+function listedValues(value: DatabaseCellValue): (string | number)[] {
+  if (typeof value !== 'string' || !value) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.filter(
+          (item): item is string | number =>
+            typeof item === 'string' || typeof item === 'number'
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Spell a grid cell value the way the column's write expects it: a list of
+ * row ids for a relation, a list of labels for a multi select, a list of ids
+ * for a multi entity, `TRUE`/`FALSE` for a checkbox, and labels as text for a
+ * single select. An empty string clears anything but a text cell.
+ */
+export function writeValue(
+  column: DatabaseColumnDetail,
+  value: DatabaseCellValue
+): SqlWriteValue {
+  const definition = column.definition.definition;
+  if (column.column.config?.kind === 'link') return relatedRowIds(value);
+  if (definition.is_multi_select) return listedValues(value).map(String);
+  if (value === null) return null;
+  if (definition.data_type === 'BOOLEAN')
+    return typeof value === 'number'
+      ? value !== 0
+      : ['1', 'true'].includes(value.toLowerCase());
+  if (value === '' && !['STRING', 'LINK'].includes(definition.data_type))
+    return null;
+  if (definition.data_type.startsWith('SELECT_')) return String(value);
+  return value;
 }
 
 export function createDatabaseRowsSource(props: {
@@ -107,11 +150,7 @@ export function createDatabaseRowsSource(props: {
     queryKey: databasesKeys.rows(props.databaseId, props.table().table.id)
       .queryKey,
     queryFn: () =>
-      props.exec({
-        sql: selectAllStatement(
-          currentTable().read_sql_name ?? currentTable().sql_name
-        ),
-      }),
+      props.exec({ sql: selectAllStatement(currentTable().sql_name) }),
   }));
   // Accepted draft writes can outlive the query observer's owner. Retain actual
   // reads so a post-unmount option change supplies its version to the next write.
@@ -140,8 +179,9 @@ export function createDatabaseRowsSource(props: {
     const indexes = props.table().columns.map((column) => ({
       id: column.column.id,
       index:
-        result?.columns.findIndex((entry) => entry.name === column.sql_name) ??
-        -1,
+        result?.columns.findIndex(
+          (entry) => entry.name === resultColumnName(column)
+        ) ?? -1,
     }));
     return {
       version: data.read_versions[props.table().table.id],
@@ -165,13 +205,7 @@ export function createDatabaseRowsSource(props: {
     const column = table.columns.find(
       (column) => column.column.id === columnId
     );
-    if (
-      !column ||
-      !(column.column.config?.kind === 'link'
-        ? column.junction_writable && column.junction_sql_name
-        : column.writable)
-    )
-      throw new Error('This property is read-only.');
+    if (!column?.writable) throw new Error('This property is read-only.');
     return column;
   }
 
@@ -181,47 +215,24 @@ export function createDatabaseRowsSource(props: {
     const tableSqlName = table.sql_name;
     if (mutation.kind === 'cell') {
       const column = columnForWrite(table, mutation.columnId);
-      if (column.column.config?.kind === 'link')
-        return replaceRelatedRowsStatement({
-          junctionSqlName: column.junction_sql_name!,
-          rowId: mutation.rowId,
-          relatedIds: relatedRowIds(mutation.value),
-        });
       return updateCellStatement({
         tableSqlName,
         rowId: mutation.rowId,
         columnSqlName: column.sql_name,
-        value: mutation.value,
+        value: writeValue(column, mutation.value),
       });
     }
     if (mutation.kind === 'delete')
       return deleteRowStatement({ tableSqlName, rowId: mutation.rowId });
-    const entries = Object.entries(mutation.values).map(([id, value]) => ({
-      column: columnForWrite(table, id),
-      value,
-    }));
-    const insert = insertRowStatement({
+    return insertRowStatement({
       tableSqlName,
       values: Object.fromEntries(
-        entries
-          .filter(({ column }) => column.column.config?.kind !== 'link')
-          .map(({ column, value }) => [column.sql_name, value])
+        Object.entries(mutation.values).map(([id, value]) => {
+          const column = columnForWrite(table, id);
+          return [column.sql_name, writeValue(column, value)];
+        })
       ),
     });
-    return [
-      insert,
-      ...entries
-        .filter(({ column }) => column.column.config?.kind === 'link')
-        .map(({ column, value }) =>
-          insertRelatedRowsStatement({
-            tableSqlName,
-            junctionSqlName: column.junction_sql_name!,
-            relatedIds: relatedRowIds(value),
-          })
-        ),
-    ]
-      .filter(Boolean)
-      .join('; ');
   }
 
   async function prepareFirstValues(

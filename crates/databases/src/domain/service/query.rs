@@ -91,6 +91,14 @@ where
                     entry.table.name
                 )));
             }
+            if let Some(expected) = req
+                .base_versions
+                .as_ref()
+                .and_then(|versions| versions.get(&table))
+                && *expected != entry.table.version
+            {
+                return Err(QueryError::VersionConflict { table_id: table });
+            }
         }
 
         let source = Source {
@@ -218,7 +226,8 @@ where
         if let Some(rows) = self.loaded.lock().expect("row cache").get(&table) {
             return Ok(rows.clone());
         }
-        let entry = entry_for(self.entries, table).map_err(|error| SourceError(error.to_string()))?;
+        let entry =
+            entry_for(self.entries, table).map_err(|error| SourceError(error.to_string()))?;
         let rows: Vec<EngineRow> = self
             .service
             .rows_with_cells(table)
@@ -278,9 +287,7 @@ where
         limit: usize,
     ) -> Result<Page, SourceError> {
         let GqlQuery::Soup { table, propf, .. } = query else {
-            return Err(SourceError(
-                "only database tables can be read here".into(),
-            ));
+            return Err(SourceError("only database tables can be read here".into()));
         };
         let rows = self.matching(*table, propf, needs).await?;
         let start: usize = cursor
@@ -308,7 +315,11 @@ where
         let rows = self.matching(*table, propf, &[*group_by]).await?;
         let mut bins: Vec<Bin> = Vec::new();
         for row in rows {
-            let key = row.cells.get(group_by).cloned().filter(|cell| !cell_is_empty(cell));
+            let key = row
+                .cells
+                .get(group_by)
+                .cloned()
+                .filter(|cell| !cell_is_empty(cell));
             match bins.iter_mut().find(|bin| bin.key == key) {
                 Some(bin) => bin.count += 1,
                 None => bins.push(Bin { key, count: 1 }),
@@ -348,7 +359,7 @@ fn soup_matches(expr: &Expr<PropertiesLiteral>, row: &EngineRow) -> bool {
             (Some(Cell::Options(ids)), PropertyMatchValue::SelectOption(id)) => ids.contains(id),
             (Some(Cell::Entities(ids)), PropertyMatchValue::EntityRef(id)) => {
                 let id = id.to_string();
-                ids.iter().any(|candidate| *candidate == id)
+                ids.contains(&id)
             }
             _ => false,
         },
@@ -397,9 +408,13 @@ where
     Broker: MacroEventBroker,
 {
     fn entry(&self, table: TableId) -> Result<&TableEntry, WriteError> {
-        let entry = entry_for(self.entries, table).map_err(|error| WriteError(error.to_string()))?;
+        let entry =
+            entry_for(self.entries, table).map_err(|error| WriteError(error.to_string()))?;
         if !entry.grant.can_write() {
-            return Err(WriteError(format!("table {} is read-only", entry.table.name)));
+            return Err(WriteError(format!(
+                "table {} is read-only",
+                entry.table.name
+            )));
         }
         Ok(entry)
     }
@@ -417,6 +432,25 @@ where
             Some(owner) if owner == table => Ok(()),
             _ => Err(WriteError(format!("no row {row} in this table"))),
         }
+    }
+
+    /// A first value settles the columns it landed in: they no longer infer
+    /// their type from it.
+    async fn settle(
+        &self,
+        table: TableId,
+        stored: &[(PropertyDefinitionId, Option<PropertyValue>)],
+    ) -> Result<(), WriteError> {
+        let valued: Vec<PropertyDefinitionId> = stored
+            .iter()
+            .filter(|(_, value)| value.is_some())
+            .map(|(definition, _)| *definition)
+            .collect();
+        self.service
+            .repo
+            .settle_inference(table, &valued)
+            .await
+            .map_err(|error| WriteError(error.to_string()))
     }
 
     fn stored(
@@ -471,6 +505,7 @@ where
                 .write(row.id, &stored)
                 .await
                 .map_err(|error| WriteError(error.to_string()))?;
+            self.settle(table, &stored).await?;
         }
         Ok(row.id)
     }
@@ -488,7 +523,8 @@ where
             .cells
             .write(row_id, &stored)
             .await
-            .map_err(|error| WriteError(error.to_string()))
+            .map_err(|error| WriteError(error.to_string()))?;
+        self.settle(table, &stored).await
     }
 
     async fn delete(&self, table: TableId, row_id: Uuid) -> Result<(), WriteError> {
@@ -531,8 +567,7 @@ fn property_value(column: &ColumnEntry, value: Value) -> PropertyValue {
     };
     match value {
         Value::Text(text) => {
-            if column.definition.definition.data_type == models_properties::shared::DataType::Link
-            {
+            if column.definition.definition.data_type == models_properties::shared::DataType::Link {
                 PropertyValue::Link(vec![text])
             } else {
                 PropertyValue::Str(text)
@@ -601,7 +636,10 @@ fn result_sets(entries: &[TableEntry], outcome: &Outcome) -> Vec<QueryResult> {
                 values.push(SqlValue::Text(outcome.row_ids[index].to_string()));
             }
             values.extend(row.iter().zip(&outcome.columns).map(|(cell, column)| {
-                sql_value(cell.as_ref(), column_entry(column.column).map(|(_, entry)| entry))
+                sql_value(
+                    cell.as_ref(),
+                    column_entry(column.column).map(|(_, entry)| entry),
+                )
             }));
             values
         })
@@ -643,9 +681,14 @@ fn sql_value(cell: Option<&Cell>, column: Option<&ColumnEntry>) -> SqlValue {
 
 fn scalar_or_array(values: Vec<String>, multi: bool) -> SqlValue {
     if multi {
-        SqlValue::Text(serde_json::Value::Array(values.into_iter().map(Into::into).collect()).to_string())
+        SqlValue::Text(
+            serde_json::Value::Array(values.into_iter().map(Into::into).collect()).to_string(),
+        )
     } else {
-        values.into_iter().next().map_or(SqlValue::Null, SqlValue::Text)
+        values
+            .into_iter()
+            .next()
+            .map_or(SqlValue::Null, SqlValue::Text)
     }
 }
 

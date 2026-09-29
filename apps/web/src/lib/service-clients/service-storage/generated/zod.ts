@@ -6476,7 +6476,7 @@ export const execDatabaseSqlResponse = zod
     truncated_tables: zod
       .array(zod.string())
       .describe(
-        'Magic tables whose materialization hit its row cap; aggregates over\nthem are incomplete.'
+        "Tables whose read hit the engine's row cap; aggregates over them are\nincomplete."
       ),
   })
   .describe('Outcome of an [`ExecRequest`].');
@@ -6618,7 +6618,7 @@ export const queryDatabaseSqlResponse = zod
     truncated_tables: zod
       .array(zod.string())
       .describe(
-        'Magic tables whose materialization hit its row cap; aggregates over\nthem are incomplete.'
+        "Tables whose read hit the engine's row cap; aggregates over them are\nincomplete."
       ),
   })
   .describe('Outcome of an [`ExecRequest`].');
@@ -6895,24 +6895,11 @@ export const getDatabaseResponse = zod
                       .describe(
                         'Property definition with its associated options (service representation).'
                       ),
-                    junction_sql_name: zod
+                    sql_name: zod
                       .string()
-                      .nullish()
                       .describe(
-                        'Exact junction name for multi-valued or relation columns.'
+                        'The name SQL refers to the column by: its display name, quoted when it\nneeds it.'
                       ),
-                    junction_writable: zod
-                      .boolean()
-                      .describe(
-                        'Whether this viewer can insert\/delete edges in the junction.'
-                      ),
-                    read_junction_sql_name: zod
-                      .string()
-                      .nullish()
-                      .describe(
-                        'Stable read-only junction alias, when it is unambiguous in the catalog.'
-                      ),
-                    sql_name: zod.string().describe('Name to use in SQL.'),
                     writable: zod
                       .boolean()
                       .describe('Whether SQL may write this column.'),
@@ -6925,11 +6912,13 @@ export const getDatabaseResponse = zod
             read_sql_name: zod
               .string()
               .describe(
-                'Immutable read-only name for persisted queries; unaffected by renames\nor the other tables a viewer can access.'
+                'The same name; kept for clients that still distinguish reads.'
               ),
             sql_name: zod
               .string()
-              .describe('Name to use in SQL (`FROM guests`).'),
+              .describe(
+                'The name SQL refers to the table by: its display name, quoted when it\nneeds it (`FROM \"Table 1\"`), optionally qualified by the database\'s.'
+              ),
             table: zod
               .object({
                 database_id: zod.uuid().describe('Owning database.'),
@@ -7074,13 +7063,6 @@ export const updateDatabasePermissionsResponse = zod
     owner: zod.string().describe('Current database owner.'),
   })
   .describe('Recipient grants shown in the native sharing interface.');
-
-/**
- * @summary Download a database as a SQLite file.
- */
-export const downloadDatabaseSqliteParams = zod.object({
-  id: zod.uuid().describe('Database id'),
-});
 
 /**
  * @summary Create a table in a database.
@@ -7625,24 +7607,11 @@ export const inferDatabaseColumnTypeResponse = zod
           .describe(
             'Property definition with its associated options (service representation).'
           ),
-        junction_sql_name: zod
+        sql_name: zod
           .string()
-          .nullish()
           .describe(
-            'Exact junction name for multi-valued or relation columns.'
+            'The name SQL refers to the column by: its display name, quoted when it\nneeds it.'
           ),
-        junction_writable: zod
-          .boolean()
-          .describe(
-            'Whether this viewer can insert\/delete edges in the junction.'
-          ),
-        read_junction_sql_name: zod
-          .string()
-          .nullish()
-          .describe(
-            'Stable read-only junction alias, when it is unambiguous in the catalog.'
-          ),
-        sql_name: zod.string().describe('Name to use in SQL.'),
         writable: zod.boolean().describe('Whether SQL may write this column.'),
       })
       .describe('One column placement with the definition behind it.'),
@@ -7872,22 +7841,11 @@ export const addDatabaseColumnOptionsResponse = zod
       .describe(
         'Property definition with its associated options (service representation).'
       ),
-    junction_sql_name: zod
+    sql_name: zod
       .string()
-      .nullish()
-      .describe('Exact junction name for multi-valued or relation columns.'),
-    junction_writable: zod
-      .boolean()
       .describe(
-        'Whether this viewer can insert\/delete edges in the junction.'
+        'The name SQL refers to the column by: its display name, quoted when it\nneeds it.'
       ),
-    read_junction_sql_name: zod
-      .string()
-      .nullish()
-      .describe(
-        'Stable read-only junction alias, when it is unambiguous in the catalog.'
-      ),
-    sql_name: zod.string().describe('Name to use in SQL.'),
     writable: zod.boolean().describe('Whether SQL may write this column.'),
   })
   .describe('One column placement with the definition behind it.');

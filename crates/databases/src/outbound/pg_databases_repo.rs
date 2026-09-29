@@ -601,12 +601,11 @@ impl DatabasesRepo for PgDatabasesRepo {
 
     #[tracing::instrument(err, skip(self))]
     async fn row_table(&self, row_id: RowId) -> Result<Option<TableId>, Self::Err> {
-        Ok(sqlx::query_scalar!(
-            "SELECT table_id FROM database_rows WHERE id = $1",
-            row_id
+        Ok(
+            sqlx::query_scalar!("SELECT table_id FROM database_rows WHERE id = $1", row_id)
+                .fetch_optional(&self.pool)
+                .await?,
         )
-        .fetch_optional(&self.pool)
-        .await?)
     }
 
     #[tracing::instrument(err, skip(self, definitions))]

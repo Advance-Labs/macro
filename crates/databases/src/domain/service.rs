@@ -12,6 +12,8 @@ mod infer_column_type;
 mod query;
 mod rename_column;
 mod sharing;
+#[cfg(test)]
+mod test;
 mod transfer;
 
 use std::collections::{HashMap, HashSet};
@@ -1036,5 +1038,4 @@ where
         )
         .await
     }
-
 }

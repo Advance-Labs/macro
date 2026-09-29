@@ -8148,67 +8148,6 @@
         }
       }
     },
-    "/databases/{id}/sqlite": {
-      "get": {
-        "tags": ["databases"],
-        "summary": "Download a database as a SQLite file.",
-        "operationId": "download_database_sqlite",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Database id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "A SQLite database file",
-            "content": {
-              "application/vnd.sqlite3": {
-                "schema": {
-                  "$ref": "#/components/schemas/SqliteFile"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid credentials",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "No access to the database",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/databases/{id}/tables": {
       "post": {
         "tags": ["databases"],
@@ -21851,13 +21790,7 @@
       "ColumnDetail": {
         "type": "object",
         "description": "One column placement with the definition behind it.",
-        "required": [
-          "column",
-          "sql_name",
-          "definition",
-          "writable",
-          "junction_writable"
-        ],
+        "required": ["column", "sql_name", "definition", "writable"],
         "properties": {
           "column": {
             "$ref": "#/components/schemas/Column",
@@ -21867,21 +21800,9 @@
             "$ref": "#/components/schemas/PropertyDefinitionWithOptions",
             "description": "The bound definition (name, type, options)."
           },
-          "junction_sql_name": {
-            "type": ["string", "null"],
-            "description": "Exact junction name for multi-valued or relation columns."
-          },
-          "junction_writable": {
-            "type": "boolean",
-            "description": "Whether this viewer can insert/delete edges in the junction."
-          },
-          "read_junction_sql_name": {
-            "type": ["string", "null"],
-            "description": "Stable read-only junction alias, when it is unambiguous in the catalog."
-          },
           "sql_name": {
             "type": "string",
-            "description": "Name to use in SQL."
+            "description": "The name SQL refers to the column by: its display name, quoted when it\nneeds it."
           },
           "writable": {
             "type": "boolean",
@@ -25927,7 +25848,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Magic tables whose materialization hit its row cap; aggregates over\nthem are incomplete."
+            "description": "Tables whose read hit the engine's row cap; aggregates over them are\nincomplete."
           }
         }
       },
@@ -33976,11 +33897,6 @@
         ],
         "description": "A value in the SQLite materialization, kept engine-agnostic so the domain\nnever depends on rusqlite types. Serializes as a plain JSON scalar."
       },
-      "SqliteFile": {
-        "type": "string",
-        "format": "binary",
-        "description": "The bytes of a SQLite database file.\n\nIts only job is to make the response body binary in the OpenAPI document;\n`Vec<u8>` would be described as an array of integers and generate clients\nthat parse the file as JSON."
-      },
       "StarterDatabase": {
         "type": "object",
         "description": "Starter result. A missing database means the user already started or removed it.",
@@ -34109,11 +34025,11 @@
           },
           "read_sql_name": {
             "type": "string",
-            "description": "Immutable read-only name for persisted queries; unaffected by renames\nor the other tables a viewer can access."
+            "description": "The same name; kept for clients that still distinguish reads."
           },
           "sql_name": {
             "type": "string",
-            "description": "Name to use in SQL (`FROM guests`)."
+            "description": "The name SQL refers to the table by: its display name, quoted when it\nneeds it (`FROM \"Table 1\"`), optionally qualified by the database's."
           },
           "table": {
             "$ref": "#/components/schemas/Table",

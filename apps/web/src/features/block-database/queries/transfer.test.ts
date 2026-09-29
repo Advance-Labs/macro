@@ -16,12 +16,11 @@ vi.mock('@service-storage/client', () => ({
 }));
 const table = {
   table: { id: 'table', name: 'Contacts' },
-  sql_name: 'contacts',
-  read_sql_name: 'stable_contacts',
+  sql_name: '"Contacts"',
   columns: [
     {
       column: { id: 'name', display_name: 'Customer' },
-      sql_name: 'name',
+      sql_name: '"Customer"',
       definition: { definition: { display_name: 'Name' } },
     },
   ],
@@ -32,7 +31,7 @@ function outcome(
   truncated: string[] = []
 ) {
   return {
-    results: [{ columns: [{ name: 'row_id' }, { name: 'name' }], rows }],
+    results: [{ columns: [{ name: 'row_id' }, { name: 'Customer' }], rows }],
     read_versions: { table: version },
     truncated_tables: truncated,
   };
@@ -55,7 +54,7 @@ describe('CSV transfers', () => {
     });
     expect(text).toBe('Customer\n00123\n"a,b"');
     expect(mocks.query).toHaveBeenLastCalledWith(
-      'SELECT * FROM "stable_contacts" ORDER BY "row_id" LIMIT 5000 OFFSET 0'
+      'SELECT * FROM "Contacts" LIMIT 5000 OFFSET 0'
     );
   });
   it('refuses truncated data and schema mismatches instead of downloading partial CSV', async () => {

@@ -86,9 +86,10 @@ where
                 "A lookup's type comes from its source column.".into(),
             ));
         }
-        let rows = self.rows_with_cells(table.id).await.map_err(|error| {
-            DatabaseError::Repo(rootcause::Report::new(error).into_dynamic())
-        })?;
+        let rows = self
+            .rows_with_cells(table.id)
+            .await
+            .map_err(|error| DatabaseError::Repo(rootcause::Report::new(error).into_dynamic()))?;
         if rows.len() > MAX_CONVERTED_ROWS {
             return Err(DatabaseError::InvalidSchemaOperation(
                 "This table is too large to validate a type change in one operation.".into(),

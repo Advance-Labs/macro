@@ -210,8 +210,9 @@ pub trait CellStore: Send + Sync + 'static {
     fn cells(
         &self,
         rows: &[RowId],
-    ) -> impl Future<Output = Result<HashMap<RowId, HashMap<PropertyDefinitionId, PropertyValue>>, Self::Err>>
-    + Send;
+    ) -> impl Future<
+        Output = Result<HashMap<RowId, HashMap<PropertyDefinitionId, PropertyValue>>, Self::Err>,
+    > + Send;
 
     /// Set (or, with `None`, clear) cells on one row.
     fn write(

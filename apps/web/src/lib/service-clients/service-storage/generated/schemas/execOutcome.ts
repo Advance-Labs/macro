@@ -32,7 +32,7 @@ writes. Versions for tables it only reads are ignored. */
   read_versions: ExecOutcomeReadVersions;
   /** Result sets of the SELECT statements, in order. */
   results: QueryResult[];
-  /** Magic tables whose materialization hit its row cap; aggregates over
-them are incomplete. */
+  /** Tables whose read hit the engine's row cap; aggregates over them are
+incomplete. */
   truncated_tables: string[];
 }

@@ -23,7 +23,7 @@ const nameColumn: DatabaseColumnDetail = {
     position: 'a',
     config: null,
   },
-  sql_name: 'name',
+  sql_name: '"Name"',
   writable: true,
   definition: {
     definition: {
@@ -59,8 +59,7 @@ const detail: DatabaseDetail = {
         position: 'a',
         version: 1,
       },
-      sql_name: 'customers',
-      read_sql_name: '_macro_table_customers',
+      sql_name: '"Customers"',
       columns: [nameColumn],
     },
   ],
@@ -70,7 +69,7 @@ const outcome = (name: string): ExecOutcome => ({
     {
       columns: [
         { name: 'row_id', entity_type: null, origin: null },
-        { name: 'name', entity_type: null, origin: null },
+        { name: 'Name', entity_type: null, origin: null },
       ],
       rows: [['customer-1', name]],
     },
@@ -128,7 +127,7 @@ it('shares one target-table read across multiple relation columns and reacts to 
   expect(transport.get).toHaveBeenCalledTimes(1);
   expect(exec).toHaveBeenCalledTimes(1);
   expect(exec).toHaveBeenCalledWith({
-    sql: 'SELECT * FROM "_macro_table_customers"',
+    sql: 'SELECT * FROM "Customers"',
   });
   client.setQueryData(
     databasesKeys.rows('db', 'customers').queryKey,

@@ -231,7 +231,7 @@ export function QueryEditor(props: {
           />
           <div class="mt-1.5 flex items-center justify-between gap-2">
             <p class="text-[11px] text-ink-muted">
-              Read-only SQLite · ⌘ / Ctrl + Enter to run
+              Read-only SQL · ⌘ / Ctrl + Enter to run
             </p>
             <Button
               variant="ghost"

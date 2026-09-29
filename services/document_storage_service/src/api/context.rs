@@ -77,13 +77,8 @@ use collab_surface::{
     outbound::surface_init::LexicalSyncSurfaceInitializer,
 };
 use databases::{
-    domain::service::DatabasesServiceImpl,
     inbound::axum_router::DatabasesRouterState,
-    outbound::{
-        gateway_event_publisher::GatewayTableEventPublisher, magic::MagicTableRegistry,
-        pg_access_directory::PgAccessDirectory, pg_databases_repo::PgDatabasesRepo,
-        pg_definition_store::PgDefinitionStore, rusqlite_executor::RusqliteExecutor,
-    },
+    outbound::{build::PgDatabasesService, gateway_event_publisher::GatewayTableEventPublisher},
 };
 use foreign_entity::{
     domain::service::ForeignEntityServiceImpl, inbound::axum_router::ForeignEntityRouterState,
@@ -499,15 +494,8 @@ pub(crate) type DssUserApiKeyState =
     UserApiKeyRouterState<UserApiKeyServiceType, AuthorizationService>;
 
 /// Type alias for the databases service.
-pub(crate) type DatabasesServiceType = DatabasesServiceImpl<
-    PgDatabasesRepo,
-    PgDefinitionStore<properties::outbound::properties_pg_repo::PropertiesPgRepo>,
-    MagicTableRegistry,
-    RusqliteExecutor,
-    GatewayTableEventPublisher,
-    PgAccessDirectory,
-    DssEventBroker,
->;
+pub(crate) type DatabasesServiceType =
+    PgDatabasesService<GatewayTableEventPublisher, DssEventBroker>;
 
 /// Type alias for the databases router state.
 pub(crate) type DssDatabasesState =

@@ -25,7 +25,7 @@ vi.mock('@service-storage/client', () => ({
   storageServiceClient: { databases: transport },
 }));
 
-function detail(sqlName = 'guests', readSqlName?: string): DatabaseDetail {
+function detail(sqlName = '"guests"'): DatabaseDetail {
   return {
     database: {
       id: 'db',
@@ -45,7 +45,6 @@ function detail(sqlName = 'guests', readSqlName?: string): DatabaseDetail {
           version: 5,
         },
         sql_name: sqlName,
-        read_sql_name: readSqlName,
         columns: [
           {
             column: {
@@ -55,7 +54,7 @@ function detail(sqlName = 'guests', readSqlName?: string): DatabaseDetail {
               position: 'a',
               config: null,
             },
-            sql_name: 'Name',
+            sql_name: '"Name"',
             writable: true,
             definition: {
               definition: {
@@ -153,7 +152,7 @@ afterEach(() => {
 });
 
 describe('database rows SQL names', () => {
-  it('edits projected relationships through the resolved writable junction with CAS', async () => {
+  it('replaces a relation cell with a list of row ids', async () => {
     const schema = detail();
     const column = schema.tables[0].columns[0];
     column.column.config = {
@@ -161,9 +160,6 @@ describe('database rows SQL names', () => {
       database_id: 'db',
       table_id: 'customers',
     };
-    column.writable = false;
-    column.junction_writable = true;
-    column.junction_sql_name = '_macro_storage_junction_customer';
     const exec = vi
       .fn<(request: ExecRequest) => Promise<ExecOutcome>>()
       .mockResolvedValue(read);
@@ -185,12 +181,12 @@ describe('database rows SQL names', () => {
       5
     );
     expect(exec).toHaveBeenLastCalledWith({
-      sql: 'DELETE FROM "_macro_storage_junction_customer" WHERE "row_id" = \'record\'; INSERT INTO "_macro_storage_junction_customer" ("row_id", "linked_id") VALUES (\'record\', \'customer-1\'), (\'record\', \'customer-2\')',
+      sql: "UPDATE \"guests\" SET \"Name\" = ['customer-1', 'customer-2'] WHERE row_id = 'record'",
       baseVersions: { 'guests-table': 5 },
     });
   });
 
-  it('creates a Customer-first row and its links in one atomic exec without assigning its identity', async () => {
+  it('creates a Customer-first row with its links in one INSERT without assigning its identity', async () => {
     const schema = detail();
     const column = schema.tables[0].columns[0];
     column.column.config = {
@@ -198,9 +194,6 @@ describe('database rows SQL names', () => {
       database_id: 'db',
       table_id: 'customers',
     };
-    column.writable = false;
-    column.junction_writable = true;
-    column.junction_sql_name = 'guests__customer';
     const exec = vi
       .fn<(request: ExecRequest) => Promise<ExecOutcome>>()
       .mockResolvedValue(read);
@@ -217,13 +210,13 @@ describe('database rows SQL names', () => {
     );
     expect(exec).toHaveBeenCalledTimes(1);
     expect(exec).toHaveBeenCalledWith({
-      sql: 'INSERT INTO "guests" DEFAULT VALUES; INSERT INTO "guests__customer" ("row_id", "linked_id") SELECT "row_id", \'customer-1\' FROM "guests" WHERE "row_id" LIKE \'new:%\'',
+      sql: 'INSERT INTO "guests" ("Name") VALUES ([\'customer-1\'])',
       baseVersions: { 'guests-table': 5 },
     });
     expect(result.insertedRowIds).toEqual(['new-record']);
   });
 
-  it('refuses relation writes when the junction is read-only, even though a scalar definition exists', async () => {
+  it('refuses relation writes when the column is read-only', async () => {
     const schema = detail();
     const column = schema.tables[0].columns[0];
     column.column.config = {
@@ -231,7 +224,7 @@ describe('database rows SQL names', () => {
       database_id: 'db',
       table_id: 'customers',
     };
-    column.junction_writable = false;
+    column.writable = false;
     const exec = vi
       .fn<(request: ExecRequest) => Promise<ExecOutcome>>()
       .mockResolvedValue(read);
@@ -266,35 +259,29 @@ describe('database rows SQL names', () => {
     ).rejects.toBe(refused);
   });
 
-  it.each([
-    ['stable read alias', 'stable_guests_uuid', 'stable_guests_uuid'],
-    ['older server physical name', undefined, 'guests'],
-  ])('reads through the %s', async (_label, alias, expected) => {
+  it('reads through the quoted display name and matches result columns by display name', async () => {
     const exec = vi.fn<(request: ExecRequest) => Promise<ExecOutcome>>(
       async () => read
     );
-    const { source } = setup(detail('guests', alias), exec);
+    const { source } = setup(detail('"Guest List"'), exec);
     await waitFor(() =>
       expect(source.snapshot()?.rows).toEqual([
         { rowId: 'record', cells: { name: 'Ada' } },
       ])
     );
-    expect(exec).toHaveBeenCalledWith({ sql: `SELECT * FROM "${expected}"` });
+    expect(exec).toHaveBeenCalledWith({ sql: 'SELECT * FROM "Guest List"' });
   });
 
   it('refreshes only this database after SQL_ERROR and rebuilds the physical write name on explicit retry', async () => {
     const exec = vi
       .fn<(request: ExecRequest) => Promise<ExecOutcome>>()
       .mockResolvedValue(read);
-    const { source, client, applyVersions } = setup(
-      detail('guests', 'stable_guests_uuid'),
-      exec
-    );
+    const { source, client, applyVersions } = setup(detail(), exec);
     await waitFor(() => expect(source.loading()).toBe(false));
     const collision = Object.assign(new Error('no such table: guests'), {
       code: 'SQL_ERROR',
     });
-    const refreshed = detail('Personal.Guests', 'stable_guests_uuid');
+    const refreshed = detail('"Personal Guests"');
     transport.get.mockResolvedValue(ok(refreshed));
     exec.mockRejectedValueOnce(collision).mockResolvedValueOnce(written);
 
@@ -311,7 +298,7 @@ describe('database rows SQL names', () => {
       version: 6,
     });
     expect(exec).toHaveBeenLastCalledWith({
-      sql: 'UPDATE "Personal.Guests" SET "Name" = \'Grace\' WHERE "row_id" = \'record\'',
+      sql: 'UPDATE "Personal Guests" SET "Name" = \'Grace\' WHERE row_id = \'record\'',
       baseVersions: { 'guests-table': 5 },
     });
     expect(transport.get).toHaveBeenCalledTimes(1);
@@ -339,9 +326,7 @@ describe('database rows SQL names', () => {
     expect(transport.get).toHaveBeenCalledTimes(2);
     expect(exec).toHaveBeenCalledTimes(2);
 
-    transport.get.mockResolvedValue(
-      ok(detail('Personal.Guests', 'stable_guests_uuid'))
-    );
+    transport.get.mockResolvedValue(ok(detail('"Personal Guests"')));
     await expect(source.write(edit, 5)).resolves.toEqual({
       insertedRowIds: [],
       version: 6,
@@ -349,7 +334,7 @@ describe('database rows SQL names', () => {
     expect(transport.get).toHaveBeenCalledTimes(3);
     expect(exec).toHaveBeenCalledTimes(3);
     expect(exec).toHaveBeenLastCalledWith({
-      sql: 'UPDATE "Personal.Guests" SET "Name" = \'Grace\' WHERE "row_id" = \'record\'',
+      sql: 'UPDATE "Personal Guests" SET "Name" = \'Grace\' WHERE row_id = \'record\'',
       baseVersions: { 'guests-table': 5 },
     });
   });
@@ -364,16 +349,14 @@ describe('database rows SQL names', () => {
       .mockResolvedValue(read);
     const { source } = setup(detail(), exec);
     await waitFor(() => expect(source.error()).toBe(collision));
-    transport.get.mockResolvedValue(
-      ok(detail('Personal.Guests', 'stable_guests_uuid'))
-    );
+    transport.get.mockResolvedValue(ok(detail('"Personal Guests"')));
 
     await source.refresh();
     await waitFor(() => expect(source.error()).toBeUndefined());
     expect(transport.get).toHaveBeenCalledExactlyOnceWith({ id: 'db' });
     expect(exec).toHaveBeenNthCalledWith(1, { sql: 'SELECT * FROM "guests"' });
     expect(exec).toHaveBeenNthCalledWith(2, {
-      sql: 'SELECT * FROM "stable_guests_uuid"',
+      sql: 'SELECT * FROM "Personal Guests"',
     });
     expect(source.snapshot()?.rows).toEqual([
       { rowId: 'record', cells: { name: 'Ada' } },
@@ -387,7 +370,7 @@ describe('accepted writes after switching tables', () => {
     const status = structuredClone(initial.tables[0].columns[0]);
     status.column.id = 'status';
     status.column.property_definition_id = 'status-definition';
-    status.sql_name = 'Status';
+    status.sql_name = '"Status"';
     status.definition.definition.id = 'status-definition';
     status.definition.definition.display_name = 'Status';
     initial.tables[0].columns.push(status);
@@ -466,7 +449,7 @@ describe('accepted writes after switching tables', () => {
         baseVersions: { 'guests-table': 5 },
       },
       {
-        sql: 'UPDATE "guests" SET "Status" = \'In review\' WHERE "row_id" = \'server-record\'',
+        sql: 'UPDATE "guests" SET "Status" = \'In review\' WHERE row_id = \'server-record\'',
         baseVersions: { 'guests-table': 7 },
       },
     ]);
@@ -585,7 +568,7 @@ describe('first-entry column types', () => {
       base_version: 5,
     });
     expect(exec).toHaveBeenLastCalledWith({
-      sql: 'UPDATE "guests" SET "Name" = \'macro|ada@example.com\' WHERE "row_id" = \'record\'',
+      sql: 'UPDATE "guests" SET "Name" = \'macro|ada@example.com\' WHERE row_id = \'record\'',
       baseVersions: { 'guests-table': 6 },
     });
   });
@@ -637,7 +620,7 @@ describe('first-entry column types', () => {
     await source.write(mutation, 5);
     expect(transport.inferColumnType).toHaveBeenCalledOnce();
     expect(exec).toHaveBeenLastCalledWith({
-      sql: 'UPDATE "guests" SET "Name" = 12 WHERE "row_id" = \'record\'',
+      sql: 'UPDATE "guests" SET "Name" = 12 WHERE row_id = \'record\'',
       baseVersions: { 'guests-table': 6 },
     });
   });

@@ -21,8 +21,7 @@ const detail: DatabaseDetail = {
       position: name,
       version: 1,
     },
-    sql_name: name.toLowerCase(),
-    read_sql_name: `_macro_table_${name}`,
+    sql_name: `"${name}"`,
     columns: [],
   })),
 };
@@ -33,7 +32,7 @@ const request = {
 };
 const proposal = {
   databaseId: 'support',
-  sql: 'SELECT COUNT(*) FROM "_macro_table_Tickets"',
+  sql: 'SELECT COUNT(*) FROM "Tickets"',
   explanation: 'Counts tickets.',
 };
 
@@ -165,7 +164,7 @@ describe('automatic question source verification', () => {
     expect(result.source?.tables.map((table) => table.name)).toContain(
       'Customers'
     );
-    expect(result.source?.tables[0].sqlName).toBe('_macro_table_Tickets');
+    expect(result.source?.tables[0].sqlName).toBe('"Tickets"');
   });
 
   it('rejects an inaccessible or unverified model-selected source', async () => {
