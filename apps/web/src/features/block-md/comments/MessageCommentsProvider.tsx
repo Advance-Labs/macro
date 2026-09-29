@@ -88,7 +88,7 @@ function getHighlightThread(
  */
 export const MessageCommentsProvider: VoidComponent<{
   activeComment?: Accessor<string | undefined>;
-  loroManager: AutomergeManager;
+  automergeManager: AutomergeManager;
 }> = (props) => {
   const {
     documentId: getDocumentId,
@@ -106,7 +106,7 @@ export const MessageCommentsProvider: VoidComponent<{
   }
   const { plugins, editor } = wrapper;
 
-  const currentPeerId = () => props.loroManager.peerIdStr;
+  const currentPeerId = () => props.automergeManager.peerIdStr;
 
   // The shared comment state now lives on the markdown document context. These
   // shims preserve the legacy store/signal surface this provider reads and
@@ -492,7 +492,7 @@ export const MessageCommentsProvider: VoidComponent<{
     for (const thread of commentThreads) {
       const anchor = thread.state.anchor;
       // Retained identities recover deletes missed while the document was
-      // closed, regardless of whether metadata or Loro marks arrive first.
+      // closed, regardless of whether metadata or Automerge marks arrive first.
       if (
         thread.state.deleted_at &&
         anchor?.type === 'markdown' &&

@@ -216,7 +216,7 @@ export function HistoryProvider(props: {
 
   // Diff a session: the state just before its first edit vs the state at its end,
   // paired by node id. Each changed block is attributed to whoever last edited it
-  // (via buildWhoMap over the loro op history), falling back to the session author.
+  // (via buildWhoMap over the automerge op history), falling back to the session author.
   const diffPreviewState = createMemo<SerializedEditorState | null>(() => {
     const session = diffSession();
     if (!session) return null;

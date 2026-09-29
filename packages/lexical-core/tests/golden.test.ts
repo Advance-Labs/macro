@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { AutomergeDoc } from '@macro-inc/automerge';
 import { Mirror } from '@macro-inc/automerge/mirror';
 import { describe, expect, it } from 'vitest';
-import { MARKDOWN_LORO_SCHEMA } from '../markdown-loro-schema';
+import { MARKDOWN_AUTOMERGE_SCHEMA } from '../markdown-automerge-schema';
 
 describe('markdown-golden.bin', () => {
   it('ensures that the \"golden\" snapshot is properly blank as expected', async () => {
@@ -14,7 +14,7 @@ describe('markdown-golden.bin', () => {
     const doc = new AutomergeDoc();
     doc.import(golden);
 
-    const mirror = new Mirror({ doc, schema: MARKDOWN_LORO_SCHEMA });
+    const mirror = new Mirror({ doc, schema: MARKDOWN_AUTOMERGE_SCHEMA });
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();

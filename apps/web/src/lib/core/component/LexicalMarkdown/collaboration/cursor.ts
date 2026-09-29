@@ -25,7 +25,7 @@ import {
   type RangeSelection,
 } from 'lexical';
 import type { LexicalSelectionAwareness, NodeCursor } from './LexicalAwareness';
-import { $findLoroContainerForLexicalNode } from './mapping';
+import { $findAutomergeContainerForLexicalNode } from './mapping';
 
 type ListLikeContainer = AutomergeMovableList | AutomergeList;
 
@@ -81,9 +81,9 @@ function getIndexOfContainerInParentList(
   return index;
 }
 
-// Convert Lexical selection to Loro cursors
+// Convert Lexical selection to Automerge cursors
 export function $convertLexicalSelectionToCursors(
-  loroManager: AutomergeManager,
+  automergeManager: AutomergeManager,
   mapping: NodeIdMappings,
   selection: BaseSelection
 ): { anchor: NodeCursor; focus: NodeCursor } | undefined {
@@ -99,8 +99,12 @@ export function $convertLexicalSelectionToCursors(
     const anchor = rangeSelection.anchor;
     const focus = rangeSelection.focus;
 
-    const anchorCursor = lexicalPointToCursor(anchor, loroManager, mapping);
-    const focusCursor = lexicalPointToCursor(focus, loroManager, mapping);
+    const anchorCursor = lexicalPointToCursor(
+      anchor,
+      automergeManager,
+      mapping
+    );
+    const focusCursor = lexicalPointToCursor(focus, automergeManager, mapping);
 
     if (!anchorCursor || !focusCursor) {
       warn('no anchor or focus cursor');
@@ -138,15 +142,15 @@ export function $convertLexicalSelectionToCursors(
       return undefined;
     }
 
-    // Find Loro containers for the selected nodes
-    const firstContainerId = $findLoroContainerForLexicalNode(
-      loroManager,
+    // Find Automerge containers for the selected nodes
+    const firstContainerId = $findAutomergeContainerForLexicalNode(
+      automergeManager,
       firstNode,
       mapping
     );
 
-    const lastContainerId = $findLoroContainerForLexicalNode(
-      loroManager,
+    const lastContainerId = $findAutomergeContainerForLexicalNode(
+      automergeManager,
       lastNode,
       mapping
     );
@@ -159,7 +163,8 @@ export function $convertLexicalSelectionToCursors(
     let focusCursor: Cursor | undefined;
 
     // Create cursor at the start of the first node
-    const firstContainerResult = loroManager.getContainerById(firstContainerId);
+    const firstContainerResult =
+      automergeManager.getContainerById(firstContainerId);
 
     if (firstContainerResult.isErr()) {
       warn('Failed to get first container', firstContainerResult);
@@ -174,7 +179,8 @@ export function $convertLexicalSelectionToCursors(
     }
 
     // Create cursor at the end of the last node
-    const lastContainerResult = loroManager.getContainerById(lastContainerId);
+    const lastContainerResult =
+      automergeManager.getContainerById(lastContainerId);
 
     if (lastContainerResult.isErr()) {
       warn('Failed to get last container', lastContainerResult);
@@ -209,10 +215,10 @@ export function $convertLexicalSelectionToCursors(
   return undefined;
 }
 
-// Convert from Lexical point to Loro cursor
+// Convert from Lexical point to Automerge cursor
 function lexicalPointToCursor(
   point: Point,
-  loroManager: AutomergeManager,
+  automergeManager: AutomergeManager,
   mapping: NodeIdMappings
 ): NodeCursor | undefined {
   const node = point.getNode();
@@ -225,9 +231,9 @@ function lexicalPointToCursor(
     return undefined;
   }
 
-  // Find the corresponding Loro container for this Lexical node
-  const containerId = $findLoroContainerForLexicalNode(
-    loroManager,
+  // Find the corresponding Automerge container for this Lexical node
+  const containerId = $findAutomergeContainerForLexicalNode(
+    automergeManager,
     node,
     mapping
   );
@@ -237,7 +243,7 @@ function lexicalPointToCursor(
   }
 
   // Get the container and create the cursor
-  const maybeContainer = loroManager.getContainerById(containerId);
+  const maybeContainer = automergeManager.getContainerById(containerId);
   if (maybeContainer.isErr()) {
     warn('Failed to get container', maybeContainer);
     return undefined;
@@ -299,10 +305,10 @@ function lexicalPointToCursor(
   };
 }
 
-// Convert from Loro cursor back to Lexical position
+// Convert from Automerge cursor back to Lexical position
 export function $cursorToLexicalPoint(
   cursor: NodeCursor,
-  loroManager: AutomergeManager,
+  automergeManager: AutomergeManager,
   editor: LexicalEditor,
   mapping: NodeIdMappings
 ): Point | null {
@@ -311,11 +317,11 @@ export function $cursorToLexicalPoint(
   const node = $getNodeById(editor, mapping.idToNodeKeyMap, nodeId);
 
   if (!node) {
-    warn('no node for loro container', nodeId);
+    warn('no node for automerge container', nodeId);
     return null;
   }
 
-  let maybeContainer = loroManager.getContainerById(cursorContainerID);
+  let maybeContainer = automergeManager.getContainerById(cursorContainerID);
 
   if (maybeContainer.isErr()) {
     warn('Failed to get container', maybeContainer);
@@ -330,7 +336,7 @@ export function $cursorToLexicalPoint(
   const nodeKey = node.getKey();
 
   // Get position info from the cursor
-  const posResult = loroManager.getCursorPos(cursor.cursor);
+  const posResult = automergeManager.getCursorPos(cursor.cursor);
 
   if (posResult.isErr()) {
     warn('Failed to get cursor position', posResult);
@@ -368,7 +374,7 @@ function $createPointFromKeyAndOffset(
 }
 
 export function $createSelectionFromPeerAwareness(
-  loroManager: AutomergeManager,
+  automergeManager: AutomergeManager,
   editor: LexicalEditor,
   peerAwareness: LexicalSelectionAwareness,
   mapping: NodeIdMappings,
@@ -378,11 +384,11 @@ export function $createSelectionFromPeerAwareness(
   const focus = peerAwareness?.focus;
 
   const anchorPoint = anchor
-    ? $cursorToLexicalPoint(anchor, loroManager, editor, mapping)
+    ? $cursorToLexicalPoint(anchor, automergeManager, editor, mapping)
     : null;
 
   const focusPoint = focus
-    ? $cursorToLexicalPoint(focus, loroManager, editor, mapping)
+    ? $cursorToLexicalPoint(focus, automergeManager, editor, mapping)
     : null;
 
   const selection = $createRangeSelection();

@@ -82,7 +82,7 @@ function getHighlightThread(
 /** Comments read from the annotation endpoints and anchored by the mark's stored thread id. */
 export const LegacyCommentsProvider: VoidComponent<{
   activeComment?: Accessor<string | undefined>;
-  loroManager: AutomergeManager;
+  automergeManager: AutomergeManager;
 }> = (props) => {
   const wrapper = useContext(LexicalWrapperContext);
   if (!isWrapperWithIds(wrapper)) {
@@ -93,7 +93,7 @@ export const LegacyCommentsProvider: VoidComponent<{
   const { documentId, state } = useMarkdownDocument();
   const { comments: commentState, setCommentState } = state;
 
-  const currentPeerId = () => props.loroManager.peerIdStr;
+  const currentPeerId = () => props.automergeManager.peerIdStr;
 
   const commentThreadsQuery = useMarkdownCommentsQuery(documentId);
   useCommentRealtime();

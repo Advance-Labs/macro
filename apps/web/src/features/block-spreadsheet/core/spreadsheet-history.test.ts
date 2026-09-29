@@ -303,7 +303,7 @@ describe('structural spreadsheet history', () => {
       if (operation === 'delete')
         right.getMap('spreadsheetValues').delete('A1');
       else {
-        // Loro drops a set of the existing value; make a real peer rewrite
+        // Give the peer a distinct value before restoring the original value
         // whose final text matches the original local operation.
         right.getMap('spreadsheetValues').set('A1', 'temporary peer value');
         right.commit();

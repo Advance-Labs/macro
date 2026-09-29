@@ -1,12 +1,12 @@
 import { AutomergeDoc } from '@macro-inc/automerge';
-import { markdownToLoroSnapshot } from '@macro-inc/lexical-core/markdown-loro-snapshot';
+import { markdownToAutomergeSnapshot } from '@macro-inc/lexical-core/markdown-automerge-snapshot';
 import { expect, test } from 'vitest';
 import { buildTimestampIndex } from './timestampIndex';
 
 test('native historical views materialize nested editor lists', async () => {
   const doc = new AutomergeDoc();
   try {
-    const snapshot = await markdownToLoroSnapshot('Historical **text**');
+    const snapshot = await markdownToAutomergeSnapshot('Historical **text**');
     expect(snapshot).toBeDefined();
     doc.import(snapshot!);
     const index = buildTimestampIndex(doc);

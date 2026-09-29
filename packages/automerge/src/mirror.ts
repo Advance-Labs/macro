@@ -13,8 +13,8 @@ import type { InferType, SchemaType } from './schema';
 export * from './schema';
 
 export enum SyncDirection {
-  TO_LORO = 'to-document',
-  FROM_LORO = 'from-document',
+  TO_AUTOMERGE = 'to-document',
+  FROM_AUTOMERGE = 'from-document',
 }
 export type UpdateMetadata = {
   direction: SyncDirection;
@@ -142,7 +142,7 @@ export class Mirror<S extends SchemaType> {
     this.schema = options.schema;
     this.unsubscribe = this.doc.subscribe((event) => {
       const metadata = this.metadata ?? {
-        direction: SyncDirection.FROM_LORO,
+        direction: SyncDirection.FROM_AUTOMERGE,
         origin: event.origin,
       };
       for (const listener of this.listeners)
@@ -174,7 +174,7 @@ export class Mirror<S extends SchemaType> {
           );
       }
     this.metadata = {
-      direction: SyncDirection.TO_LORO,
+      direction: SyncDirection.TO_AUTOMERGE,
       tags: typeof options?.tags === 'string' ? [options.tags] : options?.tags,
     };
     try {
@@ -188,7 +188,7 @@ export class Mirror<S extends SchemaType> {
     this.doc.commit();
     return this.getState();
   }
-  syncFromLoro() {
+  syncFromAutomerge() {
     return this.getState();
   }
   getContainerIds() {

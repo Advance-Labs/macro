@@ -1,5 +1,5 @@
 /**
- * Broadcasts a writer's cursor/selection over Loro awareness so it shows up as a
+ * Broadcasts a writer's cursor/selection over Automerge awareness so it shows up as a
  * live remote cursor in the website. The executor pumps each `Awareness` step
  * into `apply()`; unlike the old `presence.ts`, there's no internal timing here —
  * the drag-select and typing motion are decomposed into discrete awareness/pause
@@ -16,7 +16,7 @@ import {
   EphemeralStore,
 } from '@macro-inc/automerge';
 import type { Mirror } from '@macro-inc/automerge/mirror';
-import type { MarkdownLoroSchemaType } from '@macro-inc/lexical-core/markdown-loro-schema';
+import type { MarkdownAutomergeSchemaType } from '@macro-inc/lexical-core/markdown-automerge-schema';
 import { match } from 'ts-pattern';
 import type { Awareness } from '../queue';
 
@@ -63,7 +63,7 @@ export interface AwarenessSource {
   clear(): void;
 }
 
-/** Records every applied `Awareness` and never touches Loro — for tests. */
+/** Records every applied `Awareness` and never touches Automerge — for tests. */
 export function mockAwarenessSource(): AwarenessSource & { seen: Awareness[] } {
   const seen: Awareness[] = [];
   return {
@@ -82,7 +82,7 @@ type AwarenessPayload = {
 };
 
 export type RealAwarenessOptions = {
-  mirror: Mirror<MarkdownLoroSchemaType>;
+  mirror: Mirror<MarkdownAutomergeSchemaType>;
   doc: AutomergeDoc;
   send: (bytes: Uint8Array) => void;
   name: string;
@@ -154,7 +154,7 @@ export function realAwarenessSource(
   function publish(x: Awareness, keepalive: boolean): boolean {
     // Resolve to the node that actually OWNS the text (a block's text lives in a
     // child text-node container). The cursor blob must be tagged with that id, or
-    // the receiver can't map the Loro cursor to a caret and it never walks.
+    // the receiver can't map the Automerge cursor to a caret and it never walks.
     const owner = resolveTextOwner(mirror, doc, x.node);
     if (!owner) return false;
     const { text, nodeId: ownerNodeId } = owner;
@@ -191,15 +191,15 @@ export function realAwarenessSource(
   return { apply, clear };
 }
 
-// the following functions smell; their role is just to help us find a loro node
-// given a stable id and then get the actual lorotext that we can use for
+// the following functions smell; their role is just to help us find a automerge node
+// given a stable id and then get the actual automergetext that we can use for
 // awareness. there's probably a better way to do this
 
-function isLoroMap(c: Container | undefined): c is AutomergeMap {
+function isAutomergeMap(c: Container | undefined): c is AutomergeMap {
   return c?.kind() === 'Map';
 }
 
-/** The `$.id` of a loro container. */
+/** The `$.id` of a automerge container. */
 function containerId(c: AutomergeMap): string | undefined {
   const dollar = c.get('$') as
     | { getShallowValue?: () => { id?: string } | undefined; id?: string }
@@ -213,17 +213,17 @@ function containerId(c: AutomergeMap): string | undefined {
  * Resolve a node id to its `AutomergeText` AND the id of the container that owns that
  * text. A block's text lives in a child text-node container, so for a block id we
  * return the child text node's id — the awareness blob must be tagged with the
- * text-owning node's id, otherwise the receiver can't turn the Loro cursor into a
+ * text-owning node's id, otherwise the receiver can't turn the Automerge cursor into a
  * caret and it never walks with the typed text.
  */
 export function resolveTextOwner(
-  mirror: Mirror<MarkdownLoroSchemaType>,
+  mirror: Mirror<MarkdownAutomergeSchemaType>,
   doc: AutomergeDoc,
   nodeId: string
 ): { text: AutomergeText; nodeId: string } | null {
   for (const cid of mirror.getContainerIds()) {
     const c = doc.getContainerById(cid);
-    if (!isLoroMap(c)) continue;
+    if (!isAutomergeMap(c)) continue;
     if (containerId(c) !== nodeId) continue;
     const own = ownText(c);
     if (own) return own;
@@ -232,7 +232,7 @@ export function resolveTextOwner(
   return null;
 }
 
-/** The container's own `{ text, nodeId }` if it directly holds a AutomergeText. */
+/** The container's own `{ text, nodeId }` if it directly holds an AutomergeText. */
 function ownText(
   c: AutomergeMap
 ): { text: AutomergeText; nodeId: string } | null {
@@ -243,7 +243,7 @@ function ownText(
     : null;
 }
 
-/** First descendant (DFS) that directly owns a AutomergeText. */
+/** First descendant (DFS) that directly owns an AutomergeText. */
 function firstDescendantText(
   c: AutomergeMap
 ): { text: AutomergeText; nodeId: string } | null {
@@ -252,7 +252,7 @@ function firstDescendantText(
     | undefined;
   if (!children || typeof children.toArray !== 'function') return null;
   for (const child of children.toArray()) {
-    if (!isLoroMap(child)) continue;
+    if (!isAutomergeMap(child)) continue;
     const own = ownText(child);
     if (own) return own;
     const deep = firstDescendantText(child);

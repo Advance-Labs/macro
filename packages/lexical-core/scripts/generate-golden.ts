@@ -4,14 +4,14 @@
 
 import {
   markdownToSerializedEditorState,
-  rawMarkdownStateToLoroSnapshot,
-} from '../markdown-loro-snapshot';
+  rawMarkdownStateToAutomergeSnapshot,
+} from '../markdown-automerge-snapshot';
 
 // Build from scratch (no golden base) — this script *produces* the golden, so
-// it must not seed from it. Runtime callers go through markdownToLoroSnapshot,
+// it must not seed from it. Runtime callers go through markdownToAutomergeSnapshot,
 // which does seed from the golden.
 const emptyState = markdownToSerializedEditorState('');
-const golden = await rawMarkdownStateToLoroSnapshot(emptyState as any);
+const golden = await rawMarkdownStateToAutomergeSnapshot(emptyState as any);
 if (!golden) {
   console.error('snapshot generation returned undefined');
   process.exit(1);

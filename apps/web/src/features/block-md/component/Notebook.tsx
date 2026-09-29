@@ -103,7 +103,7 @@ function useCanUseLexicalStateDebugger() {
 }
 
 export function Notebook(props: {
-  loroManager: AutomergeManager;
+  automergeManager: AutomergeManager;
   documentId: string;
   hotkeyScope: string | undefined;
   autoFocus: boolean;
@@ -380,7 +380,7 @@ export function Notebook(props: {
           <div class="relative">
             <MarkdownEditor
               resolveAppLink={resolveAppLink}
-              loroManager={props.loroManager}
+              automergeManager={props.automergeManager}
               showLexicalStateDebugger={
                 canUseLexicalStateDebugger() && showLexicalStateDebugger()
               }
@@ -432,7 +432,7 @@ export function Notebook(props: {
 }
 
 export function InstructionsNotebook(props: {
-  loroManager: AutomergeManager;
+  automergeManager: AutomergeManager;
   hotkeyScope: string | undefined;
 }) {
   const { state } = useMarkdownDocument();
@@ -484,7 +484,7 @@ export function InstructionsNotebook(props: {
       <div class="grow max-w-3xl pt-12 min-w-0 mx-auto" ref={contentRef}>
         <InstructionsEditor
           resolveAppLink={resolveAppLink}
-          loroManager={props.loroManager}
+          automergeManager={props.automergeManager}
           showLexicalStateDebugger={
             canUseLexicalStateDebugger() && showLexicalStateDebugger()
           }

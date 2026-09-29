@@ -305,7 +305,7 @@ describe('spreadsheet session', () => {
     remote.free();
   });
 
-  it('rebinds the editor after sync recovery replaces the Loro document', async () => {
+  it('rebinds the editor after sync recovery replaces the Automerge document', async () => {
     const remote = new AutomergeDoc();
     writeSpreadsheetCells(remote, { A1: { value: 'initial' } });
     const transport = fakeLiveSource();

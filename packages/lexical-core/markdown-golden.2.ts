@@ -1,5 +1,5 @@
 // AUTO-GENERATED from markdown-golden.2.bin — do not edit by hand.
-// Canonical blank-markdown Loro "golden" snapshot, inlined as a byte literal so
+// Canonical blank-markdown Automerge "golden" snapshot, inlined as a byte literal so
 // it can be imported directly in any runtime (Cloudflare Worker, node, browser)
 // without a bundler-specific asset loader.
 export const MARKDOWN_GOLDEN: Uint8Array = new Uint8Array([

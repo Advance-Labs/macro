@@ -58,7 +58,7 @@ export function createSpreadsheetHistory(
       if (!event) {
         const popped = reversing;
         reversing = undefined;
-        // Redo metadata describes the actual inverse after Loro has reconciled
+        // Redo metadata describes the actual inverse after Automerge has reconciled
         // it with remote operations, rather than blindly reversing old data.
         const value =
           popped && popped.kind !== 'unavailable'
@@ -172,7 +172,7 @@ export function createSpreadsheetHistory(
     } finally {
       preview?.free();
     }
-    // onPop is called after Loro applies the inverse. Capture the current
+    // onPop is called after Automerge applies the inverse. Capture the current
     // values here instead so the next stack item describes the actual redo.
     reversing = item
       ? {

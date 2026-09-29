@@ -204,7 +204,7 @@ function getBlankMarkdownPlaceholder(canEdit: boolean) {
 
 export function MarkdownEditor(props: {
   autoFocusOnMount?: boolean;
-  loroManager: AutomergeManager;
+  automergeManager: AutomergeManager;
   showLexicalStateDebugger?: boolean;
   onLexicalStateDebuggerClose?: () => void;
   resolveAppLink?: MentionLinkResolver;
@@ -546,7 +546,7 @@ export function MarkdownEditor(props: {
     if (!IS_SYNC()) {
       return createPeerIdValidator(() => undefined, false);
     }
-    const peerId = () => props.loroManager.peerIdStr;
+    const peerId = () => props.automergeManager.peerIdStr;
     return createPeerIdValidator(peerId, true);
   };
 
@@ -557,7 +557,7 @@ export function MarkdownEditor(props: {
     .markdownShortcuts()
     .delete()
     .state<EditorState>(setState, 'json')
-    .history(400, props.loroManager)
+    .history(400, props.automergeManager)
     .use(tabIndentationPlugin())
     .use(listSwipeIndentPlugin(isContentEditable))
     .use(selectionDataPlugin(lexicalWrapper))
@@ -673,7 +673,7 @@ export function MarkdownEditor(props: {
   }
 
   if (ENABLE_MARKDOWN_LIVE_COLLABORATION) {
-    const peerId = () => props.loroManager.peerIdStr;
+    const peerId = () => props.automergeManager.peerIdStr;
     plugins.use(
       peerIdPlugin({
         peerId,
@@ -1016,7 +1016,7 @@ export function MarkdownEditor(props: {
             editorFocus={editorFocus}
             setEditorReady={setEditorReady}
             setEditorError={setEditorError}
-            loroManager={props.loroManager}
+            automergeManager={props.automergeManager}
           />
         </Show>
 
@@ -1149,7 +1149,7 @@ export function MarkdownEditor(props: {
           <Suspense>
             <CommentsProvider
               activeComment={activeCommentIdParam}
-              loroManager={props.loroManager}
+              automergeManager={props.automergeManager}
             />
           </Suspense>
         </Show>

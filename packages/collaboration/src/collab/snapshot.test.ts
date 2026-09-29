@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest';
 describe('collaboration snapshots', () => {
   it.each([1, 2, 3, 4, 5, 6, 7, 8, 9])('roundtrips %i branches', (heads) => {
     const doc = new AutomergeDoc();
-    // Three independent histories reproduce Loro 1.13.7 choosing one head as
-    // the shallow root and dropping the history required by the other two.
+    // Each independent branch must survive export and retain enough history
+    // to merge subsequent edits after restoring the snapshot.
     for (let index = 1; index <= heads; index++) {
       const peer = String(index);
       const branch = new AutomergeDoc();

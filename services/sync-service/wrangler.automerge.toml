@@ -1,4 +1,4 @@
-# Isolated Automerge rollout. Never bind this worker to legacy Loro storage.
+# Isolated Automerge rollout. Never bind this worker to legacy pre-Automerge storage.
 name = "sync-service-automerge-local"
 main = "build/worker/shim.mjs"
 compatibility_date = "2025-03-05"
@@ -11,7 +11,7 @@ INTERNAL_API_SECRET_KEY = "LOCAL_API_KEY"
 DOCUMENT_PERMISSIONS_SECRET = "local"
 ENVIRONMENT = "local"
 # DSS_URL is intentionally absent: native protocol tests must not write
-# Automerge snapshots into an existing Loro application's storage.
+# Automerge snapshots into an existing pre-Automerge application's storage.
 
 [durable_objects]
 bindings = [{ name = "DOCUMENT_SYNC_SESSION", class_name = "DocumentSyncSession" }]

@@ -31,7 +31,10 @@ export function endTrackedDocumentSpan(span: Span): void {
   span.end();
 }
 
-export function stampLoroSnapshotState(span: Span, doc: AutomergeDoc): void {
+export function stampAutomergeSnapshotState(
+  span: Span,
+  doc: AutomergeDoc
+): void {
   span.setAttr(
     'snapshot.op_count',
     [...doc.getAllChanges().values()]

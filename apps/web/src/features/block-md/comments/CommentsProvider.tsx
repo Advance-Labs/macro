@@ -10,16 +10,16 @@ import { MessageCommentsProvider } from './MessageCommentsProvider';
 /** Binds the editor's comment marks to whichever comment store this document uses. */
 export const CommentsProvider: VoidComponent<{
   activeComment?: Accessor<string | undefined>;
-  loroManager: AutomergeManager;
+  automergeManager: AutomergeManager;
 }> = (props) =>
   isFeatureEnabled(enableUnifiedDocumentDiscussions) ? (
     <MessageCommentsProvider
       activeComment={props.activeComment}
-      loroManager={props.loroManager}
+      automergeManager={props.automergeManager}
     />
   ) : (
     <LegacyCommentsProvider
       activeComment={props.activeComment}
-      loroManager={props.loroManager}
+      automergeManager={props.automergeManager}
     />
   );

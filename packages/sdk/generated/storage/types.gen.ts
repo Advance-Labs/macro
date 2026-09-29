@@ -3908,7 +3908,7 @@ export type CreateTaskResponse = {
      */
     documentMetadata: DocumentResponseMetadata;
     /**
-     * Base64-encoded canonical Loro snapshot used to initialize the task.
+     * Base64-encoded canonical Automerge snapshot used to initialize the task.
      */
     initialSnapshot: string;
     /**
@@ -14382,7 +14382,7 @@ export type CreateTaskHandlerResponses = {
          */
         documentMetadata: DocumentResponseMetadata;
         /**
-         * Base64-encoded canonical Loro snapshot used to initialize the task.
+         * Base64-encoded canonical Automerge snapshot used to initialize the task.
          */
         initialSnapshot: string;
         /**

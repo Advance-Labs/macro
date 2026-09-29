@@ -177,7 +177,7 @@ describe("document copy endpoint tests", () => {
   test("should preserve document structure in copy", async () => {
     const user = await createTestUser(mf, "structured-doc");
 
-    // Create structured content (using Loro's text operations)
+    // Create structured content (using Automerge's text operations)
     user.makeChange("Line 1");
     user.makeChange("\nLine 2");
     user.makeChange("\nLine 3");

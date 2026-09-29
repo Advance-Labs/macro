@@ -2,13 +2,13 @@ import type { AutomergeDoc } from '@macro-inc/automerge';
 import { createAutomergeDoc } from './manager';
 import type { RawUpdate } from './shared';
 
-export function loroDocFromSnapshot(snapshot: RawUpdate): AutomergeDoc {
-  const loroDoc = createAutomergeDoc();
-  loroDoc.import(snapshot);
-  return loroDoc;
+export function automergeDocFromSnapshot(snapshot: RawUpdate): AutomergeDoc {
+  const automergeDoc = createAutomergeDoc();
+  automergeDoc.import(snapshot);
+  return automergeDoc;
 }
 
-export function compareLoroDocVersions(
+export function compareAutomergeDocVersions(
   a: AutomergeDoc,
   b: AutomergeDoc
 ): number {

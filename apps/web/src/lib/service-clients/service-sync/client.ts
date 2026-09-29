@@ -234,7 +234,7 @@ export const syncServiceClient = {
     );
 
     // Without this an error body decodes as a snapshot, surfacing as a bogus
-    // Loro parse failure. Transport failures (offline, CORS) reject instead,
+    // Automerge parse failure. Transport failures (offline, CORS) reject instead,
     // which callers already see.
     if (!response.ok) {
       return err([

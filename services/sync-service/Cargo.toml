@@ -56,5 +56,5 @@ futures.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-# JWT crypto still uses getrandom 0.2; Loro previously enabled this transitively.
+# JWT crypto requires getrandom 0.2 with browser/WASM support.
 getrandom02 = { package = "getrandom", version = "0.2", features = ["js"] }

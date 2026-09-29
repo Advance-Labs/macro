@@ -6,8 +6,8 @@ import {
 } from '@macro-inc/automerge';
 import { AutomergeManager } from '@macro-inc/collaboration/collab/manager';
 import { createNoopLiveSyncSource } from '@macro-inc/collaboration/collab/source';
-import { MARKDOWN_LORO_SCHEMA } from '@macro-inc/lexical-core/markdown-loro-schema';
-import { markdownToLoroSnapshot } from '@macro-inc/lexical-core/markdown-loro-snapshot';
+import { MARKDOWN_AUTOMERGE_SCHEMA } from '@macro-inc/lexical-core/markdown-automerge-schema';
+import { markdownToAutomergeSnapshot } from '@macro-inc/lexical-core/markdown-automerge-snapshot';
 import { describe, expect, it } from 'vitest';
 import { applyCommentMarkChange } from './run';
 
@@ -22,7 +22,7 @@ type Node = {
 };
 
 async function worker(snapshot: Uint8Array) {
-  const manager = new AutomergeManager(MARKDOWN_LORO_SCHEMA, {
+  const manager = new AutomergeManager(MARKDOWN_AUTOMERGE_SCHEMA, {
     documentId: DOC,
   });
   (await manager.initializeFromSnapshot(snapshot))._unsafeUnwrap();
@@ -69,7 +69,9 @@ function tree(doc: AutomergeDoc): Node {
 
 describe('applyCommentMarkChange', () => {
   it('reaches other peers as a comment mark around the quoted text', async () => {
-    const snapshot = (await markdownToLoroSnapshot('The quick brown fox.'))!;
+    const snapshot = (await markdownToAutomergeSnapshot(
+      'The quick brown fox.'
+    ))!;
     const manager = await worker(snapshot);
     const peer = human(snapshot);
 
@@ -90,12 +92,14 @@ describe('applyCommentMarkChange', () => {
   });
 
   it('merges with typing that lands while the mark is placed', async () => {
-    const snapshot = (await markdownToLoroSnapshot('The quick brown fox.'))!;
+    const snapshot = (await markdownToAutomergeSnapshot(
+      'The quick brown fox.'
+    ))!;
     const manager = await worker(snapshot);
     const peer = human(snapshot);
 
     // Typed before the worker's change reaches this peer, into the very text
-    // run the mark splits. Loro keeps every keystroke and both peers converge
+    // run the mark splits. Automerge keeps every keystroke and both peers converge
     // on one mark, though typing in a run the split removed can surface
     // elsewhere in the paragraph, as it does when a person places a comment.
     const typed = firstText(peer);
@@ -124,7 +128,9 @@ describe('applyCommentMarkChange', () => {
   });
 
   it('pushes nothing when the text cannot be anchored', async () => {
-    const snapshot = (await markdownToLoroSnapshot('The quick brown fox.'))!;
+    const snapshot = (await markdownToAutomergeSnapshot(
+      'The quick brown fox.'
+    ))!;
     const manager = await worker(snapshot);
     const before = manager.doc.oplogVersion();
 

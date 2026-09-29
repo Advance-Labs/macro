@@ -19,7 +19,8 @@ export const blockUserAccessSignal = createBlockSignal<UserAccessLevel>();
 export const blockMetadataSignal = createBlockSignal<DocumentMetadata>();
 
 // Derived signals for syncable documents
-export const blockLoroManagerSignal = createBlockSignal<AutomergeManager>();
+export const blockAutomergeManagerSignal =
+  createBlockSignal<AutomergeManager>();
 export const blockSyncSourceSignal = createBlockSignal<LiveSyncSource>();
 export const blockSourceSignal = createBlockSignal<Source>();
 

@@ -3,7 +3,7 @@ import { schema } from '@macro-inc/automerge/mirror';
 // Root maps have stable identities even when two peers first edit an empty
 // cell concurrently. Separate properties also let formatting and value edits
 // merge independently. Calculated values are deliberately never persisted.
-export const SPREADSHEET_LORO_SCHEMA = schema({
+export const SPREADSHEET_AUTOMERGE_SCHEMA = schema({
   spreadsheetSheetMetadata: schema.AutomergeMap(
     {} as Record<string, ReturnType<typeof schema.String>>
   ),

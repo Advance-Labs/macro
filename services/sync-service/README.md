@@ -7,22 +7,22 @@ WebSocket, and storage adapters share that policy and persistence pipeline.
 
 ## Rollout boundary
 
-This implementation is **incompatible with Loro snapshots, updates, revisions,
+This implementation is **incompatible with pre-Automerge snapshots, updates, revisions,
 and awareness**. It rejects incompatible stored snapshots rather than replacing
-them with empty documents. It does not convert existing Loro history.
+them with empty documents. It does not convert existing pre-Automerge history.
 
 The Macro editors, collaboration package, spreadsheet engine, and AI editing
 worker use `packages/automerge`, with native snapshots, head revisions, cursors,
 undo, and JSON presence. Stable list objects are stored separately from their
 ordering references so moves preserve concurrent edits. The raw JSON endpoint
 materializes these lists for Lexical consumers. Browser persistence and gossip
-use separate Automerge namespaces. Existing Loro documents still require an
+use separate Automerge namespaces. Existing pre-Automerge documents still require an
 explicit data migration; use this port with fresh isolated data only.
 
 Use only `wrangler.automerge.toml` for this rollout. It creates the separate
 `sync-service-playground-automerge` worker, fresh D1/KV bindings, and separate
 Durable Object storage. It omits DSS callbacks so native snapshots cannot reach
-the existing application's Loro storage. The old `wrangler.toml` resources remain
+the existing application's pre-Automerge storage. The old `wrangler.toml` resources remain
 listed for reference, but its build and the legacy deployment workflow fail
 closed. Do not bypass that guard with `--no-bundle` or a prebuilt deployment.
 

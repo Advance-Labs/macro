@@ -3,7 +3,7 @@ main = "build/worker/shim.mjs"
 compatibility_date = "2025-03-05"
 
 [build]
-command = "echo 'Legacy Loro deployment is disabled. Use wrangler.automerge.toml for the isolated Automerge rollout.' >&2; exit 1"
+command = "echo 'Legacy pre-Automerge deployment is disabled. Use wrangler.automerge.toml for the isolated Automerge rollout.' >&2; exit 1"
 
 [observability.logs]
 enabled = true

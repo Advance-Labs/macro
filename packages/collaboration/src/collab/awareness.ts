@@ -30,10 +30,10 @@ export type PeerAwareness<DecodedSelection> = {
 /**
  * A codec for encoding and decoding selections
  *
- * Selections require encoding / decoding, because they likely contain a [LoroCursor]
+ * Selections require encoding / decoding, because they likely contain a [AutomergeCursor]
  * Which is a wasm ptr, which is not structured clonable.
  *
- * To transmit LoroCursor over the wire, we need to use the LoroCursor.encode() method
+ * To transmit AutomergeCursor over the wire, we need to use the AutomergeCursor.encode() method
  *
  * The `encode` method on the codec, is responsible for encoding all cursors in the selection
  *

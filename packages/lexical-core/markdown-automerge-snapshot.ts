@@ -1,8 +1,8 @@
 import { AutomergeDoc } from '@macro-inc/automerge';
 import { type InferType, Mirror } from '@macro-inc/automerge/mirror';
 import type { SerializedEditorState } from 'lexical';
+import { MARKDOWN_AUTOMERGE_SCHEMA } from './markdown-automerge-schema';
 import { MARKDOWN_GOLDEN } from './markdown-golden.2';
-import { MARKDOWN_LORO_SCHEMA } from './markdown-loro-schema';
 import { markdownToSerializedEditorStateWithIds } from './utils/markdown-state';
 
 // HACK: hack to get around async nature of mirror sync,
@@ -14,20 +14,20 @@ async function awaitMirrorSync() {
   await Promise.resolve();
 }
 
-export async function rawMarkdownStateToLoroSnapshot(
-  state: InferType<typeof MARKDOWN_LORO_SCHEMA>,
+export async function rawMarkdownStateToAutomergeSnapshot(
+  state: InferType<typeof MARKDOWN_AUTOMERGE_SCHEMA>,
   base?: Uint8Array
 ): Promise<Uint8Array | undefined> {
-  const loroDoc = new AutomergeDoc();
-  loroDoc.setRecordTimestamp(true);
+  const automergeDoc = new AutomergeDoc();
+  automergeDoc.setRecordTimestamp(true);
 
   // Seed from the golden base so every document shares a common ancestor — this
   // is what lets concurrent/optimistic edits converge instead of duplicating.
-  if (base) loroDoc.import(base);
+  if (base) automergeDoc.import(base);
 
   const mirror = new Mirror({
-    doc: loroDoc,
-    schema: MARKDOWN_LORO_SCHEMA,
+    doc: automergeDoc,
+    schema: MARKDOWN_AUTOMERGE_SCHEMA,
   });
 
   mirror.setState(state);
@@ -35,7 +35,7 @@ export async function rawMarkdownStateToLoroSnapshot(
   await awaitMirrorSync();
 
   try {
-    return loroDoc.export({ mode: 'snapshot' });
+    return automergeDoc.export({ mode: 'snapshot' });
   } catch (e) {
     console.error('Failed to export snapshot', e);
     return undefined;
@@ -50,12 +50,12 @@ export function markdownToSerializedEditorState(
   ) as SerializedEditorState;
 }
 
-export async function markdownToLoroSnapshot(
+export async function markdownToAutomergeSnapshot(
   markdown: string
 ): Promise<Uint8Array | undefined> {
   // Blank markdown is exactly the golden — return it verbatim so all empty docs
   // share identical bytes and skip the mirror round-trip.
   if (markdown === '') return MARKDOWN_GOLDEN;
   const state = markdownToSerializedEditorState(markdown);
-  return rawMarkdownStateToLoroSnapshot(state as any, MARKDOWN_GOLDEN);
+  return rawMarkdownStateToAutomergeSnapshot(state as any, MARKDOWN_GOLDEN);
 }

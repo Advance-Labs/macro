@@ -15,7 +15,7 @@ import {
   on,
   type Setter,
 } from 'solid-js';
-import { registerLoroHistory } from '../collaboration/undo';
+import { registerAutomergeHistory } from '../collaboration/undo';
 import { bindStateAs } from '../utils';
 import { checklistPlugin } from './checklist/';
 import { customDeletePlugin } from './custom-delete';
@@ -33,10 +33,10 @@ export function createPluginManager(editor: LexicalEditor, type: EditorType) {
   const cleanupFunctions: Array<() => void> = [];
 
   const pluginManager = {
-    history(timeGap = 400, loroManager?: AutomergeManager) {
-      if (type === 'markdown-sync' && loroManager) {
+    history(timeGap = 400, automergeManager?: AutomergeManager) {
+      if (type === 'markdown-sync' && automergeManager) {
         cleanupFunctions.push(
-          registerLoroHistory(editor, loroManager.doc, timeGap)
+          registerAutomergeHistory(editor, automergeManager.doc, timeGap)
         );
       } else {
         cleanupFunctions.push(

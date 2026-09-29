@@ -4,8 +4,8 @@ import type { Chatter } from '@macro-inc/collaboration/collab/chatter';
 import { createSyncEngine } from '@macro-inc/collaboration/collab/engine';
 import { AutomergeManager } from '@macro-inc/collaboration/collab/manager';
 import {
+  AUTOMERGE_SNAPSHOT_DB_NAME,
   IDBSnapshotStore,
-  LORO_SNAPSHOT_DB_NAME,
   loadCachedState,
   type SnapshotStore,
 } from '@macro-inc/collaboration/collab/snapshot-store';
@@ -16,8 +16,8 @@ import {
   SyncSourceStatus,
 } from '@macro-inc/collaboration/collab/source';
 import {
+  AUTOMERGE_WAL_DB_NAME,
   BrowserWALStore,
-  LORO_WAL_DB_NAME,
   type WALStore,
   WALSyncer,
 } from '@macro-inc/collaboration/collab/wal';
@@ -31,7 +31,7 @@ import {
   SPREADSHEET_FORMAT_VERSION,
   type SpreadsheetSelection,
 } from '../core/spreadsheet-document';
-import { SPREADSHEET_LORO_SCHEMA } from '../core/spreadsheet-schema';
+import { SPREADSHEET_AUTOMERGE_SCHEMA } from '../core/spreadsheet-schema';
 import { isSpreadsheetSheetId } from '../core/workbook-document';
 
 export type SpreadsheetSessionOptions = {
@@ -66,7 +66,7 @@ function serializeSnapshotOperation<T>(
   return pending;
 }
 
-/** The same Loro, local snapshot, WAL and live transport used by markdown. */
+/** The same Automerge, local snapshot, WAL and live transport used by markdown. */
 export function createSpreadsheetSession(
   options: SpreadsheetSessionOptions,
   persistence?: {
@@ -75,15 +75,18 @@ export function createSpreadsheetSession(
     makeChatter?: (documentId: string) => Chatter;
   }
 ): SpreadsheetDocumentSource {
-  const manager = new AutomergeManager(SPREADSHEET_LORO_SCHEMA, {
+  const manager = new AutomergeManager(SPREADSHEET_AUTOMERGE_SCHEMA, {
     documentId: options.documentId,
   });
   const snapshotStore =
     persistence?.snapshots ??
-    new IDBSnapshotStore<Uint8Array>(LORO_SNAPSHOT_DB_NAME, options.documentId);
+    new IDBSnapshotStore<Uint8Array>(
+      AUTOMERGE_SNAPSHOT_DB_NAME,
+      options.documentId
+    );
   const walStore =
     persistence?.wal ??
-    new BrowserWALStore<Uint8Array>(LORO_WAL_DB_NAME, options.documentId);
+    new BrowserWALStore<Uint8Array>(AUTOMERGE_WAL_DB_NAME, options.documentId);
   const wal = new WALSyncer(
     walStore,
     (updates) => options.syncSource.pushUpdate(updates),
@@ -155,7 +158,7 @@ export function createSpreadsheetSession(
   onCleanup(() => clearInterval(presenceHeartbeat));
 
   const engine = createSyncEngine({
-    loroManager: manager,
+    automergeManager: manager,
     awareness,
     syncs: { live: options.syncSource, wal },
     bindings: { onRemoteState: () => setDoc(manager.doc) },

@@ -27,8 +27,8 @@ const markdownNodeSchema = schema.AutomergeMap({
 
 markdownNodeSchema.definition.children.itemSchema = markdownNodeSchema;
 
-export const MARKDOWN_LORO_SCHEMA = schema({
+export const MARKDOWN_AUTOMERGE_SCHEMA = schema({
   root: markdownNodeSchema,
 });
 
-export type MarkdownLoroSchemaType = typeof MARKDOWN_LORO_SCHEMA;
+export type MarkdownAutomergeSchemaType = typeof MARKDOWN_AUTOMERGE_SCHEMA;

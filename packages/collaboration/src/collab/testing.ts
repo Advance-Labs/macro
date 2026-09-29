@@ -182,7 +182,9 @@ export class MockLiveSyncSource implements LiveSyncSource {
   }
 }
 
-export class MockLoroManager implements SyncEngineManager<GenericRootSchema> {
+export class MockAutomergeManager
+  implements SyncEngineManager<GenericRootSchema>
+{
   private updateCallbacks = new Set<(update: AutomergeRawUpdate) => void>();
   private stateCallbacks = new Set<
     (update: StateUpdate<GenericRootSchema>) => void
@@ -195,7 +197,7 @@ export class MockLoroManager implements SyncEngineManager<GenericRootSchema> {
       _update: AutomergeRawUpdate
     ): Result<boolean, ResultError<AutomergeManagerError>[]> => ok(true)
   );
-  public syncToLoro = vi.fn(async () => ok(undefined as void));
+  public syncToAutomerge = vi.fn(async () => ok(undefined as void));
   public reset = vi.fn(async () => ok(undefined as void));
 
   constructor(initialized = true) {

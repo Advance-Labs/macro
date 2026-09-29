@@ -59,7 +59,7 @@ migrate-d1-prod:
 deploy-prod: migrate-d1-prod
   npx wrangler deploy --env prod
 
-# Isolated local native protocol worker; never reads an old local Loro volume.
+# Isolated local native protocol worker; never reads an pre-Automerge local volume.
 local-automerge:
   CI=true npx wrangler d1 migrations apply USER_PEER_MAPPING --local --config wrangler.automerge.toml --persist-to .wrangler-automerge
   npx wrangler dev --config wrangler.automerge.toml --persist-to .wrangler-automerge --var LOCAL_API_KEY:local --port 8791

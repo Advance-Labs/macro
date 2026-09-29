@@ -10,7 +10,7 @@ import {
   SPREADSHEET_MAX_CELL_LENGTH,
   SPREADSHEET_MAX_ROWS,
 } from './spreadsheet-document';
-import { SPREADSHEET_LORO_SCHEMA } from './spreadsheet-schema';
+import { SPREADSHEET_AUTOMERGE_SCHEMA } from './spreadsheet-schema';
 import {
   isSpreadsheetSheetId,
   validateSpreadsheetSheetName,
@@ -21,7 +21,7 @@ const MAX_DOCUMENT_ENTRIES = 1_000_000;
 const textEncoder = new TextEncoder();
 const knownRoots = new Set([
   'spreadsheetMeta',
-  ...Object.keys(SPREADSHEET_LORO_SCHEMA.definition),
+  ...Object.keys(SPREADSHEET_AUTOMERGE_SCHEMA.definition),
 ]);
 
 function sheetName(value: unknown): value is string {

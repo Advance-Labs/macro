@@ -32,7 +32,7 @@ import {
 
 export enum AutomergeManagerError {
   ImportFailed = 'IMPORT_FAILED',
-  /** The update arrived ahead of its causal dependencies. Loro holds it and
+  /** The update arrived ahead of its causal dependencies. Automerge holds it and
    *  applies it automatically once the gap fills — not a failure. */
   ImportPending = 'IMPORT_PENDING',
   NotInitialized = 'NOT_INITIALIZED',
@@ -41,7 +41,7 @@ export enum AutomergeManagerError {
   ExportFailed = 'EXPORT_FAILED',
   GetCursorPosFailed = 'GET_CURSOR_POS_FAILED',
   GetContainerByIdFailed = 'GET_CONTAINER_BY_ID_FAILED',
-  UnknownLoroError = 'UNKNOWN_LORO_ERROR',
+  UnknownAutomergeError = 'UNKNOWN_AUTOMERGE_ERROR',
 }
 
 export enum AutomergeStateTag {
@@ -69,7 +69,7 @@ export type AutomergeManagerOptions = {
   documentId: string;
 };
 
-/** Map Loro's {@link ImportStatus} onto our Result: ok(didChange), or
+/** Map Automerge's {@link ImportStatus} onto our Result: ok(didChange), or
  *  {@link AutomergeManagerError.ImportPending} when ops were held back waiting on
  *  missing causal dependencies. */
 function importStatusToResult(
@@ -96,7 +96,7 @@ export interface SyncEngineManager<
   importUpdate(
     update: AutomergeRawUpdate
   ): Result<boolean, ResultError<AutomergeManagerError>[]>;
-  syncToLoro(
+  syncToAutomerge(
     state: InferType<S>
   ): Promise<Result<void, ResultError<AutomergeManagerError>[]>>;
   reset(
@@ -108,7 +108,7 @@ export interface SyncEngineManager<
 }
 
 /**
- * The AutomergeManager manages the state of a AutomergeDoc by syncing arbitrary JSON
+ * The AutomergeManager manages the state of an AutomergeDoc by syncing arbitrary JSON
  * state to and from it via the {@link Mirror}, which incrementally diffs the
  * incoming JSON state and applies it to the AutomergeDoc.
  *
@@ -151,7 +151,11 @@ export class AutomergeManager<S extends GenericRootSchema = GenericRootSchema>
     this.options = options;
     // Stamp this doc's telemetry with the peer identity as soon as it
     // exists, so every span and log record carries who we are.
-    setTelemetryAttr(options.documentId, 'loro.peer_id', this._doc.peerIdStr);
+    setTelemetryAttr(
+      options.documentId,
+      'automerge.peer_id',
+      this._doc.peerIdStr
+    );
   }
 
   /** The inner AutomergeDoc. Only touch this if you know what you're doing. */
@@ -162,7 +166,7 @@ export class AutomergeManager<S extends GenericRootSchema = GenericRootSchema>
   get mirror(): Mirror<S> | undefined {
     return this._mirror;
   }
-  /** The current mirrored state of the loro doc
+  /** The current mirrored state of the automerge doc
    *
    * ┌─────────────┐
    * │ Local State │                    ┌─────────────┐
@@ -307,7 +311,7 @@ export class AutomergeManager<S extends GenericRootSchema = GenericRootSchema>
       this.emitState({
         state: mirrorState,
         metadata: {
-          direction: SyncDirection.TO_LORO,
+          direction: SyncDirection.TO_AUTOMERGE,
           tags: ['INITIALIZE'],
         },
       });
@@ -368,7 +372,7 @@ export class AutomergeManager<S extends GenericRootSchema = GenericRootSchema>
     return ok(this._mirror.getContainerIds());
   }
 
-  async syncToLoro(
+  async syncToAutomerge(
     state: InferType<S>
   ): Promise<Result<void, ResultError<AutomergeManagerError>[]>> {
     if (!this._initialized || !this._mirror) {
@@ -391,12 +395,12 @@ export class AutomergeManager<S extends GenericRootSchema = GenericRootSchema>
         documentId: this.options.documentId,
         level: 'error',
         context: {},
-        message: `syncToLoro failed: ${e}`,
+        message: `syncToAutomerge failed: ${e}`,
       });
       return err([
         {
           code: AutomergeManagerError.SyncFailed,
-          message: `Failed to sync to loro: ${e}`,
+          message: `Failed to sync to automerge: ${e}`,
         },
       ]);
     }
@@ -448,7 +452,7 @@ export class AutomergeManager<S extends GenericRootSchema = GenericRootSchema>
     this.emitState({
       state,
       metadata: {
-        direction: SyncDirection.TO_LORO,
+        direction: SyncDirection.TO_AUTOMERGE,
         tags: [AutomergeStateTag.Initialize],
       },
     });
@@ -498,7 +502,7 @@ export class AutomergeManager<S extends GenericRootSchema = GenericRootSchema>
         return err([
           {
             code: AutomergeManagerError.GetCursorPosFailed,
-            message: "loro didn't give us a cursor position",
+            message: "automerge didn't give us a cursor position",
           },
         ]);
       }

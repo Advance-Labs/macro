@@ -11,9 +11,9 @@ import {
   WALSyncer,
 } from '@macro-inc/collaboration/collab/wal';
 import {
-  MARKDOWN_LORO_SCHEMA,
-  type MarkdownLoroSchemaType,
-} from '@macro-inc/lexical-core/markdown-loro-schema';
+  MARKDOWN_AUTOMERGE_SCHEMA,
+  type MarkdownAutomergeSchemaType,
+} from '@macro-inc/lexical-core/markdown-automerge-schema';
 import {
   $getId,
   $updateAllNodeIds,
@@ -54,8 +54,10 @@ if (initial.isErr())
   throw new Error(`initial sync failed: ${initial.error.type}`);
 const { snapshot } = initial.value;
 
-const manager = new AutomergeManager(MARKDOWN_LORO_SCHEMA, { documentId: '' });
-let engine: SyncEngine<typeof MARKDOWN_LORO_SCHEMA, unknown> | undefined;
+const manager = new AutomergeManager(MARKDOWN_AUTOMERGE_SCHEMA, {
+  documentId: '',
+});
+let engine: SyncEngine<typeof MARKDOWN_AUTOMERGE_SCHEMA, unknown> | undefined;
 manager.onStateChange((u) => queueMicrotask(() => engine?.onStateUpdate(u)));
 
 const initResult = await manager.initializeFromSnapshot(snapshot);
@@ -74,7 +76,7 @@ const wal = new WALSyncer<RawUpdate>(
   (updates) => source.pushUpdate(updates)
 );
 engine = new SyncEngine({
-  loroManager: manager,
+  automergeManager: manager,
   awareness: workerAwareness,
   syncs: { wal, live: source },
   bindings: { onRemoteState: () => {} },
@@ -91,8 +93,8 @@ const propagate = () => {
     session.editor.update(() => $updateAllNodeIds(session.ids), {
       discrete: true,
     });
-    await engine!.syncStateToLoro(
-      toSnapshot(session) as unknown as InferType<MarkdownLoroSchemaType>
+    await engine!.syncStateToAutomerge(
+      toSnapshot(session) as unknown as InferType<MarkdownAutomergeSchemaType>
     );
   });
 };

@@ -36,10 +36,7 @@ async function buildSnapshot(
   return doc.export({ mode: 'snapshot' });
 }
 
-/** Push the full op-log from a manager to the server. Loro dedupes by op ID,
- *  so re-applying already-seen ops is a no-op. We use full-update mode (no
- *  `from` frontier) because Loro panics when the `from` frontier was derived
- *  from a snapshot import. */
+/** Push all changes to the server; Automerge deduplicates previously seen changes. */
 function pushToServer(
   manager: AutomergeManager<typeof TEST_SCHEMA>,
   server: TestServer
@@ -71,7 +68,7 @@ describe('AutomergeManager seed + converge — two-client merge', () => {
           }),
           reconnectedB,
           syncEngine: createSyncEngine({
-            loroManager: reconnectedB,
+            automergeManager: reconnectedB,
             awareness: {
               local: () => undefined,
               updateLocalAwareness: vi.fn(),
@@ -92,12 +89,12 @@ describe('AutomergeManager seed + converge — two-client merge', () => {
       snapshot: initialSnapshotX,
     });
 
-    await offlineClientB.syncToLoro({
+    await offlineClientB.syncToAutomerge({
       paragraphs: [{ id: 'p1', text: 'X online-B ' }],
     });
     pushToServer(offlineClientB, server);
 
-    await offlineClientB.syncToLoro({
+    await offlineClientB.syncToAutomerge({
       paragraphs: [{ id: 'p1', text: 'X online-B offline-B ' }],
     });
     const staleLocalSnapshot = offlineClientB.doc.export({
@@ -107,7 +104,7 @@ describe('AutomergeManager seed + converge — two-client merge', () => {
 
     clientA.importUpdate(server.doc.export({ mode: 'update' }));
     await Promise.resolve();
-    await clientA.syncToLoro({
+    await clientA.syncToAutomerge({
       paragraphs: [{ id: 'p1', text: 'X online-B online-A ' }],
     });
     pushToServer(clientA, server);
@@ -162,12 +159,12 @@ describe('AutomergeManager seed + converge — two-client merge', () => {
       });
       await clientB.ingest({ kind: 'dss', snapshot: initialSnapshotX });
 
-      await clientA.syncToLoro({
+      await clientA.syncToAutomerge({
         paragraphs: [{ id: 'p1', text: 'X edit-A ' }],
       });
       pushToServer(clientA, server);
 
-      await clientB.syncToLoro({
+      await clientB.syncToAutomerge({
         paragraphs: [{ id: 'p1', text: 'X edit-B ' }],
       });
       pushToServer(clientB, server);
