@@ -19,4 +19,6 @@ uuid = { workspace = true, features = ["js"] }
 
 [dev-dependencies]
 pollster = { workspace = true }
+reqwest = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true }
