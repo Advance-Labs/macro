@@ -1,4 +1,5 @@
 import { CREATE_MENU_COMMAND_SCOPE } from '@app/constants/hotkeys';
+import { createDestinationHint } from '@app/features/command/create-destination';
 import { useCreateMenuBlocks } from '@app/features/command/Launcher';
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
 import { useHotkeyInterceptor } from '@app/signal/hotkeyRoot';
@@ -188,7 +189,16 @@ export const SidebarCreateMenu = (props: SidebarCreateMenuProps) => {
                 <div class="size-4 shrink-0 flex items-center rounded-sm text-ink-muted [&_svg]:size-4">
                   <Dynamic component={block.icon} />
                 </div>
-                <span class="flex-1 text-ink">{block.label}</span>
+                <span class="flex min-w-0 flex-1 items-baseline gap-2">
+                  <span class="text-ink">{block.label}</span>
+                  <Show when={createDestinationHint(block)}>
+                    {(hint) => (
+                      <span class="max-w-40 truncate text-ink-extra-muted/70">
+                        {hint()}
+                      </span>
+                    )}
+                  </Show>
+                </span>
                 <Hotkey token={block.hotkeyToken} theme="subtle" class="ml-6" />
               </Dropdown.Item>
             )}

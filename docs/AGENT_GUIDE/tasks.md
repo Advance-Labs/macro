@@ -81,6 +81,8 @@ filter sheets. Desktop uses the centered composer dialog.
    `Add description...`, and property buttons: `Not Started` (status), `Priority`, assignee
    chip (defaults to you), `Due Date`, `Change or select tags`, `Attach image or video`,
    a `Create More` switch, and `Create Task Ctrl ↵`.
+   A composer that adds the task to a project starts its property row with a
+   read-only chip naming that project (see Projects below).
    The `Shared with Team` row defaults to on and remembers your choice in local
    storage across composer openings and page reloads. Its hint explains whether
    the task will be visible to your whole team or only to you and the people you
@@ -174,6 +176,19 @@ the project title and property pills appear only on Overview. Use
 inserted into the query cache before the composer closes, including its selected
 properties and project chip. It stays in its group while saving and assigning,
 then uses the saved task ID. Failed creations or assignments roll back that row.
+
+The global create menu is scoped to an open project the way Cmd/Ctrl+K is scoped
+to the focused split. While a project's Overview or Tasks is the active split,
+press `c` (with focus outside any editor or input), then `t` — or choose `Task`
+in the Create menu or the sidebar `Create` dropdown — to open the same composer
+as `New task`. The menu's Task row reads `In <project name>`, and the composer's
+property row starts with a read-only chip naming the project. Submitting adds
+the task to the project and switches the project to its Tasks tab, where the new
+row appears. Every other create entry (Document, Project, Folder, and so on)
+behaves as it does elsewhere. Outside a project, or for viewers without edit
+access to it, `c` then `t` opens the regular composer with no project chip. A
+task opened from the project's list is not a project view, so `c` there creates
+an ordinary task.
 Verify this with GraphQL Soup both enabled and disabled. The section tabs
 use the same control as Channels. Existing tasks can be assigned through their
 `Set project…` context menu; there is no bulk-add dialog in the project view.

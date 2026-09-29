@@ -410,6 +410,9 @@ Document navigates straight into a new doc; Task, Project, and Channel open dial
 When calls are enabled, `C C` (Create → Call) opens `/app/meet/new`. The call is
 created only after `Start call`; Escape closes the Create menu.
 Project opens the native project composer; Folder remains the Files folder action.
+While a project is the active split, Task (and `C T`) creates the task in that
+project: the Task row shows `In <project name>` and the composer shows the
+project chip. Other entries are unaffected (see Projects in `tasks.md`).
 
 Mobile glass presses animate the enclosing surface over 300ms. Round buttons
 retain roughly 20% growth; wide pills and grouped controls extend their glass
@@ -493,6 +496,7 @@ restart rules still apply.
 
 - `Ctrl/Cmd+K` — jump to anything by name.
 - `c` then `d`/`t`/`e`/`m`/`a` — create doc / task / email / channel / AI chat.
+  Inside an open project, `c` then `t` adds the task to that project.
   Single-letter shortcuts only work when no editor has focus; press `Escape` first.
 - `/` — search everything. `j`/`k` — move in lists. `e` — mark done.
 - `g` then `h` — Home; `g` then `i` remains an alias.

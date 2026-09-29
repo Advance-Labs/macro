@@ -1,12 +1,12 @@
 import { EntityDetailTopBar } from '@app/components/entity-detail/EntityDetailTopBar';
 import { ViewBreadcrumbs } from '@app/components/view-shell';
+import { registerCreateDestination } from '@app/features/command/create-destination';
 import {
   projectDetailRoute,
   projectTaskRoute,
   tasksSplitRoute,
 } from '@app/features/tasks-view/route';
 import { useNavigate } from '@app/lib/split-router';
-import type { ComposeTaskProps } from '@block-md/component/ComposeTask';
 import { useSplitLayout } from '@components/app/split-layout/layout';
 import { useSplitPanelOrThrow } from '@components/app/split-layout/layoutUtils';
 import { getPermissions } from '@core/component/SharePermissions';
@@ -18,7 +18,7 @@ import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import { getDisplayName, tryMacroId } from '@core/user';
 import StackIcon from '@phosphor/stack.svg';
 import { Button } from '@ui';
-import { Match, Show, Switch } from 'solid-js';
+import { Match, onCleanup, Show, Switch } from 'solid-js';
 import { ProjectCollaborators } from './components/project-collaborators';
 import {
   type ProjectsContext,
@@ -31,6 +31,10 @@ import {
   type ProjectSection,
 } from './core/project';
 import type { ProjectRoute } from './core/route';
+import {
+  projectCreateDestination,
+  projectTaskComposer,
+} from './primitives/project-task-composer';
 import { ProjectDiscussion } from './project-collaboration';
 import { ProjectDescription } from './project-description';
 import { Projects } from './projects';
@@ -139,25 +143,35 @@ function ProjectDetailHost(props: ProjectDetailProps) {
   const source = context.createProjectSource(() => props.route.id);
   const commands = context.createCommands();
   const layout = useSplitLayout();
+  const panel = useSplitPanelOrThrow();
   const navigate = useNavigate();
   const section = (section: ProjectSection) =>
     navigate({
       route: projectDetailRoute,
       params: { projectId: props.route.id, section },
     });
+  // A new task shows up in the project's Tasks list.
+  const onTaskCreated = () => section('tasks');
   const createTask = () => {
-    const projectId = props.route.id;
+    const project = source.project();
+    if (!project) return;
     layout.popoverSplit({
       type: 'component',
       id: 'task-compose',
-      params: {
-        createTask: (
-          ...args: Parameters<NonNullable<ComposeTaskProps['createTask']>>
-        ) => commands.createTask(projectId, ...args),
-        onSuccess: () => section('tasks'),
-      },
+      params: projectTaskComposer(project, commands.createTask, onTaskCreated),
     });
   };
+  // Scopes the global create menu's Task (`c` then `t`) to this project.
+  onCleanup(
+    registerCreateDestination(
+      panel.handle.id,
+      projectCreateDestination(
+        source.project,
+        commands.createTask,
+        onTaskCreated
+      )
+    )
+  );
   return (
     <>
       <Show when={props.breadcrumb}>
