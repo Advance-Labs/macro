@@ -27,7 +27,7 @@ For Markdown document content, link to other Macro documents, channels, chats, p
 
 `<m-document-mention>{"documentId":"{id}","documentName":"","blockName":"md","blockParams":{}}</m-document-mention>`
 
-The same Markdown parser also renders the other in-app chip tags: `<m-date-mention>` for a day or time, `<m-agent-session-mention>` for an agent session (add `"expanded":true` for the card that follows the latest turn), `<m-user-mention>` / `<m-contact-mention>` / `<m-group-mention>` for people and groups, and `<m-pr-mention>` for a pull request. Use those tags in document content the same way you would in a chat reply.
+The same Markdown parser also renders the other in-app chip tags: `<m-date-mention>` for a day or time, `<m-agent-session-mention>` for an agent session (add `"expanded":true` for the card that follows the latest turn), `<m-user-mention>` / `<m-contact-mention>` / `<m-group-mention>` for people and groups, `<m-pr-mention>` for a pull request, and `<m-initiative-mention>` for an initiative (a Project). Use those tags in document content the same way you would in a chat reply.
 
 This holds true even when `CreateDocument` is called through the MCP server, where you are otherwise told to link items in your own chat replies as plain Markdown URLs — that rule is about your conversational responses to the MCP client, not about content you write into a Macro document. Do NOT use plain Markdown links or bare URLs to reference other Macro items inside document content; only `<m-document-mention>` tags (and the other chip tags above) render as working links there.
 

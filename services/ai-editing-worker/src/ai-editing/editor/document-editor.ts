@@ -685,6 +685,15 @@ export class DocumentEditor {
     return this.insertMention(blockId, at, { kind: 'pr', ...entity });
   }
 
+  /** An initiative is what users see as a Project. */
+  public mentionInitiative(
+    blockId: NodeId,
+    at: number,
+    entity: { id: string; label?: string }
+  ): Ref {
+    return this.insertMention(blockId, at, { kind: 'initiative', ...entity });
+  }
+
   public mentionTag(
     blockId: NodeId,
     at: number,

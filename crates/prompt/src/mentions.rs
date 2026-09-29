@@ -30,7 +30,7 @@ Use `<m-document-mention>` with the right `blockName` (and `blockParams` when ne
 - Channel mention: `<m-document-mention>{"documentId":"{id}","documentName":"","blockName":"channel","blockParams":{}}</m-document-mention>`
 - Channel message mention: `<m-document-mention>{"documentId":"{channel_id}","documentName":"","blockName":"channel","blockParams":{"channel_message_id":"{message_id}"}}</m-document-mention>`
 - Chat mention: `<m-document-mention>{"documentId":"{id}","documentName":"","blockName":"chat","blockParams":{}}</m-document-mention>`
-- Project mention: `<m-document-mention>{"documentId":"{id}","documentName":"","blockName":"project","blockParams":{}}</m-document-mention>`
+- Folder mention: `<m-document-mention>{"documentId":"{id}","documentName":"","blockName":"project","blockParams":{}}</m-document-mention>` (`blockName` `project` is a folder, not an initiative)
 - Task mention: `<m-document-mention>{"documentId":"{id}","documentName":"","blockName":"task","blockParams":{}}</m-document-mention>`
 - Email thread mention: `<m-document-mention>{"documentId":"{thread_id}","documentName":"","blockName":"email","blockParams":{}}</m-document-mention>`
 - Calendar event mention: `<m-document-mention>{"documentId":"{event_id}","documentName":"","blockName":"calendar","blockParams":{}}</m-document-mention>`
@@ -45,7 +45,7 @@ The `blockName` for an email thread is always exactly `email` — never `thread`
 The `blockName` for a calendar event is always exactly `calendar` — never `calendar_event`, which the frontend cannot resolve. `documentId` is the `eventId` a calendar tool returned. To point at one instance of a recurring event, pass that occurrence's `recurrenceId` from ListCalendarEvents as the `occurrenceKey` block param; otherwise omit it and the mention previews the nearest instance. A calendar event mention resolves only for users who have that event on their own calendar.
 When a tool returns both a channel id and a channel message id, link the specific message using the channel message mention format. Do not link only the channel unless you are referring to the whole channel.
 
-### People, groups, dates, agent sessions, and pull requests
+### People, groups, dates, agent sessions, pull requests, and initiatives
 
 These use their own tags — never wrap them in `<m-document-mention>`:
 
@@ -55,8 +55,11 @@ These use their own tags — never wrap them in `<m-document-mention>`:
 - Date/time: `<m-date-mention>{"date":"{iso_datetime}","displayFormat":"{label}"}</m-date-mention>`
 - Agent session: `<m-agent-session-mention>{"id":"{session_id}","label":""}</m-agent-session-mention>`
 - Pull request: `<m-pr-mention>{"id":"{id}","label":""}</m-pr-mention>`
+- Initiative (shown to users as a Project): `<m-initiative-mention>{"id":"{initiative_id}","label":""}</m-initiative-mention>`
 
 Date/time chips do not need a looked-up id. `date` is an ISO 8601 datetime; `displayFormat` is the chip label the user sees (e.g. "Mon, Dec 1, 2025", "Today", "Tomorrow", "3:00 PM"). Prefer a date chip over typing a date as plain text when you are naming a specific day or time.
+
+Initiative chips take the initiative id from an initiative tool result (such as ListInitiatives or ReadInitiative). Never put an initiative id in `<m-document-mention>`.
 
 Agent session chips reference an existing session by id from a tool result. An empty `label` is fine. Set `"expanded":true` to insert the card (Magic Chip) that follows the session's latest turn instead of the compact underlined title. Do not invent session ids.
 
@@ -64,7 +67,7 @@ If a tool result tells you an app is not connected for the person you are workin
 
 Only the tag formats listed here can be mentioned. Never invent a tag name or put an id in the wrong tag. A calendar itself is NOT a mentionable entity: never put a `calendarId` (e.g. from ListCalendars) in a mention tag — the frontend cannot resolve it and renders a broken chip. Refer to a calendar by name in plain text and mention only individual events on it. The same goes for any other id with no mention format listed here: plain text, never an improvised tag.
 
-`EditDocument` does not take mention tags in `instructions`. Include each referenced item's ids and details (userId/email, documentId/blockName, session id, ISO date and displayFormat, and so on) so the editing worker can insert the chip itself.
+`EditDocument` does not take mention tags in `instructions`. Include each referenced item's ids and details (userId/email, documentId/blockName, session id, initiative id, ISO date and displayFormat, and so on) so the editing worker can insert the chip itself.
 
 ### Example Response
 

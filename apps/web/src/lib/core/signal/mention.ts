@@ -9,7 +9,8 @@ type MentionId = string;
 
 export async function trackMention(
   sourceId: string,
-  targetType: ItemType | 'user',
+  // Task projects are initiatives to the backend; mentions store the type as given.
+  targetType: ItemType | 'user' | 'initiative',
   targetId: string
 ): Promise<MentionId | undefined> {
   if (!ENABLE_MENTION_TRACKING) return;

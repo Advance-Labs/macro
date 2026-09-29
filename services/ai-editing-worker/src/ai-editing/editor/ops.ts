@@ -97,6 +97,7 @@ export type MentionSpec =
     }
   | { kind: 'agent_session'; id: string; label?: string; expanded?: boolean }
   | { kind: 'pr'; id: string; label?: string }
+  | { kind: 'initiative'; id: string; label?: string }
   | {
       kind: 'tag';
       optionId: string;

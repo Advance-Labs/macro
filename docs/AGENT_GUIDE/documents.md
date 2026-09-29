@@ -363,6 +363,25 @@ check that the inserted company mention points to the correct company. Also chec
 searching by domain and that an open picker updates when companies finish hydrating.
 Discard unsent test drafts rather than sending them.
 
+## Project mentions
+
+With Projects enabled, type `@` followed by a project name in an editor or
+composer. Projects (not folders) appear alongside documents and tasks in the
+**Documents, Agents, & Tasks** section, searched on the server like the command
+menu, and ranked in without reordering the documents. Spreadsheet cell mentions
+do not list projects. Selecting one inserts a chip with the
+project's icon and current name; clicking it or pressing Enter on it opens the
+project. A project you cannot read renders as "Private project" and does not open.
+
+The chip is stored as `<m-initiative-mention>{"id":…,"label":…}</m-initiative-mention>`.
+In a document it is tracked as a reference like other entity mentions. It is
+deliberately not a channel-message reference, so mentioning a project in a
+channel never shares the project with the channel's members.
+
+To verify, mention a project in a document and in a channel draft, check the chip
+opens the right project, rename the project and reload to see the chip label
+update, and delete the chip. Discard unsent test drafts rather than sending them.
+
 ## Native offline reopening
 
 On native mobile, previously opened Markdown documents/tasks can reopen after an

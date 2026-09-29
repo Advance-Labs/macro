@@ -24,6 +24,7 @@ export * from './nodes/GroupMentionNode';
 export * from './nodes/HorizontalRuleNode';
 export * from './nodes/HtmlRenderNode';
 export * from './nodes/ImageNode';
+export * from './nodes/InitiativeMentionNode';
 export * from './nodes/InlineSearchNode';
 export * from './nodes/MagicChipNode';
 export * from './nodes/MediaNode';

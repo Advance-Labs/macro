@@ -50,6 +50,10 @@ import type {
 } from './nodes/HtmlRenderNode';
 import type { ImageDecoratorProps, ImageNode } from './nodes/ImageNode';
 import type {
+  InitiativeMentionDecoratorProps,
+  InitiativeMentionNode,
+} from './nodes/InitiativeMentionNode';
+import type {
   MagicChipDecoratorProps,
   MagicChipNode,
 } from './nodes/MagicChipNode';
@@ -142,6 +146,10 @@ export interface NodeDecoratorMap {
   PullRequestMentionNode: {
     klass: typeof PullRequestMentionNode;
     props: PullRequestMentionDecoratorProps;
+  };
+  InitiativeMentionNode: {
+    klass: typeof InitiativeMentionNode;
+    props: InitiativeMentionDecoratorProps;
   };
   ReplyTargetNode: {
     klass: typeof ReplyTargetNode;

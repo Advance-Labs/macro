@@ -451,6 +451,15 @@ describe('DocumentEditor — mention methods push insertInline ops', () => {
       kind: 'insertInline',
       spec: { inline: 'mention', mention: { kind: 'pr', id: 'pr-1' } },
     });
+    const ei = ed();
+    ei.mentionInitiative('b1', 0, { id: 'init-1', label: 'Launch' });
+    expect(ei.drain()[0]).toMatchObject({
+      kind: 'insertInline',
+      spec: {
+        inline: 'mention',
+        mention: { kind: 'initiative', id: 'init-1', label: 'Launch' },
+      },
+    });
     const et = ed();
     et.mentionTag('b1', 0, {
       optionId: 'o',

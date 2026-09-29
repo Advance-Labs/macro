@@ -2,8 +2,9 @@ use cool_asserts::assert_matches;
 
 use crate::parse::{
     NullXmlFormatter, ParsedAgentSessionMention, ParsedContactMention, ParsedDateMention,
-    ParsedDocumentMention, ParsedGroupMention, ParsedLink, ParsedPullRequestMention,
-    ParsedUserMention, ParsedXmlText, PlainTextFormatter, TextSegment, XmlFormatter, XmlTag,
+    ParsedDocumentMention, ParsedGroupMention, ParsedInitiativeMention, ParsedLink,
+    ParsedPullRequestMention, ParsedUserMention, ParsedXmlText, PlainTextFormatter, TextSegment,
+    XmlFormatter, XmlTag,
 };
 
 // =============================================================================
@@ -804,6 +805,38 @@ fn parse_pull_request_mention_without_label() {
     let parsed = ParsedXmlText::parse(input).unwrap();
     let rendered = PlainTextFormatter::format_xml_text(parsed).0;
     assert_eq!(rendered, "Pull request");
+}
+
+#[test]
+fn parse_initiative_mention() {
+    let input =
+        r#"See <m-initiative-mention>{"id":"init-1","label":"Launch"}</m-initiative-mention>."#;
+    let parsed = ParsedXmlText::parse(input).unwrap();
+    assert_eq!(PlainTextFormatter::format_xml_text(parsed).0, "See Launch.");
+    let out = ParsedXmlText::parse(input).unwrap();
+    assert_matches!(out.0, [
+        TextSegment::Plain("See "),
+        TextSegment::Xml(XmlTag::Initiative(ParsedInitiativeMention { id, label })),
+        TextSegment::Plain("."),
+    ] => {
+        assert_eq!(id.as_ref(), "init-1");
+        assert_eq!(label.as_deref(), Some("Launch"));
+    });
+    let out = ParsedXmlText::parse(input).unwrap();
+    assert_eq!(NullXmlFormatter::format_xml_text(out).0, "See .");
+}
+
+#[test]
+fn parse_initiative_mention_without_label() {
+    let input = r#"<m-initiative-mention>{"id":"init-1","label":""}</m-initiative-mention>"#;
+    let parsed = ParsedXmlText::parse(input).unwrap();
+    assert_eq!(PlainTextFormatter::format_xml_text(parsed).0, "Project");
+}
+
+#[test]
+fn parse_initiative_mention_missing_id() {
+    let input = r#"<m-initiative-mention>{"label":"Launch"}</m-initiative-mention>"#;
+    assert!(ParsedXmlText::parse(input).is_err());
 }
 
 // =============================================================================

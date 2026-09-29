@@ -207,6 +207,13 @@ export type PullRequestMentionNode = Id & {
   label: string;
 };
 
+export type InitiativeMentionNode = Id & {
+  type: 'initiative-mention';
+  version: number;
+  id: string;
+  label?: string;
+};
+
 export type ThemeMentionNode = Id & {
   type: 'theme-mention';
   version: number;
@@ -258,6 +265,7 @@ export type KnownNode =
   | GroupMentionNode
   | AgentSessionMentionNode
   | PullRequestMentionNode
+  | InitiativeMentionNode
   | TagMentionNode
   | ThemeMentionNode
   | UnknownMentionNode;

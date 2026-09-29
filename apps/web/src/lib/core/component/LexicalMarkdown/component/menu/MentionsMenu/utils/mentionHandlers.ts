@@ -8,6 +8,7 @@ import {
   INSERT_DATE_MENTION_COMMAND,
   INSERT_DOCUMENT_MENTION_COMMAND,
   INSERT_GROUP_MENTION_COMMAND,
+  INSERT_INITIATIVE_MENTION_COMMAND,
 } from '../../../../plugins/mentions';
 import type {
   HandlerDependencies,
@@ -60,6 +61,23 @@ async function handleAgentSessionMention(
   editor.dispatchCommand(INSERT_AGENT_SESSION_MENTION_COMMAND, {
     id: session.id,
     label: session.name,
+    ...(mentionUuid ? { mentionUuid } : {}),
+  });
+}
+
+/** Insert a task project chip, tracked like other document references. */
+async function handleProjectMention(
+  project: { id: string; name: string },
+  dependencies: HandlerDependencies
+): Promise<void> {
+  const { editor, blockId } = dependencies;
+  const mentionUuid =
+    blockId && tracksMentions(dependencies)
+      ? await trackMention(blockId, 'initiative', project.id)
+      : undefined;
+  editor.dispatchCommand(INSERT_INITIATIVE_MENTION_COMMAND, {
+    id: project.id,
+    label: project.name,
     ...(mentionUuid ? { mentionUuid } : {}),
   });
 }
@@ -154,6 +172,11 @@ export function createItemHandler(dependencies: HandlerDependencies) {
         return await handleGroupMentionItem(item.data, dependencies);
       case 'agentSession':
         return await handleAgentSessionMention(
+          { id: item.id, name: item.data.name },
+          dependencies
+        );
+      case 'project':
+        return await handleProjectMention(
           { id: item.id, name: item.data.name },
           dependencies
         );
