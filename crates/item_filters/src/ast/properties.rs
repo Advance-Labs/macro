@@ -23,6 +23,8 @@ pub enum PropertyEntityType {
     Chat,
     /// Company entity
     Company,
+    /// Database row entity
+    DatabaseRow,
     /// Document entity
     Document,
     /// Initiative entity
@@ -50,6 +52,7 @@ impl FromStr for PropertyEntityType {
             "CHANNEL" => Ok(Self::Channel),
             "CHAT" => Ok(Self::Chat),
             "COMPANY" => Ok(Self::Company),
+            "DATABASE_ROW" => Ok(Self::DatabaseRow),
             "DOCUMENT" => Ok(Self::Document),
             "INITIATIVE" => Ok(Self::Initiative),
             "PROJECT" => Ok(Self::Project),
@@ -68,6 +71,7 @@ impl fmt::Display for PropertyEntityType {
             Self::Channel => write!(f, "CHANNEL"),
             Self::Chat => write!(f, "CHAT"),
             Self::Company => write!(f, "COMPANY"),
+            Self::DatabaseRow => write!(f, "DATABASE_ROW"),
             Self::Document => write!(f, "DOCUMENT"),
             Self::Initiative => write!(f, "INITIATIVE"),
             Self::Project => write!(f, "PROJECT"),

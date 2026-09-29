@@ -674,6 +674,8 @@ export type GraphqlEntityType =
   | 'CRM_CONTACT'
   /** Macro Database entity (a collection of user-defined tables). */
   | 'DATABASE'
+  /** Row of a Macro Database table. */
+  | 'DATABASE_ROW'
   /** Document entity. */
   | 'DOCUMENT'
   /** Email thread entity. */
@@ -984,6 +986,8 @@ export type GraphqlPropertyEntityType =
   | 'CHAT'
   /** Company entity. */
   | 'COMPANY'
+  /** Database row entity. */
+  | 'DATABASE_ROW'
   /** Document entity. */
   | 'DOCUMENT'
   /** Initiative entity. */
@@ -1007,6 +1011,8 @@ export type GraphqlPropertyTargetEntityType =
   | 'CHAT'
   /** CRM company target. */
   | 'COMPANY'
+  /** Row of a Macro database table. */
+  | 'DATABASE_ROW'
   /** Document target, including tasks and snippets. */
   | 'DOCUMENT'
   /** Initiative target, displayed as a Project in the application. */

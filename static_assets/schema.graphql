@@ -2478,6 +2478,10 @@ enum GraphqlEntityType {
 	Macro Database entity (a collection of user-defined tables).
 	"""
 	DATABASE
+	"""
+	Row of a Macro Database table.
+	"""
+	DATABASE_ROW
 }
 
 """
@@ -3990,6 +3994,10 @@ enum GraphqlPropertyEntityType {
 	"""
 	COMPANY
 	"""
+	Database row entity.
+	"""
+	DATABASE_ROW
+	"""
 	Document entity.
 	"""
 	DOCUMENT
@@ -4070,6 +4078,10 @@ enum GraphqlPropertyOwnerScope {
 	A system definition.
 	"""
 	SYSTEM
+	"""
+	A column of one database.
+	"""
+	DATABASE
 }
 
 """
@@ -4092,6 +4104,10 @@ enum GraphqlPropertyTargetEntityType {
 	CRM company target.
 	"""
 	COMPANY
+	"""
+	Row of a Macro database table.
+	"""
+	DATABASE_ROW
 	"""
 	Document target, including tasks and snippets.
 	"""

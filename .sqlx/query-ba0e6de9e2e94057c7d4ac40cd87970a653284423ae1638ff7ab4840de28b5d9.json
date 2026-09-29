@@ -73,7 +73,8 @@
                 "TASK",
                 "CALL_RECORD",
                 "CALENDAR_EVENT",
-                "INITIATIVE"
+                "INITIATIVE",
+                "DATABASE_ROW"
               ]
             }
           }
@@ -134,7 +135,8 @@
                 "TASK",
                 "CALL_RECORD",
                 "CALENDAR_EVENT",
-                "INITIATIVE"
+                "INITIATIVE",
+                "DATABASE_ROW"
               ]
             }
           }

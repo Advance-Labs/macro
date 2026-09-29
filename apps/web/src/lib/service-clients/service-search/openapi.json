@@ -2230,6 +2230,7 @@
           "CHANNEL",
           "CHAT",
           "COMPANY",
+          "DATABASE_ROW",
           "DOCUMENT",
           "INITIATIVE",
           "PROJECT",

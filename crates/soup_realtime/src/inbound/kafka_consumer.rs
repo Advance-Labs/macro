@@ -453,8 +453,11 @@ fn soup_entity_type_from_property(entity_type: PropertyEntityType) -> Option<Ent
         PropertyEntityType::Project => Some(EntityType::Project),
         PropertyEntityType::Thread => Some(EntityType::EmailThread),
         PropertyEntityType::Initiative => Some(EntityType::Initiative),
-        // Soup channels do not expose properties, and users are not Soup items.
-        PropertyEntityType::Channel | PropertyEntityType::User => None,
+        // Soup channels do not expose properties, and users and database rows
+        // are not Soup items.
+        PropertyEntityType::Channel
+        | PropertyEntityType::User
+        | PropertyEntityType::DatabaseRow => None,
     }
 }
 

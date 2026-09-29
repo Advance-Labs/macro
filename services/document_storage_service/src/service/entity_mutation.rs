@@ -420,6 +420,7 @@ where
             | EntityType::Skill
             | EntityType::AgentSession
             | EntityType::ScheduledAction
+            | EntityType::DatabaseRow
             | EntityType::Initiative => {
                 return unsupported(requested, "rename");
             }
@@ -471,7 +472,8 @@ where
             | EntityType::Initiative
             // A database is not filed into a project, so there is nowhere to
             // move it to (`EntityType::is_valid_entity_access_entity`).
-            | EntityType::Database => {
+            | EntityType::Database
+            | EntityType::DatabaseRow => {
                 return unsupported(requested, "move");
             }
         };
@@ -524,7 +526,8 @@ where
             | EntityType::Initiative
             // Databases are shared by granting access directly; they carry no
             // public/channel share policy.
-            | EntityType::Database => {
+            | EntityType::Database
+            | EntityType::DatabaseRow => {
                 return unsupported(requested, "share policy updates");
             }
         };
@@ -578,6 +581,7 @@ where
             | EntityType::Skill
             | EntityType::AgentSession
             | EntityType::ScheduledAction
+            | EntityType::DatabaseRow
             | EntityType::Initiative => {
                 return unsupported(requested, "trash");
             }
@@ -611,6 +615,7 @@ where
             | EntityType::Skill
             | EntityType::AgentSession
             | EntityType::ScheduledAction
+            | EntityType::DatabaseRow
             | EntityType::Initiative => {
                 return unsupported(requested, "restore");
             }
@@ -664,6 +669,7 @@ where
             | EntityType::Skill
             | EntityType::AgentSession
             | EntityType::ScheduledAction
+            | EntityType::DatabaseRow
             | EntityType::Initiative => {
                 return unsupported(requested, "permanent deletion");
             }
@@ -729,7 +735,8 @@ where
             | EntityType::Initiative
             // Duplicating a database means copying every row of every table;
             // there is no such use case (or domain method) yet.
-            | EntityType::Database => {
+            | EntityType::Database
+            | EntityType::DatabaseRow => {
                 return unsupported(requested, "duplication");
             }
         };

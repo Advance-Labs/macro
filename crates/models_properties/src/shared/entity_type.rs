@@ -21,6 +21,8 @@ pub enum EntityType {
     Channel,
     Chat,
     Company,
+    /// A row of a Macro database table; its cells are its properties.
+    DatabaseRow,
     Document,
     /// Initiative, displayed as a Project in the application.
     Initiative,
@@ -38,6 +40,7 @@ impl fmt::Display for EntityType {
             EntityType::Channel => write!(f, "channel"),
             EntityType::Chat => write!(f, "chat"),
             EntityType::Company => write!(f, "company"),
+            EntityType::DatabaseRow => write!(f, "database_row"),
             EntityType::Document => write!(f, "document"),
             EntityType::Initiative => write!(f, "initiative"),
             EntityType::Project => write!(f, "project"),
@@ -61,6 +64,7 @@ impl FromStr for EntityType {
             "channel" => Ok(Self::Channel),
             "chat" => Ok(Self::Chat),
             "company" => Ok(Self::Company),
+            "database_row" => Ok(Self::DatabaseRow),
             "document" => Ok(Self::Document),
             "initiative" => Ok(Self::Initiative),
             "project" => Ok(Self::Project),

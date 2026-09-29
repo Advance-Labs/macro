@@ -12128,7 +12128,8 @@
                   "agent_session",
                   "scheduled_action",
                   "initiative",
-                  "database"
+                  "database",
+                  "database_row"
                 ]
               }
             },
@@ -12350,7 +12351,8 @@
                 "agent_session",
                 "scheduled_action",
                 "initiative",
-                "database"
+                "database",
+                "database_row"
               ]
             }
           },
@@ -16049,7 +16051,8 @@
                   "agent_session",
                   "scheduled_action",
                   "initiative",
-                  "database"
+                  "database",
+                  "database_row"
                 ]
               }
             },
@@ -17811,7 +17814,8 @@
                   "agent_session",
                   "scheduled_action",
                   "initiative",
-                  "database"
+                  "database",
+                  "database_row"
                 ]
               }
             ],
@@ -23194,7 +23198,8 @@
                   "agent_session",
                   "scheduled_action",
                   "initiative",
-                  "database"
+                  "database",
+                  "database_row"
                 ]
               }
             ],
@@ -24636,7 +24641,8 @@
                   "agent_session",
                   "scheduled_action",
                   "initiative",
-                  "database"
+                  "database",
+                  "database_row"
                 ]
               }
             ],
@@ -27822,7 +27828,8 @@
                   "agent_session",
                   "scheduled_action",
                   "initiative",
-                  "database"
+                  "database",
+                  "database_row"
                 ]
               }
             ],
@@ -28063,6 +28070,7 @@
           "CHANNEL",
           "CHAT",
           "COMPANY",
+          "DATABASE_ROW",
           "DOCUMENT",
           "INITIATIVE",
           "PROJECT",
@@ -28442,7 +28450,8 @@
                   "agent_session",
                   "scheduled_action",
                   "initiative",
-                  "database"
+                  "database",
+                  "database_row"
                 ]
               }
             ],
@@ -28499,7 +28508,8 @@
                   "agent_session",
                   "scheduled_action",
                   "initiative",
-                  "database"
+                  "database",
+                  "database_row"
                 ]
               }
             ],
@@ -34355,7 +34365,8 @@
                   "agent_session",
                   "scheduled_action",
                   "initiative",
-                  "database"
+                  "database",
+                  "database_row"
                 ]
               }
             ],
@@ -34708,7 +34719,8 @@
                   "agent_session",
                   "scheduled_action",
                   "initiative",
-                  "database"
+                  "database",
+                  "database_row"
                 ]
               }
             ],
@@ -37656,7 +37668,8 @@
                   "agent_session",
                   "scheduled_action",
                   "initiative",
-                  "database"
+                  "database",
+                  "database_row"
                 ]
               }
             ],

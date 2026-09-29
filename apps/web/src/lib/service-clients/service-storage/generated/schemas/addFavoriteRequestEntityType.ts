@@ -28,4 +28,5 @@ export type AddFavoriteRequestEntityType =
   | 'agent_session'
   | 'scheduled_action'
   | 'initiative'
-  | 'database';
+  | 'database'
+  | 'database_row';

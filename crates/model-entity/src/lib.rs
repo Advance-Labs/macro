@@ -75,6 +75,8 @@ pub enum EntityType {
     /// The entity is a Macro Database: a collection of user-defined tables
     /// (see the `databases` crate)
     Database,
+    /// The entity is a row of a table in a Macro Database
+    DatabaseRow,
 }
 
 impl EntityType {
@@ -123,6 +125,9 @@ impl EntityType {
             // as owner, plus whoever it is later shared with - but, like agent
             // sessions, a database is not something you file into a project.
             EntityType::Database => false,
+            // Rows carry no `entity_access` rows of their own; access
+            // resolves through the parent database.
+            EntityType::DatabaseRow => false,
         }
     }
     /// provide an entity string slice to upgrade this type into an [Entity]

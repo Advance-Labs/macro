@@ -43,9 +43,11 @@ pub async fn delete_user_entity_access_bulk(
         | EntityType::CrmContact
         | EntityType::Skill
         | EntityType::ForeignEntity
-        // Reminders and scheduled actions own no entity_access rows to delete.
+        // Reminders, scheduled actions, and database rows own no
+        // entity_access rows to delete.
         | EntityType::Reminder
-        | EntityType::ScheduledAction => {
+        | EntityType::ScheduledAction
+        | EntityType::DatabaseRow => {
             anyhow::bail!("invalid entity type")
         }
         EntityType::Project => {
