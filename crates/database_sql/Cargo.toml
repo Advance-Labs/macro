@@ -1,0 +1,9 @@
+[package]
+edition = "2024"
+name = "database_sql"
+publish = false
+version = "0.1.0"
+
+[dependencies]
+logos = { workspace = true }
+thiserror = { workspace = true }
