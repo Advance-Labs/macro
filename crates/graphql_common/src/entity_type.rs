@@ -75,6 +75,8 @@ pub enum GraphqlEntityType {
     Initiative,
     /// Macro Database entity (a collection of user-defined tables).
     Database,
+    /// Row of a Macro Database table.
+    DatabaseRow,
 }
 
 impl GraphqlSoupEntityType {
@@ -108,7 +110,8 @@ impl GraphqlSoupEntityType {
             | EntityType::CrmContact
             | EntityType::Skill
             | EntityType::ScheduledAction
-            | EntityType::Database => return None,
+            | EntityType::Database
+            | EntityType::DatabaseRow => return None,
         })
     }
 
@@ -156,6 +159,7 @@ impl GraphqlEntityType {
             EntityType::ScheduledAction => Self::ScheduledAction,
             EntityType::Initiative => Self::Initiative,
             EntityType::Database => Self::Database,
+            EntityType::DatabaseRow => Self::DatabaseRow,
         }
     }
 
@@ -187,6 +191,7 @@ impl GraphqlEntityType {
             Self::ScheduledAction => EntityType::ScheduledAction,
             Self::Initiative => EntityType::Initiative,
             Self::Database => EntityType::Database,
+            Self::DatabaseRow => EntityType::DatabaseRow,
         }
     }
 }
@@ -255,5 +260,17 @@ mod test {
         let graphql = GraphqlSoupEntityType::try_new(EntityType::Initiative).unwrap();
         assert!(matches!(graphql, GraphqlSoupEntityType::Initiative));
         assert_eq!(graphql.into_model(), EntityType::Initiative);
+    }
+
+    #[test]
+    fn database_row_round_trips_through_graphql_entity_type() {
+        let graphql = GraphqlEntityType::new(EntityType::DatabaseRow);
+        assert!(matches!(graphql, GraphqlEntityType::DatabaseRow));
+        assert!(matches!(graphql.into_model(), EntityType::DatabaseRow));
+    }
+
+    #[test]
+    fn database_row_is_not_a_soup_entity_type() {
+        assert!(GraphqlSoupEntityType::try_new(EntityType::DatabaseRow).is_none());
     }
 }

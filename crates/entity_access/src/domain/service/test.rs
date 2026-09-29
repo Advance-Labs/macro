@@ -31,6 +31,7 @@ struct MockRepo {
     initiative_access: Arc<Mutex<Option<AccessLevel>>>,
     agent_session_document: Arc<Mutex<Option<String>>>,
     database_access: Arc<Mutex<Option<AccessLevel>>>,
+    database_row_access: Arc<Mutex<Option<AccessLevel>>>,
     reminder_access: Arc<Mutex<Option<AccessLevel>>>,
     team_entity_access: Arc<Mutex<Option<AccessLevel>>>,
     team_entity_access_calls: Arc<AtomicUsize>,
@@ -72,6 +73,7 @@ impl MockRepo {
             initiative_access: Arc::new(Mutex::new(None)),
             agent_session_document: Arc::default(),
             database_access: Arc::new(Mutex::new(None)),
+            database_row_access: Arc::new(Mutex::new(None)),
             reminder_access: Arc::new(Mutex::new(None)),
             team_entity_access: Arc::new(Mutex::new(None)),
             team_entity_access_calls: Arc::new(AtomicUsize::new(0)),
@@ -142,6 +144,11 @@ impl MockRepo {
 
     fn with_database_access(mut self, level: AccessLevel) -> Self {
         self.database_access = Arc::new(Mutex::new(Some(level)));
+        self
+    }
+
+    fn with_database_row_access(mut self, level: AccessLevel) -> Self {
+        self.database_row_access = Arc::new(Mutex::new(Some(level)));
         self
     }
 
@@ -348,6 +355,14 @@ impl AccessRepository for MockRepo {
         _user_id: Option<&MacroUserId<Lowercase<'_>>>,
     ) -> Result<Option<AccessLevel>, AccessError> {
         Ok(*self.database_access.lock().await)
+    }
+
+    async fn get_database_row_access(
+        &self,
+        _row_id: &str,
+        _user_id: Option<&MacroUserId<Lowercase<'_>>>,
+    ) -> Result<Option<AccessLevel>, AccessError> {
+        Ok(*self.database_row_access.lock().await)
     }
 
     async fn get_reminder_access(
@@ -844,6 +859,48 @@ async fn test_get_entity_permission_database_no_access_returns_unauthorized() {
 }
 
 #[tokio::test]
+async fn test_get_entity_permission_database_row_resolves_through_its_database() {
+    let repo = MockRepo::new().with_database_row_access(AccessLevel::Edit);
+    let service = EntityAccessServiceImpl::new(repo);
+    let user_id = test_user_id();
+
+    let result = service
+        .get_entity_permission(
+            Some(&user_id),
+            "0198a805-3e22-75b2-97eb-d9c6b91accb1",
+            EntityType::DatabaseRow,
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert!(matches!(
+        result,
+        EntityPermission::AccessLevel {
+            access_level: AccessLevel::Edit
+        }
+    ));
+}
+
+#[tokio::test]
+async fn test_get_access_level_database_row_uses_the_row_query_not_the_database_query() {
+    let repo = MockRepo::new().with_database_access(AccessLevel::Owner);
+    let service = EntityAccessServiceImpl::new(repo);
+    let user_id = test_user_id();
+
+    let result = service
+        .get_access_level(
+            Some(&user_id),
+            "0198a805-3e22-75b2-97eb-d9c6b91accb1",
+            EntityType::DatabaseRow,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(result, None);
+}
+
+#[tokio::test]
 async fn test_get_entity_permission_foreign_entity_returns_view_access_level() {
     let repo = MockRepo::new().with_foreign_entity_access(true);
     let service = EntityAccessServiceImpl::new(repo);
@@ -1328,6 +1385,7 @@ async fn team_scoped_bot_dispatches_all_item_types() {
         EntityType::EmailThread,
         EntityType::Call,
         EntityType::Initiative,
+        EntityType::DatabaseRow,
     ] {
         let receipt = service
             .generate_bot_entity_access_receipt::<ViewAccessLevel>(
@@ -1351,7 +1409,7 @@ async fn team_scoped_bot_dispatches_all_item_types() {
         ));
     }
 
-    assert_eq!(repo.team_entity_access_calls.load(Ordering::SeqCst), 6);
+    assert_eq!(repo.team_entity_access_calls.load(Ordering::SeqCst), 7);
 }
 
 #[tokio::test]

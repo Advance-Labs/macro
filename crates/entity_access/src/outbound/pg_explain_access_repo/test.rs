@@ -98,3 +98,69 @@ async fn database_explanation_rejects_invalid_ids_before_querying() {
         AccessError::BadRequest("Invalid database ID format")
     ));
 }
+
+#[sqlx::test(
+    migrator = "MACRO_DB_MIGRATIONS",
+    fixtures(path = "../../../fixtures", scripts("user_team"))
+)]
+async fn database_row_explanation_is_its_database_grants(pool: PgPool) {
+    let database_id = Uuid::now_v7();
+    let table_id = Uuid::now_v7();
+    let row_id = Uuid::now_v7();
+    let member = MacroUserIdStr::try_from_email("member@team.com").unwrap();
+
+    sqlx::query!(
+        r#"INSERT INTO databases (id, name, owner_id) VALUES ($1, 'db', 'macro|owner@team.com')"#,
+        database_id,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query!(
+        r#"INSERT INTO database_tables (id, database_id, name, position) VALUES ($1, $2, 't', 'a')"#,
+        table_id,
+        database_id,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query!(
+        r#"INSERT INTO database_rows (id, table_id, position) VALUES ($1, $2, 'a')"#,
+        row_id,
+        table_id,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query!(
+        r#"
+        INSERT INTO entity_access (entity_id, entity_type, source_id, source_type, access_level)
+        VALUES ($1, 'database', $2, 'user', 'edit')
+        "#,
+        database_id,
+        member.as_ref(),
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let service = ExplainAccessServiceImpl::new(PgExplainAccessRepository::new(pool.clone()));
+    let explanation = service
+        .explain_access(&member, &row_id.to_string(), EntityType::DatabaseRow)
+        .await
+        .unwrap();
+    assert_eq!(
+        explanation.effective_access_level(),
+        Some(AccessLevel::Edit)
+    );
+
+    let unknown_row = service
+        .explain_access(
+            &member,
+            &Uuid::now_v7().to_string(),
+            EntityType::DatabaseRow,
+        )
+        .await
+        .unwrap();
+    assert!(unknown_row.grants.is_empty());
+}

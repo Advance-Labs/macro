@@ -83,7 +83,9 @@
                 "COMPANY",
                 "TASK",
                 "CALL_RECORD",
-                "CALENDAR_EVENT"
+                "CALENDAR_EVENT",
+                "INITIATIVE",
+                "DATABASE_ROW"
               ]
             }
           }

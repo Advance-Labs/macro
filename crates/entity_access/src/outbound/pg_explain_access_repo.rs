@@ -137,6 +137,18 @@ impl ExplainAccessRepository for PgExplainAccessRepository {
                 )
                 .await?)
             }
+            EntityType::DatabaseRow => {
+                let row_id = parse_uuid(entity_id, "Invalid database row ID format")?;
+                let source_ids = queries::get_user_source_ids(&self.pool, Some(user_id))
+                    .await
+                    .map_err(anyhow_access_error)?;
+                Ok(queries::database_row_access::explain_database_row_access(
+                    &self.pool,
+                    &row_id,
+                    &source_ids,
+                )
+                .await?)
+            }
             EntityType::Initiative => {
                 let initiative_id = parse_uuid(entity_id, "Invalid initiative ID format")?;
                 let source_ids = queries::get_user_source_ids(&self.pool, Some(user_id))

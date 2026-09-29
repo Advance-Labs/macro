@@ -115,7 +115,8 @@ export function buildGraphqlEntitySoupInput(
     .with('INITIATIVE', () => ({
       initiativeFilter: { literal: { id: entityId } },
     }))
-    .with('USER', () => undefined)
+    // Users and database rows are not Soup items.
+    .with('USER', 'DATABASE_ROW', () => undefined)
     .exhaustive();
   if (!targetFilter) return undefined;
 

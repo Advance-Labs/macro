@@ -308,6 +308,26 @@ impl AccessRepository for PgAccessRepository {
         )
     }
 
+    #[tracing::instrument(err, skip(self, user_id))]
+    async fn get_database_row_access(
+        &self,
+        row_id: &str,
+        user_id: Option<&MacroUserId<Lowercase<'_>>>,
+    ) -> Result<Option<AccessLevel>, AccessError> {
+        let row_uuid = row_id
+            .parse::<Uuid>()
+            .map_err(|_| AccessError::BadRequest("Invalid database row ID format"))?;
+        let source_ids = queries::get_user_source_ids(&self.pool, user_id)
+            .await
+            .map_err(anyhow_access_error)?;
+        Ok(queries::database_row_access::get_database_row_access(
+            &self.pool,
+            &row_uuid,
+            &source_ids,
+        )
+        .await?)
+    }
+
     // A macro user id embeds the user's email, so it stays out of the span; the
     // reminder id is what identifies the lookup anyway.
     #[tracing::instrument(err, skip(self, user_id))]
@@ -402,6 +422,14 @@ impl AccessRepository for PgAccessRepository {
             }
             EntityType::Database => {
                 queries::database_access::get_database_access(
+                    &self.pool,
+                    &entity_uuid,
+                    &source_ids,
+                )
+                .await
+            }
+            EntityType::DatabaseRow => {
+                queries::database_row_access::get_database_row_access(
                     &self.pool,
                     &entity_uuid,
                     &source_ids,

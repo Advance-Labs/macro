@@ -97,7 +97,7 @@ export type AddFavoriteRequest = {
     /**
      * The type of the entity to favorite.
      */
-    entityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database';
+    entityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row';
 };
 
 /**
@@ -3175,7 +3175,7 @@ export type CollabSurfaceResponse = {
     /**
      * Type of the parent entity.
      */
-    parentEntityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database';
+    parentEntityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row';
     /**
      * Lifecycle state (`ready` for every surface visible via the API).
      */
@@ -4017,7 +4017,7 @@ export type CreateReminderRequest = {
     /**
      * Type of the entity to attach the reminder to. Requires `entityId`.
      */
-    entityType?: null | 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database';
+    entityType?: null | 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row';
     /**
      * When and how often the reminder fires.
      */
@@ -5740,7 +5740,7 @@ export type EnsureCollabSurfaceRequest = {
     /**
      * Type of the parent entity access derives from.
      */
-    parentEntityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database';
+    parentEntityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row';
 };
 
 /**
@@ -5874,7 +5874,7 @@ export type EntityReference = {
 /**
  * Type of entity that can be referenced by entity properties.
  */
-export type EntityType = 'CALENDAR_EVENT' | 'CALL_RECORD' | 'CHANNEL' | 'CHAT' | 'COMPANY' | 'DOCUMENT' | 'INITIATIVE' | 'PROJECT' | 'TASK' | 'THREAD' | 'USER';
+export type EntityType = 'CALENDAR_EVENT' | 'CALL_RECORD' | 'CHANNEL' | 'CHAT' | 'COMPANY' | 'DATABASE_ROW' | 'DOCUMENT' | 'INITIATIVE' | 'PROJECT' | 'TASK' | 'THREAD' | 'USER';
 
 /**
  * A plain old json error response for use with axum.
@@ -6095,7 +6095,7 @@ export type Favorite = {
     /**
      * The type of the favorited entity.
      */
-    entityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database';
+    entityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row';
     /**
      * File type of the favorited document, when applicable.
      */
@@ -6117,7 +6117,7 @@ export type FavoriteEntityRef = {
     /**
      * The type of the favorited entity.
      */
-    entityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database';
+    entityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row';
 };
 
 /**
@@ -8802,7 +8802,7 @@ export type Reminder = {
     /**
      * Type of the associated entity, when the reminder is attached to one.
      */
-    entityType?: null | 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database';
+    entityType?: null | 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row';
     /**
      * Reminder id.
      */
@@ -9022,7 +9022,7 @@ export type ResultColumn = {
     /**
      * Entity type of id values, when known — drives chip rendering.
      */
-    entity_type?: null | 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database';
+    entity_type?: null | 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row';
     /**
      * Column name or alias.
      */
@@ -10629,7 +10629,7 @@ export type SoupReminderReference = {
     /**
      * The referenced entity's type.
      */
-    entityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database';
+    entityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row';
     /**
      * File type, when the reference is a document — `md`, `pdf`, and so on.
      */
@@ -16502,7 +16502,7 @@ export type ListFavoritesData = {
         /**
          * Restrict to favorites whose entity is one of these types.
          */
-        entityType?: Array<'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database'>;
+        entityType?: Array<'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row'>;
         /**
          * Restrict to favorites whose entity is one of these ids.
          */
@@ -16571,7 +16571,7 @@ export type RemoveFavoriteByEntityData = {
         /**
          * The type of an entity in Macro
          */
-        entity_type: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database';
+        entity_type: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row';
         /**
          * The id of the favorited entity.
          */
@@ -18078,7 +18078,7 @@ export type ListRemindersData = {
         /**
          * Restrict to reminders attached to an entity of these types.
          */
-        entityType?: Array<'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database'>;
+        entityType?: Array<'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row'>;
         /**
          * Restrict to reminders attached to these entity ids.
          */

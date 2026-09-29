@@ -59,7 +59,14 @@ export function entityTypeToItemType(type: EntityType): ItemType | undefined {
     .with('CHAT', () => 'chat')
     .with('CALL_RECORD', () => 'call')
     .with('THREAD', () => 'email')
-    .with('COMPANY', 'USER', 'CALENDAR_EVENT', 'INITIATIVE', () => undefined)
+    .with(
+      'COMPANY',
+      'USER',
+      'CALENDAR_EVENT',
+      'INITIATIVE',
+      'DATABASE_ROW',
+      () => undefined
+    )
     .exhaustive();
 }
 

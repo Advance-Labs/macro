@@ -299,6 +299,8 @@ enum GraphqlPropertyEntityType {
     Chat,
     /// Company entity.
     Company,
+    /// Database row entity.
+    DatabaseRow,
     /// Document entity.
     Document,
     /// Initiative entity.
@@ -323,6 +325,7 @@ impl TryFrom<GraphqlPropertyEntityType> for PropertyEntityType {
             GraphqlPropertyEntityType::Channel => Self::Channel,
             GraphqlPropertyEntityType::Chat => Self::Chat,
             GraphqlPropertyEntityType::Company => Self::Company,
+            GraphqlPropertyEntityType::DatabaseRow => Self::DatabaseRow,
             GraphqlPropertyEntityType::Document => Self::Document,
             GraphqlPropertyEntityType::Project => Self::Project,
             GraphqlPropertyEntityType::Task => Self::Task,
