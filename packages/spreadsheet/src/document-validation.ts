@@ -1,4 +1,4 @@
-import { type LoroDoc, LoroMap } from 'loro-crdt';
+import { type AutomergeDoc, AutomergeMap } from '@macro-inc/automerge';
 import { match } from 'ts-pattern';
 import {
   isSpreadsheetStyleEntry,
@@ -129,7 +129,7 @@ function validCellEntry(root: string, key: string, value: unknown): boolean {
 /** Validate native workbook state at the spreadsheet business boundary.
  * Sync stores arbitrary CRDT documents; it does not enforce this schema.
  */
-export function validateSpreadsheetDocument(doc: LoroDoc): void {
+export function validateSpreadsheetDocument(doc: AutomergeDoc): void {
   const invalid = () =>
     new Error(
       'Only native spreadsheet maps with supported values may be edited.'
@@ -139,8 +139,9 @@ export function validateSpreadsheetDocument(doc: LoroDoc): void {
   // Inspect actual containers and entries, not deep JSON, which turns nested
   // text/counter containers into scalars indistinguishable from cell values.
   for (const [name, id] of Object.entries(doc.getShallowValue())) {
+    if (typeof id !== 'string') throw invalid();
     const container = doc.getContainerById(id);
-    if (!knownRoots.has(name) || !(container instanceof LoroMap))
+    if (!knownRoots.has(name) || !(container instanceof AutomergeMap))
       throw invalid();
     entries += container.size;
     if (entries > MAX_DOCUMENT_ENTRIES)

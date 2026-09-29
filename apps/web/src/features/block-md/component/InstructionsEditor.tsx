@@ -38,7 +38,7 @@ import {
 } from '@core/component/LexicalMarkdown/utils';
 import { ENABLE_MARKDOWN_LIVE_COLLABORATION } from '@core/constant/featureFlags';
 import { bufToString } from '@core/util/string';
-import type { LoroManager } from '@macro-inc/collaboration/collab/manager';
+import type { AutomergeManager } from '@macro-inc/collaboration/collab/manager';
 import {
   AwaitNode,
   CommentNode,
@@ -66,7 +66,7 @@ import { MarkdownCollabProvider } from './MarkdownCollabProvider';
 const EDITOR_PADDING_BOTTOM = 120;
 
 export function InstructionsEditor(props: {
-  loroManager: LoroManager;
+  loroManager: AutomergeManager;
   showLexicalStateDebugger?: boolean;
   onLexicalStateDebuggerClose?: () => void;
   resolveAppLink?: MentionLinkResolver;

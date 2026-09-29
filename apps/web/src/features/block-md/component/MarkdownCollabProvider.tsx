@@ -1,7 +1,7 @@
 import { CollabProvider } from '@core/component/LexicalMarkdown/collaboration/CollabProvider';
 import type { MarkdownEditorErrors } from '@core/component/LexicalMarkdown/constants';
 import type { PluginManager } from '@core/component/LexicalMarkdown/plugins';
-import type { LoroManager } from '@macro-inc/collaboration/collab/manager';
+import type { AutomergeManager } from '@macro-inc/collaboration/collab/manager';
 import type { NodeIdMappings } from '@macro-inc/lexical-core';
 import type { LexicalEditor } from 'lexical';
 import type { Accessor, Setter } from 'solid-js';
@@ -25,7 +25,7 @@ export type MarkdownCollabProviderProps = {
   editorFocus: Accessor<boolean>;
   setEditorReady: Setter<boolean>;
   setEditorError: Setter<MarkdownEditorErrors | null>;
-  loroManager: LoroManager;
+  loroManager: AutomergeManager;
 };
 
 /**

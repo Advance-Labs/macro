@@ -1,5 +1,5 @@
+import { Cursor } from '@macro-inc/automerge';
 import type { SelectionCodec } from '@macro-inc/collaboration/collab/awareness';
-import { Cursor } from 'loro-crdt';
 
 /** A cursor for a node in a Loro document */
 export type NodeCursor = {
@@ -14,14 +14,14 @@ export type NodeCursor = {
 /** Serialized NodeCursor */
 type NodeCursorRaw = {
   nodeId: string;
-  cursor: Uint8Array;
+  cursor: number[];
 };
 
 /** Conver a Lexical node cursor to a raw node cursor */
 function toRaw(cursor: NodeCursor): NodeCursorRaw {
   return {
     nodeId: cursor.nodeId,
-    cursor: cursor.cursor.encode(),
+    cursor: Array.from(cursor.cursor.encode()),
   };
 }
 
@@ -29,7 +29,7 @@ function toRaw(cursor: NodeCursor): NodeCursorRaw {
 function fromRaw(raw: NodeCursorRaw): NodeCursor {
   return {
     nodeId: raw.nodeId,
-    cursor: Cursor.decode(raw.cursor),
+    cursor: Cursor.decode(new Uint8Array(raw.cursor)),
   };
 }
 

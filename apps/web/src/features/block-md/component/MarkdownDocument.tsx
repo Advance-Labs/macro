@@ -1,6 +1,6 @@
 import {
-  createLoroManager,
-  type LoroManager,
+  type AutomergeManager,
+  createAutomergeManager,
 } from '@macro-inc/collaboration/collab/manager';
 import type { RawUpdate } from '@macro-inc/collaboration/collab/shared';
 import {
@@ -42,7 +42,7 @@ import type { MarkdownDocumentKind, MarkdownDocumentSource } from '../types';
 import { MarkdownNameProvider } from './MarkdownNameProvider';
 import { InstructionsNotebook, Notebook } from './Notebook';
 
-type MarkdownLoroManager = LoroManager<typeof MARKDOWN_LORO_SCHEMA>;
+type MarkdownLoroManager = AutomergeManager<typeof MARKDOWN_LORO_SCHEMA>;
 type SnapshotResult = {
   outcome: 'seeded' | 'discarded' | 'unavailable' | 'error';
   bytes?: number;
@@ -291,7 +291,7 @@ export function MarkdownDocumentContent(props: MarkdownDocumentContentProps) {
   const { documentId: getDocumentId, state } = useMarkdownDocument();
   const documentId = getDocumentId();
 
-  const loroManager = createLoroManager(MARKDOWN_LORO_SCHEMA, {
+  const loroManager = createAutomergeManager(MARKDOWN_LORO_SCHEMA, {
     documentId,
   });
 

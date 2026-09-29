@@ -1,4 +1,4 @@
-import { LoroManager } from '@macro-inc/collaboration/collab/manager';
+import { AutomergeManager } from '@macro-inc/collaboration/collab/manager';
 import type { RawUpdate } from '@macro-inc/collaboration/collab/shared';
 import {
   createNoopLiveSyncSource,
@@ -109,7 +109,7 @@ export async function runEditSession(
   const source = args.source;
 
   // The manager owns the one true (merged) doc + mirror.
-  const manager = new LoroManager(MARKDOWN_LORO_SCHEMA, {
+  const manager = new AutomergeManager(MARKDOWN_LORO_SCHEMA, {
     documentId: args.documentId,
   });
 

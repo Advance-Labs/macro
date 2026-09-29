@@ -125,7 +125,7 @@ reference transformation across concurrent operations.
 ### Workbook sheets
 
 The implicit first sheet has stable ID `sheet1`; existing version-1 documents and
-the canonical `static_assets/spreadsheet-golden.1.bin` seed open without migration
+the canonical `static_assets/spreadsheet-golden.2.bin` seed open without migration
 or writes. Its cells keep plain `A1` keys. Additional sheets receive UUIDs and use
 `<sheet-id>!A1` keys in the same property maps. Column widths and row additions use
 the same sheet prefix. `spreadsheetSheetNames`, `spreadsheetSheetOrder`, and

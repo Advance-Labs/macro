@@ -1,13 +1,13 @@
-import { LoroManager } from '@macro-inc/collaboration/collab/manager';
+import {
+  AutomergeDoc,
+  type AutomergeMap,
+  type AutomergeMovableList,
+  type AutomergeText,
+} from '@macro-inc/automerge';
+import { AutomergeManager } from '@macro-inc/collaboration/collab/manager';
 import { createNoopLiveSyncSource } from '@macro-inc/collaboration/collab/source';
 import { MARKDOWN_LORO_SCHEMA } from '@macro-inc/lexical-core/markdown-loro-schema';
 import { markdownToLoroSnapshot } from '@macro-inc/lexical-core/markdown-loro-snapshot';
-import {
-  LoroDoc,
-  type LoroMap,
-  type LoroMovableList,
-  type LoroText,
-} from 'loro-crdt';
 import { describe, expect, it } from 'vitest';
 import { applyCommentMarkChange } from './run';
 
@@ -22,27 +22,31 @@ type Node = {
 };
 
 async function worker(snapshot: Uint8Array) {
-  const manager = new LoroManager(MARKDOWN_LORO_SCHEMA, { documentId: DOC });
+  const manager = new AutomergeManager(MARKDOWN_LORO_SCHEMA, {
+    documentId: DOC,
+  });
   (await manager.initializeFromSnapshot(snapshot))._unsafeUnwrap();
   return manager;
 }
 
-function human(snapshot: Uint8Array): LoroDoc {
-  const doc = new LoroDoc();
+function human(snapshot: Uint8Array): AutomergeDoc {
+  const doc = new AutomergeDoc();
   doc.import(snapshot);
   return doc;
 }
 
-/** The LoroText of the first paragraph's first text node, as a typist edits it. */
-function firstText(doc: LoroDoc): LoroText {
-  const paragraph = (doc.getMap('root').get('children') as LoroMovableList).get(
+/** The AutomergeText of the first paragraph's first text node, as a typist edits it. */
+function firstText(doc: AutomergeDoc): AutomergeText {
+  const paragraph = (
+    doc.getMap('root').get('children') as AutomergeMovableList
+  ).get(0) as AutomergeMap;
+  const text = (paragraph.get('children') as AutomergeMovableList).get(
     0
-  ) as LoroMap;
-  const text = (paragraph.get('children') as LoroMovableList).get(0) as LoroMap;
-  return text.get('text') as LoroText;
+  ) as AutomergeMap;
+  return text.get('text') as AutomergeText;
 }
 
-function exchange(a: LoroDoc, b: LoroDoc) {
+function exchange(a: AutomergeDoc, b: AutomergeDoc) {
   const fromA = a.export({ mode: 'update', from: b.oplogVersion() });
   const fromB = b.export({ mode: 'update', from: a.oplogVersion() });
   a.import(fromB);
@@ -59,7 +63,7 @@ function textOf(node: Node): string {
   return (node.text ?? '') + (node.children ?? []).map(textOf).join('');
 }
 
-function tree(doc: LoroDoc): Node {
+function tree(doc: AutomergeDoc): Node {
   return (doc.toJSON() as { root: Node }).root;
 }
 

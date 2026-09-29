@@ -1,4 +1,4 @@
-import { LoroManager } from '@macro-inc/collaboration/collab/manager';
+import { AutomergeManager } from '@macro-inc/collaboration/collab/manager';
 import type { RawUpdate } from '@macro-inc/collaboration/collab/shared';
 import type { LiveSyncSource } from '@macro-inc/collaboration/collab/source';
 import {
@@ -35,7 +35,7 @@ export async function runCommentMarkChange(
   documentId: string,
   change: CommentMarkChange
 ): Promise<CommentMarkChangeResult> {
-  const manager = new LoroManager(MARKDOWN_LORO_SCHEMA, { documentId });
+  const manager = new AutomergeManager(MARKDOWN_LORO_SCHEMA, { documentId });
   try {
     const initial = await source.doInitialSync();
     if (initial.isErr())
@@ -57,7 +57,7 @@ export async function runCommentMarkChange(
 
 /** Apply `change` to the doc `manager` holds and push it out through `source`. */
 export async function applyCommentMarkChange(
-  manager: LoroManager<typeof MARKDOWN_LORO_SCHEMA>,
+  manager: AutomergeManager<typeof MARKDOWN_LORO_SCHEMA>,
   source: LiveSyncSource,
   change: CommentMarkChange
 ): Promise<CommentMarkChangeResult> {

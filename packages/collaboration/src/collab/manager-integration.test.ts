@@ -1,32 +1,34 @@
-import { Mirror, schema } from '@loro-mirror/core';
-import { LoroDoc, type VersionVector } from 'loro-crdt';
+import { AutomergeDoc, type Revision } from '@macro-inc/automerge';
+import { Mirror, schema } from '@macro-inc/automerge/mirror';
 import { createRoot } from 'solid-js';
 import { describe, expect, it, vi } from 'vitest';
 import { noopChatter } from './chatter';
 import { createSyncEngine } from './engine';
-import { createLoroManager, type LoroManager } from './manager';
+import { type AutomergeManager, createAutomergeManager } from './manager';
 import { TestServer } from './test-utils/test-server';
 import { InMemoryWALStore, WALSyncer } from './wal';
 
 // mostly dummy schema that's flat so it's easy for tests
 const TEST_SCHEMA = schema({
-  paragraphs: schema.LoroList(
-    schema.LoroMap({
+  paragraphs: schema.AutomergeList(
+    schema.AutomergeMap({
       id: schema.String(),
-      text: schema.LoroText(),
+      text: schema.AutomergeText(),
     }),
     (paragraph: { id: string }) => paragraph.id
   ),
 });
 
-function paragraphTexts(manager: LoroManager<typeof TEST_SCHEMA>): string[] {
+function paragraphTexts(
+  manager: AutomergeManager<typeof TEST_SCHEMA>
+): string[] {
   return manager.state?.state.paragraphs.map((p) => p.text) ?? [];
 }
 
 async function buildSnapshot(
   paragraphs: Array<{ id: string; text: string }>
 ): Promise<Uint8Array> {
-  const doc = new LoroDoc();
+  const doc = new AutomergeDoc();
   const mirror = new Mirror({ doc, schema: TEST_SCHEMA });
   mirror.setState({ paragraphs });
   await Promise.resolve();
@@ -39,13 +41,13 @@ async function buildSnapshot(
  *  `from` frontier) because Loro panics when the `from` frontier was derived
  *  from a snapshot import. */
 function pushToServer(
-  manager: LoroManager<typeof TEST_SCHEMA>,
+  manager: AutomergeManager<typeof TEST_SCHEMA>,
   server: TestServer
 ) {
   server.applyUpdate(manager.doc.export({ mode: 'update' }));
 }
 
-describe('LoroManager seed + converge — two-client merge', () => {
+describe('AutomergeManager seed + converge — two-client merge', () => {
   it('converges a stale local seed on engine startup without losing offline edits', async () => {
     const initialSnapshotX = await buildSnapshot([{ id: 'p1', text: 'X ' }]);
     const server = new TestServer();
@@ -57,14 +59,14 @@ describe('LoroManager seed + converge — two-client merge', () => {
     const onRemoteState = vi.fn();
     const { clientA, offlineClientB, reconnectedB, syncEngine, dispose } =
       createRoot((dispose) => {
-        const reconnectedB = createLoroManager(TEST_SCHEMA, {
+        const reconnectedB = createAutomergeManager(TEST_SCHEMA, {
           documentId: 'test-doc-b-reconnected',
         });
         return {
-          clientA: createLoroManager(TEST_SCHEMA, {
+          clientA: createAutomergeManager(TEST_SCHEMA, {
             documentId: 'test-doc-a',
           }),
-          offlineClientB: createLoroManager(TEST_SCHEMA, {
+          offlineClientB: createAutomergeManager(TEST_SCHEMA, {
             documentId: 'test-doc-b-offline',
           }),
           reconnectedB,
@@ -127,7 +129,7 @@ describe('LoroManager seed + converge — two-client merge', () => {
     expect(live.requestUpdatesSince).toHaveBeenCalledOnce();
     const requestedVersion = (
       live.requestUpdatesSince as unknown as {
-        mock: { calls: [[VersionVector]] };
+        mock: { calls: [[Revision]] };
       }
     ).mock.calls[0][0];
     expect(requestedVersion.toJSON()).toEqual(versionAfterOfflineEdit.toJSON());
@@ -150,12 +152,12 @@ describe('LoroManager seed + converge — two-client merge', () => {
       const server = new TestServer();
       server.applyUpdate(initialSnapshotX);
 
-      const clientA = createLoroManager(TEST_SCHEMA, {
+      const clientA = createAutomergeManager(TEST_SCHEMA, {
         documentId: 'test-doc-a',
       });
       await clientA.ingest({ kind: 'dss', snapshot: initialSnapshotX });
 
-      const clientB = createLoroManager(TEST_SCHEMA, {
+      const clientB = createAutomergeManager(TEST_SCHEMA, {
         documentId: 'test-doc-b',
       });
       await clientB.ingest({ kind: 'dss', snapshot: initialSnapshotX });
@@ -188,7 +190,7 @@ describe('LoroManager seed + converge — two-client merge', () => {
 
   it('reports a causally pending update instead of treating it as a no-op', async () => {
     await createRoot(async (dispose) => {
-      const source = new LoroDoc();
+      const source = new AutomergeDoc();
       source.setPeerId(7n);
       const text = source.getText('pending-test');
       text.insert(0, 'first');
@@ -202,7 +204,7 @@ describe('LoroManager seed + converge — two-client merge', () => {
         from: afterFirst,
       });
 
-      const manager = createLoroManager(TEST_SCHEMA, {
+      const manager = createAutomergeManager(TEST_SCHEMA, {
         documentId: 'test-doc-pending',
       });
       await manager.ingest({

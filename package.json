@@ -68,6 +68,7 @@
 			"packages/observability",
 			"packages/email-renderer",
 			"packages/collaboration",
+			"packages/automerge",
 			"packages/machine",
 			"packages/loro-mirror",
 			"packages/lexical-core",

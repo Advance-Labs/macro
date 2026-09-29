@@ -26,6 +26,61 @@ fn wire_proof_round_trips_and_rejects_invalid_operation_ids() {
     assert!(serde_json::from_value::<SnapshotProof>(invalid).is_err());
 }
 
+#[tokio::test]
+async fn automerge_contracts_use_hash_heads_and_native_proofs() {
+    use crate::automerge::AutomergeSnapshotProof;
+    let source = Uuid::from_u128(2);
+    let target = Uuid::from_u128(3);
+    let heads = vec!["a".repeat(64)];
+    let (client, task) = server(
+        format!("/document/{source}/copy"),
+        serde_json::json!({ "target_document_id": target.to_string(), "version_id": heads }),
+        200,
+        "{}".into(),
+    );
+    client
+        .copy_automerge_document(&source.to_string(), &target.to_string(), Some(&heads))
+        .await
+        .unwrap();
+    task.join().unwrap();
+    let proof = AutomergeSnapshotProof {
+        operation_id: SurfaceOperationId(Uuid::from_u128(1)),
+        source_id: Some(source),
+        digest: "snapshot-digest".into(),
+        content_digest: "content-digest".into(),
+        revision: heads.clone(),
+        oplog_revision: heads,
+    };
+    let (client, task) = server(
+        format!("/surface/{target}/verify"),
+        serde_json::to_value(&proof).unwrap(),
+        200,
+        serde_json::to_string(&proof).unwrap(),
+    );
+    assert_eq!(
+        client
+            .verify_automerge_surface(target, &proof)
+            .await
+            .unwrap(),
+        proof
+    );
+    task.join().unwrap();
+    let (client, task) = server(
+        format!("/document/{source}/migration/retire"),
+        serde_json::to_value(&proof).unwrap(),
+        200,
+        serde_json::to_string(&proof).unwrap(),
+    );
+    assert_eq!(
+        client
+            .retire_automerge_surface(source, &proof)
+            .await
+            .unwrap(),
+        proof
+    );
+    task.join().unwrap();
+}
+
 /// Minimal HTTP peer validates transport without another mocking dependency.
 fn server(
     path: String,

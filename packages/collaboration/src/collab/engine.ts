@@ -1,7 +1,7 @@
-import { type InferType, SyncDirection } from '@loro-mirror/core';
+import type { Revision } from '@macro-inc/automerge';
+import { type InferType, SyncDirection } from '@macro-inc/automerge/mirror';
 import type { Attributes } from '@macro-inc/observability';
 import { Mutex } from 'async-mutex';
-import type { VersionVector } from 'loro-crdt';
 import type { ResultAsync } from 'neverthrow';
 import {
   type Accessor,
@@ -15,14 +15,18 @@ import type { Awareness } from './awareness';
 import { BroadcastChannelChatter, type Chatter, noopChatter } from './chatter';
 import { logSyncService } from './logger';
 import {
-  LoroManagerError,
-  LoroStateTag,
+  AutomergeManagerError,
+  AutomergeStateTag,
   type StateUpdate,
   type SyncEngineManager,
 } from './manager';
-import type { GenericRootSchema, LoroRawUpdate, RawUpdate } from './shared';
+import type {
+  AutomergeRawUpdate,
+  GenericRootSchema,
+  RawUpdate,
+} from './shared';
 import type { SnapshotStore } from './snapshot-store';
-import { peerCounterAttr, telemetrySpan } from './telemetry';
+import { telemetrySpan } from './telemetry';
 
 // SnapshotStore in the engine is always Loro updates — RawUpdate.
 type LoroSnapshotStore = SnapshotStore<RawUpdate>;
@@ -36,9 +40,9 @@ const REQUEST_UPDATES_MAX_ATTEMPTS = 3;
 const REQUEST_UPDATES_RETRY_DELAY_MS = 2_000;
 
 /** A version vector as a compact `peer:counter` span attribute. */
-function vvAttr(vv: VersionVector): string {
+function vvAttr(vv: Revision): string {
   try {
-    return peerCounterAttr(vv.toJSON().entries());
+    return vv.heads.join(',');
   } catch {
     return 'unavailable';
   }
@@ -257,7 +261,8 @@ export class SyncEngine<S extends GenericRootSchema, D> {
     if (!this._isRunning || !stateUpdate) return;
 
     if (stateUpdate.metadata.direction === SyncDirection.TO_LORO) return;
-    if (stateUpdate.metadata.tags?.includes(LoroStateTag.Initialize)) return;
+    if (stateUpdate.metadata.tags?.includes(AutomergeStateTag.Initialize))
+      return;
     this.syncLock.runExclusive(() =>
       this.bindings.onRemoteState(stateUpdate.state)
     );
@@ -272,7 +277,7 @@ export class SyncEngine<S extends GenericRootSchema, D> {
     this.chatter?.post({ type: 'awareness', data: awarenessUpdate });
   }
 
-  private async handleLocalUpdates(update: LoroRawUpdate) {
+  private async handleLocalUpdates(update: AutomergeRawUpdate) {
     if (this.readonly()) return;
     this.log('debug', 'engine: local update, appending to WAL');
     void this.syncs.wal.append(update);
@@ -314,7 +319,7 @@ export class SyncEngine<S extends GenericRootSchema, D> {
         await Promise.resolve();
         if (importResult.isErr()) {
           const pendingOnly = importResult.error.every(
-            (e) => e.code === LoroManagerError.ImportPending
+            (e) => e.code === AutomergeManagerError.ImportPending
           );
           if (pendingOnly) {
             // Loro retains causally-ahead updates. Pull the missing operations
@@ -408,7 +413,7 @@ export class SyncEngine<S extends GenericRootSchema, D> {
   }
 
   private async requestAndHandleUpdatesSince(
-    since: VersionVector,
+    since: Revision,
     attempt: number,
     generation: number
   ) {

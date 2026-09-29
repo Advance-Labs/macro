@@ -4,6 +4,7 @@
  */
 
 import { mergeRegister } from '@lexical/utils';
+import { type AutomergeDoc, UndoManager } from '@macro-inc/automerge';
 import type { EditorState, LexicalEditor } from 'lexical';
 import {
   $isRangeSelection,
@@ -17,7 +18,6 @@ import {
   REDO_COMMAND,
   UNDO_COMMAND,
 } from 'lexical';
-import { type LoroDoc, UndoManager } from 'loro-crdt';
 
 type MergeAction = 0 | 1 | 2;
 const HISTORY_MERGE = 0;
@@ -209,7 +209,7 @@ function isTextNodeUnchanged(
  */
 export function registerLoroHistory(
   editor: LexicalEditor,
-  loroDoc: LoroDoc,
+  loroDoc: AutomergeDoc,
   delay: number,
   maxUndoSteps: number = 100
 ): () => void {

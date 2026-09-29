@@ -1,8 +1,8 @@
-import { LoroDoc } from 'loro-crdt';
+import { AutomergeDoc } from '@macro-inc/automerge';
 import { err, ResultAsync } from 'neverthrow';
 import { describe, expect, it, vi } from 'vitest';
 import { SyncEngine } from './engine';
-import { LoroManagerError } from './manager';
+import { AutomergeManagerError } from './manager';
 import type { RawUpdate } from './shared';
 import { createNoopLiveSyncSource } from './source';
 import {
@@ -14,7 +14,7 @@ import {
 } from './testing';
 import { WALSyncer } from './wal';
 
-const emptySnapshot = () => new LoroDoc().export({ mode: 'snapshot' });
+const emptySnapshot = () => new AutomergeDoc().export({ mode: 'snapshot' });
 
 function makeAwareness() {
   return {
@@ -252,7 +252,7 @@ describe('SyncEngine', () => {
     await new Promise((resolve) => setTimeout(resolve));
 
     manager.importUpdate.mockReturnValueOnce(
-      err([{ code: LoroManagerError.ImportPending, message: 'pending' }])
+      err([{ code: AutomergeManagerError.ImportPending, message: 'pending' }])
     );
     source.emit({ type: 'update', update: new Uint8Array([9]) });
 

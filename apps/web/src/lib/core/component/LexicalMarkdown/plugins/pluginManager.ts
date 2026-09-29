@@ -3,7 +3,7 @@ import { registerList } from '@lexical/list';
 import { CODE } from '@lexical/markdown';
 import { registerPlainText } from '@lexical/plain-text';
 import { registerRichText } from '@lexical/rich-text';
-import type { LoroManager } from '@macro-inc/collaboration/collab/manager';
+import type { AutomergeManager } from '@macro-inc/collaboration/collab/manager';
 import { ALL_TRANSFORMERS, type EditorType } from '@macro-inc/lexical-core';
 import { HR } from '@macro-inc/lexical-core/transformers/transformers';
 import type { EditorState, LexicalEditor, UpdateListener } from 'lexical';
@@ -33,7 +33,7 @@ export function createPluginManager(editor: LexicalEditor, type: EditorType) {
   const cleanupFunctions: Array<() => void> = [];
 
   const pluginManager = {
-    history(timeGap = 400, loroManager?: LoroManager) {
+    history(timeGap = 400, loroManager?: AutomergeManager) {
       if (type === 'markdown-sync' && loroManager) {
         cleanupFunctions.push(
           registerLoroHistory(editor, loroManager.doc, timeGap)

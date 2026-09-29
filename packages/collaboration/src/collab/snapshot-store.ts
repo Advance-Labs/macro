@@ -1,6 +1,6 @@
 import { type DBSchema, type IDBPDatabase, openDB as idbOpen } from 'idb';
 import { logSyncService } from './logger';
-import { type LoroManager, LoroManagerError } from './manager';
+import { type AutomergeManager, AutomergeManagerError } from './manager';
 import type { GenericRootSchema, RawUpdate } from './shared';
 import type { WALStore } from './wal';
 
@@ -11,7 +11,7 @@ export interface SnapshotStore<T> {
 }
 
 /** DB name for the Loro doc-snapshot store. */
-export const LORO_SNAPSHOT_DB_NAME = 'macro-document-snapshots';
+export const LORO_SNAPSHOT_DB_NAME = 'macro-automerge-document-snapshots';
 
 const DB_VERSION = 1;
 const STORE = 'snapshots';
@@ -75,7 +75,7 @@ export class IDBSnapshotStore<T> implements SnapshotStore<T> {
  * applied.
  */
 export async function loadCachedState<S extends GenericRootSchema>(
-  loroManager: LoroManager<S>,
+  loroManager: AutomergeManager<S>,
   snapshotStore: SnapshotStore<RawUpdate>,
   walStore: WALStore<RawUpdate>
 ): Promise<boolean> {
@@ -102,7 +102,7 @@ export async function loadCachedState<S extends GenericRootSchema>(
     const importResult = loroManager.importUpdate(entry.update);
     if (importResult.isErr()) {
       const pendingOnly = importResult.error.every(
-        (e) => e.code === LoroManagerError.ImportPending
+        (e) => e.code === AutomergeManagerError.ImportPending
       );
       if (pendingOnly) {
         // Loro holds the entry until its causal gap fills, so keep replaying:

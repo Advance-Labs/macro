@@ -1,5 +1,5 @@
 /**
- * Build-time generator for the canonical "blank lexical markdown" Loro snapshot.
+ * Build-time generator for the canonical "blank lexical markdown" Automerge snapshot.
  */
 
 import {
@@ -18,7 +18,7 @@ if (!golden) {
 }
 
 // Hardcoded version suffix to bust caches if we ever care to
-const GOLDEN_FILENAME = 'markdown-golden.1.bin';
+const GOLDEN_FILENAME = 'markdown-golden.2.bin';
 
 // The binary snapshot is shared by the JavaScript and Rust workspaces. Keep a
 // single canonical copy in static_assets now that Docker builds use the
@@ -36,13 +36,13 @@ for (let i = 0; i < bytes.length; i += 20) {
   lines.push(`  ${bytes.slice(i, i + 20).join(', ')},`);
 }
 const tsModule = `// AUTO-GENERATED from ${GOLDEN_FILENAME} — do not edit by hand.
-// Canonical blank-markdown Loro "golden" snapshot, inlined as a byte literal so
+// Canonical blank-markdown Automerge "golden" snapshot, inlined as a byte literal so
 // it can be imported directly in any runtime (Cloudflare Worker, node, browser)
 // without a bundler-specific asset loader.
 export const MARKDOWN_GOLDEN: Uint8Array = new Uint8Array([
 ${lines.join('\n')}
 ]);
 `;
-const tsPath = `${import.meta.dir}/../markdown-golden.1.ts`;
+const tsPath = `${import.meta.dir}/../markdown-golden.2.ts`;
 await Bun.write(tsPath, tsModule);
 console.log(`wrote ${bytes.length} bytes → ${tsPath}`);

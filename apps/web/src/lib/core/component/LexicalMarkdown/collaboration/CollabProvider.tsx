@@ -27,7 +27,7 @@ import { mergeRegister } from '@lexical/utils';
 import { createAwareness } from '@macro-inc/collaboration/collab/awareness';
 import { createSyncEngine } from '@macro-inc/collaboration/collab/engine';
 import { logSyncService } from '@macro-inc/collaboration/collab/logger';
-import type { LoroManager } from '@macro-inc/collaboration/collab/manager';
+import type { AutomergeManager } from '@macro-inc/collaboration/collab/manager';
 import {
   IDBSnapshotStore,
   LORO_SNAPSHOT_DB_NAME,
@@ -88,7 +88,7 @@ export type CollabProviderProps = {
   editorFocus: Accessor<boolean>;
   setEditorReady: Setter<boolean>;
   setEditorError: Setter<MarkdownEditorErrors | null>;
-  loroManager: LoroManager;
+  loroManager: AutomergeManager;
   /**
    * The live sync source for this session. Must be non-undefined by the time
    * the provider mounts — the check below is NOT reactive, so gate mounting
@@ -296,7 +296,7 @@ export function CollabProvider(props: CollabProviderProps) {
   }
 
   /** Handle the cursor state after successful sync from Lexical->Loro */
-  function $afterSyncCursorUpdate(manager: LoroManager) {
+  function $afterSyncCursorUpdate(manager: AutomergeManager) {
     // Update the local cursor after the state has been synced
     let newLocalSelection = localCursorUpdate();
 

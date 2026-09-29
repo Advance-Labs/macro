@@ -1,7 +1,7 @@
-import { type InferType, Mirror } from '@loro-mirror/core';
+import { AutomergeDoc } from '@macro-inc/automerge';
+import { type InferType, Mirror } from '@macro-inc/automerge/mirror';
 import type { SerializedEditorState } from 'lexical';
-import { LoroDoc } from 'loro-crdt';
-import { MARKDOWN_GOLDEN } from './markdown-golden.1';
+import { MARKDOWN_GOLDEN } from './markdown-golden.2';
 import { MARKDOWN_LORO_SCHEMA } from './markdown-loro-schema';
 import { markdownToSerializedEditorStateWithIds } from './utils/markdown-state';
 
@@ -18,7 +18,7 @@ export async function rawMarkdownStateToLoroSnapshot(
   state: InferType<typeof MARKDOWN_LORO_SCHEMA>,
   base?: Uint8Array
 ): Promise<Uint8Array | undefined> {
-  const loroDoc = new LoroDoc();
+  const loroDoc = new AutomergeDoc();
   loroDoc.setRecordTimestamp(true);
 
   // Seed from the golden base so every document shares a common ancestor — this

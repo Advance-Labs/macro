@@ -18,7 +18,7 @@ pub struct SurfaceOperationId(pub Uuid);
 /// Receipt binding one operation to snapshot bytes, decoded content and both
 /// Loro frontiers. A successful retry returns this same verified receipt.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SnapshotProof {
+pub struct SnapshotProof<R = Vec<(String, i32)>> {
     /// Durable operation identity; reuse only for an identical retry.
     pub operation_id: SurfaceOperationId,
     /// Legacy source UUID, or None for a newly seeded isolated surface.
@@ -28,16 +28,16 @@ pub struct SnapshotProof {
     /// SHA-256 of the canonical decoded JSON content.
     pub content_digest: String,
     /// Sorted state frontier (peer string, counter) pairs.
-    pub revision: Vec<(String, i32)>,
+    pub revision: R,
     /// Sorted operation-log frontier pairs.
-    pub oplog_revision: Vec<(String, i32)>,
+    pub oplog_revision: R,
 }
 
 /// Authoritative frozen state, including pending persisted operations.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SurfaceSnapshot {
+pub struct SurfaceSnapshot<R = Vec<(String, i32)>> {
     /// Verification receipt for these exact bytes.
-    pub proof: SnapshotProof,
+    pub proof: SnapshotProof<R>,
     /// Full Loro snapshot, not initial Markdown or a shallow client snapshot.
     pub snapshot: Vec<u8>,
 }
@@ -88,7 +88,7 @@ impl SyncServiceClient {
         Ok(response)
     }
 
-    async fn surface_json<T: DeserializeOwned>(
+    pub(crate) async fn surface_json<T: DeserializeOwned>(
         &self,
         path: &str,
         body: &impl Serialize,

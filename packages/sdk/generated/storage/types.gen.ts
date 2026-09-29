@@ -10230,10 +10230,7 @@ export type SuccessResponse = {
  */
 export type SurfaceState = 'pending' | 'ready';
 
-export type SyncServiceVersionId = {
-    counter: number;
-    peer: string;
-};
+export type SyncServiceVersionId = Array<string>;
 
 /**
  * A built-in system skill: static, code-defined AI instructions surfaced

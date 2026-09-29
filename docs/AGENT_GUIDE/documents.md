@@ -311,12 +311,19 @@ and agent chat links also convert to their respective entity mentions.
 2. `type_text` the title, then `submitKey: "Enter"` to drop into the body.
 3. Type paragraphs with plain `type_text`; use Enter between paragraphs. Do NOT use `fill` —
    the editor is contenteditable and `fill` does not work on it.
-4. The document auto-saves continuously (collaborative CRDT; no save button). The tab title
+4. The document auto-saves continuously (Automerge; no save button). The tab title
    and header update to the typed title.
 
 The a11y snapshot exposes the entire body as the contenteditable's `value` and as paragraph
 nodes — use the snapshot itself to verify content. For formatting checks, run
 `evaluate_script` over `[contenteditable] strong` etc.
+
+For local Automerge verification, create a fresh document in the isolated local
+stack. Open its URL in two independent browser contexts, type distinct text in
+both, and verify convergence after reconnect and reload. Test undo after a peer
+edit and moving a block while the peer edits its text. Historical previews must
+show normal nested editor content. Old Loro snapshots are intentionally rejected;
+do not point this build at a shared environment containing legacy documents.
 
 Body placeholder advertises: `/` for block commands, `@` to reference files, `;` for snippets.
 Markdown auto-format works while typing (`#` heading, `[]` checklist, `>` quote).

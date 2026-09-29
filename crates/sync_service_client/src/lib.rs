@@ -1,3 +1,4 @@
+pub mod automerge;
 pub mod copy_document;
 pub mod delete;
 pub mod exists;

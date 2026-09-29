@@ -1,4 +1,8 @@
-import { type LoroDoc, UndoManager, type Value } from 'loro-crdt';
+import {
+  type AutomergeDoc,
+  UndoManager,
+  type Value,
+} from '@macro-inc/automerge';
 import { formulaReferencesSheet } from './sheet-references';
 import { readSpreadsheetSheets } from './spreadsheet-sheet-registry';
 import { readSpreadsheetWorkbook } from './workbook-document';
@@ -31,7 +35,7 @@ function metadata(value: Value | undefined): HistoryMetadata | undefined {
   return value as HistoryMetadata;
 }
 
-function scalar(doc: LoroDoc, map: string, key: string): Scalar {
+function scalar(doc: AutomergeDoc, map: string, key: string): Scalar {
   const value = doc.getMap(map).get(key);
   return typeof value === 'string' ||
     typeof value === 'number' ||
@@ -41,7 +45,10 @@ function scalar(doc: LoroDoc, map: string, key: string): Scalar {
 }
 
 /** Protect peer edits; preflight structural history before emitting any ops. */
-export function createSpreadsheetHistory(doc: LoroDoc, onChange: () => void) {
+export function createSpreadsheetHistory(
+  doc: AutomergeDoc,
+  onChange: () => void
+) {
   let reversing: HistoryMetadata | undefined;
   const history = new UndoManager(doc, {
     mergeInterval: 0,
@@ -75,7 +82,7 @@ export function createSpreadsheetHistory(doc: LoroDoc, onChange: () => void) {
       const structural = event.events.some((change) =>
         structuralMaps.has(String(change.path[0]))
       );
-      let before: LoroDoc | undefined;
+      let before: AutomergeDoc | undefined;
       try {
         if (structural) before = doc.forkAt(event.from);
         const changes = event.events.flatMap((change) => {
@@ -129,7 +136,7 @@ export function createSpreadsheetHistory(doc: LoroDoc, onChange: () => void) {
       )
     )
       return `${action} is blocked because a newer collaborator edit would be overwritten. Their changes have been kept.`;
-    let preview: LoroDoc | undefined;
+    let preview: AutomergeDoc | undefined;
     try {
       if (item?.kind === 'structural') {
         preview = doc.fork();

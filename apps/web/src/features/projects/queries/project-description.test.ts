@@ -10,7 +10,7 @@ const doubles = vi.hoisted(() => ({
   cleanup: vi.fn(),
 }));
 vi.mock('@macro-inc/collaboration/collab/manager', () => ({
-  createLoroManager: () => ({ ingest: doubles.ingest }),
+  createAutomergeManager: () => ({ ingest: doubles.ingest }),
 }));
 vi.mock('@macro-inc/collaboration/collab/snapshot-store', () => ({
   LORO_SNAPSHOT_DB_NAME: 'snapshots',

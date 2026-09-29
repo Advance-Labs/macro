@@ -2,7 +2,7 @@
 
 /// Canonical blank-markdown Loro "golden" snapshot.
 const MARKDOWN_GOLDEN_SNAPSHOT: &[u8] =
-    include_bytes!("../../../../static_assets/markdown-golden.1.bin");
+    include_bytes!("../../../../static_assets/markdown-golden.2.bin");
 
 use std::future::Future;
 use std::sync::Arc;

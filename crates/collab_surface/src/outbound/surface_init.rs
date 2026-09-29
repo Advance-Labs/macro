@@ -18,7 +18,7 @@ use crate::domain::ports::SurfaceInitializer;
 /// Canonical blank-markdown Loro "golden" snapshot — the same bytes the
 /// documents crate seeds empty markdown documents with.
 const MARKDOWN_GOLDEN_SNAPSHOT: &[u8] =
-    include_bytes!("../../../../static_assets/markdown-golden.1.bin");
+    include_bytes!("../../../../static_assets/markdown-golden.2.bin");
 
 const MAX_ATTEMPTS: usize = 3;
 const RETRY_DELAY: Duration = Duration::from_secs(1);

@@ -20,7 +20,7 @@ import {
 } from '@core/component/LexicalMarkdown/plugins/comments/commentPlugin';
 import { useParamNavigationCount } from '@core/component/ParamsProvider';
 import { useUserId } from '@core/context/user';
-import type { LoroManager } from '@macro-inc/collaboration/collab/manager';
+import type { AutomergeManager } from '@macro-inc/collaboration/collab/manager';
 import type { CommentNode } from '@macro-inc/lexical-core';
 import {
   useMessageLink,
@@ -88,7 +88,7 @@ function getHighlightThread(
  */
 export const MessageCommentsProvider: VoidComponent<{
   activeComment?: Accessor<string | undefined>;
-  loroManager: LoroManager;
+  loroManager: AutomergeManager;
 }> = (props) => {
   const {
     documentId: getDocumentId,

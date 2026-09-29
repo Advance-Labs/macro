@@ -1,6 +1,13 @@
 import { DEV_MODE_ENV } from '@core/constant/featureFlags';
-import type { LoroManager } from '@macro-inc/collaboration/collab/manager';
-
+import {
+  AutomergeList,
+  AutomergeMap,
+  AutomergeMovableList,
+  AutomergeText,
+  type Container,
+  type Cursor,
+} from '@macro-inc/automerge';
+import type { AutomergeManager } from '@macro-inc/collaboration/collab/manager';
 import { $getNodeById, type NodeIdMappings } from '@macro-inc/lexical-core';
 import {
   $createPoint,
@@ -17,18 +24,10 @@ import {
   type Point,
   type RangeSelection,
 } from 'lexical';
-import {
-  type Container,
-  type Cursor,
-  LoroList,
-  LoroMap,
-  LoroMovableList,
-  LoroText,
-} from 'loro-crdt';
 import type { LexicalSelectionAwareness, NodeCursor } from './LexicalAwareness';
 import { $findLoroContainerForLexicalNode } from './mapping';
 
-type ListLikeContainer = LoroMovableList | LoroList;
+type ListLikeContainer = AutomergeMovableList | AutomergeList;
 
 const warn = (...args: any[]) => {
   if (DEV_MODE_ENV) console.warn('Collab Cursors: ', ...args);
@@ -37,10 +36,13 @@ const warn = (...args: any[]) => {
 function isListLikeContainer(
   container: Container
 ): container is ListLikeContainer {
-  return container instanceof LoroMovableList || container instanceof LoroList;
+  return (
+    container instanceof AutomergeMovableList ||
+    container instanceof AutomergeList
+  );
 }
 
-function isTextLikeContainer(container: LoroMap): boolean {
+function isTextLikeContainer(container: AutomergeMap): boolean {
   return (
     container.get('type') === 'text' ||
     container.get('type') === 'inline-search' ||
@@ -81,7 +83,7 @@ function getIndexOfContainerInParentList(
 
 // Convert Lexical selection to Loro cursors
 export function $convertLexicalSelectionToCursors(
-  loroManager: LoroManager,
+  loroManager: AutomergeManager,
   mapping: NodeIdMappings,
   selection: BaseSelection
 ): { anchor: NodeCursor; focus: NodeCursor } | undefined {
@@ -165,9 +167,9 @@ export function $convertLexicalSelectionToCursors(
     }
 
     const firstContainer = firstContainerResult.value;
-    if (firstContainer instanceof LoroText) {
+    if (firstContainer instanceof AutomergeText) {
       anchorCursor = firstContainer.getCursor(0);
-    } else if (firstContainer instanceof LoroMovableList) {
+    } else if (firstContainer instanceof AutomergeMovableList) {
       anchorCursor = firstContainer.getCursor(0);
     }
 
@@ -181,9 +183,9 @@ export function $convertLexicalSelectionToCursors(
 
     const lastContainer = lastContainerResult.value;
 
-    if (lastContainer instanceof LoroText) {
+    if (lastContainer instanceof AutomergeText) {
       focusCursor = lastContainer.getCursor(lastContainer.length);
-    } else if (lastContainer instanceof LoroMovableList) {
+    } else if (lastContainer instanceof AutomergeMovableList) {
       focusCursor = lastContainer.getCursor(lastContainer.length);
     }
 
@@ -210,7 +212,7 @@ export function $convertLexicalSelectionToCursors(
 // Convert from Lexical point to Loro cursor
 function lexicalPointToCursor(
   point: Point,
-  loroManager: LoroManager,
+  loroManager: AutomergeManager,
   mapping: NodeIdMappings
 ): NodeCursor | undefined {
   const node = point.getNode();
@@ -244,16 +246,19 @@ function lexicalPointToCursor(
   let container = maybeContainer.value;
 
   let cursor: Cursor | undefined;
-  if (container instanceof LoroText) {
+  if (container instanceof AutomergeText) {
     cursor = container.getCursor(offset);
-  } else if (container instanceof LoroMovableList) {
+  } else if (container instanceof AutomergeMovableList) {
     cursor = container.getCursor(offset);
     // This is the parent container for text
-  } else if (container instanceof LoroMap) {
+  } else if (container instanceof AutomergeMap) {
     if (isTextLikeContainer(container)) {
-      let textContainer: LoroText | undefined;
+      let textContainer: AutomergeText | undefined;
       try {
-        textContainer = container.getOrCreateContainer('text', new LoroText());
+        textContainer = container.getOrCreateContainer(
+          'text',
+          new AutomergeText()
+        );
       } catch (e) {
         warn(
           'Expected text container to exist',
@@ -297,7 +302,7 @@ function lexicalPointToCursor(
 // Convert from Loro cursor back to Lexical position
 export function $cursorToLexicalPoint(
   cursor: NodeCursor,
-  loroManager: LoroManager,
+  loroManager: AutomergeManager,
   editor: LexicalEditor,
   mapping: NodeIdMappings
 ): Point | null {
@@ -363,7 +368,7 @@ function $createPointFromKeyAndOffset(
 }
 
 export function $createSelectionFromPeerAwareness(
-  loroManager: LoroManager,
+  loroManager: AutomergeManager,
   editor: LexicalEditor,
   peerAwareness: LexicalSelectionAwareness,
   mapping: NodeIdMappings,

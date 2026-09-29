@@ -32,23 +32,17 @@ describe("document copy endpoint tests", () => {
     let user = await doc.createUser();
 
     user.makeChange("Version 1");
-    const v1Frontier = user.doc.vvToFrontiers(user.doc.version())[0];
+    const v1Frontier = user.doc.vvToFrontiers(user.doc.version());
 
     user.makeChange(" -> Version 2");
-    const v2Frontier = user.doc.vvToFrontiers(user.doc.version())[0];
+    const v2Frontier = user.doc.vvToFrontiers(user.doc.version());
 
     user.makeChange(" -> Version 3");
     await wait(500);
 
     // Copy to v1
-    const v1 = await doc.copy("copy-v1", {
-      peer: v1Frontier.peer,
-      counter: v1Frontier.counter,
-    });
-    const v2 = await doc.copy("copy-v2", {
-      peer: v2Frontier.peer,
-      counter: v2Frontier.counter,
-    });
+    const v1 = await doc.copy("copy-v1", v1Frontier);
+    const v2 = await doc.copy("copy-v2", v2Frontier);
 
     // Verify versions
     const copyV1 = await v1.createUser();

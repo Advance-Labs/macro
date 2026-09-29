@@ -42,7 +42,7 @@ export const WAL_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
 
 /** DB name for the Loro doc-update WAL. Each WAL "purpose" (loro updates,
  *  offline comments, etc.) gets its own DB so schemas don't collide. */
-export const LORO_WAL_DB_NAME = 'macro-document-wal';
+export const LORO_WAL_DB_NAME = 'macro-automerge-document-wal';
 
 const DB_VERSION = 1;
 

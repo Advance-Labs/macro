@@ -1,6 +1,6 @@
-import type { InferType } from '@loro-mirror/core';
+import type { InferType } from '@macro-inc/automerge/mirror';
 import { SyncEngine } from '@macro-inc/collaboration/collab/engine';
-import type { LoroManager } from '@macro-inc/collaboration/collab/manager';
+import type { AutomergeManager } from '@macro-inc/collaboration/collab/manager';
 import type { RawUpdate } from '@macro-inc/collaboration/collab/shared';
 import type { LiveSyncSource } from '@macro-inc/collaboration/collab/source';
 import type { WALSyncer } from '@macro-inc/collaboration/collab/wal';
@@ -39,7 +39,7 @@ export class EditingWorkspace {
   private readonly pool: PeerPool;
 
   constructor(
-    private readonly manager: LoroManager<typeof MARKDOWN_LORO_SCHEMA>,
+    private readonly manager: AutomergeManager<typeof MARKDOWN_LORO_SCHEMA>,
     private readonly source: LiveSyncSource,
     wal: WALSyncer<RawUpdate>,
     opts: EditingWorkspaceOptions = {}

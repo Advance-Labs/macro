@@ -31455,16 +31455,9 @@
         "enum": ["pending", "ready"]
       },
       "SyncServiceVersionID": {
-        "type": "object",
-        "required": ["peer", "counter"],
-        "properties": {
-          "counter": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "peer": {
-            "type": "string"
-          }
+        "type": "array",
+        "items": {
+          "type": "string"
         }
       },
       "SystemSkillSummary": {

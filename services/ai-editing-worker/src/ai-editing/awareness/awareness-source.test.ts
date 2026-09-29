@@ -1,4 +1,4 @@
-import { EphemeralStore } from 'loro-crdt';
+import { EphemeralStore } from '@macro-inc/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AI_NAMES,

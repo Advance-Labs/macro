@@ -1,7 +1,8 @@
+import type { AutomergeDoc } from '@macro-inc/automerge';
 import { createAwareness } from '@macro-inc/collaboration/collab/awareness';
 import type { Chatter } from '@macro-inc/collaboration/collab/chatter';
 import { createSyncEngine } from '@macro-inc/collaboration/collab/engine';
-import { LoroManager } from '@macro-inc/collaboration/collab/manager';
+import { AutomergeManager } from '@macro-inc/collaboration/collab/manager';
 import {
   IDBSnapshotStore,
   LORO_SNAPSHOT_DB_NAME,
@@ -20,7 +21,6 @@ import {
   type WALStore,
   WALSyncer,
 } from '@macro-inc/collaboration/collab/wal';
-import type { LoroDoc } from 'loro-crdt';
 import type { ResultAsync } from 'neverthrow';
 import { type Accessor, createSignal, onCleanup } from 'solid-js';
 import { match } from 'ts-pattern';
@@ -75,7 +75,7 @@ export function createSpreadsheetSession(
     makeChatter?: (documentId: string) => Chatter;
   }
 ): SpreadsheetDocumentSource {
-  const manager = new LoroManager(SPREADSHEET_LORO_SCHEMA, {
+  const manager = new AutomergeManager(SPREADSHEET_LORO_SCHEMA, {
     documentId: options.documentId,
   });
   const snapshotStore =
@@ -89,7 +89,7 @@ export function createSpreadsheetSession(
     (updates) => options.syncSource.pushUpdate(updates),
     options.documentId
   );
-  const [doc, setDoc] = createSignal<LoroDoc>();
+  const [doc, setDoc] = createSignal<AutomergeDoc>();
   const [ready, setReady] = createSignal(false);
   const [error, setError] = createSignal<string>();
   let disposed = false;
@@ -164,7 +164,7 @@ export function createSpreadsheetSession(
     makeChatter: persistence?.makeChatter,
   });
 
-  // The shared engine replaces its LoroDoc when it recovers from an invalid
+  // The shared engine replaces its AutomergeDoc when it recovers from an invalid
   // update. Initialization-tagged updates bypass its rendering binding, so
   // keep our document handle current independently of that binding.
   const unsubscribeManager = manager.onStateChange(() => {

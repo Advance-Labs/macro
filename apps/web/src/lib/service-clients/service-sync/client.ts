@@ -76,12 +76,8 @@ export type HistorySession = {
   count: number;
 };
 
-/** A single frontier op-id — structurally a `SyncServiceVersionID`, so it can
- * be passed straight to the copy/fork path. */
-export type HistoryVersionId = {
-  peer: string;
-  counter: number;
-};
+/** Native Automerge causal heads for a historical copy. */
+export type HistoryVersionId = string[];
 
 export const syncServiceClient = {
   async wakeup(args: { documentId: string }) {

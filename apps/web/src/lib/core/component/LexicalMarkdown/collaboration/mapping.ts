@@ -1,22 +1,21 @@
 import { DEV_MODE_ENV } from '@core/constant/featureFlags';
-import type { LoroManager } from '@macro-inc/collaboration/collab/manager';
-
+import { AutomergeMap, type ContainerID } from '@macro-inc/automerge';
+import type { AutomergeManager } from '@macro-inc/collaboration/collab/manager';
 import type { NodeIdMappings } from '@macro-inc/lexical-core';
 import { $getNodeByKey, type LexicalNode } from 'lexical';
-import { type ContainerID, LoroMap } from 'loro-crdt';
 
 const warn = (...args: any[]) => {
   if (DEV_MODE_ENV) console.warn('LoroNodeMappings:', ...args);
 };
 
-/** Finds the [LexicalNode] for the given [LoroDoc] and [LoroLexicalNodeMappings]
+/** Finds the [LexicalNode] for the given [AutomergeDoc] and [LoroLexicalNodeMappings]
  *
- * @param loroManager The [LoroDoc] to search
+ * @param loroManager The [AutomergeDoc] to search
  * @param mappings The [LoroLexicalNodeMappings] to search
  * @param containerId The [ContainerID] to search
  */
 function _$findLexicalNodeForLoroContainer(
-  loroManager: LoroManager,
+  loroManager: AutomergeManager,
   mappings: NodeIdMappings,
   containerId: ContainerID
 ): LexicalNode | null {
@@ -36,15 +35,18 @@ function _$findLexicalNodeForLoroContainer(
     return null;
   }
 
-  if (!(container instanceof LoroMap)) {
+  if (!(container instanceof AutomergeMap)) {
     if (!container.parent) {
       warn('no parent for text');
       return null;
     }
-    container = container.parent()?.getAttached() as LoroMap;
+    container = container.parent()?.getAttached() as AutomergeMap;
   }
 
-  const idMap = (container as LoroMap).getOrCreateContainer('$', new LoroMap());
+  const idMap = (container as AutomergeMap).getOrCreateContainer(
+    '$',
+    new AutomergeMap()
+  );
 
   const value = idMap.getShallowValue();
 
@@ -61,12 +63,12 @@ function _$findLexicalNodeForLoroContainer(
 
 /** Finds the given loro container's [ContainerID] given the node id
  *
- * @param loroManager The [LoroDoc] to search
+ * @param loroManager The [AutomergeDoc] to search
  * @param node The [LexicalNode] to search
  * @param mappings The [LoroLexicalNodeMappings] to search
  */
 export function $findLoroContainerForLexicalNode(
-  loroManager: LoroManager,
+  loroManager: AutomergeManager,
   node: LexicalNode,
   mappings: NodeIdMappings
 ): ContainerID | null {
@@ -90,11 +92,11 @@ export function $findLoroContainerForLexicalNode(
 }
 
 function getMapValueOrContainer(
-  container: LoroMap,
+  container: AutomergeMap,
   key: string
 ): Record<string, any> {
   const maybeContainer = container.get(key);
-  if (maybeContainer instanceof LoroMap) {
+  if (maybeContainer instanceof AutomergeMap) {
     return maybeContainer.getShallowValue();
   } else if (typeof maybeContainer === 'object' && maybeContainer !== null) {
     return maybeContainer;
@@ -103,7 +105,7 @@ function getMapValueOrContainer(
 }
 
 function smartSearchContainersForNode(
-  loroManager: LoroManager,
+  loroManager: AutomergeManager,
   nodeId: string
 ): ContainerID | undefined {
   const res = loroManager.getAllContainerIds();
@@ -127,7 +129,7 @@ function smartSearchContainersForNode(
 
     container = container?.getAttached();
 
-    if (!container || !(container instanceof LoroMap)) continue;
+    if (!container || !(container instanceof AutomergeMap)) continue;
 
     const innerValue = getMapValueOrContainer(container, '$');
 

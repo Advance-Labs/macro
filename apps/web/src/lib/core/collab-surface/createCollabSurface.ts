@@ -1,5 +1,5 @@
-import type { LoroManager } from '@macro-inc/collaboration/collab/manager';
-import { createLoroManager } from '@macro-inc/collaboration/collab/manager';
+import type { AutomergeManager } from '@macro-inc/collaboration/collab/manager';
+import { createAutomergeManager } from '@macro-inc/collaboration/collab/manager';
 import type { RawUpdate } from '@macro-inc/collaboration/collab/shared';
 import {
   IDBSnapshotStore,
@@ -17,7 +17,9 @@ import { createCollabSurfaceSource } from '@service-sync/source';
 import { type Accessor, createSignal } from 'solid-js';
 import { getCollabSurfaceToken } from './token';
 
-export type CollabSurfaceLoroManager = LoroManager<typeof MARKDOWN_LORO_SCHEMA>;
+export type CollabSurfaceLoroManager = AutomergeManager<
+  typeof MARKDOWN_LORO_SCHEMA
+>;
 
 /** The parent entity a surface hangs off; all access derives from it. */
 export type CollabSurfaceParent = {
@@ -107,7 +109,7 @@ export function createCollabSurfaceSession(
   surfaceId: string,
   opts: CollabSurfaceSessionOptions
 ): CollabSurfaceSession {
-  const loroManager = createLoroManager(MARKDOWN_LORO_SCHEMA, {
+  const loroManager = createAutomergeManager(MARKDOWN_LORO_SCHEMA, {
     documentId: surfaceId,
   });
   const snapshotStore = new IDBSnapshotStore<RawUpdate>(

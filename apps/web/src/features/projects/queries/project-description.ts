@@ -1,6 +1,6 @@
 import { ingestLocalSnapshot } from '@core/collab-surface/createCollabSurface';
 import type { CollabMarkdownSession } from '@core/collab-surface/types';
-import { createLoroManager } from '@macro-inc/collaboration/collab/manager';
+import { createAutomergeManager } from '@macro-inc/collaboration/collab/manager';
 import type { RawUpdate } from '@macro-inc/collaboration/collab/shared';
 import {
   IDBSnapshotStore,
@@ -36,7 +36,9 @@ export function createProjectDescriptionSession<Access>(
   transport: ProjectDescriptionTransport<Access>
 ): CollabMarkdownSession & { dispose(): void; loaded: Promise<void> } {
   const owner = getOwner();
-  const loroManager = createLoroManager(MARKDOWN_LORO_SCHEMA, { documentId });
+  const loroManager = createAutomergeManager(MARKDOWN_LORO_SCHEMA, {
+    documentId,
+  });
   const [syncSource, setSyncSource] = createSignal<LiveSyncSource>();
   const [connectionError, setConnectionError] = createSignal<string>();
   let disposed = false;

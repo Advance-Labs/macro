@@ -148,7 +148,7 @@ import { trackMention } from '@core/signal/mention';
 import { bufToString } from '@core/util/string';
 import { handleFileFolderDrop } from '@core/util/upload';
 import { type EntityDragEvent, isEntityDragEvent } from '@entity';
-import type { LoroManager } from '@macro-inc/collaboration/collab/manager';
+import type { AutomergeManager } from '@macro-inc/collaboration/collab/manager';
 import {
   $isInlineSearchNode,
   AwaitNode,
@@ -204,7 +204,7 @@ function getBlankMarkdownPlaceholder(canEdit: boolean) {
 
 export function MarkdownEditor(props: {
   autoFocusOnMount?: boolean;
-  loroManager: LoroManager;
+  loroManager: AutomergeManager;
   showLexicalStateDebugger?: boolean;
   onLexicalStateDebuggerClose?: () => void;
   resolveAppLink?: MentionLinkResolver;

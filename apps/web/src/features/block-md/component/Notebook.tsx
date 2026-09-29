@@ -24,7 +24,7 @@ import {
   restoreScrollAnchor,
   type ScrollAnchor,
 } from '@core/util/scrollAnchor';
-import type { LoroManager } from '@macro-inc/collaboration/collab/manager';
+import type { AutomergeManager } from '@macro-inc/collaboration/collab/manager';
 import { makeResizeObserver } from '@solid-primitives/resize-observer';
 import { makePersisted } from '@solid-primitives/storage';
 import {
@@ -103,7 +103,7 @@ function useCanUseLexicalStateDebugger() {
 }
 
 export function Notebook(props: {
-  loroManager: LoroManager;
+  loroManager: AutomergeManager;
   documentId: string;
   hotkeyScope: string | undefined;
   autoFocus: boolean;
@@ -432,7 +432,7 @@ export function Notebook(props: {
 }
 
 export function InstructionsNotebook(props: {
-  loroManager: LoroManager;
+  loroManager: AutomergeManager;
   hotkeyScope: string | undefined;
 }) {
   const { state } = useMarkdownDocument();

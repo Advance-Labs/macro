@@ -50,7 +50,7 @@ fn scenario_body_html_sanitized(body_html: Option<&str>, body_text: &str) -> Str
 /// Canonical blank-markdown loro snapshot, matching the one production uses
 /// to initialize empty documents.
 const MARKDOWN_GOLDEN_SNAPSHOT: &[u8] =
-    include_bytes!("../../../../../static_assets/markdown-golden.1.bin");
+    include_bytes!("../../../../../static_assets/markdown-golden.2.bin");
 
 /// System labels created for every seeded inbox.
 const EMAIL_SYSTEM_LABELS: &[&str] = &[
