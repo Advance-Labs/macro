@@ -134,16 +134,41 @@ async fn a_mailbox_with_its_own_profile_retains_its_existing_owner() {
             grant_owner: None,
         },
     };
-    let result = service
-        .resolve(
-            "older@example.com",
-            Some(owner.fusionauth_id),
-            Uuid::now_v7(),
-        )
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(result.macro_id, owner.macro_id);
+    for grant_owner in [None, Some(owner.fusionauth_id)] {
+        let result = service
+            .resolve("older@example.com", grant_owner, Uuid::now_v7())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.macro_id, owner.macro_id);
+        assert_eq!(result.fusionauth_id, owner.fusionauth_id);
+    }
+}
+
+#[tokio::test]
+async fn a_mailbox_profile_cannot_override_a_different_verified_grant_owner() {
+    let profile = owner();
+    let grant_owner = owner();
+    for existing_inbox in [false, true] {
+        let service = InboxOwnerService {
+            repo: Owners {
+                mailbox_profile: Some(profile.clone()),
+                existing_inbox,
+                delegated: true,
+                grant_owner: Some(grant_owner.clone()),
+            },
+        };
+        assert!(
+            service
+                .resolve(
+                    "older@example.com",
+                    Some(grant_owner.fusionauth_id),
+                    Uuid::now_v7(),
+                )
+                .await
+                .is_err()
+        );
+    }
 }
 
 #[tokio::test]

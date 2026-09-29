@@ -55,6 +55,13 @@ impl<R: InboxOwnerRepository> InboxOwnerService<R> {
         requester: Uuid,
     ) -> Result<Option<InboxOwner>, Report> {
         if let Some(owner) = self.repo.by_email(email).await? {
+            if let Some(grant_owner) = verified_grant_owner
+                && owner.fusionauth_id != grant_owner
+            {
+                return Err(rootcause::report!(
+                    "Mailbox profile does not match Google grant owner"
+                ));
+            }
             return Ok(Some(owner));
         }
         // Old callbacks have no owner metadata and retain their existing behavior.
