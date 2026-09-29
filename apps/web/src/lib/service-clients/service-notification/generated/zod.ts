@@ -63,6 +63,7 @@ export const unsubscribeItemParams = zod.object({
     'agent_session',
     'scheduled_action',
     'initiative',
+    'database',
   ]),
   item_id: zod.string(),
 });
@@ -104,6 +105,7 @@ export const removeUnsubscribeItemParams = zod.object({
     'agent_session',
     'scheduled_action',
     'initiative',
+    'database',
   ]),
   item_id: zod.string(),
 });
