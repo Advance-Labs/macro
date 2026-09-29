@@ -9,6 +9,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use macro_user_id::user_id::MacroUserIdStr;
 use macro_uuid::Uuid;
+use rootcause::Report;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 /// Validate configuration syntax and authorize its target before persistence.
@@ -94,6 +95,18 @@ pub trait ScheduledActionRepo: Send + Sync + 'static {
         id: &Uuid,
         executed_at: DateTime<Utc>,
     ) -> impl Future<Output = Result<()>> + Send;
+}
+
+/// Lists one user's routines for read-only clients.
+///
+/// The list includes cron and event triggers, keeps only actions whose owner
+/// is that user, and orders them by `(created_at, id)`.
+pub trait ScheduledActionReadService: Send + Sync + 'static {
+    /// Routines owned by `user_id` in stable `(created_at, id)` order.
+    fn list_owned(
+        &self,
+        user_id: MacroUserIdStr<'static>,
+    ) -> impl Future<Output = std::result::Result<Vec<ScheduledAction>, Report>> + Send;
 }
 
 pub trait ScheduledActionService: Send + Sync + 'static {

@@ -290,6 +290,10 @@ impl ScheduledAction {
             owner_type: self.owner.owner_type(),
         })
     }
+
+    pub fn claim_expires_at(&self) -> Option<DateTime<Utc>> {
+        self.claimed.map(|claimed| claimed + MAX_ACTION_TIME)
+    }
 }
 
 /// Transcript resource created by a run. Never infer this from current task configuration.
