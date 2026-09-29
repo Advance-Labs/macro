@@ -43,6 +43,8 @@ export function NewChatPage(props: {
   onDraftChange?: (draft: string) => void;
   autoFocus?: boolean;
   registerFocus?: (focus: () => void) => void;
+  /** Lets a host attach files dropped outside the composer, e.g. on Home's pane. */
+  registerAttachFiles?: (attach: (files: File[]) => void) => void;
   roster: RosterAgent[];
   rosterLoading: boolean;
   /** Agents are listed but whether they can start is still unknown. */
@@ -144,6 +146,7 @@ export function NewChatPage(props: {
       uploadFile: (file) =>
         uploadFile(file, 'static', { hideProgressIndicator: true }),
     });
+  props.registerAttachFiles?.(attachFiles);
 
   const send = (prompt: string, attachments: InputAttachmentData[]) => {
     const persona = selected();
