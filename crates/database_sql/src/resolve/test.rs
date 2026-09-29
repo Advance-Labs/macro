@@ -3,7 +3,7 @@ use chrono::{TimeZone, Utc};
 use uuid::Uuid;
 
 use super::*;
-use crate::catalog::Catalog;
+use crate::catalog::{Catalog, PEOPLE_EMAIL, PEOPLE_ID, PEOPLE_NAME, PEOPLE_TABLE};
 use crate::parse::parse;
 
 use crate::test_support::{catalog, *};
@@ -21,7 +21,13 @@ fn grouped_aggregate_with_mixed_where() {
     ";
 
     let expected = Query::Select(SelectQuery {
-        table: DEALS,
+        distinct: false,
+        relations: vec![Relation {
+            table: DEALS,
+            alias: "deals".into(),
+        }],
+        joins: vec![],
+        bindings: vec![],
         items: vec![
             SelectItem::Column(OWNER),
             SelectItem::Agg {
@@ -62,7 +68,22 @@ fn grouped_aggregate_with_mixed_where() {
         ],
     });
 
-    assert_eq!(resolve(&catalog(), parse(sql).unwrap()).unwrap(), expected);
+    assert_eq!(
+        without_bindings(resolve(&catalog(), parse(sql).unwrap()).unwrap()),
+        expected
+    );
+}
+
+/// The bindings are the scope's bookkeeping; the literal tests check the
+/// rest.
+fn without_bindings(query: Query) -> Query {
+    match query {
+        Query::Select(select) => Query::Select(SelectQuery {
+            bindings: vec![],
+            ..select
+        }),
+        other => other,
+    }
 }
 
 #[test]
@@ -81,7 +102,13 @@ fn star_expands_and_every_column_kind_types_its_literal() {
     ";
 
     let expected = Query::Select(SelectQuery {
-        table: DEALS,
+        distinct: false,
+        relations: vec![Relation {
+            table: DEALS,
+            alias: "deals".into(),
+        }],
+        joins: vec![],
+        bindings: vec![],
         items: vec![
             SelectItem::Column(NAME),
             SelectItem::Column(AMOUNT),
@@ -142,13 +169,15 @@ fn star_expands_and_every_column_kind_types_its_literal() {
     });
 
     assert_eq!(
-        resolve(
-            &Catalog {
-                tables: catalog().tables.into_iter().take(2).collect(),
-            },
-            parse(sql).unwrap()
-        )
-        .unwrap(),
+        without_bindings(
+            resolve(
+                &Catalog {
+                    tables: catalog().tables.into_iter().take(2).collect(),
+                },
+                parse(sql).unwrap()
+            )
+            .unwrap()
+        ),
         expected
     );
 }
@@ -158,7 +187,13 @@ fn order_by_aggregate_resolves_to_its_select_item() {
     let sql = "SELECT stage, MAX(\"closed at\") FROM crm.deals GROUP BY stage ORDER BY MAX(\"closed at\") DESC, stage";
 
     let expected = Query::Select(SelectQuery {
-        table: DEALS,
+        distinct: false,
+        relations: vec![Relation {
+            table: DEALS,
+            alias: "deals".into(),
+        }],
+        joins: vec![],
+        bindings: vec![],
         items: vec![
             SelectItem::Column(STAGE),
             SelectItem::Agg {
@@ -180,7 +215,10 @@ fn order_by_aggregate_resolves_to_its_select_item() {
         ],
     });
 
-    assert_eq!(resolve(&catalog(), parse(sql).unwrap()).unwrap(), expected);
+    assert_eq!(
+        without_bindings(resolve(&catalog(), parse(sql).unwrap()).unwrap()),
+        expected
+    );
 }
 
 #[test]
@@ -231,6 +269,215 @@ fn update_types_cells_and_null_clears() {
         row_id: Uuid::from_u128(0xa1),
     });
     assert_eq!(resolve(&catalog(), parse(sql).unwrap()).unwrap(), expected);
+}
+
+#[test]
+fn joins_key_each_relation_and_record_bindings() {
+    let sql = "
+        SELECT DISTINCT p.email, t.row_id
+        FROM macro.tasks t
+        JOIN macro.people p ON t.assignees = p.id
+        LEFT JOIN crm.deals ON t.deal = deals.row_id
+        WHERE priority = 'High' AND deals.amount > 100
+        ORDER BY email
+    ";
+    let people_id = column_key(1, PEOPLE_ID);
+    let people_email = column_key(1, PEOPLE_EMAIL);
+    let deals_amount = column_key(2, AMOUNT);
+
+    let expected = Query::Select(SelectQuery {
+        distinct: true,
+        relations: vec![
+            Relation {
+                table: TASKS,
+                alias: "t".into(),
+            },
+            Relation {
+                table: PEOPLE_TABLE,
+                alias: "p".into(),
+            },
+            Relation {
+                table: DEALS,
+                alias: "deals".into(),
+            },
+        ],
+        joins: vec![
+            ResolvedJoin {
+                relation: 1,
+                kind: JoinKind::Inner,
+                on: vec![(ASSIGNEES, people_id)],
+            },
+            ResolvedJoin {
+                relation: 2,
+                kind: JoinKind::Left,
+                on: vec![(DEAL, row_id_key(DEALS))],
+            },
+        ],
+        items: vec![
+            SelectItem::Column(people_email),
+            SelectItem::Column(row_id_key(TASKS)),
+        ],
+        where_: Some(Filter::And(vec![
+            Filter::Cmp {
+                column: PRIORITY,
+                op: CmpOp::Eq,
+                value: Value::Option(HIGH),
+            },
+            Filter::Cmp {
+                column: deals_amount,
+                op: CmpOp::Gt,
+                value: Value::Number(100.0),
+            },
+        ])),
+        group_by: None,
+        order_by: vec![Order {
+            key: OrderKey::Column(people_email),
+            dir: Dir::Asc,
+        }],
+        bindings: vec![
+            Binding {
+                key: ASSIGNEES,
+                relation: 0,
+                column: Some(ASSIGNEES),
+            },
+            Binding {
+                key: people_id,
+                relation: 1,
+                column: Some(PEOPLE_ID),
+            },
+            Binding {
+                key: DEAL,
+                relation: 0,
+                column: Some(DEAL),
+            },
+            Binding {
+                key: row_id_key(DEALS),
+                relation: 2,
+                column: None,
+            },
+            Binding {
+                key: people_email,
+                relation: 1,
+                column: Some(PEOPLE_EMAIL),
+            },
+            Binding {
+                key: row_id_key(TASKS),
+                relation: 0,
+                column: None,
+            },
+            Binding {
+                key: PRIORITY,
+                relation: 0,
+                column: Some(PRIORITY),
+            },
+            Binding {
+                key: deals_amount,
+                relation: 2,
+                column: Some(AMOUNT),
+            },
+        ],
+    });
+
+    assert_eq!(resolve(&catalog(), parse(sql).unwrap()).unwrap(), expected);
+}
+
+#[test]
+fn a_definition_bound_to_both_joined_tables_gets_two_keys() {
+    // `crm.deals.name` and `crm.people.name` are the same definition.
+    let query = match resolve(
+        &catalog(),
+        parse("SELECT d.name, p.name FROM crm.deals d JOIN crm.people p ON d.owner = p.row_id")
+            .unwrap(),
+    )
+    .unwrap()
+    {
+        Query::Select(query) => query,
+        _ => unreachable!(),
+    };
+    assert_eq!(
+        query.items,
+        vec![
+            SelectItem::Column(NAME),
+            SelectItem::Column(column_key(1, NAME)),
+        ]
+    );
+    assert_ne!(NAME, column_key(1, NAME));
+    assert_eq!(
+        query.binding(column_key(1, NAME)),
+        Some(&Binding {
+            key: column_key(1, NAME),
+            relation: 1,
+            column: Some(NAME),
+        })
+    );
+}
+
+#[test]
+fn star_over_a_join_lists_every_relation_in_order() {
+    let query = match resolve(
+        &catalog(),
+        parse("SELECT * FROM macro.tasks t JOIN macro.people p ON t.assignees = p.id").unwrap(),
+    )
+    .unwrap()
+    {
+        Query::Select(query) => query,
+        _ => unreachable!(),
+    };
+    assert_eq!(
+        query.items,
+        vec![
+            SelectItem::Column(TITLE),
+            SelectItem::Column(PRIORITY),
+            SelectItem::Column(ASSIGNEES),
+            SelectItem::Column(DEAL),
+            SelectItem::Column(column_key(1, PEOPLE_ID)),
+            SelectItem::Column(column_key(1, PEOPLE_NAME)),
+            SelectItem::Column(column_key(1, PEOPLE_EMAIL)),
+        ]
+    );
+}
+
+#[test]
+fn join_rejections_quote_what_the_agent_wrote() {
+    let cases: &[(&str, &str)] = &[
+        (
+            "SELECT name FROM crm.deals d JOIN crm.people p ON d.owner = p.row_id",
+            "\"name\" is ambiguous — qualify it as d.name or p.name",
+        ),
+        (
+            "SELECT x.name FROM crm.deals d JOIN crm.people p ON d.owner = p.row_id",
+            "unknown table \"x\" in x.name — the query reads crm.deals as d and crm.people as p",
+        ),
+        (
+            "SELECT d.name FROM crm.deals d JOIN crm.people p ON d.amount = p.row_id",
+            "cannot join d.amount (number) to p.row_id (entity): join columns must hold the same kind of value",
+        ),
+        (
+            "SELECT d.name FROM crm.deals d JOIN crm.people p ON d.owner = d.owner",
+            "ON d.owner = d.owner must compare a column of p with a column of an earlier table",
+        ),
+        (
+            "SELECT d.name FROM crm.deals d JOIN crm.people d ON d.owner = d.row_id",
+            "\"d\" already names crm.deals; give the other table an alias, like JOIN crm.people p",
+        ),
+        (
+            "SELECT d.emial FROM crm.deals d JOIN macro.people p ON d.owner = p.id",
+            "unknown column \"emial\" in crm.deals",
+        ),
+        (
+            "SELECT emai FROM crm.deals d JOIN macro.people p ON d.owner = p.id",
+            "unknown column \"emai\" in crm.deals or macro.people — did you mean \"email\"?",
+        ),
+        (
+            "SELECT d.name FROM crm.deals d JOIN macro.people p ON d.owner = p.id GROUP BY p.email",
+            "\"name\" must appear in GROUP BY or inside an aggregate",
+        ),
+    ];
+
+    for (sql, message) in cases {
+        let error = resolve(&catalog(), parse(sql).unwrap()).unwrap_err();
+        assert_eq!(error.to_string(), *message, "\n{sql}");
+    }
 }
 
 // ---- rejections: the exact message the agent reads --------------------------

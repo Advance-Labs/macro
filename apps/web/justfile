@@ -77,6 +77,7 @@ local-email: ensure-cache-wasm
 node_heap := "--max-old-space-size=8192"
 cache_wasm_target := justfile_directory() / "../../target/cache-wasm"
 agent_fold_wasm_target := justfile_directory() / "../../target/agent-fold-wasm"
+database_sql_wasm_target := justfile_directory() / "../../target/database-sql-wasm"
 
 [parallel]
 build-wasm: build-cache-wasm build-agent-fold-wasm
@@ -228,6 +229,22 @@ ensure-agent-fold-wasm:
     CRATE="{{justfile_directory()}}/../../crates/agent_fold"
     if [ ! -f "$WASM" ] || [ -n "$(find "$CRATE/src" "$CRATE/Cargo.toml" -newer "$WASM" -print -quit)" ]; then
         just --justfile "{{justfile()}}" build-agent-fold-wasm
+    fi
+
+# Build the database-sql wasm module (the SQL engine's staged `Query`) into
+# src/lib/core/database-sql/wasm (gitignored).
+build-database-sql-wasm:
+    CARGO_TARGET_DIR="{{database_sql_wasm_target}}" wasm-pack build {{justfile_directory()}}/../../crates/database_sql --target web --release --out-dir {{justfile_directory()}}/src/lib/core/database-sql/wasm
+
+# Dev fast path: build the database-sql wasm pkg only when it is missing or
+# any engine source is newer than the built artifact.
+ensure-database-sql-wasm:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    WASM="{{justfile_directory()}}/src/lib/core/database-sql/wasm/database_sql_bg.wasm"
+    CRATE="{{justfile_directory()}}/../../crates/database_sql"
+    if [ ! -f "$WASM" ] || [ -n "$(find "$CRATE/src" "$CRATE/Cargo.toml" -newer "$WASM" -print -quit)" ]; then
+        just --justfile "{{justfile()}}" build-database-sql-wasm
     fi
 
 # Regenerate src/lib/service-clients/service-agent-fold/generated/types.ts

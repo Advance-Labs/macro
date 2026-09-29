@@ -3,25 +3,27 @@
 
 use chrono::{DateTime, NaiveDate, Utc};
 
-use crate::catalog::{Column, ColumnKind, Table};
+use crate::catalog::{Column, ColumnKind};
 use crate::parse::{CmpOp, Cond, Lit};
 
-use super::{Filter, ResolveError, Value, names};
+use super::names::Scope;
+use super::{Filter, ResolveError, Value};
 
-pub fn resolve(table: &Table, cond: Cond) -> Result<Filter, ResolveError> {
+pub fn resolve(scope: &mut Scope<'_>, cond: Cond) -> Result<Filter, ResolveError> {
     match cond {
         Cond::And(parts) => parts
             .into_iter()
-            .map(|part| resolve(table, part))
+            .map(|part| resolve(scope, part))
             .collect::<Result<_, _>>()
             .map(Filter::And),
         Cond::Or(parts) => parts
             .into_iter()
-            .map(|part| resolve(table, part))
+            .map(|part| resolve(scope, part))
             .collect::<Result<_, _>>()
             .map(Filter::Or),
         Cond::Cmp { column, op, value } => {
-            let column = names::column(table, &column)?;
+            let bound = scope.column(&column)?;
+            let column = &bound.column;
             if column.kind.is_multi() {
                 return Err(ResolveError::EqualityOnMultiValued {
                     column: column.name.clone(),
@@ -34,7 +36,7 @@ pub fn resolve(table: &Table, cond: Cond) -> Result<Filter, ResolveError> {
             }
             check_operator(column, op)?;
             Ok(Filter::Cmp {
-                column: column.id,
+                column: bound.key,
                 op,
                 value: typed(column, value)?,
             })
@@ -44,7 +46,8 @@ pub fn resolve(table: &Table, cond: Cond) -> Result<Filter, ResolveError> {
             values,
             negated,
         } => {
-            let column = names::column(table, &column)?;
+            let bound = scope.column(&column)?;
+            let column = &bound.column;
             if column.kind.is_multi() {
                 return Err(ResolveError::EqualityOnMultiValued {
                     column: column.name.clone(),
@@ -62,7 +65,7 @@ pub fn resolve(table: &Table, cond: Cond) -> Result<Filter, ResolveError> {
                 })
                 .collect::<Result<_, _>>()?;
             Ok(Filter::In {
-                column: column.id,
+                column: bound.key,
                 values,
                 negated,
             })
@@ -72,22 +75,23 @@ pub fn resolve(table: &Table, cond: Cond) -> Result<Filter, ResolveError> {
             value,
             negated,
         } => {
-            let column = names::column(table, &column)?;
+            let bound = scope.column(&column)?;
+            let column = &bound.column;
             if !column.kind.is_multi() {
                 return Err(ResolveError::HasOnSingleValued {
                     column: column.name.clone(),
                 });
             }
             Ok(Filter::Has {
-                column: column.id,
+                column: bound.key,
                 value: typed(column, value)?,
                 negated,
             })
         }
         Cond::IsNull { column, negated } => {
-            let column = names::column(table, &column)?;
+            let bound = scope.column(&column)?;
             Ok(Filter::IsNull {
-                column: column.id,
+                column: bound.key,
                 negated,
             })
         }
@@ -96,10 +100,11 @@ pub fn resolve(table: &Table, cond: Cond) -> Result<Filter, ResolveError> {
             pattern,
             negated,
         } => {
-            let column = names::column(table, &column)?;
+            let bound = scope.column(&column)?;
+            let column = &bound.column;
             match column.kind {
                 ColumnKind::Text | ColumnKind::Link => Ok(Filter::Like {
-                    column: column.id,
+                    column: bound.key,
                     pattern,
                     negated,
                 }),

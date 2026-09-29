@@ -103,9 +103,14 @@ impl<'a> Parser<'a> {
 
     fn select(&mut self) -> Result<Select, ParseError> {
         self.expect(Tok::Select, "SELECT")?;
+        let distinct = self.eat(Tok::Distinct);
         let items = self.items()?;
         self.expect(Tok::From, "FROM")?;
-        let table = self.table()?;
+        let from = self.table_item("a table name after FROM, like database.table")?;
+        let mut joins = Vec::new();
+        while let Some(join) = self.join()? {
+            joins.push(join);
+        }
         let where_ = if self.eat(Tok::Where) {
             Some(self.cond()?)
         } else {
@@ -113,7 +118,7 @@ impl<'a> Parser<'a> {
         };
         let group_by = if self.eat(Tok::Group) {
             self.expect(Tok::By, "BY after GROUP")?;
-            Some(self.ident("a column name after GROUP BY")?)
+            Some(self.column_ref("a column name after GROUP BY")?)
         } else {
             None
         };
@@ -124,12 +129,65 @@ impl<'a> Parser<'a> {
             Vec::new()
         };
         Ok(Select {
+            distinct,
             items,
-            table,
+            from,
+            joins,
             where_,
             group_by,
             order_by,
         })
+    }
+
+    /// `table [[AS] alias]`.
+    fn table_item(&mut self, expected: &str) -> Result<FromItem, ParseError> {
+        let table = self.table(expected)?;
+        let alias = if self.eat(Tok::As) {
+            Some(self.ident("an alias after AS")?)
+        } else if matches!(self.peek(), Some(Tok::Ident(_) | Tok::QuotedIdent(_))) {
+            Some(self.ident("an alias")?)
+        } else {
+            None
+        };
+        Ok(FromItem { table, alias })
+    }
+
+    /// `[INNER] JOIN table ON …` or `LEFT [OUTER] JOIN table ON …`, if one
+    /// starts here.
+    fn join(&mut self) -> Result<Option<Join>, ParseError> {
+        let kind = match self.peek() {
+            Some(Tok::Join) => {
+                self.bump();
+                JoinKind::Inner
+            }
+            Some(Tok::Inner) => {
+                self.bump();
+                self.expect(Tok::Join, "JOIN after INNER")?;
+                JoinKind::Inner
+            }
+            Some(Tok::Left) => {
+                self.bump();
+                self.eat(Tok::Outer);
+                self.expect(Tok::Join, "JOIN after LEFT")?;
+                JoinKind::Left
+            }
+            _ => return Ok(None),
+        };
+        let table = self.table_item("a table name after JOIN, like database.table")?;
+        self.expect(Tok::On, "ON after the joined table")?;
+        let mut on = vec![self.join_equality()?];
+        while self.eat(Tok::And) {
+            on.push(self.join_equality()?);
+        }
+        Ok(Some(Join { kind, table, on }))
+    }
+
+    /// `column = column`, the only condition a join accepts.
+    fn join_equality(&mut self) -> Result<(ColumnRef, ColumnRef), ParseError> {
+        let left = self.column_ref("a column to join on, like alias.column")?;
+        self.expect(Tok::Eq, "= between the two join columns")?;
+        let right = self.column_ref("a column of the other table after =")?;
+        Ok((left, right))
     }
 
     fn items(&mut self) -> Result<Vec<Item>, ParseError> {
@@ -147,7 +205,7 @@ impl<'a> Parser<'a> {
         if self.is_agg_start() {
             return Ok(Item::Agg(self.agg()?));
         }
-        Ok(Item::Column(self.ident(
+        Ok(Item::Column(self.column_ref(
             "a column name, an aggregate like COUNT(*) or SUM(column), or *",
         )?))
     }
@@ -172,7 +230,7 @@ impl<'a> Parser<'a> {
         let arg = if func == AggFn::Count && self.eat(Tok::Star) {
             None
         } else {
-            Some(self.ident(if func == AggFn::Count {
+            Some(self.column_ref(if func == AggFn::Count {
                 "* or a column name inside COUNT(…)"
             } else {
                 "a column name inside the aggregate"
@@ -182,8 +240,8 @@ impl<'a> Parser<'a> {
         Ok(Agg { func, arg })
     }
 
-    fn table(&mut self) -> Result<TableName, ParseError> {
-        let first = self.ident("a table name after FROM, like database.table")?;
+    fn table(&mut self, expected: &str) -> Result<TableName, ParseError> {
+        let first = self.ident(expected)?;
         if self.eat(Tok::Dot) {
             let table = self.ident("a table name after the .")?;
             Ok(TableName {
@@ -207,22 +265,22 @@ impl<'a> Parser<'a> {
     }
 
     fn order_by(&mut self) -> Result<OrderBy, ParseError> {
-        let key =
-            if self.is_agg_start() {
-                OrderKey::Agg(self.agg()?)
-            } else if let Some(Tok::Num(n)) = self.peek() {
-                let n = *n;
-                if n.fract() != 0.0 || n < 1.0 {
-                    return Err(self
-                        .error("a column name or a 1-based select-list position after ORDER BY"));
-                }
-                self.bump();
-                OrderKey::Position(n as u32)
-            } else {
-                OrderKey::Column(self.ident(
-                    "a column name, an aggregate, or a select-list position after ORDER BY",
-                )?)
-            };
+        let key = if self.is_agg_start() {
+            OrderKey::Agg(self.agg()?)
+        } else if let Some(Tok::Num(n)) = self.peek() {
+            let n = *n;
+            if n.fract() != 0.0 || n < 1.0 {
+                return Err(
+                    self.error("a column name or a 1-based select-list position after ORDER BY")
+                );
+            }
+            self.bump();
+            OrderKey::Position(n as u32)
+        } else {
+            OrderKey::Column(self.column_ref(
+                "a column name, an aggregate, or a select-list position after ORDER BY",
+            )?)
+        };
         let dir = if self.eat(Tok::Desc) {
             Dir::Desc
         } else {
@@ -260,7 +318,7 @@ impl<'a> Parser<'a> {
     }
 
     fn atom(&mut self) -> Result<Cond, ParseError> {
-        let column = self.ident("a column name to compare")?;
+        let column = self.column_ref("a column name to compare")?;
         let negated = self.eat(Tok::Not);
         match self.peek() {
             Some(Tok::In) => {
@@ -307,7 +365,10 @@ impl<'a> Parser<'a> {
                 self.expect(Tok::Null, "NULL after IS")?;
                 Ok(Cond::IsNull { column, negated })
             }
-            _ if negated => Err(self.error(&format!("IN, HAS or LIKE after \"{}\" NOT", column.0))),
+            _ if negated => Err(self.error(&format!(
+                "IN, HAS or LIKE after \"{}\" NOT",
+                column.column.0
+            ))),
             Some(op @ (Tok::Eq | Tok::Ne | Tok::Lt | Tok::Le | Tok::Gt | Tok::Ge)) => {
                 let op = match op {
                     Tok::Eq => CmpOp::Eq,
@@ -323,12 +384,29 @@ impl<'a> Parser<'a> {
             }
             _ => Err(self.error(&format!(
                 "a comparison operator, IN, HAS, IS or LIKE after \"{}\"",
-                column.0
+                column.column.0
             ))),
         }
     }
 
     // ---- leaves -------------------------------------------------------
+
+    /// `column` or `alias.column`.
+    fn column_ref(&mut self, expected: &str) -> Result<ColumnRef, ParseError> {
+        let first = self.ident(expected)?;
+        if self.eat(Tok::Dot) {
+            let column = self.ident("a column name after the .")?;
+            Ok(ColumnRef {
+                table: Some(first),
+                column,
+            })
+        } else {
+            Ok(ColumnRef {
+                table: None,
+                column: first,
+            })
+        }
+    }
 
     fn ident(&mut self, expected: &str) -> Result<Ident, ParseError> {
         match self.peek() {
@@ -385,7 +463,7 @@ impl<'a> Parser<'a> {
     fn insert(&mut self) -> Result<Insert, ParseError> {
         self.expect(Tok::Insert, "INSERT")?;
         self.expect(Tok::Into, "INTO after INSERT")?;
-        let table = self.table()?;
+        let table = self.table("a table name after INTO, like database.table")?;
         self.expect(Tok::LParen, "( and the column list after the table name")?;
         let mut columns = vec![self.ident("a column name in the column list")?];
         while self.eat(Tok::Comma) {
@@ -431,7 +509,7 @@ impl Parser<'_> {
 
     fn update(&mut self) -> Result<Update, ParseError> {
         self.expect(Tok::Update, "UPDATE")?;
-        let table = self.table()?;
+        let table = self.table("a table name after UPDATE, like database.table")?;
         self.expect(Tok::Set, "SET after the table name")?;
         let mut assignments = vec![self.assignment()?];
         while self.eat(Tok::Comma) {
@@ -455,7 +533,7 @@ impl Parser<'_> {
     fn delete(&mut self) -> Result<Delete, ParseError> {
         self.expect(Tok::Delete, "DELETE")?;
         self.expect(Tok::From, "FROM after DELETE")?;
-        let table = self.table()?;
+        let table = self.table("a table name after FROM, like database.table")?;
         let row_id = self.row_id_clause("DELETE")?;
         Ok(Delete { table, row_id })
     }

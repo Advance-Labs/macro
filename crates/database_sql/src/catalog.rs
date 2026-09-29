@@ -1,19 +1,23 @@
 //! What the caller can see: tables, their columns, and the columns' types and
 //! select options. Built once per request by the caller from the databases
 //! the viewer has access to; a table that is not in the catalog does not exist
-//! as far as a query is concerned.
+//! as far as a query is concerned. A driver builds it in JSON, in camel
+//! case, and hands it across the wasm boundary.
 
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Every table a statement may name.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Catalog {
     /// The visible tables.
     pub tables: Vec<Table>,
 }
 
 /// One table and its columns, in display order.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Table {
     /// The table id.
     pub id: Uuid,
@@ -23,10 +27,65 @@ pub struct Table {
     pub name: String,
     /// The columns, in display order.
     pub columns: Vec<Column>,
+    /// Where its rows come from.
+    #[serde(default)]
+    pub source: TableSource,
+}
+
+/// Where a table's rows come from. The engine only says which; the driver
+/// serving its fetch requests decides how.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TableSource {
+    /// A Macro database table, read through Soup.
+    #[default]
+    Database,
+    /// The people the viewer can see: `id`, `name`, `email`.
+    People,
+}
+
+/// The id of the `people` table. Platform tables have fixed ids, so a saved
+/// query keeps meaning the same thing.
+pub const PEOPLE_TABLE: Uuid = Uuid::from_u128(0x6d61_6372_6f00_0000_0000_0000_7065_6f70);
+/// `people.id`: the user's entity id.
+pub const PEOPLE_ID: Uuid = Uuid::from_u128(0x6d61_6372_6f00_0000_0000_0000_7065_6f71);
+/// `people.name`.
+pub const PEOPLE_NAME: Uuid = Uuid::from_u128(0x6d61_6372_6f00_0000_0000_0000_7065_6f72);
+/// `people.email`.
+pub const PEOPLE_EMAIL: Uuid = Uuid::from_u128(0x6d61_6372_6f00_0000_0000_0000_7065_6f73);
+
+/// The `macro.people` table: every person the viewer can see, keyed by
+/// entity id so entity columns join to it. Its `id` cells are
+/// [`crate::fold::Cell::Entities`] with one id each.
+pub fn people_table() -> Table {
+    Table {
+        id: PEOPLE_TABLE,
+        database: "macro".into(),
+        name: "people".into(),
+        columns: vec![
+            Column {
+                id: PEOPLE_ID,
+                name: "id".into(),
+                kind: ColumnKind::Entity { multi: false },
+            },
+            Column {
+                id: PEOPLE_NAME,
+                name: "name".into(),
+                kind: ColumnKind::Text,
+            },
+            Column {
+                id: PEOPLE_EMAIL,
+                name: "email".into(),
+                kind: ColumnKind::Text,
+            },
+        ],
+        source: TableSource::People,
+    }
 }
 
 /// One column: a property definition bound to the table.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Column {
     /// The property definition id.
     pub id: Uuid,
@@ -38,7 +97,8 @@ pub struct Column {
 
 /// The value type of a column, mirroring the property data types a query can
 /// compare against.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ColumnKind {
     /// Free text.
     Text,
@@ -65,7 +125,8 @@ pub enum ColumnKind {
 }
 
 /// One option of a select column.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SelectOption {
     /// The option id.
     pub id: Uuid,

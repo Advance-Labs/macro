@@ -116,6 +116,50 @@ pub enum ResolveError {
         /// The column.
         column: String,
     },
+    /// Two tables of a `SELECT` share an alias.
+    DuplicateAlias {
+        /// The alias.
+        alias: String,
+        /// The table already using it.
+        table: String,
+    },
+    /// `alias.column` names an alias the query does not have.
+    UnknownAlias {
+        /// The alias as written.
+        alias: String,
+        /// The column as written.
+        column: String,
+        /// Every relation, as `database.table as alias`.
+        relations: Vec<String>,
+    },
+    /// A bare column name that several relations have.
+    AmbiguousColumn {
+        /// The name.
+        name: String,
+        /// The `alias.column` spellings that would pick one.
+        qualified: Vec<String>,
+    },
+    /// An `ON` equality that does not relate the joined table to an
+    /// earlier one.
+    JoinNotAcrossTables {
+        /// The joined table's alias.
+        alias: String,
+        /// The left column as written.
+        left: String,
+        /// The right column as written.
+        right: String,
+    },
+    /// An `ON` equality between columns of different kinds.
+    JoinKindMismatch {
+        /// The earlier table's column.
+        left: String,
+        /// Its kind.
+        left_kind: &'static str,
+        /// The joined table's column.
+        right: String,
+        /// Its kind.
+        right_kind: &'static str,
+    },
 }
 
 impl fmt::Display for ResolveError {
@@ -225,6 +269,37 @@ impl fmt::Display for ResolveError {
             Self::DuplicateInsertColumn { column } => {
                 write!(f, "\"{column}\" is listed twice in the column list")
             }
+            Self::DuplicateAlias { alias, table } => write!(
+                f,
+                "\"{alias}\" already names {table}; give the other table an alias, like JOIN crm.people p"
+            ),
+            Self::UnknownAlias {
+                alias,
+                column,
+                relations,
+            } => write!(
+                f,
+                "unknown table \"{alias}\" in {alias}.{column} — the query reads {}",
+                relations.join(" and ")
+            ),
+            Self::AmbiguousColumn { name, qualified } => write!(
+                f,
+                "\"{name}\" is ambiguous — qualify it as {}",
+                qualified.join(" or ")
+            ),
+            Self::JoinNotAcrossTables { alias, left, right } => write!(
+                f,
+                "ON {left} = {right} must compare a column of {alias} with a column of an earlier table"
+            ),
+            Self::JoinKindMismatch {
+                left,
+                left_kind,
+                right,
+                right_kind,
+            } => write!(
+                f,
+                "cannot join {left} ({left_kind}) to {right} ({right_kind}): join columns must hold the same kind of value"
+            ),
         }
     }
 }

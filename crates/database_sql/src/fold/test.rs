@@ -267,3 +267,90 @@ fn residual_predicates_follow_sql_null_rules_and_macro_matching() {
         assert_eq!(held, *kept, "\nWHERE {where_}");
     }
 }
+
+// ---- joins and DISTINCT ------------------------------------------------------
+
+#[test]
+fn distinct_keeps_the_first_of_equal_rows_after_sorting() {
+    let plan = plan("SELECT DISTINCT owner FROM crm.deals ORDER BY owner");
+    let (rows, ids) = fold_relations(&catalog(), &plan, vec![deals()]);
+    assert_eq!(
+        rows,
+        vec![
+            vec![Some(Cell::Entities(vec!["macro|ana@example.com".into()]))],
+            vec![Some(Cell::Entities(vec!["macro|sam@example.com".into()]))],
+            vec![None],
+        ]
+    );
+    // Hooli is Ana's; Acme is the first of Sam's two; Initech has no owner.
+    assert_eq!(ids, vec![HOOLI, ACME, INITECH]);
+}
+
+#[test]
+fn distinct_over_aggregates_changes_nothing() {
+    let plan =
+        plan("SELECT DISTINCT stage, COUNT(*) FROM crm.deals GROUP BY stage ORDER BY 2 DESC");
+    let (rows, ids) = fold_relations(&catalog(), &plan, vec![deals()]);
+    assert_eq!(rows.len(), 3);
+    assert_eq!(ids, Vec::<Uuid>::new());
+}
+
+#[test]
+fn join_matches_by_membership_and_leaves_empty_cells_unmatched() {
+    use crate::catalog::PEOPLE_ID;
+    use crate::resolve::column_key;
+
+    let plan = plan(
+        "SELECT d.name, p.name FROM crm.deals d LEFT JOIN macro.people p ON d.owner = p.id ORDER BY d.name",
+    );
+    let people = vec![
+        Row {
+            id: Uuid::from_u128(0x71),
+            cells: HashMap::from([
+                (
+                    column_key(1, PEOPLE_ID),
+                    Cell::Entities(vec!["macro|sam@example.com".into()]),
+                ),
+                (
+                    column_key(1, crate::catalog::PEOPLE_NAME),
+                    Cell::Text("Sam".into()),
+                ),
+            ]),
+        },
+        Row {
+            id: Uuid::from_u128(0x72),
+            cells: HashMap::from([
+                (
+                    column_key(1, PEOPLE_ID),
+                    Cell::Entities(vec!["macro|ana@example.com".into()]),
+                ),
+                (
+                    column_key(1, crate::catalog::PEOPLE_NAME),
+                    Cell::Text("Ana".into()),
+                ),
+            ]),
+        },
+    ];
+    let joined = join::join(&plan, vec![deals(), people.clone()]);
+    assert_eq!(joined.len(), 4);
+    let (rows, ids) = fold_relations(&catalog(), &plan, vec![deals(), people]);
+    assert_eq!(
+        rows,
+        vec![
+            vec![
+                Some(Cell::Text("Acme".into())),
+                Some(Cell::Text("Sam".into()))
+            ],
+            vec![
+                Some(Cell::Text("Globex".into())),
+                Some(Cell::Text("Sam".into()))
+            ],
+            vec![
+                Some(Cell::Text("hooli".into())),
+                Some(Cell::Text("Ana".into()))
+            ],
+            vec![Some(Cell::Text("Initech".into())), None],
+        ]
+    );
+    assert_eq!(ids, vec![ACME, GLOBEX, HOOLI, INITECH]);
+}

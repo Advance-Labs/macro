@@ -1,9 +1,9 @@
-//! Stage four, and the whole pipeline in one call: [`run`] compiles a
-//! statement, fetches through a [`RowSource`] or writes through a
-//! [`RowWriter`], folds, and answers with an [`Outcome`].
+//! The whole pipeline in one call: [`run`] compiles a statement, drives an
+//! [`Engine`] through a [`RowSource`] or writes through a [`RowWriter`], and
+//! answers with an [`Outcome`].
 //!
-//! The source and writer are the only I/O; everything else here is pure.
-//! Paging and the row cap live here rather than in the source so a fake
+//! The source and writer are the only I/O; everything else is pure. Paging
+//! and the row cap live in the engine rather than in the source so a fake
 //! source can prove them.
 
 #[cfg(test)]
@@ -16,9 +16,12 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::catalog::{Catalog, ColumnKind};
-use crate::fold::{Bin, Row, Table, fold_bins, fold_rows};
-use crate::resolve::{AggFn, CompileError, Query, SelectItem, SelectQuery, Value, compile};
-use crate::split::{GqlQuery, Plan, Shape, split};
+use crate::engine::{Engine, Step};
+use crate::fold::{Bin, Row, Table};
+use crate::resolve::{
+    AggFn, Binding, CompileError, Query, Relation, SelectItem, SelectQuery, Value, compile,
+};
+use crate::split::{GqlQuery, column_of};
 
 /// The most rows one statement reads before the fold. Past it the answer
 /// is still returned, marked truncated, so aggregates are visibly partial
@@ -26,10 +29,11 @@ use crate::split::{GqlQuery, Plan, Shape, split};
 pub const ROW_CAP: usize = 20_000;
 
 /// The most rows asked for in one page.
-const PAGE_LIMIT: usize = 500;
+pub const PAGE_LIMIT: usize = 500;
 
 /// One page of rows from the server.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Page {
     /// The rows, carrying at least the columns asked for.
     pub rows: Vec<Row>,
@@ -102,6 +106,23 @@ pub enum RunError {
     /// The server could not be read.
     #[error("could not read rows: {0}")]
     Source(#[from] SourceError),
+    /// The engine was started on a write.
+    #[error("the engine runs SELECT statements; writes go through run()")]
+    NotARead,
+    /// A feed quoted a request the engine is not waiting on.
+    #[error("fed request {fed}, but request {expected} is outstanding")]
+    WrongRequest {
+        /// The outstanding request.
+        expected: u32,
+        /// The id fed.
+        fed: u32,
+    },
+    /// A feed arrived when nothing was outstanding.
+    #[error("fed request {fed}, but nothing is outstanding")]
+    NothingOutstanding {
+        /// The id fed.
+        fed: u32,
+    },
 }
 
 /// What a statement produced.
@@ -222,112 +243,51 @@ async fn read(
     select: SelectQuery,
     source: &impl RowSource,
 ) -> Result<Outcome, RunError> {
-    let columns = describe(catalog, &select.items);
-    let plan = split(catalog, select);
-    let table = match &plan.gql {
-        GqlQuery::Soup { table, .. } | GqlQuery::GroupSoup { table, .. } => *table,
-    };
-
-    let (rows, row_ids, truncated) = match &plan.gql {
-        GqlQuery::GroupSoup { .. } => {
-            let bins = source.bins(&plan.gql).await?;
-            (fold_bins(catalog, &plan, bins), Vec::new(), false)
-        }
-        GqlQuery::Soup { .. } => {
-            let (fetched, truncated) = fetch_all(source, &plan).await?;
-            let ordered_ids = match &plan.shape {
-                Shape::Rows(_) => Some(()),
-                Shape::Aggregate { .. } => None,
-            };
-            let rows = fold_rows(catalog, &plan, fetched.clone());
-            let row_ids = match ordered_ids {
-                Some(()) => row_ids_in_result_order(catalog, &plan, fetched),
-                None => Vec::new(),
-            };
-            (rows, row_ids, truncated)
-        }
-    };
-
-    Ok(Outcome {
-        columns,
-        rows,
-        row_ids,
-        read_tables: vec![table],
-        truncated,
-        ..Outcome::default()
-    })
-}
-
-/// Page through the query until the server runs out or the cap is hit.
-async fn fetch_all(source: &impl RowSource, plan: &Plan) -> Result<(Vec<Row>, bool), RunError> {
-    let mut rows = Vec::new();
-    let mut cursor = None;
+    let (mut engine, mut step) = Engine::from_select(catalog, select);
     loop {
-        let room = ROW_CAP - rows.len();
-        if room == 0 {
-            return Ok((rows, true));
-        }
-        let page = source
-            .page(&plan.gql, &plan.needs, cursor, room.min(PAGE_LIMIT))
-            .await?;
-        rows.extend(page.rows);
-        if rows.len() > ROW_CAP {
-            rows.truncate(ROW_CAP);
-            return Ok((rows, true));
-        }
-        match page.next {
-            Some(next) => cursor = Some(next),
-            None => return Ok((rows, false)),
-        }
+        step = match step {
+            Step::Done(outcome) => return Ok(outcome),
+            Step::Fetch(request) => {
+                let page = source
+                    .page(
+                        &request.query,
+                        &request.needs,
+                        request.cursor,
+                        request.limit,
+                    )
+                    .await?;
+                engine.feed_page(request.id, page)?
+            }
+            Step::Bins(request) => {
+                let bins = source.bins(&request.query).await?;
+                engine.feed_bins(request.id, bins)?
+            }
+        };
     }
 }
 
-/// The ids behind a row-shaped result, in the order the fold emits rows.
-/// The fold is deterministic, so folding the ids' rows again with a
-/// one-column shape yields them in the same order.
-fn row_ids_in_result_order(catalog: &Catalog, plan: &Plan, fetched: Vec<Row>) -> Vec<Uuid> {
-    let marker = Uuid::nil();
-    let tagged: Vec<Row> = fetched
-        .into_iter()
-        .map(|mut row| {
-            row.cells
-                .insert(marker, crate::fold::Cell::Text(row.id.to_string()));
-            row
-        })
-        .collect();
-    let id_plan = Plan {
-        shape: Shape::Rows(vec![marker]),
-        ..plan.clone()
-    };
-    fold_rows(catalog, &id_plan, tagged)
-        .into_iter()
-        .map(|row| match row.first() {
-            Some(Some(crate::fold::Cell::Text(id))) => {
-                Uuid::parse_str(id).expect("the marker cell holds the row id")
-            }
-            _ => unreachable!("every fetched row carries the marker cell"),
-        })
-        .collect()
-}
-
 /// Name and type each select item.
-fn describe(catalog: &Catalog, items: &[SelectItem]) -> Vec<OutcomeColumn> {
-    let column = |id: Uuid| {
-        catalog
-            .tables
-            .iter()
-            .flat_map(|table| &table.columns)
-            .find(|column| column.id == id)
-            .expect("resolve bound every item to the catalog")
-    };
+pub(crate) fn describe(
+    catalog: &Catalog,
+    items: &[SelectItem],
+    bindings: &[Binding],
+    relations: &[Relation],
+) -> Vec<OutcomeColumn> {
+    let column = |key: Uuid| column_of(catalog, bindings, relations, key);
     items
         .iter()
         .map(|item| match item {
-            SelectItem::Column(id) => {
-                let column = column(*id);
+            SelectItem::Column(key) => {
+                let Some(column) = column(*key) else {
+                    return OutcomeColumn {
+                        name: crate::resolve::ROW_ID.into(),
+                        column: None,
+                        kind: OutcomeKind::Entity,
+                    };
+                };
                 OutcomeColumn {
                     name: column.name.clone(),
-                    column: Some(*id),
+                    column: Some(column.id),
                     kind: match column.kind {
                         ColumnKind::Text | ColumnKind::Link => OutcomeKind::Text,
                         ColumnKind::Number => OutcomeKind::Number,
@@ -345,13 +305,19 @@ fn describe(catalog: &Catalog, items: &[SelectItem]) -> Vec<OutcomeColumn> {
             },
             SelectItem::Agg {
                 func,
-                column: Some(id),
+                column: Some(key),
             } => {
-                let column = column(*id);
+                let (name, kind) = match column(*key) {
+                    Some(column) => (column.name.clone(), column.kind.clone()),
+                    None => (
+                        crate::resolve::ROW_ID.into(),
+                        ColumnKind::Entity { multi: false },
+                    ),
+                };
                 OutcomeColumn {
-                    name: format!("{}({})", func.name(), column.name),
+                    name: format!("{}({})", func.name(), name),
                     column: None,
-                    kind: match (func, &column.kind) {
+                    kind: match (func, &kind) {
                         (AggFn::Min | AggFn::Max, ColumnKind::Date) => OutcomeKind::Date,
                         _ => OutcomeKind::Number,
                     },

@@ -1,11 +1,12 @@
 //! Stage three: divide a resolved `SELECT` into what the server answers and
 //! what we finish ourselves.
 //!
-//! The server side is a Soup query: a table scope plus, when the filter
-//! allows it, a `propf` expression the server evaluates with its indexes.
-//! Everything Soup cannot express — comparisons on numbers, dates, text and
-//! checkboxes, negations (whose `NULL` semantics differ from SQL's), sorting
-//! by a column, aggregation — is left in the [`Plan`] for the fold to apply
+//! Each relation is one server-side query: a table scope plus, when the
+//! filter allows it, a `propf` expression the server evaluates with its
+//! indexes. Everything Soup cannot express — comparisons on numbers, dates,
+//! text and checkboxes, negations (whose `NULL` semantics differ from
+//! SQL's), conditions spanning relations, joins, sorting by a column,
+//! aggregation, `DISTINCT` — is left in the [`Plan`] for the fold to apply
 //! to the rows that come back.
 //!
 //! Split is total: every resolved query has a plan.
@@ -16,30 +17,68 @@ mod test;
 
 use filter_ast::Expr;
 use item_filters::ast::properties::PropertiesLiteral;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::catalog::{Catalog, ColumnKind};
-use crate::resolve::{AggFn, Filter, Order, OrderKey, SelectItem, SelectQuery};
+use crate::catalog::{Catalog, Column, ColumnKind, TableSource};
+use crate::fold::Cell;
+use crate::resolve::{
+    AggFn, Binding, Filter, JoinKind, Order, OrderKey, Relation, SelectItem, SelectQuery,
+};
 
 /// A resolved `SELECT`, divided.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Plan {
-    /// What to ask the server.
-    pub gql: GqlQuery,
-    /// The columns whose values the fetched rows must carry for the rest of
-    /// the plan to run: selected, aggregated, grouped, sorted on, or tested by
-    /// the residual filter. Pushed-down conditions need nothing back.
-    pub needs: Vec<Uuid>,
-    /// The part of `WHERE` the server did not apply.
+    /// One fetch per relation, `FROM` first; the key hints are filled in
+    /// by the engine once the earlier relations are in.
+    pub relations: Vec<RelationPlan>,
+    /// The joins, in statement order.
+    pub joins: Vec<JoinPlan>,
+    /// The part of `WHERE` no relation's query applied.
     pub residual: Option<Filter>,
+    /// Whether repeated result rows are dropped.
+    pub distinct: bool,
     /// The shape of the result: plain rows or aggregates.
     pub shape: Shape,
     /// The ordering, applied after `shape`.
     pub order_by: Vec<Order>,
+    /// What every key in the plan refers to.
+    pub bindings: Vec<Binding>,
+}
+
+/// The fetch of one relation.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RelationPlan {
+    /// The table, with the alias its columns are qualified by.
+    pub relation: Relation,
+    /// What to ask the server.
+    pub gql: GqlQuery,
+    /// The keys whose values the fetched rows must carry for the rest of the
+    /// plan to run: selected, aggregated, grouped, sorted on, joined on, or
+    /// tested by the residual filter. Pushed-down conditions need nothing
+    /// back, and the row id is always carried.
+    pub needs: Vec<Uuid>,
+}
+
+/// A join to apply in the fold: each `on` pair is (a key of an earlier
+/// relation, a key of the joined relation).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JoinPlan {
+    /// The relation joined in.
+    pub relation: usize,
+    /// Inner or left.
+    pub kind: JoinKind,
+    /// The equalities, all of which must hold.
+    pub on: Vec<(Uuid, Uuid)>,
 }
 
 /// Every GraphQL query a plan can send.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum GqlQuery {
     /// `Query.soup` scoped to one table, paged to completion.
     Soup {
@@ -47,6 +86,10 @@ pub enum GqlQuery {
         table: Uuid,
         /// The pushed-down part of `WHERE`, as the Soup `propf` expression.
         propf: Option<Expr<PropertiesLiteral>>,
+        /// For a joined relation, the values the join needs; a driver may
+        /// narrow its fetch to rows carrying one of them. The fold applies
+        /// the join predicate regardless, so fetching more is safe.
+        key_hint: Option<KeyHint>,
     },
     /// `Query.groupSoup` scoped to one table, for `COUNT(*)` per group of a
     /// select or entity column: the bins' `totalCount` answers the query
@@ -59,17 +102,34 @@ pub enum GqlQuery {
         /// The column whose values form the bins.
         group_by: Uuid,
     },
+    /// The people the viewer can see, as [`crate::catalog::people_table`]
+    /// describes them; `ids` narrows to those users when the join already
+    /// knows who it needs.
+    People {
+        /// The user ids wanted, or every visible person.
+        ids: Option<Vec<String>>,
+    },
+}
+
+/// The values a joined relation is matched on.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyHint {
+    /// The property matched; `None` when the row id is.
+    pub column: Option<Uuid>,
+    /// The values the earlier rows carry, each once.
+    pub values: Vec<Cell>,
 }
 
 /// What the result rows look like.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Shape {
-    /// One result row per fetched row, with these columns.
+    /// One result row per fetched row, with these keys.
     Rows(Vec<Uuid>),
     /// One result row per group (or one row in all, without `GROUP BY`),
     /// with these items.
     Aggregate {
-        /// The column grouped on.
+        /// The key grouped on.
         group_by: Option<Uuid>,
         /// The select list, in order.
         items: Vec<SelectItem>,
@@ -77,10 +137,11 @@ pub enum Shape {
 }
 
 /// Divide a resolved `SELECT`.
-pub fn split(catalog: &Catalog, query: SelectQuery) -> Plan {
-    let (propf, residual) = match query.where_ {
-        Some(filter) => pushdown::divide(filter),
-        None => (None, None),
+pub fn split(catalog: &Catalog, mut query: SelectQuery) -> Plan {
+    let relations = query.relations.len();
+    let (pushed, residual) = match query.where_.take() {
+        Some(filter) => pushdown::divide(filter, &query.bindings, relations),
+        None => (vec![None; relations], None),
     };
 
     let aggregates = query
@@ -105,9 +166,11 @@ pub fn split(catalog: &Catalog, query: SelectQuery) -> Plan {
         )
     };
 
-    let counts_bins = residual.is_none()
+    let counts_bins = relations == 1
+        && !query.distinct
+        && residual.is_none()
         && query.group_by.is_some_and(|group| {
-            groups_server_side(catalog, group)
+            groups_server_side(catalog, &query.bindings, &query.relations, group)
                 && query.items.iter().all(|item| {
                     *item == SelectItem::Column(group)
                         || matches!(
@@ -120,93 +183,183 @@ pub fn split(catalog: &Catalog, query: SelectQuery) -> Plan {
                 })
         });
 
-    let gql = match (counts_bins, query.group_by) {
-        (true, Some(group_by)) => GqlQuery::GroupSoup {
-            table: query.table,
-            propf,
-            group_by,
-        },
-        _ => GqlQuery::Soup {
-            table: query.table,
-            propf,
-        },
-    };
-
     let needs = if counts_bins {
         Vec::new()
     } else {
-        needed_columns(
+        needed_keys(
             &query.items,
             query.group_by,
             &query.order_by,
             residual.as_ref(),
+            &query.joins,
         )
     };
 
+    let relation_plans = query
+        .relations
+        .iter()
+        .zip(pushed)
+        .enumerate()
+        .map(|(index, (relation, propf))| {
+            let source = catalog
+                .tables
+                .iter()
+                .find(|table| table.id == relation.table)
+                .map(|table| table.source)
+                .unwrap_or_default();
+            let gql = match (source, counts_bins, query.group_by) {
+                (TableSource::People, _, _) => GqlQuery::People { ids: None },
+                (TableSource::Database, true, Some(group_by)) => GqlQuery::GroupSoup {
+                    table: relation.table,
+                    propf,
+                    group_by: definition_of(&query.bindings, group_by)
+                        .expect("bins group on a property"),
+                },
+                (TableSource::Database, _, _) => GqlQuery::Soup {
+                    table: relation.table,
+                    propf,
+                    key_hint: None,
+                },
+            };
+            RelationPlan {
+                relation: relation.clone(),
+                gql,
+                needs: needs
+                    .iter()
+                    .copied()
+                    .filter(|key| {
+                        query
+                            .binding(*key)
+                            .is_some_and(|binding| binding.relation == index)
+                    })
+                    .collect(),
+            }
+        })
+        .collect();
+
     Plan {
-        gql,
-        needs,
+        relations: relation_plans,
+        joins: query
+            .joins
+            .iter()
+            .map(|join| JoinPlan {
+                relation: join.relation,
+                kind: join.kind,
+                on: join.on.clone(),
+            })
+            .collect(),
         residual,
+        distinct: query.distinct,
         shape,
         order_by: query.order_by,
+        bindings: query.bindings,
     }
 }
 
-/// Whether `groupSoup` can bin on the column: only select and entity values
-/// are indexed as facts.
-fn groups_server_side(catalog: &Catalog, column: Uuid) -> bool {
+/// The property definition behind a key, if it is not a row id.
+pub fn definition_of(bindings: &[Binding], key: Uuid) -> Option<Uuid> {
+    bindings
+        .iter()
+        .find(|binding| binding.key == key)
+        .and_then(|binding| binding.column)
+}
+
+/// The catalog column behind a key, if it is not a row id.
+pub fn column_of<'c>(
+    catalog: &'c Catalog,
+    bindings: &[Binding],
+    relations: &[Relation],
+    key: Uuid,
+) -> Option<&'c Column> {
+    let binding = bindings.iter().find(|binding| binding.key == key)?;
+    let definition = binding.column?;
     catalog
         .tables
         .iter()
-        .flat_map(|table| &table.columns)
-        .find(|candidate| candidate.id == column)
-        .is_some_and(|column| {
-            matches!(
-                column.kind,
-                ColumnKind::Select { .. } | ColumnKind::Entity { .. }
-            )
-        })
+        .find(|table| table.id == relations[binding.relation].table)?
+        .columns
+        .iter()
+        .find(|column| column.id == definition)
 }
 
-/// Every column the fold reads, first use first, no repeats.
-fn needed_columns(
+impl Plan {
+    /// The catalog column behind a key, if it is not a row id.
+    pub fn column<'c>(&self, catalog: &'c Catalog, key: Uuid) -> Option<&'c Column> {
+        let relations: Vec<Relation> = self
+            .relations
+            .iter()
+            .map(|relation| relation.relation.clone())
+            .collect();
+        column_of(catalog, &self.bindings, &relations, key)
+    }
+
+    /// The `FROM` table.
+    pub fn table(&self) -> Uuid {
+        self.relations[0].relation.table
+    }
+}
+
+/// Whether `groupSoup` can bin on the key: only select and entity values of
+/// a database table are indexed as facts.
+fn groups_server_side(
+    catalog: &Catalog,
+    bindings: &[Binding],
+    relations: &[Relation],
+    key: Uuid,
+) -> bool {
+    column_of(catalog, bindings, relations, key).is_some_and(|column| {
+        matches!(
+            column.kind,
+            ColumnKind::Select { .. } | ColumnKind::Entity { .. }
+        )
+    })
+}
+
+/// Every key the fold reads, first use first, no repeats.
+fn needed_keys(
     items: &[SelectItem],
     group_by: Option<Uuid>,
     order_by: &[Order],
     residual: Option<&Filter>,
+    joins: &[crate::resolve::ResolvedJoin],
 ) -> Vec<Uuid> {
     let mut needs = Vec::new();
-    let mut need = |column: Uuid| {
-        if !needs.contains(&column) {
-            needs.push(column);
+    let mut need = |key: Uuid| {
+        if !needs.contains(&key) {
+            needs.push(key);
         }
     };
     for item in items {
         match item {
-            SelectItem::Column(column) => need(*column),
+            SelectItem::Column(key) => need(*key),
             SelectItem::Agg {
-                column: Some(column),
-                ..
-            } => need(*column),
+                column: Some(key), ..
+            } => need(*key),
             SelectItem::Agg { column: None, .. } => {}
         }
     }
-    if let Some(column) = group_by {
-        need(column);
+    if let Some(key) = group_by {
+        need(key);
     }
     for order in order_by {
-        if let OrderKey::Column(column) = order.key {
-            need(column);
+        if let OrderKey::Column(key) = order.key {
+            need(key);
         }
     }
     if let Some(filter) = residual {
         filter.for_each_column(&mut need);
     }
+    for join in joins {
+        for (left, right) in &join.on {
+            need(*left);
+            need(*right);
+        }
+    }
     needs
 }
 
 impl Filter {
-    /// Visit every column the filter tests, in source order.
+    /// Visit every key the filter tests, in source order.
     pub fn for_each_column(&self, visit: &mut impl FnMut(Uuid)) {
         match self {
             Filter::Cmp { column, .. }
