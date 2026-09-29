@@ -13,7 +13,7 @@ vi.mock('@app/signal/splitLayout', () => ({
 import {
   activeCreateDestination,
   type CreateDestination,
-  createDestinationHint,
+  createMenuHint,
   registerCreateDestination,
 } from './create-destination';
 
@@ -21,7 +21,7 @@ const projectSplit = 'project-split' as SplitId;
 const otherSplit = 'other-split' as SplitId;
 
 function destination(label = 'Launch'): CreateDestination {
-  return { label, taskComposer: { projectName: label } };
+  return { label, taskComposer: {} };
 }
 
 const cleanups: (() => void)[] = [];
@@ -76,36 +76,43 @@ describe('create destinations', () => {
     host.activeSplitId = active;
 
     createRoot((dispose) => {
-      const hint = createMemo(() =>
-        createDestinationHint({ blockName: 'task' })
-      );
-      expect(hint()).toBeUndefined();
+      const current = createMemo(() => activeCreateDestination()?.label);
+      expect(current()).toBeUndefined();
       setActive(projectSplit);
-      expect(hint()).toBeUndefined();
+      expect(current()).toBeUndefined();
       const unregister = register(projectSplit, () => {
-        const current = label();
-        return current ? destination(current) : undefined;
+        const name = label();
+        return name ? destination(name) : undefined;
       });
-      expect(hint()).toBeUndefined();
+      expect(current()).toBeUndefined();
       setLabel('Launch');
-      expect(hint()).toBe('In Launch');
+      expect(current()).toBe('Launch');
       setLabel('Renamed');
-      expect(hint()).toBe('In Renamed');
+      expect(current()).toBe('Renamed');
       setActive(otherSplit);
-      expect(hint()).toBeUndefined();
+      expect(current()).toBeUndefined();
       setActive(projectSplit);
-      expect(hint()).toBe('In Renamed');
+      expect(current()).toBe('Renamed');
       unregister();
-      expect(hint()).toBeUndefined();
+      expect(current()).toBeUndefined();
       dispose();
     });
   });
+});
 
-  it('only name the destination beside Task', () => {
-    host.activeSplitId = () => projectSplit;
-    register(projectSplit, () => destination());
-    expect(createDestinationHint({ blockName: 'task' })).toBe('In Launch');
-    for (const blockName of ['md', 'initiative', 'project', 'channel'] as const)
-      expect(createDestinationHint({ blockName })).toBeUndefined();
+describe('create menu hints', () => {
+  const launcherHint = 'Something to do';
+
+  it('say where an entry creates in place of its launcher hint', () => {
+    expect(
+      createMenuHint({ launcherHint, destinationHint: () => 'In Launch' })
+    ).toBe('In Launch');
+  });
+
+  it('fall back to the launcher hint without a destination', () => {
+    expect(
+      createMenuHint({ launcherHint, destinationHint: () => undefined })
+    ).toBe(launcherHint);
+    expect(createMenuHint({})).toBeUndefined();
   });
 });

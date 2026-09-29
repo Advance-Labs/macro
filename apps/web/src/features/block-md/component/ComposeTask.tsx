@@ -33,7 +33,6 @@ import ArrowSquareOutIcon from '@phosphor/arrow-square-out.svg';
 import ArrowsOutIcon from '@phosphor/arrows-out.svg';
 import PaperclipIcon from '@phosphor/paperclip.svg';
 import SplitIcon from '@phosphor/square-half.svg';
-import StackIcon from '@phosphor/stack.svg';
 import XIcon from '@phosphor/x.svg';
 import { Modals } from '@property/component/modal';
 import { PropertiesProvider } from '@property/context/PropertiesContext';
@@ -42,14 +41,7 @@ import type { PropertyApiValues } from '@property/types';
 import { useUpsertToHistoryMutation } from '@queries/history/history';
 import { onElementConnect } from '@solid-primitives/lifecycle';
 import { debounce } from '@solid-primitives/scheduled';
-import {
-  Badge,
-  Button,
-  EntityComposer,
-  Scroll,
-  ToggleSwitch,
-  Tooltip,
-} from '@ui';
+import { Button, EntityComposer, Scroll, ToggleSwitch, Tooltip } from '@ui';
 import {
   $getRoot,
   $getSelection,
@@ -67,6 +59,7 @@ import {
   createEffect,
   createSignal,
   For,
+  type JSX,
   on,
   onCleanup,
   onMount,
@@ -345,10 +338,10 @@ export interface ComposeTaskProps {
   /** Replaces how the task is created, e.g. to also add it to a project. */
   createTask?: typeof createTaskWithProperties;
   /**
-   * The project `createTask` adds the task to, shown as a read-only chip
-   * beside the properties so the destination is visible before submitting.
+   * Rendered first in the property row, e.g. a chip naming the project
+   * `createTask` adds the task to, so it is visible before submitting.
    */
-  projectName?: string;
+  leadingChip?: () => JSX.Element;
   onCreateTask?: (title: string, content: string) => void;
   onClose?: () => void;
   initialTitle?: string;
@@ -577,7 +570,7 @@ export function ComposeTask(props: ComposeTaskProps) {
     popoverSplit({
       type: 'component',
       id: 'task-compose',
-      params: { createTask: props.createTask, projectName: props.projectName },
+      params: { createTask: props.createTask, leadingChip: props.leadingChip },
     });
 
   const handleCreateTask = async () => {
@@ -993,17 +986,7 @@ export function ComposeTask(props: ComposeTaskProps) {
                 }
               }}
             >
-              <Show when={props.projectName}>
-                {(name) => (
-                  <Tooltip label={`Project: ${name()}`} class="min-w-0">
-                    <Badge variant="outline" size="sm" class="max-w-48">
-                      <StackIcon class="size-3" aria-hidden="true" />
-                      <span class="sr-only">Project:</span>
-                      <span class="min-w-0 truncate">{name()}</span>
-                    </Badge>
-                  </Tooltip>
-                )}
-              </Show>
+              {props.leadingChip?.()}
               <For each={properties()}>
                 {(property) => (
                   <InlinePropertyValue

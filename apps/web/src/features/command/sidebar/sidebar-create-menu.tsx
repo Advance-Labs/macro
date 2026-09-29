@@ -1,5 +1,4 @@
 import { CREATE_MENU_COMMAND_SCOPE } from '@app/constants/hotkeys';
-import { createDestinationHint } from '@app/features/command/create-destination';
 import { useCreateMenuBlocks } from '@app/features/command/Launcher';
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
 import { useHotkeyInterceptor } from '@app/signal/hotkeyRoot';
@@ -191,7 +190,9 @@ export const SidebarCreateMenu = (props: SidebarCreateMenuProps) => {
                 </div>
                 <span class="flex min-w-0 flex-1 items-baseline gap-2">
                   <span class="text-ink">{block.label}</span>
-                  <Show when={createDestinationHint(block)}>
+                  {/* Only where the entry creates: this compact menu leaves
+                      out the launcher's descriptions. */}
+                  <Show when={block.destinationHint?.()}>
                     {(hint) => (
                       <span class="max-w-40 truncate text-ink-extra-muted/70">
                         {hint()}

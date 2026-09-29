@@ -78,7 +78,7 @@ import { Dynamic } from 'solid-js/web';
 import { createCallCommand } from './create-call-command';
 import {
   activeCreateDestination,
-  createDestinationHint,
+  createMenuHint,
   type DestinationTaskComposer,
 } from './create-destination';
 import { MobileCreateSheet } from './mobile/MobileCreateSheet';
@@ -593,9 +593,13 @@ export const CREATABLE_BLOCKS: CreatableBlock[] = [
     hotkeyToken: TOKENS.create.task,
     altHotkeyToken: TOKENS.create.taskNewSplit,
     hotkey: 't' as const,
+    // Inside a project the task lands in that project, as with its own
+    // New task button.
+    destinationHint: () => {
+      const destination = activeCreateDestination();
+      return destination && `In ${destination.label}`;
+    },
     keyDownHandler: () => {
-      // Inside a project the task lands in that project, as with its own
-      // New task button.
       runCreateAction('task', {
         taskComposer: activeCreateDestination()?.taskComposer,
       });
@@ -813,8 +817,6 @@ export const [createMenuOpen, setCreateMenuOpen] = createControlledOpenSignal(
 
 type LauncherMenuItemProps = {
   creatableBlock: CreatableBlock;
-  /** Secondary text beside the label, e.g. the entry's launcher hint. */
-  hint?: string;
   selected?: boolean;
   showHotkey?: boolean;
 };
@@ -822,7 +824,7 @@ type LauncherMenuItemProps = {
 const LauncherMenuItem = (props: LauncherMenuItemProps) => {
   const selectedIconColor = () =>
     getIconConfig(props.creatableBlock.blockName).foreground;
-  const launcherHint = () => props.hint;
+  const launcherHint = () => createMenuHint(props.creatableBlock);
 
   return (
     <>
@@ -878,11 +880,6 @@ export const LauncherInner = (props: LauncherInnerProps) => {
     );
   });
   const [attachHotkeys, launcherScope] = useHotkeyDOMScope('create-menu', true);
-  // A custom block list (the onboarding sandbox) runs its own handlers, so it
-  // never creates into the open split's destination.
-  const itemHint = (item: CreatableBlock) =>
-    (props.blocks ? undefined : createDestinationHint(item)) ??
-    item.launcherHint;
 
   let ref!: HTMLDivElement;
   let searchInputRef: HTMLInputElement | undefined;
@@ -1141,7 +1138,6 @@ export const LauncherInner = (props: LauncherInnerProps) => {
             {(item, index) => (
               <LauncherMenuItem
                 creatableBlock={item}
-                hint={itemHint(item)}
                 selected={focusedIndex() === index()}
                 showHotkey={!searchMode()}
               />
@@ -1212,7 +1208,6 @@ function MobileLauncher(props: LauncherProps) {
       open={props.open}
       onOpenChange={props.onOpenChange}
       items={items()}
-      hint={(item) => createDestinationHint(item) ?? item.launcherHint}
       onSelect={(item) => {
         trackLauncherItemUsage(item);
         item.keyDownHandler();

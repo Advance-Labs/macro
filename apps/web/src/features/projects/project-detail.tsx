@@ -1,6 +1,9 @@
 import { EntityDetailTopBar } from '@app/components/entity-detail/EntityDetailTopBar';
 import { ViewBreadcrumbs } from '@app/components/view-shell';
-import { registerCreateDestination } from '@app/features/command/create-destination';
+import {
+  type DestinationTaskComposer,
+  registerCreateDestination,
+} from '@app/features/command/create-destination';
 import {
   projectDetailRoute,
   projectTaskRoute,
@@ -19,6 +22,7 @@ import { getDisplayName, tryMacroId } from '@core/user';
 import StackIcon from '@phosphor/stack.svg';
 import { Button } from '@ui';
 import { Match, onCleanup, Show, Switch } from 'solid-js';
+import { ProjectComposerChip } from './components/project-chip';
 import { ProjectCollaborators } from './components/project-collaborators';
 import {
   type ProjectsContext,
@@ -29,12 +33,10 @@ import {
   canEditProject,
   type ProjectDetail as ProjectDetailData,
   type ProjectSection,
+  projectDisplayName,
 } from './core/project';
 import type { ProjectRoute } from './core/route';
-import {
-  projectCreateDestination,
-  projectTaskComposer,
-} from './primitives/project-task-composer';
+import { createProjectDestination } from './primitives/project-destination';
 import { ProjectDiscussion } from './project-collaboration';
 import { ProjectDescription } from './project-description';
 import { Projects } from './projects';
@@ -138,40 +140,76 @@ function ProjectShareTrigger(props: {
   );
 }
 
+type CreateProjectTask = ReturnType<
+  ProjectsContext['createCommands']
+>['createTask'];
+
+/** Task composer props that add the new task to the project and say so. */
+function projectTaskComposer(
+  project: ProjectDetailData,
+  createTask: CreateProjectTask
+): DestinationTaskComposer {
+  const name = projectDisplayName(project);
+  return {
+    createTask: (...args) => createTask(project.id, ...args),
+    leadingChip: () => <ProjectComposerChip name={name} />,
+  };
+}
+
+function ProjectCreateDestinationHost(props: { projectId: string }) {
+  const context = useProjectsContext();
+  const source = context.createProjectSource(() => props.projectId);
+  const { createTask } = context.createCommands();
+  const panel = useSplitPanelOrThrow();
+  onCleanup(
+    registerCreateDestination(
+      panel.handle.id,
+      createProjectDestination(source.project, (project) =>
+        projectTaskComposer(project, createTask)
+      )
+    )
+  );
+  return null;
+}
+
+/**
+ * Scopes the create menu's Task (`c` then `t`) to this project for as long as
+ * its route is open in the split, including a task opened from the project.
+ */
+export function ProjectCreateDestination(props: { projectId: string }) {
+  return (
+    <Projects>
+      <ProjectCreateDestinationHost projectId={props.projectId} />
+    </Projects>
+  );
+}
+
 function ProjectDetailHost(props: ProjectDetailProps) {
   const context = useProjectsContext();
   const source = context.createProjectSource(() => props.route.id);
   const commands = context.createCommands();
   const layout = useSplitLayout();
-  const panel = useSplitPanelOrThrow();
   const navigate = useNavigate();
   const section = (section: ProjectSection) =>
     navigate({
       route: projectDetailRoute,
       params: { projectId: props.route.id, section },
     });
-  // A new task shows up in the project's Tasks list.
-  const onTaskCreated = () => section('tasks');
   const createTask = () => {
     const project = source.project();
     if (!project) return;
     layout.popoverSplit({
       type: 'component',
       id: 'task-compose',
-      params: projectTaskComposer(project, commands.createTask, onTaskCreated),
+      params: {
+        ...projectTaskComposer(project, commands.createTask),
+        // The new row appears in the list this button sits above, so skip the
+        // toast. Success lands after the composer has closed, so it must not
+        // navigate either: the user may have moved on.
+        onSuccess: () => {},
+      },
     });
   };
-  // Scopes the global create menu's Task (`c` then `t`) to this project.
-  onCleanup(
-    registerCreateDestination(
-      panel.handle.id,
-      projectCreateDestination(
-        source.project,
-        commands.createTask,
-        onTaskCreated
-      )
-    )
-  );
   return (
     <>
       <Show when={props.breadcrumb}>

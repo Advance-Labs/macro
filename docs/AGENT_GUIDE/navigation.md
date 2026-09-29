@@ -410,9 +410,10 @@ Document navigates straight into a new doc; Task, Project, and Channel open dial
 When calls are enabled, `C C` (Create → Call) opens `/app/meet/new`. The call is
 created only after `Start call`; Escape closes the Create menu.
 Project opens the native project composer; Folder remains the Files folder action.
-While a project is the active split, Task (and `C T`) creates the task in that
-project: the Task row shows `In <project name>` and the composer shows the
-project chip. Other entries are unaffected (see Projects in `tasks.md`).
+While a project (or a task opened from it) is the active split, Task (and
+`C T`) creates the task in that project: the Task row shows `In <project name>`
+and the composer shows the project chip. Other entries are unaffected (see
+Projects in `tasks.md`).
 
 Mobile glass presses animate the enclosing surface over 300ms. Round buttons
 retain roughly 20% growth; wide pills and grouped controls extend their glass

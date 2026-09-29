@@ -1,4 +1,3 @@
-import type { SplitId } from '@components/app/split-layout/layoutManager';
 import { TOKENS } from '@core/hotkey/tokens';
 import type { HotkeyInterceptorContext } from '@core/hotkey/types';
 import {
@@ -10,13 +9,12 @@ import {
 } from '@solidjs/testing-library';
 import type { ParentProps } from 'solid-js';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { registerCreateDestination } from '../create-destination';
 import { SidebarCreateMenu } from './sidebar-create-menu';
 
 const host = vi.hoisted(() => ({
   createProject: vi.fn(),
   createTask: vi.fn(),
-  activeSplitId: undefined as string | undefined,
+  taskDestination: (): string | undefined => undefined,
   registerInterceptor:
     vi.fn<(callback: (context: HotkeyInterceptorContext) => boolean) => void>(),
 }));
@@ -28,6 +26,7 @@ vi.mock('@app/features/command/Launcher', () => ({
   useCreateMenuBlocks: () => () => [
     {
       label: 'Project',
+      launcherHint: 'Plan work together',
       blockName: 'initiative',
       icon: () => null,
       hotkey: 'p',
@@ -40,12 +39,10 @@ vi.mock('@app/features/command/Launcher', () => ({
       icon: () => null,
       hotkey: 't',
       hotkeyToken: TOKENS.create.task,
+      destinationHint: () => host.taskDestination(),
       keyDownHandler: host.createTask,
     },
   ],
-}));
-vi.mock('@app/signal/splitLayout', () => ({
-  globalSplitManager: () => ({ activeSplitId: () => host.activeSplitId }),
 }));
 vi.mock('@app/lib/analytics/analytics-context', () => ({
   useAnalytics: () => ({ track: vi.fn() }),
@@ -85,7 +82,7 @@ afterEach(() => {
   cleanup();
   menuStyles.remove();
   vi.unstubAllGlobals();
-  host.activeSplitId = undefined;
+  host.taskDestination = () => undefined;
 });
 
 async function openMenu() {
@@ -137,22 +134,17 @@ it('restores the trigger on dismissal without creating anything', async () => {
   expect(host.createProject).not.toHaveBeenCalled();
 });
 
-it('names the open project beside Task only while its split is active', async () => {
-  const unregister = registerCreateDestination(
-    'project-split' as SplitId,
-    () => ({ label: 'Launch', taskComposer: { projectName: 'Launch' } })
-  );
-  host.activeSplitId = 'project-split';
+it('says where an entry creates, without launcher descriptions', async () => {
+  host.taskDestination = () => 'In Launch';
   const { item } = await openMenu();
   const task = screen.getByRole('menuitem', { name: /Task/ });
   expect(task.textContent).toContain('In Launch');
-  expect(item.textContent).not.toContain('In Launch');
+  expect(item.textContent).toBe('Project');
 
-  host.activeSplitId = 'other-split';
+  host.taskDestination = () => undefined;
   cleanup();
   await openMenu();
-  expect(
-    screen.getByRole('menuitem', { name: /Task/ }).textContent
-  ).not.toContain('In Launch');
-  unregister();
+  expect(screen.getByRole('menuitem', { name: /Task/ }).textContent).toBe(
+    'Task'
+  );
 });

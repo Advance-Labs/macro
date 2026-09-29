@@ -97,9 +97,8 @@ afterEach(() => {
 /** A project open in `project-split`, as its detail view registers it. */
 function openProject(): DestinationTaskComposer {
   const taskComposer: DestinationTaskComposer = {
-    projectName: 'Launch',
     createTask: vi.fn(async () => null),
-    onSuccess: vi.fn(),
+    leadingChip: () => null,
   };
   unregisterDestination = registerCreateDestination(
     'project-split' as SplitId,
@@ -219,6 +218,20 @@ it('creates the task in the project open in the active split', () => {
     params: taskComposer,
   });
   expect(createMenuOpen()).toBe(false);
+});
+
+it('names the open project beside Task, and only there', () => {
+  openProject();
+  host.activeSplitId = 'project-split';
+  expect(creatable('Task').destinationHint?.()).toBe('In Launch');
+  expect(
+    CREATABLE_BLOCKS.filter((block) => block.destinationHint).map(
+      (block) => block.label
+    )
+  ).toEqual(['Task']);
+
+  host.activeSplitId = 'other-split';
+  expect(creatable('Task').destinationHint?.()).toBeUndefined();
 });
 
 it('opens the plain task composer when the active split is not a project', () => {

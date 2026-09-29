@@ -11,6 +11,7 @@ import { projectDetailSearch, tasksSplitRoute } from './route';
 
 vi.mock('@app/features/projects/project-detail', () => ({
   ProjectBreadcrumb: () => null,
+  ProjectCreateDestination: () => null,
   ProjectDetail: () => null,
 }));
 vi.mock('@app/features/projects/projects', () => ({ Projects: () => null }));

@@ -8,7 +8,7 @@ import type { CreatableBlock } from './types';
 /** How a destination's task composer creates the task and shows where it goes. */
 export type DestinationTaskComposer = Pick<
   ComposeTaskProps,
-  'createTask' | 'onSuccess' | 'projectName'
+  'createTask' | 'leadingChip'
 >;
 
 /**
@@ -18,7 +18,7 @@ export type DestinationTaskComposer = Pick<
  * Task entry is placed; every other entry creates as it does anywhere else.
  */
 export type CreateDestination = {
-  /** Names the destination beside the entries that create into it. */
+  /** Names the destination in the create menus. */
   label: string;
   taskComposer: DestinationTaskComposer;
 };
@@ -29,9 +29,9 @@ const destinations = new ReactiveMap<
 >();
 
 /**
- * Offer a destination for as long as the split shows it. The accessor is read
- * whenever the menu needs it, so it can withdraw the destination (e.g. while
- * the viewer cannot add to it) by returning undefined.
+ * Offer a destination for as long as the split shows it. The accessor can
+ * withdraw it (e.g. while the viewer cannot add to it) by returning undefined;
+ * pass a memo, as the menus read it on every render.
  */
 export function registerCreateDestination(
   splitId: SplitId,
@@ -53,11 +53,9 @@ export function activeCreateDestination(): CreateDestination | undefined {
   return splitId ? destinations.get(splitId)?.() : undefined;
 }
 
-/** Names where an entry's creation lands, for the entries a destination places. */
-export function createDestinationHint(
-  item: Pick<CreatableBlock, 'blockName'>
+/** Secondary text for a create-menu entry: where it creates, else its hint. */
+export function createMenuHint(
+  item: Pick<CreatableBlock, 'destinationHint' | 'launcherHint'>
 ): string | undefined {
-  if (item.blockName !== 'task') return;
-  const destination = activeCreateDestination();
-  return destination && `In ${destination.label}`;
+  return item.destinationHint?.() ?? item.launcherHint;
 }
