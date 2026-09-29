@@ -160,7 +160,7 @@ export function CallControlBar(props: {
         <Button
           size="icon-md"
           tooltipDisabled
-          variant="plain"
+          variant="ghost"
           aria-label={settingsLabels[group.kind]}
           aria-expanded={expanded()}
           aria-controls={expanded() ? id : undefined}
