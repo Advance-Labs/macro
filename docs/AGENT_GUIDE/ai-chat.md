@@ -982,7 +982,13 @@ again. If the model succeeds but effort is rejected, the new model remains
 selected with its confirmed effort; the error is shown and no unsupported
 setting is presented as accepted.
 
-See [effort capabilities](../AGENT_EFFORT.md) for the harness contracts and test coverage.
+New conversations confirm selected model and effort settings before sending the
+first message. If startup reports a rejected setting or timeout, the first prompt
+has not been sent. See [effort capabilities](../AGENT_EFFORT.md) for the harness
+contracts and test coverage.
+
+Routine model/agent pickers retain model-only selection: they do not offer effort
+choices, because routine targets do not save an effort setting.
 
 ## Reading skills
 
