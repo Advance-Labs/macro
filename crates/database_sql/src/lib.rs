@@ -14,6 +14,10 @@
 //! dependencies.
 #![deny(missing_docs)]
 
+pub mod catalog;
 pub mod parse;
+pub mod resolve;
 
+pub use catalog::Catalog;
 pub use parse::{ParseError, parse};
+pub use resolve::{CompileError, Query, ResolveError, compile, resolve};
