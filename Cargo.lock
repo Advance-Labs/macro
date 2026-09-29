@@ -5305,7 +5305,10 @@ name = "database_sql"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "filter_ast",
+ "item_filters",
  "logos",
+ "serde_json",
  "thiserror 2.0.18",
  "uuid",
 ]

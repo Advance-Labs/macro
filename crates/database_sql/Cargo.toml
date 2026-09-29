@@ -6,9 +6,14 @@ version = "0.1.0"
 
 [dependencies]
 chrono = { workspace = true }
+filter_ast = { path = "../filter_ast" }
+item_filters = { path = "../item_filters", default-features = false }
 logos = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 uuid = { workspace = true, features = ["js"] }
+
+[dev-dependencies]
+serde_json = { workspace = true }

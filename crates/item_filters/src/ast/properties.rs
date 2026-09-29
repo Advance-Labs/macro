@@ -126,7 +126,7 @@ impl<'de> Deserialize<'de> for EntityRefId {
 }
 
 /// Describes how to match against a property value in the entity_properties table.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum PropertyMatchValue {
     /// Match a select option by its UUID. Uses the `?` jsonb operator on `values->'value'`.
     #[serde(rename = "so")]
@@ -140,7 +140,7 @@ pub enum PropertyMatchValue {
 ///
 /// When converted to SQL, this generates an EXISTS subquery against the
 /// `entity_properties` table, checking that the given property has a matching value.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct PropertiesLiteral {
     /// The property definition UUID to filter on.
     #[serde(rename = "pd")]
