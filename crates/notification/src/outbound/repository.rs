@@ -1681,10 +1681,6 @@ impl NotificationDeliveryRepository for DbNotificationRepository<PgPool> {
         let metadata = serde_json::to_value(&request.req.notification.content)?;
         let sender_id = request.req.sender_id.as_ref().map(ToString::to_string);
         let typename = request.req.notification.tag.as_ref();
-        let apns_collapse_key = request
-            .build_apns
-            .as_ref()
-            .map(|output| output.attr.collapse_key.as_str());
 
         let mut tx = self.db.begin().await?;
         let inserted = sqlx::query!(
@@ -1711,7 +1707,7 @@ impl NotificationDeliveryRepository for DbNotificationRepository<PgPool> {
             service_sender,
             metadata,
             sender_id,
-            apns_collapse_key,
+            None::<&str>,
             secondary_entity_id,
             secondary_entity_type,
         )
@@ -1967,6 +1963,7 @@ impl NotificationDeliveryRepository for DbNotificationRepository<PgPool> {
         &self,
         notification_id: Uuid,
         claim_token: DeliveryClaimToken,
+        apns_collapse_key: Option<&str>,
         payloads: &[serde_json::Value],
         digest_receipt_cleanup_after: DateTime<Utc>,
     ) -> Result<bool, Report> {
@@ -1997,6 +1994,20 @@ impl NotificationDeliveryRepository for DbNotificationRepository<PgPool> {
         if !prepared {
             tx.rollback().await?;
             return Ok(false);
+        }
+
+        if let Some(apns_collapse_key) = apns_collapse_key {
+            sqlx::query!(
+                r#"
+                UPDATE notification
+                SET apns_collapse_key = $2
+                WHERE id = $1
+                "#,
+                notification_id,
+                apns_collapse_key,
+            )
+            .execute(&mut *tx)
+            .await?;
         }
 
         for (position, payload) in payloads.iter().enumerate() {

@@ -345,6 +345,7 @@ impl NotificationDeliveryRepository for SandboxNotificationRepository {
         &self,
         notification_id: Uuid,
         claim_token: DeliveryClaimToken,
+        apns_collapse_key: Option<&str>,
         payloads: &[serde_json::Value],
         digest_receipt_cleanup_after: chrono::DateTime<chrono::Utc>,
     ) -> Result<bool, Report> {
@@ -352,6 +353,7 @@ impl NotificationDeliveryRepository for SandboxNotificationRepository {
             .prepare_delivery_intents(
                 notification_id,
                 claim_token,
+                apns_collapse_key,
                 payloads,
                 digest_receipt_cleanup_after,
             )

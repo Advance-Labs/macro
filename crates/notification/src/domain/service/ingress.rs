@@ -457,6 +457,7 @@ where
                 .prepare_delivery_intents(
                     claimed.notification_id,
                     claimed.claim_token,
+                    None,
                     &[],
                     chrono::Utc::now() + chrono::Duration::seconds(DELIVERY_CLAIM_LEASE_SECONDS),
                 )
@@ -465,7 +466,7 @@ where
             return Ok(());
         }
 
-        let (queue_messages, _) = self
+        let (queue_messages, apns_collapse_key) = self
             .build_queue_message(claimed.notification_id, &mut request)
             .await?;
         let first = claimed
@@ -493,6 +494,7 @@ where
             .prepare_delivery_intents(
                 claimed.notification_id,
                 claimed.claim_token,
+                apns_collapse_key.as_deref(),
                 &payloads,
                 chrono::Utc::now() + chrono::Duration::seconds(DELIVERY_CLAIM_LEASE_SECONDS),
             )

@@ -796,15 +796,6 @@ impl NotificationDeliveryRepository for MockRepository {
             .lock()
             .unwrap()
             .push(notification_id);
-        let collapse_key = request
-            .build_apns
-            .as_ref()
-            .map(|output| output.attr.collapse_key.clone());
-        self.stored_collapse_keys
-            .lock()
-            .unwrap()
-            .push((notification_id, collapse_key));
-
         let now = Utc::now();
         let entity = request.req.notification_entity.clone().into_owned();
         let sender_id = request
@@ -888,6 +879,7 @@ impl NotificationDeliveryRepository for MockRepository {
         &self,
         notification_id: Uuid,
         claim_token: DeliveryClaimToken,
+        apns_collapse_key: Option<&str>,
         payloads: &[serde_json::Value],
         _digest_receipt_cleanup_after: chrono::DateTime<Utc>,
     ) -> Result<bool, Report> {
@@ -913,6 +905,10 @@ impl NotificationDeliveryRepository for MockRepository {
         request.prepared = true;
         request.completed = payloads.is_empty();
         request.claim_token = None;
+        self.stored_collapse_keys
+            .lock()
+            .unwrap()
+            .push((notification_id, apns_collapse_key.map(String::from)));
         let now = Utc::now();
         let mut intents = self.delivery_intents.lock().unwrap();
         for (position, payload) in payloads.iter().enumerate() {
@@ -2168,6 +2164,7 @@ async fn test_recovery_retries_and_completes_actual_digest_receipt_cleanup(pool:
         .prepare_delivery_intents(
             notification_id,
             preparation_token,
+            None,
             &[],
             Utc::now() - chrono::Duration::seconds(1),
         )
@@ -2424,6 +2421,32 @@ async fn test_no_apns_collapse_key_when_apns_not_enabled() {
         collapse_keys[0].1, None,
         "No APNS collapse key should be stored when APNS is not enabled"
     );
+}
+
+#[tokio::test]
+async fn test_no_apns_collapse_key_when_no_ios_endpoint_exists() {
+    let user = test_user_id("alice@example.com");
+    let repo = Arc::new(MockRepository::new());
+    let queue = Arc::new(MockQueue::new());
+    let service = NotificationIngressService::new(repo.clone(), queue, MockStateMachine);
+
+    let request = SendNotificationRequestBuilder {
+        notification_entity: EntityType::Document.with_entity_str("doc_1"),
+        secondary_notification_entity: None,
+        notification: TestNotification {
+            message: "Hello".to_string(),
+        },
+        sender_id: None,
+        recipient_ids: HashSet::from([user]),
+    }
+    .into_request()
+    .with_apns();
+    let notification_id = request.uuid_to_write;
+
+    service.send_notification(request).await.unwrap();
+
+    let collapse_keys = repo.stored_collapse_keys.lock().unwrap();
+    assert_eq!(collapse_keys.as_slice(), &[(notification_id, None)]);
 }
 
 // ============================================================================

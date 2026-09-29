@@ -1576,6 +1576,58 @@ async fn test_delivery_request_backoff_allows_newer_preparation(pool: Pool<Postg
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn test_delivery_preparation_records_apns_collapse_key(pool: Pool<Postgres>) {
+    let repository = DbNotificationRepository::new(pool.clone());
+    let notification_id = Uuid::now_v7();
+    repository
+        .persist_notification_with_delivery_request(
+            delivery_request(notification_id, test_user("apns-collapse@example.com")),
+            "test",
+        )
+        .await
+        .unwrap();
+
+    let before: Option<String> =
+        sqlx::query_scalar("SELECT apns_collapse_key FROM notification WHERE id = $1")
+            .bind(notification_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(before, None);
+
+    let claim_token = DeliveryClaimToken::new();
+    repository
+        .claim_delivery_request(
+            Some(notification_id),
+            claim_token,
+            DeliveryLease::until(Utc::now() + chrono::Duration::seconds(30)),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        repository
+            .prepare_delivery_intents(
+                notification_id,
+                claim_token,
+                Some("collapse-key"),
+                &[],
+                Utc::now() + chrono::Duration::seconds(30),
+            )
+            .await
+            .unwrap()
+    );
+
+    let after: Option<String> =
+        sqlx::query_scalar("SELECT apns_collapse_key FROM notification WHERE id = $1")
+            .bind(notification_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(after.as_deref(), Some("collapse-key"));
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn test_concurrent_final_intents_complete_parent(pool: Pool<Postgres>) {
     let repository = DbNotificationRepository::new(pool.clone());
     let notification_id = Uuid::now_v7();
@@ -1601,6 +1653,7 @@ async fn test_concurrent_final_intents_complete_parent(pool: Pool<Postgres>) {
             .prepare_delivery_intents(
                 notification_id,
                 preparation_token,
+                None,
                 &[
                     serde_json::json!({"position": 0}),
                     serde_json::json!({"position": 1})

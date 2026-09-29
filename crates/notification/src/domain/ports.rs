@@ -326,13 +326,15 @@ pub trait NotificationDeliveryRepository: Send + Sync + 'static {
         lease: DeliveryLease,
     ) -> impl Future<Output = Result<Option<ClaimedDeliveryRequest>, Report>> + Send;
 
-    /// Atomically store the concrete channel payloads and finish request preparation.
+    /// Atomically store the concrete channel payloads, record the APNS collapse
+    /// key when an APNS payload was built, and finish request preparation.
     ///
     /// Returns `false` when the claim expired or was superseded.
     fn prepare_delivery_intents(
         &self,
         notification_id: Uuid,
         claim_token: DeliveryClaimToken,
+        apns_collapse_key: Option<&str>,
         payloads: &[serde_json::Value],
         digest_receipt_cleanup_after: chrono::DateTime<chrono::Utc>,
     ) -> impl Future<Output = Result<bool, Report>> + Send;
@@ -447,6 +449,7 @@ where
         &self,
         notification_id: Uuid,
         claim_token: DeliveryClaimToken,
+        apns_collapse_key: Option<&str>,
         payloads: &[serde_json::Value],
         digest_receipt_cleanup_after: chrono::DateTime<chrono::Utc>,
     ) -> Result<bool, Report> {
@@ -454,6 +457,7 @@ where
             .prepare_delivery_intents(
                 notification_id,
                 claim_token,
+                apns_collapse_key,
                 payloads,
                 digest_receipt_cleanup_after,
             )
