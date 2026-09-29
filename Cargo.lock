@@ -7000,6 +7000,7 @@ dependencies = [
 name = "entity_registry"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "bot_id",
  "chrono",
  "harness_id",
