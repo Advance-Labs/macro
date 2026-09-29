@@ -112,5 +112,53 @@ async fn secondary_grant_owner_bootstrap_delegates_only_the_authorized_mailbox(
             .len(),
         2
     );
+
+    // A separately confirmed shared-inbox promotion can commit before grant
+    // relocation succeeds. Its profile changes, but its existing token owner
+    // stays valid; reconnect must continue to resolve the shared profile.
+    let mut tx = pool.begin().await?;
+    let promoted = macro_db_client::shared_inbox::promote_link_to_shared(
+        tx.as_mut(),
+        link.id,
+        owner.macro_id.as_ref(),
+        "macro|requester@example.com",
+        "secondary@example.com",
+        None,
+    )
+    .await
+    .map_err(|error| rootcause::report!("{error:?}"))?;
+    tx.commit().await?;
+    let shared_owner = service
+        .resolve("secondary@example.com", Some(old_owner), requester)
+        .await?
+        .unwrap();
+    assert_eq!(shared_owner.macro_id.as_ref(), promoted.mailbox_macro_id);
+    assert_eq!(shared_owner.fusionauth_id, promoted.mailbox_fusion_id);
+    assert_ne!(shared_owner.fusionauth_id, old_owner);
+    assert!(
+        service
+            .repo
+            .inbox_uses_grant("secondary@example.com", &shared_owner.macro_id, old_owner)
+            .await?
+    );
+    // Neither a matching email alone nor an unrelated profile proves ownership.
+    assert!(
+        !service
+            .repo
+            .inbox_uses_grant("secondary@example.com", &shared_owner.macro_id, requester)
+            .await?
+    );
+    assert!(
+        !service
+            .repo
+            .inbox_uses_grant("secondary@example.com", &owner.macro_id, old_owner)
+            .await?
+    );
+    assert!(
+        service
+            .resolve("secondary@example.com", Some(requester), requester)
+            .await
+            .is_err()
+    );
     Ok(())
 }

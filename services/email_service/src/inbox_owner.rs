@@ -8,12 +8,13 @@ use uuid::Uuid;
 #[cfg(test)]
 mod test;
 
-/// A Macro profile and the FusionAuth identity that holds its mailbox grant.
+/// A Macro profile selected for mailbox provisioning or delegation.
 #[derive(Clone, Debug)]
 pub struct InboxOwner {
     /// The profile that owns the mailbox; delegates receive access to one link only.
     pub macro_id: MacroUserIdStr<'static>,
-    /// The existing Google sign-in identity. Connecting a mailbox must not move it.
+    /// This profile's FusionAuth identity. An existing shared inbox can retain
+    /// its original grant owner while grant relocation is incomplete.
     pub fusionauth_id: Uuid,
 }
 
@@ -26,6 +27,13 @@ pub trait InboxOwnerRepository: Send + Sync {
     ) -> impl Future<Output = Result<Option<InboxOwner>, Report>> + Send;
     /// Whether a mailbox already exists, in which case the existing sharing flow owns it.
     fn has_inbox(&self, email: &str) -> impl Future<Output = Result<bool, Report>> + Send;
+    /// Whether this profile's existing mailbox uses the verified Google grant owner.
+    fn inbox_uses_grant(
+        &self,
+        email: &str,
+        profile: &MacroUserIdStr<'_>,
+        grant_owner: Uuid,
+    ) -> impl Future<Output = Result<bool, Report>> + Send;
     /// Whether the requester already has an edge to this mailbox on this grant owner.
     fn already_delegated(
         &self,
@@ -57,11 +65,18 @@ impl<R: InboxOwnerRepository> InboxOwnerService<R> {
         if let Some(owner) = self.repo.by_email(email).await? {
             if let Some(grant_owner) = verified_grant_owner
                 && owner.fusionauth_id != grant_owner
+                && !self
+                    .repo
+                    .inbox_uses_grant(email, &owner.macro_id, grant_owner)
+                    .await?
             {
                 return Err(rootcause::report!(
                     "Mailbox profile does not match Google grant owner"
                 ));
             }
+            // Shared-inbox promotion can commit its profile before relocating the
+            // grant. Keep that existing inbox usable when its token owner matches
+            // consent; do not bootstrap a new inbox under a conflicting profile.
             return Ok(Some(owner));
         }
         // Old callbacks have no owner metadata and retain their existing behavior.

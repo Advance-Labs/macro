@@ -3,6 +3,7 @@ use super::*;
 struct Owners {
     mailbox_profile: Option<InboxOwner>,
     existing_inbox: bool,
+    matching_inbox_grant: bool,
     delegated: bool,
     grant_owner: Option<InboxOwner>,
 }
@@ -12,6 +13,14 @@ impl InboxOwnerRepository for Owners {
     }
     async fn has_inbox(&self, _: &str) -> Result<bool, Report> {
         Ok(self.existing_inbox)
+    }
+    async fn inbox_uses_grant(
+        &self,
+        _: &str,
+        _: &MacroUserIdStr<'_>,
+        _: Uuid,
+    ) -> Result<bool, Report> {
+        Ok(self.matching_inbox_grant)
     }
     async fn already_delegated(&self, _: &str, _: Uuid, _: Uuid) -> Result<bool, Report> {
         Ok(self.delegated)
@@ -39,6 +48,7 @@ async fn secondary_mailbox_without_an_inbox_bootstraps_under_its_existing_grant_
         repo: Owners {
             mailbox_profile: None,
             existing_inbox: false,
+            matching_inbox_grant: false,
             delegated: false,
             grant_owner: Some(owner.clone()),
         },
@@ -62,6 +72,7 @@ async fn existing_external_inbox_retains_the_sharing_confirmation_flow() {
         repo: Owners {
             mailbox_profile: None,
             existing_inbox: true,
+            matching_inbox_grant: false,
             delegated: false,
             grant_owner: None,
         },
@@ -86,6 +97,7 @@ async fn same_account_and_legacy_callbacks_keep_the_data_source_flow() {
         repo: Owners {
             mailbox_profile: None,
             existing_inbox: false,
+            matching_inbox_grant: false,
             delegated: false,
             grant_owner: None,
         },
@@ -107,6 +119,7 @@ async fn a_missing_grant_owner_profile_does_not_fall_back_to_the_requester() {
         repo: Owners {
             mailbox_profile: None,
             existing_inbox: false,
+            matching_inbox_grant: false,
             delegated: false,
             grant_owner: None,
         },
@@ -130,6 +143,7 @@ async fn a_mailbox_with_its_own_profile_retains_its_existing_owner() {
         repo: Owners {
             mailbox_profile: Some(owner.clone()),
             existing_inbox: false,
+            matching_inbox_grant: false,
             delegated: false,
             grant_owner: None,
         },
@@ -154,6 +168,7 @@ async fn a_mailbox_profile_cannot_override_a_different_verified_grant_owner() {
             repo: Owners {
                 mailbox_profile: Some(profile.clone()),
                 existing_inbox,
+                matching_inbox_grant: false,
                 delegated: true,
                 grant_owner: Some(grant_owner.clone()),
             },
@@ -172,12 +187,39 @@ async fn a_mailbox_profile_cannot_override_a_different_verified_grant_owner() {
 }
 
 #[tokio::test]
+async fn a_shared_inbox_can_reconnect_before_its_grant_is_relocated() {
+    let profile = owner();
+    let grant_owner = owner();
+    let service = InboxOwnerService {
+        repo: Owners {
+            mailbox_profile: Some(profile.clone()),
+            existing_inbox: true,
+            matching_inbox_grant: true,
+            delegated: true,
+            grant_owner: Some(grant_owner.clone()),
+        },
+    };
+    let resolved = service
+        .resolve(
+            "older@example.com",
+            Some(grant_owner.fusionauth_id),
+            Uuid::now_v7(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(resolved.macro_id, profile.macro_id);
+    assert_eq!(resolved.fusionauth_id, profile.fusionauth_id);
+}
+
+#[tokio::test]
 async fn reconnecting_an_already_delegated_mailbox_does_not_promote_it() {
     let owner = owner();
     let service = InboxOwnerService {
         repo: Owners {
             mailbox_profile: None,
             existing_inbox: true,
+            matching_inbox_grant: false,
             delegated: true,
             grant_owner: Some(owner.clone()),
         },

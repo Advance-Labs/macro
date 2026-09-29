@@ -40,6 +40,25 @@ impl InboxOwnerRepository for PgInboxOwners {
         .is_some())
     }
 
+    async fn inbox_uses_grant(
+        &self,
+        email: &str,
+        profile: &MacroUserIdStr<'_>,
+        grant_owner: Uuid,
+    ) -> Result<bool, Report> {
+        Ok(email_db_client::links::get::fetch_link_by_email(
+            &self.0,
+            email,
+            models_email::service::link::UserProvider::Gmail,
+        )
+        .await
+        .map_err(|error| rootcause::report!("{error:?}"))?
+        .is_some_and(|link| {
+            link.macro_id.as_ref() == profile.as_ref()
+                && link.fusionauth_user_id == grant_owner.to_string()
+        }))
+    }
+
     async fn already_delegated(
         &self,
         email: &str,
