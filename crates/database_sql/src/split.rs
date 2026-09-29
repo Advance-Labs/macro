@@ -42,6 +42,10 @@ pub struct Plan {
     pub shape: Shape,
     /// The ordering, applied after `shape`.
     pub order_by: Vec<Order>,
+    /// `LIMIT`, applied after ordering.
+    pub limit: Option<u32>,
+    /// `OFFSET`, applied after ordering.
+    pub offset: Option<u32>,
     /// What every key in the plan refers to.
     pub bindings: Vec<Binding>,
 }
@@ -249,6 +253,8 @@ pub fn split(catalog: &Catalog, mut query: SelectQuery) -> Plan {
             })
             .collect(),
         residual,
+        limit: query.limit,
+        offset: query.offset,
         distinct: query.distinct,
         shape,
         order_by: query.order_by,

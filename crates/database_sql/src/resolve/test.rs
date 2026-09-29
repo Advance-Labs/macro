@@ -66,6 +66,8 @@ fn grouped_aggregate_with_mixed_where() {
                 dir: Dir::Asc,
             },
         ],
+        limit: None,
+        offset: None,
     });
 
     assert_eq!(
@@ -166,6 +168,8 @@ fn star_expands_and_every_column_kind_types_its_literal() {
             key: OrderKey::Column(CLOSED_AT),
             dir: Dir::Desc,
         }],
+        limit: None,
+        offset: None,
     });
 
     assert_eq!(
@@ -213,6 +217,8 @@ fn order_by_aggregate_resolves_to_its_select_item() {
                 dir: Dir::Asc,
             },
         ],
+        limit: None,
+        offset: None,
     });
 
     assert_eq!(
@@ -334,6 +340,8 @@ fn joins_key_each_relation_and_record_bindings() {
             key: OrderKey::Column(people_email),
             dir: Dir::Asc,
         }],
+        limit: None,
+        offset: None,
         bindings: vec![
             Binding {
                 key: ASSIGNEES,
@@ -480,6 +488,37 @@ fn join_rejections_quote_what_the_agent_wrote() {
     }
 }
 
+#[test]
+fn lists_type_multi_valued_cells_and_bare_values_become_one_element_lists() {
+    let sql = "UPDATE crm.deals SET tags = ['vip'], owner = 'macro|sam@example.com', stage = ['Won'] WHERE row_id = '00000000-0000-0000-0000-0000000000a1'";
+    let expected = Query::Update(UpdateQuery {
+        table: DEALS,
+        row_id: Uuid::from_u128(0xa1),
+        cells: vec![
+            (TAGS, Some(Value::Options(vec![VIP]))),
+            (OWNER, Some(Value::Entity("macro|sam@example.com".into()))),
+            (STAGE, Some(Value::Option(WON))),
+        ],
+    });
+    assert_eq!(resolve(&catalog(), parse(sql).unwrap()).unwrap(), expected);
+
+    let sql = "INSERT INTO crm.deals (name, tags) VALUES ('Acme', 'vip'), ('Globex', ['vip'])";
+    let expected = Query::Insert(InsertQuery {
+        table: DEALS,
+        rows: vec![
+            vec![
+                (NAME, Value::Text("Acme".into())),
+                (TAGS, Value::Options(vec![VIP])),
+            ],
+            vec![
+                (NAME, Value::Text("Globex".into())),
+                (TAGS, Value::Options(vec![VIP])),
+            ],
+        ],
+    });
+    assert_eq!(resolve(&catalog(), parse(sql).unwrap()).unwrap(), expected);
+}
+
 // ---- rejections: the exact message the agent reads --------------------------
 
 #[test]
@@ -600,6 +639,10 @@ fn rejections_quote_what_the_agent_wrote() {
         (
             "UPDATE crm.deals SET amount = 'lots' WHERE row_id = '00000000-0000-0000-0000-0000000000a1'",
             "\"amount\" is a number column; compare it to a number",
+        ),
+        (
+            "UPDATE crm.deals SET stage = ['Won', 'Lead'] WHERE row_id = '00000000-0000-0000-0000-0000000000a1'",
+            "\"stage\" holds one value; a list of 2 was given",
         ),
         (
             "INSERT INTO crm.deals (owner) VALUES ('Sam')",

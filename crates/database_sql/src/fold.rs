@@ -106,9 +106,9 @@ fn fold_joined(catalog: &Catalog, plan: &Plan, rows: Vec<Row>) -> (Table, Vec<Uu
                 (row.id, cells)
             });
             let (ids, table): (Vec<Uuid>, Table) = if plan.distinct {
-                distinct(projected).unzip()
+                window(plan, distinct(projected)).unzip()
             } else {
-                projected.unzip()
+                window(plan, projected).unzip()
             };
             (table, ids)
         }
@@ -116,11 +116,17 @@ fn fold_joined(catalog: &Catalog, plan: &Plan, rows: Vec<Row>) -> (Table, Vec<Uu
             let mut groups = aggregate::groups(rows, *group_by, items);
             sort::groups(catalog, &mut groups, &plan.order_by, *group_by, items);
             (
-                groups.into_iter().map(|group| group.cells).collect(),
+                window(plan, groups.into_iter().map(|group| group.cells)).collect(),
                 Vec::new(),
             )
         }
     }
+}
+
+/// `OFFSET` then `LIMIT`, after ordering.
+fn window<T>(plan: &Plan, rows: impl Iterator<Item = T>) -> impl Iterator<Item = T> {
+    rows.skip(plan.offset.unwrap_or(0) as usize)
+        .take(plan.limit.map_or(usize::MAX, |limit| limit as usize))
 }
 
 /// Keep the first of every set of equal result rows, in order. Cells are

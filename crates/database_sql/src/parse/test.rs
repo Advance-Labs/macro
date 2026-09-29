@@ -67,6 +67,8 @@ fn grouped_aggregate_with_mixed_where() {
                 dir: Dir::Asc,
             },
         ],
+        limit: None,
+        offset: None,
     });
 
     assert_eq!(parse(sql).unwrap(), expected);
@@ -115,6 +117,8 @@ fn or_binds_looser_than_and_and_parens_override() {
         ])),
         group_by: None,
         order_by: vec![],
+        limit: None,
+        offset: None,
     });
 
     assert_eq!(parse(sql).unwrap(), expected);
@@ -200,6 +204,8 @@ fn every_atom_form_and_literal_kind() {
         ])),
         group_by: None,
         order_by: vec![],
+        limit: None,
+        offset: None,
     });
 
     assert_eq!(parse(sql).unwrap(), expected);
@@ -245,6 +251,8 @@ fn order_by_column_aggregate_and_position() {
                 dir: Dir::Asc,
             },
         ],
+        limit: None,
+        offset: None,
     });
 
     assert_eq!(parse(sql).unwrap(), expected);
@@ -316,6 +324,8 @@ fn distinct_aliases_and_joins() {
             key: OrderKey::Column(qualified("p", "email")),
             dir: Dir::Asc,
         }],
+        limit: None,
+        offset: None,
     });
 
     assert_eq!(parse(sql).unwrap(), expected);
@@ -350,6 +360,8 @@ fn keywords_are_usable_as_column_names_when_quoted() {
         }),
         group_by: None,
         order_by: vec![],
+        limit: None,
+        offset: None,
     });
 
     assert_eq!(parse(sql).unwrap(), expected);
@@ -429,6 +441,69 @@ fn update_and_delete_one_row_by_id() {
     assert_eq!(parse(sql).unwrap(), expected);
 }
 
+#[test]
+fn list_values_default_values_and_limit_offset() {
+    let sql = "UPDATE crm.deals SET tags = ['vip', 'renewal'], owner = ['macro|sam@example.com'] WHERE row_id = '00000000-0000-0000-0000-0000000000a1'";
+    let expected = Statement::Update(Update {
+        table: TableName {
+            database: Some(Ident("crm".into())),
+            table: Ident("deals".into()),
+        },
+        assignments: vec![
+            (
+                Ident("tags".into()),
+                Lit::List(vec![Lit::Str("vip".into()), Lit::Str("renewal".into())]),
+            ),
+            (
+                Ident("owner".into()),
+                Lit::List(vec![Lit::Str("macro|sam@example.com".into())]),
+            ),
+        ],
+        row_id: "00000000-0000-0000-0000-0000000000a1".into(),
+    });
+    assert_eq!(parse(sql).unwrap(), expected);
+
+    let sql = "INSERT INTO crm.deals DEFAULT VALUES";
+    let expected = Statement::Insert(Insert {
+        table: TableName {
+            database: Some(Ident("crm".into())),
+            table: Ident("deals".into()),
+        },
+        columns: vec![],
+        rows: vec![vec![]],
+    });
+    assert_eq!(parse(sql).unwrap(), expected);
+
+    let sql = "SELECT name FROM crm.deals ORDER BY name LIMIT 10 OFFSET 20";
+    let expected = Statement::Select(Select {
+        distinct: false,
+        items: vec![Item::Column(ColumnRef {
+            table: None,
+            column: Ident("name".into()),
+        })],
+        from: FromItem {
+            table: TableName {
+                database: Some(Ident("crm".into())),
+                table: Ident("deals".into()),
+            },
+            alias: None,
+        },
+        joins: vec![],
+        where_: None,
+        group_by: None,
+        order_by: vec![OrderBy {
+            key: OrderKey::Column(ColumnRef {
+                table: None,
+                column: Ident("name".into()),
+            }),
+            dir: Dir::Asc,
+        }],
+        limit: Some(10),
+        offset: Some(20),
+    });
+    assert_eq!(parse(sql).unwrap(), expected);
+}
+
 // ---- rejected statements: the span and the exact message the agent reads ---
 
 #[test]
@@ -458,11 +533,6 @@ fn rejections_point_at_the_offending_token() {
             "SELECT name AS n FROM crm.deals",
             12..14,
             "expected FROM, found AS",
-        ),
-        (
-            "SELECT name FROM crm.deals LIMIT 10",
-            27..32,
-            "expected end of statement, found LIMIT",
         ),
         (
             "SELECT stage, SUM(amount) FROM crm.deals GROUP BY stage HAVING SUM(amount) > 1",
@@ -527,7 +597,7 @@ fn rejections_point_at_the_offending_token() {
         (
             "INSERT INTO crm.deals VALUES ('Acme')",
             22..28,
-            "expected ( and the column list after the table name, found VALUES",
+            "expected ( and the column list, or DEFAULT VALUES, after the table name, found VALUES",
         ),
         (
             "INSERT INTO crm.deals (name, stage) VALUES ('Acme', 'Won'), ('Globex')",

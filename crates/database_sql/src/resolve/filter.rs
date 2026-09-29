@@ -146,8 +146,49 @@ impl CmpOp {
     }
 }
 
-/// Type a literal for the column it is compared to or stored in.
+/// Type a literal a column is compared to. Lists belong to writes.
 pub fn typed(column: &Column, lit: Lit) -> Result<Value, ResolveError> {
+    if matches!(lit, Lit::List(_)) {
+        return Err(ResolveError::ListInComparison {
+            column: column.name.clone(),
+        });
+    }
+    typed_one(column, lit)
+}
+
+/// Type a literal being stored in a cell: a list for a multi-valued column
+/// (or one element for a single-valued one), a bare value otherwise; a
+/// multi-valued column accepts a bare value as a one-element list.
+pub fn typed_cell(column: &Column, lit: Lit) -> Result<Value, ResolveError> {
+    let elements = match lit {
+        Lit::List(elements) => elements,
+        single => vec![single],
+    };
+    if !column.kind.is_multi() {
+        return match elements.len() {
+            1 => typed_one(column, elements.into_iter().next().expect("one element")),
+            count => Err(ResolveError::ListOnSingleValued {
+                column: column.name.clone(),
+                count,
+            }),
+        };
+    }
+    let mut options = Vec::new();
+    let mut entities = Vec::new();
+    for element in elements {
+        match typed_one(column, element)? {
+            Value::Option(id) => options.push(id),
+            Value::Entity(id) => entities.push(id),
+            other => unreachable!("multi-valued columns are select or entity: {other:?}"),
+        }
+    }
+    Ok(match column.kind {
+        ColumnKind::Entity { .. } => Value::Entities(entities),
+        _ => Value::Options(options),
+    })
+}
+
+fn typed_one(column: &Column, lit: Lit) -> Result<Value, ResolveError> {
     let mismatch = |expected, hint| ResolveError::TypeMismatch {
         column: column.name.clone(),
         expected,

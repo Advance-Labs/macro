@@ -261,6 +261,8 @@ fn cell(value: Value) -> Cell {
         Value::Date(d) => Cell::Date(d),
         Value::Option(id) => Cell::Options(vec![id]),
         Value::Entity(id) => Cell::Entities(vec![id]),
+        Value::Options(ids) => Cell::Options(ids),
+        Value::Entities(ids) => Cell::Entities(ids),
     }
 }
 

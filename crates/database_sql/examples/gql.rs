@@ -373,6 +373,11 @@ impl Api {
             Some(Value::Entity(id)) => {
                 json!({ "entityReference": { "entityType": entity_type, "entityId": id } })
             }
+            Some(Value::Options(ids)) => json!({ "multiSelectOption": ids }),
+            Some(Value::Entities(ids)) => json!({ "multiEntityReference": ids
+                .iter()
+                .map(|id| json!({ "entityType": entity_type, "entityId": id }))
+                .collect::<Vec<_>>() }),
         }
     }
 

@@ -206,6 +206,28 @@ fn bins_answer_a_count_only_group() {
     );
 }
 
+#[test]
+fn limit_and_offset_apply_after_ordering() {
+    let windowed = plan("SELECT name FROM crm.deals ORDER BY name LIMIT 2 OFFSET 1");
+    assert_eq!(
+        fold_rows(&catalog(), &windowed, deals()),
+        vec![
+            vec![Some(Cell::Text("Globex".into()))],
+            vec![Some(Cell::Text("hooli".into()))],
+        ]
+    );
+
+    let top_group =
+        plan("SELECT stage, COUNT(*) FROM crm.deals GROUP BY stage ORDER BY 2 DESC LIMIT 1");
+    assert_eq!(
+        fold_rows(&catalog(), &top_group, deals()),
+        vec![vec![
+            Some(Cell::Options(vec![WON])),
+            Some(Cell::Number(2.0))
+        ]]
+    );
+}
+
 // ---- residual predicate semantics: which rows each WHERE keeps ---------------
 
 #[test]

@@ -34,6 +34,10 @@ pub enum Tok {
     // it with a message the agent can act on.
     #[regex("(?i)limit")]
     Limit,
+    #[regex("(?i)offset")]
+    Offset,
+    #[regex("(?i)default")]
+    Default,
     #[regex("(?i)where")]
     Where,
     #[regex("(?i)group")]
@@ -104,6 +108,10 @@ pub enum Tok {
     Gt,
     #[token("(")]
     LParen,
+    #[token("[")]
+    LBracket,
+    #[token("]")]
+    RBracket,
     #[token(")")]
     RParen,
     #[token(",")]
@@ -187,6 +195,8 @@ impl Tok {
             Tok::Lt => "<".into(),
             Tok::Gt => ">".into(),
             Tok::LParen => "(".into(),
+            Tok::LBracket => "[".into(),
+            Tok::RBracket => "]".into(),
             Tok::RParen => ")".into(),
             Tok::Comma => ",".into(),
             Tok::Dot => ".".into(),

@@ -2,8 +2,8 @@
 //!
 //! ```text
 //! statement := select | insert | update | delete
-//! select    := SELECT items FROM table [WHERE cond] [GROUP BY ident]
-//!              [ORDER BY order {, order}]
+//! select    := SELECT [DISTINCT] items FROM table {join} [WHERE cond] [GROUP BY ident]
+//!              [ORDER BY order {, order}] [LIMIT int [OFFSET int]]
 //! items     := '*' | item {, item}
 //! item      := ident | agg
 //! agg       := COUNT '(' '*' ')' | (COUNT|SUM|AVG|MIN|MAX) '(' ident ')'
@@ -19,14 +19,16 @@
 //!            | ident [NOT] LIKE string
 //! lit       := string | number | TRUE | FALSE | NULL
 //! insert    := INSERT INTO table '(' ident {, ident} ')' VALUES row {, row}
-//! row       := '(' lit {, lit} ')'
-//! update    := UPDATE table SET ident '=' lit {, ident '=' lit} WHERE row_id '=' string
+//!            | INSERT INTO table DEFAULT VALUES
+//! row       := '(' value {, value} ')'
+//! value     := lit | '[' lit {, lit} ']'          -- a list for a multi-valued cell
+//! update    := UPDATE table SET ident '=' value {, ident '=' value} WHERE row_id '=' string
 //! delete    := DELETE FROM table WHERE row_id '=' string
 //! ```
 //!
 //! Keywords are case-insensitive; identifiers keep their case. A trailing
 //! `;` is allowed. Everything else SQL has (joins, subqueries, aliases,
-//! arithmetic, functions beyond the five aggregates, `LIMIT`, `HAVING`, an
+//! arithmetic, functions beyond the five aggregates, `HAVING`, an
 //! `UPDATE`/`DELETE` over anything but one row id) is a
 //! parse error with a span and a message written for the agent that sent it.
 

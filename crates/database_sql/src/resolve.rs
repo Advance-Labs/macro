@@ -58,6 +58,10 @@ pub struct SelectQuery {
     pub group_by: Option<Uuid>,
     /// The `ORDER BY` keys, in order.
     pub order_by: Vec<Order>,
+    /// `LIMIT`: at most this many result rows.
+    pub limit: Option<u32>,
+    /// `OFFSET`: skip this many result rows first.
+    pub offset: Option<u32>,
     /// What every key the query mentions refers to.
     pub bindings: Vec<Binding>,
 }
@@ -204,6 +208,10 @@ pub enum Value {
     Option(Uuid),
     /// An entity id such as `macro|sam@example.com`.
     Entity(String),
+    /// Every option of a multi-select cell being written.
+    Options(Vec<Uuid>),
+    /// Every reference of a multi-valued entity cell being written.
+    Entities(Vec<String>),
 }
 
 /// One `ORDER BY` key.

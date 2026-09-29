@@ -95,6 +95,8 @@ pub fn resolve(catalog: &Catalog, select: Select) -> Result<SelectQuery, Resolve
         where_,
         group_by: group_by.map(|bound| bound.key),
         order_by,
+        limit: select.limit,
+        offset: select.offset,
         bindings: scope.bindings,
     })
 }

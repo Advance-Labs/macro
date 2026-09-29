@@ -165,6 +165,20 @@ fn lit(input: In<'_>) -> R<'_, Lit> {
     }
 }
 
+/// A literal, or `[lit, …]` for a multi-valued cell.
+fn value(input: In<'_>) -> R<'_, Lit> {
+    alt((
+        delimited(
+            kw(Tok::LBracket),
+            cut(separated_list1(comma, lit)),
+            cut(tok(Tok::RBracket, ", or ] in the list")),
+        )
+        .map(Lit::List),
+        lit,
+    ))
+    .parse(input)
+}
+
 /// `column` or `alias.column`.
 fn column_ref<'a>(expected: &'static str) -> impl Fn(In<'a>) -> R<'a, ColumnRef> {
     move |input| {
@@ -267,6 +281,16 @@ fn select(input: In<'_>) -> R<'_, Select> {
         )),
     ))
     .parse(input)?;
+    let (input, limit) = opt(preceded(
+        kw(Tok::Limit),
+        cut(count("a row count after LIMIT")),
+    ))
+    .parse(input)?;
+    let (input, offset) = opt(preceded(
+        kw(Tok::Offset),
+        cut(count("a row count after OFFSET")),
+    ))
+    .parse(input)?;
     Ok((
         input,
         Select {
@@ -277,6 +301,8 @@ fn select(input: In<'_>) -> R<'_, Select> {
             where_,
             group_by,
             order_by: order_by.unwrap_or_default(),
+            limit,
+            offset,
         },
     ))
 }
@@ -503,6 +529,14 @@ fn atom(input: In<'_>) -> R<'_, Cond> {
     }
 }
 
+/// A non-negative whole number.
+fn count<'a>(expected: &'static str) -> impl Fn(In<'a>) -> R<'a, u32> {
+    move |input| match input.first().map(|token| &token.kind) {
+        Some(Tok::Num(n)) if n.fract() == 0.0 && *n >= 0.0 => Ok((input.take_from(1), *n as u32)),
+        _ => fail(input, expected),
+    }
+}
+
 fn cmp_op(input: In<'_>) -> R<'_, CmpOp> {
     let op = match input.first().map(|token| &token.kind) {
         Some(Tok::Eq) => CmpOp::Eq,
@@ -531,8 +565,22 @@ fn insert(input: In<'_>) -> R<'_, Insert> {
     let (input, _) = kw(Tok::Insert)(input)?;
     let (input, _) = cut(tok(Tok::Into, "INTO after INSERT")).parse(input)?;
     let (input, table) = cut(table("a table name after INTO, like database.table")).parse(input)?;
+    if let Ok((input, ())) = kw(Tok::Default)(input) {
+        let (input, ()) = cut(tok(Tok::Values, "VALUES after DEFAULT")).parse(input)?;
+        return Ok((
+            input,
+            Insert {
+                table,
+                columns: Vec::new(),
+                rows: vec![Vec::new()],
+            },
+        ));
+    }
     let (input, columns) = cut(delimited(
-        tok(Tok::LParen, "( and the column list after the table name"),
+        tok(
+            Tok::LParen,
+            "( and the column list, or DEFAULT VALUES, after the table name",
+        ),
         separated_list1(comma, ident("a column name in the column list")),
         tok(Tok::RParen, ", or ) in the column list"),
     ))
@@ -569,7 +617,7 @@ fn row(input: In<'_>, width: usize, number: usize) -> R<'_, Vec<Lit>> {
         .unwrap_or_default();
     let (rest, values) = delimited(
         tok(Tok::LParen, "( to start a row of values"),
-        cut(separated_list1(comma, lit)),
+        cut(separated_list1(comma, value)),
         cut(tok(Tok::RParen, ", or ) in the row of values")),
     )
     .parse(input)?;
@@ -615,7 +663,7 @@ fn assignment(input: In<'_>) -> R<'_, (Ident, Lit)> {
             )));
         }
     };
-    let (input, value) = cut(lit).parse(input)?;
+    let (input, value) = cut(value).parse(input)?;
     Ok((input, (column, value)))
 }
 

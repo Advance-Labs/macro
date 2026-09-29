@@ -8,6 +8,10 @@ pub struct Ident(pub String);
 
 /// One parsed statement.
 #[derive(Debug, Clone, PartialEq)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "a statement is parsed once and moved once; boxing the select would only add noise to every test literal"
+)]
 pub enum Statement {
     /// A `SELECT`.
     Select(Select),
@@ -36,6 +40,10 @@ pub struct Select {
     pub group_by: Option<ColumnRef>,
     /// The `ORDER BY` keys, in order.
     pub order_by: Vec<OrderBy>,
+    /// `LIMIT n`.
+    pub limit: Option<u32>,
+    /// `OFFSET n`.
+    pub offset: Option<u32>,
 }
 
 /// A table read, with the alias its columns are qualified by.
@@ -208,6 +216,9 @@ pub enum Lit {
     Bool(bool),
     /// `NULL`.
     Null,
+    /// `[value, …]`: several values for a multi-valued cell. Only in
+    /// `INSERT` rows and `UPDATE` assignments.
+    List(Vec<Lit>),
 }
 
 /// One `ORDER BY` key.
@@ -244,9 +255,10 @@ pub enum Dir {
 pub struct Insert {
     /// The table written.
     pub table: TableName,
-    /// The columns named, in order.
+    /// The columns named, in order; empty for `DEFAULT VALUES`.
     pub columns: Vec<Ident>,
-    /// The rows; every row has exactly `columns.len()` values.
+    /// The rows; every row has exactly `columns.len()` values. `DEFAULT
+    /// VALUES` is one empty row.
     pub rows: Vec<Vec<Lit>>,
 }
 

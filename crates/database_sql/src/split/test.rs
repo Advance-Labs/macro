@@ -36,6 +36,8 @@ fn single(
         distinct: false,
         shape,
         order_by,
+        limit: None,
+        offset: None,
         bindings: plan.bindings.clone(),
     }
 }

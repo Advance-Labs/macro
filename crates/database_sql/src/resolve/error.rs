@@ -111,6 +111,18 @@ pub enum ResolveError {
         /// The value as written.
         written: String,
     },
+    /// A list written to a column that holds one value.
+    ListOnSingleValued {
+        /// The column.
+        column: String,
+        /// How many values the list had.
+        count: usize,
+    },
+    /// A list where a single value is compared.
+    ListInComparison {
+        /// The column.
+        column: String,
+    },
     /// A column named twice in an `INSERT` column list or `UPDATE`.
     DuplicateInsertColumn {
         /// The column.
@@ -265,6 +277,14 @@ impl fmt::Display for ResolveError {
             Self::RowIdNotAnId { written } => write!(
                 f,
                 "'{written}' is not a row id; row ids are the UUIDs a SELECT returns"
+            ),
+            Self::ListOnSingleValued { column, count } => write!(
+                f,
+                "\"{column}\" holds one value; a list of {count} was given"
+            ),
+            Self::ListInComparison { column } => write!(
+                f,
+                "compare \"{column}\" to one value; lists are for INSERT and UPDATE"
             ),
             Self::DuplicateInsertColumn { column } => {
                 write!(f, "\"{column}\" is listed twice in the column list")
