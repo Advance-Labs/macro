@@ -18,10 +18,18 @@ pub const WEBSITE: Uuid = Uuid::from_u128(0x08);
 pub const LEAD: Uuid = Uuid::from_u128(0x31);
 pub const WON: Uuid = Uuid::from_u128(0x30);
 pub const VIP: Uuid = Uuid::from_u128(0x32);
+pub const TASKS: Uuid = Uuid::from_u128(0xd3);
+pub const TITLE: Uuid = Uuid::from_u128(0x11);
+pub const PRIORITY: Uuid = Uuid::from_u128(0x12);
+pub const ASSIGNEES: Uuid = Uuid::from_u128(0x13);
+pub const DEAL: Uuid = Uuid::from_u128(0x14);
+pub const HIGH: Uuid = Uuid::from_u128(0x41);
+pub const LOW: Uuid = Uuid::from_u128(0x42);
 
 /// `crm.deals` with one column of every kind, `crm.people` (sharing the
 /// `name` definition with `crm.deals`), a second `deals` table in another
-/// database so bare names can be ambiguous, and the platform `macro.people`.
+/// database so bare names can be ambiguous, `macro.tasks` with people
+/// assigned and a deal linked, and the platform `macro.people`.
 pub fn catalog() -> Catalog {
     Catalog {
         tables: vec![
@@ -107,6 +115,46 @@ pub fn catalog() -> Catalog {
                 database: "sales".into(),
                 name: "deals".into(),
                 columns: vec![],
+                source: TableSource::Database,
+            },
+            Table {
+                id: TASKS,
+                database: "macro".into(),
+                name: "tasks".into(),
+                columns: vec![
+                    Column {
+                        id: TITLE,
+                        name: "title".into(),
+                        kind: ColumnKind::Text,
+                    },
+                    Column {
+                        id: PRIORITY,
+                        name: "priority".into(),
+                        kind: ColumnKind::Select {
+                            multi: false,
+                            options: vec![
+                                SelectOption {
+                                    id: HIGH,
+                                    label: "High".into(),
+                                },
+                                SelectOption {
+                                    id: LOW,
+                                    label: "Low".into(),
+                                },
+                            ],
+                        },
+                    },
+                    Column {
+                        id: ASSIGNEES,
+                        name: "assignees".into(),
+                        kind: ColumnKind::Entity { multi: true },
+                    },
+                    Column {
+                        id: DEAL,
+                        name: "deal".into(),
+                        kind: ColumnKind::Entity { multi: false },
+                    },
+                ],
                 source: TableSource::Database,
             },
             people_table(),

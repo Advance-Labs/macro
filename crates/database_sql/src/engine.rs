@@ -9,6 +9,9 @@
 //! and a joined relation's request carries the key values the rows so far
 //! need (see [`KeyHint`]), which a driver may use to fetch less.
 
+#[cfg(test)]
+mod test;
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

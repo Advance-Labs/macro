@@ -2,7 +2,11 @@ use filter_ast::Expr;
 use item_filters::ast::properties::{EntityRefId, PropertiesLiteral, PropertyMatchValue};
 
 use super::*;
-use crate::resolve::{AggFn, CmpOp, Dir, Order, OrderKey, Query, Relation, Value, compile};
+use crate::catalog::{PEOPLE_EMAIL, PEOPLE_ID, PEOPLE_NAME, PEOPLE_TABLE};
+use crate::resolve::{
+    AggFn, CmpOp, Dir, JoinKind, Order, OrderKey, Query, Relation, Value, column_key, compile,
+    row_id_key,
+};
 use crate::test_support::{catalog, *};
 
 /// A one-table plan with the bindings the query produced.
@@ -358,6 +362,143 @@ fn a_whole_table_read_pushes_nothing_and_needs_every_column() {
             vec![],
         )
     );
+}
+
+// ---- joins: one fetch per relation ------------------------------------------
+
+#[test]
+fn each_relation_gets_its_own_pushdown_and_needs() {
+    let plan = split(
+        &catalog(),
+        select(
+            "SELECT DISTINCT p.email
+             FROM macro.tasks t
+             JOIN macro.people p ON t.assignees = p.id
+             LEFT JOIN crm.deals d ON t.deal = d.row_id
+             WHERE t.priority = 'High' AND d.stage = 'Won' AND d.amount > 100 AND p.name LIKE 'A%'",
+        ),
+    );
+    let people_id = column_key(1, PEOPLE_ID);
+    let people_email = column_key(1, PEOPLE_EMAIL);
+    let people_name = column_key(1, PEOPLE_NAME);
+    let deals_stage = column_key(2, STAGE);
+    let deals_amount = column_key(2, AMOUNT);
+
+    assert_eq!(
+        plan.relations,
+        vec![
+            RelationPlan {
+                relation: Relation {
+                    table: TASKS,
+                    alias: "t".into(),
+                },
+                gql: GqlQuery::Soup {
+                    table: TASKS,
+                    propf: Some(option(PRIORITY, HIGH)),
+                    key_hint: None,
+                },
+                needs: vec![ASSIGNEES, DEAL],
+            },
+            RelationPlan {
+                relation: Relation {
+                    table: PEOPLE_TABLE,
+                    alias: "p".into(),
+                },
+                gql: GqlQuery::People { ids: None },
+                needs: vec![people_email, people_name, people_id],
+            },
+            RelationPlan {
+                relation: Relation {
+                    table: DEALS,
+                    alias: "d".into(),
+                },
+                // The pushed literal names the property, not the key.
+                gql: GqlQuery::Soup {
+                    table: DEALS,
+                    propf: Some(option(STAGE, WON)),
+                    key_hint: None,
+                },
+                needs: vec![deals_amount, row_id_key(DEALS)],
+            },
+        ]
+    );
+    assert_eq!(
+        plan.joins,
+        vec![
+            JoinPlan {
+                relation: 1,
+                kind: JoinKind::Inner,
+                on: vec![(ASSIGNEES, people_id)],
+            },
+            JoinPlan {
+                relation: 2,
+                kind: JoinKind::Left,
+                on: vec![(DEAL, row_id_key(DEALS))],
+            },
+        ]
+    );
+    assert_eq!(
+        plan.residual,
+        Some(Filter::And(vec![
+            Filter::Cmp {
+                column: deals_amount,
+                op: CmpOp::Gt,
+                value: Value::Number(100.0),
+            },
+            Filter::Like {
+                column: people_name,
+                pattern: "A%".into(),
+                negated: false,
+            },
+        ]))
+    );
+    assert!(plan.distinct);
+    assert_eq!(plan.shape, Shape::Rows(vec![people_email]));
+    assert_eq!(
+        plan.column(&catalog(), deals_amount).map(|c| c.id),
+        Some(AMOUNT)
+    );
+    assert_eq!(plan.column(&catalog(), row_id_key(DEALS)), None);
+    assert_eq!(plan.table(), TASKS);
+    assert_eq!(deals_stage, column_key(2, STAGE));
+}
+
+#[test]
+fn a_condition_spanning_relations_stays_residual_and_bins_need_one_relation() {
+    let plan = split(
+        &catalog(),
+        select(
+            "SELECT t.priority, COUNT(*) FROM macro.tasks t JOIN macro.people p ON t.assignees = p.id
+             WHERE t.priority = 'High' OR p.name = 'Sam' GROUP BY t.priority",
+        ),
+    );
+    // COUNT per select group would be bins over one table; over a join the
+    // rows are needed.
+    assert!(matches!(
+        plan.relations[0].gql,
+        GqlQuery::Soup { propf: None, .. }
+    ));
+    assert!(plan.residual.is_some());
+    assert_eq!(plan.relations[0].needs, vec![PRIORITY, ASSIGNEES]);
+
+    let plan = split(
+        &catalog(),
+        select("SELECT DISTINCT stage, COUNT(*) FROM crm.deals GROUP BY stage"),
+    );
+    assert!(matches!(plan.relations[0].gql, GqlQuery::Soup { .. }));
+}
+
+#[test]
+fn a_row_id_condition_never_pushes_down() {
+    let plan = split(
+        &catalog(),
+        select("SELECT name FROM crm.deals WHERE row_id = '00000000-0000-0000-0000-0000000000a1'"),
+    );
+    assert!(matches!(
+        plan.relations[0].gql,
+        GqlQuery::Soup { propf: None, .. }
+    ));
+    assert_eq!(plan.relations[0].needs, vec![NAME, row_id_key(DEALS)]);
 }
 
 #[test]
