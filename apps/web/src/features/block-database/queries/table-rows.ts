@@ -16,7 +16,6 @@ import {
 import { type Accessor, createMemo, createSignal } from 'solid-js';
 import {
   type DatabaseRowsSource,
-  DatabaseWriteConflict,
   DatabaseWriteOutcomeUnknown,
 } from '../context/table-source';
 import {
@@ -345,48 +344,54 @@ export function createDatabaseRowsSource(props: {
           },
         });
         if (result.isErr()) {
-          const conflict = result.error.some(
+          const competing = result.error.some(
             (error) => error.code === 'VERSION_CONFLICT'
           );
           try {
             await refreshSchema();
           } catch {
-            // Preserve the rejected entry and its actual conflict/validation error.
+            // Preserve the rejected entry and its actual validation error.
           }
-          const message =
-            result.error[0]?.message ??
-            'Could not set the column type. Your entry is kept.';
-          if (conflict) throw new DatabaseWriteConflict(message);
-          throw new Error(message);
+          // Another first entry typed this column meanwhile: write against it.
+          const refreshed = columnForWrite(currentTable(), columnId);
+          if (competing && !refreshed.column.infer_type) {
+            column = refreshed;
+            version = currentTable().table.version;
+          } else
+            throw new Error(
+              result.error[0]?.message ??
+                'Could not set the column type. Your entry is kept.'
+            );
+        } else {
+          column = result.value.column;
+          inferredVersions.set(version, result.value.table_version);
+          version = result.value.table_version;
+          await queryClient.cancelQueries({ queryKey: detailKey, exact: true });
+          queryClient.setQueryData(
+            detailKey,
+            (previous: DatabaseDetail | undefined) =>
+              previous && {
+                ...previous,
+                tables: previous.tables.map((entry) =>
+                  entry.table.id === tableId &&
+                  entry.table.version <= result.value.table_version
+                    ? {
+                        ...entry,
+                        table: {
+                          ...entry.table,
+                          version: result.value.table_version,
+                        },
+                        columns: entry.columns.map((existing) =>
+                          existing.column.id === columnId
+                            ? result.value.column
+                            : existing
+                        ),
+                      }
+                    : entry
+                ),
+              }
+          );
         }
-        column = result.value.column;
-        inferredVersions.set(version, result.value.table_version);
-        version = result.value.table_version;
-        await queryClient.cancelQueries({ queryKey: detailKey, exact: true });
-        queryClient.setQueryData(
-          detailKey,
-          (previous: DatabaseDetail | undefined) =>
-            previous && {
-              ...previous,
-              tables: previous.tables.map((entry) =>
-                entry.table.id === tableId &&
-                entry.table.version <= result.value.table_version
-                  ? {
-                      ...entry,
-                      table: {
-                        ...entry.table,
-                        version: result.value.table_version,
-                      },
-                      columns: entry.columns.map((existing) =>
-                        existing.column.id === columnId
-                          ? result.value.column
-                          : existing
-                      ),
-                    }
-                  : entry
-              ),
-            }
-        );
       }
       const definition = column.definition.definition;
       if (
@@ -454,13 +459,8 @@ export function createDatabaseRowsSource(props: {
       }
       try {
         const prepared = await prepareFirstValues(mutation, version);
-        const request = {
-          sql: statement(prepared.mutation),
-          baseVersions:
-            prepared.version === undefined
-              ? undefined
-              : { [tableId]: prepared.version },
-        };
+        // Row writes are last-write-wins; live updates keep viewers current.
+        const request = { sql: statement(prepared.mutation) };
         let written: ExecOutcome;
         try {
           written = await props.exec(request);
@@ -500,12 +500,6 @@ export function createDatabaseRowsSource(props: {
             // Keep the original failed edit; the next write must refresh first.
           }
         }
-        if (
-          error instanceof Error &&
-          'code' in error &&
-          error.code === 'VERSION_CONFLICT'
-        )
-          throw new DatabaseWriteConflict(error.message);
         throw error;
       }
     },

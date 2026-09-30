@@ -797,16 +797,12 @@ export function DatabaseTableView(props: {
                 <p class="font-medium text-ink">
                   {failure().outcomeUnknown
                     ? 'This row may already be saved.'
-                    : failure().conflict
-                      ? 'This table changed before your edit was saved.'
-                      : `Could not save ${failure().label}.`}
+                    : `Could not save ${failure().label}.`}
                 </p>
                 <p class="mt-1 text-ink-muted">
                   {failure().outcomeUnknown
                     ? 'Check the latest rows against your draft, then discard the draft. Refreshing will not submit it again.'
-                    : failure().conflict
-                      ? 'The latest values are loaded. Retry to apply your change.'
-                      : failure().message}
+                    : failure().message}
                 </p>
               </div>
               <Button

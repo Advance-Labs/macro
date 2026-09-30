@@ -31,7 +31,5 @@ export type DatabaseRowsSource = {
   retain(rowIds: Accessor<readonly string[]>): void;
 };
 
-export class DatabaseWriteConflict extends Error {}
-
 /** A create request may have committed before its response was lost. */
 export class DatabaseWriteOutcomeUnknown extends Error {}

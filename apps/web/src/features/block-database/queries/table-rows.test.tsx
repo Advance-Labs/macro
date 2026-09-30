@@ -265,7 +265,6 @@ describe('database rows SQL names', () => {
     );
     expect(exec).toHaveBeenLastCalledWith({
       sql: "UPDATE \"guests\" SET \"Name\" = ['customer-1', 'customer-2'] WHERE row_id = 'record'",
-      baseVersions: { 'guests-table': 5 },
     });
   });
 
@@ -294,7 +293,6 @@ describe('database rows SQL names', () => {
     expect(exec).toHaveBeenCalledTimes(1);
     expect(exec).toHaveBeenCalledWith({
       sql: 'INSERT INTO "guests" ("Name") VALUES ([\'customer-1\'])',
-      baseVersions: { 'guests-table': 5 },
     });
     expect(result.insertedRowIds).toEqual(['new-record']);
   });
@@ -382,7 +380,6 @@ describe('database rows SQL names', () => {
     });
     expect(exec).toHaveBeenLastCalledWith({
       sql: 'UPDATE "Personal Guests" SET "Name" = \'Grace\' WHERE row_id = \'record\'',
-      baseVersions: { 'guests-table': 5 },
     });
     expect(transport.get).toHaveBeenCalledTimes(1);
     expect(applyVersions).toHaveBeenCalledExactlyOnceWith({
@@ -418,7 +415,6 @@ describe('database rows SQL names', () => {
     expect(exec).toHaveBeenCalledTimes(3);
     expect(exec).toHaveBeenLastCalledWith({
       sql: 'UPDATE "Personal Guests" SET "Name" = \'Grace\' WHERE row_id = \'record\'',
-      baseVersions: { 'guests-table': 5 },
     });
   });
 
@@ -484,10 +480,6 @@ describe('accepted writes after switching tables', () => {
       writes.push(request);
       const creating = request.sql.startsWith('INSERT');
       if (creating) await createReady;
-      if (request.baseVersions?.['guests-table'] !== version)
-        throw Object.assign(new Error('Stale table version'), {
-          code: 'VERSION_CONFLICT',
-        });
       if (creating)
         persistedRows = [['server-record', 'Accepted record', null]];
       else persistedRows[0][2] = 'In review';
@@ -529,11 +521,9 @@ describe('accepted writes after switching tables', () => {
     expect(writes).toEqual([
       {
         sql: 'INSERT INTO "guests" ("Name") VALUES (\'Accepted record\')',
-        baseVersions: { 'guests-table': 5 },
       },
       {
         sql: 'UPDATE "guests" SET "Status" = \'In review\' WHERE row_id = \'server-record\'',
-        baseVersions: { 'guests-table': 7 },
       },
     ]);
     expect(source.snapshot()).toEqual({
@@ -616,7 +606,6 @@ describe('first-entry column types', () => {
       });
       expect(exec).toHaveBeenLastCalledWith({
         sql: `INSERT INTO "guests" ("Name") VALUES (${sqlValue})`,
-        baseVersions: { 'guests-table': 6 },
       });
       expect(
         client.getQueryData<DatabaseDetail>(databasesKeys.detail('db').queryKey)
@@ -653,7 +642,6 @@ describe('first-entry column types', () => {
     });
     expect(exec).toHaveBeenLastCalledWith({
       sql: 'UPDATE "guests" SET "Name" = \'macro|ada@example.com\' WHERE row_id = \'record\'',
-      baseVersions: { 'guests-table': 6 },
     });
   });
 
@@ -668,7 +656,7 @@ describe('first-entry column types', () => {
     expect(exec.mock.calls.at(-1)?.[0].sql).toContain("= '123'");
   });
 
-  it('refreshes after a competing first-entry type decision and does not submit stale SQL', async () => {
+  it('after a competing first-entry type decision, writes the value against the refreshed column', async () => {
     const initial = detail();
     initial.tables[0].columns[0].column.infer_type = true;
     const exec = vi.fn<(request: ExecRequest) => Promise<ExecOutcome>>(
@@ -680,11 +668,12 @@ describe('first-entry column types', () => {
       err([{ code: 'VERSION_CONFLICT', message: 'Column changed' }])
     );
     transport.get.mockResolvedValue(ok(detail()));
-    await expect(source.write({ ...edit, value: '123' }, 5)).rejects.toThrow(
-      'Column changed'
-    );
-    expect(exec).toHaveBeenCalledTimes(1);
+    await source.write({ ...edit, value: '123' }, 5);
+    expect(transport.inferColumnType).toHaveBeenCalledOnce();
     expect(transport.get).toHaveBeenCalledOnce();
+    expect(exec).toHaveBeenLastCalledWith({
+      sql: 'UPDATE "guests" SET "Name" = \'123\' WHERE row_id = \'record\'',
+    });
   });
 
   it('retries a failed value write using its own completed type change without inferring again', async () => {
@@ -705,7 +694,6 @@ describe('first-entry column types', () => {
     expect(transport.inferColumnType).toHaveBeenCalledOnce();
     expect(exec).toHaveBeenLastCalledWith({
       sql: 'UPDATE "guests" SET "Name" = 12 WHERE row_id = \'record\'',
-      baseVersions: { 'guests-table': 6 },
     });
   });
 });

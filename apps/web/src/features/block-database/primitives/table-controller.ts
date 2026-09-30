@@ -2,7 +2,6 @@ import { Mutex } from 'async-mutex';
 import { batch, createMemo, createSignal, onCleanup } from 'solid-js';
 import {
   type DatabaseRowsSource,
-  DatabaseWriteConflict,
   DatabaseWriteOutcomeUnknown,
   type DatabaseWriteResult,
 } from '../context/table-source';
@@ -10,7 +9,6 @@ import {
   type DatabaseRow,
   type DatabaseRowMutation,
   optimisticRows,
-  rowValue,
 } from '../core/table';
 
 type PendingWrite = {
@@ -24,7 +22,6 @@ type FailedWrite = {
   option?: string;
   createIntentId?: string;
   message: string;
-  conflict: boolean;
   outcomeUnknown: boolean;
 };
 
@@ -67,37 +64,6 @@ export function createTableController(
     disposed = true;
   });
 
-  const storedCell = (rowId: string, columnId: string) => {
-    const row = source.snapshot()?.rows.find((entry) => entry.rowId === rowId);
-    return row ? rowValue(row, columnId) : undefined;
-  };
-
-  /**
-   * The table's version guards every write, so a save that raced someone
-   * else's edit to a different cell is refused although nothing clashed. Load
-   * the newer rows and save again once, as long as the edited cell still holds
-   * the value this edit replaced; a change to that same cell stays a conflict.
-   */
-  async function writeRebasingOtherCells(
-    mutation: Extract<DatabaseRowMutation, { kind: 'cell' }>,
-    version: number | undefined
-  ) {
-    const replaced = storedCell(mutation.rowId, mutation.columnId);
-    try {
-      return await source.write(mutation, version);
-    } catch (error) {
-      if (!(error instanceof DatabaseWriteConflict)) throw error;
-      await source.refresh();
-      const current = source.snapshot();
-      if (
-        !current ||
-        storedCell(mutation.rowId, mutation.columnId) !== replaced
-      )
-        throw error;
-      return source.write(mutation, current.version);
-    }
-  }
-
   async function save(
     mutation: DatabaseRowMutation,
     label = 'change',
@@ -139,10 +105,7 @@ export function createTableController(
               : lastWrittenVersion === undefined
                 ? readVersion
                 : Math.max(readVersion, lastWrittenVersion);
-          const written =
-            mutation.kind === 'cell'
-              ? await writeRebasingOtherCells(mutation, version)
-              : await source.write(mutation, version);
+          const written = await source.write(mutation, version);
           didWrite = true;
           batch(() => {
             if (createIntentId)
@@ -178,9 +141,8 @@ export function createTableController(
           }
           return written;
         } catch (error) {
-          const conflict = error instanceof DatabaseWriteConflict;
           const outcomeUnknown = error instanceof DatabaseWriteOutcomeUnknown;
-          if (conflict || outcomeUnknown) {
+          if (outcomeUnknown) {
             try {
               await source.refresh();
             } catch {
@@ -192,7 +154,6 @@ export function createTableController(
             label,
             option,
             createIntentId,
-            conflict,
             outcomeUnknown,
             message: error instanceof Error ? error.message : String(error),
           };

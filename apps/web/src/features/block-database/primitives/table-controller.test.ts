@@ -1,10 +1,9 @@
 import { createRoot, createSignal } from 'solid-js';
 import { describe, expect, it, vi } from 'vitest';
-import {
-  type DatabaseRowsSnapshot,
-  type DatabaseRowsSource,
-  DatabaseWriteConflict,
-  type DatabaseWriteResult,
+import type {
+  DatabaseRowsSnapshot,
+  DatabaseRowsSource,
+  DatabaseWriteResult,
 } from '../context/table-source';
 import type { DatabaseRowMutation } from '../core/table';
 
@@ -104,59 +103,6 @@ describe('table controller', () => {
       1, 2,
     ]);
     expect(controller.pending()).toBe(false);
-    dispose();
-  });
-
-  it('saves an edit again after someone else changed another cell of the table', async () => {
-    const { controller, source, setSnapshot, snapshot, dispose } = setup();
-    vi.mocked(source.write).mockRejectedValueOnce(
-      new DatabaseWriteConflict('Conflict')
-    );
-    vi.mocked(source.refresh).mockImplementationOnce(async () => {
-      setSnapshot({
-        rows: [
-          {
-            rowId: 'record',
-            cells: { status: 'To do', title: 'Renamed by someone else' },
-          },
-        ],
-        version: 7,
-      });
-    });
-    await controller.save(move, 'Status');
-    expect(vi.mocked(source.write).mock.calls).toEqual([
-      [move, 1],
-      [move, 7],
-    ]);
-    expect(controller.failure()).toBeUndefined();
-    expect(snapshot().rows[0].cells.title).toBe('Renamed by someone else');
-    dispose();
-  });
-
-  it('keeps a conflicting edit for Retry when someone else changed that same cell', async () => {
-    const { controller, source, setSnapshot, dispose } = setup();
-    vi.mocked(source.write).mockRejectedValueOnce(
-      new DatabaseWriteConflict('Conflict')
-    );
-    vi.mocked(source.refresh).mockImplementationOnce(async () => {
-      setSnapshot({
-        rows: [
-          {
-            rowId: 'record',
-            cells: { status: 'Blocked', title: 'Plan launch' },
-          },
-        ],
-        version: 7,
-      });
-    });
-    await controller.save(move, 'Status');
-    expect(vi.mocked(source.write).mock.calls).toEqual([[move, 1]]);
-    expect(controller.failure()?.label).toBe('Status');
-    expect(controller.failure()?.conflict).toBe(true);
-    expect(controller.rows()[0].cells.status).toBe('Blocked');
-    await controller.retry();
-    expect(vi.mocked(source.write).mock.calls[1]).toEqual([move, 7]);
-    expect(controller.failure()).toBeUndefined();
     dispose();
   });
 
