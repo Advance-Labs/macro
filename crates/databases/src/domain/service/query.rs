@@ -9,10 +9,12 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
+use database_sql::cast::ColumnType;
 use database_sql::fold::{Bin, Cell, Row as EngineRow};
 use database_sql::resolve::{Query, Value, column_key};
 use database_sql::run::{
-    Outcome, OutcomeKind, Page, RowSource, RowWriter, RunError, SourceError, WriteError, run,
+    ColumnChange, Outcome, OutcomeKind, Page, RowSource, RowWriter, RunError, SourceError,
+    WriteError, run,
 };
 use database_sql::split::GqlQuery;
 use filter_ast::Expr;
@@ -24,10 +26,11 @@ use models_properties::shared::EntityReference;
 use uuid::Uuid;
 
 use super::{DatabasesServiceImpl, MAX_SQL_LEN, events, infra};
-use crate::domain::catalog::{self, ColumnEntry, TableEntry};
+use crate::domain::catalog::{self, ColumnEntry, PropertyType, TableEntry};
 use crate::domain::models::{
-    DatabaseId, ExecOutcome, ExecRequest, PropertyDefinitionId, QueryError, QueryResult,
-    ResultColumn, RowId, SqlValue, TableId, TableVersion, Viewer,
+    AlteredColumn, ChangeColumnType, DatabaseError, DatabaseId, ExecOutcome, ExecRequest,
+    PropertyDefinitionId, QueryError, QueryResult, ResultColumn, RowId, SqlValue, TableId,
+    TableVersion, Viewer,
 };
 use crate::domain::ports::{
     AccessDirectory, CellStore, ColumnDefinitionStore, DatabasesRepo, TableEventPublisher,
@@ -73,6 +76,7 @@ where
             Query::Insert(insert) => Some(insert.table),
             Query::Update(update) => Some(update.table),
             Query::Delete(delete) => Some(delete.table),
+            Query::AlterColumnType(alter) => Some(alter.table),
         };
         if let Some(table) = written_table {
             if mode == QueryMode::ReadOnly {
@@ -139,6 +143,20 @@ where
             &new_versions,
         )
         .await;
+        // A type change goes through the schema path, which bumps and
+        // announces the table itself.
+        let altered_column = match &outcome.altered_column {
+            Some(altered) => {
+                new_versions.extend(
+                    self.repo
+                        .table_versions(&[altered.table])
+                        .await
+                        .map_err(infra)?,
+                );
+                Some(altered_column(&entries, altered)?)
+            }
+            None => None,
+        };
 
         let read_tables: Vec<TableId> = outcome.read_tables.clone();
         let read_versions: HashMap<TableId, TableVersion> = read_tables
@@ -173,6 +191,7 @@ where
             read_tables,
             read_versions,
             truncated_tables,
+            altered_column,
         })
     }
 
@@ -209,6 +228,25 @@ where
             .map(|row| (row.id, cells.remove(&row.id).unwrap_or_default()))
             .collect())
     }
+}
+
+/// The engine's report of a type change, naming the placement rather than
+/// the definition it was bound to before.
+fn altered_column(
+    entries: &[TableEntry],
+    altered: &database_sql::AlteredColumn,
+) -> Result<AlteredColumn, QueryError> {
+    let column = entry_for(entries, altered.table)?
+        .column_for(altered.column)
+        .ok_or_else(|| QueryError::Sql(format!("no such column: {}", altered.column)))?;
+    Ok(AlteredColumn {
+        table_id: altered.table,
+        column_id: column.column.id,
+        name: column.name().to_owned(),
+        to: altered.to.clone(),
+        cleared_cells: altered.cleared_cells,
+        trimmed_cells: altered.trimmed_cells,
+    })
 }
 
 fn entry_for(entries: &[TableEntry], table: TableId) -> Result<&TableEntry, QueryError> {
@@ -542,6 +580,56 @@ where
             .await
             .map_err(|error| WriteError(error.to_string()))?;
         self.settle(table, &stored).await
+    }
+
+    async fn change_column_type(
+        &self,
+        table: TableId,
+        column: Uuid,
+        to: ColumnType,
+        clear_invalid: bool,
+    ) -> Result<ColumnChange, WriteError> {
+        let entry = self.entry(table)?;
+        let placement = entry
+            .column_for(column)
+            .ok_or_else(|| WriteError(format!("no column {column}")))?;
+        let target = PropertyType::from_column_type(to);
+        let changed = self
+            .service
+            .retype_column(
+                entry.database.id,
+                Some(events::Attribution::acting(
+                    self.viewer.user_id.clone(),
+                    self.viewer.acting_bot,
+                )),
+                self.viewer,
+                ChangeColumnType {
+                    table_id: table,
+                    column_id: placement.column.id,
+                    data_type: target.data_type,
+                    is_multi_select: target.is_multi_select,
+                    specific_entity_type: target.specific_entity_type,
+                    relation: None,
+                    base_version: entry.table.version,
+                    clear_invalid,
+                },
+            )
+            .await
+            .map_err(|error| match error {
+                DatabaseError::InvalidSchemaOperation(message) => WriteError(message),
+                DatabaseError::VersionConflict => {
+                    WriteError("the table changed while the statement ran; run it again".into())
+                }
+                DatabaseError::NotFound => WriteError(format!("no column {column}")),
+                other => {
+                    tracing::error!(error = ?other, "ALTER COLUMN failed");
+                    WriteError("the column's type could not be changed".into())
+                }
+            })?;
+        Ok(ColumnChange {
+            cleared_cells: changed.cleared_cells,
+            trimmed_cells: changed.trimmed_cells,
+        })
     }
 
     async fn delete(&self, table: TableId, row_id: Uuid) -> Result<(), WriteError> {

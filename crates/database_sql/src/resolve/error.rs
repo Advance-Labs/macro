@@ -161,6 +161,16 @@ pub enum ResolveError {
         /// The right column as written.
         right: String,
     },
+    /// A type change the cast rule never allows while the column holds
+    /// values.
+    CastNever {
+        /// The column.
+        column: String,
+        /// The type asked for, as SQL spells it.
+        to: String,
+        /// Why no value converts.
+        reason: &'static str,
+    },
     /// An `ON` equality between columns of different kinds.
     JoinKindMismatch {
         /// The earlier table's column.
@@ -310,6 +320,10 @@ impl fmt::Display for ResolveError {
             Self::JoinNotAcrossTables { alias, left, right } => write!(
                 f,
                 "ON {left} = {right} must compare a column of {alias} with a column of an earlier table"
+            ),
+            Self::CastNever { column, to, reason } => write!(
+                f,
+                "\"{column}\" can't become {to}: {reason} Add a new column instead."
             ),
             Self::JoinKindMismatch {
                 left,

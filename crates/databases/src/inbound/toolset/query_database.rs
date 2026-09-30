@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::{DatabasesToolContext, query_error, sql_guide};
-use crate::domain::models::{ExecOutcome, ExecRequest, QueryResult, SqlValue};
+use crate::domain::models::{AlteredColumn, ExecOutcome, ExecRequest, QueryResult, SqlValue};
 use crate::domain::ports::DatabasesService;
 
 /// Run SQL against the user's databases.
@@ -296,7 +296,10 @@ where
 impl From<ExecOutcome> for QueryDatabaseResponse {
     fn from(outcome: ExecOutcome) -> Self {
         let results: Vec<ToolResultSet> = outcome.results.into_iter().map(Into::into).collect();
-        let summary = summarize(&results, outcome.changes_applied, &outcome.truncated_tables);
+        let mut summary = summarize(&results, outcome.changes_applied, &outcome.truncated_tables);
+        if let Some(altered) = &outcome.altered_column {
+            summary = altered_summary(altered);
+        }
         let mut read_versions: Vec<_> = outcome
             .read_versions
             .into_iter()
@@ -321,6 +324,26 @@ impl From<ExecOutcome> for QueryDatabaseResponse {
             read_versions,
         }
     }
+}
+
+/// What an `ALTER COLUMN` did, including what `USING NULL` cost.
+fn altered_summary(altered: &AlteredColumn) -> String {
+    let mut summary = format!("Changed \"{}\" to {}.", altered.name, altered.to);
+    if altered.cleared_cells > 0 {
+        let plural = if altered.cleared_cells == 1 { "" } else { "s" };
+        summary.push_str(&format!(
+            " Emptied {} cell{plural} whose value did not fit.",
+            altered.cleared_cells
+        ));
+    }
+    if altered.trimmed_cells > 0 {
+        let plural = if altered.trimmed_cells == 1 { "" } else { "s" };
+        summary.push_str(&format!(
+            " Kept only the first value of {} cell{plural}.",
+            altered.trimmed_cells
+        ));
+    }
+    summary
 }
 
 /// Say what happened, so a model does not have to infer "it worked" from an

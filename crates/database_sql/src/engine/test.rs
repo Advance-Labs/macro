@@ -528,6 +528,16 @@ impl RowWriter for NoWrites {
     async fn delete(&self, _: Uuid, _: Uuid) -> Result<(), WriteError> {
         unreachable!()
     }
+
+    async fn change_column_type(
+        &self,
+        _: Uuid,
+        _: Uuid,
+        _: crate::cast::ColumnType,
+        _: bool,
+    ) -> Result<crate::run::ColumnChange, WriteError> {
+        unreachable!()
+    }
 }
 
 #[test]

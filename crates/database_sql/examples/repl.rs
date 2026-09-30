@@ -16,12 +16,13 @@ use std::io::{self, BufRead, Write};
 use std::sync::Mutex;
 
 use chrono::{TimeZone, Utc};
+use database_sql::cast::ColumnType;
 use database_sql::catalog::{
     Catalog, Column, ColumnKind, EntityKind, SelectOption, Table, TableSource,
 };
 use database_sql::fold::{Bin, Cell, Row};
 use database_sql::resolve::Value;
-use database_sql::run::{Page, RowSource, RowWriter, SourceError, WriteError, run};
+use database_sql::run::{ColumnChange, Page, RowSource, RowWriter, SourceError, WriteError, run};
 use database_sql::split::GqlQuery;
 use uuid::Uuid;
 
@@ -316,6 +317,16 @@ impl RowWriter for Memory {
             return Err(WriteError(format!("no row {row_id}")));
         }
         Ok(())
+    }
+
+    async fn change_column_type(
+        &self,
+        _table: Uuid,
+        _column: Uuid,
+        _to: ColumnType,
+        _clear_invalid: bool,
+    ) -> Result<ColumnChange, WriteError> {
+        Err(WriteError("the REPL's columns keep their types".into()))
     }
 }
 

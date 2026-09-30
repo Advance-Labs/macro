@@ -71,7 +71,9 @@ impl Engine {
     pub fn start(catalog: &Catalog, sql: &str) -> Result<(Engine, Step), RunError> {
         match compile(catalog, sql)? {
             Query::Select(select) => Ok(Engine::from_select(catalog, select)),
-            Query::Insert(_) | Query::Update(_) | Query::Delete(_) => Err(RunError::NotARead),
+            Query::Insert(_) | Query::Update(_) | Query::Delete(_) | Query::AlterColumnType(_) => {
+                Err(RunError::NotARead)
+            }
         }
     }
 

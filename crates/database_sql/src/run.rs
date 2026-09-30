@@ -15,6 +15,7 @@ use maybe_send::MaybeSend;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::cast::ColumnType;
 use crate::catalog::{Catalog, ColumnKind, EntityKind};
 use crate::engine::{Engine, Step};
 use crate::fold::{Bin, Row, Table};
@@ -85,6 +86,25 @@ pub trait RowWriter {
         table: Uuid,
         row_id: Uuid,
     ) -> impl Future<Output = Result<(), WriteError>> + MaybeSend;
+
+    /// Change a column's type, converting its values. A value that does not
+    /// fit refuses the change unless `clear_invalid` empties it.
+    fn change_column_type(
+        &self,
+        table: Uuid,
+        column: Uuid,
+        to: ColumnType,
+        clear_invalid: bool,
+    ) -> impl Future<Output = Result<ColumnChange, WriteError>> + MaybeSend;
+}
+
+/// What a column type change did to the column's cells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ColumnChange {
+    /// Cells emptied because their value did not fit.
+    pub cleared_cells: usize,
+    /// Cells that held several values and kept only their first.
+    pub trimmed_cells: usize,
 }
 
 /// A source could not answer.
@@ -106,6 +126,9 @@ pub enum RunError {
     /// The server could not be read.
     #[error("could not read rows: {0}")]
     Source(#[from] SourceError),
+    /// A schema change was refused, in the writer's words.
+    #[error("{0}")]
+    Schema(WriteError),
     /// The engine was started on a write.
     #[error("the engine runs SELECT statements; writes go through run()")]
     NotARead,
@@ -145,6 +168,25 @@ pub struct Outcome {
     pub changes_applied: u32,
     /// Rows a write could not change, by statement position.
     pub failures: Vec<RowFailure>,
+    /// The column an `ALTER COLUMN` changed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub altered_column: Option<AlteredColumn>,
+}
+
+/// A column whose type an `ALTER COLUMN` changed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlteredColumn {
+    /// The table.
+    pub table: Uuid,
+    /// The column's property definition before the change.
+    pub column: Uuid,
+    /// The type it became, as SQL spells it.
+    pub to: String,
+    /// Cells `USING NULL` emptied.
+    pub cleared_cells: usize,
+    /// Cells that kept only their first of several values.
+    pub trimmed_cells: usize,
 }
 
 /// One result column.
@@ -221,6 +263,22 @@ pub async fn run(
                 .await,
         )),
         Query::Delete(delete) => Ok(one_row(writer.delete(delete.table, delete.row_id).await)),
+        Query::AlterColumnType(alter) => {
+            let change = writer
+                .change_column_type(alter.table, alter.column, alter.to, alter.clear_invalid)
+                .await
+                .map_err(RunError::Schema)?;
+            Ok(Outcome {
+                altered_column: Some(AlteredColumn {
+                    table: alter.table,
+                    column: alter.column,
+                    to: alter.to.to_string(),
+                    cleared_cells: change.cleared_cells,
+                    trimmed_cells: change.trimmed_cells,
+                }),
+                ..Outcome::default()
+            })
+        }
     }
 }
 

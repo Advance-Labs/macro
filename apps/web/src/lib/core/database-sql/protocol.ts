@@ -90,6 +90,14 @@ export interface Outcome {
   insertedRowIds: string[];
   changesApplied: number;
   failures: { row: number; message: string }[];
+  /** The column an `ALTER COLUMN … TYPE` changed; the server runs those. */
+  alteredColumn?: {
+    table: string;
+    column: string;
+    to: string;
+    clearedCells: number;
+    trimmedCells: number;
+  };
 }
 
 /** What the driver does next. */

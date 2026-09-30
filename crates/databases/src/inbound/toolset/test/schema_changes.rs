@@ -350,3 +350,31 @@ async fn describing_a_column_lists_the_types_it_can_change_to() {
         vec!["number", "date", "boolean", "link"]
     );
 }
+
+#[test]
+fn an_alter_column_answer_says_what_using_null_cost() {
+    let response = QueryDatabaseResponse::from(ExecOutcome {
+        results: vec![],
+        changes_applied: 0,
+        inserted_row_ids: vec![],
+        new_versions: HashMap::from([(TABLE_ID, TableVersion(5))]),
+        read_tables: vec![],
+        read_database_ids: vec![],
+        read_versions: HashMap::new(),
+        truncated_tables: vec![],
+        altered_column: Some(crate::domain::models::AlteredColumn {
+            table_id: TABLE_ID,
+            column_id: COLUMN_ID,
+            name: "Price".into(),
+            to: "number".into(),
+            cleared_cells: 3,
+            trimmed_cells: 1,
+        }),
+    });
+
+    assert_eq!(
+        response.summary,
+        "Changed \"Price\" to number. Emptied 3 cells whose value did not fit. Kept only the \
+         first value of 1 cell."
+    );
+}

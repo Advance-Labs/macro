@@ -469,6 +469,7 @@ impl DatabasesService for FakeService {
             read_database_ids: vec![DATABASE_ID],
             read_versions: std::collections::HashMap::from([(TABLE_ID, TableVersion(3))]),
             truncated_tables: Vec::new(),
+            altered_column: None,
         })
     }
 
@@ -532,6 +533,7 @@ impl DatabasesService for FakeService {
             read_database_ids: vec![DATABASE_ID],
             read_versions: HashMap::from([(TABLE_ID, TableVersion(3))]),
             truncated_tables: vec![],
+            altered_column: None,
         })
     }
 }

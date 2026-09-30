@@ -2,6 +2,8 @@
 //! are [`Lit`]s; binding them to a catalog is the next stage's job. No spans:
 //! later stages report problems by quoting the identifier.
 
+use crate::cast::ColumnType;
+
 /// An identifier as written, quotes removed, case preserved.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ident(pub String);
@@ -24,6 +26,8 @@ pub enum Statement {
     Update(Update),
     /// A `DELETE FROM … WHERE row_id = …`.
     Delete(Delete),
+    /// An `ALTER TABLE … ALTER COLUMN … TYPE …`.
+    AlterColumnType(AlterColumnType),
 }
 
 /// `SELECT [DISTINCT] items FROM table [JOIN …] [WHERE] [GROUP BY] [ORDER BY]`.
@@ -288,4 +292,18 @@ pub struct Delete {
     pub table: TableName,
     /// The row, as written in the `WHERE`.
     pub row_id: String,
+}
+
+/// `ALTER TABLE table ALTER [COLUMN] column TYPE type [USING NULL]`: change
+/// one column's type, converting its values.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterColumnType {
+    /// The table whose column changes.
+    pub table: TableName,
+    /// The column.
+    pub column: Ident,
+    /// The type it becomes.
+    pub to: ColumnType,
+    /// `USING NULL`: empty the values that do not fit instead of refusing.
+    pub clear_invalid: bool,
 }

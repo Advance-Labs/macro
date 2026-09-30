@@ -1,7 +1,7 @@
 //! Stage one: SQL text to the subset AST.
 //!
 //! ```text
-//! statement := select | insert | update | delete
+//! statement := select | insert | update | delete | alter
 //! select    := SELECT [DISTINCT] items FROM table {join} [WHERE cond] [GROUP BY ident]
 //!              [ORDER BY order {, order}] [LIMIT int [OFFSET int]]
 //! items     := '*' | item {, item}
@@ -24,9 +24,14 @@
 //! value     := lit | '[' lit {, lit} ']'          -- a list for a multi-valued cell
 //! update    := UPDATE table SET ident '=' value {, ident '=' value} WHERE row_id '=' string
 //! delete    := DELETE FROM table WHERE row_id '=' string
+//! alter     := ALTER TABLE table ALTER [COLUMN] ident TYPE type [USING NULL]
+//! type      := (text | number | boolean | date | link | select | select_number | tag
+//!              | entity '(' kind ')') ['[' ']']      -- [] for a multi-valued column
 //! ```
 //!
-//! Keywords are case-insensitive; identifiers keep their case. A trailing
+//! Keywords are case-insensitive; identifiers keep their case. `ALTER`,
+//! `TABLE`, `COLUMN`, `TYPE`, `USING` and the type names are read as words,
+//! so a column may still be called `type`. A trailing
 //! `;` is allowed. Everything else SQL has (joins, subqueries, aliases,
 //! arithmetic, functions beyond the five aggregates, `HAVING`, an
 //! `UPDATE`/`DELETE` over anything but one row id) is a

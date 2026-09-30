@@ -45,7 +45,9 @@ fn single(
 fn select(sql: &str) -> SelectQuery {
     match compile(&catalog(), sql).unwrap() {
         Query::Select(select) => select,
-        Query::Insert(_) | Query::Update(_) | Query::Delete(_) => panic!("not a SELECT"),
+        Query::Insert(_) | Query::Update(_) | Query::Delete(_) | Query::AlterColumnType(_) => {
+            panic!("not a SELECT")
+        }
     }
 }
 

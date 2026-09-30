@@ -80,9 +80,17 @@ macro_rules! sql_guide {
          it has spaces or punctuation (`FROM \"Guest List\" WHERE \"Due Date\" < '2026-09-01'`); \
          names match case-insensitively, and a miss suggests the closest name. \
          A table may be qualified by its database's name (`FROM \"Offsite\".\"Guests\"`).\n\
-         - **Schema uses tools, not SQL DDL:** CreateDatabase, RenameDatabase, CreateTable, \
-         RenameTable, ReorderTables, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, \
-         ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.\n\
+         - **Changing a column's type:** `ALTER TABLE table ALTER COLUMN col TYPE type [USING \
+         NULL]`, where type is text, number, boolean, date, link, select, select_number, tag or \
+         entity(USER), entity(DOCUMENT), entity(TASK)…, with `[]` for several values \
+         (`select[]`). Pick from the column's `safeTypes` and `checkedTypes`: any other type \
+         is refused while the column holds values (add a new column instead). A value that \
+         does not fit refuses the statement, counting and quoting the misfits; fix them with \
+         UPDATE, or add `USING NULL` to empty them (a cell with several values keeps its \
+         first) only when the user accepts losing those values.\n\
+         - **Other schema changes use tools, not SQL DDL:** CreateDatabase, RenameDatabase, \
+         CreateTable, RenameTable, ReorderTables, DeleteTable, AddColumn, AddColumnOptions, \
+         RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.\n\
          - Tables you only hold view access on are read-only."
     };
 }

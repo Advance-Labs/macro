@@ -35,7 +35,7 @@ pub use fold::{Bin, Cell, Row, Table, fold_bins, fold_relations, fold_rows};
 pub use parse::{ParseError, parse};
 pub use resolve::{CompileError, Query, ResolveError, compile, resolve};
 pub use run::{
-    Outcome, OutcomeColumn, OutcomeKind, Page, RowFailure, RowSource, RowWriter, RunError,
-    SourceError, WriteError, run,
+    AlteredColumn, ColumnChange, Outcome, OutcomeColumn, OutcomeKind, Page, RowFailure, RowSource,
+    RowWriter, RunError, SourceError, WriteError, run,
 };
 pub use split::{GqlQuery, JoinPlan, KeyHint, Plan, RelationPlan, Shape, split};

@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use chrono::{TimeZone, Utc};
 
 use super::*;
+use crate::cast::ColumnType;
 use crate::fold::Cell;
 use crate::test_support::{catalog, *};
 
@@ -92,6 +93,30 @@ impl RowWriter for FakeWriter {
             .unwrap()
             .push(format!("delete {table} {row_id}"));
         Ok(())
+    }
+
+    /// Refuses unless clearing, as a column holding two misfits would.
+    async fn change_column_type(
+        &self,
+        table: Uuid,
+        column: Uuid,
+        to: ColumnType,
+        clear_invalid: bool,
+    ) -> Result<ColumnChange, WriteError> {
+        self.calls.lock().unwrap().push(format!(
+            "change {table} {column} to {to} clearing {clear_invalid}"
+        ));
+        if !clear_invalid {
+            return Err(WriteError(
+                "2 values in \"name\" aren't numbers: 'Acme', 'Globex'. Fix them, or convert \
+                 with clearing to empty them."
+                    .into(),
+            ));
+        }
+        Ok(ColumnChange {
+            cleared_cells: 2,
+            trimmed_cells: 0,
+        })
     }
 }
 
@@ -187,6 +212,7 @@ fn select_pages_to_completion_then_folds() {
             inserted_row_ids: vec![],
             changes_applied: 0,
             failures: vec![],
+            altered_column: None,
         }
     );
 
@@ -443,6 +469,7 @@ fn insert_writes_each_row_and_reports_the_ones_that_failed() {
                 row: 1,
                 message: "a row named Globex already exists".into(),
             }],
+            altered_column: None,
         }
     );
     assert_eq!(
@@ -501,6 +528,7 @@ fn outcome_serializes_camel_case_for_the_wire() {
         inserted_row_ids: vec![],
         changes_applied: 0,
         failures: vec![],
+        altered_column: None,
     };
     assert_eq!(
         serde_json::to_value(&outcome).unwrap(),
@@ -514,5 +542,57 @@ fn outcome_serializes_camel_case_for_the_wire() {
             "changesApplied": 0,
             "failures": []
         })
+    );
+}
+
+// ---- schema -----------------------------------------------------------------
+
+#[test]
+fn a_type_change_goes_to_the_writer_without_reading_rows() {
+    let source = source(deals());
+    let writer = FakeWriter::default();
+
+    let outcome = pollster::block_on(run(
+        &catalog(),
+        "ALTER TABLE crm.deals ALTER COLUMN name TYPE number USING NULL",
+        &source,
+        &writer,
+    ))
+    .unwrap();
+
+    assert_eq!(
+        outcome,
+        Outcome {
+            altered_column: Some(AlteredColumn {
+                table: DEALS,
+                column: NAME,
+                to: "number".into(),
+                cleared_cells: 2,
+                trimmed_cells: 0,
+            }),
+            ..Outcome::default()
+        }
+    );
+    assert_eq!(
+        *writer.calls.lock().unwrap(),
+        vec![format!("change {DEALS} {NAME} to number clearing true")]
+    );
+    assert!(source.asked.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_type_change_the_writer_refuses_is_the_statement_error() {
+    let error = pollster::block_on(run(
+        &catalog(),
+        "ALTER TABLE crm.deals ALTER COLUMN name TYPE number",
+        &source(vec![]),
+        &FakeWriter::default(),
+    ))
+    .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "2 values in \"name\" aren't numbers: 'Acme', 'Globex'. Fix them, or convert with \
+         clearing to empty them."
     );
 }

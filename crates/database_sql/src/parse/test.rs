@@ -1,4 +1,6 @@
 use super::*;
+use crate::cast::ColumnType;
+use crate::catalog::EntityKind;
 
 fn col(name: &str) -> ColumnRef {
     ColumnRef {
@@ -763,7 +765,7 @@ fn rejections_point_at_the_offending_token() {
         (
             "MERGE INTO crm.deals USING x",
             0..5,
-            "expected SELECT, INSERT, UPDATE or DELETE, found \"MERGE\"",
+            "expected SELECT, INSERT, UPDATE, DELETE or ALTER TABLE, found \"MERGE\"",
         ),
     ];
 
@@ -774,6 +776,136 @@ fn rejections_point_at_the_offending_token() {
             (span.clone(), *message),
             "\n{sql}\n{}^",
             " ".repeat(error.span.start)
+        );
+    }
+}
+
+// ---- ALTER TABLE … ALTER COLUMN … TYPE ------------------------------------
+
+#[test]
+fn alter_column_type_names_the_table_column_and_type() {
+    assert_eq!(
+        parse("ALTER TABLE crm.deals ALTER COLUMN amount TYPE text").unwrap(),
+        Statement::AlterColumnType(AlterColumnType {
+            table: TableName {
+                database: Some(Ident("crm".into())),
+                table: Ident("deals".into()),
+            },
+            column: Ident("amount".into()),
+            to: ColumnType::Text,
+            clear_invalid: false,
+        })
+    );
+}
+
+#[test]
+fn using_null_clears_what_does_not_fit_and_column_is_optional() {
+    assert_eq!(
+        parse("alter table deals alter \"closed at\" type select[] using null;").unwrap(),
+        Statement::AlterColumnType(AlterColumnType {
+            table: TableName {
+                database: None,
+                table: Ident("deals".into()),
+            },
+            column: Ident("closed at".into()),
+            to: ColumnType::Select { multi: true },
+            clear_invalid: true,
+        })
+    );
+}
+
+#[test]
+fn an_entity_type_names_its_kind_and_takes_brackets_for_several() {
+    assert_eq!(
+        parse("ALTER TABLE deals ALTER COLUMN owner TYPE entity(user)[]").unwrap(),
+        Statement::AlterColumnType(AlterColumnType {
+            table: TableName {
+                database: None,
+                table: Ident("deals".into()),
+            },
+            column: Ident("owner".into()),
+            to: ColumnType::Entity {
+                target: EntityKind::User,
+                multi: true,
+            },
+            clear_invalid: false,
+        })
+    );
+    assert_eq!(
+        parse("ALTER TABLE deals ALTER COLUMN column TYPE select_number").unwrap(),
+        Statement::AlterColumnType(AlterColumnType {
+            table: TableName {
+                database: None,
+                table: Ident("deals".into()),
+            },
+            column: Ident("column".into()),
+            to: ColumnType::SelectNumber { multi: false },
+            clear_invalid: false,
+        })
+    );
+}
+
+#[test]
+fn a_bad_alter_says_what_would_have_been_accepted() {
+    let types = "text, number, boolean, date, link, select, select_number, tag or \
+                 entity(<KIND>) such as entity(USER); add [] after select, select_number \
+                 or entity(…) for several values";
+    let cases: Vec<(&str, std::ops::Range<usize>, String)> = vec![
+        (
+            "ALTER TABLE deals ALTER COLUMN amount TYPE strin",
+            43..48,
+            format!("unknown column type \"strin\"; the types are {types}"),
+        ),
+        (
+            "ALTER TABLE deals ALTER COLUMN amount TYPE text[]",
+            47..48,
+            "text holds one value; [] is for select, select_number and entity(…)".into(),
+        ),
+        (
+            "ALTER TABLE deals ALTER COLUMN tags TYPE tag[]",
+            44..45,
+            "tag always holds several values; write tag".into(),
+        ),
+        (
+            "ALTER TABLE deals ALTER COLUMN owner TYPE entity",
+            48..48,
+            "expected ( and an entity kind after entity, like entity(USER), found end of statement"
+                .into(),
+        ),
+        (
+            "ALTER TABLE deals ALTER COLUMN owner TYPE entity(ROBOT)",
+            49..54,
+            "unknown entity kind \"ROBOT\"; the kinds are USER, DOCUMENT, TASK, COMPANY, \
+             CALL_RECORD, CHANNEL, CHAT, PROJECT, THREAD, CALENDAR_EVENT, INITIATIVE"
+                .into(),
+        ),
+        (
+            "ALTER TABLE deals ALTER COLUMN owner TYPE entity(DATABASE_ROW)",
+            49..61,
+            "a relation to another table's rows is made with the ChangeColumnType tool's \
+             linkToTableId, not ALTER COLUMN"
+                .into(),
+        ),
+        (
+            "ALTER TABLE deals ALTER COLUMN amount TYPE text USING 'x'",
+            54..57,
+            "expected NULL after USING (USING NULL empties the values that do not fit), found 'x'"
+                .into(),
+        ),
+        (
+            "ALTER TABLE deals ADD COLUMN notes text",
+            18..21,
+            "expected ALTER COLUMN after the table name (ALTER TABLE only changes a column's \
+             type), found \"ADD\""
+                .into(),
+        ),
+    ];
+    for (sql, span, message) in cases {
+        let error = parse(sql).unwrap_err();
+        assert_eq!(
+            (error.span.clone(), error.message.as_str()),
+            (span.clone(), message.as_str()),
+            "\n{sql}"
         );
     }
 }

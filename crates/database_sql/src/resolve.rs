@@ -19,6 +19,7 @@ use uuid::Uuid;
 
 pub use self::error::ResolveError;
 pub use self::names::ROW_ID;
+use crate::cast::{Cast, ColumnType, Contents, cast};
 use crate::catalog::Catalog;
 use crate::parse::{self, Statement};
 
@@ -35,6 +36,8 @@ pub enum Query {
     Update(UpdateQuery),
     /// One row to remove.
     Delete(DeleteQuery),
+    /// A column's type to change.
+    AlterColumnType(AlterColumnTypeQuery),
 }
 
 /// A `SELECT` with every name resolved and every comparison type-checked.
@@ -267,6 +270,19 @@ pub struct DeleteQuery {
     pub row_id: Uuid,
 }
 
+/// An `ALTER COLUMN … TYPE` the cast rule allows for a column with values.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterColumnTypeQuery {
+    /// The table.
+    pub table: Uuid,
+    /// The column's property definition.
+    pub column: Uuid,
+    /// The type it becomes.
+    pub to: ColumnType,
+    /// Empty the values that do not fit instead of refusing.
+    pub clear_invalid: bool,
+}
+
 /// Bind a parsed statement to the catalog.
 pub fn resolve(catalog: &Catalog, statement: Statement) -> Result<Query, ResolveError> {
     match statement {
@@ -278,6 +294,25 @@ pub fn resolve(catalog: &Catalog, statement: Statement) -> Result<Query, Resolve
         Statement::Update(update) => {
             let table = names::table(catalog, &update.table)?;
             insert::resolve_update(table, update).map(Query::Update)
+        }
+        Statement::AlterColumnType(alter) => {
+            let table = names::table(catalog, &alter.table)?;
+            let column = names::column(table, &alter.column)?;
+            // No data is read here, so the column is taken to hold values;
+            // the writer knows better and lets an empty one take any type.
+            if let Cast::Never(reason) = cast(&column.kind, &alter.to.kind(), Contents::Filled) {
+                return Err(ResolveError::CastNever {
+                    column: column.name.clone(),
+                    to: alter.to.to_string(),
+                    reason,
+                });
+            }
+            Ok(Query::AlterColumnType(AlterColumnTypeQuery {
+                table: table.id,
+                column: column.id,
+                to: alter.to,
+                clear_invalid: alter.clear_invalid,
+            }))
         }
         Statement::Delete(delete) => {
             let table = names::table(catalog, &delete.table)?;

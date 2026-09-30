@@ -696,3 +696,45 @@ fn exact_case_resolves_a_case_insensitive_collision() {
         "table \"Table 1\" exists in Test and test — qualify it as Test.Table 1 or test.Table 1"
     );
 }
+
+// ---- ALTER COLUMN ------------------------------------------------------
+
+#[test]
+fn a_type_change_binds_the_column_and_keeps_using_null() {
+    assert_eq!(
+        compile(
+            &catalog(),
+            "ALTER TABLE crm.deals ALTER COLUMN amount TYPE text USING NULL"
+        )
+        .unwrap(),
+        Query::AlterColumnType(AlterColumnTypeQuery {
+            table: DEALS,
+            column: AMOUNT,
+            to: crate::cast::ColumnType::Text,
+            clear_invalid: true,
+        })
+    );
+}
+
+#[test]
+fn a_type_change_the_cast_rule_never_allows_is_refused_without_reading_data() {
+    let cases: &[(&str, &str)] = &[
+        (
+            "ALTER TABLE crm.deals ALTER COLUMN amount TYPE date",
+            "\"amount\" can't become date: Numbers aren't dates. Add a new column instead.",
+        ),
+        (
+            "ALTER TABLE crm.deals ALTER COLUMN owner TYPE entity(DOCUMENT)",
+            "\"owner\" can't become entity(DOCUMENT): References can't change what they point \
+             at. Add a new column instead.",
+        ),
+        (
+            "ALTER TABLE crm.deals ALTER COLUMN amont TYPE text",
+            "unknown column \"amont\" in crm.deals — did you mean \"amount\"?",
+        ),
+    ];
+    for (sql, message) in cases {
+        let error = compile(&catalog(), sql).unwrap_err();
+        assert_eq!(error.to_string(), *message, "\n{sql}");
+    }
+}

@@ -13,9 +13,13 @@ use nom::multi::separated_list1;
 use nom::sequence::{delimited, preceded};
 use nom::{IResult, Input, Parser};
 
+use strum::IntoEnumIterator;
+
 use super::ParseError;
 use super::ast::*;
 use super::lexer::{Tok, Token};
+use crate::cast::ColumnType;
+use crate::catalog::EntityKind;
 
 /// The input: the statement's tokens, always ending in [`Tok::End`]. A
 /// newtype because nom implements [`Input`] only for bytes and `&str`.
@@ -263,12 +267,13 @@ fn comma(input: In<'_>) -> R<'_, ()> {
 
 fn statement_rule(input: In<'_>) -> R<'_, Statement> {
     let (input, statement) = expecting(
-        "SELECT, INSERT, UPDATE or DELETE",
+        "SELECT, INSERT, UPDATE, DELETE or ALTER TABLE",
         alt((
             select.map(Statement::Select),
             insert.map(Statement::Insert),
             update.map(Statement::Update),
             delete.map(Statement::Delete),
+            alter.map(Statement::AlterColumnType),
         )),
     )(input)?;
     let (input, _) = opt(kw(Tok::Semi)).parse(input)?;
@@ -808,4 +813,186 @@ fn row_id_clause<'a>(input: In<'a>, statement: &str) -> R<'a, String> {
     };
     let (input, _) = cut(tok(Tok::Eq, "= after row_id")).parse(input)?;
     cut(string("a quoted row id")).parse(input)
+}
+
+// ---- schema ------------------------------------------------------------
+
+/// The column types, as written; `entity` takes its kind in parentheses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumString, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case", ascii_case_insensitive)]
+enum TypeName {
+    Text,
+    Number,
+    Boolean,
+    Date,
+    Link,
+    Select,
+    SelectNumber,
+    Tag,
+    Entity,
+}
+
+const COLUMN_TYPES: &str = "text, number, boolean, date, link, select, select_number, tag or \
+                            entity(<KIND>) such as entity(USER); add [] after select, \
+                            select_number or entity(…) for several values";
+
+/// The unquoted word `name`, in any case. ALTER, TABLE, COLUMN, TYPE and
+/// USING are words rather than keywords so columns can still be named so.
+fn word<'a>(name: &'static str, expected: &'static str) -> impl Fn(In<'a>) -> R<'a, ()> {
+    move |input| match input.first().map(|token| &token.kind) {
+        Some(Tok::Ident(word)) if word.eq_ignore_ascii_case(name) => Ok((input.take_from(1), ())),
+        _ => fail(input, expected),
+    }
+}
+
+fn alter(input: In<'_>) -> R<'_, AlterColumnType> {
+    let (input, ()) = word("alter", "ALTER")(input)?;
+    let (input, ()) = cut(word("table", "TABLE after ALTER")).parse(input)?;
+    let (input, table) =
+        cut(table("a table name after ALTER TABLE, like database.table")).parse(input)?;
+    let (input, ()) = cut(word(
+        "alter",
+        "ALTER COLUMN after the table name (ALTER TABLE only changes a column's type)",
+    ))
+    .parse(input)?;
+    let (input, column) =
+        cut(ident("the column to change after ALTER COLUMN")).parse(skip_column_word(input))?;
+    let (input, ()) = cut(word("type", "TYPE and the new type after the column")).parse(input)?;
+    let (input, to) = column_type(input)?;
+    let (input, clear_invalid) = match word("using", "USING")(input) {
+        Ok((input, ())) => {
+            let (input, ()) = cut(tok(
+                Tok::Null,
+                "NULL after USING (USING NULL empties the values that do not fit)",
+            ))
+            .parse(input)?;
+            (input, true)
+        }
+        Err(_) => (input, false),
+    };
+    Ok((
+        input,
+        AlterColumnType {
+            table,
+            column,
+            to,
+            clear_invalid,
+        },
+    ))
+}
+
+/// Past the optional `COLUMN` of `ALTER [COLUMN] name`: a column itself
+/// named `column` is the one followed by `TYPE`.
+fn skip_column_word(input: In<'_>) -> In<'_> {
+    let is_word = |index: usize, name: &str| {
+        matches!(
+            input.get(index).map(|token| &token.kind),
+            Some(Tok::Ident(word)) if word.eq_ignore_ascii_case(name)
+        )
+    };
+    if is_word(0, "column") && !is_word(1, "type") {
+        input.take_from(1)
+    } else {
+        input
+    }
+}
+
+/// `name`, `entity(KIND)`, either with `[]` for several values.
+fn column_type(input: In<'_>) -> R<'_, ColumnType> {
+    let name = match input.first().map(|token| &token.kind) {
+        Some(Tok::Ident(name)) => name.as_str(),
+        Some(Tok::Select) => "select",
+        _ => {
+            return Err(nom::Err::Failure(at(
+                input,
+                &format!("a column type: {COLUMN_TYPES}"),
+            )));
+        }
+    };
+    let type_name: TypeName = name.parse().map_err(|_| {
+        nom::Err::Failure(message_at(
+            input,
+            &format!("unknown column type \"{name}\"; the types are {COLUMN_TYPES}"),
+        ))
+    })?;
+    let mut input = input.take_from(1);
+    let mut target = EntityKind::User;
+    if type_name == TypeName::Entity {
+        let (rest, kind) = entity_kind(input)?;
+        (input, target) = (rest, kind);
+    }
+    let bracket = input;
+    let several = kw(Tok::LBracket)(input).is_ok();
+    if several {
+        (input, ()) = cut(tok(Tok::RBracket, "] after [")).parse(input.take_from(1))?;
+    }
+    let single = |to: ColumnType| {
+        if several {
+            let name: &'static str = type_name.into();
+            Err(nom::Err::Failure(message_at(
+                bracket,
+                &format!("{name} holds one value; [] is for select, select_number and entity(…)"),
+            )))
+        } else {
+            Ok(to)
+        }
+    };
+    let to = match type_name {
+        TypeName::Text => single(ColumnType::Text)?,
+        TypeName::Number => single(ColumnType::Number)?,
+        TypeName::Boolean => single(ColumnType::Boolean)?,
+        TypeName::Date => single(ColumnType::Date)?,
+        TypeName::Link => single(ColumnType::Link)?,
+        TypeName::Select => ColumnType::Select { multi: several },
+        TypeName::SelectNumber => ColumnType::SelectNumber { multi: several },
+        TypeName::Entity => ColumnType::Entity {
+            target,
+            multi: several,
+        },
+        TypeName::Tag if several => {
+            return Err(nom::Err::Failure(message_at(
+                bracket,
+                "tag always holds several values; write tag",
+            )));
+        }
+        TypeName::Tag => ColumnType::Tag,
+    };
+    Ok((input, to))
+}
+
+/// `(KIND)` after `entity`.
+fn entity_kind(input: In<'_>) -> R<'_, EntityKind> {
+    let (input, ()) = cut(tok(
+        Tok::LParen,
+        "( and an entity kind after entity, like entity(USER)",
+    ))
+    .parse(input)?;
+    let Some(Tok::Ident(written)) = input.first().map(|token| &token.kind) else {
+        return Err(nom::Err::Failure(at(input, "an entity kind such as USER")));
+    };
+    let kind = match written.parse::<EntityKind>() {
+        Ok(EntityKind::Row) => {
+            return Err(nom::Err::Failure(message_at(
+                input,
+                "a relation to another table's rows is made with the ChangeColumnType tool's \
+                 linkToTableId, not ALTER COLUMN",
+            )));
+        }
+        Ok(kind) => kind,
+        Err(_) => {
+            let kinds: Vec<&str> = EntityKind::iter()
+                .filter(|kind| *kind != EntityKind::Row)
+                .map(EntityKind::sql_name)
+                .collect();
+            return Err(nom::Err::Failure(message_at(
+                input,
+                &format!(
+                    "unknown entity kind \"{written}\"; the kinds are {}",
+                    kinds.join(", ")
+                ),
+            )));
+        }
+    };
+    let (input, ()) = cut(tok(Tok::RParen, ") after the entity kind")).parse(input.take_from(1))?;
+    Ok((input, kind))
 }

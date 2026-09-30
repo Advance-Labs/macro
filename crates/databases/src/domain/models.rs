@@ -459,6 +459,28 @@ pub struct ExecOutcome {
     /// Tables whose read hit the engine's row cap; aggregates over them are
     /// incomplete.
     pub truncated_tables: Vec<String>,
+    /// The column an `ALTER COLUMN … TYPE` changed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub altered_column: Option<AlteredColumn>,
+}
+
+/// A column whose type an `ALTER COLUMN … TYPE` statement changed.
+#[derive(utoipa::ToSchema, Debug, Clone, PartialEq, Serialize)]
+pub struct AlteredColumn {
+    /// The table.
+    #[schema(value_type = Uuid)]
+    pub table_id: TableId,
+    /// The column placement; its id survives the change.
+    #[schema(value_type = Uuid)]
+    pub column_id: ColumnId,
+    /// The column's name.
+    pub name: String,
+    /// The type it became, as SQL spells it.
+    pub to: String,
+    /// Cells `USING NULL` emptied because their value did not fit.
+    pub cleared_cells: usize,
+    /// Cells that held several values and kept only their first.
+    pub trimmed_cells: usize,
 }
 
 // ===== Saved queries =====
