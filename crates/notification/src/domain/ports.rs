@@ -326,18 +326,30 @@ pub trait NotificationDeliveryRepository: Send + Sync + 'static {
         lease: DeliveryLease,
     ) -> impl Future<Output = Result<Option<ClaimedDeliveryRequest>, Report>> + Send;
 
-    /// Atomically store the concrete channel payloads, record the APNS collapse
-    /// key when an APNS payload was built, and finish request preparation.
+    /// Atomically verify the active recipient snapshot, store the concrete
+    /// channel payloads, record the APNS collapse key when a mobile payload was
+    /// built, and finish request preparation. The adapter must serialize this
+    /// check with recipient lifecycle updates so a dismissed notification is
+    /// not published after preparation.
     ///
     /// Returns `false` when the claim expired or was superseded.
     fn prepare_delivery_intents(
         &self,
         notification_id: Uuid,
         claim_token: DeliveryClaimToken,
+        expected_active_recipients: &[MacroUserIdStr<'_>],
         apns_collapse_key: Option<&str>,
         payloads: &[serde_json::Value],
         digest_receipt_cleanup_after: chrono::DateTime<chrono::Utc>,
     ) -> impl Future<Output = Result<bool, Report>> + Send;
+
+    /// Return recipients whose persisted lifecycle still permits delivery.
+    /// Publication rechecks this after an intent is claimed so a previously
+    /// prepared payload can omit recipients dismissed before queue handoff.
+    fn get_active_delivery_recipients(
+        &self,
+        notification_id: Uuid,
+    ) -> impl Future<Output = Result<HashSet<MacroUserIdStr<'static>>, Report>> + Send;
 
     /// Release a preparation claim after an ordinary failure.
     fn release_delivery_request(
@@ -449,6 +461,7 @@ where
         &self,
         notification_id: Uuid,
         claim_token: DeliveryClaimToken,
+        expected_active_recipients: &[MacroUserIdStr<'_>],
         apns_collapse_key: Option<&str>,
         payloads: &[serde_json::Value],
         digest_receipt_cleanup_after: chrono::DateTime<chrono::Utc>,
@@ -457,10 +470,20 @@ where
             .prepare_delivery_intents(
                 notification_id,
                 claim_token,
+                expected_active_recipients,
                 apns_collapse_key,
                 payloads,
                 digest_receipt_cleanup_after,
             )
+            .await
+    }
+
+    async fn get_active_delivery_recipients(
+        &self,
+        notification_id: Uuid,
+    ) -> Result<HashSet<MacroUserIdStr<'static>>, Report> {
+        self.as_ref()
+            .get_active_delivery_recipients(notification_id)
             .await
     }
 

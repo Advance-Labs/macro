@@ -88,23 +88,25 @@ where
         };
 
         let recovery_loop = async {
-            let mut interval = tokio::time::interval(RECOVERY_INTERVAL);
-            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
-                interval.tick().await;
-                match tokio::time::timeout(
+                let saturated = match tokio::time::timeout(
                     RECOVERY_BATCH_TIMEOUT,
                     self.service.recover_pending_deliveries(RECOVERY_BATCH_SIZE),
                 )
                 .await
                 {
-                    Ok(Ok(())) => {}
+                    Ok(Ok(saturated)) => saturated,
                     Ok(Err(error)) => {
                         tracing::warn!(error = ?error, "failed to recover pending notification deliveries");
+                        false
                     }
                     Err(_) => {
                         tracing::warn!("notification delivery recovery batch timed out");
+                        false
                     }
+                };
+                if !saturated {
+                    tokio::time::sleep(RECOVERY_INTERVAL).await;
                 }
             }
         };

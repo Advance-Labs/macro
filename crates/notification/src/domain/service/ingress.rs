@@ -19,7 +19,7 @@ use crate::domain::models::request::{
     UpdateNotificationsRequest,
 };
 use crate::domain::models::{
-    DeviceEndpoint, DisabledNotificationType, Notification, NotificationResult,
+    DeviceEndpoint, DisabledNotificationType, Notification, NotificationResult, NotificationState,
     NotificationStatusPayload, NotificationTypeName, PatchDelete, UserNotificationRow,
 };
 use crate::domain::ports::{
@@ -43,7 +43,10 @@ use std::time::Duration;
 use uuid::Uuid;
 
 const DELIVERY_CLAIM_LEASE_SECONDS: i64 = 30;
-const DELIVERY_PREPARATION_TIMEOUT: Duration = Duration::from_secs(15);
+// Leave time inside the worker's outer budget to release a failed preparation.
+// Claim acquisition also schedules durable backoff in case the worker itself is
+// cancelled while preparing, publishing, or cleaning up external state.
+const DELIVERY_PREPARATION_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Trait for sending notifications through the ingress service.
 pub trait NotificationIngress: Send + Sync + 'static {
@@ -309,10 +312,11 @@ where
     /// The ingress worker calls this independently of ingress SQS messages so a
     /// committed notification remains recoverable even if its source message is
     /// delayed or dead-lettered.
-    pub async fn recover_pending_deliveries(&self, limit: usize) -> Result<(), Report> {
+    pub async fn recover_pending_deliveries(&self, limit: usize) -> Result<bool, Report> {
         let mut first_error = None;
+        let mut saturated = false;
 
-        for _ in 0..limit {
+        for iteration in 0..limit {
             let prepared = match self.prepare_delivery_request(None).await {
                 Ok(prepared) => prepared,
                 Err(error) => {
@@ -373,11 +377,12 @@ where
             if !prepared && !published && !cleaned {
                 break;
             }
+            saturated = iteration + 1 == limit;
         }
 
         match first_error {
             Some(error) => Err(error),
-            None => Ok(()),
+            None => Ok(saturated),
         }
     }
 
@@ -446,17 +451,25 @@ where
         let mut request: SendNotificationRequest<'static, serde_json::Value, serde_json::Value> =
             serde_json::from_value(claimed.request).context(SendNotificationError::Other)?;
 
-        request.req.recipient_ids = claimed
+        let active_notifications: Vec<_> = claimed
             .notifications
+            .into_iter()
+            .filter(|notification| {
+                notification.state == NotificationState::Unseen && notification.deleted_at.is_none()
+            })
+            .collect();
+        let active_recipients: Vec<_> = active_notifications
             .iter()
             .map(|notification| notification.owner_id.clone())
             .collect();
+        request.req.recipient_ids = active_recipients.iter().cloned().collect();
 
-        if claimed.notifications.is_empty() {
+        if active_notifications.is_empty() {
             self.repository
                 .prepare_delivery_intents(
                     claimed.notification_id,
                     claimed.claim_token,
+                    &active_recipients,
                     None,
                     &[],
                     chrono::Utc::now() + chrono::Duration::seconds(DELIVERY_CLAIM_LEASE_SECONDS),
@@ -469,12 +482,11 @@ where
         let (queue_messages, apns_collapse_key) = self
             .build_queue_message(claimed.notification_id, &mut request)
             .await?;
-        let first = claimed
-            .notifications
+        let first = active_notifications
             .first()
             .expect("empty notifications returned above");
         let (created_at, updated_at) = (first.created_at, first.updated_at);
-        let results = join_all(claimed.notifications.into_iter().map(|notification| {
+        let results = join_all(active_notifications.into_iter().map(|notification| {
             self.state_machine_driver
                 .ingest(notification.map(Arc::new), claimed.generation)
         }))
@@ -494,6 +506,7 @@ where
             .prepare_delivery_intents(
                 claimed.notification_id,
                 claimed.claim_token,
+                &active_recipients,
                 apns_collapse_key.as_deref(),
                 &payloads,
                 chrono::Utc::now() + chrono::Duration::seconds(DELIVERY_CLAIM_LEASE_SECONDS),
@@ -547,6 +560,31 @@ where
 
         let message: QueueMessage<'static, serde_json::Value, serde_json::Value> =
             serde_json::from_value(intent.payload)?;
+        let active_recipients = self
+            .repository
+            .get_active_delivery_recipients(intent.notification_id)
+            .await?;
+        let Some(message) = message.retain_active_recipients(&active_recipients) else {
+            tracing::info!(
+                notification_id = %intent.notification_id,
+                position = intent.position,
+                "skipping durable notification intent with no active recipients",
+            );
+            let completed = self
+                .repository
+                .complete_delivery_intent(
+                    intent.notification_id,
+                    intent.position,
+                    intent.claim_token,
+                )
+                .await?;
+            if !completed {
+                return Err(rootcause::report!(
+                    "delivery intent lifecycle skip was not durably completed"
+                ));
+            }
+            return Ok(true);
+        };
         if let Err(error) = self.queue.publish(vec![message]).await {
             tracing::warn!(
                 error = ?error,

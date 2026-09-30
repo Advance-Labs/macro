@@ -14,7 +14,7 @@ use macro_user_id::user_id::MacroUserIdStr;
 use model_entity::Entity;
 use rate_limit::RateLimitExceeded;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -337,6 +337,34 @@ impl<'a, T, U> QueueMessage<'a, T, U> {
     /// Consume the message and return its content.
     pub(crate) fn into_inner(self) -> NotificationChannel<'a, T, U> {
         self.content
+    }
+
+    /// Remove recipients whose persisted lifecycle no longer permits delivery.
+    ///
+    /// Durable intents retain their original filtered audience, but a user may
+    /// dismiss a notification after preparation and before queue publication.
+    /// Return `None` when no recipient remains for this channel.
+    pub(crate) fn retain_active_recipients(
+        mut self,
+        active_recipients: &HashSet<MacroUserIdStr<'_>>,
+    ) -> Option<Self> {
+        let has_recipient = match &mut self.content {
+            NotificationChannel::Ios(targets) => {
+                targets
+                    .ios_device_endpoints
+                    .retain(|user_id, _| active_recipients.contains(user_id));
+                !targets.ios_device_endpoints.is_empty()
+            }
+            NotificationChannel::Email(email) => active_recipients.contains(&email.to),
+            NotificationChannel::ConnGateway(notification) => {
+                notification
+                    .recipients
+                    .retain(|user_id| active_recipients.contains(user_id));
+                !notification.recipients.is_empty()
+            }
+        };
+
+        has_recipient.then_some(self)
     }
 }
 

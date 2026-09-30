@@ -1867,6 +1867,12 @@ impl NotificationDeliveryRepository for DbNotificationRepository<PgPool> {
             SET claim_token = $2,
                 claim_expires_at = $3,
                 attempt_count = outbox.attempt_count + 1,
+                next_attempt_at = ($3::timestamptz) + make_interval(
+                    secs => LEAST(
+                        300,
+                        power(2, LEAST(outbox.attempt_count + 1, 8))::integer
+                    )
+                ),
                 updated_at = now()
             FROM candidate
             WHERE outbox.notification_id = candidate.notification_id
@@ -1963,12 +1969,43 @@ impl NotificationDeliveryRepository for DbNotificationRepository<PgPool> {
         &self,
         notification_id: Uuid,
         claim_token: DeliveryClaimToken,
+        expected_active_recipients: &[MacroUserIdStr<'_>],
         apns_collapse_key: Option<&str>,
         payloads: &[serde_json::Value],
         digest_receipt_cleanup_after: DateTime<Utc>,
     ) -> Result<bool, Report> {
         let claim_token_uuid = claim_token.into_uuid();
         let mut tx = self.db.begin().await?;
+
+        // Lifecycle updates and preparation serialize on the recipient rows.
+        // If a recipient was seen, completed, or deleted after this claimant
+        // loaded the request, abort preparation so the retry rebuilds payloads
+        // from the authoritative active recipients.
+        let active_recipients: HashSet<_> = sqlx::query_scalar!(
+            r#"
+            SELECT user_id
+            FROM user_notification
+            WHERE notification_id = $1
+              AND state = 'unseen'::notification_state
+              AND deleted_at IS NULL
+            ORDER BY user_id
+            FOR UPDATE
+            "#,
+            notification_id,
+        )
+        .fetch_all(&mut *tx)
+        .await?
+        .into_iter()
+        .collect();
+        let expected_active_recipients: HashSet<_> = expected_active_recipients
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        if active_recipients != expected_active_recipients {
+            tx.rollback().await?;
+            return Ok(false);
+        }
+
         let prepared = sqlx::query_scalar!(
             r#"
             UPDATE notification_delivery_outbox
@@ -2051,6 +2088,33 @@ impl NotificationDeliveryRepository for DbNotificationRepository<PgPool> {
         Ok(true)
     }
 
+    async fn get_active_delivery_recipients(
+        &self,
+        notification_id: Uuid,
+    ) -> Result<HashSet<MacroUserIdStr<'static>>, Report> {
+        let user_ids = sqlx::query_scalar!(
+            r#"
+            SELECT user_id
+            FROM user_notification
+            WHERE notification_id = $1
+              AND state = 'unseen'::notification_state
+              AND deleted_at IS NULL
+            "#,
+            notification_id,
+        )
+        .fetch_all(&self.db)
+        .await?;
+
+        user_ids
+            .into_iter()
+            .map(|user_id| {
+                MacroUserIdStr::parse_from_str(&user_id)
+                    .map(CowLike::into_owned)
+                    .map_err(|error| rootcause::report!(error).into_dynamic())
+            })
+            .collect()
+    }
+
     async fn release_delivery_request(
         &self,
         notification_id: Uuid,
@@ -2107,6 +2171,12 @@ impl NotificationDeliveryRepository for DbNotificationRepository<PgPool> {
             SET claim_token = $2,
                 claim_expires_at = $3,
                 attempt_count = intent.attempt_count + 1,
+                next_attempt_at = ($3::timestamptz) + make_interval(
+                    secs => LEAST(
+                        300,
+                        power(2, LEAST(intent.attempt_count + 1, 8))::integer
+                    )
+                ),
                 updated_at = now()
             FROM candidate
             WHERE intent.notification_id = candidate.notification_id
@@ -2288,6 +2358,12 @@ impl NotificationDeliveryRepository for DbNotificationRepository<PgPool> {
             SET claim_token = $1,
                 claim_expires_at = $2,
                 attempt_count = cleanup.attempt_count + 1,
+                safe_after = ($2::timestamptz) + make_interval(
+                    secs => LEAST(
+                        300,
+                        power(2, LEAST(cleanup.attempt_count + 1, 8))::integer
+                    )
+                ),
                 updated_at = now()
             FROM candidate
             WHERE cleanup.notification_id = candidate.notification_id

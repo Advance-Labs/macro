@@ -345,6 +345,7 @@ impl NotificationDeliveryRepository for SandboxNotificationRepository {
         &self,
         notification_id: Uuid,
         claim_token: DeliveryClaimToken,
+        expected_active_recipients: &[MacroUserIdStr<'_>],
         apns_collapse_key: Option<&str>,
         payloads: &[serde_json::Value],
         digest_receipt_cleanup_after: chrono::DateTime<chrono::Utc>,
@@ -353,10 +354,20 @@ impl NotificationDeliveryRepository for SandboxNotificationRepository {
             .prepare_delivery_intents(
                 notification_id,
                 claim_token,
+                expected_active_recipients,
                 apns_collapse_key,
                 payloads,
                 digest_receipt_cleanup_after,
             )
+            .await
+    }
+
+    async fn get_active_delivery_recipients(
+        &self,
+        notification_id: Uuid,
+    ) -> Result<HashSet<MacroUserIdStr<'static>>, Report> {
+        self.inner
+            .get_active_delivery_recipients(notification_id)
             .await
     }
 

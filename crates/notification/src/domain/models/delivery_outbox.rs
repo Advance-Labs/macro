@@ -3,16 +3,24 @@
 //! ## Failure and rollout contract
 //!
 //! The additive migration must land before notification-service starts writing
-//! outbox rows. A one-second recovery cadence runs at most 25 iterations per
-//! 15-second batch; each iteration can attempt preparation, intent publication,
-//! and digest cleanup. Individual preparation claims have a 30-second lease and
-//! a 15-second operation timeout. Failed preparation/publication/cleanup claims
-//! use bounded exponential backoff so a poison row does not starve newer work.
+//! outbox rows. Recovery runs at most 25 iterations per 15-second batch; each
+//! iteration can attempt preparation, intent publication, and digest cleanup.
+//! Saturated batches continue immediately, while drained, failed, or timed-out
+//! batches wait one second. Individual claims have a 30-second lease, and
+//! preparation has a 10-second inner timeout. Claim acquisition durably
+//! schedules post-lease backoff, so cancellation or process loss cannot bypass
+//! bounded exponential retry. A poison row therefore does not starve newer work.
 //!
 //! Queue publication is intentionally at-least-once: a crash after SQS accepts
 //! a payload but before Postgres records completion can republish that payload.
 //! Per-intent progress prevents ordinary retry from replaying completed channel
 //! work, but this layer does not claim exactly-once delivery.
+//!
+//! Preparation serializes its active-recipient snapshot with lifecycle writes,
+//! and publication filters frozen payloads against current unseen, non-deleted
+//! recipients. A lifecycle change concurrent with the final database check and
+//! external queue handoff can still race; the outbox does not claim an atomic
+//! status-check-to-SQS boundary.
 //!
 //! Hard-deleting a notification cascades its current outbox and intents, which
 //! cancels that stored delivery generation. Its generation-scoped Redis digest
