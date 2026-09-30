@@ -8285,6 +8285,107 @@
         }
       }
     },
+    "/databases/{id}/ops": {
+      "post": {
+        "tags": ["databases"],
+        "summary": "Apply a batch of typed ops: insert, update and delete rows, or change a\ncolumn's type. Row ops are last-write-wins. A refused op, named by its\nindex (and row and column where relevant), leaves the whole batch\nunwritten.",
+        "operationId": "apply_database_ops",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyOpsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyOpsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An op was refused; nothing was written",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No edit access to the database",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A column type change raced another schema change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/databases/{id}/permissions": {
       "get": {
         "tags": ["databases"],
@@ -19419,6 +19520,34 @@
           }
         }
       },
+      "ApplyOpsRequest": {
+        "type": "object",
+        "description": "A batch of ops for one database, applied together or not at all.",
+        "required": ["ops"],
+        "properties": {
+          "ops": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DatabaseOp"
+            },
+            "description": "The ops, in the order they apply. Every one names a table of this\ndatabase; a column type change is sent on its own."
+          }
+        }
+      },
+      "ApplyOpsResponse": {
+        "type": "object",
+        "description": "What each op of a batch did.",
+        "required": ["results"],
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OpResult"
+            },
+            "description": "One result per op, in the order the ops were sent."
+          }
+        }
+      },
       "ApprovePairingRequest": {
         "type": "object",
         "description": "Request to approve a pairing and register the harness.",
@@ -20923,6 +21052,173 @@
         "type": "string",
         "description": "Whether a column's values convert to a type.",
         "enum": ["safe", "checked", "never"]
+      },
+      "CellValue": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Free text.",
+            "required": ["value", "type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["text"]
+              },
+              "value": {
+                "type": "string",
+                "description": "Free text."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A finite number.",
+            "required": ["value", "type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["number"]
+              },
+              "value": {
+                "type": "number",
+                "format": "double",
+                "description": "A finite number."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A checkbox.",
+            "required": ["value", "type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["boolean"]
+              },
+              "value": {
+                "type": "boolean",
+                "description": "A checkbox."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A date-time.",
+            "required": ["value", "type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["date"]
+              },
+              "value": {
+                "type": "string",
+                "format": "date-time",
+                "description": "A date-time."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Complete http or https URLs; at most one for a single-valued column.",
+            "required": ["value", "type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["link"]
+              },
+              "value": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Complete http or https URLs; at most one for a single-valued column."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Options of a select or tag column; at most one for a single-valued\ncolumn.",
+            "required": ["value", "type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["options"]
+              },
+              "value": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OptionRef"
+                },
+                "description": "Options of a select or tag column; at most one for a single-valued\ncolumn."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "References to Macro entities of the kind the column points at; at\nmost one for a single-valued column.",
+            "required": ["value", "type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["entities"]
+              },
+              "value": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/EntityRef"
+                },
+                "description": "References to Macro entities of the kind the column points at; at\nmost one for a single-valued column."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Rows of the table a relation column points at, by [`RowId`].",
+            "required": ["value", "type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["rows"]
+              },
+              "value": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "Rows of the table a relation column points at, by [`RowId`]."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "No value: the cell is emptied.",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["clear"]
+              }
+            }
+          }
+        ],
+        "description": "A cell's value. It must fit the column's type: text for a text column,\noptions of the column for a select, and so on."
+      },
+      "CellWrite": {
+        "type": "object",
+        "description": "One cell of a row: which column, and its new value.",
+        "required": ["column", "value"],
+        "properties": {
+          "column": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The column placement."
+          },
+          "value": {
+            "$ref": "#/components/schemas/CellValue",
+            "description": "The value, or [`CellValue::Clear`] to empty the cell."
+          }
+        }
       },
       "ChangeColumnTypeRequest": {
         "type": "object",
@@ -22518,6 +22814,147 @@
             "description": "Whether SQL may write this column."
           }
         }
+      },
+      "ColumnKind": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Free text.",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["text"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A number.",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["number"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A checkbox.",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["boolean"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A date-time.",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["date"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A URL.",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["link"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Text options.",
+            "required": ["multi", "type"],
+            "properties": {
+              "multi": {
+                "type": "boolean",
+                "description": "Whether a cell holds several options."
+              },
+              "type": {
+                "type": "string",
+                "enum": ["select"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Numeric options.",
+            "required": ["multi", "type"],
+            "properties": {
+              "multi": {
+                "type": "boolean",
+                "description": "Whether a cell holds several options."
+              },
+              "type": {
+                "type": "string",
+                "enum": ["select_number"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Colored labels; always several per cell.",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["tag"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "References to Macro entities.",
+            "required": ["target", "multi", "type"],
+            "properties": {
+              "multi": {
+                "type": "boolean",
+                "description": "Whether a cell holds several references."
+              },
+              "target": {
+                "$ref": "#/components/schemas/EntityKind",
+                "description": "What the references point at."
+              },
+              "type": {
+                "type": "string",
+                "enum": ["entity"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Rows of another table.",
+            "required": ["database", "table", "type"],
+            "properties": {
+              "database": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The database of the related table."
+              },
+              "table": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The related table."
+              },
+              "type": {
+                "type": "string",
+                "enum": ["relation"]
+              }
+            }
+          }
+        ],
+        "description": "A type a column can have."
       },
       "ColumnSchemaOutcome": {
         "type": "object",
@@ -24422,6 +24859,118 @@
           }
         }
       },
+      "DatabaseOp": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Append rows to a table, in order, each with the cells it starts with.",
+            "required": ["table", "rows", "kind"],
+            "properties": {
+              "createMissingOptions": {
+                "type": "boolean",
+                "description": "Create a select option for a label the column does not have yet,\ninstead of refusing the op."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["insert_rows"]
+              },
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CellWrite"
+                  }
+                },
+                "description": "One entry per new row: the cells it starts with. Columns left out\nstart empty."
+              },
+              "table": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The table."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Write cells of existing rows. Last write wins: there is no version\ncheck.",
+            "required": ["table", "changes", "kind"],
+            "properties": {
+              "changes": {
+                "$ref": "#/components/schemas/RowChanges",
+                "description": "Which rows get which cells."
+              },
+              "createMissingOptions": {
+                "type": "boolean",
+                "description": "Create a select option for a label the column does not have yet,\ninstead of refusing the op."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["update_rows"]
+              },
+              "table": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The table the rows belong to."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Remove rows and their cells.",
+            "required": ["table", "rows", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["delete_rows"]
+              },
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "The rows, each named once."
+              },
+              "table": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The table the rows belong to."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Convert a column to another type, converting its cells. A value that\ndoes not fit refuses the change unless `clearInvalid` empties it.",
+            "required": ["table", "column", "to", "kind"],
+            "properties": {
+              "clearInvalid": {
+                "type": "boolean",
+                "description": "Empty the cells whose value does not fit, instead of refusing; a\ncell with several values going to a single-valued type keeps its\nfirst."
+              },
+              "column": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The column placement; its id survives the change."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["change_column_type"]
+              },
+              "table": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The table."
+              },
+              "to": {
+                "$ref": "#/components/schemas/ColumnKind",
+                "description": "The type it becomes."
+              }
+            }
+          }
+        ],
+        "description": "One write to a database's data. A request's ops apply together or not at\nall, and every op names a table of the database the request is for."
+      },
       "DeleteAnchorInfo": {
         "allOf": [
           {
@@ -26211,6 +26760,23 @@
           }
         }
       },
+      "EntityKind": {
+        "type": "string",
+        "description": "A kind of Macro entity a reference column can point at.",
+        "enum": [
+          "USER",
+          "DOCUMENT",
+          "TASK",
+          "COMPANY",
+          "CALL_RECORD",
+          "CHANNEL",
+          "CHAT",
+          "PROJECT",
+          "THREAD",
+          "CALENDAR_EVENT",
+          "INITIATIVE"
+        ]
+      },
       "EntityPermission": {
         "oneOf": [
           {
@@ -26299,6 +26865,21 @@
           }
         ],
         "description": "API response envelope for entity permissions."
+      },
+      "EntityRef": {
+        "type": "object",
+        "description": "A reference to one Macro entity.",
+        "required": ["entityType", "entityId"],
+        "properties": {
+          "entityId": {
+            "type": "string",
+            "description": "The entity's id."
+          },
+          "entityType": {
+            "$ref": "#/components/schemas/EntityKind",
+            "description": "What kind of entity it is; it must be the kind the column points at."
+          }
+        }
       },
       "EntityReference": {
         "type": "object",
@@ -29865,6 +30446,100 @@
         "description": "The mutually exclusive lifecycle states of a user's notification.",
         "enum": ["unseen", "seen", "done"]
       },
+      "OpResult": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "What an insert, update or delete did.",
+            "required": ["tableVersion", "inserted", "affected", "kind"],
+            "properties": {
+              "affected": {
+                "type": "integer",
+                "format": "int32",
+                "description": "How many rows the op inserted, updated or deleted.",
+                "minimum": 0
+              },
+              "inserted": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "The rows an insert created, in the order they were sent; empty\nfor an update or a delete."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["rows_written"]
+              },
+              "tableVersion": {
+                "$ref": "#/components/schemas/TableVersion",
+                "description": "The table's version once the request committed."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "What a column type change did.",
+            "required": [
+              "tableVersion",
+              "clearedCells",
+              "trimmedCells",
+              "kind"
+            ],
+            "properties": {
+              "clearedCells": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Cells emptied because their value did not fit the new type.",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["column_typed"]
+              },
+              "tableVersion": {
+                "$ref": "#/components/schemas/TableVersion",
+                "description": "The table's version after the change."
+              },
+              "trimmedCells": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Cells that held several values and kept only their first.",
+                "minimum": 0
+              }
+            }
+          }
+        ],
+        "description": "What one op did, in the order the ops were sent."
+      },
+      "OptionRef": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "An option the column has.",
+            "required": ["id"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "An option the column has."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "An option's label, matched without regard to case. An unknown label\nis refused unless the op creates missing options.",
+            "required": ["label"],
+            "properties": {
+              "label": {
+                "type": "string",
+                "description": "An option's label, matched without regard to case. An unknown label\nis refused unless the op creates missing options."
+              }
+            }
+          }
+        ],
+        "description": "A select option, by its id or by its label."
+      },
       "PairingDetails": {
         "type": "object",
         "description": "A pending pairing, as shown to the approving user.",
@@ -32034,6 +32709,74 @@
             "description": "The ring status for the authenticated user."
           }
         }
+      },
+      "RowChange": {
+        "type": "object",
+        "description": "One row's cells in a [`RowChanges::PerRow`] update.",
+        "required": ["row", "cells"],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CellWrite"
+            },
+            "description": "Its new cells."
+          },
+          "row": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The row."
+          }
+        }
+      },
+      "RowChanges": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The same cells on every row.",
+            "required": ["rows", "cells", "kind"],
+            "properties": {
+              "cells": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CellWrite"
+                },
+                "description": "The cells each of them gets."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["uniform"]
+              },
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "The rows."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Each row its own cells.",
+            "required": ["rows", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["per_row"]
+              },
+              "rows": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RowChange"
+                },
+                "description": "The rows and their cells, in order."
+              }
+            }
+          }
+        ],
+        "description": "Which rows an update writes, and with what."
       },
       "S3ObjectInfo": {
         "type": "object",
