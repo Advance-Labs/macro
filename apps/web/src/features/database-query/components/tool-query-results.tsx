@@ -1,5 +1,6 @@
+import { isFeatureEnabled, showDatabaseSql } from '@core/constant/featureFlags';
 import { Select } from '@ui/components/Select';
-import { createMemo, createSignal } from 'solid-js';
+import { createMemo, createSignal, Show } from 'solid-js';
 import { AppAnswerDisplay } from '../answer-display';
 import { isScalarAnswer, type QueryAnswer } from '../core/query';
 import { prepareQueryChart, type QueryDisplayMode } from '../core/query-chart';
@@ -67,12 +68,14 @@ export function ToolQueryResults(props: {
           compact
         />
       </AppAnswerDisplay>
-      <details class="text-xs text-ink-muted">
-        <summary>View SQL</summary>
-        <pre class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-hover p-2">
-          {props.sql}
-        </pre>
-      </details>
+      <Show when={isFeatureEnabled(showDatabaseSql)}>
+        <details class="text-xs text-ink-muted">
+          <summary>View SQL</summary>
+          <pre class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-hover p-2">
+            {props.sql}
+          </pre>
+        </details>
+      </Show>
     </div>
   );
 }

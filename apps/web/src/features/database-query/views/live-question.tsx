@@ -1,3 +1,4 @@
+import { isFeatureEnabled, showDatabaseSql } from '@core/constant/featureFlags';
 import { Popover } from '@kobalte/core/popover';
 import ArrowClockwiseIcon from '@phosphor/arrow-clockwise.svg';
 import LightningIcon from '@phosphor/lightning.svg';
@@ -264,12 +265,14 @@ export function LiveQuestion(props: {
                     Finding your answer…
                   </p>
                 </Show>
-                <details class="text-xs">
-                  <summary class="text-ink-muted">View SQL</summary>
-                  <pre class="mt-2 overflow-auto whitespace-pre-wrap rounded-md bg-input p-2">
-                    {props.sql?.()}
-                  </pre>
-                </details>
+                <Show when={isFeatureEnabled(showDatabaseSql)}>
+                  <details class="text-xs">
+                    <summary class="text-ink-muted">View SQL</summary>
+                    <pre class="mt-2 overflow-auto whitespace-pre-wrap rounded-md bg-input p-2">
+                      {props.sql?.()}
+                    </pre>
+                  </details>
+                </Show>
                 <div class="flex items-center justify-between">
                   <Button
                     size="sm"

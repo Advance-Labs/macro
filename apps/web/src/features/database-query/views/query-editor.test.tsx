@@ -1,6 +1,7 @@
+import { showDatabaseSql } from '@core/constant/featureFlags';
 import { fireEvent, render, waitFor } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   QueryActionError,
   type QueryAnswer,
@@ -23,6 +24,13 @@ const answer: QueryAnswer = {
 };
 
 describe('question editor', () => {
+  beforeEach(() => {
+    showDatabaseSql.enabled = true;
+  });
+  afterEach(() => {
+    showDatabaseSql.enabled = false;
+  });
+
   it('keeps the source trigger mounted while its reactive source label changes', () => {
     const [schema, setSchema] = createSignal<QuerySchema>({
       name: 'Automatic',
@@ -915,6 +923,62 @@ describe('question editor', () => {
       }),
       answer
     );
+    result.unmount();
+  });
+});
+
+describe('question editor with SQL hidden', () => {
+  it('asks and answers without a SQL toggle, editor or statement', async () => {
+    const read = vi.fn(async () => answer);
+    const generate = vi.fn(async () => ({
+      sql: 'SELECT COUNT(*) AS Count FROM projects',
+      explanation: 'Counts projects.',
+    }));
+    const result = render(() => (
+      <QueryEditor
+        initial={{ sql: '', prompt: '', displayMode: 'scalar' }}
+        schema={{ databaseId: 'db', name: 'Planning', tables: [] }}
+        capabilities={{ read, generate }}
+        onSave={vi.fn()}
+      />
+    ));
+    fireEvent.input(result.getByLabelText('Ask your database'), {
+      target: { value: 'How many projects?' },
+    });
+    fireEvent.click(result.getByRole('button', { name: /Ask/ }));
+    await result.findByRole('button', { name: 'Insert' });
+    expect(read).toHaveBeenCalledWith(
+      'SELECT COUNT(*) AS Count FROM projects',
+      expect.objectContaining({ databaseId: 'db' })
+    );
+    expect(result.queryByRole('button', { name: 'SQL' })).toBeNull();
+    expect(result.queryByLabelText('Query SQL')).toBeNull();
+    expect(result.queryByRole('button', { name: 'Run SQL' })).toBeNull();
+    expect(result.container.textContent).not.toMatch(/SQL|SELECT/);
+    result.unmount();
+  });
+
+  it('words an engine refusal plainly and keeps the raw message out of view', async () => {
+    const read = vi.fn(async () => {
+      throw new Error('unknown column "Price" in "Shop"."Items"');
+    });
+    const result = render(() => (
+      <QueryEditor
+        initial={{
+          databaseId: 'db',
+          prompt: 'Total price?',
+          sql: 'SELECT SUM("Price") FROM "Items"',
+          displayMode: 'scalar',
+        }}
+        schema={{ databaseId: 'db', name: 'Shop', tables: [] }}
+        capabilities={{ read, generate: vi.fn() }}
+      />
+    ));
+    expect((await result.findByRole('alert')).textContent).toBe(
+      "This answer couldn't be computed: the column Price no longer exists."
+    );
+    expect(result.queryByText('Technical details')).toBeNull();
+    expect(result.container.textContent).not.toMatch(/SQL|SELECT|unknown/);
     result.unmount();
   });
 });

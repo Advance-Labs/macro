@@ -1,3 +1,4 @@
+import { isFeatureEnabled, showDatabaseSql } from '@core/constant/featureFlags';
 import ArrowClockwiseIcon from '@phosphor/arrow-clockwise.svg';
 import ArrowUpIcon from '@phosphor/arrow-up.svg';
 import CodeIcon from '@phosphor/code.svg';
@@ -60,6 +61,7 @@ export function QueryEditor(props: {
   let promptInput: HTMLTextAreaElement | undefined;
   const [sqlOpen, setSqlOpen] = createSignal(false);
   const displayMode = (): QueryDisplayMode =>
+  const showSql = isFeatureEnabled(showDatabaseSql);
     composer.presentation().displayMode === 'scalar' &&
     composer.preview() &&
     !isScalarAnswer(composer.preview()!.answer)
@@ -259,21 +261,23 @@ export function QueryEditor(props: {
             {sourcePicker}
           </Show>
         </div>
-        <button
-          type="button"
-          class="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-xs text-ink-muted outline-none hover:bg-hover hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/50"
-          aria-expanded={sqlOpen()}
-          onClick={() => setSqlOpen(!sqlOpen())}
-        >
-          <CodeIcon class="size-3.5" /> {sqlOpen() ? 'Hide SQL' : 'SQL'}
-        </button>
+        <Show when={showSql}>
+          <button
+            type="button"
+            class="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-xs text-ink-muted outline-none hover:bg-hover hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/50"
+            aria-expanded={sqlOpen()}
+            onClick={() => setSqlOpen(!sqlOpen())}
+          >
+            <CodeIcon class="size-3.5" /> {sqlOpen() ? 'Hide SQL' : 'SQL'}
+          </button>
+        </Show>
       </div>
       <Show when={!sourceAvailable()}>
         <p class="text-xs text-ink-muted">
           Choose an available database to update this answer.
         </p>
       </Show>
-      <Show when={sqlOpen()}>
+      <Show when={showSql && sqlOpen()}>
         <div>
           <SqlEditor
             value={composer.sql()}
@@ -314,7 +318,9 @@ export function QueryEditor(props: {
             <p>{message()}</p>
             <Show
               when={
-                composer.errorDetail() && composer.errorDetail() !== message()
+                showSql &&
+                composer.errorDetail() &&
+                composer.errorDetail() !== message()
               }
             >
               <details class="mt-2 text-xs">

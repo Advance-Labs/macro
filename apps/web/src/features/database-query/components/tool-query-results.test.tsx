@@ -1,7 +1,8 @@
+import { showDatabaseSql } from '@core/constant/featureFlags';
 import { fireEvent, render, screen } from '@solidjs/testing-library';
 import userEvent from '@testing-library/user-event';
 import { createSignal, type JSX } from 'solid-js';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { QueryAnswer } from '../core/query';
 import { ToolQueryResults } from './tool-query-results';
 
@@ -29,6 +30,10 @@ const answer: QueryAnswer = {
   read_versions: {},
   truncated_tables: [],
 };
+
+afterEach(() => {
+  showDatabaseSql.enabled = false;
+});
 
 describe('native chat database answers', () => {
   it('opens the requested chart and lets the reader override it', async () => {
@@ -74,6 +79,7 @@ describe('native chat database answers', () => {
   });
 
   it('switches real query data between table and compatible charts', async () => {
+    showDatabaseSql.enabled = true;
     const rendered = render(() => (
       <ToolQueryResults
         answer={answer}
@@ -122,6 +128,18 @@ describe('native chat database answers', () => {
       { key: 'ArrowDown' }
     );
     expect(screen.queryByRole('option', { name: /chart/ })).toBeNull();
+    rendered.unmount();
+  });
+});
+
+describe('native chat database answers with SQL hidden', () => {
+  it('shows the result without the statement', () => {
+    const rendered = render(() => (
+      <ToolQueryResults answer={answer} sql="SELECT team, count FROM tickets" />
+    ));
+    expect(rendered.getByRole('table').textContent).toContain('Support12');
+    expect(rendered.queryByText('View SQL')).toBeNull();
+    expect(rendered.container.textContent).not.toContain('SELECT');
     rendered.unmount();
   });
 });

@@ -1,6 +1,7 @@
+import { showDatabaseSql } from '@core/constant/featureFlags';
 import { fireEvent, render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { QueryAnswer } from '../core/query';
 import { LiveQuestion } from './live-question';
 
@@ -248,6 +249,72 @@ describe('answer titles', () => {
     expect(await screen.findByRole('button', { name: 'Refresh' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Edit question' })).toBeNull();
     expect(screen.queryByLabelText('Ask your database')).toBeNull();
+    rendered.unmount();
+  });
+});
+
+describe('answer details', () => {
+  afterEach(() => {
+    showDatabaseSql.enabled = false;
+  });
+  const details = () => (
+    <LiveQuestion
+      source={{
+        queryId: 'open-tickets',
+        prompt: 'How many open tickets?',
+        displayMode: 'table',
+      }}
+      answer={{
+        results: [
+          { columns: [{ name: 'Count', entity_type: null }], rows: [[4]] },
+        ],
+        read_tables: [],
+        read_versions: {},
+        truncated_tables: [],
+      }}
+      loading={false}
+      onRefresh={vi.fn()}
+      sql={() => 'SELECT COUNT(*) FROM "Tickets"'}
+    />
+  );
+
+  it('offers View SQL when SQL is shown', async () => {
+    showDatabaseSql.enabled = true;
+    const rendered = render(details);
+    fireEvent.click(rendered.getByRole('button', { name: 'Details' }));
+    await fireEvent.click(await screen.findByText('View SQL'));
+    expect(document.body.textContent).toContain('SELECT COUNT(*)');
+    rendered.unmount();
+  });
+
+  it('hides View SQL and the statement when SQL is hidden', async () => {
+    const rendered = render(details);
+    fireEvent.click(rendered.getByRole('button', { name: 'Details' }));
+    expect(await screen.findByText('How many open tickets?')).toBeTruthy();
+    expect(screen.queryByText('View SQL')).toBeNull();
+    expect(document.body.textContent).not.toContain('SELECT');
+    rendered.unmount();
+  });
+
+  it('words an unavailable answer plainly', async () => {
+    const rendered = render(() => (
+      <LiveQuestion
+        source={{
+          queryId: 'prices',
+          prompt: 'Total price',
+          displayMode: 'table',
+        }}
+        error={new Error('unknown column "Price" in "Shop"."Items"')}
+        loading={false}
+        onRefresh={vi.fn()}
+      />
+    ));
+    fireEvent.click(rendered.getByRole('button', { name: 'Details' }));
+    expect(
+      (await screen.findAllByRole('alert')).map((alert) => alert.textContent)
+    ).toContain(
+      "This answer couldn't be computed: the column Price no longer exists."
+    );
     rendered.unmount();
   });
 });
