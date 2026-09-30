@@ -1,0 +1,29 @@
+---
+title: ChangeColumnType
+description: "Change a column's type, converting every existing value. The column keeps its id and name.  Conversion is all or nothing: if any value cannot become the new type without losing information (\"soon\" as a number), nothing changes and the error says why. Converting to `select` or `tag` turns the distinct existing values into the column's options; pass `options` to add labels no row has yet.  - `entity` needs `specificEntityType` (e.g. `USER` for people, `DOCUMENT`). - `linkToTableId` makes it a relation to rows of another table of this database; pass `dataType: entity` with it. Relations are always multi-valued, and the column must be empty. - `tag` columns are always multi-valued.  Requires edit access. The response is the schema after the change."
+---
+
+# ChangeColumnType
+
+Change a column's type, converting every existing value. The column keeps its id and name.
+
+Conversion is all or nothing: if any value cannot become the new type without losing information ("soon" as a number), nothing changes and the error says why. Converting to `select` or `tag` turns the distinct existing values into the column's options; pass `options` to add labels no row has yet.
+
+- `entity` needs `specificEntityType` (e.g. `USER` for people, `DOCUMENT`).
+- `linkToTableId` makes it a relation to rows of another table of this database; pass `dataType: entity` with it. Relations are always multi-valued, and the column must be empty.
+- `tag` columns are always multi-valued.
+
+Requires edit access. The response is the schema after the change.
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `databaseId` | string | Yes | Id of the database containing the column, from ListDatabases. |
+| `tableId` | string | Yes | Id of the table containing the column, from DescribeDatabase. |
+| `columnId` | string | Yes | Id of the column to change, from DescribeDatabase. |
+| `dataType` | `"text"` \| `"number"` \| `"boolean"` \| `"date"` \| `"link"` \| `"select"` \| `"select_number"` \| `"tag"` \| `"entity"` | Yes | The value type of a column, as the model names it.  A deliberate mirror of [`DataType`] rather than a re-export: the property system's names are internal, and the tool vocabulary has to stay stable independently of them. |
+| `isMultiSelect` | boolean | No | True if a cell can hold several values (select, select_number, entity, link). Defaults to false. |
+| `options` | string[] | No | For select, select_number, or tag: labels to accept beyond the values the rows already have. Omit for other types. |
+| `specificEntityType` | `"USER"` \| `"DOCUMENT"` \| `"TASK"` \| `"COMPANY"` \| `"CALL_RECORD"` \| `"CHANNEL"` \| `"CHAT"` \| `"PROJECT"` \| `"THREAD"` \| `"CALENDAR_EVENT"` \| `"INITIATIVE"` | No | Required for dataType entity without linkToTableId: what the ids reference, e.g. USER or DOCUMENT. |
+| `linkToTableId` | string | No | Id of a table of this database to relate to; makes the column a relation holding row ids. Requires dataType entity. |

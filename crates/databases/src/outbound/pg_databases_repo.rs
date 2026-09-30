@@ -6,6 +6,8 @@
 //! through the properties adapter.
 
 mod columns;
+mod delete_table;
+mod saved_queries;
 mod sharing;
 #[cfg(test)]
 mod test;
@@ -25,6 +27,7 @@ use crate::domain::models::{
     TableMutationOutcome, TableVersion,
 };
 use crate::domain::models::{ColumnReplacement, ColumnSchemaOutcome};
+use crate::domain::models::{QueryDefinition, QueryId, SavedQuery, TableDeletion};
 use crate::domain::ports::DatabasesRepo;
 
 /// Errors from the Postgres repository.
@@ -94,6 +97,26 @@ impl DatabasesRepo for PgDatabasesRepo {
         column_ids: &[ColumnId],
     ) -> Result<Option<TableVersion>, Self::Err> {
         self.reorder_column_placements(table, column_ids).await
+    }
+
+    #[tracing::instrument(err, skip(self, table))]
+    async fn delete_table(&self, table: &Table) -> Result<TableDeletion, Self::Err> {
+        self.delete_table_and_rows(table).await
+    }
+
+    #[tracing::instrument(err, skip(self, definition))]
+    async fn save_query(
+        &self,
+        database_id: Option<DatabaseId>,
+        definition: &QueryDefinition,
+        created_by: &str,
+    ) -> Result<SavedQuery, Self::Err> {
+        self.insert_query(database_id, definition, created_by).await
+    }
+
+    #[tracing::instrument(err, skip(self))]
+    async fn get_query(&self, id: QueryId) -> Result<Option<SavedQuery>, Self::Err> {
+        self.query_by_id(id).await
     }
 
     #[tracing::instrument(err, skip(self, cmd))]

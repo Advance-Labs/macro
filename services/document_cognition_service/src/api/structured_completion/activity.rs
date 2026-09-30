@@ -45,10 +45,16 @@ pub(super) fn has_database_changes(activity: &[StructuredToolActivity]) -> bool 
             && (matches!(
                 entry.name.as_str(),
                 "CreateDatabase"
+                    | "RenameDatabase"
                     | "CreateTable"
                     | "RenameTable"
+                    | "DeleteTable"
                     | "AddColumn"
                     | "AddColumnOptions"
+                    | "RenameColumn"
+                    | "ChangeColumnType"
+                    | "DeleteColumn"
+                    | "ReorderColumns"
                     | "SaveDatabaseView"
             ) || (entry.name == "QueryDatabase"
                 && entry.changes_applied.is_some_and(|count| count > 0)))

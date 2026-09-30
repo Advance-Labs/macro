@@ -25,7 +25,9 @@ use super::*;
 mod committed_writes;
 mod read_only;
 mod relations;
+mod saved_queries;
 mod saved_views;
+mod schema_changes;
 use crate::domain::models::{
     Column, ColumnDetail, Database, ExecOutcome, QueryResult, RenameColumnOutcome, ResultColumn,
     SqlValue, Table, TableDetail, TableVersion,
@@ -58,6 +60,16 @@ struct Calls {
     renamed_tables: Vec<(Uuid, String, String)>,
     created_columns: Vec<(Uuid, DataType, bool, Vec<String>)>,
     added_options: Vec<(Uuid, Vec<String>)>,
+    renamed_databases: Vec<String>,
+    deleted_tables: Vec<Uuid>,
+    /// `(table, column, name, previous name)`.
+    renamed_columns: Vec<(Uuid, Uuid, String, String)>,
+    changed_column_types: Vec<crate::domain::models::ChangeColumnType>,
+    /// `(table, column, base version)`.
+    deleted_columns: Vec<(Uuid, Uuid, TableVersion)>,
+    /// `(table, order, base version)`.
+    reordered_columns: Vec<(Uuid, Vec<Uuid>, TableVersion)>,
+    saved_queries: Vec<(Option<Uuid>, crate::domain::models::QueryDefinition)>,
 }
 
 #[derive(Clone, Default)]
@@ -73,6 +85,7 @@ struct FakeService {
 const DATABASE_ID: Uuid = Uuid::from_u128(0x0dbb_0000_0000_0000_0000_0000_0000_0001);
 const TABLE_ID: Uuid = Uuid::from_u128(0x7ab1_0000_0000_0000_0000_0000_0000_0001);
 const COLUMN_ID: Uuid = Uuid::from_u128(0xc01a_0000_0000_0000_0000_0000_0000_0001);
+const QUERY_ID: Uuid = Uuid::from_u128(0x0e11_0000_0000_0000_0000_0000_0000_0001);
 
 fn database() -> Database {
     Database {
@@ -200,15 +213,26 @@ impl DatabasesService for FakeService {
         Ok(database)
     }
 
-    // Renaming and the trash have no tools: the model has no use case for
-    // them that a user would not do themselves, and a permanent delete is not
-    // something a tool call should be able to reach.
     async fn rename_database(
         &self,
         _receipt: EntityAccessReceipt<EditAccessLevel>,
-        _name: String,
+        name: String,
     ) -> Result<Database, DatabaseError> {
-        unimplemented!("the toolset does not rename databases")
+        self.calls
+            .lock()
+            .unwrap()
+            .renamed_databases
+            .push(name.clone());
+        Ok(Database { name, ..database() })
+    }
+
+    async fn delete_table(
+        &self,
+        _receipt: EntityAccessReceipt<EditAccessLevel>,
+        table_id: crate::domain::models::TableId,
+    ) -> Result<(), DatabaseError> {
+        self.calls.lock().unwrap().deleted_tables.push(table_id);
+        Ok(())
     }
 
     async fn rename_table(
@@ -238,37 +262,66 @@ impl DatabasesService for FakeService {
         &self,
         _: EntityAccessReceipt<EditAccessLevel>,
         _: Viewer,
-        _: crate::domain::models::ChangeColumnType,
+        cmd: crate::domain::models::ChangeColumnType,
     ) -> Result<crate::domain::models::ColumnSchemaOutcome, DatabaseError> {
-        unimplemented!("tool tests do not change column types")
+        let table_id = cmd.table_id;
+        self.calls.lock().unwrap().changed_column_types.push(cmd);
+        Ok(crate::domain::models::ColumnSchemaOutcome {
+            table_versions: HashMap::from([(table_id, TableVersion(4))]),
+        })
     }
     async fn delete_column(
         &self,
         _: EntityAccessReceipt<EditAccessLevel>,
-        _: Uuid,
-        _: Uuid,
-        _: TableVersion,
+        table_id: Uuid,
+        column_id: Uuid,
+        base_version: TableVersion,
     ) -> Result<crate::domain::models::ColumnSchemaOutcome, DatabaseError> {
-        unimplemented!("tool tests do not delete columns")
+        self.calls
+            .lock()
+            .unwrap()
+            .deleted_columns
+            .push((table_id, column_id, base_version));
+        Ok(crate::domain::models::ColumnSchemaOutcome {
+            table_versions: HashMap::from([(table_id, TableVersion(4))]),
+        })
     }
     async fn reorder_columns(
         &self,
         _: EntityAccessReceipt<EditAccessLevel>,
-        _: Uuid,
-        _: Vec<Uuid>,
-        _: TableVersion,
+        table_id: Uuid,
+        column_ids: Vec<Uuid>,
+        base_version: TableVersion,
     ) -> Result<crate::domain::models::ColumnSchemaOutcome, DatabaseError> {
-        unimplemented!("tool tests do not reorder columns")
+        self.calls
+            .lock()
+            .unwrap()
+            .reordered_columns
+            .push((table_id, column_ids, base_version));
+        Ok(crate::domain::models::ColumnSchemaOutcome {
+            table_versions: HashMap::from([(table_id, TableVersion(4))]),
+        })
     }
     async fn rename_column(
         &self,
         _receipt: EntityAccessReceipt<EditAccessLevel>,
-        _table_id: crate::domain::models::TableId,
-        _column_id: crate::domain::models::ColumnId,
-        _name: String,
-        _previous_name: String,
+        table_id: crate::domain::models::TableId,
+        column_id: crate::domain::models::ColumnId,
+        name: String,
+        previous_name: String,
     ) -> Result<RenameColumnOutcome, DatabaseError> {
-        unimplemented!("the toolset does not rename columns")
+        self.calls.lock().unwrap().renamed_columns.push((
+            table_id,
+            column_id,
+            name.clone(),
+            previous_name,
+        ));
+        let mut column = status_column().column;
+        column.display_name = Some(name);
+        Ok(RenameColumnOutcome {
+            column,
+            table_version: TableVersion(4),
+        })
     }
 
     async fn trash_database(
@@ -377,6 +430,44 @@ impl DatabasesService for FakeService {
             read_versions: std::collections::HashMap::from([(TABLE_ID, TableVersion(3))]),
             truncated_tables: Vec::new(),
         })
+    }
+
+    async fn save_query(
+        &self,
+        _viewer: Viewer,
+        database_id: Option<crate::domain::models::DatabaseId>,
+        definition: crate::domain::models::QueryDefinition,
+    ) -> Result<crate::domain::models::SavedQuery, QueryError> {
+        if let Some(message) = &self.sql_error {
+            return Err(QueryError::Sql(message.clone()));
+        }
+        self.calls
+            .lock()
+            .unwrap()
+            .saved_queries
+            .push((database_id, definition.clone()));
+        Ok(crate::domain::models::SavedQuery {
+            id: QUERY_ID,
+            definition,
+            database_id,
+            created_by: USER.to_string(),
+            created_at: Utc::now(),
+        })
+    }
+
+    async fn get_query(
+        &self,
+        _id: crate::domain::models::QueryId,
+    ) -> Result<Option<crate::domain::models::SavedQuery>, QueryError> {
+        unimplemented!("no tool reads a saved query back")
+    }
+
+    async fn run_query(
+        &self,
+        _viewer: Viewer,
+        _id: crate::domain::models::QueryId,
+    ) -> Result<ExecOutcome, QueryError> {
+        unimplemented!("no tool runs a saved query")
     }
 
     async fn query_sql(&self, _viewer: Viewer, sql: String) -> Result<ExecOutcome, QueryError> {
@@ -604,6 +695,48 @@ fn every_tool_schema_is_valid() {
             .name,
         "AddColumnOptions"
     );
+    assert_eq!(
+        generate_validated_input_schema::<RenameDatabase>()
+            .expect("schema should validate")
+            .name,
+        "RenameDatabase"
+    );
+    assert_eq!(
+        generate_validated_input_schema::<DeleteTable>()
+            .expect("schema should validate")
+            .name,
+        "DeleteTable"
+    );
+    assert_eq!(
+        generate_validated_input_schema::<RenameColumn>()
+            .expect("schema should validate")
+            .name,
+        "RenameColumn"
+    );
+    assert_eq!(
+        generate_validated_input_schema::<ChangeColumnType>()
+            .expect("schema should validate")
+            .name,
+        "ChangeColumnType"
+    );
+    assert_eq!(
+        generate_validated_input_schema::<DeleteColumn>()
+            .expect("schema should validate")
+            .name,
+        "DeleteColumn"
+    );
+    assert_eq!(
+        generate_validated_input_schema::<ReorderColumns>()
+            .expect("schema should validate")
+            .name,
+        "ReorderColumns"
+    );
+    assert_eq!(
+        generate_validated_input_schema::<SaveDatabaseQuery>()
+            .expect("schema should validate")
+            .name,
+        "SaveDatabaseQuery"
+    );
 }
 
 /// The dialect note is the whole reason a model can write correct SQL on the
@@ -634,14 +767,21 @@ fn toolset_builds_with_every_tool() {
         "QueryDatabase",
         "CreateDatabase",
         "CreateTable",
+        "RenameDatabase",
         "RenameTable",
+        "DeleteTable",
         "AddColumn",
         "AddColumnOptions",
+        "RenameColumn",
+        "ChangeColumnType",
+        "DeleteColumn",
+        "ReorderColumns",
         "SaveDatabaseView",
+        "SaveDatabaseQuery",
     ] {
         assert!(toolset.tools.contains_key(name), "missing {name}");
     }
-    assert_eq!(toolset.tools.len(), 9);
+    assert_eq!(toolset.tools.len(), 16);
     assert!(
         toolset.user_tools.is_empty(),
         "database tools run in the loop, none are user-executed"

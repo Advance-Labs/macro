@@ -26,11 +26,10 @@ Run SQL against the current user's Macro databases — the only way to read or c
 rows. SELECT to answer a question, INSERT/UPDATE/DELETE to change data. One statement per \
 call.\n\
 \n\
-**Every table the user can see is already in scope, across all of their databases.** There is \
-no connecting or selecting a database first, and no `databaseId` argument: the statement runs \
-as the user against exactly what they are allowed to read. A table they cannot see simply does \
-not exist, so a query can never leak somebody else's data — and a table they only have view \
-access to is read-only.\n\
+**Every table the user can see is already in scope, across all of their databases.** The \
+statement runs as the user against exactly what they are allowed to read: a table they cannot \
+see simply does not exist, and a table they only have view access to is read-only. Always pass \
+`databaseId` for the database the statement is about, so its tables win name ties.\n\
 \n\
 **Call DescribeDatabase first unless you already know the exact table and column names.** \
 Names are the display names the user typed, so quote the ones with spaces. If a statement \
@@ -51,7 +50,11 @@ row's id is in `insertedRowIds`.\n\
 Results come back as columns and rows. A column whose values are entity ids carries an \
 `entityType`, which is how the app renders it as a clickable chip rather than as raw text — \
 prefer selecting an entity column over stringifying it. Writes report `changesApplied` and, \
-for inserts, the `insertedRowIds` the server minted."
+for inserts, the `insertedRowIds` the server minted.\n\
+\n\
+To answer a question about the data or draw a chart for the user, check the SELECT here, then \
+save it with SaveDatabaseQuery and paste the block it returns: it stays live, where a pasted \
+result goes stale."
     )
 )]
 pub struct QueryDatabase {
@@ -85,7 +88,7 @@ pub struct QueryDatabase {
 }
 
 /// Presentation hint for a query result; it does not affect SQL execution.
-#[derive(Debug, Deserialize, JsonSchema, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum QueryDatabaseDisplay {
     /// Show the returned rows and columns.

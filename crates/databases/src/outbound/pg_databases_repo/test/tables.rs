@@ -63,3 +63,47 @@ async fn deleted_parent_is_not_a_name_conflict_or_storage_error(pool: PgPool) {
         TableMutationOutcome::NotFound
     ));
 }
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn deleting_a_table_takes_its_rows_and_columns_but_never_the_last_table(pool: PgPool) {
+    let (repo, table, _) = fixture(&pool).await;
+    let rows = repo.insert_rows(table.id, USER, 2).await.unwrap().unwrap();
+
+    let deletion = repo.delete_table(&table).await.unwrap();
+    assert_eq!(
+        deletion,
+        TableDeletion::Deleted {
+            row_ids: rows.iter().map(|row| row.id).collect()
+        }
+    );
+    assert!(repo.row_refs(table.id).await.unwrap().is_empty());
+    assert!(
+        repo.columns_for_tables(&[table.id])
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let (_, tables) = repo.get_database(table.database_id).await.unwrap().unwrap();
+    assert_eq!(
+        tables.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
+        vec!["Table 1"]
+    );
+
+    assert_eq!(
+        repo.delete_table(&table).await.unwrap(),
+        TableDeletion::NotFound
+    );
+    assert_eq!(
+        repo.delete_table(&tables[0]).await.unwrap(),
+        TableDeletion::LastTable
+    );
+    assert_eq!(
+        repo.get_database(table.database_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .1
+            .len(),
+        1
+    );
+}

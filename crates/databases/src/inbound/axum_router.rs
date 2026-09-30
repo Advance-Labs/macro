@@ -5,6 +5,8 @@
 //! - `POST /exec` — run SQL (reads and writes) as the caller; the viewer's
 //!   catalog is the authorization boundary, enforced in the domain service.
 //! - `POST /query` — read-only SQL for live chips and query previews.
+//! - `POST /queries`, `GET /queries/{query_id}`, `POST /queries/{query_id}/run`
+//!   — saved, immutable queries that document nodes point at.
 //! - `GET /` — list the caller's databases; `POST /` — create one.
 //! - `GET /{id}` — schema detail (tables, columns, definitions, SQL names).
 //! - `POST /{id}/tables`, `POST /{id}/tables/{table_id}/columns`,
@@ -18,6 +20,8 @@
 use std::collections::HashMap;
 /// Structured column type, ordering, and placement deletion endpoints.
 pub mod column_mutations;
+/// Saved, immutable queries that document nodes point at.
+pub mod saved_queries;
 /// Native database recipient sharing.
 pub mod sharing;
 /// Atomic table imports.
@@ -121,6 +125,19 @@ where
         .route("/", post(create_database_handler::<S, Eas, Auth>))
         .route("/exec", post(exec_handler::<S, Eas, Auth>))
         .route("/query", post(query_handler::<S, Eas, Auth>))
+        // Static segments win over `/{id}`, so these never read as a database.
+        .route(
+            "/queries",
+            post(saved_queries::save_query_handler::<S, Eas, Auth>),
+        )
+        .route(
+            "/queries/{query_id}",
+            get(saved_queries::get_query_handler::<S, Eas, Auth>),
+        )
+        .route(
+            "/queries/{query_id}/run",
+            post(saved_queries::run_query_handler::<S, Eas, Auth>),
+        )
         .route("/{id}", get(get_database_handler::<S, Eas, Auth>))
         .route("/{id}/awareness", put(awareness_handler::<S, Eas, Auth>))
         .route(
@@ -131,7 +148,8 @@ where
         .route("/{id}/tables", post(create_table_handler::<S, Eas, Auth>))
         .route(
             "/{id}/tables/{table_id}",
-            patch(rename_table_handler::<S, Eas, Auth>),
+            patch(rename_table_handler::<S, Eas, Auth>)
+                .delete(delete_table_handler::<S, Eas, Auth>),
         )
         .route(
             "/{id}/tables/{table_id}/columns",
@@ -591,6 +609,40 @@ where
         .map(Json)
 }
 
+/// Delete a table with its rows and columns. A database keeps at least one.
+#[utoipa::path(
+    delete,
+    tag = "databases",
+    operation_id = "delete_database_table",
+    path = "/databases/{id}/tables/{table_id}",
+    params(("id" = Uuid, Path, description = "Database id"),
+           ("table_id" = Uuid, Path, description = "Table id")),
+    responses(
+        (status = 204, description = "Deleted"),
+        (status = 400, description = "The last table, or a relation still points at it", body = ErrorResponse),
+        (status = 401, body = ErrorResponse),
+        (status = 403, body = ErrorResponse),
+        (status = 404, body = ErrorResponse),
+        (status = 500, body = ErrorResponse),
+    )
+)]
+pub async fn delete_table_handler<S, Eas, Auth>(
+    access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
+    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
+    Path(ColumnPath { table_id, .. }): Path<ColumnPath>,
+) -> Result<StatusCode, DatabaseError>
+where
+    S: DatabasesService,
+    Eas: EntityAccessService,
+    Auth: MacroAuthorizationService,
+{
+    state
+        .service
+        .delete_table(access.entity_access_receipt, table_id)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 /// Response for a created column.
 #[derive(Debug, serde::Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -865,6 +917,7 @@ impl IntoResponse for QueryError {
             QueryError::ReadOnly(_) => StatusCode::FORBIDDEN,
             QueryError::VersionConflict { .. } => StatusCode::CONFLICT,
             QueryError::BudgetExceeded => StatusCode::UNPROCESSABLE_ENTITY,
+            QueryError::NotFound => StatusCode::NOT_FOUND,
             QueryError::Infrastructure(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
         let message = match &self {

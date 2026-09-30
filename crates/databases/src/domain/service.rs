@@ -8,9 +8,11 @@
 
 mod column_types;
 mod columns;
+mod delete_table;
 mod infer_column_type;
 mod query;
 mod rename_column;
+mod saved_queries;
 mod sharing;
 #[cfg(test)]
 mod test;
@@ -42,6 +44,7 @@ use crate::domain::models::{
     RenameColumnOutcome, Table, TableDetail, TableId, TableMutationOutcome, TableVersion, Viewer,
 };
 use crate::domain::models::{ChangeColumnType, ColumnReplacement, ColumnSchemaOutcome};
+use crate::domain::models::{QueryDefinition, QueryId, SavedQuery};
 use crate::domain::ports::{
     AccessDirectory, CellStore, ColumnDefinitionStore, DatabasesRepo, DatabasesService,
     TableEventPublisher,
@@ -728,6 +731,15 @@ where
     }
 
     #[tracing::instrument(skip(self, receipt), err)]
+    async fn delete_table(
+        &self,
+        receipt: EntityAccessReceipt<EditAccessLevel>,
+        table_id: TableId,
+    ) -> Result<(), DatabaseError> {
+        self.remove_table(receipt, table_id).await
+    }
+
+    #[tracing::instrument(skip(self, receipt), err)]
     async fn rename_column(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
@@ -1056,5 +1068,25 @@ where
             query::QueryMode::ReadOnly,
         )
         .await
+    }
+
+    #[tracing::instrument(skip(self, definition), err)]
+    async fn save_query(
+        &self,
+        viewer: Viewer,
+        database_id: Option<DatabaseId>,
+        definition: QueryDefinition,
+    ) -> Result<SavedQuery, QueryError> {
+        self.store_query(viewer, database_id, definition).await
+    }
+
+    #[tracing::instrument(skip(self), err)]
+    async fn get_query(&self, id: QueryId) -> Result<Option<SavedQuery>, QueryError> {
+        self.repo.get_query(id).await.map_err(infra)
+    }
+
+    #[tracing::instrument(skip(self), err)]
+    async fn run_query(&self, viewer: Viewer, id: QueryId) -> Result<ExecOutcome, QueryError> {
+        self.run_saved_query(viewer, id).await
     }
 }

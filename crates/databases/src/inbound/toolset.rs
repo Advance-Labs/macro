@@ -11,12 +11,19 @@
 
 mod add_column;
 mod add_column_options;
+mod change_column_type;
 mod create_database;
 mod create_table;
+mod delete_column;
+mod delete_table;
 mod describe_database;
 mod list_databases;
 mod query_database;
+mod rename_column;
+mod rename_database;
 mod rename_table;
+mod reorder_columns;
+mod save_database_query;
 mod save_database_view;
 
 #[cfg(test)]
@@ -35,29 +42,36 @@ macro_rules! sql_guide {
          listed here is everything there is:\n\
          \n\
          - **Reads:** `SELECT [DISTINCT] items FROM [database.]table [alias] [JOIN [database.]table \
-         [alias] ON a.col = b.col ...] [WHERE cond] [GROUP BY col] [ORDER BY col|agg|position \
-         [ASC|DESC], ...] [LIMIT n [OFFSET m]]`. Items are `*`, column names, or `COUNT(*)`, \
-         `COUNT(col)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`. No expressions, no \
-         aliases on items, no HAVING, no subqueries, no functions beyond those five.\n\
+         [alias] ON a.col = b.col ...] [WHERE cond] [GROUP BY col] [ORDER BY col|alias|position \
+         [ASC|DESC], ...] [LIMIT n [OFFSET m]]`. Items are `*`, columns, or `COUNT(*)`, \
+         `COUNT(col)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`, each optionally named \
+         with `AS name`; the alias names the result column and can be ordered by. No other \
+         expressions or functions, no HAVING.\n\
+         - **Count per related row:** `SELECT p.\"Name\" AS party, COUNT(*) AS invites FROM \
+         \"Party Invites\".\"Invites\" i JOIN \"Party Invites\".\"Parties\" p ON i.\"Party\" = \
+         p.row_id GROUP BY p.\"Name\" ORDER BY invites DESC`.\n\
+         - **No subqueries** (`IN (SELECT ...)`) and no comma joins: SELECT the ids first, then \
+         use them as literals (`WHERE row_id IN ('<id>', '<id>')`), or JOIN.\n\
          - **Conditions:** `col = | != | < | <= | > | >= literal`, `col [NOT] IN ('a', 'b')`, \
          `col [NOT] LIKE 'pat%'` (case-insensitive), `col IS [NOT] NULL`, `col [NOT] HAS 'x'` \
-         (membership in a multi-valued column), combined with AND, OR and parentheses. \
-         Literals are `'text'`, numbers, TRUE/FALSE, NULL; dates are `'2026-08-13'` or an \
-         ISO date-time.\n\
+         (membership in a multi-valued column), combined with AND, OR and parentheses.\n\
+         - **Literals:** `'text'` (a quote inside is doubled: `'Wolf''s place'`), numbers, \
+         TRUE/FALSE, NULL; dates are `'2026-08-13'` or an ISO date-time.\n\
          - **Writes:** `INSERT INTO table (col, ...) VALUES (...), (...)` or \
          `INSERT INTO table DEFAULT VALUES`; `UPDATE table SET col = value, ... WHERE row_id = \
          '<id>'`; `DELETE FROM table WHERE row_id = '<id>'`. An UPDATE or DELETE names exactly \
          one row by its id: read the ids first. A multi-valued cell is written as a list: \
          `tags = ['Urgent', 'Backend']`; `NULL` clears a cell.\n\
          - **`row_id`** is every row's id. It comes back as the first column of a row-shaped \
-         SELECT and in `insertedRowIds` after an INSERT; never invent one.\n\
+         SELECT and in `insertedRowIds` after an INSERT; never invent one. A row the app shows \
+         as \"Unnamed\" has a NULL name: find it with `WHERE \"Name\" IS NULL`.\n\
          - **Select columns take their option labels as text** (`status = 'Going'`), never \
          option ids. Only the labels the column carries are accepted; add new ones with \
          AddColumnOptions.\n\
          - **Relation columns hold the ids of rows in another table.** Write them as a list \
          of row ids (`guests = ['<row id>']`), test them with `HAS '<row id>'`, and join through \
-         them: `FROM invites i JOIN guests g ON i.guest = g.row_id`. Never compare a relation \
-         to a name.\n\
+         them with `ON i.guest = g.row_id` (`ON i.guest HAS g.row_id` means the same). Never \
+         compare a relation to a name.\n\
          - **Entity columns hold Macro ids** such as `macro|sam@example.com` for a person. \
          Respect each column's `specificEntityType`; never invent an id or replace it with \
          a name.\n\
@@ -65,8 +79,9 @@ macro_rules! sql_guide {
          it has spaces or punctuation (`FROM \"Guest List\" WHERE \"Due Date\" < '2026-09-01'`); \
          names match case-insensitively, and a miss suggests the closest name. \
          A table may be qualified by its database's name (`FROM \"Offsite\".\"Guests\"`).\n\
-         - **Schema uses tools, not SQL DDL.** CreateDatabase, CreateTable, RenameTable, \
-         AddColumn, AddColumnOptions and SaveDatabaseView change structure and presentation.\n\
+         - **Schema uses tools, not SQL DDL:** CreateDatabase, RenameDatabase, CreateTable, \
+         RenameTable, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, \
+         DeleteColumn, ReorderColumns and SaveDatabaseView.\n\
          - Tables you only hold view access on are read-only."
     };
 }
@@ -89,19 +104,29 @@ use uuid::Uuid;
 
 use crate::domain::catalog::{option_labels, sql_table_name};
 use crate::domain::models::{
-    AccessGrant, ColumnConfig, DatabaseDetail, DatabaseError, ListedDatabase, QueryError, Viewer,
+    AccessGrant, ColumnConfig, ColumnDetail, DatabaseDetail, DatabaseError, ListedDatabase,
+    QueryError, TableDetail, Viewer,
 };
 use crate::domain::ports::DatabasesService;
 use crate::domain::views::{DatabaseViewService, DatabaseViewsServiceImpl};
 
 pub use add_column::{AddColumn, AddColumnResponse};
 pub use add_column_options::{AddColumnOptions, AddColumnOptionsResponse};
+pub use change_column_type::{ChangeColumnType, ChangeColumnTypeResponse};
 pub use create_database::{CreateDatabase, CreateDatabaseResponse};
 pub use create_table::{CreateTable, CreateTableResponse};
+pub use delete_column::{DeleteColumn, DeleteColumnResponse};
+pub use delete_table::{DeleteTable, DeleteTableResponse};
 pub use describe_database::DescribeDatabase;
 pub use list_databases::{ListDatabases, ListDatabasesResponse};
-pub use query_database::{QueryDatabase, QueryDatabaseResponse, ReadOnlyQueryDatabase};
+pub use query_database::{
+    QueryDatabase, QueryDatabaseDisplay, QueryDatabaseResponse, ReadOnlyQueryDatabase,
+};
+pub use rename_column::{RenameColumn, RenameColumnResponse};
+pub use rename_database::{RenameDatabase, RenameDatabaseResponse};
 pub use rename_table::{RenameTable, RenameTableResponse};
+pub use reorder_columns::{ReorderColumns, ReorderColumnsResponse};
+pub use save_database_query::{SaveDatabaseQuery, SaveDatabaseQueryResponse, ToolChart};
 pub use save_database_view::SaveDatabaseView;
 
 /// Service context for the databases AI tools.
@@ -187,6 +212,20 @@ impl<S: DatabasesService, E: EntityAccessService> DatabasesToolContext<S, E> {
         }
     }
 
+    /// The database as the caller sees it now, for tools that must name the
+    /// current table version or label rather than asking the model for it.
+    pub(crate) async fn current_schema(
+        &self,
+        user_id: &MacroUserIdStr<'static>,
+        database_id: Uuid,
+    ) -> Result<DatabaseDetail, ToolCallError> {
+        let receipt = self.view_receipt(user_id, database_id).await?;
+        self.service
+            .get_database(receipt, viewer_of(user_id))
+            .await
+            .map_err(database_error)
+    }
+
     /// Mint a receipt, saying what actually went wrong.
     ///
     /// Collapsing "no such database" into "no access" sends a model with a
@@ -236,10 +275,17 @@ where
         .add_tool::<QueryDatabase, DatabasesToolContext<S, E>>()
         .add_tool::<CreateDatabase, DatabasesToolContext<S, E>>()
         .add_tool::<CreateTable, DatabasesToolContext<S, E>>()
+        .add_tool::<RenameDatabase, DatabasesToolContext<S, E>>()
         .add_tool::<RenameTable, DatabasesToolContext<S, E>>()
+        .add_tool::<DeleteTable, DatabasesToolContext<S, E>>()
         .add_tool::<AddColumn, DatabasesToolContext<S, E>>()
         .add_tool::<AddColumnOptions, DatabasesToolContext<S, E>>()
+        .add_tool::<RenameColumn, DatabasesToolContext<S, E>>()
+        .add_tool::<ChangeColumnType, DatabasesToolContext<S, E>>()
+        .add_tool::<DeleteColumn, DatabasesToolContext<S, E>>()
+        .add_tool::<ReorderColumns, DatabasesToolContext<S, E>>()
         .add_tool::<SaveDatabaseView, DatabasesToolContext<S, E>>()
+        .add_tool::<SaveDatabaseQuery, DatabasesToolContext<S, E>>()
 }
 
 /// Discovery and read-only SQL for live document answers. No mutation tools.
@@ -252,6 +298,51 @@ where
         .add_tool::<ListDatabases, DatabasesToolContext<S, E>>()
         .add_tool::<DescribeDatabase, DatabasesToolContext<S, E>>()
         .add_tool::<ReadOnlyQueryDatabase, DatabasesToolContext<S, E>>()
+}
+
+/// One table of a described database, or an error pointing at DescribeDatabase.
+pub(crate) fn table_of(
+    detail: &DatabaseDetail,
+    table_id: Uuid,
+) -> Result<&TableDetail, ToolCallError> {
+    detail
+        .tables
+        .iter()
+        .find(|table| table.table.id == table_id)
+        .ok_or_else(|| ToolCallError {
+            description: format!(
+                "Database {} has no table with id {table_id}. Call DescribeDatabase for its tables.",
+                detail.database.id
+            ),
+            internal_error: anyhow::anyhow!("table not found in database"),
+        })
+}
+
+/// One column of a described table, or an error pointing at DescribeDatabase.
+pub(crate) fn column_of(
+    table: &TableDetail,
+    column_id: Uuid,
+) -> Result<&ColumnDetail, ToolCallError> {
+    table
+        .columns
+        .iter()
+        .find(|column| column.column.id == column_id)
+        .ok_or_else(|| ToolCallError {
+            description: format!(
+                "Table {} has no column with id {column_id}. Call DescribeDatabase for its columns.",
+                table.table.id
+            ),
+            internal_error: anyhow::anyhow!("column not found in table"),
+        })
+}
+
+/// The label a column goes by: its placement's own, else its definition's.
+pub(crate) fn column_label(column: &ColumnDetail) -> String {
+    column
+        .column
+        .display_name
+        .clone()
+        .unwrap_or_else(|| column.definition.definition.display_name.clone())
 }
 
 /// The acting user, as the service's query surface understands them.
@@ -319,6 +410,9 @@ pub(crate) fn query_error(error: QueryError) -> ToolCallError {
             "The statement exceeded the query budget. Narrow it with a WHERE clause or a LIMIT."
                 .to_string()
         }
+        QueryError::NotFound => "That database or saved query does not exist, or the user \
+                                 cannot see it. Call ListDatabases for the user's databases."
+            .to_string(),
         QueryError::Infrastructure(_) => "The databases service failed.".to_string(),
     };
 
@@ -415,6 +509,55 @@ impl From<DataType> for ColumnType {
             DataType::SelectNumber => ColumnType::SelectNumber,
             DataType::Tag => ColumnType::Tag,
             DataType::Entity => ColumnType::Entity,
+        }
+    }
+}
+
+/// The kind of Macro entity an entity column references, as the model names
+/// it. A mirror of the property system's entity types, minus database rows:
+/// a relation to another table is made with `linkToTableId`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ToolEntityType {
+    /// A person.
+    User,
+    /// A document.
+    Document,
+    /// A task.
+    Task,
+    /// A CRM company.
+    Company,
+    /// A call recording.
+    CallRecord,
+    /// A channel.
+    Channel,
+    /// An AI chat.
+    Chat,
+    /// A project folder.
+    Project,
+    /// An email thread.
+    Thread,
+    /// A calendar event.
+    CalendarEvent,
+    /// An initiative, shown as a project in the app.
+    Initiative,
+}
+
+impl From<ToolEntityType> for models_properties::EntityType {
+    fn from(value: ToolEntityType) -> Self {
+        use models_properties::EntityType as Stored;
+        match value {
+            ToolEntityType::User => Stored::User,
+            ToolEntityType::Document => Stored::Document,
+            ToolEntityType::Task => Stored::Task,
+            ToolEntityType::Company => Stored::Company,
+            ToolEntityType::CallRecord => Stored::CallRecord,
+            ToolEntityType::Channel => Stored::Channel,
+            ToolEntityType::Chat => Stored::Chat,
+            ToolEntityType::Project => Stored::Project,
+            ToolEntityType::Thread => Stored::Thread,
+            ToolEntityType::CalendarEvent => Stored::CalendarEvent,
+            ToolEntityType::Initiative => Stored::Initiative,
         }
     }
 }

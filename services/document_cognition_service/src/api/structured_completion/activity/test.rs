@@ -39,6 +39,12 @@ fn tracks_committed_row_schema_and_view_changes() {
         ("AddColumn", json!({})),
         ("AddColumnOptions", json!({})),
         ("SaveDatabaseView", json!({})),
+        ("RenameDatabase", json!({})),
+        ("DeleteTable", json!({})),
+        ("RenameColumn", json!({})),
+        ("ChangeColumnType", json!({})),
+        ("DeleteColumn", json!({})),
+        ("ReorderColumns", json!({})),
     ] {
         let activity = tool_activity(&[AssistantMessagePart::ToolCallResponseJson {
             name: name.into(),
@@ -47,4 +53,14 @@ fn tracks_committed_row_schema_and_view_changes() {
         }]);
         assert!(has_database_changes(&activity), "{name}");
     }
+}
+
+#[test]
+fn saving_a_question_is_not_a_database_change() {
+    let activity = tool_activity(&[AssistantMessagePart::ToolCallResponseJson {
+        name: "SaveDatabaseQuery".into(),
+        json: json!({"queryId": "0e110000-0000-0000-0000-000000000001", "markdown": ""}),
+        id: "1".into(),
+    }]);
+    assert!(!has_database_changes(&activity));
 }

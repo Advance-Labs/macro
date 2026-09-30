@@ -6,7 +6,7 @@ use crate::types::StaticPrompt;
 pub static PROMPT: StaticPrompt<'static> = StaticPrompt::borrowed(
     "Macro databases",
     include_str!("databases.md"),
-    "Find nested tables before claiming absence, use real schema and entity ids, carry out requested database changes, and verify persisted results without claiming unavailable visualization capabilities.",
+    "Find nested tables before claiming absence, use real schema and entity ids, carry out requested database changes with the schema tools, verify persisted results, and answer data questions with live saved-query blocks.",
 );
 
 #[cfg(test)]

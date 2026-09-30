@@ -25,6 +25,7 @@ use crate::domain::models::{
     TableMutationOutcome, TableVersion, Viewer,
 };
 use crate::domain::models::{ChangeColumnType, ColumnReplacement, ColumnSchemaOutcome};
+use crate::domain::models::{QueryDefinition, QueryId, SavedQuery, TableDeletion};
 
 /// Persistence for databases, tables, column placements and row identities.
 pub trait DatabasesRepo: Send + Sync + 'static {
@@ -82,6 +83,13 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         name: &str,
         previous_name: &str,
     ) -> impl Future<Output = Result<TableMutationOutcome, Self::Err>> + Send;
+
+    /// Remove a table with its columns and row identities, unless it is its
+    /// database's last one.
+    fn delete_table(
+        &self,
+        table: &Table,
+    ) -> impl Future<Output = Result<TableDeletion, Self::Err>> + Send;
 
     /// Bind a definition into a table as a new column placement.
     fn create_column(
@@ -195,6 +203,20 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         &self,
         table_ids: &[TableId],
     ) -> impl Future<Output = Result<Vec<Column>, Self::Err>> + Send;
+
+    /// Store a new, immutable query.
+    fn save_query(
+        &self,
+        database_id: Option<DatabaseId>,
+        definition: &QueryDefinition,
+        created_by: &str,
+    ) -> impl Future<Output = Result<SavedQuery, Self::Err>> + Send;
+
+    /// A saved query, if it exists.
+    fn get_query(
+        &self,
+        id: QueryId,
+    ) -> impl Future<Output = Result<Option<SavedQuery>, Self::Err>> + Send;
 }
 
 /// A row's cells, kept by the properties system as entity properties of the
@@ -367,6 +389,14 @@ pub trait DatabasesService: Send + Sync + 'static {
         previous_name: String,
     ) -> impl Future<Output = Result<Table, DatabaseError>> + Send;
 
+    /// Remove a table with its rows and columns. A database keeps at least
+    /// one table.
+    fn delete_table(
+        &self,
+        receipt: EntityAccessReceipt<EditAccessLevel>,
+        table_id: TableId,
+    ) -> impl Future<Output = Result<(), DatabaseError>> + Send;
+
     /// Add a column.
     fn create_column(
         &self,
@@ -448,5 +478,29 @@ pub trait DatabasesService: Send + Sync + 'static {
         &self,
         viewer: Viewer,
         sql: String,
+    ) -> impl Future<Output = Result<ExecOutcome, QueryError>> + Send;
+
+    /// Save a read-only query. It must compile as a SELECT against the
+    /// viewer's catalog, scoped to `database_id`, which the viewer must be
+    /// able to see.
+    fn save_query(
+        &self,
+        viewer: Viewer,
+        database_id: Option<DatabaseId>,
+        definition: QueryDefinition,
+    ) -> impl Future<Output = Result<SavedQuery, QueryError>> + Send;
+
+    /// A saved query's definition. Definitions are readable by anyone
+    /// authenticated; what running one returns is permission-filtered.
+    fn get_query(
+        &self,
+        id: QueryId,
+    ) -> impl Future<Output = Result<Option<SavedQuery>, QueryError>> + Send;
+
+    /// Run a saved query as the viewer.
+    fn run_query(
+        &self,
+        viewer: Viewer,
+        id: QueryId,
     ) -> impl Future<Output = Result<ExecOutcome, QueryError>> + Send;
 }

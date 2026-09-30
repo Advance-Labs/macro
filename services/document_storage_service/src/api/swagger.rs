@@ -81,7 +81,8 @@ use databases::domain::models::{
     AccessGrant as DatabaseAccessGrant, Awareness as DatabaseAwareness, Column as DatabaseColumn,
     ColumnConfig as DatabaseColumnConfig, ColumnDetail as DatabaseColumnDetail, Database,
     DatabaseDetail, ExecOutcome as DatabaseExecOutcome, ListedDatabase,
-    QueryResult as DatabaseQueryResult, ResultColumn as DatabaseResultColumn,
+    QueryDefinition as DatabaseQueryDefinition, QueryResult as DatabaseQueryResult,
+    ResultColumn as DatabaseResultColumn, SavedQuery as DatabaseSavedQuery,
     SqlValue as DatabaseSqlValue, Table as DatabaseTable, TableDetail as DatabaseTableDetail,
     TableVersion as DatabaseTableVersion,
 };
@@ -92,6 +93,7 @@ use databases::inbound::axum_router::{
     CreateColumnResponse as DatabaseCreateColumnResponse, CreateDatabaseRequest,
     CreateTableRequest as DatabaseCreateTableRequest, ExecRequestBody as DatabaseExecRequestBody,
     QueryRequestBody as DatabaseQueryRequestBody,
+    saved_queries::SaveQueryRequest as DatabaseSaveQueryRequest,
 };
 use document_sub_type::DocumentSubType;
 use documents_hex::inbound::axum_router::{
@@ -424,6 +426,10 @@ use utoipa::OpenApi;
         databases::inbound::axum_router::query_handler,
         databases::inbound::axum_router::create_table_handler,
         databases::inbound::axum_router::rename_table_handler,
+        databases::inbound::axum_router::delete_table_handler,
+        databases::inbound::axum_router::saved_queries::save_query_handler,
+        databases::inbound::axum_router::saved_queries::get_query_handler,
+        databases::inbound::axum_router::saved_queries::run_query_handler,
         databases::inbound::axum_router::create_column_handler,
         databases::inbound::axum_router::rename_column_handler,
         databases::inbound::axum_router::column_mutations::change_column_type_handler,
@@ -618,6 +624,9 @@ use utoipa::OpenApi;
             DatabaseExecRequestBody,
             DatabaseAwareness,
             DatabaseQueryRequestBody,
+            DatabaseQueryDefinition,
+            DatabaseSavedQuery,
+            DatabaseSaveQueryRequest,
             CreateReminderRequest,
             UpdateReminderRequest,
             InitiativeId,

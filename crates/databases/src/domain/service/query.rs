@@ -62,17 +62,7 @@ where
         if req.sql.len() > MAX_SQL_LEN {
             return Err(QueryError::BudgetExceeded);
         }
-        let grants: HashMap<DatabaseId, _> = self
-            .access
-            .accessible_databases(&viewer)
-            .await
-            .map_err(infra)?
-            .into_iter()
-            .collect();
-        let mut entries = self.entries_for(&grants).await?;
-        if let Some(scope) = req.scope {
-            catalog::scope_entries(&mut entries, scope);
-        }
+        let entries = self.viewer_entries(&viewer, req.scope).await?;
         let engine_catalog = catalog::engine_catalog(&entries);
 
         let query = database_sql::compile(&engine_catalog, &req.sql)
@@ -180,6 +170,26 @@ where
             read_versions,
             truncated_tables,
         })
+    }
+
+    /// Every table the viewer can see, `scope`'s winning name ties.
+    pub(super) async fn viewer_entries(
+        &self,
+        viewer: &Viewer,
+        scope: Option<DatabaseId>,
+    ) -> Result<Vec<TableEntry>, QueryError> {
+        let grants: HashMap<DatabaseId, _> = self
+            .access
+            .accessible_databases(viewer)
+            .await
+            .map_err(infra)?
+            .into_iter()
+            .collect();
+        let mut entries = self.entries_for(&grants).await?;
+        if let Some(scope) = scope {
+            catalog::scope_entries(&mut entries, scope);
+        }
+        Ok(entries)
     }
 
     /// A table's rows with their cells, in position order.

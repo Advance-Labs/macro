@@ -37,7 +37,7 @@ fn subagent_toolset_passes_schema_validation() {
 }
 
 #[test]
-fn database_only_toolset_exposes_exactly_its_nine_database_capabilities() {
+fn database_only_toolset_exposes_exactly_its_database_capabilities() {
     let tools = database_tools();
     let names = tools
         .tools
@@ -50,10 +50,17 @@ fn database_only_toolset_exposes_exactly_its_nine_database_capabilities() {
         "QueryDatabase",
         "CreateDatabase",
         "CreateTable",
+        "RenameDatabase",
         "RenameTable",
+        "DeleteTable",
         "AddColumn",
         "AddColumnOptions",
+        "RenameColumn",
+        "ChangeColumnType",
+        "DeleteColumn",
+        "ReorderColumns",
         "SaveDatabaseView",
+        "SaveDatabaseQuery",
     ]
     .into_iter()
     .collect();

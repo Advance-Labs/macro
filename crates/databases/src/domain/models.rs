@@ -106,7 +106,7 @@ pub struct RenameColumnOutcome {
 }
 
 /// Explicit type selection for one column placement, guarded by its table version.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ChangeColumnType {
     /// Owning table.
     pub table_id: TableId,
@@ -388,6 +388,128 @@ pub struct ExecOutcome {
     pub truncated_tables: Vec<String>,
 }
 
+// ===== Saved queries =====
+
+/// Identifier of a saved query.
+pub type QueryId = Uuid;
+
+/// What a saved query asks. Serialized as `{"version": 1, "query": "<sql>"}`:
+/// the integer version tags the shape, so a later version can change the
+/// fields without breaking the stored rows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QueryDefinition {
+    /// A read-only SQL statement.
+    V1 {
+        /// The SELECT, in the databases dialect.
+        query: String,
+    },
+}
+
+impl QueryDefinition {
+    /// The SQL the definition runs.
+    pub fn sql(&self) -> &str {
+        match self {
+            QueryDefinition::V1 { query } => query,
+        }
+    }
+}
+
+impl Serialize for QueryDefinition {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        match self {
+            QueryDefinition::V1 { query } => {
+                let mut state = serializer.serialize_struct("QueryDefinition", 2)?;
+                state.serialize_field("version", &1u8)?;
+                state.serialize_field("query", query)?;
+                state.end()
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for QueryDefinition {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Versioned {
+            version: u8,
+            query: String,
+        }
+        let versioned = Versioned::deserialize(deserializer)?;
+        match versioned.version {
+            1 => Ok(QueryDefinition::V1 {
+                query: versioned.query,
+            }),
+            other => Err(serde::de::Error::custom(format!(
+                "unsupported query definition version {other}"
+            ))),
+        }
+    }
+}
+
+impl utoipa::ToSchema for QueryDefinition {
+    fn name() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed("QueryDefinition")
+    }
+}
+
+impl utoipa::PartialSchema for QueryDefinition {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        use utoipa::openapi::schema::{ObjectBuilder, Type};
+        ObjectBuilder::new()
+            .description(Some("A versioned query definition."))
+            .property(
+                "version",
+                ObjectBuilder::new()
+                    .schema_type(Type::Integer)
+                    .enum_values(Some([1])),
+            )
+            .required("version")
+            .property(
+                "query",
+                ObjectBuilder::new()
+                    .schema_type(Type::String)
+                    .description(Some("A read-only SELECT in the databases dialect.")),
+            )
+            .required("query")
+            .into()
+    }
+}
+
+/// A stored, immutable query. Editing a question saves a new one.
+#[derive(utoipa::ToSchema, Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedQuery {
+    /// Identifier.
+    #[schema(value_type = Uuid)]
+    pub id: QueryId,
+    /// What it asks.
+    pub definition: QueryDefinition,
+    /// The database whose tables win name resolution; `null` once that
+    /// database is deleted, or when none was given.
+    #[schema(value_type = Option<Uuid>)]
+    pub database_id: Option<DatabaseId>,
+    /// Who saved it.
+    pub created_by: String,
+    /// When it was saved.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Result of removing a table, checked atomically against its database.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TableDeletion {
+    /// The table and its row identities are gone; these rows' cells are
+    /// the caller's to clear.
+    Deleted {
+        /// Every row the table held.
+        row_ids: Vec<RowId>,
+    },
+    /// The table, or its live database, was not there.
+    NotFound,
+    /// It is the database's only table.
+    LastTable,
+}
+
 // ===== Access & rendering models =====
 
 /// The access a viewer holds on a database, from its `entity_access` rows.
@@ -549,6 +671,10 @@ pub enum QueryError {
     /// The statement exceeded the execution budget (time or row caps).
     #[error("query budget exceeded")]
     BudgetExceeded,
+    /// The saved query, or the database it is scoped to, does not exist or
+    /// is invisible to the viewer.
+    #[error("not found")]
+    NotFound,
     /// Materialization or apply-side persistence failure.
     #[error("query infrastructure error: {0:?}")]
     Infrastructure(rootcause::Report),

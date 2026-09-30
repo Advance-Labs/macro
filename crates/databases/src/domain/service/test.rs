@@ -22,14 +22,16 @@ use uuid::Uuid;
 use super::*;
 use crate::domain::models::{
     Column, ColumnBinding, ColumnConfig, PropertyDefinitionId, RowId, RowRef, SqlValue,
-    TableVersion,
+    TableDeletion, TableVersion,
 };
 
 mod columns;
+mod delete_table;
 mod discovery;
 mod infer_column_type;
 mod relations;
 mod rename_column;
+mod saved_queries;
 mod sharing;
 mod tables;
 mod views;
@@ -72,6 +74,8 @@ struct World {
     settled: Vec<(TableId, Vec<PropertyDefinitionId>)>,
     /// Simulate a parent removed between domain validation and the write.
     table_write_not_found: bool,
+    /// Saved queries, oldest first.
+    queries: Vec<SavedQuery>,
 }
 
 type Shared = Arc<Mutex<World>>;
@@ -224,6 +228,36 @@ impl DatabasesRepo for FakeRepo {
         current.name = name.to_string();
         current.version.0 += 1;
         Ok(TableMutationOutcome::Applied(current.clone()))
+    }
+    async fn delete_table(&self, table: &Table) -> Result<TableDeletion, FakeError> {
+        let mut w = self.0.lock().unwrap();
+        if w.table_write_not_found
+            || !w
+                .databases
+                .iter()
+                .any(|d| d.id == table.database_id && d.trashed_at.is_none())
+            || !w.tables.iter().any(|t| t.id == table.id)
+        {
+            return Ok(TableDeletion::NotFound);
+        }
+        if w.tables
+            .iter()
+            .filter(|t| t.database_id == table.database_id)
+            .count()
+            <= 1
+        {
+            return Ok(TableDeletion::LastTable);
+        }
+        w.tables.retain(|t| t.id != table.id);
+        w.columns.retain(|c| c.table_id != table.id);
+        let row_ids = w
+            .rows
+            .remove(&table.id)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|row| row.id)
+            .collect();
+        Ok(TableDeletion::Deleted { row_ids })
     }
     async fn create_column(
         &self,
@@ -516,6 +550,32 @@ impl DatabasesRepo for FakeRepo {
             .collect();
         columns.sort_by(|a, b| (a.table_id, &a.position).cmp(&(b.table_id, &b.position)));
         Ok(columns)
+    }
+    async fn save_query(
+        &self,
+        database_id: Option<DatabaseId>,
+        definition: &QueryDefinition,
+        created_by: &str,
+    ) -> Result<SavedQuery, FakeError> {
+        let saved = SavedQuery {
+            id: Uuid::now_v7(),
+            definition: definition.clone(),
+            database_id,
+            created_by: created_by.to_string(),
+            created_at: Utc::now(),
+        };
+        self.0.lock().unwrap().queries.push(saved.clone());
+        Ok(saved)
+    }
+    async fn get_query(&self, id: QueryId) -> Result<Option<SavedQuery>, FakeError> {
+        Ok(self
+            .0
+            .lock()
+            .unwrap()
+            .queries
+            .iter()
+            .find(|query| query.id == id)
+            .cloned())
     }
 }
 
