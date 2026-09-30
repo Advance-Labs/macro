@@ -79,10 +79,9 @@ export function createTableController(
    * the value this edit replaced; a change to that same cell stays a conflict.
    */
   async function writeRebasingOtherCells(
-    mutation: DatabaseRowMutation,
+    mutation: Extract<DatabaseRowMutation, { kind: 'cell' }>,
     version: number | undefined
   ) {
-    if (mutation.kind !== 'cell') return source.write(mutation, version);
     const replaced = storedCell(mutation.rowId, mutation.columnId);
     try {
       return await source.write(mutation, version);
@@ -140,7 +139,10 @@ export function createTableController(
               : lastWrittenVersion === undefined
                 ? readVersion
                 : Math.max(readVersion, lastWrittenVersion);
-          const written = await writeRebasingOtherCells(mutation, version);
+          const written =
+            mutation.kind === 'cell'
+              ? await writeRebasingOtherCells(mutation, version)
+              : await source.write(mutation, version);
           didWrite = true;
           batch(() => {
             if (createIntentId)
