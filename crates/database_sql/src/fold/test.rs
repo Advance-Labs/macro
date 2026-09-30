@@ -18,8 +18,8 @@ const INITECH: Uuid = Uuid::from_u128(0xa4);
 fn deals() -> Vec<Row> {
     vec![
         Row {
-            position: None,
             id: ACME,
+            position: None,
             cells: HashMap::from([
                 (NAME, Cell::Text("Acme".into())),
                 (AMOUNT, Cell::Number(12000.0)),
@@ -30,8 +30,8 @@ fn deals() -> Vec<Row> {
             ]),
         },
         Row {
-            position: None,
             id: GLOBEX,
+            position: None,
             cells: HashMap::from([
                 (NAME, Cell::Text("Globex".into())),
                 (AMOUNT, Cell::Number(3000.0)),
@@ -41,8 +41,8 @@ fn deals() -> Vec<Row> {
             ]),
         },
         Row {
-            position: None,
             id: HOOLI,
+            position: None,
             cells: HashMap::from([
                 (NAME, Cell::Text("hooli".into())),
                 (STAGE, Cell::Options(vec![WON])),
@@ -54,8 +54,8 @@ fn deals() -> Vec<Row> {
             ]),
         },
         Row {
-            position: None,
             id: INITECH,
+            position: None,
             cells: HashMap::from([
                 (NAME, Cell::Text("Initech".into())),
                 (AMOUNT, Cell::Number(7000.0)),
@@ -344,8 +344,8 @@ fn join_matches_by_membership_and_leaves_empty_cells_unmatched() {
     );
     let people = vec![
         Row {
-            position: None,
             id: Uuid::from_u128(0x71),
+            position: None,
             cells: HashMap::from([
                 (
                     column_key(1, PEOPLE_ID),
@@ -358,8 +358,8 @@ fn join_matches_by_membership_and_leaves_empty_cells_unmatched() {
             ]),
         },
         Row {
-            position: None,
             id: Uuid::from_u128(0x72),
+            position: None,
             cells: HashMap::from([
                 (
                     column_key(1, PEOPLE_ID),

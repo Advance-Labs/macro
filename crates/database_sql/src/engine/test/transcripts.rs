@@ -128,7 +128,14 @@ fn fixture(name: &str) -> Value {
     serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap()
 }
 
-fn deal(id: Uuid, name: &str, amount: f64, stage: Uuid, owner: Option<Uuid>) -> Row {
+fn deal(
+    id: Uuid,
+    position: &str,
+    name: &str,
+    amount: f64,
+    stage: Uuid,
+    owner: Option<Uuid>,
+) -> Row {
     let mut cells = HashMap::from([
         (NAME, Cell::Text(name.into())),
         (AMOUNT, Cell::Number(amount)),
@@ -138,8 +145,8 @@ fn deal(id: Uuid, name: &str, amount: f64, stage: Uuid, owner: Option<Uuid>) -> 
         cells.insert(OWNER, Cell::Entities(vec![owner.to_string()]));
     }
     Row {
-        position: None,
         id,
+        position: Some(position.into()),
         cells,
     }
 }
@@ -151,8 +158,8 @@ fn a_select_column_filter_is_one_soup_query() {
             "SELECT name, amount FROM crm.deals WHERE stage = 'Won' ORDER BY amount DESC",
             vec![Feed::Page(Page {
                 rows: vec![
-                    deal(ACME, "Acme", 12000.0, WON, Some(SAM)),
-                    deal(GLOBEX, "Globex", 50000.0, WON, None),
+                    deal(ACME, "000000000001", "Acme", 12000.0, WON, Some(SAM)),
+                    deal(GLOBEX, "000000000002", "Globex", 50000.0, WON, None),
                 ],
                 next: None,
             })],
@@ -193,15 +200,15 @@ fn a_join_asks_for_the_joined_rows_it_needs() {
             vec![
                 Feed::Page(Page {
                     rows: vec![
-                        deal(ACME, "Acme", 12000.0, WON, Some(SAM)),
-                        deal(INITECH, "Initech", 300.0, LEAD, None),
+                        deal(ACME, "000000000001", "Acme", 12000.0, WON, Some(SAM)),
+                        deal(INITECH, "000000000003", "Initech", 300.0, LEAD, None),
                     ],
                     next: None,
                 }),
                 Feed::Page(Page {
                     rows: vec![Row {
-                        position: None,
                         id: SAM,
+                        position: Some("000000000001".into()),
                         cells: HashMap::from([(NAME, Cell::Text("Sam".into()))]),
                     }],
                     next: None,
@@ -219,11 +226,11 @@ fn pages_follow_the_cursor_to_the_end() {
             "SELECT name FROM crm.deals",
             vec![
                 Feed::Page(Page {
-                    rows: vec![deal(ACME, "Acme", 12000.0, WON, Some(SAM))],
+                    rows: vec![deal(ACME, "000000000001", "Acme", 12000.0, WON, Some(SAM))],
                     next: Some("second-page".into()),
                 }),
                 Feed::Page(Page {
-                    rows: vec![deal(GLOBEX, "Globex", 50000.0, WON, None)],
+                    rows: vec![deal(GLOBEX, "000000000002", "Globex", 50000.0, WON, None)],
                     next: None,
                 }),
             ],
@@ -239,18 +246,9 @@ fn row_position_orders_rows_fed_newest_first() {
             "SELECT name FROM crm.deals ORDER BY stage, row_position",
             vec![Feed::Page(Page {
                 rows: vec![
-                    Row {
-                        position: Some("000000000003".into()),
-                        ..deal(INITECH, "Initech", 300.0, LEAD, None)
-                    },
-                    Row {
-                        position: Some("000000000002".into()),
-                        ..deal(GLOBEX, "Globex", 50000.0, WON, None)
-                    },
-                    Row {
-                        position: Some("000000000001".into()),
-                        ..deal(ACME, "Acme", 12000.0, WON, Some(SAM))
-                    },
+                    deal(INITECH, "000000000003", "Initech", 300.0, LEAD, None),
+                    deal(GLOBEX, "000000000002", "Globex", 50000.0, WON, None),
+                    deal(ACME, "000000000001", "Acme", 12000.0, WON, Some(SAM)),
                 ],
                 next: None,
             })],

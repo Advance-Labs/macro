@@ -35,8 +35,8 @@ fn task(id: Uuid, title: &str, priority: Uuid, assignees: &[&str], deal: Option<
         cells.insert(DEAL, Cell::Entities(vec![deal.to_string()]));
     }
     Row {
-        position: None,
         id,
+        position: None,
         cells,
     }
 }
@@ -55,8 +55,8 @@ fn tasks() -> Vec<Row> {
 /// A person as the driver would key them for the second relation.
 fn person(id: &str, name: &str, email: &str) -> Row {
     Row {
-        position: None,
         id: Uuid::new_v5(&Uuid::NAMESPACE_OID, id.as_bytes()),
+        position: None,
         cells: HashMap::from([
             (column_key(1, PEOPLE_ID), Cell::Entities(vec![id.into()])),
             (column_key(1, PEOPLE_NAME), Cell::Text(name.into())),
@@ -77,16 +77,16 @@ fn people() -> Vec<Row> {
 fn deals() -> Vec<Row> {
     vec![
         Row {
-            position: None,
             id: ACME,
+            position: None,
             cells: HashMap::from([
                 (column_key(1, NAME), Cell::Text("Acme".into())),
                 (column_key(1, AMOUNT), Cell::Number(12000.0)),
             ]),
         },
         Row {
-            position: None,
             id: GLOBEX,
+            position: None,
             cells: HashMap::from([
                 (column_key(1, NAME), Cell::Text("Globex".into())),
                 (column_key(1, AMOUNT), Cell::Number(50.0)),
@@ -290,8 +290,8 @@ fn a_joined_tables_rows_arrive_keyed_by_definition_and_the_engine_keys_them() {
         "SELECT d.name, p.name FROM crm.deals d JOIN crm.people p ON d.owner = p.row_id",
         |query| match query {
             GqlQuery::Soup { table, .. } if *table == DEALS => vec![Row {
-                position: None,
                 id: ACME,
+                position: None,
                 cells: HashMap::from([
                     (NAME, Cell::Text("Acme".into())),
                     (
@@ -301,8 +301,8 @@ fn a_joined_tables_rows_arrive_keyed_by_definition_and_the_engine_keys_them() {
                 ]),
             }],
             GqlQuery::Soup { table, .. } if *table == PEOPLE => vec![Row {
-                position: None,
                 id: Uuid::from_u128(0x99),
+                position: None,
                 cells: HashMap::from([(NAME, Cell::Text("Sam".into()))]),
             }],
             other => panic!("unexpected {other:?}"),
@@ -324,8 +324,8 @@ fn a_definition_shared_by_both_tables_keeps_its_two_columns_apart() {
         "SELECT d.name, p.name FROM crm.deals d JOIN crm.people p ON d.owner = p.row_id",
         |query| match query {
             GqlQuery::Soup { table, .. } if *table == DEALS => vec![Row {
-                position: None,
                 id: ACME,
+                position: None,
                 cells: HashMap::from([
                     (NAME, Cell::Text("Acme".into())),
                     (
@@ -335,8 +335,8 @@ fn a_definition_shared_by_both_tables_keeps_its_two_columns_apart() {
                 ]),
             }],
             GqlQuery::Soup { table, .. } if *table == PEOPLE => vec![Row {
-                position: None,
                 id: Uuid::from_u128(0x99),
+                position: None,
                 cells: HashMap::from([(column_key(1, NAME), Cell::Text("Sam".into()))]),
             }],
             other => panic!("unexpected {other:?}"),
@@ -481,8 +481,8 @@ fn steps_and_pages_cross_the_wire_as_json() {
 
     let page = Page {
         rows: vec![Row {
-            position: None,
             id: ACME,
+            position: None,
             cells: HashMap::from([(NAME, Cell::Text("Acme".into()))]),
         }],
         next: Some("2".into()),
