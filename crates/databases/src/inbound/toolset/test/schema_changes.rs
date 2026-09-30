@@ -210,6 +210,47 @@ async fn reordering_columns_guards_on_the_version_just_read() {
 }
 
 #[tokio::test]
+async fn reordering_tables_passes_the_full_order_and_answers_the_schema() {
+    let (context, calls) = context(FakeAccess::granting(AccessLevel::Edit));
+    let other_table = Uuid::from_u128(0x7ab1e);
+    let response = ReorderTables {
+        database_id: DATABASE_ID,
+        table_ids: vec![other_table, TABLE_ID],
+    }
+    .call(ServiceContext(context), request_context())
+    .await
+    .expect("edit access may reorder tables");
+
+    assert_eq!(response.table_ids, vec![other_table, TABLE_ID]);
+    assert!(response.database.is_some());
+    assert_eq!(
+        calls.lock().unwrap().reordered_tables,
+        vec![vec![other_table, TABLE_ID]]
+    );
+}
+
+#[tokio::test]
+async fn reordering_tables_needs_more_than_view_access() {
+    let (context, calls) = context(FakeAccess::granting(AccessLevel::View));
+    let error = ReorderTables {
+        database_id: DATABASE_ID,
+        table_ids: vec![TABLE_ID],
+    }
+    .call(ServiceContext(context), request_context())
+    .await
+    .expect_err("view access cannot reorder tabs");
+
+    assert!(
+        error
+            .description
+            .contains("does not have permission to edit"),
+        "{}",
+        error.description
+    );
+    assert!(calls.lock().unwrap().reordered_tables.is_empty());
+}
+
+#[tokio::test]
 async fn deleting_a_table_needs_more_than_view_access() {
     let (context, calls) = context(FakeAccess::granting(AccessLevel::View));
     let error = DeleteTable {

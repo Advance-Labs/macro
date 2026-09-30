@@ -23,6 +23,7 @@ mod rename_column;
 mod rename_database;
 mod rename_table;
 mod reorder_columns;
+mod reorder_tables;
 mod save_database_query;
 mod save_database_view;
 
@@ -80,8 +81,8 @@ macro_rules! sql_guide {
          names match case-insensitively, and a miss suggests the closest name. \
          A table may be qualified by its database's name (`FROM \"Offsite\".\"Guests\"`).\n\
          - **Schema uses tools, not SQL DDL:** CreateDatabase, RenameDatabase, CreateTable, \
-         RenameTable, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, \
-         DeleteColumn, ReorderColumns and SaveDatabaseView.\n\
+         RenameTable, ReorderTables, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, \
+         ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.\n\
          - Tables you only hold view access on are read-only."
     };
 }
@@ -130,6 +131,7 @@ pub use rename_column::{RenameColumn, RenameColumnResponse};
 pub use rename_database::{RenameDatabase, RenameDatabaseResponse};
 pub use rename_table::{RenameTable, RenameTableResponse};
 pub use reorder_columns::{ReorderColumns, ReorderColumnsResponse};
+pub use reorder_tables::{ReorderTables, ReorderTablesResponse};
 pub use save_database_query::{SaveDatabaseQuery, SaveDatabaseQueryResponse, ToolChart};
 pub use save_database_view::SaveDatabaseView;
 
@@ -301,6 +303,7 @@ where
         .add_tool::<CreateTable, DatabasesToolContext<S, E>>()
         .add_tool::<RenameDatabase, DatabasesToolContext<S, E>>()
         .add_tool::<RenameTable, DatabasesToolContext<S, E>>()
+        .add_tool::<ReorderTables, DatabasesToolContext<S, E>>()
         .add_tool::<DeleteTable, DatabasesToolContext<S, E>>()
         .add_tool::<AddColumn, DatabasesToolContext<S, E>>()
         .add_tool::<AddColumnOptions, DatabasesToolContext<S, E>>()

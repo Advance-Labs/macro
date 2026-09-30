@@ -22,7 +22,7 @@ use uuid::Uuid;
 use super::*;
 use crate::domain::models::{
     Column, ColumnBinding, ColumnConfig, PropertyDefinitionId, RowId, RowRef, SqlValue,
-    TableDeletion, TableVersion,
+    TableDeletion, TableOrderOutcome, TableVersion,
 };
 
 mod columns;
@@ -231,6 +231,50 @@ impl DatabasesRepo for FakeRepo {
         current.name = name.to_string();
         current.version.0 += 1;
         Ok(TableMutationOutcome::Applied(current.clone()))
+    }
+    async fn reorder_tables(
+        &self,
+        database_id: DatabaseId,
+        ids: &[TableId],
+    ) -> Result<TableOrderOutcome, FakeError> {
+        let mut world = self.0.lock().unwrap();
+        if world.table_write_not_found {
+            return Ok(TableOrderOutcome::NotFound);
+        }
+        let mut current: Vec<TableId> = world
+            .tables
+            .iter()
+            .filter(|table| table.database_id == database_id)
+            .map(|table| table.id)
+            .collect();
+        let mut requested = ids.to_vec();
+        current.sort();
+        requested.sort();
+        if current != requested {
+            return Ok(TableOrderOutcome::Conflict);
+        }
+        for (index, id) in ids.iter().enumerate() {
+            let table = world
+                .tables
+                .iter_mut()
+                .find(|table| table.id == *id)
+                .unwrap();
+            table.position = format!("{:04}", index + 1);
+            table.version.0 += 1;
+        }
+        world.tables.sort_by(|a, b| a.position.cmp(&b.position));
+        Ok(TableOrderOutcome::Applied(
+            ids.iter()
+                .map(|id| {
+                    world
+                        .tables
+                        .iter()
+                        .find(|table| table.id == *id)
+                        .unwrap()
+                        .clone()
+                })
+                .collect(),
+        ))
     }
     async fn delete_table(&self, table: &Table) -> Result<TableDeletion, FakeError> {
         let mut w = self.0.lock().unwrap();

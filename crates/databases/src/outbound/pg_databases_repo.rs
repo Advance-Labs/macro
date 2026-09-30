@@ -7,6 +7,7 @@
 
 mod columns;
 mod delete_table;
+mod reorder_tables;
 mod saved_queries;
 mod sharing;
 #[cfg(test)]
@@ -27,7 +28,9 @@ use crate::domain::models::{
     TableMutationOutcome, TableVersion,
 };
 use crate::domain::models::{ColumnReplacement, ColumnSchemaOutcome};
-use crate::domain::models::{QueryDefinition, QueryId, SavedQuery, TableDeletion};
+use crate::domain::models::{
+    QueryDefinition, QueryId, SavedQuery, TableDeletion, TableOrderOutcome,
+};
 use crate::domain::ports::DatabasesRepo;
 
 /// Errors from the Postgres repository.
@@ -397,6 +400,15 @@ impl DatabasesRepo for PgDatabasesRepo {
                 })
             })
             .unwrap_or(TableMutationOutcome::Conflict))
+    }
+
+    #[tracing::instrument(err, skip(self))]
+    async fn reorder_tables(
+        &self,
+        database_id: DatabaseId,
+        table_ids: &[TableId],
+    ) -> Result<TableOrderOutcome, Self::Err> {
+        self.rewrite_table_positions(database_id, table_ids).await
     }
 
     #[tracing::instrument(err, skip(self, cmd))]

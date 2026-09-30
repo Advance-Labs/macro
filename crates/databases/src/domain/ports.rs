@@ -25,7 +25,9 @@ use crate::domain::models::{
     TableVersion, Viewer,
 };
 use crate::domain::models::{ChangeColumnType, ColumnReplacement, ColumnSchemaOutcome};
-use crate::domain::models::{QueryDefinition, QueryId, SavedQuery, TableDeletion};
+use crate::domain::models::{
+    QueryDefinition, QueryId, SavedQuery, TableDeletion, TableOrderOutcome,
+};
 
 /// Persistence for databases, tables, column placements and row identities.
 pub trait DatabasesRepo: Send + Sync + 'static {
@@ -83,6 +85,14 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         name: &str,
         previous_name: &str,
     ) -> impl Future<Output = Result<TableMutationOutcome, Self::Err>> + Send;
+
+    /// Give a database's tables the positions of `table_ids`, which must name
+    /// every one of its tables exactly once.
+    fn reorder_tables(
+        &self,
+        database_id: DatabaseId,
+        table_ids: &[TableId],
+    ) -> impl Future<Output = Result<TableOrderOutcome, Self::Err>> + Send;
 
     /// Remove a table with its columns and row identities, unless it is its
     /// database's last one.
@@ -396,6 +406,14 @@ pub trait DatabasesService: Send + Sync + 'static {
         name: String,
         previous_name: String,
     ) -> impl Future<Output = Result<Table, DatabaseError>> + Send;
+
+    /// Set the order of a database's tables (its tabs). `table_ids` names
+    /// every table exactly once; answers the tables in their new order.
+    fn reorder_tables(
+        &self,
+        receipt: EntityAccessReceipt<EditAccessLevel>,
+        table_ids: Vec<TableId>,
+    ) -> impl Future<Output = Result<Vec<Table>, DatabaseError>> + Send;
 
     /// Remove a table with its rows and columns. A database keeps at least
     /// one table.

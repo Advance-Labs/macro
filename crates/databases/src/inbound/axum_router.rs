@@ -151,6 +151,11 @@ where
                 .patch(sharing::update_permissions_handler::<S, Eas, Auth>),
         )
         .route("/{id}/tables", post(create_table_handler::<S, Eas, Auth>))
+        // Static, so it never reads as a table id.
+        .route(
+            "/{id}/tables/order",
+            put(reorder_tables_handler::<S, Eas, Auth>),
+        )
         .route(
             "/{id}/tables/{table_id}",
             patch(rename_table_handler::<S, Eas, Auth>)
@@ -215,6 +220,14 @@ pub struct RenameTableRequest {
     pub name: String,
     /// Name shown when the rename editor opened.
     pub previous_name: String,
+}
+
+/// A complete tab order, identified by stable table IDs.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ReorderTablesRequest {
+    /// Every table of the database, exactly once, in the new left-to-right order.
+    pub table_ids: Vec<Uuid>,
 }
 
 /// Rename one column placement without changing its property's SQL identifier.
@@ -621,6 +634,42 @@ where
             req.name,
             req.previous_name,
         )
+        .await
+        .map(Json)
+}
+
+/// Set the order of a database's tables (its tabs).
+#[utoipa::path(
+    put,
+    tag = "databases",
+    operation_id = "reorder_database_tables",
+    path = "/databases/{id}/tables/order",
+    params(("id" = Uuid, Path, description = "Database id")),
+    request_body = ReorderTablesRequest,
+    responses(
+        (status = 200, description = "The tables in their new order", body = Vec<Table>),
+        (status = 400, description = "The order does not name every table exactly once", body = ErrorResponse),
+        (status = 401, body = ErrorResponse),
+        (status = 403, body = ErrorResponse),
+        (status = 404, body = ErrorResponse),
+        (status = 409, description = "The database's tables changed while the order was written", body = ErrorResponse),
+        (status = 500, body = ErrorResponse),
+    )
+)]
+#[tracing::instrument(err, skip_all)]
+pub async fn reorder_tables_handler<S, Eas, Auth>(
+    access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
+    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
+    Json(req): Json<ReorderTablesRequest>,
+) -> Result<Json<Vec<Table>>, DatabaseError>
+where
+    S: DatabasesService,
+    Eas: EntityAccessService,
+    Auth: MacroAuthorizationService,
+{
+    state
+        .service
+        .reorder_tables(access.entity_access_receipt, req.table_ids)
         .await
         .map(Json)
 }

@@ -135,3 +135,186 @@ async fn a_new_table_is_empty_and_queryable_by_its_quoted_name() {
     assert_eq!(answer.results[0].rows, vec![vec![SqlValue::Real(0.0)]]);
     assert_eq!(answer.read_tables, vec![table.id]);
 }
+
+#[tokio::test]
+async fn reordering_three_tables_answers_and_lists_them_in_the_new_order() {
+    let seeded = seeded().await;
+    let (world, svc, db, guests) = (
+        seeded.world,
+        seeded.service,
+        seeded.database_id,
+        seeded.table_id,
+    );
+    let budget = svc
+        .create_table(
+            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
+            CreateTable {
+                database_id: db,
+                name: "Budget".into(),
+            },
+        )
+        .await
+        .unwrap();
+    let venues = svc
+        .create_table(
+            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
+            CreateTable {
+                database_id: db,
+                name: "Venues".into(),
+            },
+        )
+        .await
+        .unwrap();
+    {
+        let mut world = world.lock().unwrap();
+        world.published.clear();
+        world.broker_events.clear();
+    }
+
+    let reordered = svc
+        .reorder_tables(
+            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
+            vec![venues.id, guests, budget.id],
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        reordered
+            .iter()
+            .map(|t| t.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Venues", "Guests", "Budget"]
+    );
+
+    let detail = svc
+        .get_database(
+            receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::Owner),
+            viewer(OWNER),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        detail
+            .tables
+            .iter()
+            .map(|t| t.table.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Venues", "Guests", "Budget"]
+    );
+
+    let world = world.lock().unwrap();
+    let mut published = world.published.clone();
+    published.sort();
+    let mut expected: Vec<(TableId, TableVersion)> = reordered
+        .iter()
+        .map(|table| (table.id, table.version))
+        .collect();
+    expected.sort();
+    assert_eq!(published, expected);
+    assert_eq!(world.broker_events.len(), 1);
+    assert_eq!(
+        world.broker_events[0]["event_type"],
+        "database.tables_changed"
+    );
+    assert_eq!(
+        world.broker_events[0]["metadata"]["tables"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+}
+
+#[tokio::test]
+async fn an_order_missing_a_table_is_rejected_without_publishing() {
+    let seeded = seeded().await;
+    let (world, svc, db, guests) = (
+        seeded.world,
+        seeded.service,
+        seeded.database_id,
+        seeded.table_id,
+    );
+    svc.create_table(
+        receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
+        CreateTable {
+            database_id: db,
+            name: "Budget".into(),
+        },
+    )
+    .await
+    .unwrap();
+    {
+        let mut world = world.lock().unwrap();
+        world.published.clear();
+        world.broker_events.clear();
+    }
+
+    let error = svc
+        .reorder_tables(
+            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
+            vec![guests],
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(error, DatabaseError::InvalidSchemaOperation(_)));
+    let duplicate = svc
+        .reorder_tables(
+            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
+            vec![guests, guests],
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        duplicate,
+        DatabaseError::InvalidSchemaOperation(_)
+    ));
+
+    let world = world.lock().unwrap();
+    assert!(world.published.is_empty());
+    assert!(world.broker_events.is_empty());
+}
+
+#[tokio::test]
+async fn an_order_containing_another_databases_table_is_rejected() {
+    let seeded = seeded().await;
+    let (world, svc, db, guests) = (
+        seeded.world,
+        seeded.service,
+        seeded.database_id,
+        seeded.table_id,
+    );
+    let other = svc
+        .create_database(CreateDatabase {
+            name: "Hiring".into(),
+            owner_id: user(OWNER),
+            acting_bot: None,
+        })
+        .await
+        .unwrap();
+    let candidates = world
+        .lock()
+        .unwrap()
+        .tables
+        .iter()
+        .find(|table| table.database_id == other.id)
+        .unwrap()
+        .id;
+    {
+        let mut world = world.lock().unwrap();
+        world.published.clear();
+        world.broker_events.clear();
+    }
+
+    let error = svc
+        .reorder_tables(
+            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
+            vec![candidates, guests],
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(error, DatabaseError::InvalidSchemaOperation(_)));
+
+    let world = world.lock().unwrap();
+    assert!(world.published.is_empty());
+    assert!(world.broker_events.is_empty());
+}

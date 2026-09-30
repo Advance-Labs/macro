@@ -8,6 +8,7 @@ use crate::domain::models::ColumnBinding;
 use crate::domain::models::Viewer;
 
 mod rename_column;
+mod reorder_tables;
 mod saved_queries;
 mod sharing;
 mod tables;

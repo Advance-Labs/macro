@@ -425,6 +425,7 @@ use utoipa::OpenApi;
         databases::inbound::axum_router::query_handler,
         databases::inbound::axum_router::create_table_handler,
         databases::inbound::axum_router::rename_table_handler,
+        databases::inbound::axum_router::reorder_tables_handler,
         databases::inbound::axum_router::delete_table_handler,
         databases::inbound::axum_router::saved_queries::save_query_handler,
         databases::inbound::axum_router::saved_queries::get_query_handler,

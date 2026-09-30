@@ -48,6 +48,7 @@ pub(super) fn has_database_changes(activity: &[StructuredToolActivity]) -> bool 
                     | "RenameDatabase"
                     | "CreateTable"
                     | "RenameTable"
+                    | "ReorderTables"
                     | "DeleteTable"
                     | "AddColumn"
                     | "AddColumnOptions"

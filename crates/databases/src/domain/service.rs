@@ -12,6 +12,7 @@ mod delete_table;
 mod infer_column_type;
 mod query;
 mod rename_column;
+mod reorder_tables;
 mod saved_queries;
 mod sharing;
 #[cfg(test)]
@@ -743,6 +744,15 @@ where
         )
         .await;
         Ok(renamed)
+    }
+
+    #[tracing::instrument(skip(self, receipt), err)]
+    async fn reorder_tables(
+        &self,
+        receipt: EntityAccessReceipt<EditAccessLevel>,
+        table_ids: Vec<TableId>,
+    ) -> Result<Vec<Table>, DatabaseError> {
+        self.order_tables(receipt, table_ids).await
     }
 
     #[tracing::instrument(skip(self, receipt), err)]

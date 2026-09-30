@@ -213,6 +213,18 @@ pub enum TableMutationOutcome {
     Conflict,
 }
 
+/// Result of rewriting a database's tab order, checked against the tables it
+/// holds when the write takes its lock.
+#[derive(Debug, Clone)]
+pub enum TableOrderOutcome {
+    /// Every table took its new position, in the order they now display.
+    Applied(Vec<Table>),
+    /// The database was missing or trashed at the write boundary.
+    NotFound,
+    /// The order no longer names exactly the database's tables.
+    Conflict,
+}
+
 /// How a new column obtains its property definition.
 #[derive(Debug, Clone)]
 pub enum ColumnBinding {

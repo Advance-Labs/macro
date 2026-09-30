@@ -69,6 +69,8 @@ struct Calls {
     deleted_columns: Vec<(Uuid, Uuid, TableVersion)>,
     /// `(table, order, base version)`.
     reordered_columns: Vec<(Uuid, Vec<Uuid>, TableVersion)>,
+    /// Every table order the service was asked for.
+    reordered_tables: Vec<Vec<Uuid>>,
     saved_queries: Vec<(Option<Uuid>, crate::domain::models::QueryDefinition)>,
     /// The agent each attributed write reached the service as.
     acting_bots: Vec<Option<BotId>>,
@@ -253,6 +255,22 @@ impl DatabasesService for FakeService {
             .renamed_tables
             .push((table_id, name.clone(), previous_name));
         Ok(Table { name, ..table() })
+    }
+
+    async fn reorder_tables(
+        &self,
+        _receipt: EntityAccessReceipt<EditAccessLevel>,
+        table_ids: Vec<crate::domain::models::TableId>,
+    ) -> Result<Vec<Table>, DatabaseError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .reordered_tables
+            .push(table_ids.clone());
+        Ok(table_ids
+            .into_iter()
+            .map(|id| Table { id, ..table() })
+            .collect())
     }
 
     async fn infer_column_type(
@@ -754,6 +772,12 @@ fn every_tool_schema_is_valid() {
         "ReorderColumns"
     );
     assert_eq!(
+        generate_validated_input_schema::<ReorderTables>()
+            .expect("schema should validate")
+            .name,
+        "ReorderTables"
+    );
+    assert_eq!(
         generate_validated_input_schema::<SaveDatabaseQuery>()
             .expect("schema should validate")
             .name,
@@ -791,6 +815,7 @@ fn toolset_builds_with_every_tool() {
         "CreateTable",
         "RenameDatabase",
         "RenameTable",
+        "ReorderTables",
         "DeleteTable",
         "AddColumn",
         "AddColumnOptions",
@@ -803,7 +828,7 @@ fn toolset_builds_with_every_tool() {
     ] {
         assert!(toolset.tools.contains_key(name), "missing {name}");
     }
-    assert_eq!(toolset.tools.len(), 16);
+    assert_eq!(toolset.tools.len(), 17);
     assert!(
         toolset.user_tools.is_empty(),
         "database tools run in the loop, none are user-executed"

@@ -45,6 +45,7 @@ fn tracks_committed_row_schema_and_view_changes() {
         ("ChangeColumnType", json!({})),
         ("DeleteColumn", json!({})),
         ("ReorderColumns", json!({})),
+        ("ReorderTables", json!({})),
     ] {
         let activity = tool_activity(&[AssistantMessagePart::ToolCallResponseJson {
             name: name.into(),

@@ -25,6 +25,7 @@ fn database_workflow_reaches_every_agent_host_without_unrelated_scoped_tools() {
             "ChangeColumnType",
             "DeleteColumn",
             "ReorderColumns",
+            "ReorderTables",
             "SaveDatabaseQuery",
             "<m-db-query>",
             "verbatim",

@@ -10,7 +10,7 @@ Macro databases contain table tabs. They are distinct from native spreadsheet do
 Structure changes go through tools, never SQL DDL. Each returns the refreshed schema; tools that need a table's version or a column's current name read it themselves.
 
 - `CreateDatabase` makes a new container with a starter table called “Table 1”: rename it with `RenameTable` to the first table the user asked for instead of adding a redundant tab. `RenameDatabase` retitles a database.
-- `CreateTable`, `RenameTable`, `DeleteTable` add, retitle, and remove tabs. A database keeps at least one table.
+- `CreateTable`, `RenameTable`, `DeleteTable` add, retitle, and remove tabs. A database keeps at least one table. `ReorderTables` sets the left-to-right tab order and takes every table id once.
 - `AddColumn` adds a typed field; `AddColumnOptions` adds labels to a select or tag column; `RenameColumn` relabels one; `ChangeColumnType` converts a column's values to another type, all or nothing; `DeleteColumn` removes one with its values; `ReorderColumns` sets the left-to-right order and takes every column id once.
 - `SaveDatabaseView` persists a personal table or board view with filters, sorts, hidden columns, and an optional grouping column, by stable column ids. A board groups by one single-valued select or checkbox column. It changes presentation, not records, and cannot save charts.
 

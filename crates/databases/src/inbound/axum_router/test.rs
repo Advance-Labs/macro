@@ -22,3 +22,14 @@ fn a_column_request_takes_infer_type_in_camel_case_and_its_old_spelling() {
     .unwrap();
     assert!(!omitted.infer_type);
 }
+
+#[test]
+fn a_table_order_request_takes_table_ids_in_camel_case() {
+    let first = Uuid::from_u128(1);
+    let second = Uuid::from_u128(2);
+    let request: ReorderTablesRequest = serde_json::from_value(serde_json::json!({
+        "tableIds": [second, first],
+    }))
+    .unwrap();
+    assert_eq!(request.table_ids, vec![second, first]);
+}
