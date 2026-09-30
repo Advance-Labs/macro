@@ -390,6 +390,23 @@ describe('spreadsheet interactions', () => {
     ).toBe('draft');
   });
 
+  it('keeps an unsaved edit in place while someone else saves another cell of that row', async () => {
+    const { setRecords, onWrite } = setup();
+    screen.getByRole('button', { name: /Name: First\./ }).focus();
+    await userEvent.keyboard('{Enter}Half typed');
+    const input = screen.getByRole('textbox', {
+      name: 'Edit Name',
+    }) as HTMLInputElement;
+    setRecords([
+      { rowId: 'one', cells: { name: 'First', notes: 'Changed elsewhere' } },
+      rows[1],
+    ]);
+    expect(screen.getByRole('textbox', { name: 'Edit Name' })).toBe(input);
+    expect(input.value).toBe('Half typed');
+    expect(document.activeElement).toBe(input);
+    expect(onWrite).not.toHaveBeenCalled();
+  });
+
   it('steps Down onto the new-record row already editing it', async () => {
     const { setRecords, setUnsavedRow, onWrite } = setup();
     setUnsavedRow('draft');

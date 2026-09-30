@@ -107,34 +107,55 @@ describe('table controller', () => {
     dispose();
   });
 
-  it('loads the latest rows after a conflict and retains the lost edit after a queued success', async () => {
+  it('saves an edit again after someone else changed another cell of the table', async () => {
     const { controller, source, setSnapshot, snapshot, dispose } = setup();
     vi.mocked(source.write).mockRejectedValueOnce(
       new DatabaseWriteConflict('Conflict')
     );
-    vi.mocked(source.refresh).mockImplementation(async () => {
-      setSnapshot({ ...snapshot(), version: 7 });
+    vi.mocked(source.refresh).mockImplementationOnce(async () => {
+      setSnapshot({
+        rows: [
+          {
+            rowId: 'record',
+            cells: { status: 'To do', title: 'Renamed by someone else' },
+          },
+        ],
+        version: 7,
+      });
     });
-    await Promise.all([
-      controller.save(move, 'Status'),
-      controller.save(
-        {
-          kind: 'cell',
-          rowId: 'record',
-          columnId: 'title',
-          value: 'A newer title',
-        },
-        'Title'
-      ),
+    await controller.save(move, 'Status');
+    expect(vi.mocked(source.write).mock.calls).toEqual([
+      [move, 1],
+      [move, 7],
     ]);
-    expect(vi.mocked(source.write).mock.calls.map((call) => call[1])).toEqual([
-      1, 7,
-    ]);
+    expect(controller.failure()).toBeUndefined();
+    expect(snapshot().rows[0].cells.title).toBe('Renamed by someone else');
+    dispose();
+  });
+
+  it('keeps a conflicting edit for Retry when someone else changed that same cell', async () => {
+    const { controller, source, setSnapshot, dispose } = setup();
+    vi.mocked(source.write).mockRejectedValueOnce(
+      new DatabaseWriteConflict('Conflict')
+    );
+    vi.mocked(source.refresh).mockImplementationOnce(async () => {
+      setSnapshot({
+        rows: [
+          {
+            rowId: 'record',
+            cells: { status: 'Blocked', title: 'Plan launch' },
+          },
+        ],
+        version: 7,
+      });
+    });
+    await controller.save(move, 'Status');
+    expect(vi.mocked(source.write).mock.calls).toEqual([[move, 1]]);
     expect(controller.failure()?.label).toBe('Status');
     expect(controller.failure()?.conflict).toBe(true);
-    expect(controller.rows()[0].cells.status).toBe('To do');
+    expect(controller.rows()[0].cells.status).toBe('Blocked');
     await controller.retry();
-    expect(vi.mocked(source.write).mock.calls[2]).toEqual([move, 8]);
+    expect(vi.mocked(source.write).mock.calls[1]).toEqual([move, 7]);
     expect(controller.failure()).toBeUndefined();
     dispose();
   });
