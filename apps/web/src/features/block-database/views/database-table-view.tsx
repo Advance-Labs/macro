@@ -39,7 +39,10 @@ import {
   mergeDatabaseColumnOrder,
   reorderDatabaseColumns,
 } from '../core/column-order';
-import type { DatabaseColumnTypeChange } from '../core/column-schema';
+import type {
+  DatabaseColumnCastsSource,
+  DatabaseColumnTypeChange,
+} from '../core/column-schema';
 import {
   type DatabaseCellValue,
   type DatabaseViewColumn,
@@ -96,6 +99,7 @@ export function DatabaseTableView(props: {
   renderMentionValue?: GridCellProps['renderMentionValue'];
   renderRelationCell?: (props: GridCellProps) => JSX.Element;
   relationTables?: { id: string; name: string }[];
+  columnCasts?: DatabaseColumnCastsSource;
   onCellFocus?: (cell: DatabaseCellFocus | undefined) => void;
   remoteUsers?: DatabaseCellPresence[];
   onChangeColumnType?: (
@@ -934,6 +938,7 @@ export function DatabaseTableView(props: {
                   onRequestDelete={requestDelete}
                   editColumn={editColumn()}
                   relationTables={props.relationTables}
+                  columnCasts={props.columnCasts}
                   onChangeColumnType={props.onChangeColumnType}
                   onDeleteColumn={
                     props.onDeleteColumn

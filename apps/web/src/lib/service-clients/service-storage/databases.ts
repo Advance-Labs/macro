@@ -61,6 +61,32 @@ export interface DatabaseTable {
   version: number;
 }
 
+/** What a column type change did (`ColumnTypeChangeOutcome`). */
+export interface ColumnTypeChangeOutcome {
+  table_versions: Record<string, number>;
+  /** Cells emptied because their value did not fit, with `clearInvalid`. */
+  cleared_cells: number;
+  /** Cells that kept only their first of several values, with `clearInvalid`. */
+  trimmed_cells: number;
+}
+
+/** What changing a column to one type would do to its values (`ColumnCast`). */
+export interface DatabaseColumnCast {
+  data_type: DataType;
+  is_multi_select: boolean;
+  specific_entity_type: EntityType | null;
+  /** The generic relation target, standing for every related table. */
+  relation: boolean;
+  cast: 'safe' | 'checked' | 'never';
+  /** Why no value converts, for `never`. */
+  reason: string | null;
+  /** How many cells would not convert, for `checked`. */
+  failures: number;
+  /** What is wrong with them, e.g. `3 values aren't numbers`. */
+  summary: string | null;
+  examples: string[];
+}
+
 /** Column-kind specific configuration stored on a column placement. */
 export type ColumnConfig =
   | { kind: 'link'; database_id: string; table_id: string }
@@ -515,13 +541,28 @@ export const databasesClient = {
       specificEntityType?: EntityType;
       linkToTableId?: string;
       baseVersion: number;
+      /** Empty the values that do not fit instead of refusing the change. */
+      clearInvalid?: boolean;
     };
   }) {
-    return await databasesFetch<{ table_versions: Record<string, number> }>(
+    return await databasesFetch<ColumnTypeChangeOutcome>(
       `/databases/${params.id}/tables/${params.tableId}/columns/${params.columnId}/type`,
       {
         method: 'PATCH',
         body: JSON.stringify(params.request),
+        errorResponseHandler: async (response) => ({
+          code: 'HTTP_ERROR',
+          message: errorMessageFromBody(await response.text(), response.status),
+        }),
+      }
+    );
+  },
+
+  /** The dry run of a type change: what each menu type does to the values. */
+  async columnCasts(params: { id: string; tableId: string; columnId: string }) {
+    return await databasesFetch<DatabaseColumnCast[]>(
+      `/databases/${params.id}/tables/${params.tableId}/columns/${params.columnId}/casts`,
+      {
         errorResponseHandler: async (response) => ({
           code: 'HTTP_ERROR',
           message: errorMessageFromBody(await response.text(), response.status),

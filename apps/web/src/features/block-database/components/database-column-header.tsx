@@ -13,13 +13,20 @@ import EyeSlashIcon from '@phosphor/eye-slash.svg';
 import PencilIcon from '@phosphor/pencil-simple.svg';
 import TrashIcon from '@phosphor/trash.svg';
 import XIcon from '@phosphor/x.svg';
+import { ConfirmDialog } from '@ui/components/ConfirmDialog';
 import { DeleteDialog } from '@ui/components/DeleteDialog';
 import { Dropdown } from '@ui/components/Dropdown';
 import type { JSX } from 'solid-js';
 import { createSignal, createUniqueId, For, onCleanup, Show } from 'solid-js';
-import type { DatabaseColumnTypeChange } from '../core/column-schema';
+import type {
+  DatabaseColumnCastsSource,
+  DatabaseColumnTypeChange,
+} from '../core/column-schema';
 import type { DatabaseViewColumn } from '../core/database-view';
-import { ColumnTypeMenu } from './column-type-menu';
+import {
+  ColumnTypeMenu,
+  type DatabaseColumnClearingChoice,
+} from './column-type-menu';
 import { PropertyIcon } from './property-icon';
 
 export type DatabaseColumnHeaderProps = {
@@ -31,6 +38,8 @@ export type DatabaseColumnHeaderProps = {
   ) => Promise<void>;
   onDelete?: (columnId: string) => Promise<void>;
   relationTables?: { id: string; name: string }[];
+  /** The type menu's dry run; without it every type is offered as is. */
+  columnCasts?: DatabaseColumnCastsSource;
   dragHandle?: JSX.HTMLAttributes<HTMLDivElement>;
   headerRef?: (element: HTMLDivElement) => void;
   dragging?: boolean;
@@ -59,6 +68,7 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
   const [error, setError] = createSignal('');
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [deleteOpen, setDeleteOpen] = createSignal(false);
+  const [clearing, setClearing] = createSignal<DatabaseColumnClearingChoice>();
   const errorId = createUniqueId();
   let header!: HTMLDivElement;
   let input: HTMLInputElement | undefined;
@@ -383,7 +393,15 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
                               <ColumnTypeMenu
                                 column={props.column}
                                 tables={props.relationTables}
+                                loadCasts={(open) =>
+                                  props.columnCasts?.(props.column.id, open)
+                                }
                                 onChange={(change) => void changeType(change)}
+                                onConfirmClearing={(choice) => {
+                                  setMenuOpen(false);
+                                  setError('');
+                                  setClearing(choice);
+                                }}
                               />
                             </Show>
                           </Dropdown.Group>
@@ -475,6 +493,35 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
           </ContextMenuContent>
         </ContextMenu.Portal>
       </ContextMenu>
+      <ConfirmDialog
+        open={!!clearing()}
+        onOpenChange={(open) => {
+          if (!open) setClearing(undefined);
+        }}
+        pending={pending()}
+        tone="danger"
+        title={`Convert “${props.column.name}” to ${clearing()?.label ?? ''}?`}
+        confirmLabel={clearingLabel(clearing()?.cast.failures ?? 0)}
+        onConfirm={() => {
+          const choice = clearing();
+          if (!choice) return;
+          setClearing(undefined);
+          void changeType({ ...choice.change, clearInvalid: true });
+        }}
+        body={
+          <>
+            <p>
+              {clearing()?.cast.summary}. Converting anyway empties what doesn't
+              fit; a cell with several values keeps its first.
+            </p>
+            <ul class="mt-2 list-disc pl-5">
+              <For each={clearing()?.cast.examples}>
+                {(example) => <li>{example}</li>}
+              </For>
+            </ul>
+          </>
+        }
+      />
       <DeleteDialog
         open={deleteOpen()}
         onOpenChange={setDeleteOpen}
@@ -502,4 +549,8 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
       />
     </>
   );
+}
+
+function clearingLabel(failures: number): string {
+  return `Convert anyway, clearing ${failures} ${failures === 1 ? 'value' : 'values'}`;
 }

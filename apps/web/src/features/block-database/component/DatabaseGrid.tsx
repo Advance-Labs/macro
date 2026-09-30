@@ -32,6 +32,7 @@ import {
   DatabaseTextEditor,
   DatabaseTextValue,
 } from '../database-mentions';
+import { createColumnCasts } from '../queries/column-casts';
 import { updateDatabaseColumns } from '../queries/column-schema';
 import { createDatabaseRelations } from '../queries/database-relations';
 import { useRelatedDatabaseSync } from '../queries/database-relations-sync';
@@ -182,6 +183,11 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
                 }))
               : []
           }
+          columnCasts={createColumnCasts({
+            databaseId,
+            tableId: props.tableId,
+            version: () => table().table.version,
+          })}
           onChangeColumnType={(columnId, change) =>
             updateDatabaseColumns({
               databaseId,

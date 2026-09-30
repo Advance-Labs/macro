@@ -23,11 +23,16 @@ must use.
 
 The header arrow menu groups schema and view actions. **Change type** offers Text,
 Number, Select, Multi-select, Date, Checkbox, URL, People, Documents, Tasks, and
-relations to tables in this database. A type change validates all existing values
-and either converts the whole column or leaves it unchanged. Numbers can become
-text; plain number strings can become numbers. Padding, leading zeros, ambiguous
-values, and multiple values that would be lost are rejected with an explanation.
-Changing a placement never changes another table that uses the same property.
+relations to tables in this database. Opening it checks the column's values
+against every type. A type no value can become is greyed out, with the reason
+under its name (a checkbox can only become text; only an empty column can become
+People or a relation). A type some values would not survive shows how many, such
+as "3 values aren't numbers"; choosing it opens a confirmation listing a few of
+them, and **Convert anyway, clearing 3 values** converts the rest and empties
+those (a cell with several values keeps its first). Every other type converts
+immediately. Plain number strings can become numbers; padding, leading zeros and
+ambiguous values count as values that don't fit. A date becomes its `YYYY-MM-DD`
+text. Changing a placement never changes another table that uses the same property.
 A relation can hold multiple records. **Delete column** opens a confirmation;
 it removes this table’s column and values while preserving other tables.
 Drag a column header left or right to reorder it, or use **Move left / Move right**.

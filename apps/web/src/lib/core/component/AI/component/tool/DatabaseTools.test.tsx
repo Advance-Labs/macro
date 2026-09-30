@@ -66,6 +66,8 @@ const database: NamedTool<'DescribeDatabase', 'response'>['data'] = {
           dataType: 'select',
           isMultiSelect: false,
           writable: true,
+          safeTypes: ['text', 'select[]'],
+          checkedTypes: ['number'],
         },
       ],
     },
@@ -142,7 +144,14 @@ describe('database schema tool activity', () => {
         dataType: 'select',
         options: ['Open', 'Done'],
       },
-      { databaseId, tableId, columnId, database }
+      {
+        databaseId,
+        tableId,
+        columnId,
+        clearedCells: 0,
+        trimmedCells: 0,
+        database,
+      }
     );
     expect(line(rendered)).toBe('Change Status to select · Open, Done');
   });

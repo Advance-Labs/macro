@@ -39,7 +39,10 @@ import type {
   GridCellControl,
   GridCellEditorOptions,
 } from '../component/GridCell';
-import type { DatabaseColumnTypeChange } from '../core/column-schema';
+import type {
+  DatabaseColumnCastsSource,
+  DatabaseColumnTypeChange,
+} from '../core/column-schema';
 import type {
   DatabaseViewColumn,
   DatabaseViewConfig,
@@ -99,6 +102,7 @@ export function DatabaseTable(props: {
   onRequestDelete?: (rowId: string) => void;
   editColumn?: string;
   relationTables?: { id: string; name: string }[];
+  columnCasts?: DatabaseColumnCastsSource;
   onChangeColumnType?: (
     columnId: string,
     change: DatabaseColumnTypeChange
@@ -490,6 +494,7 @@ export function DatabaseTable(props: {
                     pointerOrigin = { x: event.clientX, y: event.clientY };
                   }}
                   relationTables={props.relationTables}
+                  columnCasts={props.columnCasts}
                   onChangeType={props.onChangeColumnType}
                   onDelete={props.onDeleteColumn}
                   column={column()}
