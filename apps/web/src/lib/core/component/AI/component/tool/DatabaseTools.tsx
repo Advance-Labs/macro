@@ -15,7 +15,7 @@ import DatabaseIcon from '@phosphor/database.svg';
 import TableIcon from '@phosphor/table.svg';
 import { queryClient } from '@queries/client';
 import type { NamedTool } from '@service-cognition/generated/tools/tool';
-import { createEffect, createSignal, For, Show } from 'solid-js';
+import { createSignal, For, Show } from 'solid-js';
 import { BaseTool } from './BaseTool';
 import { Tool } from './Tool';
 import { createToolRenderer } from './ToolRenderer';
@@ -265,14 +265,13 @@ export const addColumnOptionsHandler = createToolRenderer({
 
 export const saveDatabaseViewHandler = createToolRenderer({
   name: 'SaveDatabaseView',
+  handleResponse: async () => {
+    await queryClient.invalidateQueries({
+      queryKey: databaseViewKeys.saved.queryKey,
+    });
+  },
   render: (ctx) => {
     const orchestrator = useGlobalBlockOrchestrator();
-    createEffect(() => {
-      if (ctx.response?.data.viewId)
-        void queryClient.invalidateQueries({
-          queryKey: databaseViewKeys.saved.queryKey,
-        });
-    });
     async function openView() {
       const result = ctx.response?.data;
       if (!result) return;

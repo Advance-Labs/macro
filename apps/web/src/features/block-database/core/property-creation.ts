@@ -1,11 +1,10 @@
-export type DatabasePropertyType =
-  | 'STRING'
-  | 'NUMBER'
-  | 'BOOLEAN'
-  | 'DATE'
-  | 'SELECT_STRING'
-  | 'ENTITY'
-  | 'LINK';
+import type { DataType } from '@service-properties/generated/schemas/dataType';
+
+/** The property types a new database column can be created with. */
+export type DatabasePropertyType = Extract<
+  DataType,
+  'STRING' | 'NUMBER' | 'BOOLEAN' | 'DATE' | 'SELECT_STRING' | 'ENTITY' | 'LINK'
+>;
 
 export type DatabaseRelationTables =
   | { status: 'loading' }

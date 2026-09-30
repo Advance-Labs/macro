@@ -1,4 +1,10 @@
 import { markdownToPlainText } from '@macro-inc/lexical-core/utils/parsers';
+import {
+  formatBoolean,
+  formatDate,
+  formatNumber,
+} from '@property/utils/formatting';
+import { fromCellDate } from './cell-date';
 import type { DatabaseColumnType } from './column-inference';
 import { relatedRowIds } from './database-relations';
 import type { DatabaseCellValue, DatabaseViewColumn } from './database-view';
@@ -81,7 +87,7 @@ export function formatCellValue(
     return relatedRowIds(value)
       .map((id) => column.relation?.labels?.[id] ?? 'Unavailable record')
       .join(', ');
-  if (column.dataType === 'BOOLEAN') return value ? 'Yes' : 'No';
+  if (column.dataType === 'BOOLEAN') return formatBoolean(Boolean(value));
   if (column.isMultiSelect) {
     try {
       const values: unknown = JSON.parse(String(value));
@@ -92,16 +98,11 @@ export function formatCellValue(
   }
   if (column.dataType === 'STRING') return markdownToPlainText(String(value));
   if (column.dataType === 'DATE') {
-    const date = new Date(String(value));
-    if (!Number.isNaN(date.getTime())) {
-      return date.toLocaleDateString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        timeZone: 'UTC',
-      });
-    }
+    const date = fromCellDate(value);
+    if (date) return formatDate(date);
   }
+  if (column.dataType === 'NUMBER' && typeof value === 'number')
+    return formatNumber(value);
   return String(value);
 }
 

@@ -1,3 +1,4 @@
+import { databaseViewKeys } from '@app/features/block-database/queries/keys';
 import type {
   NamedTool,
   ToolName,
@@ -14,6 +15,7 @@ import {
   renameDatabaseHandler,
   reorderColumnsHandler,
   saveDatabaseQueryHandler,
+  saveDatabaseViewHandler,
 } from './DatabaseTools';
 
 vi.mock('@app/features/database-query/components/tool-query-results', () => ({
@@ -23,8 +25,9 @@ vi.mock('@app/signal/splitLayout', () => ({ globalSplitManager: () => null }));
 vi.mock('@components/app/GlobalAppState', () => ({
   useGlobalBlockOrchestrator: () => ({}),
 }));
+const invalidateQueries = vi.hoisted(() => vi.fn());
 vi.mock('@queries/client', () => ({
-  queryClient: { invalidateQueries: vi.fn() },
+  queryClient: { invalidateQueries },
 }));
 vi.mock(
   '@core/component/LexicalMarkdown/component/core/StaticMarkdown',
@@ -217,5 +220,21 @@ describe('SaveDatabaseQuery', () => {
     });
     expect(screen.getByText(/Save question/)).toBeTruthy();
     expect(screen.queryByLabelText('Saved answer')).toBeNull();
+  });
+});
+
+describe('SaveDatabaseView', () => {
+  it('refreshes saved views when the save responds, not on each render', async () => {
+    renderTool(saveDatabaseViewHandler, 'SaveDatabaseView', {
+      databaseId,
+      tableId,
+      name: 'Open',
+      view: { layout: 'table' },
+    });
+    expect(invalidateQueries).not.toHaveBeenCalled();
+    await saveDatabaseViewHandler.handleResponse?.({} as never);
+    expect(invalidateQueries).toHaveBeenCalledExactlyOnceWith({
+      queryKey: databaseViewKeys.saved.queryKey,
+    });
   });
 });
