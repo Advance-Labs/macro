@@ -175,6 +175,7 @@ pub fn run() {
     {
         builder = builder
             .plugin(tauri_plugin_android_auth::init())
+            .plugin(tauri_plugin_android_mobile::init())
             .plugin(tauri_plugin_android_push::init())
             .plugin(tauri_plugin_call_kit::init());
     }
@@ -223,9 +224,7 @@ pub fn run() {
     #[cfg(mobile)]
     {
         // register mobile specific plugins
-        builder = builder
-            .plugin(tauri_plugin_haptics::init())
-            .plugin(tauri_plugin_safe_area_insets::init());
+        builder = builder.plugin(tauri_plugin_haptics::init());
     }
 
     // Window origin differs by platform:
