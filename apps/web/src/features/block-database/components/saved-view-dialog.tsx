@@ -87,21 +87,23 @@ export function SaveViewDialog(props: {
     >
       <Panel>
         <Panel.Body>
-          <form class="flex flex-col gap-4 p-5" onSubmit={submit}>
-            <Dialog.Title class="text-base font-semibold text-ink">
-              {props.mode === 'delete'
-                ? 'Delete saved view?'
-                : props.mode === 'rename'
-                  ? 'Rename view'
-                  : 'New view'}
-            </Dialog.Title>
-            <Dialog.Description class="text-sm leading-relaxed text-ink-muted">
-              {props.mode === 'delete'
-                ? `“${props.initialName}” will be removed from your saved views. The table and its records will stay.`
-                : props.mode === 'rename'
-                  ? 'Give this view a name that is easy to find.'
-                  : 'See the same records in a different way. Views are saved just for you.'}
-            </Dialog.Description>
+          <form class="flex flex-col gap-5 p-5" onSubmit={submit}>
+            <div class="flex flex-col gap-1">
+              <Dialog.Title class="text-base font-semibold text-ink">
+                {props.mode === 'delete'
+                  ? 'Delete saved view?'
+                  : props.mode === 'rename'
+                    ? 'Rename view'
+                    : 'New view'}
+              </Dialog.Title>
+              <Dialog.Description class="text-sm text-ink-muted">
+                {props.mode === 'delete'
+                  ? `“${props.initialName}” will be removed from your saved views. The table and its records will stay.`
+                  : props.mode === 'rename'
+                    ? 'Give this view a name that is easy to find.'
+                    : 'A different way to visualize the same data.'}
+              </Dialog.Description>
+            </div>
             <Show when={props.mode === 'save'}>
               <div
                 class="grid grid-cols-2 gap-2"
@@ -116,15 +118,17 @@ export function SaveViewDialog(props: {
                     setLayout('table');
                     if (name() === 'Board view') setName('Table view');
                   }}
-                  class="flex flex-col gap-2 rounded-lg border p-3 text-left text-sm outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50"
+                  class="flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-left text-sm outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50"
                   classList={{
                     'border-edge bg-hover': layout() === 'table',
                     'border-edge-muted': layout() !== 'table',
                   }}
                 >
-                  <TableIcon class="size-5 text-ink-muted" />
-                  <span class="font-medium">Table</span>
-                  <span class="text-xs text-ink-muted">Rows and columns</span>
+                  <TableIcon class="mt-0.5 size-4 shrink-0 text-ink-muted" />
+                  <span class="flex flex-col gap-0.5">
+                    <span class="font-medium text-ink">Table</span>
+                    <span class="text-xs text-ink-muted">Rows and columns</span>
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -134,23 +138,25 @@ export function SaveViewDialog(props: {
                     setLayout('board');
                     if (name() === 'Table view') setName('Board view');
                   }}
-                  class="flex flex-col gap-2 rounded-lg border p-3 text-left text-sm outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50"
+                  class="flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-left text-sm outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50"
                   classList={{
                     'border-edge bg-hover': layout() === 'board',
                     'border-edge-muted': layout() !== 'board',
                   }}
                 >
-                  <KanbanIcon class="size-5 text-ink-muted" />
-                  <span class="font-medium">Board</span>
-                  <span class="text-xs text-ink-muted">
-                    Cards grouped by a column
+                  <KanbanIcon class="mt-0.5 size-4 shrink-0 text-ink-muted" />
+                  <span class="flex flex-col gap-0.5">
+                    <span class="font-medium text-ink">Board</span>
+                    <span class="text-xs text-ink-muted">
+                      Cards grouped by a column
+                    </span>
                   </span>
                 </button>
               </div>
             </Show>
             <Show when={props.mode === 'save' && layout() === 'board'}>
-              <div class="flex items-center gap-3 text-xs text-ink-muted">
-                <span>Group by</span>
+              <div class="flex items-center justify-between gap-3 text-sm">
+                <span class="font-medium text-ink">Group by</span>
                 <ViewSelect
                   label="Group board by"
                   value={groupBy() ?? ''}
