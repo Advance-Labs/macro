@@ -82,6 +82,7 @@
   "AI/mcp/tools/rename-document",
   "AI/mcp/tools/rename-table",
   "AI/mcp/tools/reorder-columns",
+  "AI/mcp/tools/reorder-tables",
   "AI/mcp/tools/reply-to-document-comment",
   "AI/mcp/tools/resolve-document-comment",
   "AI/mcp/tools/save-database-query",
