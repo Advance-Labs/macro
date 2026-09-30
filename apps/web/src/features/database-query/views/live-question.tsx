@@ -178,7 +178,11 @@ export function LiveQuestion(props: {
                 </span>
               </Show>
             </span>
-            <Popover.Trigger class="shrink-0 rounded px-2 py-1 text-xs text-ink-muted">
+            <Popover.Trigger
+              class="shrink-0 rounded px-2 py-1 text-xs text-ink-muted"
+              // "Edit question" opens the editor itself, not the details view.
+              onClick={() => setEditing(!!props.editor)}
+            >
               {props.editor ? 'Edit question' : 'Details'}
             </Popover.Trigger>
           </div>

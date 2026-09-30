@@ -15,6 +15,15 @@ menu offers formats supported by the result; **View data** reveals a chart's
 underlying table. Chart settings are saved with the query, and charts refresh
 from each reader's permitted data just like other live answers.
 
+Answer values render as they do in the database grid: dates as `Dec 31, 2025`,
+checkboxes, coloured select pills, and mentions for people, documents, and tasks.
+Pressing a table, chart, or single-value block selects it, as the arrow keys do,
+and shows a ring; no text caret appears. Its controls keep their own clicks, and
+a table cell's text can still be selected to copy. **Edit question** in a block's
+header opens the question editor directly; clicking an inline answer opens its
+details, which offer **Edit question**. Double-click a block's title (or press F2
+on it) to rename it in place; Enter or leaving the field saves, Escape cancels.
+
 Opening an existing answer previews its saved query. **Ask** updates a changed
 question or reruns an unchanged query, and **Save changes** updates the document.
 Previewing never changes the saved answer on its own. **Undo** restores the

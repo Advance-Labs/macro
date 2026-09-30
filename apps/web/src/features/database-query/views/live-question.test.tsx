@@ -1,4 +1,4 @@
-import { fireEvent, render } from '@solidjs/testing-library';
+import { fireEvent, render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { describe, expect, it, vi } from 'vitest';
 import type { QueryAnswer } from '../core/query';
@@ -156,5 +156,56 @@ describe('answer titles', () => {
     await fireEvent.dblClick(reader.getByText('Tickets'));
     expect(reader.queryByRole('textbox')).toBeNull();
     reader.unmount();
+  });
+
+  it('opens the question editor straight from the block’s Edit question', async () => {
+    const rendered = render(() => (
+      <LiveQuestion
+        source={{
+          queryId: 'one',
+          prompt: 'How many RSVPs?',
+          title: 'RSVP Counts',
+          displayMode: 'table',
+        }}
+        loading={false}
+        onRefresh={vi.fn()}
+        editor={() => <textarea aria-label="Ask your database" />}
+      />
+    ));
+    await fireEvent.click(
+      rendered.getByRole('button', { name: 'Edit question' })
+    );
+    expect(await screen.findByLabelText('Ask your database')).toBeTruthy();
+    rendered.unmount();
+  });
+
+  it('opens the answer details from an inline answer', async () => {
+    const rendered = render(() => (
+      <LiveQuestion
+        source={{
+          queryId: 'one',
+          prompt: 'How many RSVPs?',
+          title: 'RSVPs',
+          displayMode: 'scalar',
+        }}
+        answer={{
+          results: [
+            { columns: [{ name: 'count', entity_type: null }], rows: [[6]] },
+          ],
+          read_tables: [],
+          read_versions: {},
+          truncated_tables: [],
+        }}
+        loading={false}
+        onRefresh={vi.fn()}
+        editor={() => <textarea aria-label="Ask your database" />}
+      />
+    ));
+    await fireEvent.click(rendered.getByRole('button', { name: /RSVPs/ }));
+    expect(
+      await screen.findByRole('button', { name: 'Edit question' })
+    ).toBeTruthy();
+    expect(screen.queryByLabelText('Ask your database')).toBeNull();
+    rendered.unmount();
   });
 });
