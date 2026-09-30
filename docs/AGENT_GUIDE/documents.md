@@ -6,10 +6,11 @@ Type `/database` and choose **Database** to insert a live database answer.
 The AI prompt receives focus immediately. Type your question and press Enter or
 **Ask**; Shift+Enter adds a line break. The source starts as **Automatic**, but
 until the database AI toolset lands the assistant cannot discover databases, so
-open the source picker beside **SQL** and choose the database explicitly. That
+open the source picker below the question and choose the database explicitly. That
 choice scopes the question to the entire database; no table selection is
 required. Document questions can only read data. Choose **Insert answer** to save the result in the document.
-SQL is optional under **SQL**. A single value becomes an inline answer and multiple records become a
+The question box shows no SQL: there is no SQL toggle, editor, or **Run SQL**
+(see [Showing SQL](databases.md#showing-sql)). A single value becomes an inline answer and multiple records become a
 result table. Ask for a bar, line, or pie chart to visualize a summary. The display
 menu offers formats supported by the result; **View data** reveals a chart's
 underlying table. Chart settings are saved with the query, and charts refresh
@@ -20,7 +21,7 @@ checkboxes, coloured select pills, and mentions for people, documents, and tasks
 Pressing a table, chart, or single-value block selects it, as the arrow keys do,
 and shows a ring; no text caret appears. Its controls keep their own clicks, and
 a table cell's text can still be selected to copy. **Details** in a block's header,
-or clicking an inline answer, shows the question, its SQL, and **Refresh**. Saved
+or clicking an inline answer, shows the question and **Refresh**, with no **View SQL**. Saved
 answers are not edited: insert a new one with `/database` to ask something else. Double-click a block's title (or press F2
 on it) to rename it in place; Enter or leaving the field saves, Escape cancels.
 
@@ -28,7 +29,9 @@ Opening an existing answer previews its saved query. **Ask** updates a changed
 question or reruns an unchanged query, and **Save changes** updates the document.
 Previewing never changes the saved answer on its own. **Undo** restores the
 previous draft. Changing the source keeps your question but requires a new answer
-before saving. Saved answers retain their resolved database and SQL when reopened.
+before saving. Saved answers retain their resolved database and query when reopened.
+An answer that fails says why in plain words, for example "This answer couldn't
+be computed: the column Price no longer exists."
 Answers run with
 each reader's database access and update when referenced tables change.
 See [Databases](databases.md#ai-questions-and-live-answers).

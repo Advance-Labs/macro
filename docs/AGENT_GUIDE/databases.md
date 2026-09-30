@@ -237,7 +237,9 @@ has `ListDatabases`, `DescribeDatabase`, `QueryDatabase`, `CreateDatabase`,
 `AddColumnOptions`, and `SaveDatabaseView`. It reads current schema before editing
 and checks actual results before reporting success.
 
-Query tool results render inline. Their display menu switches between a table,
+Query tool rows say what the query did in words (**Read Invites**, **Updated 3
+rows in Guests**, **Changed Price to number**, or **Queried Party Planner**) and
+never show the statement. Query tool results render inline. Their display menu switches between a table,
 a scalar answer, or compatible bar, line, and pie charts. A saved-view tool result
 offers **Open view**, which opens that database/table and selects the created view.
 The same tools are exposed to agent sessions through the Macro MCP server.
@@ -245,7 +247,7 @@ The same tools are exposed to agent sessions through the Macro MCP server.
 In a document, `/database` → **Database** opens the question box with the AI prompt focused
 immediately. The empty input rotates through example questions; a selected database
 uses its actual table and column names. Typing hides these hints, and reduced-motion
-preferences keep them static. Use the searchable source picker beside **SQL** to
+preferences keep them static. Use the searchable source picker below the question to
 choose a database; the entire chosen database is in scope, without a table
 prerequisite. **Automatic** finds a relevant accessible database from the question
 with read-only discovery tools and inspects all its tables; if matching sources are
@@ -265,13 +267,25 @@ requires updating the result before saving. Results refresh
 when their source tables change, and each reader sees only data they can access.
 The AI supplies a short answer title independently of the original question.
 Double-click that title (or focus it and press F2) to rename it inline; Enter saves,
-Escape cancels. Renaming keeps the question and SQL unchanged. Table references
+Escape cancels. Renaming keeps the question and its saved query unchanged. Table references
 survive database and table renames.
 
 Database creation, navigation, slash actions, and interactive answer chips are
 controlled by the `enable-databases` feature flag (`VITE_ENABLE_DATABASES` locally).
 An existing document keeps its answer label when the flag is off and does not fetch
 its database results.
+
+### Showing SQL
+
+People never see SQL. Questions still compile to SQL and run, saved answers
+still store it, and agents still write it through QueryDatabase, but the UI
+shows only the question, the answer, and plain-words descriptions. There is no
+SQL toggle, SQL editor, **Run SQL**, or **View SQL**, and a failed answer reads
+like "This answer couldn't be computed: the column Price no longer exists."
+instead of the engine's message. For development, start the web app with
+`VITE_SHOW_DATABASE_SQL=true` (the env-only `showDatabaseSql` flag) to bring
+back the SQL toggle and editor, **View SQL**, the raw error under **Technical
+details**, and the server's summary on query tool rows.
 
 ## Sharing and files
 
