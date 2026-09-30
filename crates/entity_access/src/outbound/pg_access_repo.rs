@@ -712,6 +712,11 @@ impl AccessRepository for PgAccessRepository {
     }
 
     #[tracing::instrument(err, skip(self))]
+    async fn get_database_row_database(&self, row_id: &Uuid) -> Result<Option<Uuid>, AccessError> {
+        Ok(queries::database_row_access::get_database_row_database(&self.pool, row_id).await?)
+    }
+
+    #[tracing::instrument(err, skip(self))]
     async fn get_call_channel_by_channel_id(
         &self,
         channel_id: &Uuid,

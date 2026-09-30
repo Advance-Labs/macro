@@ -263,6 +263,13 @@ pub trait AccessRepository: Clone + Send + Sync + 'static {
         call_id: &Uuid,
     ) -> impl Future<Output = Result<Option<CallChannelInfo>, AccessError>> + Send;
 
+    /// The database a row's table belongs to; `None` for a row that does not
+    /// exist.
+    fn get_database_row_database(
+        &self,
+        row_id: &Uuid,
+    ) -> impl Future<Output = Result<Option<Uuid>, AccessError>> + Send;
+
     /// Resolve a channel ID to the call's channel info and share permission ID.
     ///
     /// Checks both the `calls` table (active calls) and the `call_records` table

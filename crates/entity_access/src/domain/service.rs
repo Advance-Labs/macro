@@ -658,6 +658,20 @@ where
 
                 self.repo.get_entity_users(&entity_id, entity_type).await
             }
+            // A row's audience is its database's: rows carry no grants.
+            EntityType::DatabaseRow => {
+                let row_id = Uuid::parse_str(entity_id).map_err(|_| {
+                    AccessError::BadRequest("invalid row_id for get_users_by_entity")
+                })?;
+                match self.repo.get_database_row_database(&row_id).await? {
+                    Some(database_id) => {
+                        self.repo
+                            .get_entity_users(&database_id, EntityType::Database)
+                            .await
+                    }
+                    None => Ok(Vec::new()),
+                }
+            }
             EntityType::Channel => {
                 let channel_id = Uuid::parse_str(entity_id).map_err(|_| {
                     AccessError::BadRequest("invalid channel_id for get_users_by_entity")

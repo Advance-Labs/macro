@@ -53,6 +53,7 @@ struct MockRepo {
     thread_users: Arc<Mutex<Vec<MacroUserIdStr<'static>>>>,
     agent_session_users: Arc<Mutex<Vec<MacroUserIdStr<'static>>>>,
     database_users: Arc<Mutex<Vec<MacroUserIdStr<'static>>>>,
+    database_row_database: Arc<Mutex<Option<Uuid>>>,
     channel_users: Arc<Mutex<Vec<MacroUserIdStr<'static>>>>,
     call_channel: Arc<Mutex<Option<CallChannelInfo>>>,
     call_users: Arc<Mutex<Vec<MacroUserIdStr<'static>>>>,
@@ -96,6 +97,7 @@ impl MockRepo {
             thread_users: Arc::new(Mutex::new(vec![])),
             agent_session_users: Arc::new(Mutex::new(Vec::new())),
             database_users: Arc::new(Mutex::new(vec![])),
+            database_row_database: Arc::default(),
             channel_users: Arc::new(Mutex::new(vec![])),
             call_channel: Arc::new(Mutex::new(None)),
             call_users: Arc::default(),
@@ -223,6 +225,11 @@ impl MockRepo {
 
     fn with_database_users(mut self, users: Vec<MacroUserIdStr<'static>>) -> Self {
         self.database_users = Arc::new(Mutex::new(users));
+        self
+    }
+
+    fn with_database_row_database(mut self, database_id: Uuid) -> Self {
+        self.database_row_database = Arc::new(Mutex::new(Some(database_id)));
         self
     }
 
@@ -510,6 +517,10 @@ impl AccessRepository for MockRepo {
         _call_id: &Uuid,
     ) -> Result<Option<CallChannelInfo>, AccessError> {
         Ok(self.call_channel.lock().await.clone())
+    }
+
+    async fn get_database_row_database(&self, _row_id: &Uuid) -> Result<Option<Uuid>, AccessError> {
+        Ok(*self.database_row_database.lock().await)
     }
 
     async fn get_call_channel_by_channel_id(
@@ -2249,6 +2260,42 @@ async fn test_get_users_by_entity_thread_returns_empty_when_no_users() {
         .unwrap();
 
     assert!(result.is_empty());
+}
+
+/// A row has no grants of its own: whoever can reach its database hears
+/// about it, and a row that no longer exists has no one to tell.
+#[tokio::test]
+async fn test_get_users_by_entity_database_row_reaches_its_databases_users() {
+    let users = vec![
+        user_id("macro|owner@databases.test"),
+        user_id("macro|viewer@databases.test"),
+    ];
+    let service = EntityAccessServiceImpl::new(
+        MockRepo::new()
+            .with_database_row_database(Uuid::from_u128(0xdb000000_0000_0000_0000_000000000001))
+            .with_database_users(users.clone()),
+    );
+    assert_eq!(
+        service
+            .get_users_by_entity(
+                "70000000-0000-0000-0000-000000000001",
+                EntityType::DatabaseRow
+            )
+            .await
+            .unwrap(),
+        users
+    );
+
+    let gone = EntityAccessServiceImpl::new(MockRepo::new().with_database_users(users));
+    assert_eq!(
+        gone.get_users_by_entity(
+            "70000000-0000-0000-0000-000000000001",
+            EntityType::DatabaseRow
+        )
+        .await
+        .unwrap(),
+        Vec::<MacroUserIdStr<'static>>::new()
+    );
 }
 
 #[tokio::test]

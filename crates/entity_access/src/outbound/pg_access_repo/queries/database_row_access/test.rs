@@ -99,3 +99,22 @@ async fn unknown_row_has_no_access(pool: PgPool) {
         None
     );
 }
+
+#[sqlx::test(
+    migrator = "MACRO_DB_MIGRATIONS",
+    fixtures(path = "../../../../../fixtures", scripts("user_team"))
+)]
+async fn a_row_belongs_to_the_database_of_its_table(pool: PgPool) {
+    let (database_id, row_id) = insert_row(&pool).await;
+
+    assert_eq!(
+        get_database_row_database(&pool, &row_id).await.unwrap(),
+        Some(database_id)
+    );
+    assert_eq!(
+        get_database_row_database(&pool, &Uuid::now_v7())
+            .await
+            .unwrap(),
+        None
+    );
+}
