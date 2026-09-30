@@ -1257,6 +1257,7 @@ export * from './renameTableRequest';
 export * from './reorderColumnsRequest';
 export * from './reorderFavoritesRequest';
 export * from './reorderPinRequest';
+export * from './reorderTablesRequest';
 export * from './replaceCrmStagesRequest';
 export * from './requestedHarnessScope';
 export * from './resultColumn';

@@ -449,6 +449,24 @@ export const databasesClient = {
     );
   },
 
+  /**
+   * Set the tab order. `tableIds` names every table of the database exactly
+   * once; a stale list is refused, and the caller refetches.
+   */
+  async reorderTables(params: { id: string; tableIds: string[] }) {
+    return await databasesFetch<DatabaseTable[]>(
+      `/databases/${params.id}/tables/order`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ tableIds: params.tableIds }),
+        errorResponseHandler: async (response) => ({
+          code: 'HTTP_ERROR',
+          message: errorMessageFromBody(await response.text(), response.status),
+        }),
+      }
+    );
+  },
+
   async createColumn({
     id,
     tableId,

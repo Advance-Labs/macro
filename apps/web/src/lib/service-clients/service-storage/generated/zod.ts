@@ -7369,6 +7369,42 @@ export const createDatabaseTableBody = zod
   .describe('Request body for creating a table.');
 
 /**
+ * @summary Set the order of a database's tables (its tabs).
+ */
+export const reorderDatabaseTablesParams = zod.object({
+  id: zod.uuid().describe('Database id'),
+});
+
+export const reorderDatabaseTablesBody = zod
+  .object({
+    tableIds: zod
+      .array(zod.uuid())
+      .describe(
+        'Every table of the database, exactly once, in the new left-to-right order.'
+      ),
+  })
+  .describe('A complete tab order, identified by stable table IDs.');
+
+export const reorderDatabaseTablesResponseItem = zod
+  .object({
+    database_id: zod.uuid().describe('Owning database.'),
+    id: zod.uuid().describe('Identifier.'),
+    name: zod
+      .string()
+      .describe("Display name; also the basis of the table's SQL name."),
+    position: zod.string().describe('Fractional index for tab ordering.'),
+    version: zod
+      .number()
+      .describe(
+        'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+      ),
+  })
+  .describe('One table (tab) of a database.');
+export const reorderDatabaseTablesResponse = zod.array(
+  reorderDatabaseTablesResponseItem
+);
+
+/**
  * @summary Delete a table with its rows and columns. A database keeps at least one.
  */
 export const deleteDatabaseTableParams = zod.object({
