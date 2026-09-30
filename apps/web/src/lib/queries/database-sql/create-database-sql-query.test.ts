@@ -14,7 +14,7 @@ import {
 } from '@urql/core';
 import { createRoot, createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { empty, fromValue, mergeMap, pipe } from 'wonka';
+import { empty, fromPromise, fromValue, mergeMap, pipe } from 'wonka';
 import { createDatabaseSqlQuery } from './create-database-sql-query';
 
 const DEALS = '01990000-0000-7000-8000-00000000d001';
@@ -242,7 +242,8 @@ describe('createDatabaseSqlQuery', () => {
     const query = createRoot((cleanup) => {
       dispose = cleanup;
       return createDatabaseSqlQuery(() => ({ catalog, sql: sql() }), {
-        client: () => createClient({ url: 'http://test.invalid', exchanges: [] }),
+        client: () =>
+          createClient({ url: 'http://test.invalid', exchanges: [] }),
         cacheHost: () => undefined,
         people: async () => [],
         open,
@@ -263,7 +264,12 @@ describe('createDatabaseSqlQuery', () => {
     release();
     await vi.waitFor(() =>
       expect(query.outcome()?.rows).toEqual([
-        [{ type: 'text', value: "SELECT name FROM crm.deals WHERE name = 'Acme'" }],
+        [
+          {
+            type: 'text',
+            value: "SELECT name FROM crm.deals WHERE name = 'Acme'",
+          },
+        ],
       ])
     );
   });
@@ -325,5 +331,89 @@ describe('createDatabaseSqlQuery', () => {
     ]);
     expect(query.error()).toBeInstanceOf(CombinedError);
     expect(query.outcome()?.rows).toEqual([[{ type: 'text', value: 'Acme' }]]);
+  });
+
+  it('keeps a refresh from the network when the cache changes while it is in flight', async () => {
+    let answerRefresh = (_items: SoupItem[]) => {};
+    let refreshing = false;
+    const exchange: Exchange = () => (incoming) =>
+      pipe(
+        incoming,
+        mergeMap((operation) => {
+          if (operation.kind === 'teardown') return empty;
+          const respond = (items: SoupItem[]) => {
+            const data: SoupQuery = {
+              user: {
+                id: 'macro|viewer@databases.test',
+                emailLinks: [],
+                soup: { items, nextCursor: null },
+              },
+            };
+            return { operation, data, stale: false, hasNext: false };
+          };
+          if (!refreshing) return fromValue(respond([acme]));
+          return fromPromise(
+            new Promise<ReturnType<typeof respond>>((resolve) => {
+              answerRefresh = (items) => resolve(respond(items));
+            })
+          );
+        })
+      );
+    const client = createClient({
+      url: 'http://test.invalid/graphql',
+      exchanges: [exchange],
+    });
+    const revision = 'revision-2' as CacheRevision;
+    let cacheChanged = (_revision: CacheRevision) => {};
+    // The cache has not heard of the refreshed rows yet.
+    const host = {
+      onCacheChanged: (callback: (revision: CacheRevision) => void) => {
+        cacheChanged = callback;
+        return () => {};
+      },
+      entityFilter: async (): Promise<EntityFilterCacheResult> => ({
+        kind: 'reconciled',
+        revision,
+        keys: [`GraphqlSoupDatabaseRow:${ACME}`],
+        retainedKeys: [],
+        optimistic: false,
+      }),
+      readRecordsByKeys: async () => ({
+        revision,
+        records: [
+          { recordKey: `GraphqlSoupDatabaseRow:${ACME}`, record: acme },
+        ],
+      }),
+    } satisfies Pick<
+      CacheHost,
+      'onCacheChanged' | 'entityFilter' | 'readRecordsByKeys'
+    >;
+    const query = createRoot((cleanup) => {
+      dispose = cleanup;
+      return createDatabaseSqlQuery(
+        () => ({ catalog, sql: 'SELECT name FROM crm.deals' }),
+        {
+          client: () => client,
+          cacheHost: () => host,
+          people: async () => [],
+          open: names,
+        }
+      );
+    });
+    await vi.waitFor(() =>
+      expect(query.outcome()?.rows).toEqual([[{ type: 'text', value: 'Acme' }]])
+    );
+
+    refreshing = true;
+    const refreshed = query.refresh();
+    cacheChanged(revision);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    answerRefresh([globex]);
+    await refreshed;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(query.outcome()?.rows).toEqual([
+      [{ type: 'text', value: 'Globex' }],
+    ]);
   });
 });

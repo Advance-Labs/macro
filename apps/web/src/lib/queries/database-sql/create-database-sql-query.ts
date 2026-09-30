@@ -96,6 +96,9 @@ export function createDatabaseSqlQuery(
   const [error, setError] = createSignal<unknown>();
   const [loading, setLoading] = createSignal(false);
   let latest = 0;
+  // The cache may not hold what an in-flight network read will bring, so a
+  // cache change waits for it instead of answering from older rows.
+  let networkRead: Promise<void> | undefined;
   // First-page evidence for the local filter index, per statement.
   let baselines: LocalMembership['baselines'] = new Map();
 
@@ -156,6 +159,7 @@ export function createDatabaseSqlQuery(
     if (!host) return;
     onCleanup(
       subscribeToVisibleCacheChanges(host, () => {
+        if (networkRead) return settled(networkRead);
         const current = untrack(statement);
         return current ? settled(run(current, 'cache-first', true)) : undefined;
       })
@@ -172,7 +176,14 @@ export function createDatabaseSqlQuery(
     loading,
     refresh: async () => {
       const current = untrack(statement);
-      if (current) await run(current, 'network-only', false);
+      if (!current) return;
+      const reading = run(current, 'network-only', false);
+      networkRead = reading;
+      try {
+        await reading;
+      } finally {
+        if (networkRead === reading) networkRead = undefined;
+      }
     },
   };
 }
