@@ -9,7 +9,9 @@ use crate::denormalize::{
     DenormalizeError, ReadOutcome, RecordSource, denormalize_record,
     denormalize_with_entity_resolvers,
 };
-use crate::deps::{DepIndex, OpId};
+use crate::deps::{
+    DepIndex, OpId, QueryDependencies, ViewerFieldUpdate, ViewerFields, changed_viewer_fields,
+};
 use crate::document::{Document, DocumentError, OperationKind};
 use crate::entity_resolver::{EntityResolver, EntityResolverError, EntityResolverLookup};
 use crate::link_patch::{
@@ -141,6 +143,9 @@ pub struct WriteResult {
     pub revision: CacheRevision,
     /// Whether this write advanced [`Self::revision`].
     pub revision_advanced: bool,
+    /// Search buckets changed by an ordinary query response. `None` keeps
+    /// mutation/reset notifications conservative; an empty set proves no change.
+    pub search_changed_buckets: Option<BTreeSet<String>>,
     /// Records whose contents changed.
     pub changed: BTreeSet<EntityKey<'static>>,
     /// Active operations depending on changed records (host re-executes
@@ -154,6 +159,15 @@ pub struct WriteResult {
     pub reset: bool,
     /// Queries that should be revalidated after a successful settlement.
     pub revalidations: Vec<QueryRevalidation>,
+}
+
+/// Internal durable deltas; viewer field proof is never sent across host boundaries.
+struct PersistedChanges {
+    changed: BTreeSet<EntityKey<'static>>,
+    revision: CacheRevision,
+    revision_advanced: bool,
+    search_changed_buckets: BTreeSet<String>,
+    viewer_fields: ViewerFields,
 }
 
 /// Result of hydrating a query while returning only non-`@cacheOnly` fields.
@@ -444,6 +458,7 @@ impl<S: Storage> Engine<S> {
         Ok(WriteResult {
             revision,
             revision_advanced: true,
+            search_changed_buckets: None,
             changed,
             affected_ops,
             reset: false,
@@ -632,7 +647,7 @@ impl<S: Storage> Engine<S> {
         // to promote into the hot tier afterwards).
         let mut fetched_base: HashMap<EntityKey<'static>, Record> = HashMap::new();
         let mut known_absent: BTreeSet<EntityKey<'static>> = BTreeSet::new();
-        let mut deps = BTreeSet::new();
+        let mut deps = QueryDependencies::default();
 
         let outcome = loop {
             deps.clear();
@@ -697,11 +712,11 @@ impl<S: Storage> Engine<S> {
         for (key, record) in fetched_base {
             self.hot.put(key, record);
         }
-        for key in &deps {
+        for key in &deps.records {
             let _ = self.hot.get(key);
         }
         if let Some(op_id) = op_id {
-            self.deps.set_op_deps(op_id, deps);
+            self.deps.set_query_deps(op_id, deps);
         }
         Ok(outcome)
     }
@@ -1136,6 +1151,7 @@ impl<S: Storage> Engine<S> {
                 )),
             ));
         }
+        let is_query = op.kind == OperationKind::Query;
         let normalized = normalize_with_dependencies(op, variables, data, &entity_resolvers)?;
         let mut updates = normalized.updates;
         if !retain_pages {
@@ -1174,8 +1190,13 @@ impl<S: Storage> Engine<S> {
             let before = effective_records(&bases, &self.optimistic, &candidates);
             Some((candidates, before))
         };
-        let (changed, mut revision, mut revision_advanced, mut search_changed_buckets) =
-            self.persist_updates(updates, projections).await?;
+        let PersistedChanges {
+            changed,
+            mut revision,
+            mut revision_advanced,
+            mut search_changed_buckets,
+            viewer_fields: mut viewer_changes,
+        } = self.persist_updates(updates, projections).await?;
         if reset && !revision_advanced {
             revision = self.advance_revision()?;
             revision_advanced = true;
@@ -1194,7 +1215,14 @@ impl<S: Storage> Engine<S> {
             // Compare the composed view: a hydration hidden beneath a pending
             // edit must not invalidate the search projection it did not change.
             search_changed_buckets.clear();
+            viewer_changes.clear();
             for key in &candidates {
+                if let Some(fields) = changed_viewer_fields(
+                    before.get(key).and_then(Option::as_ref),
+                    after.get(key).and_then(Option::as_ref),
+                ) {
+                    viewer_changes.insert(key.clone(), fields);
+                }
                 collect_search_changes(
                     key,
                     before.get(key).and_then(Option::as_ref),
@@ -1213,6 +1241,8 @@ impl<S: Storage> Engine<S> {
         let mut affected_ops = if reset {
             // Everything anyone had cached is gone: re-execute all ops.
             self.deps.all_ops()
+        } else if is_query {
+            self.deps.ops_for_changes(&visible_changed, &viewer_changes)
         } else {
             self.deps.ops_for_keys(visible_changed.iter())
         };
@@ -1224,7 +1254,7 @@ impl<S: Storage> Engine<S> {
                 && self.optimistic.is_empty()
             {
                 self.deps
-                    .set_op_deps(registration.op_id, normalized.dependencies);
+                    .set_query_deps(registration.op_id, normalized.dependencies);
             } else {
                 self.deps.set_op_broad(registration.op_id);
             }
@@ -1233,6 +1263,8 @@ impl<S: Storage> Engine<S> {
             WriteResult {
                 revision,
                 revision_advanced,
+                search_changed_buckets: (is_query && !reset)
+                    .then(|| search_changed_buckets.clone()),
                 changed,
                 affected_ops,
                 reset,
@@ -1317,15 +1349,7 @@ impl<S: Storage> Engine<S> {
         &mut self,
         updates: RecordUpdates,
         projections: Vec<ProjectionMutation>,
-    ) -> Result<
-        (
-            BTreeSet<EntityKey<'static>>,
-            CacheRevision,
-            bool,
-            BTreeSet<String>,
-        ),
-        EngineError<S::Error>,
-    > {
+    ) -> Result<PersistedChanges, EngineError<S::Error>> {
         // Load current values (hot tier, then storage) so merges detect real
         // changes. Merges are staged in a plain map, NOT the LRU: a batch
         // larger than the hot capacity would otherwise evict its own
@@ -1355,6 +1379,7 @@ impl<S: Storage> Engine<S> {
 
         let mut changed = BTreeSet::new();
         let mut search_changed_buckets = BTreeSet::new();
+        let mut viewer_fields = ViewerFields::new();
         let mut to_persist: Vec<(EntityKey<'static>, Record)> = Vec::new();
         let mut touched = Vec::with_capacity(updates.len());
         for (key, update) in updates {
@@ -1363,7 +1388,12 @@ impl<S: Storage> Engine<S> {
                     // Compare only fields supplied by this partial response,
                     // overlaid onto the existing row, without cloning its body.
                     let before = snapshot_search_fields(&key, &existing);
+                    let viewer_update = ViewerFieldUpdate::capture(&existing, &update);
                     let did_change = existing.merge(update);
+                    if let Some(fields) = viewer_update.and_then(|update| update.finish(&existing))
+                    {
+                        viewer_fields.insert(key.clone(), fields);
+                    }
                     if did_change {
                         collect_search_changes(
                             &key,
@@ -1409,7 +1439,13 @@ impl<S: Storage> Engine<S> {
         for (key, record) in touched {
             self.hot.put(key, record);
         }
-        Ok((changed, revision, revision_advanced, search_changed_buckets))
+        Ok(PersistedChanges {
+            changed,
+            revision,
+            revision_advanced,
+            search_changed_buckets,
+            viewer_fields,
+        })
     }
 
     async fn projection_mutations_change(
@@ -1676,6 +1712,7 @@ impl<S: Storage> Engine<S> {
             write_result: WriteResult {
                 revision,
                 revision_advanced: true,
+                search_changed_buckets: None,
                 changed,
                 affected_ops,
                 reset: false,
@@ -2103,6 +2140,7 @@ impl<S: Storage> Engine<S> {
         Ok(WriteResult {
             revision,
             revision_advanced: true,
+            search_changed_buckets: None,
             changed: durable_changed,
             affected_ops,
             reset: false,
@@ -2189,6 +2227,7 @@ impl<S: Storage> Engine<S> {
         Ok(WriteResult {
             revision,
             revision_advanced: true,
+            search_changed_buckets: None,
             changed: BTreeSet::new(),
             affected_ops,
             reset: false,
@@ -2483,8 +2522,12 @@ impl<S: PredicateIndexStorage> Engine<S> {
         for (key, record) in entries {
             updates.entry(key).or_default().merge(record);
         }
-        let (changed, revision, revision_advanced, _) =
-            self.persist_updates(updates, projections).await?;
+        let PersistedChanges {
+            changed,
+            revision,
+            revision_advanced,
+            ..
+        } = self.persist_updates(updates, projections).await?;
         let mut affected_ops = self.deps.ops_for_keys(changed.iter());
         if let Some(origin_op) = origin_op {
             affected_ops.remove(&origin_op);
@@ -2492,6 +2535,7 @@ impl<S: PredicateIndexStorage> Engine<S> {
         Ok(WriteResult {
             revision,
             revision_advanced,
+            search_changed_buckets: None,
             changed,
             affected_ops,
             reset: false,
