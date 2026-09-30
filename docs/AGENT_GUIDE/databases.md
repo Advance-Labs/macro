@@ -71,7 +71,11 @@ Shift+Tab moves backward, and both wrap between rows. Read-only columns are
 skipped. Select values open a menu, including **Add option**; checkboxes change
 directly. Type on a selected select cell to search its options; Enter chooses a
 match, and Tab chooses the focused option or typed match before moving on.
-Invalid numbers and dates remain in the editor for correction.
+Date cells open Macro's date selector (the one tasks use): type a date or phrase
+such as `tomorrow`, `3d`, or `feb 17` and press Enter, or pick **Custom date...**
+for a calendar. Typing on a selected date cell starts that search; Delete clears
+the date, and Tab leaves the selector without changing it.
+Invalid numbers remain in the editor for correction.
 Arrow keys also move between checkbox and closed select cells without changing
 their values or opening a menu. Enter opens a selected select cell's menu.
 Blank grid lines continue below the editable row to fill the available space.
