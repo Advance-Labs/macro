@@ -114,9 +114,7 @@ describe('column header interactions', () => {
       'Connection lost'
     );
     expect(input.value).toBe(' Task ');
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Retry rename column' })
-    );
+    fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() =>
       expect(screen.queryByLabelText('Column name')).toBeNull()
     );
@@ -144,6 +142,40 @@ describe('column header interactions', () => {
     expect(screen.queryByLabelText('Column name')).toBeNull();
     expect(rename).not.toHaveBeenCalled();
     await waitFor(() => expect(document.activeElement).toBe(header));
+  });
+
+  it('saves on blur without taking focus back, and drops a name emptied before blurring', async () => {
+    const rename = vi.fn(async () => {});
+    render(() => (
+      <>
+        <DatabaseColumnHeader
+          column={column}
+          canRename
+          onRename={rename}
+          onSort={vi.fn()}
+        />
+        <button type="button">Elsewhere</button>
+      </>
+    ));
+    const elsewhere = screen.getByRole('button', { name: 'Elsewhere' });
+    fireEvent.dblClick(screen.getByRole('columnheader', { name: 'Name' }));
+    const input = await screen.findByLabelText('Column name');
+    fireEvent.input(input, { target: { value: 'Title' } });
+    elsewhere.focus();
+    fireEvent.blur(input);
+    await waitFor(() =>
+      expect(screen.queryByLabelText('Column name')).toBeNull()
+    );
+    expect(rename).toHaveBeenCalledExactlyOnceWith('name', 'Title', 'Name');
+    expect(document.activeElement).toBe(elsewhere);
+
+    fireEvent.dblClick(screen.getByRole('columnheader', { name: 'Name' }));
+    const second = await screen.findByLabelText('Column name');
+    fireEvent.input(second, { target: { value: '  ' } });
+    fireEvent.blur(second);
+    expect(screen.queryByLabelText('Column name')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(rename).toHaveBeenCalledOnce();
   });
 
   it('keeps sort and view controls available without exposing rename to a viewer', async () => {
