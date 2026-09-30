@@ -59,6 +59,12 @@ the tab, or focus it and press F2. These actions also work on inactive tabs.
 The tab itself becomes an input. Enter or leaving the input saves; Escape cancels.
 Renaming preserves records and saved views. A concurrent rename asks you to reopen
 the editor, and a failed request keeps your draft available to retry.
+To reorder tables, drag a tab along the tab strip; an accent line shows where it
+will land, and Escape cancels the drag. From the keyboard, focus a tab, press
+Shift+F10 (or right-click it) and choose **Move left** or **Move right**; each is
+disabled at its end of the strip. The new order shows at once, is saved for every
+viewer, and survives a reload. If the save fails, the tabs return to their previous
+order and a toast says so.
 
 An editable empty row always follows the records. Enter a value in any of its
 cells to create a record; the next empty row appears immediately. Merely focusing
@@ -201,7 +207,7 @@ this database, its current table, and all its tables. Nothing sends automaticall
 Type a question or requested change and send it using the normal chat controls.
 Any chat, not only one opened from a database, can build databases: the assistant
 has `ListDatabases`, `DescribeDatabase`, `QueryDatabase`, `CreateDatabase`,
-`CreateTable`, `RenameTable`, `AddColumn` (including relation columns via `linkToTableId`),
+`CreateTable`, `RenameTable`, `ReorderTables`, `AddColumn` (including relation columns via `linkToTableId`),
 `AddColumnOptions`, and `SaveDatabaseView`. It reads current schema before editing
 and checks actual results before reporting success.
 

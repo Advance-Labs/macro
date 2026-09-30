@@ -411,3 +411,115 @@ describe('table creation and navigation', () => {
     await waitFor(() => expect(document.activeElement).toBe(name));
   });
 });
+
+describe('dragging tabs', () => {
+  function tabGeometry() {
+    const lefts: Record<string, number> = {
+      Tasks: 0,
+      People: 100,
+      Notes: 200,
+    };
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      function (this: HTMLElement) {
+        if (this.getAttribute('role') === 'tablist')
+          return new DOMRect(0, 0, 300, 32);
+        const name = this.querySelector('[role=tab]')?.textContent ?? '';
+        const left = lefts[name];
+        return left === undefined
+          ? new DOMRect(0, 0, 0, 0)
+          : new DOMRect(left, 0, 100, 32);
+      }
+    );
+  }
+  const tables = [
+    { id: 'tasks', name: 'Tasks' },
+    { id: 'people', name: 'People' },
+    { id: 'notes', name: 'Notes' },
+  ];
+
+  it('drops a dragged tab after the one under the pointer, showing where it lands', async () => {
+    tabGeometry();
+    const reorder = vi.fn();
+    render(() => (
+      <TableNavigation
+        tables={tables}
+        activeTableId="tasks"
+        canCreate
+        onCreate={vi.fn<CreateTable>()}
+        onSelect={vi.fn()}
+        onRename={vi.fn(async () => {})}
+        onReorder={reorder}
+      />
+    ));
+    const tasks = screen.getByRole('tab', { name: 'Tasks' });
+    fireEvent.mouseDown(tasks, { button: 0, clientX: 40, clientY: 16 });
+    // The near half of the next tab is still the original slot.
+    fireEvent.mouseMove(document, { clientX: 130, clientY: 16 });
+    expect(document.querySelector('[data-tab-drop-indicator]')).toBeNull();
+    fireEvent.mouseMove(document, { clientX: 180, clientY: 16 });
+    await waitFor(() => {
+      const line = document.querySelector<HTMLElement>(
+        '[data-tab-drop-indicator]'
+      );
+      expect(line?.dataset.dropTarget).toBe('people');
+      expect(line?.dataset.dropEdge).toBe('after');
+      expect(line?.style.left).toBe('200px');
+    });
+    fireEvent.mouseUp(document, { button: 0, clientX: 180, clientY: 16 });
+    expect(reorder).toHaveBeenCalledExactlyOnceWith([
+      'people',
+      'tasks',
+      'notes',
+    ]);
+    expect(document.querySelector('[data-tab-drop-indicator]')).toBeNull();
+  });
+
+  it('cancels a tab drag on Escape without reordering', async () => {
+    tabGeometry();
+    const reorder = vi.fn();
+    render(() => (
+      <TableNavigation
+        tables={tables}
+        activeTableId="tasks"
+        canCreate
+        onCreate={vi.fn<CreateTable>()}
+        onSelect={vi.fn()}
+        onReorder={reorder}
+      />
+    ));
+    const notes = screen.getByRole('tab', { name: 'Notes' });
+    fireEvent.mouseDown(notes, { button: 0, clientX: 240, clientY: 16 });
+    fireEvent.mouseMove(document, { clientX: 20, clientY: 16 });
+    await waitFor(() =>
+      expect(
+        document.querySelector<HTMLElement>('[data-tab-drop-indicator]')
+          ?.dataset.dropEdge
+      ).toBe('before')
+    );
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(document.querySelector('[data-tab-drop-indicator]')).toBeNull();
+    fireEvent.mouseUp(document, { button: 0, clientX: 20, clientY: 16 });
+    expect(reorder).not.toHaveBeenCalled();
+  });
+
+  it('does not start a drag for viewers who cannot edit', () => {
+    tabGeometry();
+    const reorder = vi.fn();
+    render(() => (
+      <TableNavigation
+        tables={tables}
+        activeTableId="tasks"
+        canCreate={false}
+        onCreate={vi.fn<CreateTable>()}
+        onSelect={vi.fn()}
+        onReorder={reorder}
+      />
+    ));
+    const tasks = screen.getByRole('tab', { name: 'Tasks' });
+    fireEvent.mouseDown(tasks, { button: 0, clientX: 40, clientY: 16 });
+    fireEvent.mouseMove(document, { clientX: 180, clientY: 16 });
+    fireEvent.mouseUp(document, { button: 0, clientX: 180, clientY: 16 });
+    expect(document.querySelector('[data-tab-drop-indicator]')).toBeNull();
+    expect(reorder).not.toHaveBeenCalled();
+  });
+});
