@@ -155,11 +155,17 @@ The card's **Move …** menu offers the same action without dragging. On a multi
 board a card can appear in several lanes: moving it replaces that lane's value
 and keeps its other selections; moving it to the unassigned lane clears them.
 
-**New** within a lane opens an inline title input. Enter creates a card with that
-lane's value; it appears immediately while saving, and another card can be started
-without waiting. Failed requests keep the typed draft for correction or retry.
-Open a card to edit its details. **New group** at the end of a select board adds
-another option and lane. Hiding a property does not change the record's title.
+**+ New** at the bottom of a lane (or the lane header's **+**) puts an empty,
+focused card title in that lane; nothing opens. Enter creates the card with the
+lane's value and opens another empty card below it, so several can be typed in a
+row; each appears in place while it saves. Shift+Enter creates the card and opens
+its record. Escape, or leaving an empty title, cancels; leaving a typed title
+saves it. From the keyboard, press **n** with focus on any card or control in a
+lane, or Enter on a focused lane header, to start a card there. The toolbar's
+**New** starts one in the first lane. Failed requests keep the typed draft for
+correction or retry; Enter in it retries. Open a card to edit its details. **New group** at the end of a select board adds
+another option and lane. Every new select option, a new group included, takes
+the next colour of the tag palette, so its pill is coloured wherever it shows. Hiding a property does not change the record's title.
 The table grid uses its always-ready empty row instead of a separate New button.
 
 **Filter**, **Sort**, **Search**, and **View settings** are grouped at the right of

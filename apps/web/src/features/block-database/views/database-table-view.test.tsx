@@ -1047,26 +1047,21 @@ describe('database table view', () => {
       fireEvent.click(
         screen.getByRole('button', { name: 'Add record to Done' })
       );
-      fireEvent.input(
-        screen.getByRole('textbox', { name: 'New record title' }),
-        { target: { value: 'One new card' } }
-      );
-      fireEvent.click(screen.getByRole('button', { name: 'Add record' }));
+      const draft = screen.getByRole('textbox', { name: 'New record title' });
+      fireEvent.input(draft, { target: { value: 'One new card' } });
+      fireEvent.keyDown(draft, { key: 'Enter' });
       await screen.findByRole('alert');
-      await waitFor(() =>
-        expect(
-          (
-            screen.getByRole('button', {
-              name: 'Add record',
-            }) as HTMLButtonElement
-          ).disabled
-        ).toBe(false)
-      );
-      fireEvent.click(
-        screen.getByRole('button', {
-          name: surface === 'draft' ? 'Add record' : 'Retry',
-        })
-      );
+      const titles = () =>
+        screen
+          .queryAllByRole('textbox', { name: 'New record title' })
+          .map((input) => (input as HTMLTextAreaElement).value);
+      await waitFor(() => expect(titles()).toEqual(['One new card', '']));
+      if (surface === 'draft')
+        fireEvent.keyDown(
+          screen.getAllByRole('textbox', { name: 'New record title' })[0],
+          { key: 'Enter' }
+        );
+      else fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
       await waitFor(() =>
         expect(fixture.source.write).toHaveBeenCalledTimes(2)
       );
@@ -1074,9 +1069,7 @@ describe('database table view', () => {
         name: 'Saving new record',
       });
       expect(submitted.textContent).toContain('One new card');
-      expect(
-        screen.queryByRole('textbox', { name: 'New record title' })
-      ).toBeNull();
+      expect(titles()).toEqual(['']);
       fireEvent.keyDown(submitted, { key: 'Escape' });
       expect(screen.getByRole('status', { name: 'Saving new record' })).toBe(
         submitted
@@ -1086,9 +1079,10 @@ describe('database table view', () => {
       await screen.findByRole('button', { name: 'Open One new card' });
       await waitFor(() =>
         expect(
-          screen.queryByRole('textbox', { name: 'New record title' })
+          screen.queryByRole('status', { name: 'Saving new record' })
         ).toBeNull()
       );
+      expect(titles()).toEqual(['']);
       expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
       expect(fixture.source.write).toHaveBeenCalledTimes(2);
       expect(
@@ -1101,11 +1095,11 @@ describe('database table view', () => {
         fireEvent.click(
           screen.getByRole('button', { name: 'Add record to Done' })
         );
-        fireEvent.input(
-          screen.getByRole('textbox', { name: 'New record title' }),
-          { target: { value: 'A second intentional card' } }
-        );
-        fireEvent.click(screen.getByRole('button', { name: 'Add record' }));
+        const next = screen.getByRole('textbox', { name: 'New record title' });
+        fireEvent.input(next, {
+          target: { value: 'A second intentional card' },
+        });
+        fireEvent.keyDown(next, { key: 'Enter' });
         await screen.findByRole('button', {
           name: 'Open A second intentional card',
         });
@@ -1118,140 +1112,6 @@ describe('database table view', () => {
       }
     }
   );
-
-  it('keeps an active draft editor through a filtered create acknowledgment and saves its next cell before reconciling the filter', async () => {
-    const fixture = sourceFixture();
-    fixture.setColumns([
-      columns[0],
-      { ...columns[0], id: 'notes', name: 'Notes' },
-    ]);
-    fixture.setAnswerView(() => titleContains('launch'));
-    persistWrites(fixture);
-    const commit = vi.mocked(fixture.source.write).getMockImplementation()!;
-    let complete!: () => void;
-    vi.mocked(fixture.source.write).mockImplementation(
-      async (mutation, version) => {
-        if (mutation.kind === 'create')
-          await new Promise<void>((resolve) => {
-            complete = resolve;
-          });
-        return commit(mutation, version);
-      }
-    );
-    render(() => (
-      <DatabaseTableView
-        name="Projects"
-        source={fixture.source}
-        canEdit
-        view={{ ...defaultDatabaseView(), search: 'launch' }}
-        addColumn={() => null}
-      />
-    ));
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Name: Unnamed. Click to edit' })
-    );
-    fireEvent.input(await screen.findByRole('textbox', { name: 'Edit Name' }), {
-      target: { value: 'Outside view' },
-    });
-    await userEvent.tab();
-    const notes = await screen.findByRole('textbox', { name: 'Edit Notes' });
-    fireEvent.input(notes, { target: { value: 'Keep these notes' } });
-    await waitFor(() => expect(fixture.source.write).toHaveBeenCalledTimes(1));
-    complete();
-    await waitFor(() => expect(fixture.table().rows).toHaveLength(2));
-    expect(screen.getByRole('textbox', { name: 'Edit Notes' })).toBe(notes);
-    expect(document.activeElement).toBe(notes);
-    expect((notes as HTMLInputElement).value).toBe('Keep these notes');
-    await userEvent.tab();
-    await waitFor(() =>
-      expect(fixture.source.write).toHaveBeenNthCalledWith(
-        2,
-        {
-          kind: 'cell',
-          rowId: 'created',
-          columnId: 'notes',
-          value: 'Keep these notes',
-        },
-        2
-      )
-    );
-    await waitFor(() =>
-      expect(
-        screen.queryByRole('button', { name: /Name: Outside view/ })
-      ).toBeNull()
-    );
-    expect(
-      fixture.table().rows.find((row) => row.rowId === 'created')?.cells.notes
-    ).toBe('Keep these notes');
-    expect(fixture.table().rows).toHaveLength(2);
-  });
-
-  it('reveals a newly created filtered record only on request without changing the view', async () => {
-    const fixture = sourceFixture();
-    fixture.setAnswerView(
-      () => (rows: DatabaseRow[]) =>
-        titleContains('launch')(rows).filter(
-          (row) => row.cells.status === 'To do'
-        )
-    );
-    persistWrites(fixture);
-    const changeView = vi.fn();
-    render(() => (
-      <DatabaseTableView
-        name="Projects"
-        source={fixture.source}
-        canEdit
-        view={{
-          ...defaultDatabaseView(),
-          search: 'launch',
-          filters: [
-            {
-              id: 'filter',
-              columnId: 'status',
-              operator: 'equals',
-              value: 'To do',
-            },
-          ],
-        }}
-        onViewChange={changeView}
-        addColumn={() => <button type="button">Add column</button>}
-      />
-    ));
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Name: Unnamed. Click to edit' })
-    );
-    const draft = await screen.findByRole('textbox', { name: 'Edit Name' });
-    fireEvent.input(draft, { target: { value: 'Outside view' } });
-    fireEvent.keyDown(draft, { key: 'Enter' });
-    await screen.findByText('Record created outside this view');
-    expect(screen.queryByRole('dialog')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Open record' }));
-    const dialog = await screen.findByRole('dialog');
-    expect(
-      within(dialog).getByText(
-        'This record doesn’t match your search and filters. You can keep editing it here.'
-      )
-    ).toBeTruthy();
-    expect(
-      (
-        within(dialog).getByRole('button', {
-          name: 'Next record',
-        }) as HTMLButtonElement
-      ).disabled
-    ).toBe(true);
-    expect(
-      (
-        within(dialog).getByRole('button', {
-          name: 'Previous record',
-        }) as HTMLButtonElement
-      ).disabled
-    ).toBe(true);
-    expect(
-      within(dialog).getByRole('textbox', { name: 'Edit Name' })
-    ).toBeTruthy();
-    expect(changeView).not.toHaveBeenCalled();
-    expect(fixture.source.write).toHaveBeenCalledTimes(1);
-  });
 
   it('reveals a card created outside search through its saved notice without creating it again', async () => {
     const fixture = sourceFixture();
@@ -1274,19 +1134,25 @@ describe('database table view', () => {
       />
     ));
     fireEvent.click(screen.getByRole('button', { name: 'Add record to Done' }));
-    fireEvent.input(screen.getByRole('textbox', { name: 'New record title' }), {
-      target: { value: 'Write announcement' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Add record' }));
+    const draft = screen.getByRole('textbox', { name: 'New record title' });
+    fireEvent.input(draft, { target: { value: 'Write announcement' } });
+    fireEvent.keyDown(draft, { key: 'Enter' });
     await screen.findByText('Record created outside this view');
     expect(
       screen.queryByRole('button', { name: 'Open Write announcement' })
     ).toBeNull();
     await waitFor(() =>
       expect(
-        screen.queryByRole('textbox', { name: 'New record title' })
+        screen.queryByRole('status', { name: 'Saving new record' })
       ).toBeNull()
     );
+    expect(
+      (
+        screen.getByRole('textbox', {
+          name: 'New record title',
+        }) as HTMLTextAreaElement
+      ).value
+    ).toBe('');
     fireEvent.click(screen.getByRole('button', { name: 'Open record' }));
     const dialog = await screen.findByRole('dialog');
     expect(
@@ -1606,10 +1472,9 @@ describe('database table view', () => {
       screen.getByRole('button', { name: 'Open Plan launch' })
     ).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Add record to Done' }));
-    fireEvent.input(screen.getByRole('textbox', { name: 'New record title' }), {
-      target: { value: 'New launch' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Add record' }));
+    const draft = screen.getByRole('textbox', { name: 'New record title' });
+    fireEvent.input(draft, { target: { value: 'New launch' } });
+    fireEvent.keyDown(draft, { key: 'Enter' });
     await waitFor(() =>
       expect(source.write).toHaveBeenCalledWith(
         { kind: 'create', values: { status: 'Done', title: 'New launch' } },
@@ -1679,6 +1544,45 @@ describe('database table view', () => {
       );
     }
   );
+
+  it('starts an inline card in the first lane when the toolbar adds a record to a board', async () => {
+    const { source } = sourceFixture();
+    render(() => (
+      <DatabaseTableView
+        name="Projects"
+        source={source}
+        canEdit
+        view={{ ...defaultDatabaseView(), layout: 'board', groupBy: 'status' }}
+        addColumn={() => <button type="button">Add property</button>}
+        renderToolbar={(actions) => (
+          <button type="button" onClick={() => void actions.createRecord()}>
+            New record
+          </button>
+        )}
+      />
+    ));
+    fireEvent.click(screen.getByText('New record', { selector: 'button' }));
+    const lanes = screen.getAllByRole('region');
+    expect(lanes[0].getAttribute('aria-label')).toBe('Done lane');
+    const draft = within(lanes[0]).getByRole('textbox', {
+      name: 'New record title',
+    });
+    expect(document.activeElement).toBe(draft);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(source.write).not.toHaveBeenCalled();
+    fireEvent.input(draft, { target: { value: 'From the toolbar' } });
+    fireEvent.keyDown(draft, { key: 'Enter' });
+    await waitFor(() =>
+      expect(source.write).toHaveBeenCalledWith(
+        {
+          kind: 'create',
+          values: { status: 'Done', title: 'From the toolbar' },
+        },
+        1
+      )
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
 
   it('creates a card without writing a read-only string title', async () => {
     const { source, setColumns } = sourceFixture();

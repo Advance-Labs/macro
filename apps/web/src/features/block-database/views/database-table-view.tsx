@@ -21,6 +21,7 @@ import {
 } from '../component/GridCell';
 import {
   DatabaseBoard,
+  type DatabaseBoardControls,
   type DatabaseCardPlacement,
 } from '../components/database-board';
 import {
@@ -130,6 +131,7 @@ export function DatabaseTableView(props: {
   let pendingColumnOrders = 0;
   let confirmedColumnOrder: string[] = [];
   let cardPlacementBurst: CardPlacementBurst | undefined;
+  let boardControls: DatabaseBoardControls | undefined;
   const [selectedId, setSelectedId] = createSignal<string>();
   const [editCell, setEditCell] = createSignal<{
     rowId: string;
@@ -712,7 +714,9 @@ export function DatabaseTableView(props: {
     <>
       {props.renderToolbar?.({
         createRecord: async () =>
-          props.view.layout === 'table' ? focusBlankRow() : createRow(),
+          props.view.layout === 'table'
+            ? focusBlankRow()
+            : boardControls?.addCard() || createRow(),
         focusFirstCell,
         focusColumn,
         openRecord: reveal,
@@ -1058,9 +1062,12 @@ export function DatabaseTableView(props: {
                           )
                         : false;
                     }}
-                    onCreate={(value, title, intentId) =>
-                      createRow(value, title, false, intentId)
+                    onCreate={(value, title, intentId, options) =>
+                      createRow(value, title, options?.open ?? false, intentId)
                     }
+                    controlsRef={(controls) => {
+                      boardControls = controls;
+                    }}
                     onAddGroup={async (label) => {
                       const column = group();
                       if (!props.canEdit || !column.writable) return;

@@ -289,6 +289,7 @@ export function KanbanLane(props: {
   id: string;
   label: string;
   canReorder?: boolean;
+  onKeyDown?: JSX.EventHandlerUnion<HTMLElement, KeyboardEvent>;
   children: JSX.Element;
 }) {
   const drag = useContext(DragContext);
@@ -326,6 +327,7 @@ export function KanbanLane(props: {
         }}
         aria-label={props.label}
         data-kanban-lane={props.id}
+        onKeyDown={props.onKeyDown}
         onMouseDown={(event) => {
           if (props.canReorder && event.target === event.currentTarget) {
             drag?.start(event);

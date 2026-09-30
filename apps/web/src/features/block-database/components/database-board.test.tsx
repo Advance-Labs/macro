@@ -267,7 +267,7 @@ describe('database board', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add record to Done' }));
     const input = screen.getByRole('textbox', {
       name: 'New record title',
-    }) as HTMLInputElement;
+    }) as HTMLTextAreaElement;
     fireEvent.input(input, { target: { value: 'Remember this draft' } });
     setRows([
       ...initialRows,
@@ -277,10 +277,10 @@ describe('database board', () => {
       (
         screen.getByRole('textbox', {
           name: 'New record title',
-        }) as HTMLInputElement
+        }) as HTMLTextAreaElement
       ).value
     ).toBe('Remember this draft');
-    fireEvent.click(screen.getByRole('button', { name: 'Add record' }));
+    fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() =>
       expect(onCreate).toHaveBeenCalledWith(
         'Done',
@@ -288,13 +288,181 @@ describe('database board', () => {
         expect.any(String)
       )
     );
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByRole('textbox', { name: 'New record title' })
+          .map((input) => (input as HTMLTextAreaElement).value)
+      ).toEqual(['Remember this draft', ''])
+    );
+  });
+
+  it('Enter saves a card into its lane and opens an empty card below it', async () => {
+    const onCreate = vi.fn(async () => true);
+    render(() => (
+      <DatabaseBoard
+        rows={initialRows}
+        columns={columns}
+        groupColumn={columns[1]}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={vi.fn(async () => true)}
+        onCreate={onCreate}
+      />
+    ));
+    const lane = screen.getByRole('region', { name: 'Done lane' });
+    fireEvent.click(within(lane).getByRole('button', { name: 'New record' }));
+    const first = within(lane).getByRole('textbox', {
+      name: 'New record title',
+    }) as HTMLTextAreaElement;
+    expect(document.activeElement).toBe(first);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.input(first, { target: { value: 'First idea' } });
+    fireEvent.keyDown(first, { key: 'Enter' });
+    expect(onCreate).toHaveBeenCalledWith(
+      'Done',
+      'First idea',
+      expect.any(String)
+    );
+    const next = within(lane).getByRole('textbox', {
+      name: 'New record title',
+    }) as HTMLTextAreaElement;
+    expect(next).not.toBe(first);
+    expect(next.value).toBe('');
+    expect(document.activeElement).toBe(next);
+    fireEvent.input(next, { target: { value: 'Second idea' } });
+    fireEvent.keyDown(next, { key: 'Enter' });
+    expect(onCreate).toHaveBeenLastCalledWith(
+      'Done',
+      'Second idea',
+      expect.any(String)
+    );
+    expect(onCreate).toHaveBeenCalledTimes(2);
     expect(
-      (
-        (await screen.findByRole('textbox', {
-          name: 'New record title',
-        })) as HTMLInputElement
-      ).value
-    ).toBe('Remember this draft');
+      within(screen.getByRole('region', { name: 'To do lane' })).queryByRole(
+        'textbox'
+      )
+    ).toBeNull();
+  });
+
+  it('Escape cancels a new card and returns focus to its lane', () => {
+    const onCreate = vi.fn(async () => true);
+    render(() => (
+      <DatabaseBoard
+        rows={initialRows}
+        columns={columns}
+        groupColumn={columns[1]}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={vi.fn(async () => true)}
+        onCreate={onCreate}
+      />
+    ));
+    const lane = screen.getByRole('region', { name: 'Done lane' });
+    fireEvent.click(within(lane).getByRole('button', { name: 'New record' }));
+    const input = within(lane).getByRole('textbox', {
+      name: 'New record title',
+    });
+    fireEvent.input(input, { target: { value: 'Not this one' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(within(lane).queryByRole('textbox')).toBeNull();
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(
+      within(lane).getByRole('button', { name: 'New record' })
+    );
+  });
+
+  it('blurring a typed card saves it and blurring an empty card cancels it', () => {
+    const onCreate = vi.fn(async () => true);
+    render(() => (
+      <DatabaseBoard
+        rows={initialRows}
+        columns={columns}
+        groupColumn={columns[1]}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={vi.fn(async () => true)}
+        onCreate={onCreate}
+      />
+    ));
+    const lane = screen.getByRole('region', { name: 'Done lane' });
+    fireEvent.click(within(lane).getByRole('button', { name: 'New record' }));
+    fireEvent.blur(within(lane).getByRole('textbox'));
+    expect(within(lane).queryByRole('textbox')).toBeNull();
+    expect(onCreate).not.toHaveBeenCalled();
+    fireEvent.click(within(lane).getByRole('button', { name: 'New record' }));
+    const input = within(lane).getByRole('textbox');
+    fireEvent.input(input, { target: { value: 'Typed then left' } });
+    fireEvent.blur(input);
+    expect(onCreate).toHaveBeenCalledWith(
+      'Done',
+      'Typed then left',
+      expect.any(String)
+    );
+    expect(within(lane).queryByRole('textbox')).toBeNull();
+  });
+
+  it('n on a focused card or Enter on a lane header adds a card to that lane', () => {
+    render(() => (
+      <DatabaseBoard
+        rows={initialRows}
+        columns={columns}
+        groupColumn={columns[1]}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={vi.fn(async () => true)}
+        onCreate={vi.fn(async () => true)}
+      />
+    ));
+    const todo = screen.getByRole('region', { name: 'To do lane' });
+    const card = within(todo).getByRole('button', {
+      name: 'Open Launch project',
+    });
+    card.focus();
+    fireEvent.keyDown(card, { key: 'n' });
+    expect(document.activeElement).toBe(
+      within(todo).getByRole('textbox', { name: 'New record title' })
+    );
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    const done = screen.getByRole('region', { name: 'Done lane' });
+    const header = within(done).getByRole('button', { name: 'Done lane' });
+    header.focus();
+    fireEvent.keyDown(header, { key: 'Enter' });
+    expect(document.activeElement).toBe(
+      within(done).getByRole('textbox', { name: 'New record title' })
+    );
+  });
+
+  it('Shift+Enter saves a card and asks to open its record', () => {
+    const onCreate = vi.fn(async () => true);
+    render(() => (
+      <DatabaseBoard
+        rows={initialRows}
+        columns={columns}
+        groupColumn={columns[1]}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={vi.fn(async () => true)}
+        onCreate={onCreate}
+      />
+    ));
+    const lane = screen.getByRole('region', { name: 'Done lane' });
+    fireEvent.click(within(lane).getByRole('button', { name: 'New record' }));
+    const input = within(lane).getByRole('textbox');
+    fireEvent.input(input, { target: { value: 'Needs detail' } });
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+    expect(onCreate).toHaveBeenCalledWith(
+      'Done',
+      'Needs detail',
+      expect.any(String),
+      { open: true }
+    );
+    expect(within(lane).queryByRole('textbox')).toBeNull();
   });
 
   it('opens records for viewers without exposing move or create actions', () => {
@@ -327,7 +495,7 @@ describe('database board', () => {
   });
 });
 
-it('shows submitted cards immediately and allows the next draft while the first save is pending', async () => {
+it('shows a submitted card in place while it saves and keeps its title when the save fails', async () => {
   const [pending, setPending] = createSignal(new Set<string>());
   let complete: (saved: boolean) => void = () => {};
   const onCreate = vi.fn((_value: unknown, _title: string, intent: string) => {
@@ -356,28 +524,24 @@ it('shows submitted cards immediately and allows the next draft while the first 
   fireEvent.click(within(lane).getByRole('button', { name: 'New record' }));
   const input = screen.getByRole('textbox', { name: 'New record title' });
   fireEvent.input(input, { target: { value: 'First idea' } });
-  fireEvent.submit(input.closest('form')!);
+  fireEvent.keyDown(input, { key: 'Enter' });
+  const saving = within(lane).getByRole('status', {
+    name: 'Saving new record',
+  });
+  expect(saving.textContent).toContain('First idea');
+  const next = within(lane).getByRole('textbox', { name: 'New record title' });
   expect(
-    within(lane).getByRole('status', { name: 'Saving new record' }).textContent
-  ).toContain('First idea');
-  fireEvent.click(within(lane).getByRole('button', { name: 'New record' }));
-  expect(
-    screen.getByRole('textbox', { name: 'New record title' })
+    saving.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING
   ).toBeTruthy();
-  expect(onCreate).toHaveBeenCalledOnce();
+  expect(within(lane).getByText('1')).toBeTruthy();
   complete(false);
   await waitFor(() =>
     expect(
-      screen.getAllByRole('textbox', { name: 'New record title' })
-    ).toHaveLength(2)
+      screen
+        .getAllByRole('textbox', { name: 'New record title' })
+        .map((input) => (input as HTMLTextAreaElement).value)
+    ).toEqual(['First idea', ''])
   );
-  expect(
-    (
-      screen.getAllByRole('textbox', {
-        name: 'New record title',
-      })[0] as HTMLInputElement
-    ).value
-  ).toBe('First idea');
 });
 
 it('reorders lanes with the keyboard while leaving every card value unchanged', () => {
@@ -447,6 +611,47 @@ describe('multi-select board', () => {
     expect(cardsIn('Feature')).toEqual(['login']);
     expect(cardsIn('Docs')).toEqual([]);
     expect(cardsIn('No tags')).toEqual(['idea']);
+  });
+
+  it("draws each of a card's multi-select values as a coloured pill", () => {
+    const tags: DatabaseViewColumn = {
+      id: 'tags',
+      name: 'Tags',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: true,
+      options: ['Bug', 'Feature'],
+      optionColors: { Bug: '#E5484D', Feature: '#46A758' },
+      writable: true,
+    };
+    render(() => (
+      <DatabaseBoard
+        rows={[
+          {
+            rowId: 'login',
+            cells: {
+              title: 'Fix login',
+              status: 'To do',
+              tags: '["Bug","Feature"]',
+            },
+          },
+        ]}
+        columns={[...columns, tags]}
+        groupColumn={columns[1]}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={vi.fn(async () => true)}
+        onCreate={vi.fn(async () => true)}
+      />
+    ));
+    const card = screen.getByRole('button', { name: 'Open Fix login' });
+    const dot = (label: string) =>
+      within(card)
+        .getByTitle(label)
+        .querySelector<HTMLElement>('[data-slot="tag-dot"]')?.style
+        .backgroundColor;
+    expect(dot('Bug')).toBe('rgb(229, 72, 77)');
+    expect(dot('Feature')).toBe('rgb(70, 167, 88)');
   });
 
   it('moving a card out of one value lane replaces only that value', async () => {

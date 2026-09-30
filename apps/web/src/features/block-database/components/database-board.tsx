@@ -1,8 +1,8 @@
+import { isEditableInput } from '@core/util/isEditableInput';
 import CheckIcon from '@phosphor/check.svg';
 import GripIcon from '@phosphor/dots-six-vertical.svg';
 import DotsIcon from '@phosphor/dots-three.svg';
 import PlusIcon from '@phosphor/plus.svg';
-import XIcon from '@phosphor/x.svg';
 import { Key } from '@solid-primitives/keyed';
 import { Button } from '@ui/components/Button';
 import { Dropdown } from '@ui/components/Dropdown';
@@ -12,7 +12,7 @@ import {
   createSignal,
   createUniqueId,
   For,
-  onMount,
+  onCleanup,
   Show,
 } from 'solid-js';
 import {
@@ -26,6 +26,7 @@ import {
   boardMoveValue,
   type DatabaseCellValue,
   type DatabaseViewColumn,
+  databaseCellValues,
   groupDatabaseRows,
   orderDatabaseCards,
   orderDatabaseColumns,
@@ -75,13 +76,33 @@ type DatabaseBoardProps = {
   onOpen: (rowId: string) => void;
   onMove: (rowId: string, value: DatabaseCellValue) => Promise<boolean>;
   onPlace?: (placement: DatabaseCardPlacement) => Promise<boolean>;
+  /** Resolves whether the record was saved. `open` asks to show it once it is. */
   onCreate: (
     value: DatabaseCellValue,
     title: string,
-    intentId: string
+    intentId: string,
+    options?: { open: true }
   ) => Promise<boolean>;
   onAddGroup?: (label: string) => Promise<void>;
+  /** Hands the host a way to start a card, as the toolbar's New record does. */
+  controlsRef?: (controls: DatabaseBoardControls) => void;
 };
+
+export type DatabaseBoardControls = {
+  /** Starts an inline card in the first lane that takes records, unless unmounted. */
+  addCard: () => boolean;
+};
+
+/** A card being typed into a lane, or saving there, before its record exists. */
+type CardDraft = {
+  id: string;
+  lane: string;
+  title: string;
+  saving: boolean;
+};
+
+/** After Enter, a new card follows; after Shift+Enter, the record opens; after blur, neither. */
+type DraftSubmission = 'next' | 'open' | 'stay';
 
 export function DatabaseBoard(props: DatabaseBoardProps) {
   let viewport: HTMLDivElement | undefined;
@@ -101,6 +122,79 @@ export function DatabaseBoard(props: DatabaseBoardProps) {
     )
   );
   const [announcement, setAnnouncement] = createSignal('');
+  const draftPrefix = createUniqueId();
+  let draftSequence = 0;
+  const [drafts, setDrafts] = createSignal<CardDraft[]>([]);
+  const draftElements = new Map<string, HTMLElement>();
+  const newButtons = new Map<string, HTMLElement>();
+  const titleField = () => titleColumn(props.columns);
+  const canSetTitle = () => Boolean(titleField()?.writable);
+  const acceptsRecords = (group: BoardGroup) =>
+    props.canEdit && canMoveTo(props.groupColumn, group.value);
+  const isSaving = (draft: CardDraft) =>
+    draft.saving || Boolean(props.createPending?.(draft.id));
+  const laneDrafts = (lane: string) =>
+    drafts().filter(
+      (draft) => draft.lane === lane && !props.createComplete?.(draft.id)
+    );
+  const updateDraft = (id: string, change: Partial<CardDraft>) =>
+    setDrafts((drafts) =>
+      drafts.map((draft) => (draft.id === id ? { ...draft, ...change } : draft))
+    );
+  const removeDraft = (id: string) => {
+    draftElements.delete(id);
+    setDrafts((drafts) => drafts.filter((draft) => draft.id !== id));
+  };
+  function startDraft(lane: string) {
+    const open = laneDrafts(lane).find(
+      (draft) => !isSaving(draft) && !draft.title.trim()
+    );
+    const id = open?.id ?? `${draftPrefix}:${++draftSequence}`;
+    if (!open)
+      setDrafts((drafts) => [
+        ...drafts.filter((draft) => !props.createComplete?.(draft.id)),
+        { id, lane, title: '', saving: false },
+      ]);
+    draftElements.get(id)?.focus();
+  }
+  function cancelDraft(id: string, returnFocus: boolean) {
+    const draft = drafts().find((draft) => draft.id === id);
+    if (!draft || isSaving(draft)) return;
+    removeDraft(id);
+    if (returnFocus) newButtons.get(draft.lane)?.focus();
+  }
+  async function submitDraft(id: string, submission: DraftSubmission) {
+    const draft = drafts().find((draft) => draft.id === id);
+    const group = groups().find((group) => group.key === draft?.lane);
+    if (!draft || !group || isSaving(draft)) return;
+    const title = draft.title.trim();
+    if (canSetTitle() && !title && submission !== 'open') {
+      cancelDraft(id, submission === 'next');
+      return;
+    }
+    updateDraft(id, { saving: true });
+    if (submission === 'next') startDraft(draft.lane);
+    const saved = await props.onCreate(
+      group.value,
+      title,
+      id,
+      ...(submission === 'open' ? [{ open: true } as const] : [])
+    );
+    if (saved) removeDraft(id);
+    else updateDraft(id, { saving: false });
+  }
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+  });
+  props.controlsRef?.({
+    addCard: () => {
+      const lane = disposed ? undefined : groups().find(acceptsRecords);
+      if (!lane) return false;
+      startDraft(lane.key);
+      return true;
+    },
+  });
   async function move(
     rowId: string,
     value: DatabaseCellValue,
@@ -203,6 +297,19 @@ export function DatabaseBoard(props: DatabaseBoardProps) {
                 group={group()}
                 {...props}
                 groups={groups()}
+                drafts={laneDrafts(group().key)}
+                canSetTitle={canSetTitle()}
+                titlePlaceholder={titleField()?.name ?? 'Record title'}
+                acceptsRecords={acceptsRecords(group())}
+                isSaving={isSaving}
+                onStartDraft={() => startDraft(group().key)}
+                onDraftInput={(id, title) => updateDraft(id, { title })}
+                onSubmitDraft={(id, submission) =>
+                  void submitDraft(id, submission)
+                }
+                onCancelDraft={cancelDraft}
+                draftRef={(id, element) => draftElements.set(id, element)}
+                newButtonRef={(element) => newButtons.set(group().key, element)}
                 onMove={(rowId, value) =>
                   void move(rowId, value, group().value)
                 }
@@ -242,48 +349,69 @@ function BoardLane(
   props: Omit<DatabaseBoardProps, 'onMove'> & {
     group: BoardGroup;
     groups: BoardGroup[];
+    drafts: CardDraft[];
+    canSetTitle: boolean;
+    titlePlaceholder: string;
+    acceptsRecords: boolean;
+    isSaving: (draft: CardDraft) => boolean;
+    onStartDraft: () => void;
+    onDraftInput: (id: string, title: string) => void;
+    onSubmitDraft: (id: string, submission: DraftSubmission) => void;
+    onCancelDraft: (id: string, returnFocus: boolean) => void;
+    draftRef: (id: string, element: HTMLElement) => void;
+    newButtonRef: (element: HTMLElement) => void;
     onReorder: (direction: 'left' | 'right') => void;
     onMove: (rowId: string, value: DatabaseCellValue) => void;
   }
 ) {
-  const [draftIds, setDraftIds] = createSignal<string[]>([]);
-  const laneId = createUniqueId();
-  let draftSequence = 0;
-  const visibleDrafts = () =>
-    draftIds().filter((id) => !props.createComplete?.(id));
-  const hasEditableDraft = () =>
-    visibleDrafts().some((id) => !props.createPending?.(id));
-  const removeDraft = (id: string) =>
-    setDraftIds((ids) => ids.filter((item) => item !== id));
-  const beginCreate = () => {
-    if (!hasEditableDraft())
-      setDraftIds((ids) => [
-        ...ids.filter((id) => !props.createComplete?.(id)),
-        `${laneId}:${++draftSequence}`,
-      ]);
-  };
-  const title = () => titleColumn(props.columns);
-  const acceptsRecords = () =>
-    props.canEdit && canMoveTo(props.groupColumn, props.group.value);
+  const hasOpenDraft = () =>
+    props.drafts.some((draft) => !props.isSaving(draft));
+  const savingCount = () => props.drafts.filter(props.isSaving).length;
   return (
     <KanbanLane
       id={props.group.key}
       label={`${props.group.label} lane`}
       canReorder={!!props.onGroupOrderChange}
+      onKeyDown={(event) => {
+        // "n" adds a card to the lane holding focus, as Enter does on its header.
+        if (
+          event.key !== 'n' ||
+          event.ctrlKey ||
+          event.metaKey ||
+          event.altKey ||
+          event.shiftKey ||
+          !props.acceptsRecords ||
+          !(event.target instanceof Element) ||
+          !event.currentTarget.contains(event.target) ||
+          isEditableInput(event.target)
+        )
+          return;
+        event.preventDefault();
+        props.onStartDraft();
+      }}
     >
       <KanbanHandle
-        label={`Reorder ${props.group.label} lane`}
+        label={
+          props.onGroupOrderChange
+            ? `Reorder ${props.group.label} lane`
+            : `${props.group.label} lane`
+        }
         class="mb-2 flex min-h-9 items-center gap-2 rounded px-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ink/50"
         onKeyDown={
-          props.onGroupOrderChange
+          props.onGroupOrderChange || props.acceptsRecords
             ? (event) => {
+                if (event.target !== event.currentTarget) return;
                 if (
+                  props.onGroupOrderChange &&
                   event.altKey &&
                   (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
                 ) {
                   event.preventDefault();
                   event.stopPropagation();
                   props.onReorder(event.key === 'ArrowLeft' ? 'left' : 'right');
+                } else if (props.acceptsRecords && event.key === 'Enter') {
+                  event.preventDefault();
+                  props.onStartDraft();
                 }
               }
             : undefined
@@ -295,10 +423,9 @@ function BoardLane(
           empty={props.group.value === null}
         />
         <span class="text-xs tabular-nums text-ink-placeholder">
-          {props.group.rows.length +
-            visibleDrafts().filter((id) => props.createPending?.(id)).length}
+          {props.group.rows.length + savingCount()}
         </span>
-        <Show when={acceptsRecords()}>
+        <Show when={props.acceptsRecords}>
           <Button
             size="icon-sm"
             label={`Add record to ${props.group.label}`}
@@ -306,7 +433,7 @@ function BoardLane(
             class="ml-auto"
             title={`Add record to ${props.group.label}`}
             data-kanban-no-drag
-            onClick={beginCreate}
+            onClick={props.onStartDraft}
           >
             <PlusIcon class="size-3.5" />
           </Button>
@@ -333,29 +460,40 @@ function BoardLane(
           </Key>
           <KanbanCardInsertion laneId={props.group.key} />
         </div>
-        <Show when={props.group.rows.length === 0 && !visibleDrafts().length}>
+        <Show when={props.group.rows.length === 0 && !props.drafts.length}>
           <div class="flex min-h-20 items-center justify-center rounded-lg border border-dashed border-edge-muted/70 px-4 text-xs text-ink-placeholder">
-            {acceptsRecords() ? 'Drop a record here' : 'No records'}
+            {props.acceptsRecords ? 'Drop a record here' : 'No records'}
           </div>
         </Show>
-        <For each={visibleDrafts()}>
-          {(intentId) => (
+        <Key each={props.drafts} by="id">
+          {(draft) => (
             <NewBoardCard
-              titlePlaceholder={title()?.name ?? 'Record title'}
-              canSetTitle={Boolean(title()?.writable)}
-              pending={props.createPending?.(intentId) ?? false}
-              onCancel={() => removeDraft(intentId)}
-              onSave={async (value) => {
-                if (await props.onCreate(props.group.value, value, intentId))
-                  removeDraft(intentId);
-              }}
+              title={draft().title}
+              titlePlaceholder={props.titlePlaceholder}
+              canSetTitle={props.canSetTitle}
+              saving={props.isSaving(draft())}
+              ref={(element) => props.draftRef(draft().id, element)}
+              onInput={(title) => props.onDraftInput(draft().id, title)}
+              onSubmit={(submission) =>
+                props.onSubmitDraft(draft().id, submission)
+              }
+              onCancel={(returnFocus) =>
+                props.onCancelDraft(draft().id, returnFocus)
+              }
             />
           )}
-        </For>
-        <Show when={acceptsRecords() && !hasEditableDraft()}>
-          <Button size="xs" class="mt-1 gap-2" onClick={beginCreate}>
+        </Key>
+        <Show when={props.acceptsRecords && !hasOpenDraft()}>
+          <Button
+            ref={props.newButtonRef}
+            variant="plain"
+            size="xs"
+            aria-label="New record"
+            class="h-7 justify-start gap-1.5 rounded-md px-1.5 text-ink-placeholder"
+            onClick={props.onStartDraft}
+          >
             <PlusIcon class="size-3.5" />
-            New record
+            New
           </Button>
         </Show>
       </div>
@@ -558,8 +696,9 @@ function BoardCard(props: {
                   />
                   <Show
                     when={
-                      column.dataType.startsWith('SELECT_') &&
-                      !column.isMultiSelect
+                      !column.relation &&
+                      (column.dataType.startsWith('SELECT_') ||
+                        column.dataType === 'TAG')
                     }
                     fallback={
                       <span class="truncate text-xs text-ink-muted">
@@ -570,10 +709,18 @@ function BoardCard(props: {
                       </span>
                     }
                   >
-                    <SelectPill
-                      label={String(rowValue(props.row, column.id))}
-                      column={column}
-                    />
+                    <span class="flex min-w-0 flex-wrap gap-1">
+                      <For
+                        each={databaseCellValues(
+                          rowValue(props.row, column.id),
+                          column
+                        )}
+                      >
+                        {(value) => (
+                          <SelectPill label={String(value)} column={column} />
+                        )}
+                      </For>
+                    </span>
                   </Show>
                 </span>
               )}
@@ -639,86 +786,76 @@ function BoardCard(props: {
   );
 }
 
+/** A card-shaped title field: Enter saves it, Escape or leaving it empty drops it. */
 function NewBoardCard(props: {
+  title: string;
   titlePlaceholder: string;
   canSetTitle: boolean;
-  pending: boolean;
-  onSave: (title: string) => Promise<void>;
-  onCancel: () => void;
+  saving: boolean;
+  ref: (element: HTMLElement) => void;
+  onInput: (title: string) => void;
+  onSubmit: (submission: DraftSubmission) => void;
+  onCancel: (returnFocus: boolean) => void;
 }) {
-  const [title, setTitle] = createSignal('');
-  const [submitting, setSubmitting] = createSignal(false);
-  const pending = () => submitting() || props.pending;
-  let input: HTMLInputElement | undefined;
-  onMount(() => input?.focus());
-  async function save() {
-    if (pending()) return;
-    setSubmitting(true);
-    try {
-      await props.onSave(title().trim());
-    } finally {
-      setSubmitting(false);
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      props.onCancel(true);
+    } else if (event.key === 'Enter' && !event.isComposing) {
+      event.preventDefault();
+      props.onSubmit(event.shiftKey ? 'open' : 'next');
     }
-  }
+  };
   return (
-    <form
-      class="rounded-lg border border-ink/40 bg-panel p-3 shadow-sm ring-2 ring-ink/10"
-      aria-busy={pending()}
-      onSubmit={(event) => {
-        event.preventDefault();
-        void save();
-      }}
-    >
+    <div class="rounded-lg border border-edge-muted bg-surface-3 p-3 shadow-sm">
       <Show
-        when={!pending()}
+        when={!props.saving}
         fallback={
           <div role="status" aria-label="Saving new record">
-            <p class="break-words text-[13px] font-medium leading-5 text-ink">
-              {title().trim() || 'Unnamed'}
+            <p class="break-words text-[13px] font-medium leading-5 text-ink opacity-70">
+              {props.title.trim() || 'Unnamed'}
             </p>
-            <p class="mt-2 text-[11px] text-ink-placeholder">Saving…</p>
           </div>
         }
       >
         <Show
           when={props.canSetTitle}
           fallback={
-            <p class="mb-3 text-xs text-ink-muted">
-              Add an empty record to this group.
-            </p>
+            <button
+              ref={props.ref}
+              type="button"
+              class="w-full text-left text-[13px] leading-5 text-ink-placeholder outline-none"
+              onClick={() => props.onSubmit('next')}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') onKeyDown(event);
+              }}
+              onBlur={() => props.onCancel(false)}
+            >
+              Add record
+            </button>
           }
         >
-          <input
-            ref={input}
+          <textarea
+            ref={props.ref}
+            rows={1}
             aria-label="New record title"
+            aria-description="Enter to add, Shift+Enter to add and open, Escape to cancel"
             placeholder={`${props.titlePlaceholder}…`}
-            value={title()}
-            readOnly={pending()}
-            onInput={(event) => setTitle(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                event.preventDefault();
-                if (!pending()) props.onCancel();
-              }
+            value={props.title}
+            maxlength={2000}
+            class="block w-full resize-none bg-transparent text-[13px] font-medium leading-5 text-ink outline-none field-sizing-content placeholder:font-normal placeholder:text-ink-placeholder"
+            onInput={(event) => props.onInput(event.currentTarget.value)}
+            onKeyDown={onKeyDown}
+            onBlur={() => {
+              // Switching windows is not leaving the card.
+              if (!document.hasFocus()) return;
+              if (props.title.trim()) props.onSubmit('stay');
+              else props.onCancel(false);
             }}
-            class="mb-3 w-full bg-input text-[13px] outline-none placeholder:text-ink-placeholder"
           />
         </Show>
-        <div class="flex items-center gap-2">
-          <Button size="sm" type="submit" disabled={pending()}>
-            {pending() ? 'Adding…' : 'Add record'}
-          </Button>
-          <Button
-            size="icon-sm"
-            label="Cancel new record"
-            tooltipDisabled
-            disabled={pending()}
-            onClick={props.onCancel}
-          >
-            <XIcon class="size-3.5" />
-          </Button>
-        </div>
       </Show>
-    </form>
+    </div>
   );
 }
