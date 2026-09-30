@@ -9,6 +9,8 @@
 //!   — saved, immutable queries that document nodes point at.
 //! - `GET /` — list the caller's databases; `POST /` — create one.
 //! - `GET /{id}` — schema detail (tables, columns, definitions, SQL names).
+//! - `POST /{id}/ops` — typed, batched writes to the database's rows and
+//!   column types, applied together or not at all.
 //! - `POST /{id}/tables`, `POST /{id}/tables/{table_id}/columns`,
 //!   `POST /{id}/tables/{table_id}/columns/{column_id}/options` — schema
 //!   operations, which stay structured because property definitions carry
@@ -20,6 +22,8 @@
 use std::collections::HashMap;
 /// Structured column type, ordering, and placement deletion endpoints.
 pub mod column_mutations;
+/// Typed, batched writes: `POST /{id}/ops`.
+pub mod ops;
 /// Saved, immutable queries that document nodes point at.
 pub mod saved_queries;
 /// Native database recipient sharing.
@@ -146,6 +150,7 @@ where
         )
         .route("/{id}", get(get_database_handler::<S, Eas, Auth>))
         .route("/{id}/awareness", put(awareness_handler::<S, Eas, Auth>))
+        .route("/{id}/ops", post(ops::apply_ops_handler::<S, Eas, Auth>))
         .route(
             "/{id}/permissions",
             get(sharing::get_permissions_handler::<S, Eas, Auth>)

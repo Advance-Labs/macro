@@ -85,6 +85,9 @@ use databases::domain::models::{
     SavedQuery as DatabaseSavedQuery, SqlValue as DatabaseSqlValue, Table as DatabaseTable,
     TableDetail as DatabaseTableDetail, TableVersion as DatabaseTableVersion,
 };
+use databases::inbound::axum_router::ops::{
+    ApplyOpsRequest as DatabaseApplyOpsRequest, ApplyOpsResponse as DatabaseApplyOpsResponse,
+};
 use databases::inbound::axum_router::{
     AddColumnOptionsRequest as DatabaseAddColumnOptionsRequest,
     ColumnBindingRequest as DatabaseColumnBindingRequest,
@@ -140,6 +143,12 @@ use model::{
     sync_service::SyncServiceVersionID,
     user_document_view_location::UserDocumentViewLocation,
     version::DocumentStorageServiceApiVersion,
+};
+use models_databases::{
+    CellValue as DatabaseCellValue, CellWrite as DatabaseCellWrite,
+    ColumnKind as DatabaseColumnKind, DatabaseOp, EntityKind as DatabaseEntityKind,
+    EntityRef as DatabaseEntityRef, OpResult as DatabaseOpResult, OptionRef as DatabaseOptionRef,
+    RowChange as DatabaseRowChange, RowChanges as DatabaseRowChanges,
 };
 use models_permissions::share_permission::channel_share_permission::UpdateOperation;
 use models_soup::call_record::{SoupCallRecord, SoupCallRecordParticipant};
@@ -418,6 +427,7 @@ use utoipa::OpenApi;
         databases::inbound::axum_router::create_database_handler,
         databases::inbound::axum_router::get_database_handler,
         databases::inbound::axum_router::awareness_handler,
+        databases::inbound::axum_router::ops::apply_ops_handler,
         databases::inbound::axum_router::transfer::import_table_handler,
         databases::inbound::axum_router::sharing::get_permissions_handler,
         databases::inbound::axum_router::sharing::update_permissions_handler,
@@ -623,6 +633,18 @@ use utoipa::OpenApi;
             DatabaseAddColumnOptionsRequest,
             DatabaseExecRequestBody,
             DatabaseAwareness,
+            DatabaseApplyOpsRequest,
+            DatabaseApplyOpsResponse,
+            DatabaseOp,
+            DatabaseCellWrite,
+            DatabaseCellValue,
+            DatabaseRowChanges,
+            DatabaseRowChange,
+            DatabaseOptionRef,
+            DatabaseEntityRef,
+            DatabaseEntityKind,
+            DatabaseColumnKind,
+            DatabaseOpResult,
             DatabaseQueryRequestBody,
             DatabaseQueryDefinition,
             DatabaseSavedQuery,

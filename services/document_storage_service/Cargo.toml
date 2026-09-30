@@ -168,6 +168,7 @@ model_notifications = { path = "../../crates/model_notifications" }
 model_owner = { path = "../../crates/model_owner" }
 model_user = { path = "../../crates/model_user" }
 models_bulk_upload = { path = "../../crates/models_bulk_upload" }
+models_databases = { path = "../../crates/models_databases" }
 models_dcs = { path = "../../crates/models_dcs" }
 models_opensearch = { path = "../../crates/models_opensearch" }
 models_pagination = { path = "../../crates/models_pagination", features = [
