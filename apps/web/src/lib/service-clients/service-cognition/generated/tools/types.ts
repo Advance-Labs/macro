@@ -5394,6 +5394,10 @@ export interface QueryDatabase {
    */
   sql: string;
   /**
+   * Id of the database the statement is about, from ListDatabases or DescribeDatabase. Pass it whenever you know it: this database's tables take precedence when another database has a table of the same name. Tables of other databases stay reachable for joins.
+   */
+  databaseId?: string | null;
+  /**
    * Optional versions from a previous QueryDatabase read. Reject the write
    * if a listed table being written changed. Read-only dependencies are not
    * guarded; omit for a read or intentional blind edit.

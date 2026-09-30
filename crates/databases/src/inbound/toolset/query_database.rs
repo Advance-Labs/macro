@@ -61,6 +61,17 @@ pub struct QueryDatabase {
                        DescribeDatabase reported, quoted when they have spaces."
     )]
     pub sql: String,
+    /// The database the statement is about, when known. Its tables win over
+    /// same-named tables of other databases, so a name collision such as two
+    /// databases each holding a "Table 1" never has to be qualified away.
+    #[schemars(
+        description = "Id of the database the statement is about, from ListDatabases or \
+                       DescribeDatabase. Pass it whenever you know it: this database's tables \
+                       take precedence when another database has a table of the same name. \
+                       Tables of other databases stay reachable for joins."
+    )]
+    #[serde(default)]
+    pub database_id: Option<Uuid>,
     /// Optional versions from a previous QueryDatabase read. Reject the write
     /// if a listed table being written changed. Read-only dependencies are not
     /// guarded; omit for a read or intentional blind edit.
@@ -254,7 +265,7 @@ where
             .exec_sql(
                 viewer_of(&request_context.user_id),
                 ExecRequest {
-                    scope: None,
+                    scope: self.database_id,
                     sql: self.sql.clone(),
                     base_versions: self.base_versions.as_ref().map(|versions| {
                         versions

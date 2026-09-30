@@ -34,7 +34,7 @@ use axum::{
     extract::{FromRef, Path, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, patch, post},
+    routing::{get, patch, post, put},
 };
 use entity_access::domain::models::{EditAccessLevel, ViewAccessLevel};
 use entity_access::domain::ports::EntityAccessService;
@@ -48,7 +48,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::domain::models::{
-    AddColumnOptions, ColumnBinding, ColumnConfig, ColumnDetail, ColumnId, CreateColumn,
+    AddColumnOptions, Awareness, ColumnBinding, ColumnConfig, ColumnDetail, ColumnId, CreateColumn,
     CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, ExecOutcome, ExecRequest,
     InferColumnType, InferColumnTypeOutcome, ListedDatabase, QueryError, RenameColumnOutcome,
     Table, TableVersion, Viewer,
@@ -122,6 +122,7 @@ where
         .route("/exec", post(exec_handler::<S, Eas, Auth>))
         .route("/query", post(query_handler::<S, Eas, Auth>))
         .route("/{id}", get(get_database_handler::<S, Eas, Auth>))
+        .route("/{id}/awareness", put(awareness_handler::<S, Eas, Auth>))
         .route(
             "/{id}/permissions",
             get(sharing::get_permissions_handler::<S, Eas, Auth>)
@@ -395,6 +396,39 @@ where
         .get_database(access.entity_access_receipt, viewer_of(&user))
         .await?;
     Ok(Json(detail))
+}
+
+/// Tell a database's other viewers where the caller is.
+#[utoipa::path(
+    put,
+    tag = "databases",
+    operation_id = "share_database_awareness",
+    path = "/databases/{id}/awareness",
+    params(("id" = Uuid, Path, description = "Database id")),
+    request_body = Awareness,
+    responses(
+        (status = 204, description = "Relayed"),
+        (status = 401, description = "Missing or invalid credentials", body = ErrorResponse),
+        (status = 403, description = "No access to the database", body = ErrorResponse),
+        (status = 500, body = ErrorResponse),
+    )
+)]
+pub async fn awareness_handler<S, Eas, Auth>(
+    access: DatabaseAccessLevelExtractor<ViewAccessLevel, Eas, Auth>,
+    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
+    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
+    Json(awareness): Json<Awareness>,
+) -> Result<StatusCode, DatabaseError>
+where
+    S: DatabasesService,
+    Eas: EntityAccessService,
+    Auth: MacroAuthorizationService,
+{
+    state
+        .service
+        .share_awareness(access.entity_access_receipt, viewer_of(&user), awareness)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Execute SQL as the caller. The whole read/write surface.

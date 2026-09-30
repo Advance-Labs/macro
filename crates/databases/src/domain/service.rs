@@ -36,7 +36,7 @@ use crate::domain::events::{
     DatabaseTrashedMetadata, TableVersionChange,
 };
 use crate::domain::models::{
-    AccessGrant, AddColumnOptions, ColumnBinding, ColumnConfig, ColumnDetail, ColumnId,
+    AccessGrant, AddColumnOptions, Awareness, ColumnBinding, ColumnConfig, ColumnDetail, ColumnId,
     CreateColumn, CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId,
     ExecOutcome, ExecRequest, InferColumnType, InferColumnTypeOutcome, ListedDatabase, QueryError,
     RenameColumnOutcome, Table, TableDetail, TableId, TableMutationOutcome, TableVersion, Viewer,
@@ -1024,6 +1024,24 @@ where
     #[tracing::instrument(skip(self, req), err)]
     async fn exec_sql(&self, viewer: Viewer, req: ExecRequest) -> Result<ExecOutcome, QueryError> {
         self.run_sql(viewer, req, query::QueryMode::ReadWrite).await
+    }
+
+    #[tracing::instrument(skip(self, receipt), err)]
+    async fn share_awareness(
+        &self,
+        receipt: EntityAccessReceipt<ViewAccessLevel>,
+        viewer: Viewer,
+        state: Awareness,
+    ) -> Result<(), DatabaseError> {
+        let database_id = receipt_database_id(&receipt)?;
+        if let Err(error) = self
+            .events
+            .awareness(database_id, viewer.user_id.as_ref(), &state)
+            .await
+        {
+            tracing::warn!(error = ?error, %database_id, "failed to relay awareness");
+        }
+        Ok(())
     }
 
     #[tracing::instrument(skip(self, sql), err)]

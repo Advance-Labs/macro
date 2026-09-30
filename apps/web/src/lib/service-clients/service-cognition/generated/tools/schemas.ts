@@ -4522,6 +4522,7 @@ export const NameSearch = z.object({
 
 export const QueryDatabase = z.object({
   sql: z.string(),
+  databaseId: z.union([z.string().uuid(), z.null()]).optional(),
   baseVersions: z
     .union([
       z.array(

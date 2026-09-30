@@ -78,7 +78,7 @@ use collab_surface::inbound::axum_router::{
     CollabSurfaceResponse, CollabSurfaceTokenResponse, EnsureCollabSurfaceRequest,
 };
 use databases::domain::models::{
-    AccessGrant as DatabaseAccessGrant, Column as DatabaseColumn,
+    AccessGrant as DatabaseAccessGrant, Awareness as DatabaseAwareness, Column as DatabaseColumn,
     ColumnConfig as DatabaseColumnConfig, ColumnDetail as DatabaseColumnDetail, Database,
     DatabaseDetail, ExecOutcome as DatabaseExecOutcome, ListedDatabase,
     QueryResult as DatabaseQueryResult, ResultColumn as DatabaseResultColumn,
@@ -416,6 +416,7 @@ use utoipa::OpenApi;
         databases::inbound::starter_router::ensure_starter_handler,
         databases::inbound::axum_router::create_database_handler,
         databases::inbound::axum_router::get_database_handler,
+        databases::inbound::axum_router::awareness_handler,
         databases::inbound::axum_router::transfer::import_table_handler,
         databases::inbound::axum_router::sharing::get_permissions_handler,
         databases::inbound::axum_router::sharing::update_permissions_handler,
@@ -615,6 +616,7 @@ use utoipa::OpenApi;
             DatabaseCreateColumnResponse,
             DatabaseAddColumnOptionsRequest,
             DatabaseExecRequestBody,
+            DatabaseAwareness,
             DatabaseQueryRequestBody,
             CreateReminderRequest,
             UpdateReminderRequest,

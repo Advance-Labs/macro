@@ -171,6 +171,15 @@ impl DatabasesService for FakeService {
         }])
     }
 
+    async fn share_awareness(
+        &self,
+        _receipt: EntityAccessReceipt<ViewAccessLevel>,
+        _viewer: Viewer,
+        _state: crate::domain::models::Awareness,
+    ) -> Result<(), DatabaseError> {
+        unimplemented!("the toolset does not share awareness")
+    }
+
     async fn get_database(
         &self,
         _receipt: EntityAccessReceipt<ViewAccessLevel>,
@@ -860,6 +869,7 @@ fn column_types_round_trip_through_the_property_system() {
 async fn querying_does_not_mint_a_receipt() {
     let (context, calls) = context(FakeAccess::denying());
     let response = QueryDatabase {
+        database_id: None,
         sql: "SELECT row_id FROM guests".to_string(),
         base_versions: None,
         display: None,
@@ -911,6 +921,7 @@ async fn conditional_tool_edits_forward_only_explicit_read_versions() {
 #[tokio::test]
 async fn a_sql_error_reaches_the_model_verbatim() {
     let error = QueryDatabase {
+        database_id: None,
         sql: "SELECT statuz FROM guests".to_string(),
         base_versions: None,
         display: None,

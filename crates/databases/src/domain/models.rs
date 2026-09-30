@@ -478,6 +478,33 @@ pub struct ColumnDetail {
     pub writable: bool,
 }
 
+// ===== Awareness =====
+
+/// Where one viewer is inside a database right now: ephemeral, relayed to
+/// the other viewers and never stored. A missing row or column means the
+/// viewer is on the table but on no cell.
+#[derive(utoipa::ToSchema, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Awareness {
+    /// The table the viewer is looking at.
+    #[schema(value_type = Uuid)]
+    pub table_id: TableId,
+    /// The row of the focused cell, if any.
+    #[schema(value_type = Option<Uuid>, nullable = false)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub row_id: Option<RowId>,
+    /// The column placement of the focused cell, if any.
+    #[schema(value_type = Option<Uuid>, nullable = false)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column_id: Option<ColumnId>,
+    /// Whether the cell is open for editing.
+    #[serde(default)]
+    pub editing: bool,
+    /// Whether the viewer left the database; other viewers drop their state.
+    #[serde(default)]
+    pub left: bool,
+}
+
 // ===== Errors =====
 
 /// Errors for schema and persistence operations.

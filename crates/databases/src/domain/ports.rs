@@ -18,11 +18,11 @@ use models_properties::service::property_option::{PropertyOption, PropertyOption
 use models_properties::service::property_value::PropertyValue;
 
 use crate::domain::models::{
-    AccessGrant, AddColumnOptions, Column, ColumnBinding, ColumnDetail, ColumnId, CreateColumn,
-    CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId, ExecOutcome,
-    ExecRequest, InferColumnType, InferColumnTypeOutcome, ListedDatabase, PropertyDefinitionId,
-    QueryError, RenameColumnOutcome, RowId, RowRef, Table, TableId, TableMutationOutcome,
-    TableVersion, Viewer,
+    AccessGrant, AddColumnOptions, Awareness, Column, ColumnBinding, ColumnDetail, ColumnId,
+    CreateColumn, CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId,
+    ExecOutcome, ExecRequest, InferColumnType, InferColumnTypeOutcome, ListedDatabase,
+    PropertyDefinitionId, QueryError, RenameColumnOutcome, RowId, RowRef, Table, TableId,
+    TableMutationOutcome, TableVersion, Viewer,
 };
 use crate::domain::models::{ChangeColumnType, ColumnReplacement, ColumnSchemaOutcome};
 
@@ -295,6 +295,14 @@ pub trait TableEventPublisher: Send + Sync + 'static {
         table_id: TableId,
         version: TableVersion,
     ) -> impl Future<Output = Result<(), Self::Err>> + Send;
+
+    /// Relay where a viewer is to the database's other viewers.
+    fn awareness(
+        &self,
+        database_id: DatabaseId,
+        user_id: &str,
+        state: &Awareness,
+    ) -> impl Future<Output = Result<(), Self::Err>> + Send;
 }
 
 /// The databases domain service.
@@ -425,6 +433,15 @@ pub trait DatabasesService: Send + Sync + 'static {
         viewer: Viewer,
         req: ExecRequest,
     ) -> impl Future<Output = Result<ExecOutcome, QueryError>> + Send;
+
+    /// Tell the database's other viewers where this viewer is. Best effort:
+    /// a relay failure is logged, never surfaced.
+    fn share_awareness(
+        &self,
+        receipt: EntityAccessReceipt<ViewAccessLevel>,
+        viewer: Viewer,
+        state: Awareness,
+    ) -> impl Future<Output = Result<(), DatabaseError>> + Send;
 
     /// Run one read-only statement.
     fn query_sql(

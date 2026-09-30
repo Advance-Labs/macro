@@ -8,11 +8,13 @@
 use connection_gateway_client::client::ConnectionGatewayClient;
 use model_entity::EntityType;
 
-use crate::domain::models::{DatabaseId, TableId, TableVersion};
+use crate::domain::models::{Awareness, DatabaseId, TableId, TableVersion};
 use crate::domain::ports::TableEventPublisher;
 
 /// Message type delivered to gateway subscribers of the database entity.
 pub const TABLE_CHANGED_MESSAGE_TYPE: &str = "database_table_changed";
+/// Message type carrying one viewer's [`Awareness`] to the others.
+pub const AWARENESS_MESSAGE_TYPE: &str = "database_awareness";
 
 /// Errors from event publishing.
 #[derive(Debug, thiserror::Error)]
@@ -59,6 +61,29 @@ impl TableEventPublisher for GatewayTableEventPublisher {
             .map_err(|e| PublishError::Gateway(format!("{e:#}")))?;
         Ok(())
     }
+
+    #[tracing::instrument(skip(self, state), err)]
+    async fn awareness(
+        &self,
+        database_id: DatabaseId,
+        user_id: &str,
+        state: &Awareness,
+    ) -> Result<(), Self::Err> {
+        self.client
+            .send_message(
+                EntityType::Database.with_entity_string(database_id.to_string()),
+                AWARENESS_MESSAGE_TYPE.to_string(),
+                serde_json::json!({
+                    "databaseId": database_id,
+                    "userId": user_id,
+                    "state": state,
+                    "ts": chrono::Utc::now().timestamp_millis(),
+                }),
+            )
+            .await
+            .map_err(|error| PublishError::Gateway(error.to_string()))?;
+        Ok(())
+    }
 }
 
 /// A publisher for hosts with no gateway (AI tool processes, tests): the
@@ -74,6 +99,15 @@ impl TableEventPublisher for NoOpTableEventPublisher {
         _database_id: DatabaseId,
         _table_id: TableId,
         _version: TableVersion,
+    ) -> Result<(), Self::Err> {
+        Ok(())
+    }
+
+    async fn awareness(
+        &self,
+        _database_id: DatabaseId,
+        _user_id: &str,
+        _state: &Awareness,
     ) -> Result<(), Self::Err> {
         Ok(())
     }
@@ -116,6 +150,21 @@ impl TableEventPublisher for MaybeGatewayTableEventPublisher {
             }
             Self::NoOp(publisher) => publisher
                 .table_changed(database_id, table_id, version)
+                .await
+                .map_err(|never| match never {}),
+        }
+    }
+
+    async fn awareness(
+        &self,
+        database_id: DatabaseId,
+        user_id: &str,
+        state: &Awareness,
+    ) -> Result<(), Self::Err> {
+        match self {
+            Self::Gateway(publisher) => publisher.awareness(database_id, user_id, state).await,
+            Self::NoOp(publisher) => publisher
+                .awareness(database_id, user_id, state)
                 .await
                 .map_err(|never| match never {}),
         }

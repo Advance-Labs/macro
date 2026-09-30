@@ -63,6 +63,8 @@ struct World {
     cells: HashMap<RowId, HashMap<Uuid, PropertyValue>>,
     grants: HashMap<String, Vec<(DatabaseId, AccessGrant)>>,
     published: Vec<(TableId, TableVersion)>,
+    /// Every awareness relay the service asked for.
+    awareness: Vec<(DatabaseId, String, Awareness)>,
     share_updates: Vec<Vec<models_permissions::share_permission::channel_share_permission::UpdateChannelSharePermission>>,
     /// Every `macro.databases` envelope the service handed the broker.
     broker_events: Vec<serde_json::Value>,
@@ -663,6 +665,19 @@ impl TableEventPublisher for FakeEvents {
         version: TableVersion,
     ) -> Result<(), FakeError> {
         self.0.lock().unwrap().published.push((table_id, version));
+        Ok(())
+    }
+    async fn awareness(
+        &self,
+        database_id: DatabaseId,
+        user_id: &str,
+        state: &Awareness,
+    ) -> Result<(), FakeError> {
+        self.0
+            .lock()
+            .unwrap()
+            .awareness
+            .push((database_id, user_id.to_string(), state.clone()));
         Ok(())
     }
 }
