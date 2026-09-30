@@ -24,10 +24,10 @@ pub mod column_mutations;
 pub mod saved_queries;
 /// Native database recipient sharing.
 pub mod sharing;
-/// Atomic table imports.
-pub mod transfer;
 #[cfg(test)]
 mod test;
+/// Atomic table imports.
+pub mod transfer;
 use crate::domain::sharing::DatabaseSharingService;
 use crate::domain::transfer::DatabaseTransferService;
 use column_mutations::{
