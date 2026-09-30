@@ -122,6 +122,9 @@ show those same records. **New view** offers Table and Board. A Board requires a
 Select, Multi-select, or Checkbox property; choose any compatible property in
 **Group by**. The choice is based on the table's schema, without a special Status
 property. **View settings** can change the current layout or grouping later.
+Switching to Board there without a grouping picks the first Multi-select, else the
+first Select, else the first Checkbox; an existing grouping is kept. Its
+**Columns** list shows or hides each property with a switch.
 If the table has no grouping property, **Open table** returns to its grid so you
 can create a column and choose a suitable type from its header menu.
 
@@ -154,7 +157,7 @@ filters intact and keeps that field focused. Escape clears and closes search.
 Multiple filters are combined with AND. Multi-select filters match the selected
 members. Column headers offer sorting, **Move left**, **Move right**, and
 **Hide column** for the current view. Moves skip hidden columns; the Columns
-checkboxes in **View settings** restore a hidden column to its saved position.
+switches in **View settings** restore a hidden column to its saved position.
 Hidden columns remain available in the record dialog, and new columns appear
 after the saved layout.
 Creating or changing a record can make it fall outside the current search or
