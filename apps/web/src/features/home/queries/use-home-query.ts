@@ -80,6 +80,35 @@ function matchesCapabilities(
   return true;
 }
 
+/**
+ * Filter for the touched-by-me recents that merge into the Signal tab.
+ * These are the user's own recent activity, which may not have notifications.
+ * We filter by signalFilter (to exclude CRM/automations) and recency, but
+ * don't require notifications since the user's own activity may not have them.
+ */
+function matchesSignalRecents(entity: EntityData): boolean {
+  if (!signalFilter(entity)) return false;
+
+  // Apply 2-week recency filter for certain types
+  if (
+    entity.type === 'document' ||
+    entity.type === 'email' ||
+    entity.type === 'chat' ||
+    entity.type === 'project'
+  ) {
+    // For recents, also consider touchedAt as a timestamp source
+    const timestamp =
+      homeSortTimestamp(entity) ??
+      ('touchedAt' in entity ? entity.touchedAt : undefined);
+    return (
+      new Date(timestamp ?? 0).getTime() >=
+      subWeeks(startOfDay(new Date()), 2).getTime()
+    );
+  }
+
+  return true;
+}
+
 function matchesTab(
   entity: EntityData,
   tab: HomeTab,
@@ -250,8 +279,10 @@ export function useHomeDataSource(state: HomeDataSourceInput): HomeDataSource {
     mergeRecents()
       ? mergeHomeEntities(
           filterEntities(entities),
-          recents.filter((entity) =>
-            matchesCapabilities(entity, viewContext().capabilities)
+          recents.filter(
+            (entity) =>
+              matchesCapabilities(entity, viewContext().capabilities) &&
+              matchesSignalRecents(entity)
           ),
           viewContext()
         ).map(attachNotifications)
