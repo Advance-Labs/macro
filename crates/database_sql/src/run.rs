@@ -1,8 +1,8 @@
 //! The whole pipeline in one call: [`run`] compiles a statement, drives an
-//! [`Engine`] through a [`RowSource`] or writes through a [`RowWriter`], and
-//! answers with an [`Outcome`].
+//! [`Engine`] through a [`RowSource`] for its reads and an [`OpsSink`] for its
+//! writes, and answers with an [`Outcome`].
 //!
-//! The source and writer are the only I/O; everything else is pure. Paging
+//! The source and sink are the only I/O; everything else is pure. Paging
 //! and the row cap live in the engine rather than in the source so a fake
 //! source can prove them.
 
@@ -16,13 +16,12 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use uuid::Uuid;
 
-use crate::cast::ColumnType;
+use models_databases::{DatabaseOp, OpResult};
+
 use crate::catalog::{Catalog, ColumnKind};
 use crate::engine::{Engine, Step};
 use crate::fold::{Bin, Row, Table};
-use crate::resolve::{
-    AggFn, Binding, CompileError, Query, Relation, SelectItem, SelectQuery, Value, compile,
-};
+use crate::resolve::{AggFn, Binding, CompileError, Relation, SelectItem};
 use crate::split::{GqlQuery, column_of, virtual_column_of};
 
 /// The most rows one statement reads before the fold. Past it the answer
@@ -63,49 +62,14 @@ pub trait RowSource {
     ) -> impl Future<Output = Result<Vec<Bin>, SourceError>> + MaybeSend;
 }
 
-/// Where writes go: the properties service on the server, the optimistic
-/// mutation queue in the browser. Each call is one row.
-pub trait RowWriter {
-    /// Create a row with these cells; answers the new row id.
-    fn insert(
+/// Where writes go: a statement's ops, applied together to one database.
+pub trait OpsSink {
+    /// Apply `ops` to `database`; one result per op, in order.
+    fn apply(
         &self,
-        table: Uuid,
-        cells: Vec<(Uuid, Value)>,
-    ) -> impl Future<Output = Result<Uuid, WriteError>> + MaybeSend;
-
-    /// Set (or, with `None`, clear) these cells on a row.
-    fn update(
-        &self,
-        table: Uuid,
-        row_id: Uuid,
-        cells: Vec<(Uuid, Option<Value>)>,
-    ) -> impl Future<Output = Result<(), WriteError>> + MaybeSend;
-
-    /// Remove a row.
-    fn delete(
-        &self,
-        table: Uuid,
-        row_id: Uuid,
-    ) -> impl Future<Output = Result<(), WriteError>> + MaybeSend;
-
-    /// Change a column's type, converting its values. A value that does not
-    /// fit refuses the change unless `clear_invalid` empties it.
-    fn change_column_type(
-        &self,
-        table: Uuid,
-        column: Uuid,
-        to: ColumnType,
-        clear_invalid: bool,
-    ) -> impl Future<Output = Result<ColumnChange, WriteError>> + MaybeSend;
-}
-
-/// What a column type change did to the column's cells.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct ColumnChange {
-    /// Cells emptied because their value did not fit.
-    pub cleared_cells: usize,
-    /// Cells that held several values and kept only their first.
-    pub trimmed_cells: usize,
+        database: Uuid,
+        ops: Vec<DatabaseOp>,
+    ) -> impl Future<Output = Result<Vec<OpResult>, WriteError>> + MaybeSend;
 }
 
 /// A source could not answer.
@@ -127,12 +91,24 @@ pub enum RunError {
     /// The server could not be read.
     #[error("could not read rows: {0}")]
     Source(#[from] SourceError),
-    /// A schema change was refused, in the writer's words.
+    /// A write was refused, in the sink's words.
+    #[error(transparent)]
+    Write(#[from] WriteError),
+    /// An `UPDATE` or `DELETE` named a row by id that the table does not
+    /// have.
+    #[error("row {}: no row {row} in this table", position + 1)]
+    NoSuchRow {
+        /// Where the row is named in the statement's list of ids, from 0.
+        position: usize,
+        /// The row.
+        row: Uuid,
+    },
+    /// An `UPDATE` or `DELETE` matched more rows than a statement reads.
+    #[error("the WHERE matches more than {ROW_CAP} rows; narrow it and run the statement again")]
+    TooManyRows,
+    /// Results were fed that do not answer what was asked.
     #[error("{0}")]
-    Schema(WriteError),
-    /// The engine was started on a write.
-    #[error("the engine runs SELECT statements; writes go through run()")]
-    NotARead,
+    Results(String),
     /// A feed quoted a request the engine is not waiting on.
     #[error("fed request {fed}, but request {expected} is outstanding")]
     WrongRequest {
@@ -167,8 +143,6 @@ pub struct Outcome {
     pub inserted_row_ids: Vec<Uuid>,
     /// Rows a write changed.
     pub changes_applied: u32,
-    /// Rows a write could not change, by statement position.
-    pub failures: Vec<RowFailure>,
     /// The column an `ALTER COLUMN` changed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub altered_column: Option<AlteredColumn>,
@@ -224,88 +198,14 @@ pub enum OutcomeKind {
     Entity,
 }
 
-/// A write that did not land on one row.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct RowFailure {
-    /// 0-based position of the row in the statement; for `UPDATE` and
-    /// `DELETE`, always 0.
-    #[specta(type = u32)]
-    pub row: usize,
-    /// Why, as the writer said it.
-    pub message: String,
-}
-
 /// Compile and execute one statement.
 pub async fn run(
     catalog: &Catalog,
     sql: &str,
     source: &impl RowSource,
-    writer: &impl RowWriter,
+    sink: &impl OpsSink,
 ) -> Result<Outcome, RunError> {
-    match compile(catalog, sql)? {
-        Query::Select(select) => read(catalog, select, source).await,
-        Query::Insert(insert) => {
-            let mut outcome = Outcome::default();
-            for (position, cells) in insert.rows.into_iter().enumerate() {
-                match writer.insert(insert.table, cells).await {
-                    Ok(row_id) => {
-                        outcome.inserted_row_ids.push(row_id);
-                        outcome.changes_applied += 1;
-                    }
-                    Err(WriteError(message)) => outcome.failures.push(RowFailure {
-                        row: position,
-                        message,
-                    }),
-                }
-            }
-            Ok(outcome)
-        }
-        Query::Update(update) => Ok(one_row(
-            writer
-                .update(update.table, update.row_id, update.cells)
-                .await,
-        )),
-        Query::Delete(delete) => Ok(one_row(writer.delete(delete.table, delete.row_id).await)),
-        Query::AlterColumnType(alter) => {
-            let change = writer
-                .change_column_type(alter.table, alter.column, alter.to, alter.clear_invalid)
-                .await
-                .map_err(RunError::Schema)?;
-            Ok(Outcome {
-                altered_column: Some(AlteredColumn {
-                    table: alter.table,
-                    column: alter.column,
-                    to: alter.to.to_string(),
-                    cleared_cells: change.cleared_cells,
-                    trimmed_cells: change.trimmed_cells,
-                }),
-                ..Outcome::default()
-            })
-        }
-    }
-}
-
-/// The outcome of a single-row write.
-fn one_row(result: Result<(), WriteError>) -> Outcome {
-    match result {
-        Ok(()) => Outcome {
-            changes_applied: 1,
-            ..Outcome::default()
-        },
-        Err(WriteError(message)) => Outcome {
-            failures: vec![RowFailure { row: 0, message }],
-            ..Outcome::default()
-        },
-    }
-}
-
-async fn read(
-    catalog: &Catalog,
-    select: SelectQuery,
-    source: &impl RowSource,
-) -> Result<Outcome, RunError> {
-    let (mut engine, mut step) = Engine::from_select(catalog, select);
+    let (mut engine, mut step) = Engine::start(catalog, sql)?;
     loop {
         step = match step {
             Step::Done(outcome) => return Ok(outcome),
@@ -323,6 +223,10 @@ async fn read(
             Step::Bins(request) => {
                 let bins = source.bins(&request.query).await?;
                 engine.feed_bins(request.id, bins)?
+            }
+            Step::Ops { id, database, ops } => {
+                let results = sink.apply(database, ops).await?;
+                engine.feed_ops(id, results)?
             }
         };
     }

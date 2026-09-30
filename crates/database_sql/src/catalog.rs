@@ -22,6 +22,8 @@ pub struct Catalog {
 pub struct Table {
     /// The table id.
     pub id: Uuid,
+    /// The database the table belongs to: where its writes are sent.
+    pub database_id: Uuid,
     /// The database the table belongs to, as users name it.
     pub database: String,
     /// The table's name, as users name it.
@@ -45,6 +47,8 @@ pub enum TableSource {
     People,
 }
 
+/// The database platform tables belong to. Nothing is written there.
+pub const PLATFORM_DATABASE: Uuid = Uuid::from_u128(0x6d61_6372_6f00_0000_0000_0000_0000_0000);
 /// The id of the `people` table. Platform tables have fixed ids, so a saved
 /// query keeps meaning the same thing.
 pub const PEOPLE_TABLE: Uuid = Uuid::from_u128(0x6d61_6372_6f00_0000_0000_0000_7065_6f70);
@@ -61,11 +65,13 @@ pub const PEOPLE_EMAIL: Uuid = Uuid::from_u128(0x6d61_6372_6f00_0000_0000_0000_7
 pub fn people_table() -> Table {
     Table {
         id: PEOPLE_TABLE,
+        database_id: PLATFORM_DATABASE,
         database: "macro".into(),
         name: "people".into(),
         columns: vec![
             Column {
                 id: PEOPLE_ID,
+                placement: PEOPLE_ID,
                 name: "id".into(),
                 kind: ColumnKind::Entity {
                     multi: false,
@@ -74,11 +80,13 @@ pub fn people_table() -> Table {
             },
             Column {
                 id: PEOPLE_NAME,
+                placement: PEOPLE_NAME,
                 name: "name".into(),
                 kind: ColumnKind::Text,
             },
             Column {
                 id: PEOPLE_EMAIL,
+                placement: PEOPLE_EMAIL,
                 name: "email".into(),
                 kind: ColumnKind::Text,
             },
@@ -91,8 +99,10 @@ pub fn people_table() -> Table {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Column {
-    /// The property definition id.
+    /// The property definition id: what reads key cells by.
     pub id: Uuid,
+    /// The column placement: what writes name.
+    pub placement: Uuid,
     /// The column's display name.
     pub name: String,
     /// What the column holds.

@@ -757,18 +757,18 @@ fn update(input: In<'_>) -> R<'_, Update> {
         cut(table("a table name after UPDATE, like database.table")).parse(input)?;
     let (input, _) = cut(tok(Tok::Set, "SET after the table name")).parse(input)?;
     let (input, assignments) = cut(separated_list1(comma, assignment)).parse(input)?;
-    let (input, row_id) = cut(|i| row_id_clause(i, "UPDATE")).parse(input)?;
+    let (input, where_) = cut(|i| where_clause(i, "UPDATE")).parse(input)?;
     Ok((
         input,
         Update {
             table,
             assignments,
-            row_id,
+            where_,
         },
     ))
 }
 
-fn assignment(input: In<'_>) -> R<'_, (Ident, Lit)> {
+fn assignment(input: In<'_>) -> R<'_, (Ident, SetValue)> {
     let (input, column) = ident("a column name to set")(input)?;
     let (input, _) = match kw(Tok::Eq)(input) {
         Ok(ok) => ok,
@@ -779,7 +779,11 @@ fn assignment(input: In<'_>) -> R<'_, (Ident, Lit)> {
             )));
         }
     };
-    let (input, value) = cut(value).parse(input)?;
+    let (input, value) = cut(expecting(
+        "a value ('text', a number, TRUE, FALSE, NULL or a [list]) or a column name",
+        alt((value.map(SetValue::Lit), ident("").map(SetValue::Column))),
+    ))
+    .parse(input)?;
     Ok((input, (column, value)))
 }
 
@@ -787,32 +791,25 @@ fn delete(input: In<'_>) -> R<'_, Delete> {
     let (input, _) = kw(Tok::Delete)(input)?;
     let (input, _) = cut(tok(Tok::From, "FROM after DELETE")).parse(input)?;
     let (input, table) = cut(table("a table name after FROM, like database.table")).parse(input)?;
-    let (input, row_id) = cut(|i| row_id_clause(i, "DELETE")).parse(input)?;
-    Ok((input, Delete { table, row_id }))
+    let (input, where_) = cut(|i| where_clause(i, "DELETE")).parse(input)?;
+    Ok((input, Delete { table, where_ }))
 }
 
-/// `WHERE row_id = 'id'`, the only condition a write accepts.
-fn row_id_clause<'a>(input: In<'a>, statement: &str) -> R<'a, String> {
+/// The `WHERE` a write must have, so no statement changes a whole table by
+/// leaving it out.
+fn where_clause<'a>(input: In<'a>, statement: &str) -> R<'a, Cond> {
     let (input, _) = match kw(Tok::Where)(input) {
         Ok(ok) => ok,
         Err(_) => {
             return Err(nom::Err::Failure(at(
                 input,
-                &format!("WHERE row_id = '<id>' ({statement} changes one row at a time)"),
+                &format!(
+                    "WHERE and the rows to change ({statement} needs one; WHERE row_id = '<id>' names a single row)"
+                ),
             )));
         }
     };
-    let input = match input.first().map(|token| &token.kind) {
-        Some(Tok::Ident(name)) if name.eq_ignore_ascii_case("row_id") => input.take_from(1),
-        _ => {
-            return Err(nom::Err::Failure(at(
-                input,
-                &format!("row_id ({statement} changes one row at a time)"),
-            )));
-        }
-    };
-    let (input, _) = cut(tok(Tok::Eq, "= after row_id")).parse(input)?;
-    cut(string("a quoted row id")).parse(input)
+    cut(cond).parse(input)
 }
 
 // ---- schema ------------------------------------------------------------

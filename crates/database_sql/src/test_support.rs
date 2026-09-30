@@ -6,6 +6,9 @@ use crate::catalog::{
     Catalog, Column, ColumnKind, EntityKind, SelectOption, Table, TableSource, people_table,
 };
 
+pub const CRM: Uuid = Uuid::from_u128(0xdb0);
+pub const SALES: Uuid = Uuid::from_u128(0xdb1);
+pub const MACRO: Uuid = Uuid::from_u128(0xdb2);
 pub const DEALS: Uuid = Uuid::from_u128(0xd0);
 pub const PEOPLE: Uuid = Uuid::from_u128(0xd1);
 pub const SALES_DEALS: Uuid = Uuid::from_u128(0xd2);
@@ -37,21 +40,25 @@ pub fn catalog() -> Catalog {
         tables: vec![
             Table {
                 id: DEALS,
+                database_id: CRM,
                 database: "crm".into(),
                 name: "deals".into(),
                 columns: vec![
                     Column {
                         id: NAME,
+                        placement: NAME,
                         name: "name".into(),
                         kind: ColumnKind::Text,
                     },
                     Column {
                         id: AMOUNT,
+                        placement: AMOUNT,
                         name: "amount".into(),
                         kind: ColumnKind::Number,
                     },
                     Column {
                         id: STAGE,
+                        placement: STAGE,
                         name: "stage".into(),
                         kind: ColumnKind::Select {
                             multi: false,
@@ -69,11 +76,13 @@ pub fn catalog() -> Catalog {
                     },
                     Column {
                         id: CLOSED_AT,
+                        placement: CLOSED_AT,
                         name: "closed at".into(),
                         kind: ColumnKind::Date,
                     },
                     Column {
                         id: OWNER,
+                        placement: OWNER,
                         name: "owner".into(),
                         kind: ColumnKind::Entity {
                             multi: false,
@@ -82,6 +91,7 @@ pub fn catalog() -> Catalog {
                     },
                     Column {
                         id: TAGS,
+                        placement: TAGS,
                         name: "tags".into(),
                         kind: ColumnKind::Select {
                             multi: true,
@@ -93,11 +103,13 @@ pub fn catalog() -> Catalog {
                     },
                     Column {
                         id: DONE,
+                        placement: DONE,
                         name: "done".into(),
                         kind: ColumnKind::Boolean,
                     },
                     Column {
                         id: WEBSITE,
+                        placement: WEBSITE,
                         name: "website".into(),
                         kind: ColumnKind::Link,
                     },
@@ -106,10 +118,12 @@ pub fn catalog() -> Catalog {
             },
             Table {
                 id: PEOPLE,
+                database_id: CRM,
                 database: "crm".into(),
                 name: "people".into(),
                 columns: vec![Column {
                     id: NAME,
+                    placement: NAME,
                     name: "name".into(),
                     kind: ColumnKind::Text,
                 }],
@@ -117,6 +131,7 @@ pub fn catalog() -> Catalog {
             },
             Table {
                 id: SALES_DEALS,
+                database_id: SALES,
                 database: "sales".into(),
                 name: "deals".into(),
                 columns: vec![],
@@ -124,16 +139,19 @@ pub fn catalog() -> Catalog {
             },
             Table {
                 id: TASKS,
+                database_id: MACRO,
                 database: "macro".into(),
                 name: "tasks".into(),
                 columns: vec![
                     Column {
                         id: TITLE,
+                        placement: TITLE,
                         name: "title".into(),
                         kind: ColumnKind::Text,
                     },
                     Column {
                         id: PRIORITY,
+                        placement: PRIORITY,
                         name: "priority".into(),
                         kind: ColumnKind::Select {
                             multi: false,
@@ -151,6 +169,7 @@ pub fn catalog() -> Catalog {
                     },
                     Column {
                         id: ASSIGNEES,
+                        placement: ASSIGNEES,
                         name: "assignees".into(),
                         kind: ColumnKind::Entity {
                             multi: true,
@@ -159,6 +178,7 @@ pub fn catalog() -> Catalog {
                     },
                     Column {
                         id: DEAL,
+                        placement: DEAL,
                         name: "deal".into(),
                         kind: ColumnKind::Entity {
                             multi: false,

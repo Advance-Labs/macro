@@ -60,9 +60,6 @@ pub fn print_outcome(catalog: &Catalog, outcome: &Outcome) {
                 )
             }
         );
-        for failure in &outcome.failures {
-            println!("  row {}: {}", failure.row + 1, failure.message);
-        }
         return;
     }
     let mut widths: Vec<usize> = outcome
@@ -131,8 +128,11 @@ pub fn print_outcome(catalog: &Catalog, outcome: &Outcome) {
 
 /// What the statement would send to the server and keep for the fold.
 pub fn print_plan(catalog: &Catalog, sql: &str) {
-    let Ok(Query::Select(select)) = compile(catalog, sql) else {
-        return;
+    let select = match compile(catalog, sql) {
+        Ok(Query::Select(select)) => select,
+        Ok(Query::Update(update)) => update.read,
+        Ok(Query::Delete(delete)) => delete.read,
+        _ => return,
     };
     let plan = split(catalog, select);
     let propf = |propf: &Option<_>| {

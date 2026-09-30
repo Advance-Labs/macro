@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use chrono::{TimeZone, Utc};
+use models_databases::{CellValue, CellWrite, OptionRef, RowChanges, TableVersion};
 
 use super::*;
-use crate::cast::ColumnType;
 use crate::fold::Cell;
 use crate::test_support::{catalog, *};
 
@@ -13,6 +13,8 @@ const GLOBEX: Uuid = Uuid::from_u128(0xa2);
 const HOOLI: Uuid = Uuid::from_u128(0xa3);
 const INITECH: Uuid = Uuid::from_u128(0xa4);
 const NEW_ROW: Uuid = Uuid::from_u128(0xb1);
+const SECOND_NEW_ROW: Uuid = Uuid::from_u128(0xb2);
+const THIRD_NEW_ROW: Uuid = Uuid::from_u128(0xb3);
 
 /// One `page` or `bins` call as the fake saw it: query, needed columns,
 /// cursor, limit.
@@ -55,68 +57,67 @@ impl RowSource for FakeSource {
     }
 }
 
-/// A writer that records every call and fails any insert whose name is
-/// "Globex".
-#[derive(Default)]
-struct FakeWriter {
-    calls: Mutex<Vec<String>>,
+/// A sink that records every batch and answers each op as written, with
+/// the rows an insert created taken from `inserted`; it refuses any op the
+/// `refuse` test picks, in the words a server would use.
+struct FakeSink {
+    applied: Mutex<Vec<(Uuid, Vec<DatabaseOp>)>>,
+    inserted: Vec<Uuid>,
+    refuse: fn(&DatabaseOp) -> Option<&'static str>,
 }
 
-impl RowWriter for FakeWriter {
-    async fn insert(&self, table: Uuid, cells: Vec<(Uuid, Value)>) -> Result<Uuid, WriteError> {
-        self.calls
-            .lock()
-            .unwrap()
-            .push(format!("insert {table} {cells:?}"));
-        if cells.contains(&(NAME, Value::Text("Globex".into()))) {
-            return Err(WriteError("a row named Globex already exists".into()));
+impl FakeSink {
+    fn new() -> Self {
+        FakeSink {
+            applied: Mutex::new(vec![]),
+            inserted: vec![],
+            refuse: |_| None,
         }
-        Ok(NEW_ROW)
     }
+}
 
-    async fn update(
+impl OpsSink for FakeSink {
+    async fn apply(
         &self,
-        table: Uuid,
-        row_id: Uuid,
-        cells: Vec<(Uuid, Option<Value>)>,
-    ) -> Result<(), WriteError> {
-        self.calls
-            .lock()
-            .unwrap()
-            .push(format!("update {table} {row_id} {cells:?}"));
-        Ok(())
-    }
-
-    async fn delete(&self, table: Uuid, row_id: Uuid) -> Result<(), WriteError> {
-        self.calls
-            .lock()
-            .unwrap()
-            .push(format!("delete {table} {row_id}"));
-        Ok(())
-    }
-
-    /// Refuses unless clearing, as a column holding two misfits would.
-    async fn change_column_type(
-        &self,
-        table: Uuid,
-        column: Uuid,
-        to: ColumnType,
-        clear_invalid: bool,
-    ) -> Result<ColumnChange, WriteError> {
-        self.calls.lock().unwrap().push(format!(
-            "change {table} {column} to {to} clearing {clear_invalid}"
-        ));
-        if !clear_invalid {
-            return Err(WriteError(
-                "2 values in \"name\" aren't numbers: 'Acme', 'Globex'. Fix them, or convert \
-                 with clearing to empty them."
-                    .into(),
-            ));
+        database: Uuid,
+        ops: Vec<DatabaseOp>,
+    ) -> Result<Vec<OpResult>, WriteError> {
+        self.applied.lock().unwrap().push((database, ops.clone()));
+        if let Some(reason) = ops.iter().find_map(self.refuse) {
+            return Err(WriteError(reason.into()));
         }
-        Ok(ColumnChange {
-            cleared_cells: 2,
-            trimmed_cells: 0,
-        })
+        Ok(ops
+            .iter()
+            .map(|op| match op {
+                DatabaseOp::InsertRows { rows, .. } => OpResult::RowsWritten {
+                    table_version: TableVersion(8),
+                    inserted: self.inserted[..rows.len()].to_vec(),
+                    affected: rows.len() as u32,
+                },
+                DatabaseOp::UpdateRows {
+                    changes: RowChanges::Uniform { rows, .. },
+                    ..
+                }
+                | DatabaseOp::DeleteRows { rows, .. } => OpResult::RowsWritten {
+                    table_version: TableVersion(8),
+                    inserted: vec![],
+                    affected: rows.len() as u32,
+                },
+                DatabaseOp::UpdateRows {
+                    changes: RowChanges::PerRow { rows },
+                    ..
+                } => OpResult::RowsWritten {
+                    table_version: TableVersion(8),
+                    inserted: vec![],
+                    affected: rows.len() as u32,
+                },
+                DatabaseOp::ChangeColumnType { .. } => OpResult::ColumnTyped {
+                    table_version: TableVersion(8),
+                    cleared_cells: 2,
+                    trimmed_cells: 0,
+                },
+            })
+            .collect())
     }
 }
 
@@ -176,13 +177,13 @@ fn source(rows: Vec<Row>) -> FakeSource {
 #[test]
 fn select_pages_to_completion_then_folds() {
     let source = source(deals());
-    let writer = FakeWriter::default();
+    let sink = FakeSink::new();
 
     let outcome = pollster::block_on(run(
         &catalog(),
         "SELECT name, amount FROM crm.deals WHERE stage = 'Won' AND amount > 5000 ORDER BY amount DESC",
         &source,
-        &writer,
+        &sink,
     ))
     .unwrap();
 
@@ -215,7 +216,6 @@ fn select_pages_to_completion_then_folds() {
             truncated: false,
             inserted_row_ids: vec![],
             changes_applied: 0,
-            failures: vec![],
             altered_column: None,
         }
     );
@@ -230,7 +230,7 @@ fn select_pages_to_completion_then_folds() {
             .iter()
             .all(|(_, needs, _, _)| *needs == vec![NAME, AMOUNT])
     );
-    assert!(writer.calls.lock().unwrap().is_empty());
+    assert!(sink.applied.lock().unwrap().is_empty());
 }
 
 #[test]
@@ -240,7 +240,7 @@ fn aggregate_columns_are_named_after_the_statement() {
         &catalog(),
         "SELECT stage, SUM(amount), COUNT(*), MAX(\"closed at\") FROM crm.deals GROUP BY stage ORDER BY stage",
         &source,
-        &FakeWriter::default(),
+        &FakeSink::new(),
     ))
     .unwrap();
 
@@ -304,7 +304,7 @@ fn aliases_name_the_result_columns_and_order_it() {
         &catalog(),
         "SELECT stage AS \"Stage\", SUM(amount) AS total FROM crm.deals GROUP BY stage ORDER BY total DESC",
         &source,
-        &FakeWriter::default(),
+        &FakeSink::new(),
     ))
     .unwrap();
 
@@ -357,7 +357,7 @@ fn count_only_groups_ask_for_bins_not_rows() {
         &catalog(),
         "SELECT stage, COUNT(*) FROM crm.deals GROUP BY stage",
         &source,
-        &FakeWriter::default(),
+        &FakeSink::new(),
     ))
     .unwrap();
 
@@ -391,7 +391,7 @@ fn the_row_cap_marks_the_answer_truncated() {
         &catalog(),
         "SELECT SUM(amount) FROM crm.deals",
         &source,
-        &FakeWriter::default(),
+        &FakeSink::new(),
     ))
     .unwrap();
 
@@ -429,7 +429,7 @@ fn a_source_failure_is_the_outcome_error() {
         &catalog(),
         "SELECT name FROM crm.deals",
         &Broken,
-        &FakeWriter::default(),
+        &FakeSink::new(),
     ))
     .unwrap_err();
     assert_eq!(error.to_string(), "could not read rows: gateway timed out");
@@ -438,7 +438,7 @@ fn a_source_failure_is_the_outcome_error() {
         &catalog(),
         "SELECT nam FROM crm.deals",
         &Broken,
-        &FakeWriter::default(),
+        &FakeSink::new(),
     ))
     .unwrap_err();
     assert_eq!(
@@ -450,71 +450,169 @@ fn a_source_failure_is_the_outcome_error() {
 // ---- writes -----------------------------------------------------------------
 
 #[test]
-fn insert_writes_each_row_and_reports_the_ones_that_failed() {
-    let writer = FakeWriter::default();
+fn an_insert_is_one_op_holding_every_row() {
+    let sink = FakeSink {
+        inserted: vec![NEW_ROW, SECOND_NEW_ROW, THIRD_NEW_ROW],
+        ..FakeSink::new()
+    };
+    let source = source(deals());
     let outcome = pollster::block_on(run(
         &catalog(),
-        "INSERT INTO crm.deals (name, stage) VALUES ('Acme', 'Won'), ('Globex', 'Lead'), ('Hooli', NULL)",
-        &source(vec![]),
-        &writer,
+        "INSERT INTO crm.deals (name, stage) VALUES ('Acme', 'won'), ('Globex', 'Lead'), ('Hooli', NULL)",
+        &source,
+        &sink,
     ))
     .unwrap();
 
     assert_eq!(
         outcome,
         Outcome {
-            columns: vec![],
-            rows: vec![],
-            row_ids: vec![],
-            read_tables: vec![],
-            truncated: false,
-            inserted_row_ids: vec![NEW_ROW, NEW_ROW],
-            changes_applied: 2,
-            failures: vec![RowFailure {
-                row: 1,
-                message: "a row named Globex already exists".into(),
-            }],
-            altered_column: None,
+            inserted_row_ids: vec![NEW_ROW, SECOND_NEW_ROW, THIRD_NEW_ROW],
+            changes_applied: 3,
+            ..Outcome::default()
         }
     );
     assert_eq!(
-        *writer.calls.lock().unwrap(),
+        *sink.applied.lock().unwrap(),
+        vec![(
+            CRM,
+            vec![DatabaseOp::InsertRows {
+                table: DEALS,
+                rows: vec![
+                    vec![
+                        CellWrite {
+                            column: NAME,
+                            value: CellValue::Text("Acme".into()),
+                        },
+                        CellWrite {
+                            column: STAGE,
+                            value: CellValue::Options(vec![OptionRef::Label("Won".into())]),
+                        },
+                    ],
+                    vec![
+                        CellWrite {
+                            column: NAME,
+                            value: CellValue::Text("Globex".into()),
+                        },
+                        CellWrite {
+                            column: STAGE,
+                            value: CellValue::Options(vec![OptionRef::Label("Lead".into())]),
+                        },
+                    ],
+                    vec![CellWrite {
+                        column: NAME,
+                        value: CellValue::Text("Hooli".into()),
+                    }],
+                ],
+                create_missing_options: false,
+            }],
+        )]
+    );
+    assert!(source.asked.lock().unwrap().is_empty());
+}
+
+#[test]
+fn update_and_delete_by_row_id_read_the_row_then_write_it() {
+    let sink = FakeSink::new();
+    let outcome = pollster::block_on(run(
+        &catalog(),
+        "UPDATE crm.deals SET stage = 'Won', amount = NULL WHERE row_id = '00000000-0000-0000-0000-0000000000a1'",
+        &source(deals()),
+        &sink,
+    ))
+    .unwrap();
+    assert_eq!(outcome.changes_applied, 1);
+
+    let outcome = pollster::block_on(run(
+        &catalog(),
+        "DELETE FROM crm.deals WHERE row_id = '00000000-0000-0000-0000-0000000000a2'",
+        &source(deals()),
+        &sink,
+    ))
+    .unwrap();
+    assert_eq!(outcome.changes_applied, 1);
+
+    assert_eq!(
+        *sink.applied.lock().unwrap(),
         vec![
-            format!("insert {DEALS} [({NAME}, Text(\"Acme\")), ({STAGE}, Option({WON}))]"),
-            format!("insert {DEALS} [({NAME}, Text(\"Globex\")), ({STAGE}, Option({LEAD}))]"),
-            format!("insert {DEALS} [({NAME}, Text(\"Hooli\"))]"),
+            (
+                CRM,
+                vec![DatabaseOp::UpdateRows {
+                    table: DEALS,
+                    changes: RowChanges::Uniform {
+                        rows: vec![ACME],
+                        cells: vec![
+                            CellWrite {
+                                column: STAGE,
+                                value: CellValue::Options(vec![OptionRef::Label("Won".into())]),
+                            },
+                            CellWrite {
+                                column: AMOUNT,
+                                value: CellValue::Clear,
+                            },
+                        ],
+                    },
+                    create_missing_options: false,
+                }],
+            ),
+            (
+                CRM,
+                vec![DatabaseOp::DeleteRows {
+                    table: DEALS,
+                    rows: vec![GLOBEX],
+                }],
+            ),
         ]
     );
 }
 
 #[test]
-fn update_and_delete_write_one_row() {
-    let writer = FakeWriter::default();
+fn a_where_that_matches_nothing_writes_nothing() {
+    let sink = FakeSink::new();
     let outcome = pollster::block_on(run(
         &catalog(),
-        "UPDATE crm.deals SET stage = 'Won', amount = NULL WHERE row_id = '00000000-0000-0000-0000-0000000000a1'",
-        &source(vec![]),
-        &writer,
+        "DELETE FROM crm.deals WHERE name = 'Vandelay'",
+        &source(deals()),
+        &sink,
     ))
     .unwrap();
-    assert_eq!(outcome.changes_applied, 1);
-    assert_eq!(outcome.failures, vec![]);
+    assert_eq!(outcome, Outcome::default());
+    assert!(sink.applied.lock().unwrap().is_empty());
+}
 
-    let outcome = pollster::block_on(run(
+#[test]
+fn a_row_named_by_id_that_the_table_lacks_is_refused() {
+    let sink = FakeSink::new();
+    let error = pollster::block_on(run(
         &catalog(),
-        "DELETE FROM crm.deals WHERE row_id = '00000000-0000-0000-0000-0000000000a2'",
-        &source(vec![]),
-        &writer,
+        "UPDATE crm.deals SET done = TRUE WHERE row_id IN ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000ff')",
+        &source(deals()),
+        &sink,
     ))
-    .unwrap();
-    assert_eq!(outcome.changes_applied, 1);
-
+    .unwrap_err();
     assert_eq!(
-        *writer.calls.lock().unwrap(),
-        vec![
-            format!("update {DEALS} {ACME} [({STAGE}, Some(Option({WON}))), ({AMOUNT}, None)]"),
-            format!("delete {DEALS} {GLOBEX}"),
-        ]
+        error.to_string(),
+        "row 2: no row 00000000-0000-0000-0000-0000000000ff in this table"
+    );
+    assert!(sink.applied.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_refused_op_is_the_statement_error() {
+    let sink = FakeSink {
+        refuse: |_| Some("row 2: \"stage\" holds one value; 2 were given"),
+        ..FakeSink::new()
+    };
+    let error = pollster::block_on(run(
+        &catalog(),
+        "UPDATE crm.deals SET done = TRUE WHERE stage = 'Won'",
+        &source(deals()),
+        &sink,
+    ))
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "row 2: \"stage\" holds one value; 2 were given"
     );
 }
 
@@ -532,7 +630,6 @@ fn outcome_serializes_camel_case_for_the_wire() {
         truncated: false,
         inserted_row_ids: vec![],
         changes_applied: 0,
-        failures: vec![],
         altered_column: None,
     };
     assert_eq!(
@@ -544,8 +641,7 @@ fn outcome_serializes_camel_case_for_the_wire() {
             "readTables": ["00000000-0000-0000-0000-0000000000d0"],
             "truncated": false,
             "insertedRowIds": [],
-            "changesApplied": 0,
-            "failures": []
+            "changesApplied": 0
         })
     );
 }
@@ -553,15 +649,15 @@ fn outcome_serializes_camel_case_for_the_wire() {
 // ---- schema -----------------------------------------------------------------
 
 #[test]
-fn a_type_change_goes_to_the_writer_without_reading_rows() {
+fn a_type_change_is_one_op_without_reading_rows() {
     let source = source(deals());
-    let writer = FakeWriter::default();
+    let sink = FakeSink::new();
 
     let outcome = pollster::block_on(run(
         &catalog(),
         "ALTER TABLE crm.deals ALTER COLUMN name TYPE number USING NULL",
         &source,
-        &writer,
+        &sink,
     ))
     .unwrap();
 
@@ -579,19 +675,36 @@ fn a_type_change_goes_to_the_writer_without_reading_rows() {
         }
     );
     assert_eq!(
-        *writer.calls.lock().unwrap(),
-        vec![format!("change {DEALS} {NAME} to number clearing true")]
+        *sink.applied.lock().unwrap(),
+        vec![(
+            CRM,
+            vec![DatabaseOp::ChangeColumnType {
+                table: DEALS,
+                column: NAME,
+                to: models_databases::ColumnKind::Number,
+                clear_invalid: true,
+            }],
+        )]
     );
     assert!(source.asked.lock().unwrap().is_empty());
 }
 
 #[test]
-fn a_type_change_the_writer_refuses_is_the_statement_error() {
+fn a_type_change_the_sink_refuses_is_the_statement_error() {
+    let sink = FakeSink {
+        refuse: |_| {
+            Some(
+                "2 values in \"name\" aren't numbers: 'Acme', 'Globex'. Fix them, or convert \
+                 with clearing to empty them.",
+            )
+        },
+        ..FakeSink::new()
+    };
     let error = pollster::block_on(run(
         &catalog(),
         "ALTER TABLE crm.deals ALTER COLUMN name TYPE number",
         &source(vec![]),
-        &FakeWriter::default(),
+        &sink,
     ))
     .unwrap_err();
 

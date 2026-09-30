@@ -23,6 +23,7 @@ pub fn virtual_columns(table: Uuid) -> [Column; 2] {
     [
         Column {
             id: row_id_key(table),
+            placement: row_id_key(table),
             name: ROW_ID.into(),
             kind: ColumnKind::Entity {
                 multi: false,
@@ -31,6 +32,7 @@ pub fn virtual_columns(table: Uuid) -> [Column; 2] {
         },
         Column {
             id: row_position_key(table),
+            placement: row_position_key(table),
             name: ROW_POSITION.into(),
             kind: ColumnKind::Text,
         },

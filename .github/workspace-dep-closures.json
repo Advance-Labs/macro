@@ -3397,6 +3397,7 @@
       "crates/maybe_send",
       "crates/model_file_type",
       "crates/model_owner",
+      "crates/models_databases",
       "crates/non_empty",
       "crates/notification_state"
     ],

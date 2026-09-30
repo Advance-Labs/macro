@@ -20,7 +20,7 @@ use uuid::Uuid;
 pub use self::error::ResolveError;
 pub use self::names::{ROW_ID, ROW_POSITION};
 use crate::cast::{Cast, ColumnType, Contents, cast};
-use crate::catalog::Catalog;
+use crate::catalog::{Catalog, Table, TableSource};
 use crate::parse::{self, Statement};
 
 pub use crate::parse::{AggFn, CmpOp, Dir, JoinKind};
@@ -32,9 +32,9 @@ pub enum Query {
     Select(SelectQuery),
     /// Rows to create.
     Insert(InsertQuery),
-    /// Cells to set on one row.
+    /// Cells to set on the rows a read finds.
     Update(UpdateQuery),
-    /// One row to remove.
+    /// The rows a read finds, to remove.
     Delete(DeleteQuery),
     /// A column's type to change.
     AlterColumnType(AlterColumnTypeQuery),
@@ -262,24 +262,43 @@ pub struct InsertQuery {
     pub rows: Vec<Vec<(Uuid, Value)>>,
 }
 
-/// An `UPDATE` of one row with every cell typed.
+/// An `UPDATE`: the read that finds its rows, and what each gets.
 #[derive(Debug, Clone, PartialEq)]
 pub struct UpdateQuery {
     /// The table written.
     pub table: Uuid,
-    /// The row.
-    pub row_id: Uuid,
-    /// The cells to set, in statement order; `None` clears the cell.
-    pub cells: Vec<(Uuid, Option<Value>)>,
+    /// Finds the rows: `row_id`, then every column an assignment copies.
+    pub read: SelectQuery,
+    /// The cells to set, in statement order.
+    pub assignments: Vec<Assignment>,
 }
 
-/// A `DELETE` of one row.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// One `SET column = …`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Assignment {
+    /// The column's property definition.
+    pub column: Uuid,
+    /// What it becomes.
+    pub value: Assigned,
+}
+
+/// What an assignment sets a cell to.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Assigned {
+    /// The same value on every row; `None` clears the cell.
+    Value(Option<Value>),
+    /// The row's own value of another column: the property definition, which
+    /// the read selects.
+    Column(Uuid),
+}
+
+/// A `DELETE`: the read that finds its rows.
+#[derive(Debug, Clone, PartialEq)]
 pub struct DeleteQuery {
     /// The table written.
     pub table: Uuid,
-    /// The row.
-    pub row_id: Uuid,
+    /// Finds the rows: `row_id` alone.
+    pub read: SelectQuery,
 }
 
 /// An `ALTER COLUMN … TYPE` the cast rule allows for a column with values.
@@ -300,15 +319,15 @@ pub fn resolve(catalog: &Catalog, statement: Statement) -> Result<Query, Resolve
     match statement {
         Statement::Select(select) => select::resolve(catalog, select).map(Query::Select),
         Statement::Insert(insert) => {
-            let table = names::table(catalog, &insert.table)?;
+            let table = writable(names::table(catalog, &insert.table)?)?;
             insert::resolve(table, insert).map(Query::Insert)
         }
         Statement::Update(update) => {
-            let table = names::table(catalog, &update.table)?;
-            insert::resolve_update(table, update).map(Query::Update)
+            writable(names::table(catalog, &update.table)?)?;
+            insert::resolve_update(catalog, update).map(Query::Update)
         }
         Statement::AlterColumnType(alter) => {
-            let table = names::table(catalog, &alter.table)?;
+            let table = writable(names::table(catalog, &alter.table)?)?;
             let column = names::column(table, &alter.column)?;
             // No data is read here, so the column is taken to hold values;
             // the writer knows better and lets an empty one take any type.
@@ -327,12 +346,19 @@ pub fn resolve(catalog: &Catalog, statement: Statement) -> Result<Query, Resolve
             }))
         }
         Statement::Delete(delete) => {
-            let table = names::table(catalog, &delete.table)?;
-            Ok(Query::Delete(DeleteQuery {
-                table: table.id,
-                row_id: insert::row_id(&delete.row_id)?,
-            }))
+            writable(names::table(catalog, &delete.table)?)?;
+            insert::resolve_delete(catalog, delete).map(Query::Delete)
         }
+    }
+}
+
+/// A table a statement may write: a database's own, not a platform table.
+fn writable(table: &Table) -> Result<&Table, ResolveError> {
+    match table.source {
+        TableSource::Database => Ok(table),
+        TableSource::People => Err(ResolveError::ReadOnlyTable {
+            table: names::qualified(table),
+        }),
     }
 }
 

@@ -3,7 +3,7 @@
 
 use chrono::{DateTime, NaiveDate, Utc};
 
-use crate::catalog::{Column, ColumnKind};
+use crate::catalog::{Column, ColumnKind, EntityKind};
 use crate::parse::{CmpOp, Cond, Lit};
 
 use super::names::Scope;
@@ -226,6 +226,16 @@ fn typed_one(column: &Column, lit: Lit) -> Result<Value, ResolveError> {
         (ColumnKind::Select { .. }, _) => {
             Err(mismatch("select", "compare it to a quoted option label"))
         }
+        (
+            ColumnKind::Entity {
+                target: EntityKind::Row,
+                ..
+            },
+            Lit::Str(id),
+        ) => match uuid::Uuid::parse_str(&id) {
+            Ok(_) => Ok(Value::Entity(id)),
+            Err(_) => Err(ResolveError::RowIdNotAnId { written: id }),
+        },
         (ColumnKind::Entity { .. }, Lit::Str(id)) if is_entity_id(&id) => Ok(Value::Entity(id)),
         (ColumnKind::Entity { .. }, _) => Err(mismatch(
             "entity",

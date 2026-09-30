@@ -171,6 +171,23 @@ pub enum ResolveError {
         /// Why no value converts.
         reason: &'static str,
     },
+    /// A write to a table nobody writes, such as `macro.people`.
+    ReadOnlyTable {
+        /// The qualified table name.
+        table: String,
+    },
+    /// `SET column = other` where the other column holds a different kind of
+    /// value.
+    CopyKindMismatch {
+        /// The column set.
+        column: String,
+        /// Its kind.
+        column_kind: &'static str,
+        /// The column copied.
+        copied: String,
+        /// Its kind.
+        copied_kind: &'static str,
+    },
     /// An `ON` equality between columns of different kinds.
     JoinKindMismatch {
         /// The earlier table's column.
@@ -324,6 +341,16 @@ impl fmt::Display for ResolveError {
             Self::CastNever { column, to, reason } => write!(
                 f,
                 "\"{column}\" can't become {to}: {reason} Add a new column instead."
+            ),
+            Self::ReadOnlyTable { table } => write!(f, "{table} is read-only"),
+            Self::CopyKindMismatch {
+                column,
+                column_kind,
+                copied,
+                copied_kind,
+            } => write!(
+                f,
+                "\"{column}\" ({column_kind}) can't be set from \"{copied}\" ({copied_kind}): a column copies only a column of the same kind"
             ),
             Self::JoinKindMismatch {
                 left,

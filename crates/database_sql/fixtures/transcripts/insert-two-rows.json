@@ -84,97 +84,91 @@
   },
   "exchanges": [
     {
-      "bins": [
+      "results": [
         {
-          "count": 2,
-          "key": {
-            "type": "options",
-            "value": [
-              "01990000-0000-7000-8000-00000000a002"
-            ]
-          }
-        },
-        {
-          "count": 1,
-          "key": {
-            "type": "options",
-            "value": [
-              "01990000-0000-7000-8000-00000000a001"
-            ]
-          }
-        },
-        {
-          "count": 4,
-          "key": null
+          "affected": 2,
+          "inserted": [
+            "01990000-0000-7000-8000-00000000e004",
+            "01990000-0000-7000-8000-00000000e005"
+          ],
+          "kind": "rows_written",
+          "tableVersion": 7
         }
       ],
       "step": {
-        "cursor": null,
+        "database": "01990000-0000-7000-8000-00000000db01",
         "id": 0,
-        "limit": 0,
-        "needs": [],
-        "query": {
-          "groupBy": "01990000-0000-7000-8000-00000000c003",
-          "propf": null,
-          "table": "01990000-0000-7000-8000-00000000d001",
-          "type": "groupSoup"
-        },
-        "step": "bins"
+        "ops": [
+          {
+            "createMissingOptions": false,
+            "kind": "insert_rows",
+            "rows": [
+              [
+                {
+                  "column": "01990000-0000-7000-8000-00000000b001",
+                  "value": {
+                    "type": "text",
+                    "value": "Hooli"
+                  }
+                },
+                {
+                  "column": "01990000-0000-7000-8000-00000000b002",
+                  "value": {
+                    "type": "number",
+                    "value": 900.0
+                  }
+                },
+                {
+                  "column": "01990000-0000-7000-8000-00000000b003",
+                  "value": {
+                    "type": "options",
+                    "value": [
+                      {
+                        "label": "Lead"
+                      }
+                    ]
+                  }
+                }
+              ],
+              [
+                {
+                  "column": "01990000-0000-7000-8000-00000000b001",
+                  "value": {
+                    "type": "text",
+                    "value": "Vandelay"
+                  }
+                },
+                {
+                  "column": "01990000-0000-7000-8000-00000000b003",
+                  "value": {
+                    "type": "options",
+                    "value": [
+                      {
+                        "label": "Won"
+                      }
+                    ]
+                  }
+                }
+              ]
+            ],
+            "table": "01990000-0000-7000-8000-00000000d001"
+          }
+        ],
+        "step": "ops"
       }
     }
   ],
   "outcome": {
-    "changesApplied": 0,
-    "columns": [
-      {
-        "column": "01990000-0000-7000-8000-00000000c003",
-        "kind": "select",
-        "name": "stage"
-      },
-      {
-        "kind": "number",
-        "name": "COUNT(*)"
-      }
+    "changesApplied": 2,
+    "columns": [],
+    "insertedRowIds": [
+      "01990000-0000-7000-8000-00000000e004",
+      "01990000-0000-7000-8000-00000000e005"
     ],
-    "insertedRowIds": [],
-    "readTables": [
-      "01990000-0000-7000-8000-00000000d001"
-    ],
+    "readTables": [],
     "rowIds": [],
-    "rows": [
-      [
-        {
-          "type": "options",
-          "value": [
-            "01990000-0000-7000-8000-00000000a002"
-          ]
-        },
-        {
-          "type": "number",
-          "value": 2.0
-        }
-      ],
-      [
-        {
-          "type": "options",
-          "value": [
-            "01990000-0000-7000-8000-00000000a001"
-          ]
-        },
-        {
-          "type": "number",
-          "value": 1.0
-        }
-      ],
-      [
-        null,
-        {
-          "type": "number",
-          "value": 4.0
-        }
-      ]
-    ],
+    "rows": [],
     "truncated": false
   },
-  "sql": "SELECT stage, COUNT(*) FROM crm.deals GROUP BY stage"
+  "sql": "INSERT INTO crm.deals (name, amount, stage) VALUES ('Hooli', 900, 'Lead'), ('Vandelay', NULL, 'won')"
 }

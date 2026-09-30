@@ -22,8 +22,9 @@
 //!            | INSERT INTO table DEFAULT VALUES
 //! row       := '(' value {, value} ')'
 //! value     := lit | '[' lit {, lit} ']'          -- a list for a multi-valued cell
-//! update    := UPDATE table SET ident '=' value {, ident '=' value} WHERE row_id '=' string
-//! delete    := DELETE FROM table WHERE row_id '=' string
+//! update    := UPDATE table SET ident '=' set {, ident '=' set} WHERE cond
+//! set       := value | ident                     -- a column copies the row's own value
+//! delete    := DELETE FROM table WHERE cond
 //! alter     := ALTER TABLE table ALTER [COLUMN] ident TYPE type [USING NULL]
 //! type      := (text | number | boolean | date | link | select | select_number | tag
 //!              | entity '(' kind ')') ['[' ']']      -- [] for a multi-valued column
@@ -34,7 +35,7 @@
 //! so a column may still be called `type`. A trailing
 //! `;` is allowed. Everything else SQL has (joins, subqueries, aliases,
 //! arithmetic, functions beyond the five aggregates, `HAVING`, an
-//! `UPDATE`/`DELETE` over anything but one row id) is a
+//! `UPDATE`/`DELETE` without a `WHERE`) is a
 //! parse error with a span and a message written for the agent that sent it.
 
 pub mod ast;

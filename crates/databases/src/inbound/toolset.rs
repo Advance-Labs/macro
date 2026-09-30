@@ -59,9 +59,11 @@ macro_rules! sql_guide {
          - **Literals:** `'text'` (a quote inside is doubled: `'Wolf''s place'`), numbers, \
          TRUE/FALSE, NULL; dates are `'2026-08-13'` or an ISO date-time.\n\
          - **Writes:** `INSERT INTO table (col, ...) VALUES (...), (...)` or \
-         `INSERT INTO table DEFAULT VALUES`; `UPDATE table SET col = value, ... WHERE row_id = \
-         '<id>'`; `DELETE FROM table WHERE row_id = '<id>'`. An UPDATE or DELETE names exactly \
-         one row by its id: read the ids first. A multi-valued cell is written as a list: \
+         `INSERT INTO table DEFAULT VALUES`; `UPDATE table SET col = value, ... WHERE cond`; \
+         `DELETE FROM table WHERE cond`. The WHERE is required and takes any condition; \
+         `WHERE row_id = '<id>'` or `row_id IN ('<id>', ...)` names rows, and every id named \
+         must exist: read the ids first. `SET col = other_col` copies each row's own value of \
+         a column of the same kind. A multi-valued cell is written as a list: \
          `tags = ['Urgent', 'Backend']`; `NULL` clears a cell.\n\
          - **`row_id`** is every row's id. It comes back as the first column of a row-shaped \
          SELECT and in `insertedRowIds` after an INSERT; never invent one. A row the app shows \

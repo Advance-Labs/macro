@@ -691,6 +691,20 @@ impl CellStore for FakeCells {
     }
 }
 
+/// A first value settles the columns it landed in, as the cell store does in
+/// its transaction.
+fn settle(w: &mut World, table_id: TableId, definitions: Vec<PropertyDefinitionId>) {
+    if definitions.is_empty() {
+        return;
+    }
+    for column in &mut w.columns {
+        if column.table_id == table_id && definitions.contains(&column.property_definition_id) {
+            column.infer_type = false;
+        }
+    }
+    w.settled.push((table_id, definitions));
+}
+
 /// The fake cell store's batch, applied straight to the world; the caller
 /// rolls the world back unless everything applied.
 fn apply_in_world(w: &mut World, writes: &RowWrites) -> RowWritesOutcome {
@@ -724,18 +738,20 @@ fn apply_in_world(w: &mut World, writes: &RowWrites) -> RowWritesOutcome {
     for (index, write) in writes.writes.iter().enumerate() {
         match write {
             RowWrite::Insert { table_id, rows } => {
-                let table_rows = w.rows.entry(*table_id).or_default();
                 let mut ids = Vec::new();
                 for cells in rows {
                     let id = Uuid::now_v7();
+                    let table_rows = w.rows.entry(*table_id).or_default();
                     table_rows.push(RowRef {
                         id,
                         position: format!("{:04}", table_rows.len()),
                     });
                     ids.push(id);
-                    w.cells.entry(id).or_default().extend(cells.iter().cloned());
+                    if !cells.is_empty() {
+                        w.cells.entry(id).or_default().extend(cells.iter().cloned());
+                    }
                     let valued: Vec<_> = cells.iter().map(|(definition, _)| *definition).collect();
-                    w.settled.push((*table_id, valued));
+                    settle(w, *table_id, valued);
                 }
                 inserted.push(ids);
             }
@@ -762,6 +778,12 @@ fn apply_in_world(w: &mut World, writes: &RowWrites) -> RowWritesOutcome {
                             }
                         }
                     }
+                    let valued: Vec<_> = cells
+                        .iter()
+                        .filter(|(_, value)| value.is_some())
+                        .map(|(definition, _)| *definition)
+                        .collect();
+                    settle(w, *table_id, valued);
                 }
                 inserted.push(Vec::new());
             }
@@ -1142,6 +1164,8 @@ async fn seeded() -> Seeded {
         )
         .await
         .unwrap();
+    // Tests count the batches their own writes make, not the seed row's.
+    world.lock().unwrap().row_write_batches = 0;
     let column = |id: ColumnId| {
         world
             .lock()

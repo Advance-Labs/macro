@@ -19,7 +19,7 @@
 //! 2. Compile the statement against it: names resolved, literals typed, the
 //!    filter split into what Soup can evaluate and what is folded here.
 //! 3. Read the rows through the row and cell stores and fold the answer, or
-//!    write through them one row at a time.
+//!    apply the statement's write as one batch of ops.
 //!
 //! Schema operations (create database/table/column) remain small structured
 //! endpoints because property definitions carry configuration DDL cannot

@@ -10,21 +10,14 @@ pub struct Ident(pub String);
 
 /// One parsed statement.
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(
-    not(target_arch = "wasm32"),
-    expect(
-        clippy::large_enum_variant,
-        reason = "a statement is parsed once and moved once; boxing the select would only add noise to every test literal"
-    )
-)]
 pub enum Statement {
     /// A `SELECT`.
     Select(Select),
     /// An `INSERT … VALUES`.
     Insert(Insert),
-    /// An `UPDATE … SET … WHERE row_id = …`.
+    /// An `UPDATE … SET … WHERE …`.
     Update(Update),
-    /// A `DELETE FROM … WHERE row_id = …`.
+    /// A `DELETE FROM … WHERE …`.
     Delete(Delete),
     /// An `ALTER TABLE … ALTER COLUMN … TYPE …`.
     AlterColumnType(AlterColumnType),
@@ -274,24 +267,34 @@ pub struct Insert {
     pub rows: Vec<Vec<Lit>>,
 }
 
-/// `UPDATE table SET column = value, … WHERE row_id = 'id'`: one row, by id.
+/// `UPDATE table SET column = value, … WHERE cond`: every row the condition
+/// matches.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Update {
     /// The table written.
     pub table: TableName,
-    /// The cells set, in order; a `NULL` value clears the cell.
-    pub assignments: Vec<(Ident, Lit)>,
-    /// The row, as written in the `WHERE`.
-    pub row_id: String,
+    /// The cells set, in order.
+    pub assignments: Vec<(Ident, SetValue)>,
+    /// Which rows.
+    pub where_: Cond,
 }
 
-/// `DELETE FROM table WHERE row_id = 'id'`: one row, by id.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// What an `UPDATE` sets a cell to.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SetValue {
+    /// A value; `NULL` clears the cell.
+    Lit(Lit),
+    /// Another column of the same row: each row gets its own value.
+    Column(Ident),
+}
+
+/// `DELETE FROM table WHERE cond`: every row the condition matches.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Delete {
     /// The table written.
     pub table: TableName,
-    /// The row, as written in the `WHERE`.
-    pub row_id: String,
+    /// Which rows.
+    pub where_: Cond,
 }
 
 /// `ALTER TABLE table ALTER [COLUMN] column TYPE type [USING NULL]`: change

@@ -157,6 +157,7 @@ pub fn engine_catalog(entries: &[TableEntry]) -> Catalog {
             .iter()
             .map(|entry| EngineTable {
                 id: entry.table.id,
+                database_id: entry.database.id,
                 database: entry.database.name.clone(),
                 name: entry.table.name.clone(),
                 source: TableSource::Database,
@@ -165,6 +166,7 @@ pub fn engine_catalog(entries: &[TableEntry]) -> Catalog {
                     .iter()
                     .map(|column| EngineColumn {
                         id: column.definition.definition.id,
+                        placement: column.column.id,
                         name: column.name().to_owned(),
                         kind: column_kind(column),
                     })

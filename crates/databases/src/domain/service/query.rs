@@ -1,5 +1,6 @@
 //! SQL over a viewer's tables: the `database_sql` engine, fed by the row
-//! and cell stores and writing back through them.
+//! and cell stores, its writes applied as ops through the same path as
+//! `POST /databases/{id}/ops`.
 //!
 //! The engine pushes what Soup could evaluate into a `propf` expression;
 //! here, with rows loaded straight from Postgres, that expression is applied
@@ -9,28 +10,25 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
-use database_sql::cast::ColumnType;
 use database_sql::fold::{Bin, Cell, Row as EngineRow};
-use database_sql::resolve::{Query, Value, column_key};
+use database_sql::resolve::{Query, column_key};
 use database_sql::run::{
-    ColumnChange, Outcome, OutcomeKind, Page, RowSource, RowWriter, RunError, SourceError,
-    WriteError, run,
+    OpsSink, Outcome, OutcomeKind, Page, RowSource, RunError, SourceError, WriteError, run,
 };
 use database_sql::split::GqlQuery;
 use filter_ast::Expr;
 use item_filters::ast::properties::{PropertiesLiteral, PropertyMatchValue};
 use macro_event_broker::MacroEventBroker;
+use models_databases::{DatabaseOp, OpResult};
 use models_permissions::share_permission::access_level::AccessLevel;
 use models_properties::service::property_value::PropertyValue;
-use models_properties::shared::EntityReference;
 use uuid::Uuid;
 
-use super::{DatabasesServiceImpl, MAX_SQL_LEN, events, infra};
-use crate::domain::catalog::{self, ColumnEntry, PropertyType, TableEntry};
+use super::{DatabasesServiceImpl, MAX_SQL_LEN, infra};
+use crate::domain::catalog::{self, ColumnEntry, TableEntry};
 use crate::domain::models::{
-    AlteredColumn, ChangeColumnType, DatabaseError, DatabaseId, ExecOutcome, ExecRequest,
-    PropertyDefinitionId, QueryError, QueryResult, ResultColumn, RowId, RowRef, SqlValue, TableId,
-    TableVersion, Viewer,
+    AlteredColumn, DatabaseError, DatabaseId, ExecOutcome, ExecRequest, PropertyDefinitionId,
+    QueryError, QueryResult, ResultColumn, RowId, RowRef, SqlValue, TableId, TableVersion, Viewer,
 };
 use crate::domain::ports::{
     AccessDirectory, CellStore, ColumnDefinitionStore, DatabasesRepo, TableEventPublisher,
@@ -104,59 +102,30 @@ where
             entries: &entries,
             loaded: Mutex::new(HashMap::new()),
         };
-        let writer = Writer {
+        let sink = Sink {
             service: self,
             entries: &entries,
             viewer: &viewer,
+            versions: Mutex::new(HashMap::new()),
         };
-        let outcome = run(&engine_catalog, &req.sql, &source, &writer)
+        let outcome = run(&engine_catalog, &req.sql, &source, &sink)
             .await
             .map_err(|error| match error {
                 RunError::Compile(error) => QueryError::Sql(error.to_string()),
                 other => QueryError::Sql(other.to_string()),
             })?;
-        if let Some(failure) = outcome.failures.first() {
-            return Err(QueryError::Sql(format!(
-                "row {}: {}",
-                failure.row + 1,
-                failure.message
-            )));
-        }
 
-        let mut new_versions = HashMap::new();
-        if let Some(table) = written_table
-            && outcome.changes_applied > 0
-        {
-            let version = self.repo.bump_table_version(table).await.map_err(infra)?;
-            new_versions.insert(table, version);
-        }
+        // The ops path bumped and announced the tables it wrote.
+        let new_versions = sink.versions.into_inner().expect("version log");
         let database_of: HashMap<TableId, DatabaseId> = entries
             .iter()
             .map(|entry| (entry.table.id, entry.table.database_id))
             .collect();
-        self.publish(
-            Some(events::Attribution::acting(
-                viewer.user_id.clone(),
-                viewer.acting_bot,
-            )),
-            &database_of,
-            &new_versions,
-        )
-        .await;
-        // A type change goes through the schema path, which bumps and
-        // announces the table itself.
-        let altered_column = match &outcome.altered_column {
-            Some(altered) => {
-                new_versions.extend(
-                    self.repo
-                        .table_versions(&[altered.table])
-                        .await
-                        .map_err(infra)?,
-                );
-                Some(altered_column(&entries, altered)?)
-            }
-            None => None,
-        };
+        let altered_column = outcome
+            .altered_column
+            .as_ref()
+            .map(|altered| altered_column(&entries, altered))
+            .transpose()?;
 
         let read_tables: Vec<TableId> = outcome.read_tables.clone();
         let read_versions: HashMap<TableId, TableVersion> = read_tables
@@ -452,16 +421,18 @@ fn cell(column: &ColumnEntry, value: &PropertyValue) -> Cell {
 
 // ---- writes --------------------------------------------------------------
 
-/// The engine's writer: row identities through the repository, cells through
-/// the cell store, one row per call.
-struct Writer<'a, Service> {
+/// The engine's sink: a statement's ops go through the service's own ops
+/// path, which checks, writes, bumps and announces them. It keeps the table
+/// versions the results report.
+struct Sink<'a, Service> {
     service: &'a Service,
     entries: &'a [TableEntry],
     viewer: &'a Viewer,
+    versions: Mutex<HashMap<TableId, TableVersion>>,
 }
 
-impl<Repo, Defs, Cells, Events, Access, Broker>
-    Writer<'_, DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>>
+impl<Repo, Defs, Cells, Events, Access, Broker> OpsSink
+    for Sink<'_, DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>>
 where
     Repo: DatabasesRepo,
     Defs: ColumnDefinitionStore,
@@ -470,229 +441,52 @@ where
     Access: AccessDirectory,
     Broker: MacroEventBroker,
 {
-    fn entry(&self, table: TableId) -> Result<&TableEntry, WriteError> {
-        let entry =
-            entry_for(self.entries, table).map_err(|error| WriteError(error.to_string()))?;
-        if entry.grant < AccessLevel::Edit {
-            return Err(WriteError(format!(
-                "table {} is read-only",
-                entry.table.name
-            )));
-        }
-        Ok(entry)
-    }
-
-    /// Check the row belongs to the table the statement named, so a row id
-    /// from a table the viewer cannot write is refused.
-    async fn own_row(&self, table: TableId, row: RowId) -> Result<(), WriteError> {
-        match self
-            .service
-            .repo
-            .row_table(row)
-            .await
-            .map_err(|error| WriteError(error.to_string()))?
-        {
-            Some(owner) if owner == table => Ok(()),
-            _ => Err(WriteError(format!("no row {row} in this table"))),
-        }
-    }
-
-    /// A first value settles the columns it landed in: they no longer infer
-    /// their type from it.
-    async fn settle(
+    async fn apply(
         &self,
-        table: TableId,
-        stored: &[(PropertyDefinitionId, Option<PropertyValue>)],
-    ) -> Result<(), WriteError> {
-        let valued: Vec<PropertyDefinitionId> = stored
+        database: DatabaseId,
+        ops: Vec<DatabaseOp>,
+    ) -> Result<Vec<OpResult>, WriteError> {
+        let tables: Vec<TableId> = ops.iter().map(op_table).collect();
+        let grant = self
+            .entries
             .iter()
-            .filter(|(_, value)| value.is_some())
-            .map(|(definition, _)| *definition)
-            .collect();
-        self.service
-            .repo
-            .settle_inference(table, &valued)
-            .await
-            .map_err(|error| WriteError(error.to_string()))
-    }
-
-    fn stored(
-        entry: &TableEntry,
-        cells: Vec<(Uuid, Option<Value>)>,
-    ) -> Result<Vec<(PropertyDefinitionId, Option<PropertyValue>)>, WriteError> {
-        cells
-            .into_iter()
-            .map(|(definition, value)| {
-                let column = entry
-                    .column_for(definition)
-                    .ok_or_else(|| WriteError(format!("no column {definition}")))?;
-                Ok((definition, value.map(|value| property_value(column, value))))
-            })
-            .collect()
-    }
-}
-
-impl<Repo, Defs, Cells, Events, Access, Broker> RowWriter
-    for Writer<'_, DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>>
-where
-    Repo: DatabasesRepo,
-    Defs: ColumnDefinitionStore,
-    Cells: CellStore,
-    Events: TableEventPublisher,
-    Access: AccessDirectory,
-    Broker: MacroEventBroker,
-{
-    async fn insert(&self, table: TableId, cells: Vec<(Uuid, Value)>) -> Result<Uuid, WriteError> {
-        let entry = self.entry(table)?;
-        let stored = Self::stored(
-            entry,
-            cells
-                .into_iter()
-                .map(|(definition, value)| (definition, Some(value)))
-                .collect(),
-        )?;
-        let rows = self
+            .find(|entry| entry.database.id == database)
+            .map(|entry| entry.grant)
+            .ok_or_else(|| WriteError(format!("no database {database}")))?;
+        let results = self
             .service
-            .repo
-            .insert_rows(table, self.viewer.user_id.as_ref(), 1)
-            .await
-            .map_err(|error| WriteError(error.to_string()))?
-            .ok_or_else(|| WriteError("the table is gone".into()))?;
-        let row = rows
-            .into_iter()
-            .next()
-            .ok_or_else(|| WriteError("no row was created".into()))?;
-        if !stored.is_empty() {
-            self.service
-                .cells
-                .write(row.id, &stored)
-                .await
-                .map_err(|error| WriteError(error.to_string()))?;
-            self.settle(table, &stored).await?;
-        }
-        Ok(row.id)
-    }
-
-    async fn update(
-        &self,
-        table: TableId,
-        row_id: Uuid,
-        cells: Vec<(Uuid, Option<Value>)>,
-    ) -> Result<(), WriteError> {
-        let entry = self.entry(table)?;
-        self.own_row(table, row_id).await?;
-        let stored = Self::stored(entry, cells)?;
-        self.service
-            .cells
-            .write(row_id, &stored)
-            .await
-            .map_err(|error| WriteError(error.to_string()))?;
-        self.settle(table, &stored).await
-    }
-
-    async fn change_column_type(
-        &self,
-        table: TableId,
-        column: Uuid,
-        to: ColumnType,
-        clear_invalid: bool,
-    ) -> Result<ColumnChange, WriteError> {
-        let entry = self.entry(table)?;
-        let placement = entry
-            .column_for(column)
-            .ok_or_else(|| WriteError(format!("no column {column}")))?;
-        let target = PropertyType::from_column_type(to);
-        let changed = self
-            .service
-            .retype_column(
-                entry.database.id,
-                Some(events::Attribution::acting(
-                    self.viewer.user_id.clone(),
-                    self.viewer.acting_bot,
-                )),
-                self.viewer,
-                ChangeColumnType {
-                    table_id: table,
-                    column_id: placement.column.id,
-                    data_type: target.data_type,
-                    is_multi_select: target.is_multi_select,
-                    specific_entity_type: target.specific_entity_type,
-                    relation: None,
-                    base_version: entry.table.version,
-                    clear_invalid,
-                },
-            )
+            .apply_ops_with_grant(database, grant, self.viewer.clone(), ops)
             .await
             .map_err(|error| match error {
-                DatabaseError::InvalidSchemaOperation(message) => WriteError(message),
+                DatabaseError::InvalidOp(refusal) => WriteError(match refusal.row {
+                    Some(row) => format!("row {}: {}", row + 1, refusal.reason),
+                    None => refusal.reason,
+                }),
                 DatabaseError::VersionConflict => {
                     WriteError("the table changed while the statement ran; run it again".into())
                 }
-                DatabaseError::NotFound => WriteError(format!("no column {column}")),
+                DatabaseError::NotFound => WriteError("the table is gone".into()),
                 other => {
-                    tracing::error!(error = ?other, "ALTER COLUMN failed");
-                    WriteError("the column's type could not be changed".into())
+                    tracing::error!(error = ?other, "a statement's write failed");
+                    WriteError("the write could not be applied".into())
                 }
             })?;
-        Ok(ColumnChange {
-            cleared_cells: changed.cleared_cells,
-            trimmed_cells: changed.trimmed_cells,
-        })
-    }
-
-    async fn delete(&self, table: TableId, row_id: Uuid) -> Result<(), WriteError> {
-        self.entry(table)?;
-        self.own_row(table, row_id).await?;
-        self.service
-            .cells
-            .clear(row_id)
-            .await
-            .map_err(|error| WriteError(error.to_string()))?;
-        let removed = self
-            .service
-            .repo
-            .delete_row(table, row_id)
-            .await
-            .map_err(|error| WriteError(error.to_string()))?;
-        if !removed {
-            return Err(WriteError(format!("no row {row_id} in this table")));
+        let mut versions = self.versions.lock().expect("version log");
+        for (table, result) in tables.into_iter().zip(&results) {
+            let (OpResult::RowsWritten { table_version, .. }
+            | OpResult::ColumnTyped { table_version, .. }) = result;
+            versions.insert(table, *table_version);
         }
-        Ok(())
+        Ok(results)
     }
 }
 
-/// A typed value as the properties system stores it. Entity references take
-/// the column's target type; a relation column targets rows.
-fn property_value(column: &ColumnEntry, value: Value) -> PropertyValue {
-    let entity_type = if column.is_relation() {
-        models_properties::EntityType::DatabaseRow
-    } else {
-        column
-            .definition
-            .definition
-            .specific_entity_type
-            .unwrap_or(models_properties::EntityType::User)
-    };
-    let reference = |id: String| EntityReference {
-        entity_id: id,
-        entity_type,
-        specific_message_id: None,
-    };
-    match value {
-        Value::Text(text) => {
-            if column.definition.definition.data_type == models_properties::shared::DataType::Link {
-                PropertyValue::Link(vec![text])
-            } else {
-                PropertyValue::Str(text)
-            }
-        }
-        Value::Number(n) => PropertyValue::Num(n),
-        Value::Bool(b) => PropertyValue::Bool(b),
-        Value::Date(d) => PropertyValue::Date(d),
-        Value::Option(id) => PropertyValue::SelectOption(vec![id]),
-        Value::Options(ids) => PropertyValue::SelectOption(ids),
-        Value::Entity(id) => PropertyValue::EntityRef(vec![reference(id)]),
-        Value::Entities(ids) => PropertyValue::EntityRef(ids.into_iter().map(reference).collect()),
+fn op_table(op: &DatabaseOp) -> TableId {
+    match op {
+        DatabaseOp::InsertRows { table, .. }
+        | DatabaseOp::UpdateRows { table, .. }
+        | DatabaseOp::DeleteRows { table, .. }
+        | DatabaseOp::ChangeColumnType { table, .. } => *table,
     }
 }
 

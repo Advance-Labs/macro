@@ -1,15 +1,16 @@
 //! The engine, as the browser calls it.
 //!
-//! One entry point: [`Query`], a `SELECT` held open between steps. A driver
+//! One entry point: [`Query`], a statement held open between steps. A driver
 //! constructs one with the catalog and the statement, reads the first
-//! [`Step`] from [`Query::start`], serves each request, and feeds the pages
-//! (or bins) back until a step is `done`. Values cross as plain JSON
+//! [`Step`] from [`Query::start`], serves each request, and feeds the pages,
+//! bins or op results back until a step is `done`. Values cross as plain JSON
 //! objects in the shapes `serde` gives the engine's types, which
 //! `bin/database_sql_types.rs` writes out as TypeScript for
 //! `apps/web/src/lib/core/database-sql/wasm-module.ts`.
 //!
 //! Only the wasm-bindgen glue lives here; the engine knows nothing of it.
 
+use models_databases::OpResult;
 use serde::Serialize;
 use serde_wasm_bindgen::Serializer;
 use wasm_bindgen::prelude::*;
@@ -19,7 +20,7 @@ use crate::engine::{Engine, Step};
 use crate::fold::Bin;
 use crate::run::Page;
 
-/// One `SELECT` in flight.
+/// One statement in flight.
 #[wasm_bindgen]
 pub struct Query {
     engine: Engine,
@@ -62,6 +63,17 @@ impl Query {
         let step = self
             .engine
             .feed_page(request_id, page)
+            .map_err(|error| JsValue::from_str(&error.to_string()))?;
+        to_js(&step)
+    }
+
+    /// Feed the results (`[{kind, …}]`, one per op) of the outstanding ops.
+    pub fn feed_ops(&mut self, request_id: u32, results: JsValue) -> Result<JsValue, JsValue> {
+        let results: Vec<OpResult> = serde_wasm_bindgen::from_value(results)
+            .map_err(|error| JsValue::from_str(&format!("results are not readable: {error}")))?;
+        let step = self
+            .engine
+            .feed_ops(request_id, results)
             .map_err(|error| JsValue::from_str(&error.to_string()))?;
         to_js(&step)
     }

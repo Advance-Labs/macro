@@ -9,6 +9,7 @@
 //! sql string ── parse ──▶ subset AST ── resolve ──▶ (catalog-bound query)
 //!            ── split ──▶ one GraphQL query per table + post-processing
 //!            ── engine ──▶ fetch requests, one at a time ── fold ──▶ rows
+//!                      └──▶ for a write, one batch of ops ──▶ what it did
 //! ```
 //!
 //! This crate compiles natively and to `wasm32`; keep it free of native-only
@@ -27,6 +28,7 @@ pub mod split;
 mod test_support;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
+mod write;
 
 pub use cast::{Cast, ColumnType, Contents, cast};
 pub use catalog::Catalog;
@@ -35,8 +37,8 @@ pub use fold::{Bin, Cell, Row, Table, fold_bins, fold_relations, fold_rows};
 pub use parse::{ParseError, parse};
 pub use resolve::{CompileError, Query, ResolveError, compile, resolve};
 pub use run::{
-    AlteredColumn, ColumnChange, Outcome, OutcomeColumn, OutcomeKind, Page, RowFailure, RowSource,
-    RowWriter, RunError, SourceError, WriteError, run,
+    AlteredColumn, OpsSink, Outcome, OutcomeColumn, OutcomeKind, Page, RowSource, RunError,
+    SourceError, WriteError, run,
 };
 pub use split::{
     GqlQuery, JoinPlan, KeyHint, Plan, Propf, PropfLiteral, PropfValue, RelationPlan, Shape, split,

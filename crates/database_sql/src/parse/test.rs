@@ -530,7 +530,7 @@ fn insert_several_rows() {
 }
 
 #[test]
-fn update_and_delete_one_row_by_id() {
+fn update_and_delete_take_any_where() {
     let sql = "UPDATE crm.deals SET stage = 'Won', amount = 12000, \"closed at\" = NULL WHERE ROW_ID = '00000000-0000-0000-0000-0000000000a1'";
 
     let expected = Statement::Update(Update {
@@ -539,21 +539,72 @@ fn update_and_delete_one_row_by_id() {
             table: Ident("deals".into()),
         },
         assignments: vec![
-            (Ident("stage".into()), Lit::Str("Won".into())),
-            (Ident("amount".into()), Lit::Num(12000.0)),
-            (Ident("closed at".into()), Lit::Null),
+            (Ident("stage".into()), SetValue::Lit(Lit::Str("Won".into()))),
+            (Ident("amount".into()), SetValue::Lit(Lit::Num(12000.0))),
+            (Ident("closed at".into()), SetValue::Lit(Lit::Null)),
         ],
-        row_id: "00000000-0000-0000-0000-0000000000a1".into(),
+        where_: Cond::Cmp {
+            column: ColumnRef {
+                table: None,
+                column: Ident("ROW_ID".into()),
+            },
+            op: CmpOp::Eq,
+            value: Lit::Str("00000000-0000-0000-0000-0000000000a1".into()),
+        },
     });
     assert_eq!(parse(sql).unwrap(), expected);
 
-    let sql = "delete from deals where row_id = '00000000-0000-0000-0000-0000000000a1';";
+    let sql = "delete from deals where stage = 'Lead' and amount < 100;";
     let expected = Statement::Delete(Delete {
         table: TableName {
             database: None,
             table: Ident("deals".into()),
         },
-        row_id: "00000000-0000-0000-0000-0000000000a1".into(),
+        where_: Cond::And(vec![
+            Cond::Cmp {
+                column: ColumnRef {
+                    table: None,
+                    column: Ident("stage".into()),
+                },
+                op: CmpOp::Eq,
+                value: Lit::Str("Lead".into()),
+            },
+            Cond::Cmp {
+                column: ColumnRef {
+                    table: None,
+                    column: Ident("amount".into()),
+                },
+                op: CmpOp::Lt,
+                value: Lit::Num(100.0),
+            },
+        ]),
+    });
+    assert_eq!(parse(sql).unwrap(), expected);
+}
+
+#[test]
+fn an_update_can_copy_another_column_of_the_row() {
+    let sql = "UPDATE crm.deals SET \"closed at\" = due, done = TRUE WHERE done = FALSE";
+    let expected = Statement::Update(Update {
+        table: TableName {
+            database: Some(Ident("crm".into())),
+            table: Ident("deals".into()),
+        },
+        assignments: vec![
+            (
+                Ident("closed at".into()),
+                SetValue::Column(Ident("due".into())),
+            ),
+            (Ident("done".into()), SetValue::Lit(Lit::Bool(true))),
+        ],
+        where_: Cond::Cmp {
+            column: ColumnRef {
+                table: None,
+                column: Ident("done".into()),
+            },
+            op: CmpOp::Eq,
+            value: Lit::Bool(false),
+        },
     });
     assert_eq!(parse(sql).unwrap(), expected);
 }
@@ -569,14 +620,24 @@ fn list_values_default_values_and_limit_offset() {
         assignments: vec![
             (
                 Ident("tags".into()),
-                Lit::List(vec![Lit::Str("vip".into()), Lit::Str("renewal".into())]),
+                SetValue::Lit(Lit::List(vec![
+                    Lit::Str("vip".into()),
+                    Lit::Str("renewal".into()),
+                ])),
             ),
             (
                 Ident("owner".into()),
-                Lit::List(vec![Lit::Str("macro|sam@example.com".into())]),
+                SetValue::Lit(Lit::List(vec![Lit::Str("macro|sam@example.com".into())])),
             ),
         ],
-        row_id: "00000000-0000-0000-0000-0000000000a1".into(),
+        where_: Cond::Cmp {
+            column: ColumnRef {
+                table: None,
+                column: Ident("row_id".into()),
+            },
+            op: CmpOp::Eq,
+            value: Lit::Str("00000000-0000-0000-0000-0000000000a1".into()),
+        },
     });
     assert_eq!(parse(sql).unwrap(), expected);
 
@@ -745,22 +806,17 @@ fn rejections_point_at_the_offending_token() {
         (
             "UPDATE crm.deals SET stage = 'Won'",
             34..34,
-            "expected WHERE row_id = '<id>' (UPDATE changes one row at a time), found end of statement",
+            "expected WHERE and the rows to change (UPDATE needs one; WHERE row_id = '<id>' names a single row), found end of statement",
         ),
         (
-            "UPDATE crm.deals SET stage = 'Won' WHERE stage = 'Lead'",
-            41..46,
-            "expected row_id (UPDATE changes one row at a time), found \"stage\"",
+            "UPDATE crm.deals SET stage = WHERE row_id = 'a'",
+            29..34,
+            "expected a value ('text', a number, TRUE, FALSE, NULL or a [list]) or a column name, found WHERE",
         ),
         (
             "DELETE FROM crm.deals",
             21..21,
-            "expected WHERE row_id = '<id>' (DELETE changes one row at a time), found end of statement",
-        ),
-        (
-            "DELETE FROM crm.deals WHERE row_id = 'a' AND stage = 'Won'",
-            41..44,
-            "expected end of statement, found AND",
+            "expected WHERE and the rows to change (DELETE needs one; WHERE row_id = '<id>' names a single row), found end of statement",
         ),
         (
             "MERGE INTO crm.deals USING x",

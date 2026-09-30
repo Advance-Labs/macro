@@ -25,16 +25,17 @@ use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 
 use chrono::DateTime;
-use database_sql::cast::ColumnType;
 use database_sql::catalog::{
     Catalog, Column, ColumnKind, EntityKind, SelectOption, Table, TableSource,
 };
 use database_sql::fold::{Bin, Cell, Row};
-use database_sql::resolve::Value;
-use database_sql::run::{ColumnChange, Page, RowSource, RowWriter, SourceError, WriteError, run};
+use database_sql::run::{OpsSink, Page, RowSource, SourceError, WriteError, run};
 use database_sql::split::GqlQuery;
 use filter_ast::Expr;
 use item_filters::ast::properties::{PropertiesLiteral, PropertyMatchValue};
+use models_databases::{
+    CellValue, CellWrite, DatabaseOp, OpResult, OptionRef, RowChanges, TableVersion,
+};
 use serde_json::{Value as Json, json};
 use uuid::Uuid;
 
@@ -64,6 +65,8 @@ struct Api {
     http: reqwest::Client,
     /// Per definition: multi-valued, and the entity type references take.
     definitions: HashMap<Uuid, (bool, String)>,
+    /// The catalog writes resolve option labels against.
+    catalog: Catalog,
 }
 
 impl Api {
@@ -102,6 +105,7 @@ impl Api {
             .await?;
         let mut columns = vec![Column {
             id: NAME,
+            placement: NAME,
             name: "name".into(),
             kind: ColumnKind::Text,
         }];
@@ -156,6 +160,7 @@ impl Api {
             };
             columns.push(Column {
                 id,
+                placement: id,
                 name: definition["displayName"].as_str().unwrap().to_owned(),
                 kind,
             });
@@ -163,6 +168,7 @@ impl Api {
         Ok(Catalog {
             tables: vec![Table {
                 id: TASKS,
+                database_id: TASKS,
                 database: "macro".into(),
                 name: "tasks".into(),
                 columns,
@@ -362,60 +368,95 @@ impl RowSource for Api {
 }
 
 impl Api {
+    /// The option ids a column's written options name.
+    fn option_ids(&self, column: Uuid, options: Vec<OptionRef>) -> Result<Vec<Uuid>, WriteError> {
+        let labels: Vec<SelectOption> = self
+            .catalog
+            .tables
+            .iter()
+            .flat_map(|table| &table.columns)
+            .find(|candidate| candidate.placement == column)
+            .map(|column| match &column.kind {
+                ColumnKind::Select { options, .. } => options.clone(),
+                _ => Vec::new(),
+            })
+            .unwrap_or_default();
+        options
+            .into_iter()
+            .map(|option| match option {
+                OptionRef::Id(id) => Ok(id),
+                OptionRef::Label(label) => labels
+                    .iter()
+                    .find(|option| option.label.eq_ignore_ascii_case(&label))
+                    .map(|option| option.id)
+                    .ok_or_else(|| WriteError(format!("no option {label}"))),
+            })
+            .collect()
+    }
+
     /// The `setEntityProperty` value input for one cell.
-    fn property_input(&self, column: Uuid, value: Option<Value>) -> Json {
+    fn property_input(&self, column: Uuid, value: CellValue) -> Result<Json, WriteError> {
         let (multi, entity_type) = self
             .definitions
             .get(&column)
             .cloned()
             .unwrap_or((false, "USER".into()));
-        match value {
-            None => Json::Null,
-            Some(Value::Text(text)) => json!({ "string": text }),
-            Some(Value::Number(n)) => json!({ "number": n }),
-            Some(Value::Bool(b)) => json!({ "boolean": b }),
-            Some(Value::Date(d)) => json!({ "date": d.to_rfc3339() }),
-            Some(Value::Option(id)) if multi => json!({ "multiSelectOption": [id] }),
-            Some(Value::Option(id)) => json!({ "selectOption": id }),
-            Some(Value::Entity(id)) if multi => {
-                json!({ "multiEntityReference": [{ "entityType": entity_type, "entityId": id }] })
+        Ok(match value {
+            CellValue::Clear => Json::Null,
+            CellValue::Text(text) => json!({ "string": text }),
+            CellValue::Link(urls) => json!({ "string": urls.join(" ") }),
+            CellValue::Number(n) => json!({ "number": n }),
+            CellValue::Boolean(b) => json!({ "boolean": b }),
+            CellValue::Date(d) => json!({ "date": d.to_rfc3339() }),
+            CellValue::Options(options) => {
+                let ids = self.option_ids(column, options)?;
+                if multi {
+                    json!({ "multiSelectOption": ids })
+                } else {
+                    json!({ "selectOption": ids.first() })
+                }
             }
-            Some(Value::Entity(id)) => {
-                json!({ "entityReference": { "entityType": entity_type, "entityId": id } })
+            CellValue::Entities(references) => {
+                let references: Vec<Json> = references
+                    .iter()
+                    .map(|reference| json!({ "entityType": entity_type, "entityId": reference.entity_id }))
+                    .collect();
+                if multi {
+                    json!({ "multiEntityReference": references })
+                } else {
+                    json!({ "entityReference": references.first() })
+                }
             }
-            Some(Value::Options(ids)) => json!({ "multiSelectOption": ids }),
-            Some(Value::Entities(ids)) => json!({ "multiEntityReference": ids
-                .iter()
-                .map(|id| json!({ "entityType": entity_type, "entityId": id }))
-                .collect::<Vec<_>>() }),
-        }
+            CellValue::Rows(_) => {
+                return Err(WriteError("tasks have no relation columns".into()));
+            }
+        })
     }
 
-    async fn set(&self, task: Uuid, column: Uuid, value: Option<Value>) -> Result<(), WriteError> {
+    async fn set(&self, task: Uuid, column: Uuid, value: CellValue) -> Result<(), WriteError> {
         if column == NAME {
             return Err(WriteError(
                 "the task title is renamed in the app, not by SQL".into(),
             ));
         }
+        let value = self.property_input(column, value)?;
         self.gql(
             r#"mutation Set($input: SetEntityPropertyInput!) { setEntityProperty(input: $input) { id } }"#,
             json!({ "input": {
                 "entityType": "DOCUMENT", "entityId": task, "propertyDefinitionId": column,
-                "value": self.property_input(column, value),
+                "value": value,
             } }),
         )
         .await
         .map(|_| ())
         .map_err(WriteError)
     }
-}
 
-impl RowWriter for Api {
-    async fn insert(&self, _table: Uuid, cells: Vec<(Uuid, Value)>) -> Result<Uuid, WriteError> {
+    async fn create(&self, cells: Vec<CellWrite>) -> Result<Uuid, WriteError> {
         let name = cells
             .iter()
-            .find_map(|(column, value)| match (column, value) {
-                (column, Value::Text(text)) if *column == NAME => Some(text.clone()),
+            .find_map(|cell| match &cell.value {
+                CellValue::Text(text) if cell.column == NAME => Some(text.clone()),
                 _ => None,
             })
             .ok_or_else(|| WriteError("INSERT into macro.tasks needs a name".into()))?;
@@ -439,39 +480,66 @@ impl RowWriter for Api {
             .as_str()
             .and_then(|id| id.parse().ok())
             .ok_or_else(|| WriteError(format!("create_task answered without an id: {body}")))?;
-        for (column, value) in cells {
-            if column != NAME {
-                self.set(task, column, Some(value)).await?;
+        for cell in cells {
+            if cell.column != NAME {
+                self.set(task, cell.column, cell.value).await?;
             }
         }
         Ok(task)
     }
+}
 
-    async fn update(
+impl OpsSink for Api {
+    async fn apply(
         &self,
-        _table: Uuid,
-        row_id: Uuid,
-        cells: Vec<(Uuid, Option<Value>)>,
-    ) -> Result<(), WriteError> {
-        for (column, value) in cells {
-            self.set(row_id, column, value).await?;
+        _database: Uuid,
+        ops: Vec<DatabaseOp>,
+    ) -> Result<Vec<OpResult>, WriteError> {
+        let mut results = Vec::new();
+        for op in ops {
+            let (inserted, affected) = match op {
+                DatabaseOp::InsertRows { rows, .. } => {
+                    let mut inserted = Vec::new();
+                    for cells in rows {
+                        inserted.push(self.create(cells).await?);
+                    }
+                    let affected = inserted.len();
+                    (inserted, affected)
+                }
+                DatabaseOp::UpdateRows { changes, .. } => {
+                    let changes: Vec<(Uuid, Vec<CellWrite>)> = match changes {
+                        RowChanges::Uniform { rows, cells } => {
+                            rows.into_iter().map(|row| (row, cells.clone())).collect()
+                        }
+                        RowChanges::PerRow { rows } => rows
+                            .into_iter()
+                            .map(|change| (change.row, change.cells))
+                            .collect(),
+                    };
+                    let affected = changes.len();
+                    for (task, cells) in changes {
+                        for cell in cells {
+                            self.set(task, cell.column, cell.value).await?;
+                        }
+                    }
+                    (Vec::new(), affected)
+                }
+                DatabaseOp::DeleteRows { .. } => {
+                    return Err(WriteError(
+                        "deleting tasks is not wired here; trash it in the app".into(),
+                    ));
+                }
+                DatabaseOp::ChangeColumnType { .. } => {
+                    return Err(WriteError("task properties keep their types here".into()));
+                }
+            };
+            results.push(OpResult::RowsWritten {
+                table_version: TableVersion(0),
+                inserted,
+                affected: affected as u32,
+            });
         }
-        Ok(())
-    }
-
-    async fn delete(&self, _table: Uuid, _row_id: Uuid) -> Result<(), WriteError> {
-        Err(WriteError(
-            "deleting tasks is not wired here; trash it in the app".into(),
-        ))
-    }
-    async fn change_column_type(
-        &self,
-        _table: Uuid,
-        _column: Uuid,
-        _to: ColumnType,
-        _clear_invalid: bool,
-    ) -> Result<ColumnChange, WriteError> {
-        Err(WriteError("task properties keep their types here".into()))
+        Ok(results)
     }
 }
 
@@ -496,6 +564,7 @@ async fn main() {
         token,
         http: reqwest::Client::new(),
         definitions: HashMap::new(),
+        catalog: Catalog::default(),
     };
     let catalog = match api.catalog().await {
         Ok(catalog) => catalog,
@@ -504,6 +573,7 @@ async fn main() {
             std::process::exit(1);
         }
     };
+    api.catalog = catalog.clone();
     println!("database_sql over {} — table macro.tasks", api.base);
     println!(
         "columns: {}",

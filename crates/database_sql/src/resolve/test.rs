@@ -263,22 +263,115 @@ fn insert_types_each_cell_and_drops_nulls() {
 }
 
 #[test]
-fn update_types_cells_and_null_clears() {
+fn an_update_reads_the_rows_its_where_matches_and_types_its_cells() {
     let sql = "UPDATE crm.deals SET stage = 'won', amount = NULL WHERE row_id = '00000000-0000-0000-0000-0000000000a1'";
 
     let expected = Query::Update(UpdateQuery {
         table: DEALS,
-        row_id: Uuid::from_u128(0xa1),
-        cells: vec![(STAGE, Some(Value::Option(WON))), (AMOUNT, None)],
+        read: SelectQuery {
+            distinct: false,
+            relations: vec![Relation {
+                table: DEALS,
+                alias: "deals".into(),
+            }],
+            joins: vec![],
+            items: vec![SelectItem::Column(row_id_key(DEALS))],
+            labels: vec![],
+            where_: Some(Filter::Cmp {
+                column: row_id_key(DEALS),
+                op: CmpOp::Eq,
+                value: Value::Entity("00000000-0000-0000-0000-0000000000a1".into()),
+            }),
+            group_by: None,
+            order_by: vec![],
+            limit: None,
+            offset: None,
+            bindings: vec![Binding {
+                key: row_id_key(DEALS),
+                relation: 0,
+                column: None,
+            }],
+        },
+        assignments: vec![
+            Assignment {
+                column: STAGE,
+                value: Assigned::Value(Some(Value::Option(WON))),
+            },
+            Assignment {
+                column: AMOUNT,
+                value: Assigned::Value(None),
+            },
+        ],
     });
     assert_eq!(resolve(&catalog(), parse(sql).unwrap()).unwrap(), expected);
+}
 
-    let sql = "DELETE FROM crm.deals WHERE row_id = '00000000-0000-0000-0000-0000000000a1'";
+#[test]
+fn a_delete_reads_the_rows_its_where_matches() {
+    let sql = "DELETE FROM crm.deals WHERE amount < 100";
     let expected = Query::Delete(DeleteQuery {
         table: DEALS,
-        row_id: Uuid::from_u128(0xa1),
+        read: SelectQuery {
+            distinct: false,
+            relations: vec![Relation {
+                table: DEALS,
+                alias: "deals".into(),
+            }],
+            joins: vec![],
+            items: vec![SelectItem::Column(row_id_key(DEALS))],
+            labels: vec![],
+            where_: Some(Filter::Cmp {
+                column: AMOUNT,
+                op: CmpOp::Lt,
+                value: Value::Number(100.0),
+            }),
+            group_by: None,
+            order_by: vec![],
+            limit: None,
+            offset: None,
+            bindings: vec![
+                Binding {
+                    key: row_id_key(DEALS),
+                    relation: 0,
+                    column: None,
+                },
+                Binding {
+                    key: AMOUNT,
+                    relation: 0,
+                    column: Some(AMOUNT),
+                },
+            ],
+        },
     });
     assert_eq!(resolve(&catalog(), parse(sql).unwrap()).unwrap(), expected);
+}
+
+#[test]
+fn an_update_that_copies_a_column_selects_it() {
+    let sql = "UPDATE crm.deals SET tags = stage, done = TRUE WHERE done = FALSE";
+    let Query::Update(update) = resolve(&catalog(), parse(sql).unwrap()).unwrap() else {
+        panic!("an update");
+    };
+    assert_eq!(
+        update.assignments,
+        vec![
+            Assignment {
+                column: TAGS,
+                value: Assigned::Column(STAGE),
+            },
+            Assignment {
+                column: DONE,
+                value: Assigned::Value(Some(Value::Bool(true))),
+            },
+        ]
+    );
+    assert_eq!(
+        update.read.items,
+        vec![
+            SelectItem::Column(row_id_key(DEALS)),
+            SelectItem::Column(STAGE),
+        ]
+    );
 }
 
 #[test]
@@ -496,16 +589,26 @@ fn join_rejections_quote_what_the_agent_wrote() {
 #[test]
 fn lists_type_multi_valued_cells_and_bare_values_become_one_element_lists() {
     let sql = "UPDATE crm.deals SET tags = ['vip'], owner = 'macro|sam@example.com', stage = ['Won'] WHERE row_id = '00000000-0000-0000-0000-0000000000a1'";
-    let expected = Query::Update(UpdateQuery {
-        table: DEALS,
-        row_id: Uuid::from_u128(0xa1),
-        cells: vec![
-            (TAGS, Some(Value::Options(vec![VIP]))),
-            (OWNER, Some(Value::Entity("macro|sam@example.com".into()))),
-            (STAGE, Some(Value::Option(WON))),
-        ],
-    });
-    assert_eq!(resolve(&catalog(), parse(sql).unwrap()).unwrap(), expected);
+    let Query::Update(update) = resolve(&catalog(), parse(sql).unwrap()).unwrap() else {
+        panic!("an update");
+    };
+    assert_eq!(
+        update.assignments,
+        vec![
+            Assignment {
+                column: TAGS,
+                value: Assigned::Value(Some(Value::Options(vec![VIP]))),
+            },
+            Assignment {
+                column: OWNER,
+                value: Assigned::Value(Some(Value::Entity("macro|sam@example.com".into()))),
+            },
+            Assignment {
+                column: STAGE,
+                value: Assigned::Value(Some(Value::Option(WON))),
+            },
+        ]
+    );
 
     let sql = "INSERT INTO crm.deals (name, tags) VALUES ('Acme', 'vip'), ('Globex', ['vip'])";
     let expected = Query::Insert(InsertQuery {
@@ -653,6 +756,18 @@ fn rejections_quote_what_the_agent_wrote() {
             "INSERT INTO crm.deals (owner) VALUES ('Sam')",
             "\"owner\" is an entity column; give an id like 'macro|sam@example.com', not a name",
         ),
+        (
+            "UPDATE crm.deals SET name = amount WHERE done = TRUE",
+            "\"name\" (text) can't be set from \"amount\" (number): a column copies only a column of the same kind",
+        ),
+        (
+            "UPDATE macro.tasks SET deal = 'macro|sam@example.com' WHERE title = 'Ship it'",
+            "'macro|sam@example.com' is not a row id; row ids are the UUIDs a SELECT returns",
+        ),
+        (
+            "DELETE FROM macro.people WHERE name = 'Sam'",
+            "macro.people is read-only",
+        ),
     ];
 
     for (sql, message) in cases {
@@ -668,11 +783,13 @@ fn exact_case_resolves_a_case_insensitive_collision() {
     use crate::catalog::{Column, ColumnKind, Table, TableSource};
     let table = |id: u128, database: &str| Table {
         id: Uuid::from_u128(id),
+        database_id: Uuid::from_u128(id + 0x200),
         database: database.into(),
         name: "Table 1".into(),
         source: TableSource::Database,
         columns: vec![Column {
             id: Uuid::from_u128(id + 0x100),
+            placement: Uuid::from_u128(id + 0x100),
             name: "Name".into(),
             kind: ColumnKind::Text,
         }],

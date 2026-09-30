@@ -6,8 +6,8 @@
 //!
 //! Type SQL; see the plan (what would go to the server as a Soup `propf`
 //! filter, what the fold keeps), the result, and the errors an agent gets.
-//! `INSERT`, `UPDATE … WHERE row_id = …` and `DELETE … WHERE row_id = …`
-//! change the in-memory rows. `\rows` dumps them; `\catalog` shows the schema.
+//! `INSERT`, `UPDATE … WHERE …` and `DELETE … WHERE …` change the in-memory
+//! rows. `\rows` dumps them; `\catalog` shows the schema.
 
 mod common;
 
@@ -16,16 +16,18 @@ use std::io::{self, BufRead, Write};
 use std::sync::Mutex;
 
 use chrono::{TimeZone, Utc};
-use database_sql::cast::ColumnType;
 use database_sql::catalog::{
     Catalog, Column, ColumnKind, EntityKind, SelectOption, Table, TableSource,
 };
 use database_sql::fold::{Bin, Cell, Row};
-use database_sql::resolve::Value;
-use database_sql::run::{ColumnChange, Page, RowSource, RowWriter, SourceError, WriteError, run};
+use database_sql::run::{OpsSink, Page, RowSource, SourceError, WriteError, run};
 use database_sql::split::GqlQuery;
+use models_databases::{
+    CellValue, CellWrite, DatabaseOp, OpResult, OptionRef, RowChanges, TableVersion,
+};
 use uuid::Uuid;
 
+const CRM: Uuid = Uuid::from_u128(0xdb0);
 const DEALS: Uuid = Uuid::from_u128(0xd0);
 const NAME: Uuid = Uuid::from_u128(0x01);
 const AMOUNT: Uuid = Uuid::from_u128(0x02);
@@ -44,21 +46,25 @@ fn catalog() -> Catalog {
     Catalog {
         tables: vec![Table {
             id: DEALS,
+            database_id: CRM,
             database: "crm".into(),
             name: "deals".into(),
             columns: vec![
                 Column {
                     id: NAME,
+                    placement: NAME,
                     name: "name".into(),
                     kind: ColumnKind::Text,
                 },
                 Column {
                     id: AMOUNT,
+                    placement: AMOUNT,
                     name: "amount".into(),
                     kind: ColumnKind::Number,
                 },
                 Column {
                     id: STAGE,
+                    placement: STAGE,
                     name: "stage".into(),
                     kind: ColumnKind::Select {
                         multi: false,
@@ -80,11 +86,13 @@ fn catalog() -> Catalog {
                 },
                 Column {
                     id: CLOSED_AT,
+                    placement: CLOSED_AT,
                     name: "closed at".into(),
                     kind: ColumnKind::Date,
                 },
                 Column {
                     id: OWNER,
+                    placement: OWNER,
                     name: "owner".into(),
                     kind: ColumnKind::Entity {
                         multi: false,
@@ -93,6 +101,7 @@ fn catalog() -> Catalog {
                 },
                 Column {
                     id: TAGS,
+                    placement: TAGS,
                     name: "tags".into(),
                     kind: ColumnKind::Select {
                         multi: true,
@@ -110,6 +119,7 @@ fn catalog() -> Catalog {
                 },
                 Column {
                     id: DONE,
+                    placement: DONE,
                     name: "done".into(),
                     kind: ColumnKind::Boolean,
                 },
@@ -181,6 +191,7 @@ fn seed() -> Vec<Row> {
 /// The whole "server": rows in memory. Reads honour the pushed-down filter
 /// the way Soup would; writes land as cells.
 struct Memory {
+    catalog: Catalog,
     rows: Mutex<Vec<Row>>,
 }
 
@@ -260,81 +271,132 @@ impl RowSource for Memory {
     }
 }
 
-fn cell(value: Value) -> Cell {
-    match value {
-        Value::Text(text) => Cell::Text(text),
-        Value::Number(n) => Cell::Number(n),
-        Value::Bool(b) => Cell::Bool(b),
-        Value::Date(d) => Cell::Date(d),
-        Value::Option(id) => Cell::Options(vec![id]),
-        Value::Entity(id) => Cell::Entities(vec![id]),
-        Value::Options(ids) => Cell::Options(ids),
-        Value::Entities(ids) => Cell::Entities(ids),
+impl Memory {
+    /// A written value as the cell it stores; `None` empties the cell.
+    fn cell(&self, column: Uuid, value: CellValue) -> Result<Option<Cell>, WriteError> {
+        let options = self
+            .catalog
+            .tables
+            .iter()
+            .flat_map(|table| &table.columns)
+            .find(|candidate| candidate.placement == column)
+            .map(|column| match &column.kind {
+                ColumnKind::Select { options, .. } => options.clone(),
+                _ => Vec::new(),
+            })
+            .ok_or_else(|| WriteError(format!("no column {column}")))?;
+        Ok(match value {
+            CellValue::Clear => None,
+            CellValue::Text(text) => Some(Cell::Text(text)),
+            CellValue::Number(n) => Some(Cell::Number(n)),
+            CellValue::Boolean(b) => Some(Cell::Bool(b)),
+            CellValue::Date(d) => Some(Cell::Date(d)),
+            CellValue::Link(urls) => Some(Cell::Text(urls.join(" "))),
+            CellValue::Options(refs) => Some(Cell::Options(
+                refs.into_iter()
+                    .map(|option| match option {
+                        OptionRef::Id(id) => Ok(id),
+                        OptionRef::Label(label) => options
+                            .iter()
+                            .find(|option| option.label.eq_ignore_ascii_case(&label))
+                            .map(|option| option.id)
+                            .ok_or_else(|| WriteError(format!("no option {label}"))),
+                    })
+                    .collect::<Result<_, _>>()?,
+            )),
+            CellValue::Entities(refs) => Some(Cell::Entities(
+                refs.into_iter()
+                    .map(|reference| reference.entity_id)
+                    .collect(),
+            )),
+            CellValue::Rows(rows) => {
+                Some(Cell::Entities(rows.iter().map(Uuid::to_string).collect()))
+            }
+        })
     }
-}
 
-impl RowWriter for Memory {
-    async fn insert(&self, _table: Uuid, cells: Vec<(Uuid, Value)>) -> Result<Uuid, WriteError> {
-        let id = Uuid::now_v7();
-        self.rows.lock().unwrap().push(Row {
-            id,
-            position: None,
-            cells: cells
-                .into_iter()
-                .map(|(column, value)| (column, cell(value)))
-                .collect(),
-        });
-        Ok(id)
-    }
-
-    async fn update(
-        &self,
-        _table: Uuid,
-        row_id: Uuid,
-        cells: Vec<(Uuid, Option<Value>)>,
-    ) -> Result<(), WriteError> {
-        let mut rows = self.rows.lock().unwrap();
-        let row = rows
-            .iter_mut()
-            .find(|row| row.id == row_id)
-            .ok_or_else(|| WriteError(format!("no row {row_id}")))?;
-        for (column, value) in cells {
-            match value {
-                Some(value) => {
-                    row.cells.insert(column, cell(value));
+    fn write(&self, row: &mut Row, cells: Vec<CellWrite>) -> Result<(), WriteError> {
+        for write in cells {
+            match self.cell(write.column, write.value)? {
+                Some(cell) => {
+                    row.cells.insert(write.column, cell);
                 }
                 None => {
-                    row.cells.remove(&column);
+                    row.cells.remove(&write.column);
                 }
             }
         }
         Ok(())
     }
+}
 
-    async fn delete(&self, _table: Uuid, row_id: Uuid) -> Result<(), WriteError> {
-        let mut rows = self.rows.lock().unwrap();
-        let before = rows.len();
-        rows.retain(|row| row.id != row_id);
-        if rows.len() == before {
-            return Err(WriteError(format!("no row {row_id}")));
-        }
-        Ok(())
-    }
-
-    async fn change_column_type(
+impl OpsSink for Memory {
+    async fn apply(
         &self,
-        _table: Uuid,
-        _column: Uuid,
-        _to: ColumnType,
-        _clear_invalid: bool,
-    ) -> Result<ColumnChange, WriteError> {
-        Err(WriteError("the REPL's columns keep their types".into()))
+        _database: Uuid,
+        ops: Vec<DatabaseOp>,
+    ) -> Result<Vec<OpResult>, WriteError> {
+        let mut stored = self.rows.lock().unwrap();
+        let mut results = Vec::new();
+        for op in ops {
+            let (inserted, affected) = match op {
+                DatabaseOp::InsertRows { rows, .. } => {
+                    let mut inserted = Vec::new();
+                    for cells in rows {
+                        let mut row = Row {
+                            id: Uuid::now_v7(),
+                            position: None,
+                            cells: HashMap::new(),
+                        };
+                        self.write(&mut row, cells)?;
+                        inserted.push(row.id);
+                        stored.push(row);
+                    }
+                    let affected = inserted.len();
+                    (inserted, affected)
+                }
+                DatabaseOp::UpdateRows { changes, .. } => {
+                    let changes: Vec<(Uuid, Vec<CellWrite>)> = match changes {
+                        RowChanges::Uniform { rows, cells } => {
+                            rows.into_iter().map(|row| (row, cells.clone())).collect()
+                        }
+                        RowChanges::PerRow { rows } => rows
+                            .into_iter()
+                            .map(|change| (change.row, change.cells))
+                            .collect(),
+                    };
+                    let affected = changes.len();
+                    for (id, cells) in changes {
+                        let row = stored
+                            .iter_mut()
+                            .find(|row| row.id == id)
+                            .ok_or_else(|| WriteError(format!("no row {id}")))?;
+                        self.write(row, cells)?;
+                    }
+                    (Vec::new(), affected)
+                }
+                DatabaseOp::DeleteRows { rows, .. } => {
+                    stored.retain(|row| !rows.contains(&row.id));
+                    (Vec::new(), rows.len())
+                }
+                DatabaseOp::ChangeColumnType { .. } => {
+                    return Err(WriteError("the REPL's columns keep their types".into()));
+                }
+            };
+            results.push(OpResult::RowsWritten {
+                table_version: TableVersion(0),
+                inserted,
+                affected: affected as u32,
+            });
+        }
+        Ok(results)
     }
 }
 
 fn main() {
     let catalog = catalog();
     let memory = Memory {
+        catalog: catalog.clone(),
         rows: Mutex::new(seed()),
     };
     println!(

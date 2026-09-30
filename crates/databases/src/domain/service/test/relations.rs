@@ -314,7 +314,7 @@ async fn relation_values_must_be_ids_and_a_viewer_cannot_write_them() {
         matches!(
             error,
             QueryError::Sql(ref message)
-                if message == "\"Sessions\" is an entity column; give an id like 'macro|sam@example.com', not a name"
+                if message == "'Keynote' is not a row id; row ids are the UUIDs a SELECT returns"
         ),
         "{error:?}"
     );

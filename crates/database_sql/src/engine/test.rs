@@ -8,8 +8,8 @@ use item_filters::ast::properties::{PropertiesLiteral, PropertyMatchValue};
 use super::*;
 use crate::catalog::{PEOPLE_EMAIL, PEOPLE_ID, PEOPLE_NAME, PEOPLE_TABLE};
 use crate::fold::Cell;
-use crate::resolve::{Value, column_key};
-use crate::run::{OutcomeKind, RowSource, RowWriter, SourceError, WriteError, run};
+use crate::resolve::column_key;
+use crate::run::{OpsSink, OutcomeKind, RowSource, SourceError, WriteError, run};
 use crate::test_support::{catalog, *};
 
 const FIX_LOGIN: Uuid = Uuid::from_u128(0xe1);
@@ -113,6 +113,7 @@ fn drive(
                 engine.feed_page(id, Page { rows, next: None }).unwrap()
             }
             Step::Bins(_) => panic!("no bins here"),
+            Step::Ops { .. } => panic!("no writes here"),
         };
     }
 }
@@ -452,19 +453,6 @@ fn a_relation_past_the_cap_is_truncated_and_the_next_still_fetched() {
 }
 
 #[test]
-fn a_write_does_not_start_an_engine() {
-    let error = Engine::start(
-        &catalog(),
-        "DELETE FROM crm.deals WHERE row_id = '00000000-0000-0000-0000-0000000000a1'",
-    )
-    .unwrap_err();
-    assert_eq!(
-        error.to_string(),
-        "the engine runs SELECT statements; writes go through run()"
-    );
-}
-
-#[test]
 fn steps_and_pages_cross_the_wire_as_json() {
     let (_, step) =
         Engine::start(&catalog(), "SELECT name FROM crm.deals WHERE stage = 'Won'").unwrap();
@@ -523,31 +511,8 @@ impl RowSource for ByTable {
 
 struct NoWrites;
 
-impl RowWriter for NoWrites {
-    async fn insert(&self, _: Uuid, _: Vec<(Uuid, Value)>) -> Result<Uuid, WriteError> {
-        unreachable!()
-    }
-
-    async fn update(
-        &self,
-        _: Uuid,
-        _: Uuid,
-        _: Vec<(Uuid, Option<Value>)>,
-    ) -> Result<(), WriteError> {
-        unreachable!()
-    }
-
-    async fn delete(&self, _: Uuid, _: Uuid) -> Result<(), WriteError> {
-        unreachable!()
-    }
-
-    async fn change_column_type(
-        &self,
-        _: Uuid,
-        _: Uuid,
-        _: crate::cast::ColumnType,
-        _: bool,
-    ) -> Result<crate::run::ColumnChange, WriteError> {
+impl OpsSink for NoWrites {
+    async fn apply(&self, _: Uuid, _: Vec<DatabaseOp>) -> Result<Vec<OpResult>, WriteError> {
         unreachable!()
     }
 }
