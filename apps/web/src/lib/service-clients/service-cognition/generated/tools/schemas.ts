@@ -1541,6 +1541,7 @@ export const CreateCalendarEvent = z.object({
       z.null(),
     ])
     .optional(),
+  addMacroCall: z.boolean().optional(),
   addGoogleMeet: z.boolean().optional(),
   eventType: z
     .any()
