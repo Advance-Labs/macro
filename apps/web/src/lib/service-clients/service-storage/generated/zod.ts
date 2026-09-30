@@ -7685,6 +7685,93 @@ export const renameDatabaseColumnResponse = zod
   );
 
 /**
+ * @summary What changing one column to each type of the type menu would do to its
+values: safe, checked (with how many values would not convert and a few
+of them), or never (with why). Changes nothing.
+ */
+export const listDatabaseColumnCastsParams = zod.object({
+  id: zod.uuid(),
+  table_id: zod.uuid(),
+  column_id: zod.uuid(),
+});
+
+export const listDatabaseColumnCastsResponseFailuresMin = 0;
+
+export const listDatabaseColumnCastsResponseItem = zod
+  .object({
+    cast: zod
+      .enum(['safe', 'checked', 'never'])
+      .describe("Whether a column's values convert to a type."),
+    data_type: zod
+      .enum([
+        'BOOLEAN',
+        'DATE',
+        'NUMBER',
+        'STRING',
+        'SELECT_NUMBER',
+        'SELECT_STRING',
+        'TAG',
+        'ENTITY',
+        'LINK',
+      ])
+      .describe(
+        'Data type for property values, determining storage and validation.'
+      ),
+    examples: zod
+      .array(zod.string())
+      .describe('Up to three of the values that would not convert.'),
+    failures: zod
+      .number()
+      .min(listDatabaseColumnCastsResponseFailuresMin)
+      .describe('For a `checked` cast, how many cells would not convert.'),
+    is_multi_select: zod
+      .boolean()
+      .describe('Whether the target holds several values.'),
+    reason: zod
+      .string()
+      .nullish()
+      .describe('Why nothing converts, for a `never` cast.'),
+    relation: zod
+      .boolean()
+      .describe("Whether the target is a relation to another table's rows."),
+    specific_entity_type: zod
+      .union([
+        zod.null(),
+        zod
+          .enum([
+            'CALENDAR_EVENT',
+            'CALL_RECORD',
+            'CHANNEL',
+            'CHAT',
+            'COMPANY',
+            'DATABASE_ROW',
+            'DOCUMENT',
+            'INITIATIVE',
+            'PROJECT',
+            'TASK',
+            'THREAD',
+            'USER',
+          ])
+          .describe(
+            'Type of entity that can be referenced by entity properties.'
+          ),
+      ])
+      .optional(),
+    summary: zod
+      .string()
+      .nullish()
+      .describe(
+        "For a `checked` cast with failures, what is wrong with them, as in\n`3 values aren't numbers`."
+      ),
+  })
+  .describe(
+    'What changing a column to one type would do to its values: the dry run\nof a type change, for one target.'
+  );
+export const listDatabaseColumnCastsResponse = zod.array(
+  listDatabaseColumnCastsResponseItem
+);
+
+/**
  * @summary Settle a new empty text column's type.
  */
 export const inferDatabaseColumnTypeParams = zod.object({
@@ -8188,7 +8275,8 @@ export const addDatabaseColumnOptionsResponse = zod
   .describe('One column placement with the definition behind it.');
 
 /**
- * @summary Change one column's type with all-or-nothing conversion.
+ * @summary Change one column's type. A value that does not fit refuses the whole
+change, naming how many and quoting a few, unless `clearInvalid` is set.
  */
 export const changeDatabaseColumnTypeParams = zod.object({
   id: zod.uuid(),
@@ -8202,6 +8290,12 @@ export const changeDatabaseColumnTypeBody = zod
       .number()
       .describe(
         'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+      ),
+    clearInvalid: zod
+      .boolean()
+      .optional()
+      .describe(
+        'Empty the values that do not fit the new type instead of refusing the\nchange; a cell with several values keeps its first.'
       ),
     dataType: zod
       .enum([
@@ -8257,11 +8351,19 @@ export const changeDatabaseColumnTypeBody = zod
       .optional(),
   })
   .describe(
-    'Explicit column type configuration. Existing values must convert without loss.'
+    'Explicit column type configuration. Existing values must convert without\nloss, unless `clearInvalid` empties the ones that do not.'
   );
+
+export const changeDatabaseColumnTypeResponseClearedCellsMin = 0;
+
+export const changeDatabaseColumnTypeResponseTrimmedCellsMin = 0;
 
 export const changeDatabaseColumnTypeResponse = zod
   .object({
+    cleared_cells: zod
+      .number()
+      .min(changeDatabaseColumnTypeResponseClearedCellsMin)
+      .describe('Cells emptied because their value did not fit the new type.'),
     table_versions: zod
       .record(
         zod.string(),
@@ -8272,10 +8374,14 @@ export const changeDatabaseColumnTypeResponse = zod
           )
       )
       .describe(
-        'Includes both endpoint tables when deleting relationship edges.'
+        "The table's version after the change; unchanged when the column\nalready had the type."
       ),
+    trimmed_cells: zod
+      .number()
+      .min(changeDatabaseColumnTypeResponseTrimmedCellsMin)
+      .describe('Cells that held several values and kept only their first.'),
   })
-  .describe('Table versions changed by a placement deletion or reorder.');
+  .describe('What a column type change did.');
 
 /**
  * Available to every signed-in user on every plan; does not consume chat

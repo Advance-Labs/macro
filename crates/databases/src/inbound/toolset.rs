@@ -107,7 +107,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::domain::catalog::{option_labels, sql_table_name};
+use crate::domain::catalog::{cast_targets, option_labels, sql_table_name};
 use crate::domain::models::{
     ColumnConfig, ColumnDetail, DatabaseDetail, DatabaseError, ListedDatabase, QueryError,
     TableDetail, Viewer,
@@ -660,6 +660,13 @@ pub struct ToolColumn {
     /// A database-row relationship; distinct from a Macro entity reference.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relation: Option<ToolRelation>,
+    /// Types ChangeColumnType converts every value to, spelled as SQL types
+    /// (`select[]` is a multi-valued select, `entity(USER)` a person).
+    pub safe_types: Vec<String>,
+    /// Types whose conversion checks each value first and refuses, or with
+    /// `clearInvalid` empties, the ones that do not fit. Any type in neither
+    /// list is refused while the column holds values.
+    pub checked_types: Vec<String>,
 }
 
 /// The target of a database-row relationship.
@@ -726,42 +733,60 @@ impl From<DatabaseDetail> for ToolDatabaseSchema {
                     columns: table
                         .columns
                         .into_iter()
-                        .map(|column| ToolColumn {
-                            id: column.column.id,
-                            sql_name: column.sql_name,
-                            // The catalog's labels, not the raw option text:
-                            // duplicates are disambiguated there, and a label
-                            // that does not round-trip is one SQL rejects.
-                            options: option_labels(&column.definition)
-                                .into_iter()
-                                .map(|(_, label)| label)
-                                .collect(),
-                            name: column
-                                .column
-                                .display_name
-                                .unwrap_or(column.definition.definition.display_name),
-                            data_type: column.definition.definition.data_type.into(),
-                            specific_entity_type: if matches!(
+                        .map(|column| {
+                            let (safe_types, checked_types) = if matches!(
                                 column.column.config,
-                                Some(ColumnConfig::Link { .. })
+                                Some(ColumnConfig::Lookup { .. })
                             ) {
-                                None
+                                (Vec::new(), Vec::new())
                             } else {
-                                column.definition.definition.specific_entity_type
-                            },
-                            is_multi_select: column.definition.definition.is_multi_select
-                                || matches!(column.column.config, Some(ColumnConfig::Link { .. })),
-                            writable: column.writable,
-                            relation: match column.column.config {
-                                Some(ColumnConfig::Link {
-                                    database_id,
-                                    table_id,
-                                }) => Some(ToolRelation {
-                                    database_id,
-                                    table_id,
-                                }),
-                                _ => None,
-                            },
+                                cast_targets(&column.column, &column.definition)
+                            };
+                            let names = |types: Vec<_>| {
+                                types.iter().map(ToString::to_string).collect::<Vec<_>>()
+                            };
+                            ToolColumn {
+                                safe_types: names(safe_types),
+                                checked_types: names(checked_types),
+                                id: column.column.id,
+                                sql_name: column.sql_name,
+                                // The catalog's labels, not the raw option text:
+                                // duplicates are disambiguated there, and a label
+                                // that does not round-trip is one SQL rejects.
+                                options: option_labels(&column.definition)
+                                    .into_iter()
+                                    .map(|(_, label)| label)
+                                    .collect(),
+                                name: column
+                                    .column
+                                    .display_name
+                                    .unwrap_or(column.definition.definition.display_name),
+                                data_type: column.definition.definition.data_type.into(),
+                                specific_entity_type: if matches!(
+                                    column.column.config,
+                                    Some(ColumnConfig::Link { .. })
+                                ) {
+                                    None
+                                } else {
+                                    column.definition.definition.specific_entity_type
+                                },
+                                is_multi_select: column.definition.definition.is_multi_select
+                                    || matches!(
+                                        column.column.config,
+                                        Some(ColumnConfig::Link { .. })
+                                    ),
+                                writable: column.writable,
+                                relation: match column.column.config {
+                                    Some(ColumnConfig::Link {
+                                        database_id,
+                                        table_id,
+                                    }) => Some(ToolRelation {
+                                        database_id,
+                                        table_id,
+                                    }),
+                                    _ => None,
+                                },
+                            }
                         })
                         .collect(),
                 })

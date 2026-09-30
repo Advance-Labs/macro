@@ -286,12 +286,24 @@ impl DatabasesService for FakeService {
         _: EntityAccessReceipt<EditAccessLevel>,
         _: Viewer,
         cmd: crate::domain::models::ChangeColumnType,
-    ) -> Result<crate::domain::models::ColumnSchemaOutcome, DatabaseError> {
+    ) -> Result<crate::domain::models::ColumnTypeChangeOutcome, DatabaseError> {
         let table_id = cmd.table_id;
+        let cleared_cells = if cmd.clear_invalid { 2 } else { 0 };
         self.calls.lock().unwrap().changed_column_types.push(cmd);
-        Ok(crate::domain::models::ColumnSchemaOutcome {
+        Ok(crate::domain::models::ColumnTypeChangeOutcome {
             table_versions: HashMap::from([(table_id, TableVersion(4))]),
+            cleared_cells,
+            trimmed_cells: 0,
         })
+    }
+    async fn column_casts(
+        &self,
+        _: EntityAccessReceipt<ViewAccessLevel>,
+        _: Viewer,
+        _: Uuid,
+        _: Uuid,
+    ) -> Result<Vec<crate::domain::models::ColumnCast>, DatabaseError> {
+        unimplemented!("tool tests do not preview type changes")
     }
     async fn delete_column(
         &self,

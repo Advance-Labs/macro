@@ -12,11 +12,15 @@ import type { DataType } from './dataType';
 import type { TableVersion } from './tableVersion';
 
 /**
- * Explicit column type configuration. Existing values must convert without loss.
+ * Explicit column type configuration. Existing values must convert without
+loss, unless `clearInvalid` empties the ones that do not.
  */
 export interface ChangeColumnTypeRequest {
   /** Table version shown when the type menu opened. */
   baseVersion: TableVersion;
+  /** Empty the values that do not fit the new type instead of refusing the
+change; a cell with several values keeps its first. */
+  clearInvalid?: boolean;
   /** Requested property type. */
   dataType: DataType;
   /** Whether select, link or entity values may hold multiple items. */

@@ -124,6 +124,61 @@ pub struct ChangeColumnType {
     pub relation: Option<(DatabaseId, TableId)>,
     /// Snapshot against which values are converted.
     pub base_version: TableVersion,
+    /// Empty the cells whose value does not fit the new type, instead of
+    /// refusing the change. A cell with several values going to a
+    /// single-valued type keeps its first.
+    pub clear_invalid: bool,
+}
+
+/// What a column type change did.
+#[derive(utoipa::ToSchema, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ColumnTypeChangeOutcome {
+    /// The table's version after the change; unchanged when the column
+    /// already had the type.
+    #[schema(value_type = HashMap<String, TableVersion>)]
+    pub table_versions: HashMap<TableId, TableVersion>,
+    /// Cells emptied because their value did not fit the new type.
+    pub cleared_cells: usize,
+    /// Cells that held several values and kept only their first.
+    pub trimmed_cells: usize,
+}
+
+/// What changing a column to one type would do to its values: the dry run
+/// of a type change, for one target.
+#[derive(utoipa::ToSchema, Debug, Clone, PartialEq, Serialize)]
+pub struct ColumnCast {
+    /// The target property type.
+    pub data_type: DataType,
+    /// Whether the target holds several values.
+    pub is_multi_select: bool,
+    /// The target's entity kind, for a reference column.
+    #[schema(value_type = Option<models_properties::EntityType>)]
+    pub specific_entity_type: Option<models_properties::EntityType>,
+    /// Whether the target is a relation to another table's rows.
+    pub relation: bool,
+    /// Whether the values convert.
+    pub cast: CastVerdict,
+    /// Why nothing converts, for a `never` cast.
+    pub reason: Option<String>,
+    /// For a `checked` cast, how many cells would not convert.
+    pub failures: usize,
+    /// For a `checked` cast with failures, what is wrong with them, as in
+    /// `3 values aren't numbers`.
+    pub summary: Option<String>,
+    /// Up to three of the values that would not convert.
+    pub examples: Vec<String>,
+}
+
+/// Whether a column's values convert to a type.
+#[derive(utoipa::ToSchema, Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CastVerdict {
+    /// Every value converts.
+    Safe,
+    /// The values were checked; `failures` say how many do not convert.
+    Checked,
+    /// No value converts while the column holds any.
+    Never,
 }
 
 /// Fully validated replacement values for an atomic column rebind.

@@ -9248,6 +9248,97 @@
         }
       }
     },
+    "/databases/{id}/tables/{table_id}/columns/{column_id}/casts": {
+      "get": {
+        "tags": ["databases"],
+        "summary": "What changing one column to each type of the type menu would do to its\nvalues: safe, checked (with how many values would not convert and a few\nof them), or never (with why). Changes nothing.",
+        "operationId": "list_database_column_casts",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "table_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "column_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ColumnCast"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/databases/{id}/tables/{table_id}/columns/{column_id}/infer-type": {
       "post": {
         "tags": ["databases"],
@@ -9483,7 +9574,7 @@
     "/databases/{id}/tables/{table_id}/columns/{column_id}/type": {
       "patch": {
         "tags": ["databases"],
-        "summary": "Change one column's type with all-or-nothing conversion.",
+        "summary": "Change one column's type. A value that does not fit refuses the whole\nchange, naming how many and quoting a few, unless `clearInvalid` is set.",
         "operationId": "change_database_column_type",
         "parameters": [
           {
@@ -9530,7 +9621,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ColumnSchemaOutcome"
+                  "$ref": "#/components/schemas/ColumnTypeChangeOutcome"
                 }
               }
             }
@@ -20786,14 +20877,23 @@
           }
         }
       },
+      "CastVerdict": {
+        "type": "string",
+        "description": "Whether a column's values convert to a type.",
+        "enum": ["safe", "checked", "never"]
+      },
       "ChangeColumnTypeRequest": {
         "type": "object",
-        "description": "Explicit column type configuration. Existing values must convert without loss.",
+        "description": "Explicit column type configuration. Existing values must convert without\nloss, unless `clearInvalid` empties the ones that do not.",
         "required": ["dataType", "baseVersion"],
         "properties": {
           "baseVersion": {
             "$ref": "#/components/schemas/TableVersion",
             "description": "Table version shown when the type menu opened."
+          },
+          "clearInvalid": {
+            "type": "boolean",
+            "description": "Empty the values that do not fit the new type instead of refusing the\nchange; a cell with several values keeps its first."
           },
           "dataType": {
             "$ref": "#/components/schemas/DataType",
@@ -22247,6 +22347,67 @@
         ],
         "description": "How a new column obtains its definition."
       },
+      "ColumnCast": {
+        "type": "object",
+        "description": "What changing a column to one type would do to its values: the dry run\nof a type change, for one target.",
+        "required": [
+          "data_type",
+          "is_multi_select",
+          "relation",
+          "cast",
+          "failures",
+          "examples"
+        ],
+        "properties": {
+          "cast": {
+            "$ref": "#/components/schemas/CastVerdict",
+            "description": "Whether the values convert."
+          },
+          "data_type": {
+            "$ref": "#/components/schemas/DataType",
+            "description": "The target property type."
+          },
+          "examples": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Up to three of the values that would not convert."
+          },
+          "failures": {
+            "type": "integer",
+            "description": "For a `checked` cast, how many cells would not convert.",
+            "minimum": 0
+          },
+          "is_multi_select": {
+            "type": "boolean",
+            "description": "Whether the target holds several values."
+          },
+          "reason": {
+            "type": ["string", "null"],
+            "description": "Why nothing converts, for a `never` cast."
+          },
+          "relation": {
+            "type": "boolean",
+            "description": "Whether the target is a relation to another table's rows."
+          },
+          "specific_entity_type": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EntityType",
+                "description": "The target's entity kind, for a reference column."
+              }
+            ]
+          },
+          "summary": {
+            "type": ["string", "null"],
+            "description": "For a `checked` cast with failures, what is wrong with them, as in\n`3 values aren't numbers`."
+          }
+        }
+      },
       "ColumnConfig": {
         "oneOf": [
           {
@@ -22330,6 +22491,33 @@
             "propertyNames": {
               "type": "string"
             }
+          }
+        }
+      },
+      "ColumnTypeChangeOutcome": {
+        "type": "object",
+        "description": "What a column type change did.",
+        "required": ["table_versions", "cleared_cells", "trimmed_cells"],
+        "properties": {
+          "cleared_cells": {
+            "type": "integer",
+            "description": "Cells emptied because their value did not fit the new type.",
+            "minimum": 0
+          },
+          "table_versions": {
+            "type": "object",
+            "description": "The table's version after the change; unchanged when the column\nalready had the type.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/TableVersion"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "trimmed_cells": {
+            "type": "integer",
+            "description": "Cells that held several values and kept only their first.",
+            "minimum": 0
           }
         }
       },

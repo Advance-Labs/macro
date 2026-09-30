@@ -31,7 +31,8 @@ pub mod transfer;
 use crate::domain::sharing::DatabaseSharingService;
 use crate::domain::transfer::DatabaseTransferService;
 use column_mutations::{
-    change_column_type_handler, delete_column_handler, reorder_columns_handler,
+    change_column_type_handler, column_casts_handler, delete_column_handler,
+    reorder_columns_handler,
 };
 use std::sync::Arc;
 
@@ -173,6 +174,10 @@ where
         .route(
             "/{id}/tables/{table_id}/columns/{column_id}/type",
             patch(change_column_type_handler::<S, Eas, Auth>),
+        )
+        .route(
+            "/{id}/tables/{table_id}/columns/{column_id}/casts",
+            get(column_casts_handler::<S, Eas, Auth>),
         )
         .route(
             "/{id}/tables/{table_id}/columns/order",

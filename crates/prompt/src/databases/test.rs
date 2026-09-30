@@ -23,6 +23,7 @@ fn database_workflow_reaches_every_agent_host_without_unrelated_scoped_tools() {
             "DeleteTable",
             "RenameColumn",
             "ChangeColumnType",
+            "clearInvalid",
             "DeleteColumn",
             "ReorderColumns",
             "ReorderTables",

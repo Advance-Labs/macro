@@ -64,6 +64,7 @@ async fn changing_a_column_type_uses_the_current_version_and_adds_extra_options(
         options: Some(vec!["Waitlisted".to_string()]),
         specific_entity_type: None,
         link_to_table_id: None,
+        clear_invalid: false,
     }
     .call(ServiceContext(context), request_context())
     .await
@@ -101,6 +102,7 @@ async fn changing_a_column_to_a_relation_targets_this_database_and_holds_many_ro
         options: None,
         specific_entity_type: None,
         link_to_table_id: Some(parties),
+        clear_invalid: false,
     }
     .call(ServiceContext(context), request_context())
     .await
@@ -126,6 +128,7 @@ async fn a_relation_with_another_type_is_refused_before_the_service() {
         options: None,
         specific_entity_type: None,
         link_to_table_id: Some(TABLE_ID),
+        clear_invalid: false,
     }
     .call(ServiceContext(context), request_context())
     .await
@@ -304,5 +307,46 @@ async fn renaming_a_database_returns_its_new_name() {
     assert_eq!(
         calls.lock().unwrap().renamed_databases,
         vec!["Party Planning".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn clearing_passes_through_and_the_response_counts_the_emptied_cells() {
+    let (context, calls) = context(FakeAccess::granting(AccessLevel::Edit));
+    let response = ChangeColumnType {
+        database_id: DATABASE_ID,
+        table_id: TABLE_ID,
+        column_id: COLUMN_ID,
+        data_type: ColumnType::Number,
+        is_multi_select: false,
+        options: None,
+        specific_entity_type: None,
+        link_to_table_id: None,
+        clear_invalid: true,
+    }
+    .call(ServiceContext(context), request_context())
+    .await
+    .expect("clearing converts what fits");
+
+    assert!(calls.lock().unwrap().changed_column_types[0].clear_invalid);
+    assert_eq!(response.cleared_cells, 2);
+    assert_eq!(response.trimmed_cells, 0);
+}
+
+#[tokio::test]
+async fn describing_a_column_lists_the_types_it_can_change_to() {
+    let (context, _) = context(FakeAccess::granting(AccessLevel::View));
+    let schema = DescribeDatabase {
+        database_id: DATABASE_ID,
+    }
+    .call(ServiceContext(context), request_context())
+    .await
+    .expect("view access describes");
+
+    let status = &schema.tables[0].columns[0];
+    assert_eq!(status.safe_types, vec!["text", "select[]"]);
+    assert_eq!(
+        status.checked_types,
+        vec!["number", "date", "boolean", "link"]
     );
 }

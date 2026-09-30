@@ -126,6 +126,8 @@ export const AddColumnResponse = z.object({
                     z.null(),
                   ])
                   .optional(),
+                safeTypes: z.array(z.string()),
+                checkedTypes: z.array(z.string()),
               })
             ),
           })
@@ -232,6 +234,8 @@ export const AddColumnOptionsResponse = z.object({
                     z.null(),
                   ])
                   .optional(),
+                safeTypes: z.array(z.string()),
+                checkedTypes: z.array(z.string()),
               })
             ),
           })
@@ -913,12 +917,15 @@ export const ChangeColumnType = z.object({
     ])
     .optional(),
   linkToTableId: z.union([z.string().uuid(), z.null()]).optional(),
+  clearInvalid: z.boolean().optional(),
 });
 
 export const ChangeColumnTypeResponse = z.object({
   databaseId: z.string().uuid(),
   tableId: z.string().uuid(),
   columnId: z.string().uuid(),
+  clearedCells: z.number().int().gte(0),
+  trimmedCells: z.number().int().gte(0),
   database: z
     .union([
       z.object({
@@ -1001,6 +1008,8 @@ export const ChangeColumnTypeResponse = z.object({
                     z.null(),
                   ])
                   .optional(),
+                safeTypes: z.array(z.string()),
+                checkedTypes: z.array(z.string()),
               })
             ),
           })
@@ -2162,6 +2171,8 @@ export const CreateDatabaseResponse = z.object({
                     z.null(),
                   ])
                   .optional(),
+                safeTypes: z.array(z.string()),
+                checkedTypes: z.array(z.string()),
               })
             ),
           })
@@ -2494,6 +2505,8 @@ export const CreateTableResponse = z.object({
                     z.null(),
                   ])
                   .optional(),
+                safeTypes: z.array(z.string()),
+                checkedTypes: z.array(z.string()),
               })
             ),
           })
@@ -2726,6 +2739,8 @@ export const DeleteColumnResponse = z.object({
                     z.null(),
                   ])
                   .optional(),
+                safeTypes: z.array(z.string()),
+                checkedTypes: z.array(z.string()),
               })
             ),
           })
@@ -2846,6 +2861,8 @@ export const DeleteTableResponse = z.object({
                     z.null(),
                   ])
                   .optional(),
+                safeTypes: z.array(z.string()),
+                checkedTypes: z.array(z.string()),
               })
             ),
           })
@@ -2950,6 +2967,8 @@ export const ToolDatabaseSchema = z.object({
               z.null(),
             ])
             .optional(),
+          safeTypes: z.array(z.string()),
+          checkedTypes: z.array(z.string()),
         })
       ),
     })
@@ -6379,6 +6398,8 @@ export const RenameColumnResponse = z.object({
                     z.null(),
                   ])
                   .optional(),
+                safeTypes: z.array(z.string()),
+                checkedTypes: z.array(z.string()),
               })
             ),
           })
@@ -6481,6 +6502,8 @@ export const RenameDatabaseResponse = z.object({
                     z.null(),
                   ])
                   .optional(),
+                safeTypes: z.array(z.string()),
+                checkedTypes: z.array(z.string()),
               })
             ),
           })
@@ -6596,6 +6619,8 @@ export const RenameTableResponse = z.object({
                     z.null(),
                   ])
                   .optional(),
+                safeTypes: z.array(z.string()),
+                checkedTypes: z.array(z.string()),
               })
             ),
           })
@@ -6699,6 +6724,8 @@ export const ReorderColumnsResponse = z.object({
                     z.null(),
                   ])
                   .optional(),
+                safeTypes: z.array(z.string()),
+                checkedTypes: z.array(z.string()),
               })
             ),
           })
@@ -6801,6 +6828,8 @@ export const ReorderTablesResponse = z.object({
                     z.null(),
                   ])
                   .optional(),
+                safeTypes: z.array(z.string()),
+                checkedTypes: z.array(z.string()),
               })
             ),
           })

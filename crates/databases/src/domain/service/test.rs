@@ -25,6 +25,7 @@ use crate::domain::models::{
     TableDeletion, TableOrderOutcome, TableVersion,
 };
 
+mod casts;
 mod columns;
 mod delete_table;
 mod discovery;

@@ -6,6 +6,7 @@
 //! from the viewer's grants, so an unreadable table does not exist and a
 //! write to an unwritable one is refused before it runs.
 
+mod casts;
 mod column_types;
 mod columns;
 mod delete_table;
@@ -44,7 +45,9 @@ use crate::domain::models::{
     ExecRequest, InferColumnType, InferColumnTypeOutcome, ListedDatabase, QueryError,
     RenameColumnOutcome, Table, TableDetail, TableId, TableMutationOutcome, TableVersion, Viewer,
 };
-use crate::domain::models::{ChangeColumnType, ColumnReplacement, ColumnSchemaOutcome};
+use crate::domain::models::{
+    ChangeColumnType, ColumnCast, ColumnReplacement, ColumnSchemaOutcome, ColumnTypeChangeOutcome,
+};
 use crate::domain::models::{QueryDefinition, QueryId, SavedQuery};
 use crate::domain::ports::{
     AccessDirectory, CellStore, ColumnDefinitionStore, DatabasesRepo, DatabasesService,
@@ -952,8 +955,20 @@ where
         receipt: EntityAccessReceipt<EditAccessLevel>,
         viewer: Viewer,
         cmd: ChangeColumnType,
-    ) -> Result<ColumnSchemaOutcome, DatabaseError> {
+    ) -> Result<ColumnTypeChangeOutcome, DatabaseError> {
         self.change_placement_type(receipt, viewer, cmd).await
+    }
+
+    #[tracing::instrument(skip(self, receipt, viewer), err)]
+    async fn column_casts(
+        &self,
+        receipt: EntityAccessReceipt<ViewAccessLevel>,
+        viewer: Viewer,
+        table_id: TableId,
+        column_id: ColumnId,
+    ) -> Result<Vec<ColumnCast>, DatabaseError> {
+        self.preview_casts(receipt, viewer, table_id, column_id)
+            .await
     }
 
     #[tracing::instrument(skip(self, receipt), err)]

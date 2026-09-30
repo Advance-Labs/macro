@@ -1,7 +1,10 @@
 use super::*;
-use crate::domain::models::{ChangeColumnType, ColumnSchemaOutcome};
+use crate::domain::models::{
+    ChangeColumnType, ColumnCast, ColumnSchemaOutcome, ColumnTypeChangeOutcome,
+};
 
-/// Explicit column type configuration. Existing values must convert without loss.
+/// Explicit column type configuration. Existing values must convert without
+/// loss, unless `clearInvalid` empties the ones that do not.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangeColumnTypeRequest {
@@ -18,6 +21,10 @@ pub struct ChangeColumnTypeRequest {
     pub link_to_database_id: Option<Uuid>,
     /// Table version shown when the type menu opened.
     pub base_version: TableVersion,
+    /// Empty the values that do not fit the new type instead of refusing the
+    /// change; a cell with several values keeps its first.
+    #[serde(default)]
+    pub clear_invalid: bool,
 }
 
 /// Guard a column deletion against concurrent writes.
@@ -38,12 +45,13 @@ pub struct ReorderColumnsRequest {
     pub base_version: TableVersion,
 }
 
-/// Change one column's type with all-or-nothing conversion.
+/// Change one column's type. A value that does not fit refuses the whole
+/// change, naming how many and quoting a few, unless `clearInvalid` is set.
 #[utoipa::path(patch, tag = "databases", operation_id = "change_database_column_type",
     path = "/databases/{id}/tables/{table_id}/columns/{column_id}/type",
     params(("id" = Uuid, Path), ("table_id" = Uuid, Path), ("column_id" = Uuid, Path)),
     request_body = ChangeColumnTypeRequest,
-    responses((status = 200, body = ColumnSchemaOutcome), (status = 400, body = ErrorResponse),
+    responses((status = 200, body = ColumnTypeChangeOutcome), (status = 400, body = ErrorResponse),
         (status = 401, body = ErrorResponse), (status = 403, body = ErrorResponse),
         (status = 404, body = ErrorResponse), (status = 409, body = ErrorResponse), (status = 500, body = ErrorResponse)))]
 #[tracing::instrument(err, skip_all)]
@@ -53,7 +61,7 @@ pub async fn change_column_type_handler<S, Eas, Auth>(
     user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
     Path(path): Path<ColumnOptionsPath>,
     Json(req): Json<ChangeColumnTypeRequest>,
-) -> Result<Json<ColumnSchemaOutcome>, DatabaseError>
+) -> Result<Json<ColumnTypeChangeOutcome>, DatabaseError>
 where
     S: DatabasesService,
     Eas: EntityAccessService,
@@ -74,7 +82,41 @@ where
                     .link_to_table_id
                     .map(|table_id| (req.link_to_database_id.unwrap_or(path.id), table_id)),
                 base_version: req.base_version,
+                clear_invalid: req.clear_invalid,
             },
+        )
+        .await
+        .map(Json)
+}
+
+/// What changing one column to each type of the type menu would do to its
+/// values: safe, checked (with how many values would not convert and a few
+/// of them), or never (with why). Changes nothing.
+#[utoipa::path(get, tag = "databases", operation_id = "list_database_column_casts",
+    path = "/databases/{id}/tables/{table_id}/columns/{column_id}/casts",
+    params(("id" = Uuid, Path), ("table_id" = Uuid, Path), ("column_id" = Uuid, Path)),
+    responses((status = 200, body = Vec<ColumnCast>),
+        (status = 401, body = ErrorResponse), (status = 403, body = ErrorResponse),
+        (status = 404, body = ErrorResponse), (status = 500, body = ErrorResponse)))]
+#[tracing::instrument(err, skip_all)]
+pub async fn column_casts_handler<S, Eas, Auth>(
+    access: DatabaseAccessLevelExtractor<ViewAccessLevel, Eas, Auth>,
+    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
+    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
+    Path(path): Path<ColumnOptionsPath>,
+) -> Result<Json<Vec<ColumnCast>>, DatabaseError>
+where
+    S: DatabasesService,
+    Eas: EntityAccessService,
+    Auth: MacroAuthorizationService,
+{
+    state
+        .service
+        .column_casts(
+            access.entity_access_receipt,
+            viewer_of(&user),
+            path.table_id,
+            path.column_id,
         )
         .await
         .map(Json)

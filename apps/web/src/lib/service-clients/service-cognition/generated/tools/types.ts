@@ -1445,6 +1445,17 @@ export interface ToolColumn {
    * A database-row relationship; distinct from a Macro entity reference.
    */
   relation?: ToolRelation | null;
+  /**
+   * Types ChangeColumnType converts every value to, spelled as SQL types
+   * (`select[]` is a multi-valued select, `entity(USER)` a person).
+   */
+  safeTypes: string[];
+  /**
+   * Types whose conversion checks each value first and refuses, or with
+   * `clearInvalid` empties, the ones that do not fit. Any type in neither
+   * list is refused while the column holds values.
+   */
+  checkedTypes: string[];
 }
 /**
  * The target of a database-row relationship.
@@ -1964,7 +1975,9 @@ export interface SpreadsheetChange {
 /**
  * Change a column's type, converting every existing value. The column keeps its id and name.
  *
- * Conversion is all or nothing: if any value cannot become the new type without losing information ("soon" as a number), nothing changes and the error says why. Converting to `select` or `tag` turns the distinct existing values into the column's options; pass `options` to add labels no row has yet.
+ * DescribeDatabase lists each column's `safeTypes` (every value converts) and `checkedTypes` (each value is checked first); any other type is refused while the column holds values, so add a new column instead. An empty column takes any type.
+ *
+ * Conversion is all or nothing by default: if any value cannot become the new type without losing information ("soon" as a number), nothing changes and the error counts the values and quotes a few. Fix them with UPDATE and retry, or pass `clearInvalid: true` to empty them instead; a cell with several values going to a single-valued type then keeps its first. Only clear when the user accepts losing those values. Converting to `select` or `tag` turns the distinct existing values into the column's options; pass `options` to add labels no row has yet.
  *
  * - `entity` needs `specificEntityType` (e.g. `USER` for people, `DOCUMENT`).
  * - `linkToTableId` makes it a relation to rows of another table of this database; pass `dataType: entity` with it. Relations are always multi-valued, and the column must be empty.
@@ -2002,6 +2015,10 @@ export interface ChangeColumnType {
    * Id of a table of this database to relate to; makes the column a relation holding row ids. Requires dataType entity.
    */
   linkToTableId?: string | null;
+  /**
+   * Empty the values that cannot become the new type instead of refusing the change; a cell with several values keeps its first. Defaults to false. The response says how many cells were changed.
+   */
+  clearInvalid?: boolean;
 }
 /**
  * Response from the ChangeColumnType tool.
@@ -2019,6 +2036,15 @@ export interface ChangeColumnTypeResponse {
    * The changed column's id, unchanged by the conversion.
    */
   columnId: string;
+  /**
+   * Cells emptied because their value did not fit, with `clearInvalid`.
+   */
+  clearedCells: number;
+  /**
+   * Cells that held several values and kept only their first, with
+   * `clearInvalid`.
+   */
+  trimmedCells: number;
   /**
    * The database's schema after the change.
    */

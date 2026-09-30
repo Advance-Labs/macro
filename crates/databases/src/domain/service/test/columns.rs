@@ -24,6 +24,7 @@ async fn number_text_conversion_writes_converted_cells_through_the_cell_store() 
                 specific_entity_type: None,
                 relation: None,
                 base_version: TableVersion(1),
+                clear_invalid: false,
             },
         )
         .await
@@ -85,6 +86,7 @@ async fn number_text_conversion_writes_converted_cells_through_the_cell_store() 
             specific_entity_type: None,
             relation: None,
             base_version: TableVersion(2),
+            clear_invalid: false,
         },
     )
     .await
@@ -131,6 +133,7 @@ async fn invalid_or_lossy_conversions_do_not_modify_the_column() {
                     specific_entity_type: None,
                     relation: None,
                     base_version: TableVersion(1),
+                    clear_invalid: false,
                 },
             )
             .await;
@@ -175,6 +178,7 @@ async fn selecting_text_preserves_option_labels_and_select_preserves_unused_opti
             specific_entity_type: None,
             relation: None,
             base_version: TableVersion(1),
+            clear_invalid: false,
         },
     )
     .await
@@ -218,6 +222,7 @@ async fn selecting_text_preserves_option_labels_and_select_preserves_unused_opti
             specific_entity_type: None,
             relation: None,
             base_version: TableVersion(2),
+            clear_invalid: false,
         },
     )
     .await
@@ -345,6 +350,7 @@ async fn schema_mutations_reject_wrong_database_stale_and_trashed_database() {
         specific_entity_type: None,
         relation: None,
         base_version,
+        clear_invalid: false,
     };
 
     let elsewhere = Uuid::new_v4();
@@ -477,6 +483,7 @@ async fn lookup_dependencies_prevent_deleting_or_retyping_their_source_column() 
                 specific_entity_type: None,
                 relation: None,
                 base_version: TableVersion(1),
+                clear_invalid: false,
             }
         )
         .await,

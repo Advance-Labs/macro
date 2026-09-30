@@ -24,7 +24,9 @@ use crate::domain::models::{
     QueryError, RenameColumnOutcome, RowId, RowRef, Table, TableId, TableMutationOutcome,
     TableVersion, Viewer,
 };
-use crate::domain::models::{ChangeColumnType, ColumnReplacement, ColumnSchemaOutcome};
+use crate::domain::models::{
+    ChangeColumnType, ColumnCast, ColumnReplacement, ColumnSchemaOutcome, ColumnTypeChangeOutcome,
+};
 use crate::domain::models::{
     QueryDefinition, QueryId, SavedQuery, TableDeletion, TableOrderOutcome,
 };
@@ -310,6 +312,8 @@ pub trait ColumnDefinitionStore: Send + Sync + 'static {
     ) -> impl Future<Output = Result<(), Self::Err>> + Send;
 
     /// Add options to a select definition, answering every option it has.
+    /// Each new option takes the palette colour of its position
+    /// ([`models_properties::option_color`]), so neighbouring options differ.
     fn add_options(
         &self,
         definition_id: PropertyDefinitionId,
@@ -449,13 +453,24 @@ pub trait DatabasesService: Send + Sync + 'static {
         cmd: InferColumnType,
     ) -> impl Future<Output = Result<InferColumnTypeOutcome, DatabaseError>> + Send;
 
-    /// Convert a column to another type, converting its cells.
+    /// Convert a column to another type, converting its cells. A value that
+    /// does not fit refuses the change unless the command clears it.
     fn change_column_type(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
         viewer: Viewer,
         cmd: ChangeColumnType,
-    ) -> impl Future<Output = Result<ColumnSchemaOutcome, DatabaseError>> + Send;
+    ) -> impl Future<Output = Result<ColumnTypeChangeOutcome, DatabaseError>> + Send;
+
+    /// What changing a column to each type the type menu offers would do to
+    /// its values, read in one pass without changing anything.
+    fn column_casts(
+        &self,
+        receipt: EntityAccessReceipt<ViewAccessLevel>,
+        viewer: Viewer,
+        table_id: TableId,
+        column_id: ColumnId,
+    ) -> impl Future<Output = Result<Vec<ColumnCast>, DatabaseError>> + Send;
 
     /// Remove a column.
     fn delete_column(

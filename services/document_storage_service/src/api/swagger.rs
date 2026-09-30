@@ -433,6 +433,7 @@ use utoipa::OpenApi;
         databases::inbound::axum_router::create_column_handler,
         databases::inbound::axum_router::rename_column_handler,
         databases::inbound::axum_router::column_mutations::change_column_type_handler,
+        databases::inbound::axum_router::column_mutations::column_casts_handler,
         databases::inbound::axum_router::column_mutations::delete_column_handler,
         databases::inbound::axum_router::column_mutations::reorder_columns_handler,
         databases::inbound::axum_router::infer_column_type_handler,

@@ -26,10 +26,17 @@ use crate::domain::ports::DatabasesService;
     description = "\
 Change a column's type, converting every existing value. The column keeps its id and name.\n\
 \n\
-Conversion is all or nothing: if any value cannot become the new type without losing \
-information (\"soon\" as a number), nothing changes and the error says why. Converting to \
-`select` or `tag` turns the distinct existing values into the column's options; pass \
-`options` to add labels no row has yet.\n\
+DescribeDatabase lists each column's `safeTypes` (every value converts) and `checkedTypes` \
+(each value is checked first); any other type is refused while the column holds values, so \
+add a new column instead. An empty column takes any type.\n\
+\n\
+Conversion is all or nothing by default: if any value cannot become the new type without \
+losing information (\"soon\" as a number), nothing changes and the error counts the values \
+and quotes a few. Fix them with UPDATE and retry, or pass `clearInvalid: true` to empty \
+them instead; a cell with several values going to a single-valued type then keeps its \
+first. Only clear when the user accepts losing those values. Converting to `select` or \
+`tag` turns the distinct existing values into the column's options; pass `options` to add \
+labels no row has yet.\n\
 \n\
 - `entity` needs `specificEntityType` (e.g. `USER` for people, `DOCUMENT`).\n\
 - `linkToTableId` makes it a relation to rows of another table of this database; pass \
@@ -82,6 +89,14 @@ pub struct ChangeColumnType {
     )]
     #[serde(default)]
     pub link_to_table_id: Option<Uuid>,
+    /// Empty what does not fit instead of refusing.
+    #[schemars(
+        description = "Empty the values that cannot become the new type instead of refusing \
+                       the change; a cell with several values keeps its first. Defaults to \
+                       false. The response says how many cells were changed."
+    )]
+    #[serde(default)]
+    pub clear_invalid: bool,
 }
 
 impl ToolAnnotated for ChangeColumnType {
@@ -98,6 +113,11 @@ pub struct ChangeColumnTypeResponse {
     pub table_id: Uuid,
     /// The changed column's id, unchanged by the conversion.
     pub column_id: Uuid,
+    /// Cells emptied because their value did not fit, with `clearInvalid`.
+    pub cleared_cells: usize,
+    /// Cells that held several values and kept only their first, with
+    /// `clearInvalid`.
+    pub trimmed_cells: usize,
     /// The database's schema after the change.
     pub database: Option<ToolDatabaseSchema>,
     /// Follow-up guidance if part of the change or the schema refresh failed.
@@ -145,7 +165,7 @@ where
         let receipt = service_context
             .edit_receipt(user_id, self.database_id)
             .await?;
-        service_context
+        let changed = service_context
             .service
             .change_column_type(
                 receipt,
@@ -162,6 +182,7 @@ where
                         .link_to_table_id
                         .map(|table_id| (self.database_id, table_id)),
                     base_version,
+                    clear_invalid: self.clear_invalid,
                 },
             )
             .await
@@ -207,6 +228,8 @@ where
             database_id: self.database_id,
             table_id: self.table_id,
             column_id: self.column_id,
+            cleared_cells: changed.cleared_cells,
+            trimmed_cells: changed.trimmed_cells,
             database,
             warning: (!warnings.is_empty()).then(|| warnings.join(" ")),
         })

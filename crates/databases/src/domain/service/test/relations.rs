@@ -400,6 +400,7 @@ async fn changing_a_linked_columns_type_requires_clearing_its_relations_first() 
                 specific_entity_type: None,
                 relation: None,
                 base_version: TableVersion(2),
+                clear_invalid: false,
             },
         )
         .await;

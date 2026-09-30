@@ -33,3 +33,43 @@ fn a_table_order_request_takes_table_ids_in_camel_case() {
     .unwrap();
     assert_eq!(request.table_ids, vec![second, first]);
 }
+
+#[test]
+fn a_type_change_takes_clear_invalid_in_camel_case_and_refuses_by_default() {
+    let body = serde_json::json!({ "dataType": "NUMBER", "baseVersion": 3 });
+    let refusing: column_mutations::ChangeColumnTypeRequest = serde_json::from_value(body).unwrap();
+    assert!(!refusing.clear_invalid);
+
+    let body = serde_json::json!({ "dataType": "NUMBER", "baseVersion": 3, "clearInvalid": true });
+    let clearing: column_mutations::ChangeColumnTypeRequest = serde_json::from_value(body).unwrap();
+    assert!(clearing.clear_invalid);
+}
+
+#[test]
+fn a_column_cast_reads_as_the_type_menu_expects() {
+    let cast = crate::domain::models::ColumnCast {
+        data_type: DataType::Number,
+        is_multi_select: false,
+        specific_entity_type: None,
+        relation: false,
+        cast: crate::domain::models::CastVerdict::Checked,
+        reason: None,
+        failures: 3,
+        summary: Some("3 values aren't numbers".into()),
+        examples: vec!["TBD".into(), "n/a".into(), "12.5.0".into()],
+    };
+    assert_eq!(
+        serde_json::to_value(cast).unwrap(),
+        serde_json::json!({
+            "data_type": "NUMBER",
+            "is_multi_select": false,
+            "specific_entity_type": null,
+            "relation": false,
+            "cast": "checked",
+            "reason": null,
+            "failures": 3,
+            "summary": "3 values aren't numbers",
+            "examples": ["TBD", "n/a", "12.5.0"],
+        })
+    );
+}
