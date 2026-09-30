@@ -4,7 +4,7 @@
 
 use uuid::Uuid;
 
-use crate::catalog::{Catalog, Column, ColumnKind, Table};
+use crate::catalog::{Catalog, Column, ColumnKind, EntityKind, Table};
 use crate::parse::{ColumnRef, FromItem, Ident, TableName};
 
 use super::{Binding, ResolveError, column_key, row_id_key};
@@ -222,7 +222,10 @@ impl<'c> Scope<'c> {
                 column: Column {
                     id: row_id_key(table.id),
                     name: ROW_ID.into(),
-                    kind: ColumnKind::Entity { multi: false },
+                    kind: ColumnKind::Entity {
+                        multi: false,
+                        target: EntityKind::Row,
+                    },
                 },
                 definition: None,
             });

@@ -2,7 +2,9 @@
 
 use uuid::Uuid;
 
-use crate::catalog::{Catalog, Column, ColumnKind, SelectOption, Table, TableSource, people_table};
+use crate::catalog::{
+    Catalog, Column, ColumnKind, EntityKind, SelectOption, Table, TableSource, people_table,
+};
 
 pub const DEALS: Uuid = Uuid::from_u128(0xd0);
 pub const PEOPLE: Uuid = Uuid::from_u128(0xd1);
@@ -73,7 +75,10 @@ pub fn catalog() -> Catalog {
                     Column {
                         id: OWNER,
                         name: "owner".into(),
-                        kind: ColumnKind::Entity { multi: false },
+                        kind: ColumnKind::Entity {
+                            multi: false,
+                            target: EntityKind::User,
+                        },
                     },
                     Column {
                         id: TAGS,
@@ -147,12 +152,18 @@ pub fn catalog() -> Catalog {
                     Column {
                         id: ASSIGNEES,
                         name: "assignees".into(),
-                        kind: ColumnKind::Entity { multi: true },
+                        kind: ColumnKind::Entity {
+                            multi: true,
+                            target: EntityKind::User,
+                        },
                     },
                     Column {
                         id: DEAL,
                         name: "deal".into(),
-                        kind: ColumnKind::Entity { multi: false },
+                        kind: ColumnKind::Entity {
+                            multi: false,
+                            target: EntityKind::Row,
+                        },
                     },
                 ],
                 source: TableSource::Database,

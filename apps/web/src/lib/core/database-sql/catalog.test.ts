@@ -232,7 +232,7 @@ describe('databaseSqlCatalog', () => {
             {
               id: 'def-contact',
               name: 'Contact',
-              kind: { kind: 'entity', multi: true },
+              kind: { kind: 'entity', multi: true, target: 'DATABASE_ROW' },
             },
           ],
         },
@@ -246,7 +246,7 @@ describe('databaseSqlCatalog', () => {
             {
               id: 'def-owner',
               name: 'Owner',
-              kind: { kind: 'entity', multi: false },
+              kind: { kind: 'entity', multi: false, target: 'USER' },
             },
           ],
         },

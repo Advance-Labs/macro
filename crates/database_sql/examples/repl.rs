@@ -16,7 +16,9 @@ use std::io::{self, BufRead, Write};
 use std::sync::Mutex;
 
 use chrono::{TimeZone, Utc};
-use database_sql::catalog::{Catalog, Column, ColumnKind, SelectOption, Table, TableSource};
+use database_sql::catalog::{
+    Catalog, Column, ColumnKind, EntityKind, SelectOption, Table, TableSource,
+};
 use database_sql::fold::{Bin, Cell, Row};
 use database_sql::resolve::Value;
 use database_sql::run::{Page, RowSource, RowWriter, SourceError, WriteError, run};
@@ -83,7 +85,10 @@ fn catalog() -> Catalog {
                 Column {
                     id: OWNER,
                     name: "owner".into(),
-                    kind: ColumnKind::Entity { multi: false },
+                    kind: ColumnKind::Entity {
+                        multi: false,
+                        target: EntityKind::User,
+                    },
                 },
                 Column {
                     id: TAGS,

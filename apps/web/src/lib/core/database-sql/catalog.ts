@@ -59,7 +59,8 @@ function qualifiedName(database: string, table: string): string {
 }
 
 function columnKind({ column, definition }: DatabaseColumnDetail): ColumnKind {
-  if (column.config?.kind === 'link') return { kind: 'entity', multi: true };
+  if (column.config?.kind === 'link')
+    return { kind: 'entity', multi: true, target: 'DATABASE_ROW' };
   const multi = definition.definition.is_multi_select;
   return match(definition.definition.data_type)
     .returnType<ColumnKind>()
@@ -81,7 +82,11 @@ function columnKind({ column, definition }: DatabaseColumnDetail): ColumnKind {
             .exhaustive(),
         })),
     }))
-    .with('ENTITY', () => ({ kind: 'entity', multi }))
+    .with('ENTITY', () => ({
+      kind: 'entity',
+      multi,
+      target: definition.definition.specific_entity_type ?? 'USER',
+    }))
     .exhaustive();
 }
 

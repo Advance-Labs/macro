@@ -39,7 +39,8 @@
             "id": "01990000-0000-7000-8000-00000000c004",
             "kind": {
               "kind": "entity",
-              "multi": true
+              "multi": true,
+              "target": "DATABASE_ROW"
             },
             "name": "owner"
           }

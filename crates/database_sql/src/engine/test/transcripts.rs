@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use serde_json::{Value, json};
 
 use super::*;
-use crate::catalog::{Column, ColumnKind, SelectOption, Table, TableSource};
+use crate::catalog::{Column, ColumnKind, EntityKind, SelectOption, Table, TableSource};
 
 const DEALS: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000d001);
 const PEOPLE: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000d002);
@@ -64,7 +64,10 @@ fn crm() -> Catalog {
                     Column {
                         id: OWNER,
                         name: "owner".into(),
-                        kind: ColumnKind::Entity { multi: true },
+                        kind: ColumnKind::Entity {
+                            multi: true,
+                            target: EntityKind::Row,
+                        },
                     },
                 ],
                 source: TableSource::Database,

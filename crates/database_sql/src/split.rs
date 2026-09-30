@@ -318,7 +318,7 @@ fn groups_server_side(
     column_of(catalog, bindings, relations, key).is_some_and(|column| {
         matches!(
             column.kind,
-            ColumnKind::Select { multi: false, .. } | ColumnKind::Entity { multi: false }
+            ColumnKind::Select { multi: false, .. } | ColumnKind::Entity { multi: false, .. }
         )
     })
 }

@@ -9,7 +9,8 @@
 use std::collections::HashMap;
 
 use database_sql::catalog::{
-    Catalog, Column as EngineColumn, ColumnKind, SelectOption, Table as EngineTable, TableSource,
+    Catalog, Column as EngineColumn, ColumnKind, EntityKind, SelectOption, Table as EngineTable,
+    TableSource,
 };
 use models_permissions::share_permission::access_level::AccessLevel;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
@@ -176,7 +177,10 @@ pub fn engine_catalog(entries: &[TableEntry]) -> Catalog {
 pub fn column_kind(column: &ColumnEntry) -> ColumnKind {
     let definition = &column.definition.definition;
     if column.is_relation() {
-        return ColumnKind::Entity { multi: true };
+        return ColumnKind::Entity {
+            multi: true,
+            target: EntityKind::Row,
+        };
     }
     match definition.data_type {
         DataType::String => ColumnKind::Text,
@@ -193,7 +197,31 @@ pub fn column_kind(column: &ColumnEntry) -> ColumnKind {
         },
         DataType::Entity => ColumnKind::Entity {
             multi: definition.is_multi_select,
+            target: entity_kind(
+                definition
+                    .specific_entity_type
+                    .unwrap_or(models_properties::EntityType::User),
+            ),
         },
+    }
+}
+
+/// The engine's name for what an entity column references.
+pub fn entity_kind(entity_type: models_properties::EntityType) -> EntityKind {
+    use models_properties::EntityType as Stored;
+    match entity_type {
+        Stored::User => EntityKind::User,
+        Stored::Document => EntityKind::Document,
+        Stored::Task => EntityKind::Task,
+        Stored::Company => EntityKind::Company,
+        Stored::CallRecord => EntityKind::CallRecord,
+        Stored::Channel => EntityKind::Channel,
+        Stored::Chat => EntityKind::Chat,
+        Stored::Project => EntityKind::Project,
+        Stored::Thread => EntityKind::Thread,
+        Stored::CalendarEvent => EntityKind::CalendarEvent,
+        Stored::Initiative => EntityKind::Initiative,
+        Stored::DatabaseRow => EntityKind::Row,
     }
 }
 

@@ -6,6 +6,8 @@
  * of these shapes; the driver's tests replay them.
  */
 
+import type { EntityType } from '@service-properties/generated/schemas/entityType';
+
 export type Cell =
   | { type: 'text'; value: string }
   | { type: 'number'; value: number }
@@ -103,7 +105,7 @@ export type ColumnKind =
   | { kind: 'date' }
   | { kind: 'link' }
   | { kind: 'select'; multi: boolean; options: { id: string; label: string }[] }
-  | { kind: 'entity'; multi: boolean };
+  | { kind: 'entity'; multi: boolean; target: EntityType };
 
 export interface CatalogTable {
   id: string;

@@ -66,7 +66,10 @@ pub fn people_table() -> Table {
             Column {
                 id: PEOPLE_ID,
                 name: "id".into(),
-                kind: ColumnKind::Entity { multi: false },
+                kind: ColumnKind::Entity {
+                    multi: false,
+                    target: EntityKind::User,
+                },
             },
             Column {
                 id: PEOPLE_NAME,
@@ -124,7 +127,65 @@ pub enum ColumnKind {
     Entity {
         /// Whether a cell holds several references.
         multi: bool,
+        /// What the references point at.
+        target: EntityKind,
     },
+}
+
+/// What an entity column's references point at: a kind of Macro entity, or
+/// the rows of another table for a relation.
+///
+/// Spelled as the properties system spells entity types (`USER`,
+/// `DATABASE_ROW`), on the wire and in SQL, where it parses
+/// case-insensitively.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    strum::EnumString,
+    strum::IntoStaticStr,
+    strum::EnumIter,
+)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE", ascii_case_insensitive)]
+pub enum EntityKind {
+    /// People.
+    User,
+    /// Documents.
+    Document,
+    /// Tasks.
+    Task,
+    /// CRM companies.
+    Company,
+    /// Call recordings.
+    CallRecord,
+    /// Channels.
+    Channel,
+    /// AI chats.
+    Chat,
+    /// Projects.
+    Project,
+    /// Email threads.
+    Thread,
+    /// Calendar events.
+    CalendarEvent,
+    /// Initiatives.
+    Initiative,
+    /// Rows of another table: the column is a relation.
+    #[serde(rename = "DATABASE_ROW")]
+    #[strum(serialize = "DATABASE_ROW")]
+    Row,
+}
+
+impl EntityKind {
+    /// The name SQL and the agent tools use for the kind.
+    pub fn sql_name(self) -> &'static str {
+        self.into()
+    }
 }
 
 /// One option of a select column.
@@ -142,7 +203,7 @@ impl ColumnKind {
     pub fn is_multi(&self) -> bool {
         matches!(
             self,
-            ColumnKind::Select { multi: true, .. } | ColumnKind::Entity { multi: true }
+            ColumnKind::Select { multi: true, .. } | ColumnKind::Entity { multi: true, .. }
         )
     }
 

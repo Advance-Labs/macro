@@ -15,7 +15,7 @@ use maybe_send::MaybeSend;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::catalog::{Catalog, ColumnKind};
+use crate::catalog::{Catalog, ColumnKind, EntityKind};
 use crate::engine::{Engine, Step};
 use crate::fold::{Bin, Row, Table};
 use crate::resolve::{
@@ -312,7 +312,10 @@ pub(crate) fn describe(
                     Some(column) => (column.name.clone(), column.kind.clone()),
                     None => (
                         crate::resolve::ROW_ID.into(),
-                        ColumnKind::Entity { multi: false },
+                        ColumnKind::Entity {
+                            multi: false,
+                            target: EntityKind::Row,
+                        },
                     ),
                 };
                 OutcomeColumn {
