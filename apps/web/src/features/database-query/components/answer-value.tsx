@@ -16,10 +16,10 @@ export function ResultValue(props: {
         <span class="opacity-40">—</span>
       </Match>
       <Match when={props.cell.kind === 'text' && props.cell}>
-        {(cell) => cell().text}
+        {(cell) => <>{cell().text}</>}
       </Match>
       <Match when={props.cell.kind === 'markdown' && props.cell}>
-        {(cell) => display.text(cell().markdown)}
+        {(cell) => <>{display.text(cell().markdown)}</>}
       </Match>
       <Match when={props.cell.kind === 'boolean' && props.cell}>
         {(cell) => (
