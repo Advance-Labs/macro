@@ -46,11 +46,6 @@ function reviewClause(
   viewer: string | undefined
 ): TargetExpr | undefined {
   switch (id) {
-    case 'none':
-    case 'required':
-    case 'approved':
-    case 'changes_requested':
-      return clause.eq('githubPullRequestReviewStatus', id);
     case 'reviewed_by_me':
       return viewer
         ? clause.eq('githubPullRequestReviewedBy', viewer)

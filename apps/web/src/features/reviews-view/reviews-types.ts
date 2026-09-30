@@ -9,12 +9,8 @@ export type ReviewsSortId =
   | 'least_recently_updated'
   | 'newest'
   | 'oldest';
-/** GitHub's review filters; the "me" ones match the viewer's GitHub user id. */
+/** Review filters, which match the viewer's GitHub user id. */
 export type ReviewsReviewFilterId =
-  | 'none'
-  | 'required'
-  | 'approved'
-  | 'changes_requested'
   | 'reviewed_by_me'
   | 'not_reviewed_by_me'
   | 'awaiting_my_review';

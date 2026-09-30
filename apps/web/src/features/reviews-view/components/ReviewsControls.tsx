@@ -43,13 +43,6 @@ const SORT_OPTIONS: ListControlOption<ReviewsSortId>[] = [
 ];
 
 const REVIEW_OPTIONS: ListControlOption<ReviewsReviewFilterId>[] = [
-  { id: 'none', label: 'No reviews' },
-  { id: 'required', label: 'Review required' },
-  { id: 'approved', label: 'Approved review' },
-  { id: 'changes_requested', label: 'Changes requested' },
-];
-
-const VIEWER_REVIEW_OPTIONS: ListControlOption<ReviewsReviewFilterId>[] = [
   { id: 'reviewed_by_me', label: 'Reviewed by you' },
   { id: 'not_reviewed_by_me', label: 'Not reviewed by you' },
   { id: 'awaiting_my_review', label: 'Awaiting review from you' },
@@ -83,13 +76,9 @@ function filterGroups(
       options: props.labels,
       searchPlaceholder: 'Search labels',
     },
-    {
-      id: 'review',
-      label: 'Reviews',
-      options: props.hasGithubIdentity
-        ? [...REVIEW_OPTIONS, ...VIEWER_REVIEW_OPTIONS]
-        : REVIEW_OPTIONS,
-    },
+    ...(props.hasGithubIdentity
+      ? [{ id: 'review' as const, label: 'Reviews', options: REVIEW_OPTIONS }]
+      : []),
   ];
 }
 

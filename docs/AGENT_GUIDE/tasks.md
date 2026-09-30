@@ -60,10 +60,9 @@ review requests.
 GitHub user ID. If the link-status endpoint has no identity, the list explains
 why the tab is unavailable.
 Search, filter, and sort controls appear above the list. Filters cover
-repository, author, assignee, label, and reviews (No reviews, Review required,
-Approved review, Changes requested, plus Reviewed by you, Not reviewed by you,
-and Awaiting review from you when a GitHub identity is linked). Sort offers
-Recently updated, Least recently updated, Newest, and Oldest. When visible PRs
+repository, author, assignee, label, and, when a GitHub identity is linked,
+reviews (Reviewed by you, Not reviewed by you, and Awaiting review from you).
+Sort offers Recently updated, Least recently updated, Newest, and Oldest. When visible PRs
 have GitHub labels, a Labels section below Favorites lists them with their
 colors; choosing a label shows only PRs with it, and choosing it again clears
 it. PR rows use the shared entity layout with selection checkboxes,

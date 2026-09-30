@@ -112,23 +112,18 @@ describe('Reviews Soup filter', () => {
     });
   });
 
-  it('matches any selected review filter, including the viewer ones', () => {
+  it('matches any selected review filter', () => {
     expect(
       reviewsQueryBody({
         scope: 'all',
         filters: {
           ...EMPTY_REVIEWS_FILTERS,
-          review: ['approved', 'not_reviewed_by_me', 'awaiting_my_review'],
+          review: ['not_reviewed_by_me', 'awaiting_my_review'],
         },
         viewerGithubUserId: '42',
       }).ghprf
     ).toEqual({
-      '|': [
-        { l: { rs: 'approved' } },
-        {
-          '|': [{ '!': { l: { rb: '42' } } }, { l: { rr: '42' } }],
-        },
-      ],
+      '|': [{ '!': { l: { rb: '42' } } }, { l: { rr: '42' } }],
     });
   });
 
