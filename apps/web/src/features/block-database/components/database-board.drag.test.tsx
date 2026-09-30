@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -116,7 +117,6 @@ function board(projected?: DatabaseRow[], pending = false) {
       onOpen={onOpen}
       onMove={onMove}
       onPlace={onPlace}
-      projectMove={projected ? () => projected : undefined}
       onCreate={vi.fn(async () => true)}
     />
   ));
@@ -129,6 +129,49 @@ const movePointer = (x: number, y = 90) =>
   fireEvent.mouseMove(document, { clientX: x, clientY: y });
 const dropPointer = (x: number, y = 90) =>
   fireEvent.mouseUp(document, { button: 0, clientX: x, clientY: y });
+
+describe('multi-select board drag', () => {
+  it('dragging a card between value lanes replaces the value it was dragged from', async () => {
+    const stages: DatabaseViewColumn = {
+      id: 'stage',
+      name: 'Stage',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: true,
+      options: ['Done', 'To do'],
+      writable: true,
+    };
+    const onMove = vi.fn(async () => true);
+    render(() => (
+      <DatabaseBoard
+        rows={[
+          {
+            rowId: 'shared',
+            cells: { name: 'Shared card', stage: '["Done","Urgent"]' },
+          },
+        ]}
+        columns={[columns[0], stages]}
+        groupColumn={stages}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={onMove}
+        onCreate={vi.fn(async () => true)}
+      />
+    ));
+    fireEvent.mouseDown(
+      within(screen.getByRole('region', { name: 'Done lane' })).getByRole(
+        'button',
+        { name: 'Open Shared card' }
+      ),
+      { button: 0, clientX: 60, clientY: 80 }
+    );
+    movePointer(330, 90);
+    dropPointer(330, 90);
+    await waitFor(() =>
+      expect(onMove).toHaveBeenCalledWith('shared', '["Urgent","To do"]')
+    );
+  });
+});
 
 describe('board drop placement', () => {
   it('places a card at the pointer gap instead of its previous source order', async () => {

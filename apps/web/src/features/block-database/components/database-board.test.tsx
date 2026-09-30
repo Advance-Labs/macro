@@ -408,3 +408,84 @@ it('reorders lanes with the keyboard while leaving every card value unchanged', 
   ).toEqual(['To do lane', 'Done lane', 'No status lane']);
   expect(move).not.toHaveBeenCalled();
 });
+
+describe('multi-select board', () => {
+  it('shows a record in the lane of each of its values and an untagged record in the empty lane', () => {
+    const tags: DatabaseViewColumn = {
+      id: 'tags',
+      name: 'Tags',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: true,
+      options: ['Bug', 'Feature', 'Docs'],
+      writable: true,
+    };
+    render(() => (
+      <DatabaseBoard
+        rows={[
+          {
+            rowId: 'login',
+            cells: { title: 'Fix login', tags: '["Bug","Feature"]' },
+          },
+          { rowId: 'idea', cells: { title: 'Loose idea', tags: '[]' } },
+        ]}
+        columns={[columns[0], tags]}
+        groupColumn={tags}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={vi.fn(async () => true)}
+        onCreate={vi.fn(async () => true)}
+      />
+    ));
+    const cardsIn = (lane: string) =>
+      [
+        ...screen
+          .getByRole('region', { name: `${lane} lane` })
+          .querySelectorAll('[data-row-id]'),
+      ].map((card) => card.getAttribute('data-row-id'));
+    expect(cardsIn('Bug')).toEqual(['login']);
+    expect(cardsIn('Feature')).toEqual(['login']);
+    expect(cardsIn('Docs')).toEqual([]);
+    expect(cardsIn('No tags')).toEqual(['idea']);
+  });
+
+  it('moving a card out of one value lane replaces only that value', async () => {
+    const tags: DatabaseViewColumn = {
+      id: 'tags',
+      name: 'Tags',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: true,
+      options: ['Bug', 'Feature', 'Docs'],
+      writable: true,
+    };
+    const onMove = vi.fn(async () => true);
+    render(() => (
+      <DatabaseBoard
+        rows={[
+          {
+            rowId: 'login',
+            cells: { title: 'Fix login', tags: '["Bug","Feature"]' },
+          },
+        ]}
+        columns={[columns[0], tags]}
+        groupColumn={tags}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={onMove}
+        onCreate={vi.fn(async () => true)}
+      />
+    ));
+    const trigger = within(
+      screen.getByRole('region', { name: 'Feature lane' })
+    ).getByRole('button', { name: 'Move Fix login' });
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    fireEvent.keyDown(await screen.findByRole('menuitem', { name: 'Docs' }), {
+      key: 'Enter',
+    });
+    await waitFor(() =>
+      expect(onMove).toHaveBeenCalledWith('login', '["Bug","Docs"]')
+    );
+  });
+});

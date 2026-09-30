@@ -5,6 +5,7 @@ import { Dialog } from '@ui/components/Dialog';
 import { Panel } from '@ui/components/Panel';
 import { TextField } from '@ui/components/TextField';
 import { createSignal, Show } from 'solid-js';
+import { defaultBoardGroupColumn } from '../core/board-grouping';
 import {
   type DatabaseViewColumn,
   type DatabaseViewConfig,
@@ -34,7 +35,9 @@ export function SaveViewDialog(props: {
   );
   const groups = () => (props.columns ?? []).filter(isBoardGroupColumn);
   const [groupBy, setGroupBy] = createSignal(
-    props.initialGroupBy ?? groups()[0]?.id ?? null
+    props.initialGroupBy ??
+      defaultBoardGroupColumn(props.columns ?? [])?.id ??
+      null
   );
   const [pending, setPending] = createSignal(false);
   const [error, setError] = createSignal('');

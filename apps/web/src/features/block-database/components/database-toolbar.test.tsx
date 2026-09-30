@@ -350,6 +350,93 @@ it('groups layout, board grouping, and column visibility in one view settings co
   expect(save).not.toHaveBeenCalled();
 });
 
+it('groups a new board by its first multi-select column and lets the user change it', async () => {
+  const [view, setView] = createSignal(defaultDatabaseView());
+  render(() => (
+    <DatabaseToolbar
+      columns={[
+        {
+          id: 'status',
+          name: 'Status',
+          dataType: 'SELECT_STRING',
+          isMultiSelect: false,
+          options: ['To do', 'Done'],
+          writable: true,
+        },
+        {
+          id: 'tags',
+          name: 'Tags',
+          dataType: 'SELECT_STRING',
+          isMultiSelect: true,
+          options: ['Bug', 'Feature'],
+          writable: true,
+        },
+      ]}
+      value={view()}
+      onChange={setView}
+      savedViews={[]}
+      onSelectView={vi.fn()}
+      onSaveView={vi.fn(async () => {})}
+      onRenameView={vi.fn(async () => {})}
+      onDeleteView={vi.fn(async () => {})}
+    />
+  ));
+  fireEvent.click(screen.getByRole('button', { name: 'View settings' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Board' }));
+  expect(view().layout).toBe('board');
+  expect(view().groupBy).toBe('tags');
+  fireEvent.keyDown(screen.getByRole('button', { name: /^Group board by/ }), {
+    key: 'Enter',
+  });
+  fireEvent.keyDown(await screen.findByRole('option', { name: 'Status' }), {
+    key: 'Enter',
+  });
+  expect(view().groupBy).toBe('status');
+  fireEvent.click(screen.getByRole('button', { name: 'Table' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Board' }));
+  expect(view().groupBy).toBe('status');
+});
+
+it('keeps an explicit board grouping when switching back to the board layout', async () => {
+  const [view, setView] = createSignal<DatabaseViewConfig>({
+    ...defaultDatabaseView(),
+    groupBy: 'status',
+  });
+  render(() => (
+    <DatabaseToolbar
+      columns={[
+        {
+          id: 'status',
+          name: 'Status',
+          dataType: 'SELECT_STRING',
+          isMultiSelect: false,
+          options: ['To do', 'Done'],
+          writable: true,
+        },
+        {
+          id: 'tags',
+          name: 'Tags',
+          dataType: 'SELECT_STRING',
+          isMultiSelect: true,
+          options: ['Bug', 'Feature'],
+          writable: true,
+        },
+      ]}
+      value={view()}
+      onChange={setView}
+      savedViews={[]}
+      onSelectView={vi.fn()}
+      onSaveView={vi.fn(async () => {})}
+      onRenameView={vi.fn(async () => {})}
+      onDeleteView={vi.fn(async () => {})}
+    />
+  ));
+  fireEvent.click(screen.getByRole('button', { name: 'View settings' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Board' }));
+  expect(view().layout).toBe('board');
+  expect(view().groupBy).toBe('status');
+});
+
 it('expands search inline, keeps focus while clearing, and closes with Escape without changing filters', async () => {
   const filter = {
     id: 'name',

@@ -25,6 +25,7 @@ import {
   on,
   Show,
 } from 'solid-js';
+import { defaultBoardGroupColumn } from '../core/board-grouping';
 import {
   type DatabaseViewColumn,
   type DatabaseViewConfig,
@@ -481,7 +482,11 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
               <FilterPanel
                 columns={props.columns}
                 filters={view().filters}
+                conjunction={view().filterConjunction ?? 'and'}
                 onChange={(filters) => change({ filters })}
+                onConjunctionChange={(filterConjunction) =>
+                  change({ filterConjunction })
+                }
               />
             </ToolbarPopover>
             <ToolbarPopover
@@ -688,7 +693,10 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
                     onClick={() =>
                       change({
                         layout: 'board',
-                        groupBy: view().groupBy ?? groups()[0]?.id ?? null,
+                        groupBy:
+                          view().groupBy ??
+                          defaultBoardGroupColumn(props.columns)?.id ??
+                          null,
                       })
                     }
                     class="flex h-9 flex-1 items-center justify-center gap-2 rounded-md text-xs text-ink-muted outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50"
