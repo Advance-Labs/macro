@@ -1,4 +1,5 @@
 import { databaseViewKeys } from '@app/features/block-database/queries/keys';
+import { showDatabaseSql } from '@core/constant/featureFlags';
 import type {
   NamedTool,
   ToolName,
@@ -11,6 +12,7 @@ import {
   changeColumnTypeHandler,
   deleteColumnHandler,
   deleteTableHandler,
+  queryDatabaseHandler,
   renameColumnHandler,
   renameDatabaseHandler,
   reorderColumnsHandler,
@@ -39,12 +41,31 @@ vi.mock(
     ),
   })
 );
-afterEach(cleanup);
+vi.mock('@queries/storage/databases', () => ({
+  useDatabaseDetailQuery: (databaseId: () => string | undefined) => ({
+    get isSuccess() {
+      return !!databaseId();
+    },
+    data: {
+      database: { id: databaseId(), name: 'Party Planner' },
+      tables: [
+        { table: { id: guestsTableId, name: 'Guests' } },
+        { table: { id: invitesTableId, name: 'Invites' } },
+      ],
+    },
+  }),
+}));
+afterEach(() => {
+  cleanup();
+  showDatabaseSql.enabled = false;
+});
 
 const databaseId = '01992d2f-8444-7000-8000-000000000001';
 const tableId = '01992d2f-8444-7000-8000-000000000002';
 const columnId = '01992d2f-8444-7000-8000-000000000003';
 const otherColumnId = '01992d2f-8444-7000-8000-000000000005';
+const guestsTableId = '01992d2f-8444-7000-8000-000000000006';
+const invitesTableId = '01992d2f-8444-7000-8000-000000000007';
 
 const database: NamedTool<'DescribeDatabase', 'response'>['data'] = {
   id: databaseId,
@@ -256,5 +277,82 @@ describe('SaveDatabaseView', () => {
     expect(invalidateQueries).toHaveBeenCalledExactlyOnceWith({
       queryKey: databaseViewKeys.saved.queryKey,
     });
+  });
+});
+
+describe('QueryDatabase with SQL hidden', () => {
+  const read = {
+    results: [{ columns: [{ name: 'Count' }], rows: [[12]] }],
+    changesApplied: 0,
+    readVersions: [{ tableId: invitesTableId, version: 4 }],
+    summary: 'Returned 1 row.',
+  };
+
+  it('names the table a read used, never the statement', () => {
+    const rendered = renderTool(
+      queryDatabaseHandler,
+      'QueryDatabase',
+      { databaseId, sql: 'SELECT COUNT(*) FROM "Invites"' },
+      read
+    );
+    expect(line(rendered)).toBe('Read Invites');
+  });
+
+  it('counts the rows a write changed in the table it wrote', () => {
+    const rendered = renderTool(
+      queryDatabaseHandler,
+      'QueryDatabase',
+      {
+        databaseId,
+        sql: `UPDATE "Guests" SET "Status" = 'Going' WHERE row_id = '1'`,
+      },
+      {
+        results: [],
+        changesApplied: 3,
+        newVersions: { [guestsTableId]: 9 },
+        readVersions: [],
+        summary: 'Applied 3 row changes.',
+      }
+    );
+    expect(line(rendered)).toBe('Updated 3 rows in Guests');
+  });
+
+  it('says which column an ALTER changed', () => {
+    const rendered = renderTool(
+      queryDatabaseHandler,
+      'QueryDatabase',
+      {
+        databaseId,
+        sql: 'ALTER TABLE "Items" ALTER COLUMN "Price" TYPE number',
+      },
+      {
+        results: [],
+        changesApplied: 0,
+        readVersions: [],
+        summary: 'Changed "Price" to number.',
+      }
+    );
+    expect(line(rendered)).toBe('Changed Price to number');
+  });
+
+  it('falls back to the database when nothing names a table', () => {
+    const rendered = renderTool(
+      queryDatabaseHandler,
+      'QueryDatabase',
+      { databaseId, sql: 'SELECT 1' },
+      { ...read, readVersions: [] }
+    );
+    expect(line(rendered)).toBe('Queried Party Planner');
+  });
+
+  it('keeps the server summary when SQL is shown', () => {
+    showDatabaseSql.enabled = true;
+    const rendered = renderTool(
+      queryDatabaseHandler,
+      'QueryDatabase',
+      { databaseId, sql: 'SELECT COUNT(*) FROM "Invites"' },
+      read
+    );
+    expect(line(rendered)).toBe('Returned 1 row.');
   });
 });

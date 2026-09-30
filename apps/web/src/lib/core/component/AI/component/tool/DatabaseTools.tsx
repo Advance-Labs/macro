@@ -11,16 +11,69 @@ import {
   StaticMarkdown,
   StaticMarkdownContext,
 } from '@core/component/LexicalMarkdown/component/core/StaticMarkdown';
+import { isFeatureEnabled, showDatabaseSql } from '@core/constant/featureFlags';
 import DatabaseIcon from '@phosphor/database.svg';
 import TableIcon from '@phosphor/table.svg';
 import { queryClient } from '@queries/client';
+import { useDatabaseDetailQuery } from '@queries/storage/databases';
 import type { NamedTool } from '@service-cognition/generated/tools/tool';
 import { createSignal, For, Show } from 'solid-js';
+import { match } from 'ts-pattern';
 import { BaseTool } from './BaseTool';
 import { Tool } from './Tool';
 import { createToolRenderer } from './ToolRenderer';
 
 type DatabaseSchema = NamedTool<'DescribeDatabase', 'response'>['data'];
+type QueryDatabaseResult = NamedTool<'QueryDatabase', 'response'>['data'];
+
+/**
+ * What a QueryDatabase call did, in words, for when SQL is hidden. Tables and
+ * row counts come from the result; the statement's first keyword only picks
+ * the verb and is never shown.
+ */
+export function describeDatabaseQuery(input: {
+  statement: string;
+  result: QueryDatabaseResult;
+  tableName: (tableId: string) => string | undefined;
+  databaseName: string | undefined;
+}): string {
+  const names = (tableIds: string[]) =>
+    [
+      ...new Set(
+        tableIds.map(input.tableName).filter((name): name is string => !!name)
+      ),
+    ].join(', ');
+  const keyword = input.statement
+    .replace(/^(?:\s|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)+/, '')
+    .match(/^\w+/)?.[0]
+    .toUpperCase();
+  if (keyword === 'ALTER')
+    return input.result.summary.replace(/"([^"]+)"/g, '$1').replace(/\.$/, '');
+  const write = match(keyword)
+    .with('INSERT', () => ({ verb: 'Added', preposition: 'to' }))
+    .with('UPDATE', () => ({ verb: 'Updated', preposition: 'in' }))
+    .with('DELETE', () => ({ verb: 'Deleted', preposition: 'from' }))
+    .otherwise(() => undefined);
+  const changed = input.result.changesApplied;
+  if (write || changed > 0) {
+    const { verb, preposition } = write ?? {
+      verb: 'Changed',
+      preposition: 'in',
+    };
+    const where =
+      names(Object.keys(input.result.newVersions ?? {})) || input.databaseName;
+    const rows =
+      changed === 0 ? 'no rows' : `${changed} row${changed === 1 ? '' : 's'}`;
+    return where
+      ? `${verb} ${rows} ${preposition} ${where}`
+      : `${verb} ${rows}`;
+  }
+  const read = names(input.result.readVersions.map((table) => table.tableId));
+  if (read) return `Read ${read}`;
+  return input.databaseName
+    ? `Queried ${input.databaseName}`
+    : 'Queried database';
+}
 
 function SchemaTableList(props: { schema: DatabaseSchema }) {
   return (
@@ -131,6 +184,25 @@ export const queryDatabaseHandler = createToolRenderer({
   name: 'QueryDatabase',
   render: (ctx) => {
     const [expanded, setExpanded] = createSignal(true);
+    const showSql = isFeatureEnabled(showDatabaseSql);
+    // The result carries table ids; the plain-words title names them from the schema.
+    const detailQuery = useDatabaseDetailQuery(() =>
+      showSql ? undefined : (ctx.tool.data.databaseId ?? undefined)
+    );
+    const detail = () => (detailQuery.isSuccess ? detailQuery.data : undefined);
+    const title = () => {
+      const result = ctx.response?.data;
+      if (!result) return 'Query database';
+      if (showSql) return result.summary || 'Query database';
+      return describeDatabaseQuery({
+        statement: ctx.tool.data.sql,
+        result,
+        tableName: (tableId) =>
+          detail()?.tables.find((table) => table.table.id === tableId)?.table
+            .name,
+        databaseName: detail()?.database.name,
+      });
+    };
     const answer = () => {
       const data = ctx.response?.data;
       if (!data?.results.length) return undefined;
@@ -175,9 +247,7 @@ export const queryDatabaseHandler = createToolRenderer({
         }
       >
         <div class="flex min-w-0 flex-1 items-center justify-between gap-3">
-          <span class="min-w-0 truncate">
-            {ctx.response?.data.summary || 'Query database'}
-          </span>
+          <span class="min-w-0 truncate">{title()}</span>
           <Tool.ResultToggle
             expanded={expanded()}
             onToggle={() => setExpanded((open) => !open)}
