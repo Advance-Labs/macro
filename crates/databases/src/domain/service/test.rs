@@ -1509,6 +1509,82 @@ async fn select_answers_row_id_first_and_maps_every_value_kind() {
 }
 
 #[tokio::test]
+async fn row_position_orders_rows_by_their_stored_position() {
+    let seeded = seeded().await;
+    let (svc, world, table_id) = (seeded.service, seeded.world, seeded.table_id);
+    svc.exec_sql(
+        viewer(OWNER),
+        ExecRequest {
+            scope: None,
+            sql: "INSERT INTO guests (name) VALUES ('Ada'), ('Bo')".into(),
+            base_versions: None,
+        },
+    )
+    .await
+    .unwrap();
+    // The store lists Sam, Ada, Bo; their positions put Bo first and Sam last.
+    for (row, position) in world
+        .lock()
+        .unwrap()
+        .rows
+        .get_mut(&table_id)
+        .unwrap()
+        .iter_mut()
+        .zip(["0003", "0002", "0001"])
+    {
+        row.position = position.into();
+    }
+
+    let ascending = svc
+        .query_sql(
+            viewer(OWNER),
+            "SELECT name FROM guests ORDER BY row_position".into(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        ascending.results[0]
+            .rows
+            .iter()
+            .map(|row| row[1].clone())
+            .collect::<Vec<_>>(),
+        vec![
+            SqlValue::Text("Bo".into()),
+            SqlValue::Text("Ada".into()),
+            SqlValue::Text("Sam".into()),
+        ]
+    );
+
+    let descending = svc
+        .query_sql(
+            viewer(OWNER),
+            "SELECT name, row_position FROM guests ORDER BY row_position DESC".into(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        descending.results[0]
+            .columns
+            .iter()
+            .map(|column| column.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["row_id", "Name", "row_position"]
+    );
+    assert_eq!(
+        descending.results[0]
+            .rows
+            .iter()
+            .map(|row| row[1..].to_vec())
+            .collect::<Vec<_>>(),
+        vec![
+            vec![SqlValue::Text("Sam".into()), SqlValue::Text("0003".into())],
+            vec![SqlValue::Text("Ada".into()), SqlValue::Text("0002".into())],
+            vec![SqlValue::Text("Bo".into()), SqlValue::Text("0001".into())],
+        ]
+    );
+}
+
+#[tokio::test]
 async fn select_filters_orders_and_counts_by_group() {
     let seeded = seeded().await;
     let (svc, table_id) = (seeded.service, seeded.table_id);

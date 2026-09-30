@@ -29,7 +29,7 @@ use super::{DatabasesServiceImpl, MAX_SQL_LEN, events, infra};
 use crate::domain::catalog::{self, ColumnEntry, PropertyType, TableEntry};
 use crate::domain::models::{
     AlteredColumn, ChangeColumnType, DatabaseError, DatabaseId, ExecOutcome, ExecRequest,
-    PropertyDefinitionId, QueryError, QueryResult, ResultColumn, RowId, SqlValue, TableId,
+    PropertyDefinitionId, QueryError, QueryResult, ResultColumn, RowId, RowRef, SqlValue, TableId,
     TableVersion, Viewer,
 };
 use crate::domain::ports::{
@@ -219,13 +219,16 @@ where
     pub(super) async fn rows_with_cells(
         &self,
         table_id: TableId,
-    ) -> Result<Vec<(RowId, HashMap<PropertyDefinitionId, PropertyValue>)>, QueryError> {
+    ) -> Result<Vec<(RowRef, HashMap<PropertyDefinitionId, PropertyValue>)>, QueryError> {
         let refs = self.repo.row_refs(table_id).await.map_err(infra)?;
         let ids: Vec<RowId> = refs.iter().map(|row| row.id).collect();
         let mut cells = self.cells.cells(&ids).await.map_err(infra)?;
         Ok(refs
             .into_iter()
-            .map(|row| (row.id, cells.remove(&row.id).unwrap_or_default()))
+            .map(|row| {
+                let row_cells = cells.remove(&row.id).unwrap_or_default();
+                (row, row_cells)
+            })
             .collect())
     }
 }
@@ -263,7 +266,7 @@ fn entry_for(entries: &[TableEntry], table: TableId) -> Result<&TableEntry, Quer
 struct Source<'a, Service> {
     service: &'a Service,
     entries: &'a [TableEntry],
-    /// Per table: its rows keyed by definition id, in position order.
+    /// Per table: its rows keyed by definition id, with their positions.
     loaded: Mutex<HashMap<TableId, Vec<EngineRow>>>,
 }
 
@@ -289,8 +292,9 @@ where
             .await
             .map_err(|error| SourceError(error.to_string()))?
             .into_iter()
-            .map(|(id, cells)| EngineRow {
-                id,
+            .map(|(row, cells)| EngineRow {
+                id: row.id,
+                position: Some(row.position),
                 cells: cells
                     .into_iter()
                     .filter_map(|(definition, value)| {
@@ -397,7 +401,11 @@ fn rekey(row: EngineRow, needs: &[Uuid]) -> EngineRow {
             }
         }
     }
-    EngineRow { id: row.id, cells }
+    EngineRow {
+        id: row.id,
+        position: row.position,
+        cells,
+    }
 }
 
 /// Soup's evaluation of a `propf` expression: option or reference membership,

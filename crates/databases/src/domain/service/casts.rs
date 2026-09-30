@@ -74,10 +74,10 @@ where
             .filter(|(_, (_, verdict))| *verdict == Cast::Checked)
             .map(|(index, (target, _))| (index, Converter::new(&detail.definition, *target, false)))
             .collect();
-        for (row_id, cells) in &rows {
+        for (row, cells) in &rows {
             if let Some(value) = cells.get(&definition_id) {
                 for (_, converter) in &mut converters {
-                    converter.push(*row_id, value);
+                    converter.push(row.id, value);
                 }
             }
         }

@@ -134,11 +134,11 @@ where
             ));
         }
         let definition_id = detail.definition.definition.id;
-        let values = rows.iter().filter_map(|(row_id, cells)| {
+        let values = rows.iter().filter_map(|(row, cells)| {
             cells
                 .get(&definition_id)
                 .filter(|value| !is_empty(value))
-                .map(|value| (*row_id, value))
+                .map(|value| (row.id, value))
         });
         let contents = if values.clone().next().is_some() {
             Contents::Filled
