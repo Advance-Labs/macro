@@ -158,6 +158,9 @@ import type { UpdateCrmTeamSettingsRequest } from './generated/schemas/updateCrm
 import type { UpdateReminderRequest } from './generated/schemas/updateReminderRequest';
 import type { UploadExtractFolderHandler200 } from './generated/schemas/uploadExtractFolderHandler200';
 import type { UserApiKeysList } from './generated/schemas/userApiKeysList';
+import type { UserKvEntriesList } from './generated/schemas/userKvEntriesList';
+import type { UserKvEntry } from './generated/schemas/userKvEntry';
+import type { UserKvEntryValue } from './generated/schemas/userKvEntryValue';
 import type { UserPinsResponse } from './generated/schemas/userPinsResponse';
 import type { UserViewsResponse } from './generated/schemas/userViewsResponse';
 import type { View } from './generated/schemas/view';
@@ -723,6 +726,28 @@ export const storageServiceClient = {
     return await dssFetch(`/user-api-keys/${encodeURIComponent(args.id)}`, {
       method: 'DELETE',
     });
+  },
+
+  /** The caller's entries in one namespace of the per-user key-value store. */
+  async listUserKv(args: { namespace: string }) {
+    return (
+      await dssFetch<UserKvEntriesList>(
+        `/user-kv/${encodeURIComponent(args.namespace)}`,
+        { method: 'GET' }
+      )
+    ).map((result) => result.entries);
+  },
+
+  /** Create or replace one of the caller's key-value entries. */
+  async putUserKv(args: {
+    namespace: string;
+    key: string;
+    value: UserKvEntryValue;
+  }) {
+    return await dssFetch<UserKvEntry>(
+      `/user-kv/${encodeURIComponent(args.namespace)}/${encodeURIComponent(args.key)}`,
+      { method: 'PUT', body: JSON.stringify({ value: args.value }) }
+    );
   },
 
   async getBotChannels(args: WithBotId) {
