@@ -415,7 +415,7 @@ export function DatabaseTable(props: {
       />
       <div
         ref={scrollContainer}
-        class="@container/database-grid min-h-0 flex-1 overflow-auto"
+        class="@container/database-grid min-h-0 flex-1 overflow-auto overscroll-x-none"
       >
         <div
           ref={(grid) => {
