@@ -3,9 +3,10 @@
 //! ## Failure and rollout contract
 //!
 //! The additive migration must land before notification-service starts writing
-//! outbox rows. A one-second recovery cadence drains at most 25 operations per
-//! 15-second batch; individual preparation claims have a 30-second lease and a
-//! 15-second operation timeout. Failed preparation/publication/cleanup claims
+//! outbox rows. A one-second recovery cadence runs at most 25 iterations per
+//! 15-second batch; each iteration can attempt preparation, intent publication,
+//! and digest cleanup. Individual preparation claims have a 30-second lease and
+//! a 15-second operation timeout. Failed preparation/publication/cleanup claims
 //! use bounded exponential backoff so a poison row does not starve newer work.
 //!
 //! Queue publication is intentionally at-least-once: a crash after SQS accepts

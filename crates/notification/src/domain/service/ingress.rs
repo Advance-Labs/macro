@@ -730,9 +730,9 @@ where
     /// Build queue messages for each delivery channel.
     ///
     /// - `send_conn_gateway`: Creates a single message for all recipients (1:M)
-    /// - `build_apns`: Creates one message per recipient with their device endpoints (1:1)
+    /// - `build_apns`: Creates one mobile message with per-user iOS/Android endpoints (1:M)
     /// - `build_email`: Creates one message per recipient (1:1)
-    ///   Returns `(queue_messages, apns_collapse_key)`.
+    ///   Returns `(queue_messages, mobile_collapse_key)`.
     async fn build_queue_message<
         'a,
         T: Clone + Serialize + Send + Sync,
