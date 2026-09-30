@@ -1,5 +1,10 @@
 import type { OpenEngine } from '@core/database-sql/driver';
-import type { Catalog, Page, Step } from '@core/database-sql/generated/types';
+import type {
+  Catalog,
+  Page,
+  Schema,
+  Step,
+} from '@core/database-sql/generated/types';
 import type { CacheHost } from '@graphql-cache/host/types';
 import type {
   CacheRevision,
@@ -17,8 +22,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { empty, fromPromise, fromValue, mergeMap, pipe } from 'wonka';
 import { createDatabaseSqlQuery } from './create-database-sql-query';
 
+const CRM = '01990000-0000-7000-8000-00000000db01';
 const DEALS = '01990000-0000-7000-8000-00000000d001';
 const NAME = '01990000-0000-7000-8000-00000000c001';
+const NAME_COLUMN = '01990000-0000-7000-8000-00000000b001';
 const ACME = '01990000-0000-7000-8000-00000000e001';
 const GLOBEX = '01990000-0000-7000-8000-00000000e002';
 
@@ -28,13 +35,23 @@ const catalog: Catalog = {
   tables: [
     {
       id: DEALS,
+      databaseId: CRM,
       database: 'crm',
       name: 'deals',
       source: 'database',
-      columns: [{ id: NAME, name: 'name', kind: { kind: 'text' } }],
+      columns: [
+        {
+          id: NAME,
+          placement: NAME_COLUMN,
+          name: 'name',
+          kind: { kind: 'text' },
+        },
+      ],
     },
   ],
 };
+/** What the fake builder answers `catalog` for; the builder is the engine's. */
+const schema: Schema = { databases: [], platform: [] };
 
 function deal(id: string, name: string, createdAt: string): SoupItem {
   return {
@@ -91,13 +108,15 @@ const names: OpenEngine = async () => {
     truncated: false,
     insertedRowIds: [],
     changesApplied: 0,
-    failures: [],
   });
   return {
     start: () => fetch,
     feed_page: (_id, page) => done(page),
     feed_bins: () => {
       throw 'no bins';
+    },
+    feed_ops: () => {
+      throw 'no writes';
     },
     free: () => {},
   };
@@ -173,11 +192,12 @@ describe('createDatabaseSqlQuery', () => {
     const query = createRoot((cleanup) => {
       dispose = cleanup;
       return createDatabaseSqlQuery(
-        () => ({ catalog, sql: 'SELECT name FROM crm.deals' }),
+        () => ({ schema, sql: 'SELECT name FROM crm.deals' }),
         {
           client: () => client,
           cacheHost: () => host,
           people: async () => [],
+          catalog: async () => catalog,
           open: names,
         }
       );
@@ -227,7 +247,6 @@ describe('createDatabaseSqlQuery', () => {
       truncated: false,
       insertedRowIds: [],
       changesApplied: 0,
-      failures: [],
     });
     const open: OpenEngine = async (_catalog, sql) => {
       if (sql.includes('WHERE')) await released;
@@ -235,17 +254,21 @@ describe('createDatabaseSqlQuery', () => {
         start: () => answered(sql),
         feed_page: () => answered(sql),
         feed_bins: () => answered(sql),
+        feed_ops: () => {
+          throw 'no writes';
+        },
         free: () => {},
       };
     };
     const [sql, setSql] = createSignal('SELECT name FROM crm.deals');
     const query = createRoot((cleanup) => {
       dispose = cleanup;
-      return createDatabaseSqlQuery(() => ({ catalog, sql: sql() }), {
+      return createDatabaseSqlQuery(() => ({ schema, sql: sql() }), {
         client: () =>
           createClient({ url: 'http://test.invalid', exchanges: [] }),
         cacheHost: () => undefined,
         people: async () => [],
+        catalog: async () => catalog,
         open,
       });
     });
@@ -307,11 +330,12 @@ describe('createDatabaseSqlQuery', () => {
     const query = createRoot((cleanup) => {
       dispose = cleanup;
       return createDatabaseSqlQuery(
-        () => ({ catalog, sql: 'SELECT name FROM crm.deals' }),
+        () => ({ schema, sql: 'SELECT name FROM crm.deals' }),
         {
           client: () => client,
           cacheHost: () => undefined,
           people: async () => [],
+          catalog: async () => catalog,
           open: names,
         }
       );
@@ -391,11 +415,12 @@ describe('createDatabaseSqlQuery', () => {
     const query = createRoot((cleanup) => {
       dispose = cleanup;
       return createDatabaseSqlQuery(
-        () => ({ catalog, sql: 'SELECT name FROM crm.deals' }),
+        () => ({ schema, sql: 'SELECT name FROM crm.deals' }),
         {
           client: () => client,
           cacheHost: () => host,
           people: async () => [],
+          catalog: async () => catalog,
           open: names,
         }
       );

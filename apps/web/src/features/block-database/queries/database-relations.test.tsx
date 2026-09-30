@@ -1,4 +1,4 @@
-import type { Outcome } from '@core/database-sql/generated/types';
+import type { Catalog, Outcome } from '@core/database-sql/generated/types';
 import type { DatabaseSqlQueryCapabilities } from '@queries/database-sql/create-database-sql-query';
 import type {
   DatabaseColumnDetail,
@@ -67,6 +67,27 @@ const detail: DatabaseDetail = {
     },
   ],
 };
+/** The catalog the engine builds of `detail`. */
+const catalog: Catalog = {
+  tables: [
+    {
+      id: 'customers',
+      databaseId: 'db',
+      database: 'Support',
+      name: 'Customers',
+      source: 'database',
+      columns: [
+        {
+          id: 'name-definition',
+          placement: 'name',
+          name: 'Name',
+          kind: { kind: 'text' },
+        },
+      ],
+    },
+  ],
+};
+
 /** The engine's answer for the customers table, after one Soup page. */
 function engine(names: () => string[]) {
   const reads: string[] = [];
@@ -93,6 +114,7 @@ function engine(names: () => string[]) {
     client: () => client,
     cacheHost: () => undefined,
     people: async () => [],
+    catalog: async () => catalog,
     open: async (_catalog, sql) => {
       reads.push(sql);
       const answer: Outcome = {
@@ -103,7 +125,6 @@ function engine(names: () => string[]) {
         truncated: false,
         insertedRowIds: [],
         changesApplied: 0,
-        failures: [],
       };
       return {
         start: () => ({
@@ -122,6 +143,9 @@ function engine(names: () => string[]) {
         feed_page: () => ({ step: 'done', ...answer }),
         feed_bins: () => {
           throw 'no bins';
+        },
+        feed_ops: () => {
+          throw 'no writes';
         },
         free: () => {},
       };

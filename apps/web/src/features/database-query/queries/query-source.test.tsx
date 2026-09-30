@@ -1,4 +1,8 @@
-import type { Catalog, Outcome } from '@core/database-sql/generated/types';
+import type {
+  Catalog,
+  Outcome,
+  Schema,
+} from '@core/database-sql/generated/types';
 import type { DatabaseSqlQueryCapabilities } from '@queries/database-sql/create-database-sql-query';
 import { databaseCompletionRequest } from '@service-cognition/database-query-prompt';
 import type { DatabaseDetail } from '@service-storage/databases';
@@ -117,9 +121,32 @@ describe('query schema', () => {
   });
 });
 
+/** The catalog the engine builds of `workspace` and `personal`. */
+const catalog: Catalog = {
+  tables: [
+    {
+      id: 'projects-table',
+      databaseId: 'db-work',
+      database: 'Work',
+      name: 'Projects',
+      source: 'database',
+      columns: [],
+    },
+    {
+      id: 'projects-personal',
+      databaseId: 'db-personal',
+      database: 'Personal',
+      name: 'Projects',
+      source: 'database',
+      columns: [],
+    },
+  ],
+};
+
 /** The engine's answer to any statement, after one Soup page, noting each run. */
 function engine(count: () => number, offline: () => boolean = () => false) {
-  const runs: { sql: string; catalog: Catalog }[] = [];
+  const runs: string[] = [];
+  const builds: { schema: Schema; scope?: string }[] = [];
   const exchange: Exchange = () => (incoming) =>
     pipe(
       incoming,
@@ -150,8 +177,12 @@ function engine(count: () => number, offline: () => boolean = () => false) {
     client: () => client,
     cacheHost: () => undefined,
     people: async () => [],
-    open: async (catalog, sql) => {
-      runs.push({ catalog, sql });
+    catalog: async (schema, scope) => {
+      builds.push({ schema, scope });
+      return catalog;
+    },
+    open: async (_catalog, sql) => {
+      runs.push(sql);
       const answer: Outcome = {
         columns: [{ name: 'COUNT(*)', kind: 'number' }],
         rows: [[{ type: 'number', value: count() }]],
@@ -160,7 +191,6 @@ function engine(count: () => number, offline: () => boolean = () => false) {
         truncated: false,
         insertedRowIds: [],
         changesApplied: 0,
-        failures: [],
       };
       return {
         start: () => ({
@@ -180,11 +210,14 @@ function engine(count: () => number, offline: () => boolean = () => false) {
         feed_bins: () => {
           throw 'no bins';
         },
+        feed_ops: () => {
+          throw 'no writes';
+        },
         free: () => {},
       };
     },
   };
-  return { read, runs };
+  return { read, runs, builds };
 }
 
 const workspace: DatabaseDetail = {
@@ -228,7 +261,7 @@ const personal: DatabaseDetail = {
 
 describe('live query source', () => {
   it('answers a saved query in the browser over every database the viewer can reach, as the exec API would', async () => {
-    const { read, runs } = engine(() => 2);
+    const { read, runs, builds } = engine(() => 2);
     let source!: LiveQuerySource;
     const dispose = createRoot((dispose) => {
       source = createLiveQuerySource({
@@ -257,26 +290,26 @@ describe('live query source', () => {
         truncated_tables: [],
       })
     );
-    expect(runs).toEqual([
+    expect(runs).toEqual(['SELECT COUNT(*) FROM Projects']);
+    expect(builds).toEqual([
       {
-        sql: 'SELECT COUNT(*) FROM Projects',
-        catalog: {
-          tables: [
+        scope: 'db-work',
+        schema: {
+          databases: [
             {
-              id: 'projects-table',
-              database: 'Work',
-              name: 'Projects',
-              source: 'database',
-              columns: [],
+              id: 'db-work',
+              name: 'Work',
+              tables: [{ id: 'projects-table', name: 'Projects', columns: [] }],
             },
             {
-              id: 'projects-personal',
-              database: 'Personal',
-              name: 'Projects',
-              source: 'database',
-              columns: [],
+              id: 'db-personal',
+              name: 'Personal',
+              tables: [
+                { id: 'projects-personal', name: 'Projects', columns: [] },
+              ],
             },
           ],
+          platform: [],
         },
       },
     ]);

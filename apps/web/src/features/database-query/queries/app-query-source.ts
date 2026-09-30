@@ -1,5 +1,5 @@
 import { databaseSqlAnswer } from '@core/database-sql/answer';
-import { databaseSqlCatalog } from '@core/database-sql/catalog';
+import { databaseSqlSchema } from '@core/database-sql/catalog';
 import { throwOnErr } from '@core/util/result';
 import { queryClient } from '@queries/client';
 import { readDatabaseSql } from '@queries/database-sql/create-database-sql-query';
@@ -31,12 +31,11 @@ export const queryCapabilities: QueryCapabilities = createQuestionCapabilities({
   // A draft question may read any database the viewer can reach.
   read: async (sql) => {
     const databases = await fetchViewerDatabases();
-    const catalog = databaseSqlCatalog(databases);
-    return databaseSqlAnswer(
-      await readDatabaseSql({ catalog, sql }),
-      catalog,
-      databases
-    );
+    const { catalog, outcome } = await readDatabaseSql({
+      schema: databaseSqlSchema(databases),
+      sql,
+    });
+    return databaseSqlAnswer(outcome, catalog, databases);
   },
   describe: (databaseId) =>
     queryClient.fetchQuery({

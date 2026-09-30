@@ -1,5 +1,5 @@
 import { databaseSqlAnswer } from '@core/database-sql/answer';
-import { databaseSqlCatalog } from '@core/database-sql/catalog';
+import { databaseSqlSchema } from '@core/database-sql/catalog';
 import { DatabaseSqlError } from '@core/database-sql/driver';
 import { throwOnErr } from '@core/util/result';
 import {
@@ -207,10 +207,8 @@ export function createDatabaseRowsSource(props: {
         const text = sql(table);
         if (text === undefined) return undefined;
         return {
-          catalog: databaseSqlCatalog(
-            [{ ...detail, tables: [table] }],
-            props.databaseId
-          ),
+          schema: databaseSqlSchema([{ ...detail, tables: [table] }]),
+          scope: props.databaseId,
           sql: text,
         };
       },
@@ -248,14 +246,11 @@ export function createDatabaseRowsSource(props: {
     untrack(() => currentTable().table.version)
   );
 
-  function rowsOf(
-    query: DatabaseSqlQuery,
-    statement: Accessor<DatabaseSqlStatement | undefined>
-  ): DatabaseRow[] | undefined {
+  function rowsOf(query: DatabaseSqlQuery): DatabaseRow[] | undefined {
     const outcome = query.outcome();
-    const current = statement();
-    if (!outcome || !current) return undefined;
-    const result = databaseSqlAnswer(outcome, current.catalog, []).results[0];
+    const catalog = query.catalog();
+    if (!outcome || !catalog) return undefined;
+    const result = databaseSqlAnswer(outcome, catalog, []).results[0];
     const rowIdIndex =
       result?.columns.findIndex((column) => column.name === ROW_ID_COLUMN) ??
       -1;
@@ -283,12 +278,12 @@ export function createDatabaseRowsSource(props: {
   const retainedRows = () => {
     const ids = retainedRowIds();
     if (!ids.length) return [];
-    return (rowsOf(retainedQuery, retainedStatement) ?? []).filter((row) =>
+    return (rowsOf(retainedQuery) ?? []).filter((row) =>
       ids.includes(row.rowId)
     );
   };
   const snapshot = () => {
-    const rows = rowsOf(rowsQuery, viewStatement);
+    const rows = rowsOf(rowsQuery);
     if (!rows) return undefined;
     return { version: readVersion(), rows, retained: retainedRows() };
   };

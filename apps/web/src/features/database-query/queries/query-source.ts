@@ -1,5 +1,5 @@
 import { databaseSqlAnswer } from '@core/database-sql/answer';
-import { databaseSqlCatalog } from '@core/database-sql/catalog';
+import { databaseSqlSchema } from '@core/database-sql/catalog';
 import {
   createDatabaseSqlQuery,
   type DatabaseSqlQueryCapabilities,
@@ -108,7 +108,8 @@ export function createLiveQuerySource(input: {
       return (
         saved &&
         databases && {
-          catalog: databaseSqlCatalog(databases, saved.databaseId),
+          schema: databaseSqlSchema(databases),
+          scope: saved.databaseId,
           sql: saved.sql,
         }
       );
@@ -119,10 +120,10 @@ export function createLiveQuerySource(input: {
   const query = createDatabaseSqlQuery(statement, input.read);
   const answer = createMemo(() => {
     const outcome = query.outcome();
-    const current = statement();
+    const catalog = query.catalog();
     const databases = input.databases();
-    return outcome && current && databases
-      ? databaseSqlAnswer(outcome, current.catalog, databases)
+    return outcome && catalog && databases
+      ? databaseSqlAnswer(outcome, catalog, databases)
       : undefined;
   });
   const error = () => input.loadError() ?? query.error();

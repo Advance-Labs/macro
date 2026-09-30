@@ -1,7 +1,7 @@
 /**
- * A live SQL statement: the engine runs in the browser over the GraphQL row
- * source, and runs again whenever the normalized cache changes, reading the
- * cache the second time. Cell edits reach the result through the cached
+ * A live SQL statement: the engine builds the statement's catalog from its
+ * schema, runs in the browser over the GraphQL row source, and runs again
+ * whenever the normalized cache changes, reading the cache the second time. Cell edits reach the result through the cached
  * rows; rows the cache learns about through the local filter index. A
  * changed statement keeps the last answer until its own arrives.
  */
@@ -11,7 +11,12 @@ import {
   type RowSource,
   runDatabaseSql,
 } from '@core/database-sql/driver';
-import type { Catalog, Outcome } from '@core/database-sql/generated/types';
+import type {
+  Catalog,
+  Outcome,
+  Schema,
+} from '@core/database-sql/generated/types';
+import { buildDatabaseSqlCatalog } from '@core/database-sql/wasm-module';
 import { idToDisplayName, idToEmail } from '@core/user/util';
 import type { CacheHost } from '@graphql-cache/host/types';
 import { queryClient } from '@queries/client';
@@ -24,6 +29,7 @@ import {
 import type { Client, RequestPolicy } from '@urql/core';
 import {
   type Accessor,
+  batch,
   createEffect,
   createSignal,
   on,
@@ -36,8 +42,11 @@ import {
   type Person,
 } from './graphql-source';
 
+/** A statement and the databases its catalog is built from. */
 export interface DatabaseSqlStatement {
-  catalog: Catalog;
+  schema: Schema;
+  /** The database the statement is written from: its tables win name ties. */
+  scope?: string;
   sql: string;
 }
 
@@ -48,9 +57,13 @@ export function sameDatabaseSqlStatement(
 ): boolean {
   return (
     left?.sql === right?.sql &&
-    JSON.stringify(left?.catalog) === JSON.stringify(right?.catalog)
+    left?.scope === right?.scope &&
+    JSON.stringify(left?.schema) === JSON.stringify(right?.schema)
   );
 }
+
+/** Builds a statement's catalog; the wasm engine unless a test says otherwise. */
+export type BuildCatalog = (schema: Schema, scope?: string) => Promise<Catalog>;
 
 export interface DatabaseSqlQueryCapabilities {
   client: () => Client;
@@ -60,11 +73,14 @@ export interface DatabaseSqlQueryCapabilities {
   people: () => Promise<Person[]>;
   /** The engine; the wasm module unless a test says otherwise. */
   open?: OpenEngine;
+  catalog?: BuildCatalog;
 }
 
 export interface DatabaseSqlQuery {
   /** The last answer; kept while a later run, of this statement or a changed one, is in flight. */
   outcome: Accessor<Outcome | undefined>;
+  /** The catalog the last answer was read against. */
+  catalog: Accessor<Catalog | undefined>;
   /** Why the last run failed, until one succeeds. */
   error: Accessor<unknown>;
   loading: Accessor<boolean>;
@@ -93,6 +109,7 @@ export function createDatabaseSqlQuery(
   capabilities: DatabaseSqlQueryCapabilities = productionDatabaseSqlCapabilities()
 ): DatabaseSqlQuery {
   const [outcome, setOutcome] = createSignal<Outcome>();
+  const [catalog, setCatalog] = createSignal<Catalog>();
   const [error, setError] = createSignal<unknown>();
   const [loading, setLoading] = createSignal(false);
   let latest = 0;
@@ -110,25 +127,32 @@ export function createDatabaseSqlQuery(
   ) => {
     const run = ++latest;
     const host = capabilities.cacheHost();
-    const source: RowSource = createGraphqlRowSource({
-      client: capabilities.client(),
-      catalog: current.catalog,
-      requestPolicy,
-      people: capabilities.people,
-      membership: host ? { host, baselines, reconcile } : undefined,
-    });
     setLoading(true);
     try {
-      const answer = await runDatabaseSql(current.catalog, current.sql, {
+      const built = await (capabilities.catalog ?? buildDatabaseSqlCatalog)(
+        current.schema,
+        current.scope
+      );
+      const source: RowSource = createGraphqlRowSource({
+        client: capabilities.client(),
+        catalog: built,
+        requestPolicy,
+        people: capabilities.people,
+        membership: host ? { host, baselines, reconcile } : undefined,
+      });
+      const answer = await runDatabaseSql(built, current.sql, {
         source,
         ...(capabilities.open ? { open: capabilities.open } : {}),
       });
       if (run !== latest) return;
       // A cache change that left the answer alone keeps the same outcome.
-      if (JSON.stringify(untrack(outcome)) !== JSON.stringify(answer)) {
-        setOutcome(answer);
-      }
-      setError(undefined);
+      batch(() => {
+        if (JSON.stringify(untrack(catalog)) !== JSON.stringify(built))
+          setCatalog(built);
+        if (JSON.stringify(untrack(outcome)) !== JSON.stringify(answer))
+          setOutcome(answer);
+        setError(undefined);
+      });
     } catch (failure) {
       if (run !== latest) return;
       setError(failure);
@@ -145,7 +169,10 @@ export function createDatabaseSqlQuery(
       setError(undefined);
       setLoading(false);
       if (!current) {
-        setOutcome(undefined);
+        batch(() => {
+          setOutcome(undefined);
+          setCatalog(undefined);
+        });
         return;
       }
       void settled(run(current, 'cache-and-network', false));
@@ -172,6 +199,7 @@ export function createDatabaseSqlQuery(
 
   return {
     outcome,
+    catalog,
     error,
     loading,
     refresh: async () => {
@@ -205,11 +233,15 @@ export function refreshInBackground(reader: {
 }
 
 /** One read of a statement from the network, for an answer nothing keeps live. */
-export function readDatabaseSql(
-  { catalog, sql }: DatabaseSqlStatement,
+export async function readDatabaseSql(
+  { schema, scope, sql }: DatabaseSqlStatement,
   capabilities: DatabaseSqlQueryCapabilities = productionDatabaseSqlCapabilities()
-): Promise<Outcome> {
-  return runDatabaseSql(catalog, sql, {
+): Promise<{ catalog: Catalog; outcome: Outcome }> {
+  const catalog = await (capabilities.catalog ?? buildDatabaseSqlCatalog)(
+    schema,
+    scope
+  );
+  const outcome = await runDatabaseSql(catalog, sql, {
     source: createGraphqlRowSource({
       client: capabilities.client(),
       catalog,
@@ -218,4 +250,5 @@ export function readDatabaseSql(
     }),
     ...(capabilities.open ? { open: capabilities.open } : {}),
   });
+  return { catalog, outcome };
 }

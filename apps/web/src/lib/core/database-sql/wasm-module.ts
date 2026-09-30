@@ -9,10 +9,17 @@
  * src/lib/core/database-sql/wasm/ (gitignored).
  */
 
-import type { Bin, Catalog, Page, Step } from './generated/types';
+import type {
+  Bin,
+  Catalog,
+  OpResult,
+  Page,
+  Schema,
+  Step,
+} from './generated/types';
 
 /**
- * One `SELECT` in flight. Mirrors `database_sql::wasm::Query`, whose
+ * One statement in flight. Mirrors `database_sql::wasm::Query`, whose
  * methods cross as untyped `JsValue`s: read the first step once, then feed
  * each request's answer back until `done`. Every method throws a string the
  * agent should read.
@@ -21,6 +28,7 @@ export interface DatabaseSqlQuery {
   start: () => Step;
   feed_page: (requestId: number, page: Page) => Step;
   feed_bins: (requestId: number, bins: Bin[]) => Step;
+  feed_ops: (requestId: number, results: OpResult[]) => Step;
   /** Releases the engine's wasm memory. */
   free: () => void;
 }
@@ -32,6 +40,8 @@ interface DatabaseSqlWasmModule {
     catalog: Catalog,
     sql: string
   ) => DatabaseSqlQuery;
+  /** The catalog a statement run from `scope` sees. Throws a string. */
+  buildCatalog: (schema: Schema, scope: string | undefined) => Catalog;
 }
 
 let modulePromise: Promise<DatabaseSqlWasmModule> | undefined;
@@ -63,4 +73,13 @@ export async function openDatabaseSqlQuery(
 ): Promise<DatabaseSqlQuery> {
   const { Query } = await loadDatabaseSqlWasm();
   return new Query(catalog, sql);
+}
+
+/** The catalog a statement run from `scope` sees, built by the engine. */
+export async function buildDatabaseSqlCatalog(
+  schema: Schema,
+  scope?: string
+): Promise<Catalog> {
+  const { buildCatalog } = await loadDatabaseSqlWasm();
+  return buildCatalog(schema, scope);
 }

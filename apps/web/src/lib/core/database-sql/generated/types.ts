@@ -45,10 +45,50 @@ export type Cell =
   /**  The referenced entity ids; one for single-valued columns. */
   | { type: 'entities'; value: string[] };
 
+/**
+ *  A cell's value. It must fit the column's type: text for a text column,
+ *  options of the column for a select, and so on.
+ */
+export type CellValue =
+  /**  Free text. */
+  | { type: 'text'; value: string }
+  /**  A finite number. */
+  | { type: 'number'; value: number }
+  /**  A checkbox. */
+  | { type: 'boolean'; value: boolean }
+  /**  A date-time. */
+  | { type: 'date'; value: string }
+  /**  Complete http or https URLs; at most one for a single-valued column. */
+  | { type: 'link'; value: string[] }
+  /**
+   *  Options of a select or tag column; at most one for a single-valued
+   *  column.
+   */
+  | { type: 'options'; value: OptionRef[] }
+  /**
+   *  References to Macro entities of the kind the column points at; at
+   *  most one for a single-valued column.
+   */
+  | { type: 'entities'; value: EntityRef[] }
+  /**  Rows of the table a relation column points at, by [`RowId`]. */
+  | { type: 'rows'; value: string[] }
+  /**  No value: the cell is emptied. */
+  | { type: 'clear' };
+
+/**  One cell of a row: which column, and its new value. */
+export type CellWrite = {
+  /**  The column placement. */
+  column: string;
+  /**  The value, or [`CellValue::Clear`] to empty the cell. */
+  value: CellValue;
+};
+
 /**  One column: a property definition bound to the table. */
 export type Column = {
-  /**  The property definition id. */
+  /**  The property definition id: what reads key cells by. */
   id: string;
+  /**  The column placement: what writes name. */
+  placement: string;
   /**  The column's display name. */
   name: string;
   /**  What the column holds. */
@@ -88,6 +128,116 @@ export type ColumnKind =
       target: EntityKind;
     };
 
+/**  One column placement and the property definition behind it. */
+export type ColumnSchema = {
+  /**  The placement. */
+  id: string;
+  /**  The property definition. */
+  definition: string;
+  /**  The name it goes by: the placement's own, else the definition's. */
+  name: string;
+  /**  What it holds. */
+  property: PropertyType;
+  /**  The definition's options, in any order. */
+  options: OptionSchema[];
+};
+
+/**  The property types, spelled as the properties system spells them. */
+export type DataType =
+  /**  Free text. */
+  | 'STRING'
+  /**  A number. */
+  | 'NUMBER'
+  /**  A checkbox. */
+  | 'BOOLEAN'
+  /**  A date-time. */
+  | 'DATE'
+  /**  A URL. */
+  | 'LINK'
+  /**  Text options. */
+  | 'SELECT_STRING'
+  /**  Numeric options. */
+  | 'SELECT_NUMBER'
+  /**  Colored labels. */
+  | 'TAG'
+  /**  References to entities. */
+  | 'ENTITY';
+
+/**
+ *  One write to a database's data. A request's ops apply together or not at
+ *  all, and every op names a table of the database the request is for.
+ */
+export type DatabaseOp =
+  /**  Append rows to a table, in order, each with the cells it starts with. */
+  | {
+      kind: 'insert_rows';
+      /**  The table. */
+      table: string;
+      /**
+       *  One entry per new row: the cells it starts with. Columns left out
+       *  start empty.
+       */
+      rows: CellWrite[][];
+      /**
+       *  Create a select option for a label the column does not have yet,
+       *  instead of refusing the op.
+       */
+      createMissingOptions?: boolean;
+    }
+  /**
+   *  Write cells of existing rows. Last write wins: there is no version
+   *  check.
+   */
+  | {
+      kind: 'update_rows';
+      /**  The table the rows belong to. */
+      table: string;
+      /**  Which rows get which cells. */
+      changes: RowChanges;
+      /**
+       *  Create a select option for a label the column does not have yet,
+       *  instead of refusing the op.
+       */
+      createMissingOptions?: boolean;
+    }
+  /**  Remove rows and their cells. */
+  | {
+      kind: 'delete_rows';
+      /**  The table the rows belong to. */
+      table: string;
+      /**  The rows, each named once. */
+      rows: string[];
+    }
+  /**
+   *  Convert a column to another type, converting its cells. A value that
+   *  does not fit refuses the change unless `clearInvalid` empties it.
+   */
+  | {
+      kind: 'change_column_type';
+      /**  The table. */
+      table: string;
+      /**  The column placement; its id survives the change. */
+      column: string;
+      /**  The type it becomes. */
+      to: OpColumnKind;
+      /**
+       *  Empty the cells whose value does not fit, instead of refusing; a
+       *  cell with several values going to a single-valued type keeps its
+       *  first.
+       */
+      clearInvalid?: boolean;
+    };
+
+/**  One database and its tables, in order. */
+export type DatabaseSchema = {
+  /**  The database id. */
+  id: string;
+  /**  Its name, as users name it. */
+  name: string;
+  /**  Its tables. */
+  tables: TableSchema[];
+};
+
 /**
  *  What an entity column's references point at: a kind of Macro entity, or
  *  the rows of another table for a relation.
@@ -121,6 +271,14 @@ export type EntityKind =
   | 'INITIATIVE'
   /**  Rows of another table: the column is a relation. */
   | 'DATABASE_ROW';
+
+/**  A reference to one Macro entity. */
+export type EntityRef = {
+  /**  What kind of entity it is; it must be the kind the column points at. */
+  entityType: OpEntityKind;
+  /**  The entity's id. */
+  entityId: string;
+};
 
 /**  Every GraphQL query a plan can send. */
 export type GqlQuery =
@@ -171,6 +329,127 @@ export type KeyHint = {
   values: Cell[];
 };
 
+/**  A type a column can have. */
+export type OpColumnKind =
+  /**  Free text. */
+  | { type: 'text' }
+  /**  A number. */
+  | { type: 'number' }
+  /**  A checkbox. */
+  | { type: 'boolean' }
+  /**  A date-time. */
+  | { type: 'date' }
+  /**  A URL. */
+  | { type: 'link' }
+  /**  Text options. */
+  | {
+      type: 'select';
+      /**  Whether a cell holds several options. */
+      multi: boolean;
+    }
+  /**  Numeric options. */
+  | {
+      type: 'select_number';
+      /**  Whether a cell holds several options. */
+      multi: boolean;
+    }
+  /**  Colored labels; always several per cell. */
+  | { type: 'tag' }
+  /**  References to Macro entities. */
+  | {
+      type: 'entity';
+      /**  What the references point at. */
+      target: OpEntityKind;
+      /**  Whether a cell holds several references. */
+      multi: boolean;
+    }
+  /**  Rows of another table. */
+  | {
+      type: 'relation';
+      /**  The database of the related table. */
+      database: string;
+      /**  The related table. */
+      table: string;
+    };
+
+/**  A kind of Macro entity a reference column can point at. */
+export type OpEntityKind =
+  /**  People. */
+  | 'USER'
+  /**  Documents. */
+  | 'DOCUMENT'
+  /**  Tasks. */
+  | 'TASK'
+  /**  CRM companies. */
+  | 'COMPANY'
+  /**  Call recordings. */
+  | 'CALL_RECORD'
+  /**  Channels. */
+  | 'CHANNEL'
+  /**  AI chats. */
+  | 'CHAT'
+  /**  Projects. */
+  | 'PROJECT'
+  /**  Email threads. */
+  | 'THREAD'
+  /**  Calendar events. */
+  | 'CALENDAR_EVENT'
+  /**  Initiatives. */
+  | 'INITIATIVE';
+
+/**  What one op did, in the order the ops were sent. */
+export type OpResult =
+  /**  What an insert, update or delete did. */
+  | {
+      kind: 'rows_written';
+      /**  The table's version once the request committed. */
+      tableVersion: TableVersion;
+      /**
+       *  The rows an insert created, in the order they were sent; empty
+       *  for an update or a delete.
+       */
+      inserted: string[];
+      /**  How many rows the op inserted, updated or deleted. */
+      affected: number;
+    }
+  /**  What a column type change did. */
+  | {
+      kind: 'column_typed';
+      /**  The table's version after the change. */
+      tableVersion: TableVersion;
+      /**  Cells emptied because their value did not fit the new type. */
+      clearedCells: number;
+      /**  Cells that held several values and kept only their first. */
+      trimmedCells: number;
+    };
+
+/**  A select option, by its id or by its label. */
+export type OptionRef =
+  /**  An option the column has. */
+  | ({ id: string } & { label?: never })
+  /**
+   *  An option's label, matched without regard to case. An unknown label
+   *  is refused unless the op creates missing options.
+   */
+  | ({ label: string } & { id?: never });
+
+/**  One option of a select definition. */
+export type OptionSchema = {
+  /**  The option id. */
+  id: string;
+  /**  Its value. */
+  value: OptionValue;
+  /**  Where it sorts among the definition's options. */
+  order: number;
+};
+
+/**  An option's value. */
+export type OptionValue =
+  /**  A text option. */
+  | { type: 'string'; value: string }
+  /**  A numeric option. */
+  | { type: 'number'; value: number };
+
 /**  What a statement produced. */
 export type Outcome = {
   /**  The result columns, in select-list order; empty for writes. */
@@ -187,8 +466,6 @@ export type Outcome = {
   insertedRowIds: string[];
   /**  Rows a write changed. */
   changesApplied: number;
-  /**  Rows a write could not change, by statement position. */
-  failures: RowFailure[];
   /**  The column an `ALTER COLUMN` changed. */
   alteredColumn?: AlteredColumn | null;
 };
@@ -227,6 +504,23 @@ export type Page = {
   rows: Row[];
   /**  The cursor for the next page, if there is one. */
   next: string | null;
+};
+
+/**  A table every viewer has, whatever databases they can see. */
+export type PlatformTable =
+  /**  `macro.people`. */
+  'people';
+
+/**  A column's type as the properties system stores it. */
+export type PropertyType = {
+  /**  The property type. */
+  dataType: DataType;
+  /**  Whether the definition holds several values. */
+  multi: boolean;
+  /**  What a reference points at; people when unset. */
+  entityType: EntityKind | null;
+  /**  Whether the placement relates rows of another table. */
+  relation: boolean;
 };
 
 /**  A Soup `propf` expression. */
@@ -292,15 +586,40 @@ export type Row = {
   cells: { [key in string]: Cell };
 };
 
-/**  A write that did not land on one row. */
-export type RowFailure = {
-  /**
-   *  0-based position of the row in the statement; for `UPDATE` and
-   *  `DELETE`, always 0.
-   */
-  row: number;
-  /**  Why, as the writer said it. */
-  message: string;
+/**  One row's cells in a [`RowChanges::PerRow`] update. */
+export type RowChange = {
+  /**  The row. */
+  row: string;
+  /**  Its new cells. */
+  cells: CellWrite[];
+};
+
+/**  Which rows an update writes, and with what. */
+export type RowChanges =
+  /**  The same cells on every row. */
+  | {
+      kind: 'uniform';
+      /**  The rows. */
+      rows: string[];
+      /**  The cells each of them gets. */
+      cells: CellWrite[];
+    }
+  /**  Each row its own cells. */
+  | {
+      kind: 'per_row';
+      /**  The rows and their cells, in order. */
+      rows: RowChange[];
+    };
+
+/**
+ *  What a catalog is built from: the viewer's databases, and the platform
+ *  tables to add.
+ */
+export type Schema = {
+  /**  The databases, in the order their tables are listed. */
+  databases: DatabaseSchema[];
+  /**  The platform tables the caller can read. */
+  platform?: PlatformTable[];
 };
 
 /**  One option of a select column. */
@@ -324,6 +643,19 @@ export type Step =
   | ({
       step: 'bins';
     } & Request)
+  /**
+   *  Apply these ops to the database, together, and feed their results to
+   *  [`Engine::feed_ops`].
+   */
+  | {
+      step: 'ops';
+      /**  Identifies the request; the feed must quote it. */
+      id: number;
+      /**  The database the ops are for. */
+      database: string;
+      /**  The ops, in order. */
+      ops: DatabaseOp[];
+    }
   /**  The answer. */
   | ({
       step: 'done';
@@ -333,6 +665,8 @@ export type Step =
 export type Table = {
   /**  The table id. */
   id: string;
+  /**  The database the table belongs to: where its writes are sent. */
+  databaseId: string;
   /**  The database the table belongs to, as users name it. */
   database: string;
   /**  The table's name, as users name it. */
@@ -344,6 +678,19 @@ export type Table = {
 };
 
 /**
+ *  One table and its columns, in display order. Derived columns (lookups)
+ *  are left out: they have no cells.
+ */
+export type TableSchema = {
+  /**  The table id. */
+  id: string;
+  /**  Its name. */
+  name: string;
+  /**  Its columns. */
+  columns: ColumnSchema[];
+};
+
+/**
  *  Where a table's rows come from. The engine only says which; the driver
  *  serving its fetch requests decides how.
  */
@@ -352,3 +699,11 @@ export type TableSource =
   | 'database'
   /**  The people the viewer can see: `id`, `name`, `email`. */
   | 'people';
+
+/**
+ *  Monotonic per-table version, bumped on every row/column/link mutation.
+ *
+ *  The cache key for query materializations and the invalidation signal for
+ *  live query chips.
+ */
+export type TableVersion = number;

@@ -1,20 +1,28 @@
 /**
  * The engine's transcripts from `crates/database_sql/fixtures/transcripts`:
  * every step it took answering a statement and what was fed back. A replay
- * stands in for the wasm engine, and refuses any page or bins other than
- * the recorded ones, so a test proves the TypeScript side feeds the engine
- * exactly what the Rust side recorded.
+ * stands in for the wasm engine, and refuses any page, bins or op results
+ * other than the recorded ones, so a test proves the TypeScript side feeds
+ * the engine exactly what the Rust side recorded.
  */
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import type { OpenEngine } from '../driver';
-import type { Bin, Catalog, Outcome, Page, Step } from '../generated/types';
+import type {
+  Bin,
+  Catalog,
+  OpResult,
+  Outcome,
+  Page,
+  Step,
+} from '../generated/types';
 
 export type Exchange = { step: Exclude<Step, { step: 'done' }> } & (
   | { page: Page }
   | { bins: Bin[] }
+  | { results: OpResult[] }
 );
 
 export interface Transcript {
@@ -49,9 +57,14 @@ export function replay(transcript: Transcript): OpenEngine {
       position < transcript.exchanges.length
         ? transcript.exchanges[position].step
         : { step: 'done', ...transcript.outcome };
-    const expect = (requestId: number, fed: Page | Bin[]) => {
+    const expect = (requestId: number, fed: Page | Bin[] | OpResult[]) => {
       const exchange = transcript.exchanges[position];
-      const recorded = 'page' in exchange ? exchange.page : exchange.bins;
+      const recorded =
+        'page' in exchange
+          ? exchange.page
+          : 'bins' in exchange
+            ? exchange.bins
+            : exchange.results;
       if (exchange.step.id !== requestId || !isDeepStrictEqual(fed, recorded))
         throw `fed ${JSON.stringify(fed)} for request ${requestId}, recorded ${JSON.stringify(recorded)} for request ${exchange.step.id}`;
       position += 1;
@@ -61,6 +74,7 @@ export function replay(transcript: Transcript): OpenEngine {
       start: next,
       feed_page: expect,
       feed_bins: expect,
+      feed_ops: expect,
       free: () => {},
     };
   };

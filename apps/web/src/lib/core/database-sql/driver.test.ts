@@ -1,6 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DatabaseSqlError, runDatabaseSql } from './driver';
-import type { Bin, GqlQuery, Page } from './generated/types';
+import {
+  DatabaseSqlError,
+  runDatabaseSql,
+  runDatabaseSqlStatement,
+} from './driver';
+import type {
+  Bin,
+  DatabaseOp,
+  GqlQuery,
+  OpResult,
+  Page,
+} from './generated/types';
 import { readTranscript, replay } from './tests/transcript';
 
 describe('runDatabaseSql', () => {
@@ -107,5 +117,42 @@ describe('runDatabaseSql', () => {
       })
     ).rejects.toThrow('gateway timed out');
     expect(free).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the rows an UPDATE matches, then sends its one op to the sink', async () => {
+    const update = readTranscript('update-uniform');
+    const [read, write] = update.exchanges;
+    if (!('page' in read) || !('results' in write) || write.step.step !== 'ops')
+      throw new Error('recorded a read, then a write');
+    const recorded = write.step;
+    const apply = vi.fn(
+      async (_database: string, _ops: DatabaseOp[]): Promise<OpResult[]> =>
+        write.results
+    );
+
+    const outcome = await runDatabaseSqlStatement(update.catalog, update.sql, {
+      source: { page: async () => read.page, bins: vi.fn() },
+      ops: { apply },
+      open: replay(update),
+    });
+
+    expect(outcome).toEqual(update.outcome);
+    expect(outcome.changesApplied).toBe(2);
+    expect(apply.mock.calls).toEqual([[recorded.database, recorded.ops]]);
+  });
+
+  it('refuses a write where only reads run, sending nothing', async () => {
+    const insert = readTranscript('insert-two-rows');
+
+    await expect(
+      runDatabaseSql(insert.catalog, insert.sql, {
+        source: { page: vi.fn(), bins: vi.fn() },
+        open: replay(insert),
+      })
+    ).rejects.toEqual(
+      new DatabaseSqlError(
+        'This statement changes data, and only reads are run here.'
+      )
+    );
   });
 });

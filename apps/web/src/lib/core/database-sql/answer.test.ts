@@ -239,13 +239,20 @@ const catalog: Catalog = {
   tables: [
     {
       id: 'table-guests',
+      databaseId: 'database-party-planner',
       database: 'Party Planner',
       name: 'Guests',
       source: 'database',
       columns: [
-        { id: 'def-name', name: 'Name', kind: { kind: 'text' } },
+        {
+          id: 'def-name',
+          placement: 'column-name',
+          name: 'Name',
+          kind: { kind: 'text' },
+        },
         {
           id: 'def-rsvp',
+          placement: 'column-rsvp',
           name: 'RSVP',
           kind: {
             kind: 'select',
@@ -255,6 +262,7 @@ const catalog: Catalog = {
         },
         {
           id: 'def-diet',
+          placement: 'column-diet',
           name: 'Diet',
           kind: {
             kind: 'select',
@@ -267,16 +275,28 @@ const catalog: Catalog = {
         },
         {
           id: 'def-parties',
+          placement: 'column-parties',
           name: 'Parties',
           kind: { kind: 'entity', multi: true, target: 'DATABASE_ROW' },
         },
         {
           id: 'def-host',
+          placement: 'column-host',
           name: 'Host',
           kind: { kind: 'entity', multi: false, target: 'USER' },
         },
-        { id: 'def-arrives', name: 'Arrives', kind: { kind: 'date' } },
-        { id: 'def-plus-one', name: 'Plus one', kind: { kind: 'boolean' } },
+        {
+          id: 'def-arrives',
+          placement: 'column-arrives',
+          name: 'Arrives',
+          kind: { kind: 'date' },
+        },
+        {
+          id: 'def-plus-one',
+          placement: 'column-plus-one',
+          name: 'Plus one',
+          kind: { kind: 'boolean' },
+        },
       ],
     },
   ],
@@ -320,7 +340,6 @@ describe('databaseSqlAnswer', () => {
         truncated: false,
         insertedRowIds: [],
         changesApplied: 0,
-        failures: [],
       },
       catalog,
       [party]
@@ -392,7 +411,6 @@ describe('databaseSqlAnswer', () => {
         truncated: true,
         insertedRowIds: [],
         changesApplied: 0,
-        failures: [],
       },
       catalog,
       [party]
@@ -428,7 +446,6 @@ describe('databaseSqlAnswer', () => {
         truncated: false,
         insertedRowIds: [],
         changesApplied: 0,
-        failures: [],
       },
       catalog,
       [party]

@@ -1,6 +1,34 @@
 import type { DatabaseDetail } from '@service-storage/databases';
 import { describe, expect, it } from 'vitest';
-import { databaseSqlCatalog } from './catalog';
+import { databaseSqlSchema } from './catalog';
+import { readCatalogFixture } from './tests/catalog-fixture';
+
+const id = (tail: string) =>
+  `01990000-0000-7000-8000-${tail.padStart(12, '0')}`;
+const CRM = id('cdb01');
+const OTHER = id('cdb02');
+const DEALS = id('c7a01');
+const CONTACTS = id('c7a02');
+const OTHER_CONTACTS = id('c7a03');
+const OTHER_LEADS = id('c7a04');
+const NAME_COLUMN = id('c0c001');
+const STAGE_COLUMN = id('c0c002');
+const TIER_COLUMN = id('c0c003');
+const CONTACT_COLUMN = id('c0c004');
+const EMAIL_COLUMN = id('c0c005');
+const OWNER_COLUMN = id('c0c006');
+const CONTACT_EMAIL_COLUMN = id('c0c007');
+const NAME = id('de0001');
+const STAGE = id('de0002');
+const TIER = id('de0003');
+const CONTACT = id('de0004');
+const EMAIL = id('de0005');
+const OWNER = id('de0006');
+const CONTACT_EMAIL = id('de0007');
+const WON = id('0e0001');
+const LEAD = id('0e0002');
+const TWO = id('0e0003');
+const HALF = id('0e0004');
 
 const definition = (
   id: string,
@@ -9,7 +37,7 @@ const definition = (
   is_multi_select = false
 ) => ({
   id,
-  owner: { scope: 'database' as const, database_id: 'db-crm' },
+  owner: { scope: 'database' as const, database_id: CRM },
   display_name,
   data_type,
   is_multi_select,
@@ -26,7 +54,7 @@ const option = (
   value: { type: 'string'; value: string } | { type: 'number'; value: number }
 ) => ({
   id,
-  property_definition_id: 'def-stage',
+  property_definition_id: STAGE,
   display_order,
   value,
   created_at: '2026-01-01T00:00:00Z',
@@ -35,7 +63,7 @@ const option = (
 
 const crm: DatabaseDetail = {
   database: {
-    id: 'db-crm',
+    id: CRM,
     name: 'CRM',
     owner_id: 'macro|owner@databases.test',
     created_at: '2026-01-01T00:00:00Z',
@@ -45,8 +73,8 @@ const crm: DatabaseDetail = {
   tables: [
     {
       table: {
-        id: 'table-deals',
-        database_id: 'db-crm',
+        id: DEALS,
+        database_id: CRM,
         name: 'Deals',
         position: 'a',
         version: 3,
@@ -55,94 +83,90 @@ const crm: DatabaseDetail = {
       columns: [
         {
           column: {
-            id: 'column-name',
-            table_id: 'table-deals',
-            property_definition_id: 'def-name',
+            id: NAME_COLUMN,
+            table_id: DEALS,
+            property_definition_id: NAME,
             position: 'a',
             config: null,
             display_name: 'Deal name',
           },
           sql_name: '"Deal name"',
           definition: {
-            definition: definition('def-name', 'Name', 'STRING'),
+            definition: definition(NAME, 'Name', 'STRING'),
             property_options: [],
           },
           writable: true,
         },
         {
           column: {
-            id: 'column-stage',
-            table_id: 'table-deals',
-            property_definition_id: 'def-stage',
+            id: STAGE_COLUMN,
+            table_id: DEALS,
+            property_definition_id: STAGE,
             position: 'b',
             config: null,
           },
           sql_name: '"Stage"',
           definition: {
-            definition: definition('def-stage', 'Stage', 'SELECT_STRING'),
+            definition: definition(STAGE, 'Stage', 'SELECT_STRING'),
             property_options: [
-              option('option-won', 1, { type: 'string', value: 'Won' }),
-              option('option-lead', 0, { type: 'string', value: 'Lead' }),
+              option(WON, 1, { type: 'string', value: 'Won' }),
+              option(LEAD, 0, { type: 'string', value: 'Lead' }),
             ],
           },
           writable: true,
         },
         {
           column: {
-            id: 'column-tier',
-            table_id: 'table-deals',
-            property_definition_id: 'def-tier',
+            id: TIER_COLUMN,
+            table_id: DEALS,
+            property_definition_id: TIER,
             position: 'c',
             config: null,
           },
           sql_name: '"Tier"',
           definition: {
-            definition: definition('def-tier', 'Tier', 'SELECT_NUMBER', true),
+            definition: definition(TIER, 'Tier', 'SELECT_NUMBER', true),
             property_options: [
-              option('option-two', 0, { type: 'number', value: 2 }),
-              option('option-half', 1, { type: 'number', value: 2.5 }),
+              option(TWO, 0, { type: 'number', value: 2 }),
+              option(HALF, 1, { type: 'number', value: 2.5 }),
             ],
           },
           writable: true,
         },
         {
           column: {
-            id: 'column-contact',
-            table_id: 'table-deals',
-            property_definition_id: 'def-contact',
+            id: CONTACT_COLUMN,
+            table_id: DEALS,
+            property_definition_id: CONTACT,
             position: 'd',
             config: {
               kind: 'link',
-              database_id: 'db-crm',
-              table_id: 'table-contacts',
+              database_id: CRM,
+              table_id: CONTACTS,
             },
           },
           sql_name: '"Contact"',
           definition: {
-            definition: definition('def-contact', 'Contact', 'ENTITY'),
+            definition: definition(CONTACT, 'Contact', 'ENTITY'),
             property_options: [],
           },
           writable: true,
         },
         {
           column: {
-            id: 'column-contact-email',
-            table_id: 'table-deals',
-            property_definition_id: 'def-contact-email',
+            id: CONTACT_EMAIL_COLUMN,
+            table_id: DEALS,
+            property_definition_id: CONTACT_EMAIL,
             position: 'e',
             config: {
               kind: 'lookup',
-              via_column_id: 'column-contact',
-              target: 'column-email',
+              via_column_id: CONTACT_COLUMN,
+              target: EMAIL_COLUMN,
             },
           },
           sql_name: '"Contact email"',
           definition: {
-            definition: definition(
-              'def-contact-email',
-              'Contact email',
-              'STRING'
-            ),
+            definition: definition(CONTACT_EMAIL, 'Contact email', 'STRING'),
             property_options: [],
           },
           writable: false,
@@ -151,8 +175,8 @@ const crm: DatabaseDetail = {
     },
     {
       table: {
-        id: 'table-contacts',
-        database_id: 'db-crm',
+        id: CONTACTS,
+        database_id: CRM,
         name: 'Contacts',
         position: 'b',
         version: 1,
@@ -161,30 +185,30 @@ const crm: DatabaseDetail = {
       columns: [
         {
           column: {
-            id: 'column-email',
-            table_id: 'table-contacts',
-            property_definition_id: 'def-email',
+            id: EMAIL_COLUMN,
+            table_id: CONTACTS,
+            property_definition_id: EMAIL,
             position: 'a',
             config: null,
           },
           sql_name: '"Email"',
           definition: {
-            definition: definition('def-email', 'Email', 'LINK'),
+            definition: definition(EMAIL, 'Email', 'LINK'),
             property_options: [],
           },
           writable: true,
         },
         {
           column: {
-            id: 'column-owner',
-            table_id: 'table-contacts',
-            property_definition_id: 'def-owner',
+            id: OWNER_COLUMN,
+            table_id: CONTACTS,
+            property_definition_id: OWNER,
             position: 'b',
             config: null,
           },
           sql_name: '"Owner"',
           definition: {
-            definition: definition('def-owner', 'Owner', 'ENTITY', false),
+            definition: definition(OWNER, 'Owner', 'ENTITY', false),
             property_options: [],
           },
           writable: true,
@@ -194,77 +218,22 @@ const crm: DatabaseDetail = {
   ],
 };
 
-describe('databaseSqlCatalog', () => {
-  it('names tables and columns the way the server catalog does', () => {
-    expect(databaseSqlCatalog([crm])).toEqual({
-      tables: [
-        {
-          id: 'table-deals',
-          database: 'CRM',
-          name: 'Deals',
-          source: 'database',
-          columns: [
-            { id: 'def-name', name: 'Deal name', kind: { kind: 'text' } },
-            {
-              id: 'def-stage',
-              name: 'Stage',
-              kind: {
-                kind: 'select',
-                multi: false,
-                options: [
-                  { id: 'option-lead', label: 'Lead' },
-                  { id: 'option-won', label: 'Won' },
-                ],
-              },
-            },
-            {
-              id: 'def-tier',
-              name: 'Tier',
-              kind: {
-                kind: 'select',
-                multi: true,
-                options: [
-                  { id: 'option-two', label: '2' },
-                  { id: 'option-half', label: '2.5' },
-                ],
-              },
-            },
-            {
-              id: 'def-contact',
-              name: 'Contact',
-              kind: { kind: 'entity', multi: true, target: 'DATABASE_ROW' },
-            },
-          ],
-        },
-        {
-          id: 'table-contacts',
-          database: 'CRM',
-          name: 'Contacts',
-          source: 'database',
-          columns: [
-            { id: 'def-email', name: 'Email', kind: { kind: 'link' } },
-            {
-              id: 'def-owner',
-              name: 'Owner',
-              kind: { kind: 'entity', multi: false, target: 'USER' },
-            },
-          ],
-        },
-      ],
-    });
+describe('databaseSqlSchema', () => {
+  it('describes a database detail as the schema the engine builds its catalog from', () => {
+    expect(databaseSqlSchema([crm])).toEqual(readCatalogFixture('crm').schema);
   });
 
-  it('lets the scoped database win a table name another database also uses', () => {
+  it('describes every database a scoped statement can name', () => {
     const other: DatabaseDetail = {
       ...crm,
-      database: { ...crm.database, id: 'db-other', name: 'crm' },
+      database: { ...crm.database, id: OTHER, name: 'crm' },
       tables: [
         {
           ...crm.tables[1],
           table: {
             ...crm.tables[1].table,
-            id: 'table-other-contacts',
-            database_id: 'db-other',
+            id: OTHER_CONTACTS,
+            database_id: OTHER,
             name: 'contacts',
           },
         },
@@ -272,16 +241,16 @@ describe('databaseSqlCatalog', () => {
           ...crm.tables[1],
           table: {
             ...crm.tables[1].table,
-            id: 'table-other-leads',
-            database_id: 'db-other',
+            id: OTHER_LEADS,
+            database_id: OTHER,
             name: 'Leads',
           },
         },
       ],
     };
 
-    expect(
-      databaseSqlCatalog([crm, other], 'db-crm').tables.map((table) => table.id)
-    ).toEqual(['table-deals', 'table-contacts', 'table-other-leads']);
+    const fixture = readCatalogFixture('scoped');
+    expect(databaseSqlSchema([crm, other])).toEqual(fixture.schema);
+    expect(fixture.scope).toBe(CRM);
   });
 });

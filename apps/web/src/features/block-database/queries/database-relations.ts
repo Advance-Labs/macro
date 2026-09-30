@@ -1,5 +1,5 @@
 import { databaseSqlAnswer } from '@core/database-sql/answer';
-import { databaseSqlCatalog } from '@core/database-sql/catalog';
+import { databaseSqlSchema } from '@core/database-sql/catalog';
 import { throwOnErr } from '@core/util/result';
 import {
   createDatabaseSqlQuery,
@@ -110,10 +110,8 @@ export function createDatabaseRelations(props: {
             return (
               database &&
               target && {
-                catalog: databaseSqlCatalog(
-                  [{ ...database, tables: [target] }],
-                  database.database.id
-                ),
+                schema: databaseSqlSchema([{ ...database, tables: [target] }]),
+                scope: database.database.id,
                 sql: tableRowsStatement(target.sql_name),
               }
             );
@@ -124,12 +122,12 @@ export function createDatabaseRelations(props: {
         const query = createDatabaseSqlQuery(statement, props.read);
         const rows = createMemo(() => {
           const outcome = query.outcome();
-          const current = statement();
+          const catalog = query.catalog();
           const target = table();
-          return outcome && current && target
+          return outcome && catalog && target
             ? relatedRows(
                 target,
-                databaseSqlAnswer(outcome, current.catalog, []).results[0]
+                databaseSqlAnswer(outcome, catalog, []).results[0]
               )
             : [];
         });

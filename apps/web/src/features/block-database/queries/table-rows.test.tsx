@@ -102,7 +102,6 @@ function guests(
     truncated: false,
     insertedRowIds: [],
     changesApplied: 0,
-    failures: [],
   };
 }
 const written: ExecOutcome = {
@@ -170,6 +169,31 @@ function engine(
     client: () => client,
     cacheHost: () => undefined,
     people: async () => [],
+    catalog: async () => ({
+      tables: [
+        {
+          id: 'guests-table',
+          databaseId: 'db',
+          database: 'Personal',
+          name: 'Guests',
+          source: 'database',
+          columns: [
+            {
+              id: 'definition',
+              placement: 'name',
+              name: 'Name',
+              kind: { kind: 'text' },
+            },
+            {
+              id: 'status-definition',
+              placement: 'status',
+              name: 'Status',
+              kind: { kind: 'text' },
+            },
+          ],
+        },
+      ],
+    }),
     open: async (_catalog, sql) => {
       reads.push(sql);
       const outcome = await answer(sql);
@@ -178,6 +202,9 @@ function engine(
         feed_page: () => ({ step: 'done', ...outcome }),
         feed_bins: () => {
           throw 'no bins';
+        },
+        feed_ops: () => {
+          throw 'no writes';
         },
         free: () => {},
       };

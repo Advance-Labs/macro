@@ -1,5 +1,5 @@
 import { databaseSqlAnswer } from '@core/database-sql/answer';
-import { databaseSqlCatalog } from '@core/database-sql/catalog';
+import { databaseSqlSchema } from '@core/database-sql/catalog';
 import { readDatabaseSql } from '@queries/database-sql/create-database-sql-query';
 import { invalidateDatabase } from '@queries/storage/databases';
 import { storageServiceClient } from '@service-storage/client';
@@ -41,12 +41,9 @@ export async function exportDatabaseTableCsv(
   const columns = table.columns.filter(
     (column) => column.column.config?.kind !== 'lookup'
   );
-  const catalog = databaseSqlCatalog(
-    [{ ...database, tables: [table] }],
-    database.database.id
-  );
-  const outcome = await readDatabaseSql({
-    catalog,
+  const { catalog, outcome } = await readDatabaseSql({
+    schema: databaseSqlSchema([{ ...database, tables: [table] }]),
+    scope: database.database.id,
     sql: tableRowsStatement(table.sql_name),
   });
   if (outcome.truncated)
