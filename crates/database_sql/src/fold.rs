@@ -51,6 +51,10 @@ pub enum Cell {
 pub struct Row {
     /// The row entity id.
     pub id: Uuid,
+    /// The row's place in its table, a fractional index that sorts as text;
+    /// `None` for rows that are not table rows, such as people.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<String>,
     /// Cells by column; a missing column is an empty cell.
     pub cells: HashMap<Uuid, Cell>,
 }

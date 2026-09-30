@@ -34,7 +34,11 @@ fn task(id: Uuid, title: &str, priority: Uuid, assignees: &[&str], deal: Option<
     if let Some(deal) = deal {
         cells.insert(DEAL, Cell::Entities(vec![deal.to_string()]));
     }
-    Row { id, cells }
+    Row {
+        position: None,
+        id,
+        cells,
+    }
 }
 
 /// Sam and Ana share the high-priority login fix; Kim has a low one; the
@@ -51,6 +55,7 @@ fn tasks() -> Vec<Row> {
 /// A person as the driver would key them for the second relation.
 fn person(id: &str, name: &str, email: &str) -> Row {
     Row {
+        position: None,
         id: Uuid::new_v5(&Uuid::NAMESPACE_OID, id.as_bytes()),
         cells: HashMap::from([
             (column_key(1, PEOPLE_ID), Cell::Entities(vec![id.into()])),
@@ -72,6 +77,7 @@ fn people() -> Vec<Row> {
 fn deals() -> Vec<Row> {
     vec![
         Row {
+            position: None,
             id: ACME,
             cells: HashMap::from([
                 (column_key(1, NAME), Cell::Text("Acme".into())),
@@ -79,6 +85,7 @@ fn deals() -> Vec<Row> {
             ]),
         },
         Row {
+            position: None,
             id: GLOBEX,
             cells: HashMap::from([
                 (column_key(1, NAME), Cell::Text("Globex".into())),
@@ -283,6 +290,7 @@ fn a_joined_tables_rows_arrive_keyed_by_definition_and_the_engine_keys_them() {
         "SELECT d.name, p.name FROM crm.deals d JOIN crm.people p ON d.owner = p.row_id",
         |query| match query {
             GqlQuery::Soup { table, .. } if *table == DEALS => vec![Row {
+                position: None,
                 id: ACME,
                 cells: HashMap::from([
                     (NAME, Cell::Text("Acme".into())),
@@ -293,6 +301,7 @@ fn a_joined_tables_rows_arrive_keyed_by_definition_and_the_engine_keys_them() {
                 ]),
             }],
             GqlQuery::Soup { table, .. } if *table == PEOPLE => vec![Row {
+                position: None,
                 id: Uuid::from_u128(0x99),
                 cells: HashMap::from([(NAME, Cell::Text("Sam".into()))]),
             }],
@@ -315,6 +324,7 @@ fn a_definition_shared_by_both_tables_keeps_its_two_columns_apart() {
         "SELECT d.name, p.name FROM crm.deals d JOIN crm.people p ON d.owner = p.row_id",
         |query| match query {
             GqlQuery::Soup { table, .. } if *table == DEALS => vec![Row {
+                position: None,
                 id: ACME,
                 cells: HashMap::from([
                     (NAME, Cell::Text("Acme".into())),
@@ -325,6 +335,7 @@ fn a_definition_shared_by_both_tables_keeps_its_two_columns_apart() {
                 ]),
             }],
             GqlQuery::Soup { table, .. } if *table == PEOPLE => vec![Row {
+                position: None,
                 id: Uuid::from_u128(0x99),
                 cells: HashMap::from([(column_key(1, NAME), Cell::Text("Sam".into()))]),
             }],
@@ -470,6 +481,7 @@ fn steps_and_pages_cross_the_wire_as_json() {
 
     let page = Page {
         rows: vec![Row {
+            position: None,
             id: ACME,
             cells: HashMap::from([(NAME, Cell::Text("Acme".into()))]),
         }],
@@ -554,4 +566,166 @@ fn run_answers_a_join_through_a_row_source() {
         outcome.rows,
         vec![vec![text("sam@example.com")], vec![text("ana@example.com")]]
     );
+}
+
+// ---- the row position ---------------------------------------------------------
+
+#[test]
+fn order_by_row_position_lists_rows_in_table_order_whatever_the_fetch_order() {
+    // Soup lists rows newest first; the table's order is their positions.
+    let (outcome, _) = drive(
+        &catalog(),
+        "SELECT name FROM crm.deals ORDER BY row_position",
+        |_| {
+            vec![
+                Row {
+                    id: GLOBEX,
+                    position: Some("000000000002".into()),
+                    cells: HashMap::from([(NAME, Cell::Text("Globex".into()))]),
+                },
+                Row {
+                    id: ACME,
+                    position: Some("000000000001".into()),
+                    cells: HashMap::from([(NAME, Cell::Text("Acme".into()))]),
+                },
+                Row {
+                    id: SHIP_IT,
+                    position: Some("000000000003".into()),
+                    cells: HashMap::from([(NAME, Cell::Text("Initech".into()))]),
+                },
+            ]
+        },
+    );
+    assert_eq!(
+        outcome.rows,
+        vec![
+            vec![text("Acme")],
+            vec![text("Globex")],
+            vec![text("Initech")]
+        ]
+    );
+    assert_eq!(outcome.row_ids, vec![ACME, GLOBEX, SHIP_IT]);
+}
+
+#[test]
+fn row_position_breaks_ties_after_the_sorts() {
+    let (outcome, _) = drive(
+        &catalog(),
+        "SELECT name FROM crm.deals ORDER BY stage, row_position",
+        |_| {
+            vec![
+                Row {
+                    id: IDLE,
+                    position: Some("000000000004".into()),
+                    cells: HashMap::from([
+                        (NAME, Cell::Text("Hooli".into())),
+                        (STAGE, Cell::Options(vec![LEAD])),
+                    ]),
+                },
+                Row {
+                    id: SHIP_IT,
+                    position: Some("000000000003".into()),
+                    cells: HashMap::from([
+                        (NAME, Cell::Text("Initech".into())),
+                        (STAGE, Cell::Options(vec![WON])),
+                    ]),
+                },
+                Row {
+                    id: GLOBEX,
+                    position: Some("000000000002".into()),
+                    cells: HashMap::from([
+                        (NAME, Cell::Text("Globex".into())),
+                        (STAGE, Cell::Options(vec![LEAD])),
+                    ]),
+                },
+                Row {
+                    id: ACME,
+                    position: Some("000000000001".into()),
+                    cells: HashMap::from([
+                        (NAME, Cell::Text("Acme".into())),
+                        (STAGE, Cell::Options(vec![WON])),
+                    ]),
+                },
+            ]
+        },
+    );
+    // Lead comes before Won in the column's option order.
+    assert_eq!(
+        outcome.rows,
+        vec![
+            vec![text("Globex")],
+            vec![text("Hooli")],
+            vec![text("Acme")],
+            vec![text("Initech")],
+        ]
+    );
+    assert_eq!(outcome.row_ids, vec![GLOBEX, IDLE, ACME, SHIP_IT]);
+}
+
+#[test]
+fn a_selected_row_position_is_a_text_column_named_row_position() {
+    let (outcome, _) = drive(
+        &catalog(),
+        "SELECT name, row_position FROM crm.deals ORDER BY name",
+        |_| {
+            vec![
+                Row {
+                    id: ACME,
+                    position: Some("000000000001".into()),
+                    cells: HashMap::from([(NAME, Cell::Text("Acme".into()))]),
+                },
+                Row {
+                    id: GLOBEX,
+                    position: None,
+                    cells: HashMap::from([(NAME, Cell::Text("Globex".into()))]),
+                },
+            ]
+        },
+    );
+    assert_eq!(
+        outcome.columns,
+        vec![
+            OutcomeColumn {
+                name: "name".into(),
+                column: Some(NAME),
+                kind: OutcomeKind::Text,
+            },
+            OutcomeColumn {
+                name: "row_position".into(),
+                column: None,
+                kind: OutcomeKind::Text,
+            },
+        ]
+    );
+    assert_eq!(
+        outcome.rows,
+        vec![
+            vec![text("Acme"), text("000000000001")],
+            vec![text("Globex"), None],
+        ]
+    );
+}
+
+#[test]
+fn an_aggregate_of_row_position_is_named_after_it() {
+    let (outcome, _) = drive(
+        &catalog(),
+        "SELECT COUNT(row_position) FROM crm.deals",
+        |_| {
+            vec![Row {
+                id: ACME,
+                position: Some("000000000001".into()),
+                cells: HashMap::new(),
+            }]
+        },
+    );
+    assert_eq!(
+        outcome.columns,
+        vec![OutcomeColumn {
+            name: "COUNT(row_position)".into(),
+            column: None,
+            kind: OutcomeKind::Number,
+        }]
+    );
+    assert_eq!(outcome.rows, vec![vec![Some(Cell::Number(1.0))]]);
 }

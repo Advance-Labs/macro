@@ -18,7 +18,7 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 pub use self::error::ResolveError;
-pub use self::names::ROW_ID;
+pub use self::names::{ROW_ID, ROW_POSITION};
 use crate::cast::{Cast, ColumnType, Contents, cast};
 use crate::catalog::Catalog;
 use crate::parse::{self, Statement};
@@ -117,6 +117,18 @@ pub fn column_key(relation: usize, column: Uuid) -> Uuid {
 /// The key of a table's row id.
 pub fn row_id_key(table: Uuid) -> Uuid {
     Uuid::new_v5(&table, b"row_id")
+}
+
+/// The key of a table's row position.
+pub fn row_position_key(table: Uuid) -> Uuid {
+    Uuid::new_v5(&table, b"row_position")
+}
+
+/// The stand-in column a key names in `table`: its row id or row position.
+pub fn virtual_column(table: Uuid, key: Uuid) -> Option<crate::catalog::Column> {
+    names::virtual_columns(table)
+        .into_iter()
+        .find(|column| column.id == key)
 }
 
 impl SelectQuery {

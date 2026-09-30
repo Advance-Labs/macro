@@ -18,6 +18,7 @@ const INITECH: Uuid = Uuid::from_u128(0xa4);
 fn deals() -> Vec<Row> {
     vec![
         Row {
+            position: None,
             id: ACME,
             cells: HashMap::from([
                 (NAME, Cell::Text("Acme".into())),
@@ -29,6 +30,7 @@ fn deals() -> Vec<Row> {
             ]),
         },
         Row {
+            position: None,
             id: GLOBEX,
             cells: HashMap::from([
                 (NAME, Cell::Text("Globex".into())),
@@ -39,6 +41,7 @@ fn deals() -> Vec<Row> {
             ]),
         },
         Row {
+            position: None,
             id: HOOLI,
             cells: HashMap::from([
                 (NAME, Cell::Text("hooli".into())),
@@ -51,6 +54,7 @@ fn deals() -> Vec<Row> {
             ]),
         },
         Row {
+            position: None,
             id: INITECH,
             cells: HashMap::from([
                 (NAME, Cell::Text("Initech".into())),
@@ -340,6 +344,7 @@ fn join_matches_by_membership_and_leaves_empty_cells_unmatched() {
     );
     let people = vec![
         Row {
+            position: None,
             id: Uuid::from_u128(0x71),
             cells: HashMap::from([
                 (
@@ -353,6 +358,7 @@ fn join_matches_by_membership_and_leaves_empty_cells_unmatched() {
             ]),
         },
         Row {
+            position: None,
             id: Uuid::from_u128(0x72),
             cells: HashMap::from([
                 (

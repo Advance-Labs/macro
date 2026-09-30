@@ -274,7 +274,9 @@ fn key_name(scope: &Scope<'_>, key: uuid::Uuid) -> String {
             .find(|column| column.id == id)
             .map(|column| column.name.clone())
             .expect("bindings come from the catalog"),
-        None => super::names::ROW_ID.into(),
+        None => super::virtual_column(table.id, key)
+            .map(|column| column.name)
+            .expect("a binding without a definition is a stand-in"),
     }
 }
 

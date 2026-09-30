@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use crate::catalog::Catalog;
 use crate::fold::{Bin, Cell, Row, fold_bins, fold_relations};
-use crate::resolve::{Query, SelectQuery, column_key, compile, row_id_key};
+use crate::resolve::{Query, SelectQuery, column_key, compile, row_id_key, row_position_key};
 use crate::run::{Outcome, OutcomeColumn, PAGE_LIMIT, Page, ROW_CAP, RunError, describe};
 use crate::split::{GqlQuery, KeyHint, Plan, Shape, split};
 
@@ -153,6 +153,7 @@ impl Engine {
         rows.into_iter()
             .map(|row| Row {
                 id: row.id,
+                position: row.position,
                 cells: row
                     .cells
                     .into_iter()
@@ -269,14 +270,20 @@ impl Engine {
         })
     }
 
-    /// A relation is complete: give it its row ids, then move on or fold.
+    /// A relation is complete: give it its row ids and positions, then move
+    /// on or fold.
     fn finish_relation(&mut self) -> Step {
         let table = self.plan.relations[self.current].relation.table;
-        let key = row_id_key(table);
-        if self.plan.bindings.iter().any(|binding| binding.key == key) {
-            for row in &mut self.fetched[self.current] {
+        let bound = |key: Uuid| self.plan.bindings.iter().any(|binding| binding.key == key);
+        let (id_key, position_key) = (row_id_key(table), row_position_key(table));
+        let (ids, positions) = (bound(id_key), bound(position_key));
+        for row in &mut self.fetched[self.current] {
+            if ids {
                 row.cells
-                    .insert(key, Cell::Entities(vec![row.id.to_string()]));
+                    .insert(id_key, Cell::Entities(vec![row.id.to_string()]));
+            }
+            if positions && let Some(position) = &row.position {
+                row.cells.insert(position_key, Cell::Text(position.clone()));
             }
         }
         self.current += 1;

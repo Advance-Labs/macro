@@ -548,3 +548,19 @@ fn propf_serializes_to_the_soup_wire_form() {
         })
     );
 }
+
+#[test]
+fn a_row_position_condition_never_pushes_down() {
+    let plan = split(
+        &catalog(),
+        select("SELECT name FROM crm.deals WHERE row_position = '000000000001'"),
+    );
+    assert!(matches!(
+        plan.relations[0].gql,
+        GqlQuery::Soup { propf: None, .. }
+    ));
+    assert_eq!(
+        plan.relations[0].needs,
+        vec![NAME, crate::resolve::row_position_key(DEALS)]
+    );
+}

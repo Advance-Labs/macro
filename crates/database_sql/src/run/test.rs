@@ -123,6 +123,7 @@ impl RowWriter for FakeWriter {
 fn deals() -> Vec<Row> {
     vec![
         Row {
+            position: None,
             id: ACME,
             cells: HashMap::from([
                 (NAME, Cell::Text("Acme".into())),
@@ -131,6 +132,7 @@ fn deals() -> Vec<Row> {
             ]),
         },
         Row {
+            position: None,
             id: GLOBEX,
             cells: HashMap::from([
                 (NAME, Cell::Text("Globex".into())),
@@ -139,6 +141,7 @@ fn deals() -> Vec<Row> {
             ]),
         },
         Row {
+            position: None,
             id: HOOLI,
             cells: HashMap::from([
                 (NAME, Cell::Text("Hooli".into())),
@@ -150,6 +153,7 @@ fn deals() -> Vec<Row> {
             ]),
         },
         Row {
+            position: None,
             id: INITECH,
             cells: HashMap::from([
                 (NAME, Cell::Text("Initech".into())),
@@ -373,6 +377,7 @@ fn count_only_groups_ask_for_bins_not_rows() {
 fn the_row_cap_marks_the_answer_truncated() {
     let many: Vec<Row> = (0..ROW_CAP + 5)
         .map(|i| Row {
+            position: None,
             id: Uuid::from_u128(0x1000 + i as u128),
             cells: HashMap::from([(AMOUNT, Cell::Number(1.0))]),
         })

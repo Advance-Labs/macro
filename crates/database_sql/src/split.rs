@@ -288,6 +288,20 @@ pub fn column_of<'c>(
         .find(|column| column.id == definition)
 }
 
+/// The stand-in column behind a key that has no definition: a table's row
+/// id or row position.
+pub fn virtual_column_of(
+    bindings: &[Binding],
+    relations: &[Relation],
+    key: Uuid,
+) -> Option<Column> {
+    let binding = bindings.iter().find(|binding| binding.key == key)?;
+    if binding.column.is_some() {
+        return None;
+    }
+    crate::resolve::virtual_column(relations[binding.relation].table, key)
+}
+
 impl Plan {
     /// The catalog column behind a key, if it is not a row id.
     pub fn column<'c>(&self, catalog: &'c Catalog, key: Uuid) -> Option<&'c Column> {

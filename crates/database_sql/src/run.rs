@@ -16,13 +16,13 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::cast::ColumnType;
-use crate::catalog::{Catalog, ColumnKind, EntityKind};
+use crate::catalog::{Catalog, ColumnKind};
 use crate::engine::{Engine, Step};
 use crate::fold::{Bin, Row, Table};
 use crate::resolve::{
     AggFn, Binding, CompileError, Query, Relation, SelectItem, SelectQuery, Value, compile,
 };
-use crate::split::{GqlQuery, column_of};
+use crate::split::{GqlQuery, column_of, virtual_column_of};
 
 /// The most rows one statement reads before the fold. Past it the answer
 /// is still returned, marked truncated, so aggregates are visibly partial
@@ -332,21 +332,22 @@ pub(crate) fn describe(
     bindings: &[Binding],
     relations: &[Relation],
 ) -> Vec<OutcomeColumn> {
-    let column = |key: Uuid| column_of(catalog, bindings, relations, key);
+    let column = |key: Uuid| {
+        column_of(catalog, bindings, relations, key)
+            .cloned()
+            .or_else(|| virtual_column_of(bindings, relations, key))
+            .expect("select items are bound in the scope")
+    };
     let mut columns: Vec<OutcomeColumn> = items
         .iter()
         .map(|item| match item {
             SelectItem::Column(key) => {
-                let Some(column) = column(*key) else {
-                    return OutcomeColumn {
-                        name: crate::resolve::ROW_ID.into(),
-                        column: None,
-                        kind: OutcomeKind::Entity,
-                    };
-                };
+                let column = column(*key);
                 OutcomeColumn {
-                    name: column.name.clone(),
-                    column: Some(column.id),
+                    column: bindings
+                        .iter()
+                        .find(|binding| binding.key == *key)
+                        .and_then(|binding| binding.column),
                     kind: match column.kind {
                         ColumnKind::Text | ColumnKind::Link => OutcomeKind::Text,
                         ColumnKind::Number => OutcomeKind::Number,
@@ -355,6 +356,7 @@ pub(crate) fn describe(
                         ColumnKind::Select { .. } => OutcomeKind::Select,
                         ColumnKind::Entity { .. } => OutcomeKind::Entity,
                     },
+                    name: column.name,
                 }
             }
             SelectItem::Agg { func, column: None } => OutcomeColumn {
@@ -366,20 +368,11 @@ pub(crate) fn describe(
                 func,
                 column: Some(key),
             } => {
-                let (name, kind) = match column(*key) {
-                    Some(column) => (column.name.clone(), column.kind.clone()),
-                    None => (
-                        crate::resolve::ROW_ID.into(),
-                        ColumnKind::Entity {
-                            multi: false,
-                            target: EntityKind::Row,
-                        },
-                    ),
-                };
+                let column = column(*key);
                 OutcomeColumn {
-                    name: format!("{}({})", func.name(), name),
+                    name: format!("{}({})", func.name(), column.name),
                     column: None,
-                    kind: match (func, &kind) {
+                    kind: match (func, &column.kind) {
                         (AggFn::Min | AggFn::Max, ColumnKind::Date) => OutcomeKind::Date,
                         _ => OutcomeKind::Number,
                     },

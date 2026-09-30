@@ -738,3 +738,77 @@ fn a_type_change_the_cast_rule_never_allows_is_refused_without_reading_data() {
         assert_eq!(error.to_string(), *message, "\n{sql}");
     }
 }
+
+// ---- the row position ------------------------------------------------------
+
+#[test]
+fn order_by_row_position_binds_the_virtual_column() {
+    let Query::Select(select) = compile(
+        &catalog(),
+        "SELECT name FROM crm.deals ORDER BY row_position",
+    )
+    .unwrap() else {
+        panic!("expected a select");
+    };
+    assert_eq!(
+        select.order_by,
+        vec![Order {
+            key: OrderKey::Column(row_position_key(DEALS)),
+            dir: Dir::Asc,
+        }]
+    );
+    assert_eq!(
+        select.bindings,
+        vec![
+            Binding {
+                key: NAME,
+                relation: 0,
+                column: Some(NAME),
+            },
+            Binding {
+                key: row_position_key(DEALS),
+                relation: 0,
+                column: None,
+            },
+        ]
+    );
+}
+
+#[test]
+fn select_star_leaves_out_the_row_position() {
+    let Query::Select(select) = compile(&catalog(), "SELECT * FROM crm.deals").unwrap() else {
+        panic!("expected a select");
+    };
+    assert_eq!(
+        select.items,
+        vec![
+            SelectItem::Column(NAME),
+            SelectItem::Column(AMOUNT),
+            SelectItem::Column(STAGE),
+            SelectItem::Column(CLOSED_AT),
+            SelectItem::Column(OWNER),
+            SelectItem::Column(TAGS),
+            SelectItem::Column(DONE),
+            SelectItem::Column(WEBSITE),
+        ]
+    );
+}
+
+#[test]
+fn a_grouped_query_names_an_ungrouped_row_position() {
+    assert_eq!(
+        compile(
+            &catalog(),
+            "SELECT row_position, COUNT(*) FROM crm.deals GROUP BY stage",
+        )
+        .unwrap_err()
+        .to_string(),
+        compile(
+            &catalog(),
+            "SELECT row_id, COUNT(*) FROM crm.deals GROUP BY stage",
+        )
+        .unwrap_err()
+        .to_string()
+        .replace("row_id", "row_position")
+    );
+}

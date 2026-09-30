@@ -137,7 +137,11 @@ fn deal(id: Uuid, name: &str, amount: f64, stage: Uuid, owner: Option<Uuid>) -> 
     if let Some(owner) = owner {
         cells.insert(OWNER, Cell::Entities(vec![owner.to_string()]));
     }
-    Row { id, cells }
+    Row {
+        position: None,
+        id,
+        cells,
+    }
 }
 
 #[test]
@@ -196,6 +200,7 @@ fn a_join_asks_for_the_joined_rows_it_needs() {
                 }),
                 Feed::Page(Page {
                     rows: vec![Row {
+                        position: None,
                         id: SAM,
                         cells: HashMap::from([(NAME, Cell::Text("Sam".into()))]),
                     }],
@@ -224,5 +229,32 @@ fn pages_follow_the_cursor_to_the_end() {
             ],
         ),
         fixture("paging")
+    );
+}
+
+#[test]
+fn row_position_orders_rows_fed_newest_first() {
+    assert_eq!(
+        transcript(
+            "SELECT name FROM crm.deals ORDER BY stage, row_position",
+            vec![Feed::Page(Page {
+                rows: vec![
+                    Row {
+                        position: Some("000000000003".into()),
+                        ..deal(INITECH, "Initech", 300.0, LEAD, None)
+                    },
+                    Row {
+                        position: Some("000000000002".into()),
+                        ..deal(GLOBEX, "Globex", 50000.0, WON, None)
+                    },
+                    Row {
+                        position: Some("000000000001".into()),
+                        ..deal(ACME, "Acme", 12000.0, WON, Some(SAM))
+                    },
+                ],
+                next: None,
+            })],
+        ),
+        fixture("row-position")
     );
 }

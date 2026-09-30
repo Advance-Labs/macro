@@ -269,7 +269,11 @@ fn row_from_item(item: &Json) -> Row {
             cells.insert(definition, cell);
         }
     }
-    Row { id, cells }
+    Row {
+        id,
+        position: None,
+        cells,
+    }
 }
 
 impl RowSource for Api {

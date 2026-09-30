@@ -7,10 +7,35 @@ use uuid::Uuid;
 use crate::catalog::{Catalog, Column, ColumnKind, EntityKind, Table};
 use crate::parse::{ColumnRef, FromItem, Ident, TableName};
 
-use super::{Binding, ResolveError, column_key, row_id_key};
+use super::{Binding, ResolveError, column_key, row_id_key, row_position_key};
 
 /// The name of a table's row id column.
 pub const ROW_ID: &str = "row_id";
+
+/// The name of a table's row position column: the fractional index the
+/// table orders its rows by.
+pub const ROW_POSITION: &str = "row_position";
+
+/// The columns every table has without declaring them: its row id and its
+/// row position. Each stand-in's id is its key. They are not catalog
+/// columns, so `SELECT *` and schema listings leave them out.
+pub fn virtual_columns(table: Uuid) -> [Column; 2] {
+    [
+        Column {
+            id: row_id_key(table),
+            name: ROW_ID.into(),
+            kind: ColumnKind::Entity {
+                multi: false,
+                target: EntityKind::Row,
+            },
+        },
+        Column {
+            id: row_position_key(table),
+            name: ROW_POSITION.into(),
+            kind: ColumnKind::Text,
+        },
+    ]
+}
 
 /// Case-insensitive equality on names.
 fn same(a: &str, b: &str) -> bool {
@@ -121,9 +146,10 @@ pub struct Bound {
     pub key: Uuid,
     /// The relation the column belongs to.
     pub relation: usize,
-    /// The column; for `row_id`, a stand-in entity column named `row_id`.
+    /// The column; for `row_id` and `row_position`, a stand-in (see
+    /// [`virtual_columns`]).
     pub column: Column,
-    /// The property definition; `None` for `row_id`.
+    /// The property definition; `None` for a stand-in.
     pub definition: Option<Uuid>,
 }
 
@@ -215,18 +241,14 @@ impl<'c> Scope<'c> {
     /// The column of that name in one relation, if it has one.
     fn bind(&self, index: usize, name: &str) -> Option<Bound> {
         let table = self.relations[index].table;
-        if same(name, ROW_ID) {
+        if let Some(column) = virtual_columns(table.id)
+            .into_iter()
+            .find(|column| same(&column.name, name))
+        {
             return Some(Bound {
-                key: row_id_key(table.id),
+                key: column.id,
                 relation: index,
-                column: Column {
-                    id: row_id_key(table.id),
-                    name: ROW_ID.into(),
-                    kind: ColumnKind::Entity {
-                        multi: false,
-                        target: EntityKind::Row,
-                    },
-                },
+                column,
                 definition: None,
             });
         }

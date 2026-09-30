@@ -122,6 +122,7 @@ fn catalog() -> Catalog {
 fn seed() -> Vec<Row> {
     let row = |id: u128, cells: Vec<(Uuid, Cell)>| Row {
         id: Uuid::from_u128(id),
+        position: None,
         cells: cells.into_iter().collect(),
     };
     let date = |y, m, d| Cell::Date(Utc.with_ymd_and_hms(y, m, d, 0, 0, 0).unwrap());
@@ -277,6 +278,7 @@ impl RowWriter for Memory {
         let id = Uuid::now_v7();
         self.rows.lock().unwrap().push(Row {
             id,
+            position: None,
             cells: cells
                 .into_iter()
                 .map(|(column, value)| (column, cell(value)))
