@@ -2,6 +2,7 @@ import type { CellTextEditorProps } from '@app/components/cell-text-editor/types
 import CaretDownIcon from '@phosphor/caret-down.svg';
 import CheckIcon from '@phosphor/check.svg';
 import PlusIcon from '@phosphor/plus.svg';
+import { PropertyDateSelector } from '@property/editors/selectors/PropertyDateSelector';
 import { Dropdown } from '@ui/components/Dropdown';
 import {
   createSignal,
@@ -23,6 +24,7 @@ export type {
   GridCellEditorOptions,
 } from '../core/grid-cell-editor';
 
+import { fromCellDate, toCellDate } from '../core/cell-date';
 import type {
   DatabaseEntityType,
   DatabaseMention,
@@ -102,6 +104,9 @@ export function GridCell(props: GridCellProps) {
   let cell: HTMLDivElement | undefined;
   const isSelect = () =>
     ['SELECT_STRING', 'SELECT_NUMBER', 'TAG'].includes(props.column.dataType);
+  const isDate = () =>
+    props.column.dataType === 'DATE' && !props.column.isMultiSelect;
+  const hasPopupEditor = () => isSelect() || (isDate() && editable());
   const startsEditing = Boolean(
     props.initialEdit && editable() && props.column.dataType === 'STRING'
   );
@@ -113,7 +118,7 @@ export function GridCell(props: GridCellProps) {
   let trigger: HTMLElement | undefined;
   let booleanWrapper: HTMLDivElement | undefined;
   let focusEditor: (() => void) | undefined;
-  let selectControl: GridCellControl | undefined;
+  let popupControl: GridCellControl | undefined;
   const beginEdit = (seed?: string) => {
     if (!editable()) return;
     setSelectedMention(undefined);
@@ -131,9 +136,7 @@ export function GridCell(props: GridCellProps) {
         ? seed
         : props.value === null
           ? ''
-          : props.column.dataType === 'DATE'
-            ? String(props.value).slice(0, 10)
-            : String(props.value)
+          : String(props.value)
     );
     setEditing(true);
     if (
@@ -192,7 +195,7 @@ export function GridCell(props: GridCellProps) {
     props.onReady?.({
       focus: () => {
         if (editing()) focusEditor?.();
-        else if (isSelect() && selectControl) selectControl.focus();
+        else if (hasPopupEditor() && popupControl) popupControl.focus();
         else if (
           props.column.dataType === 'BOOLEAN' &&
           !props.column.isMultiSelect &&
@@ -203,7 +206,7 @@ export function GridCell(props: GridCellProps) {
       },
       edit: (seed) => {
         if (!editable()) return;
-        if (isSelect()) selectControl?.edit(seed);
+        if (hasPopupEditor()) popupControl?.edit(seed);
         else if (props.column.dataType === 'BOOLEAN') trigger?.focus();
         else if (editing()) focusEditor?.();
         else beginEdit(seed);
@@ -229,139 +232,157 @@ export function GridCell(props: GridCellProps) {
             }
             fallback={
               <Show
-                when={isSelect()}
+                when={!(isDate() && editable())}
                 fallback={
-                  <button
-                    ref={(element) => {
-                      trigger = element;
+                  <DateCell
+                    {...props}
+                    onReady={(control) => {
+                      popupControl = control;
                     }}
-                    type="button"
-                    class="flex min-h-9 w-full min-w-0 items-center rounded px-2.5 py-1.5 text-left text-[13px] leading-5 outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50"
-                    classList={{
-                      'text-ink-muted': !editable(),
-                      'text-ink-placeholder':
-                        props.value === null && !mentionPreview(),
-                      'font-medium': props.column.dataType === 'STRING',
-                    }}
-                    aria-label={
-                      hasResolvedMentionLabel()
-                        ? undefined
-                        : `${props.column.name}: ${mentionPreview()?.mention.label || formatCellValue(props.column, props.value) || props.emptyLabel || 'Empty'}${editable() ? '. Click to edit' : ''}`
-                    }
-                    aria-description={
-                      hasResolvedMentionLabel() && editable()
-                        ? 'Click to edit'
-                        : undefined
-                    }
-                    aria-readonly={!editable()}
-                    title={
-                      mentionPreview()?.mention.label ||
-                      (!isEntity() &&
-                        formatCellValue(props.column, props.value)) ||
-                      undefined
-                    }
-                    onClick={() => editable() && beginEdit()}
-                    onKeyDown={(event) => {
-                      if (!editable()) return;
-                      if (event.isComposing || event.keyCode === 229) {
-                        beginEdit('');
-                        return;
-                      }
-                      navigate(event);
-                      if (
-                        event.defaultPrevented ||
-                        event.metaKey ||
-                        event.ctrlKey ||
-                        event.altKey
-                      )
-                        return;
-                      if (
-                        isEntity() &&
-                        (event.key === 'Backspace' || event.key === 'Delete')
-                      ) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        setSelectedMention(undefined);
-                        void props.onWrite(null);
-                      } else if (event.key === 'Enter' || event.key === 'F2') {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        beginEdit();
-                      } else if (
-                        event.key.length === 1 ||
-                        event.key === 'Backspace' ||
-                        event.key === 'Delete'
-                      ) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        beginEdit(event.key.length === 1 ? event.key : '');
-                      }
-                    }}
-                  >
-                    <Show when={hasResolvedMentionLabel()}>
-                      <span class="sr-only">{props.column.name}: </span>
-                    </Show>
-                    <span class="truncate">
-                      <Show
-                        when={mentionPreview()}
-                        fallback={
-                          <Show
-                            when={
-                              isEntity() &&
-                              typeof props.value === 'string' &&
-                              props.column.specificEntityType &&
-                              props.renderMentionValue
-                            }
-                            fallback={
-                              (props.column.dataType === 'STRING' &&
-                              typeof props.value === 'string' &&
-                              props.renderTextValue
-                                ? props.renderTextValue(props.value)
-                                : formatCellValue(
-                                    props.column,
-                                    props.value
-                                  )) || (
-                                <span class="opacity-40">
-                                  {props.emptyLabel || '—'}
-                                </span>
-                              )
-                            }
-                          >
-                            {props.renderMentionValue?.(
-                              String(props.value),
-                              props.column.specificEntityType!
-                            )}
-                          </Show>
-                        }
-                      >
-                        {(preview) => preview().mention.label}
-                      </Show>
-                    </span>
-                  </button>
+                  />
                 }
               >
                 <Show
-                  when={editable()}
+                  when={isSelect()}
                   fallback={
-                    <div
+                    <button
                       ref={(element) => {
                         trigger = element;
                       }}
-                      tabindex={-1}
-                      class="px-2.5 py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ink/50"
+                      type="button"
+                      class="flex min-h-9 w-full min-w-0 items-center rounded px-2.5 py-1.5 text-left text-[13px] leading-5 outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50"
+                      classList={{
+                        'text-ink-muted': !editable(),
+                        'text-ink-placeholder':
+                          props.value === null && !mentionPreview(),
+                        'font-medium': props.column.dataType === 'STRING',
+                      }}
+                      aria-label={
+                        hasResolvedMentionLabel()
+                          ? undefined
+                          : `${props.column.name}: ${mentionPreview()?.mention.label || formatCellValue(props.column, props.value) || props.emptyLabel || 'Empty'}${editable() ? '. Click to edit' : ''}`
+                      }
+                      aria-description={
+                        hasResolvedMentionLabel() && editable()
+                          ? 'Click to edit'
+                          : undefined
+                      }
+                      aria-readonly={!editable()}
+                      title={
+                        mentionPreview()?.mention.label ||
+                        (!isEntity() &&
+                          formatCellValue(props.column, props.value)) ||
+                        undefined
+                      }
+                      onClick={() => editable() && beginEdit()}
+                      onKeyDown={(event) => {
+                        if (!editable()) return;
+                        if (event.isComposing || event.keyCode === 229) {
+                          beginEdit('');
+                          return;
+                        }
+                        navigate(event);
+                        if (
+                          event.defaultPrevented ||
+                          event.metaKey ||
+                          event.ctrlKey ||
+                          event.altKey
+                        )
+                          return;
+                        if (
+                          isEntity() &&
+                          (event.key === 'Backspace' || event.key === 'Delete')
+                        ) {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setSelectedMention(undefined);
+                          void props.onWrite(null);
+                        } else if (
+                          event.key === 'Enter' ||
+                          event.key === 'F2'
+                        ) {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          beginEdit();
+                        } else if (
+                          event.key.length === 1 ||
+                          event.key === 'Backspace' ||
+                          event.key === 'Delete'
+                        ) {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          beginEdit(event.key.length === 1 ? event.key : '');
+                        }
+                      }}
                     >
-                      <Show when={props.value !== null}>
-                        <SelectPill label={String(props.value)} />
+                      <Show when={hasResolvedMentionLabel()}>
+                        <span class="sr-only">{props.column.name}: </span>
                       </Show>
-                    </div>
+                      <span class="truncate">
+                        <Show
+                          when={mentionPreview()}
+                          fallback={
+                            <Show
+                              when={
+                                isEntity() &&
+                                typeof props.value === 'string' &&
+                                props.column.specificEntityType &&
+                                props.renderMentionValue
+                              }
+                              fallback={
+                                (props.column.dataType === 'STRING' &&
+                                typeof props.value === 'string' &&
+                                props.renderTextValue
+                                  ? props.renderTextValue(props.value)
+                                  : formatCellValue(
+                                      props.column,
+                                      props.value
+                                    )) || (
+                                  <span class="opacity-40">
+                                    {props.emptyLabel || '—'}
+                                  </span>
+                                )
+                              }
+                            >
+                              {props.renderMentionValue?.(
+                                String(props.value),
+                                props.column.specificEntityType!
+                              )}
+                            </Show>
+                          }
+                        >
+                          {(preview) => preview().mention.label}
+                        </Show>
+                      </span>
+                    </button>
                   }
                 >
-                  <SelectCell
-                    {...props}
-                    onReady={(control) => {
-                      selectControl = control;
-                    }}
-                  />
+                  <Show
+                    when={editable()}
+                    fallback={
+                      <div
+                        ref={(element) => {
+                          trigger = element;
+                        }}
+                        tabindex={-1}
+                        class="px-2.5 py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ink/50"
+                      >
+                        <Show when={props.value !== null}>
+                          <SelectPill
+                            label={String(props.value)}
+                            column={props.column}
+                          />
+                        </Show>
+                      </div>
+                    }
+                  >
+                    <SelectCell
+                      {...props}
+                      onReady={(control) => {
+                        popupControl = control;
+                      }}
+                    />
+                  </Show>
                 </Show>
               </Show>
             }
@@ -475,11 +496,7 @@ function InlineEditor(props: {
   const [error, setError] = createSignal('');
   let finishing = false;
   const initialDraft =
-    props.originalValue === null
-      ? ''
-      : props.column.dataType === 'DATE'
-        ? String(props.originalValue).slice(0, 10)
-        : String(props.originalValue);
+    props.originalValue === null ? '' : String(props.originalValue);
   const focus = () => {
     if (textFocus) {
       textFocus();
@@ -506,22 +523,9 @@ function InlineEditor(props: {
         ? null
         : props.column.dataType === 'NUMBER'
           ? Number(props.draft)
-          : props.column.dataType === 'DATE'
-            ? `${props.draft}T00:00:00.000Z`
-            : props.draft;
+          : props.draft;
     if (typeof value === 'number' && !Number.isFinite(value)) {
       setError('Enter a valid number');
-      input?.focus();
-      return false;
-    }
-    if (
-      props.column.dataType === 'DATE' &&
-      value !== null &&
-      (!/^\d{4}-\d{2}-\d{2}$/.test(props.draft) ||
-        Number.isNaN(Date.parse(String(value))) ||
-        new Date(String(value)).toISOString().slice(0, 10) !== props.draft)
-    ) {
-      setError('Use YYYY-MM-DD');
       input?.focus();
       return false;
     }
@@ -564,14 +568,8 @@ function InlineEditor(props: {
               input = element;
               props.onEditorReady?.(focus);
             }}
-            type={
-              props.column.dataType === 'DATE' && props.selectAll
-                ? 'date'
-                : 'text'
-            }
-            placeholder={
-              props.column.dataType === 'DATE' ? 'YYYY-MM-DD' : props.emptyLabel
-            }
+            type="text"
+            placeholder={props.emptyLabel}
             inputmode={
               props.column.dataType === 'NUMBER' ? 'decimal' : undefined
             }
@@ -798,8 +796,8 @@ function SelectCell(props: GridCellProps) {
                 element.removeEventListener('keydown', openWithKeyboard, true)
               );
             }}
-            variant="ghost"
-            class="group h-auto min-h-9 w-full min-w-0 justify-between rounded px-2.5 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ink/50"
+            variant="plain"
+            class="group h-auto min-h-9 w-full min-w-0 justify-between rounded px-2.5 py-1 text-left outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50"
             aria-label={`${props.column.name}: ${label() || 'Empty'}`}
             onKeyDown={(event: KeyboardEvent) => {
               if (event.isComposing || event.keyCode === 229) {
@@ -828,7 +826,9 @@ function SelectCell(props: GridCellProps) {
             >
               <span class="flex min-w-0 flex-wrap gap-1">
                 <For each={selected()}>
-                  {(value) => <SelectPill label={value} />}
+                  {(value) => (
+                    <SelectPill label={value} column={props.column} />
+                  )}
                 </For>
               </span>
             </Show>
@@ -913,7 +913,10 @@ function SelectCell(props: GridCellProps) {
                         onSelect={() => void props.onWrite(String(option))}
                       >
                         <span class="min-w-0 flex-1">
-                          <SelectPill label={String(option)} />
+                          <SelectPill
+                            label={String(option)}
+                            column={props.column}
+                          />
                         </span>
                         <Show when={String(option) === label()}>
                           <CheckIcon class="size-3.5 text-ink-muted" />
@@ -929,7 +932,10 @@ function SelectCell(props: GridCellProps) {
                         void choose(String(option), checked)
                       }
                     >
-                      <SelectPill label={String(option)} />
+                      <SelectPill
+                        label={String(option)}
+                        column={props.column}
+                      />
                     </Dropdown.CheckboxItem>
                   </Show>
                 )}
@@ -1013,5 +1019,112 @@ function NewOptionInput(props: {
         <CheckIcon class="size-3.5" />
       </button>
     </div>
+  );
+}
+
+/** Date cells edit through the shared property date selector. */
+function DateCell(props: GridCellProps) {
+  const [open, setOpen] = createSignal(false);
+  const [query, setQuery] = createSignal('');
+  let trigger: HTMLButtonElement | undefined;
+  let navigating: 1 | -1 | undefined;
+  const label = () => formatCellValue(props.column, props.value);
+  const edit = (seed?: string) => {
+    setQuery(seed ?? '');
+    setOpen(true);
+  };
+  onMount(() => props.onReady?.({ focus: () => trigger?.focus(), edit }));
+  onCleanup(() => props.onReady?.(undefined));
+  function moveToCell(direction: 1 | -1) {
+    if (!props.onNavigate?.(direction)) focusAdjacent(trigger, direction);
+  }
+  function openWithKeyboard(event: KeyboardEvent) {
+    if (
+      event.isComposing ||
+      event.keyCode === 229 ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      !['Enter', ' ', 'F2'].includes(event.key)
+    )
+      return;
+    // Opened through state, as SelectCell does, to skip Kobalte's trigger
+    // scroll helper.
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    edit();
+  }
+  return (
+    <Dropdown open={open()} onOpenChange={setOpen}>
+      <Dropdown.Trigger
+        ref={(element: HTMLButtonElement) => {
+          trigger = element;
+          element.addEventListener('keydown', openWithKeyboard, true);
+          onCleanup(() =>
+            element.removeEventListener('keydown', openWithKeyboard, true)
+          );
+        }}
+        variant="plain"
+        class="h-auto min-h-9 w-full min-w-0 justify-start rounded px-2.5 py-1.5 text-left text-[13px] leading-5 font-normal outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50"
+        aria-label={`${props.column.name}: ${label() || props.emptyLabel || 'Empty'}. Click to edit`}
+        onKeyDown={(event: KeyboardEvent) => {
+          if (event.isComposing || event.keyCode === 229) return;
+          if (event.key === 'Tab' && props.onNavigate) {
+            event.preventDefault();
+            event.stopPropagation();
+            moveToCell(event.shiftKey ? -1 : 1);
+          } else if (event.key === 'Backspace' || event.key === 'Delete') {
+            event.preventDefault();
+            event.stopPropagation();
+            void props.onWrite(null);
+          } else if (
+            event.key.length === 1 &&
+            !event.ctrlKey &&
+            !event.metaKey &&
+            !event.altKey
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            edit(event.key);
+          }
+        }}
+      >
+        <span class="truncate">
+          {label() || (
+            <span class="text-ink-placeholder opacity-40">
+              {props.emptyLabel || '—'}
+            </span>
+          )}
+        </span>
+      </Dropdown.Trigger>
+      <Dropdown.Content
+        class="flex max-h-96 w-70 flex-col overflow-hidden p-0 text-sm"
+        // A menu's closing animation must not delay Tab into the next cell.
+        style={{ animation: 'none' }}
+        onKeyDown={(event: KeyboardEvent) => {
+          if (event.key !== 'Tab' || event.isComposing) return;
+          event.preventDefault();
+          navigating = event.shiftKey ? -1 : 1;
+          setOpen(false);
+        }}
+        onCloseAutoFocus={(event) => {
+          if (!navigating) return;
+          event.preventDefault();
+          const direction = navigating;
+          navigating = undefined;
+          queueMicrotask(() => moveToCell(direction));
+        }}
+      >
+        <PropertyDateSelector
+          property={{ displayName: props.column.name }}
+          selectedDate={fromCellDate(props.value)}
+          initialQuery={query()}
+          onSelectDate={(date) =>
+            void props.onWrite(date ? toCellDate(date) : null)
+          }
+          onClose={() => setOpen(false)}
+        />
+      </Dropdown.Content>
+    </Dropdown>
   );
 }

@@ -20,6 +20,14 @@ import {
   type GridCellControl,
 } from './GridCell';
 
+// The date selector's focus helper waits on IntersectionObserver, and the
+// property utils barrel pulls in live clients; neither exists under jsdom.
+vi.mock('@property/utils', () => ({
+  // Like the real helper, focus after the menu has taken focus on open.
+  useSearchInputFocus: (input: () => HTMLElement | undefined) =>
+    setTimeout(() => input()?.focus(), 100),
+}));
+
 const column: DatabaseViewColumn = {
   id: 'name',
   name: 'Name',
@@ -1007,5 +1015,88 @@ describe('grid cell', () => {
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(screen.getByRole('button').textContent).toContain('one, two');
     expect(onWrite).not.toHaveBeenCalled();
+  });
+
+  describe('date cells', () => {
+    const date: DatabaseViewColumn = {
+      ...column,
+      id: 'due',
+      name: 'Due',
+      dataType: 'DATE',
+    };
+
+    it('picks a typed date through the shared date selector and stores its day', async () => {
+      const onWrite = vi.fn(async () => true);
+      render(() => (
+        <GridCell
+          column={date}
+          value={null}
+          canEdit
+          onWrite={onWrite}
+          onAddOption={vi.fn(async () => true)}
+        />
+      ));
+      const trigger = screen.getByRole('button', {
+        name: 'Due: Empty. Click to edit',
+      });
+      trigger.focus();
+      await userEvent.keyboard('{Enter}');
+      const search = await screen.findByPlaceholderText('Set due...');
+      await waitFor(() => expect(document.activeElement).toBe(search));
+      await userEvent.keyboard('2030-12-31');
+      expect((search as HTMLInputElement).value).toBe('2030-12-31');
+      await screen.findByText('Dec 31, 2030');
+      await userEvent.keyboard('{Enter}');
+      await waitFor(() =>
+        expect(onWrite).toHaveBeenCalledExactlyOnceWith(
+          '2030-12-31T00:00:00.000Z'
+        )
+      );
+    });
+
+    it('clears a date with Delete without opening the selector', () => {
+      const onWrite = vi.fn(async () => true);
+      render(() => (
+        <GridCell
+          column={date}
+          value="2025-07-19T00:00:00.000Z"
+          canEdit
+          onWrite={onWrite}
+          onAddOption={vi.fn(async () => true)}
+        />
+      ));
+      fireEvent.keyDown(
+        screen.getByRole('button', {
+          name: 'Due: Jul 19, 2025. Click to edit',
+        }),
+        { key: 'Delete' }
+      );
+      expect(onWrite).toHaveBeenCalledExactlyOnceWith(null);
+      expect(screen.queryByPlaceholderText('Set due...')).toBeNull();
+    });
+
+    it('leaves the selector with Tab into the next cell without writing', async () => {
+      const onWrite = vi.fn(async () => true);
+      const onNavigate = vi.fn(() => true);
+      let control: GridCellControl | undefined;
+      render(() => (
+        <GridCell
+          column={date}
+          value={null}
+          canEdit
+          onWrite={onWrite}
+          onAddOption={vi.fn(async () => true)}
+          onNavigate={onNavigate}
+          onReady={(ready) => {
+            control = ready;
+          }}
+        />
+      ));
+      control?.edit();
+      await screen.findByPlaceholderText('Set due...');
+      await userEvent.tab();
+      await waitFor(() => expect(onNavigate).toHaveBeenCalledWith(1));
+      expect(onWrite).not.toHaveBeenCalled();
+    });
   });
 });

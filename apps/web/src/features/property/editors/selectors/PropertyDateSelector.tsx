@@ -21,15 +21,17 @@ import {
 type DateSelectorMode = 'search' | 'calendar';
 
 type DateSelectorProps = {
-  property: DateProperty;
+  property: Pick<DateProperty, 'displayName'>;
   selectedDate?: Date | null;
+  /** Seeds the search, e.g. with the key that opened the selector. */
+  initialQuery?: string;
   onSelectDate: (date: Date | null) => void;
   onClose?: () => void;
 };
 
 export const PropertyDateSelector = (props: DateSelectorProps) => {
   const [mode, setMode] = createSignal<DateSelectorMode>('search');
-  const [searchQuery, setSearchQuery] = createSignal('');
+  const [searchQuery, setSearchQuery] = createSignal(props.initialQuery ?? '');
   const [selectedIndex, setSelectedIndex] = createSignal(0);
   let searchInputRef!: HTMLInputElement;
   const keyboardMode = useKeyPressed(100);

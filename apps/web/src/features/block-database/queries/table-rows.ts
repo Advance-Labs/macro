@@ -47,6 +47,11 @@ export function toViewColumn(column: DatabaseColumnDetail): DatabaseViewColumn {
     options: column.definition.property_options.map((option) =>
       String(option.value.value)
     ),
+    optionColors: Object.fromEntries(
+      column.definition.property_options.flatMap((option) =>
+        option.color ? [[String(option.value.value), option.color]] : []
+      )
+    ),
     writable: column.writable,
     ...(relation
       ? {

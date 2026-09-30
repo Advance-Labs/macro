@@ -305,8 +305,8 @@ function BoardLane(
       >
         <SelectPill
           label={props.group.label}
+          column={props.groupColumn}
           empty={props.group.value === null}
-          dot
         />
         <span class="text-xs tabular-nums text-ink-placeholder">
           {props.group.rows.length +
@@ -594,6 +594,7 @@ function BoardCard(props: {
                   >
                     <SelectPill
                       label={String(rowValue(props.row, column.id))}
+                      column={column}
                     />
                   </Show>
                 </span>
@@ -640,6 +641,7 @@ function BoardCard(props: {
                       <span class="flex-1">
                         <SelectPill
                           label={group.label}
+                          column={props.groupColumn}
                           empty={group.value === null}
                         />
                       </span>

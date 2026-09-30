@@ -15,6 +15,8 @@ export type DatabaseViewColumn = {
   dataType: string;
   isMultiSelect: boolean;
   options: (string | number)[];
+  /** Stored option colours by label; tags fall back to the default tag colour. */
+  optionColors?: Record<string, string>;
   writable: boolean;
   specificEntityType?: DatabaseEntityType | null;
   /** A new, empty Text column may adopt the type of its first entry. */
