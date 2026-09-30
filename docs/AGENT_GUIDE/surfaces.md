@@ -75,6 +75,10 @@ visible; local results do not trigger the tab-loading bar. A fresh server respon
 still replaces that result, and initial loads without usable data retain normal loading
 indicators. A transport failure does not hide usable current-query local results,
 including empty results; HTTP responses and GraphQL errors still surface.
+To check reconnect behavior, load a non-Mail list online, let background hydration
+advance its cache while offline, then reconnect without delivering a fresh network
+response. The newer local result must remain visible; connectivity alone must not
+restore the older network snapshot. A fresh network response can take authority again.
 
 This is a best-effort display, not proof that every matching entity is cached. Outside
 the supported cached-Mail slice below, loading more follows the original server cursors
@@ -463,6 +467,14 @@ Browser WASM and native cache builds must include the regenerated schema metadat
 native offline archive support therefore requires a full app build, not just OTA.
 
 ### Cached Mail filtering
+
+Performance check: switch Signal → All twice against a large synchronized cache.
+Dense local pages use bounded sort-index candidates rather than sorting the entire
+mailbox. Sparse filters and large timestamp ties retain the exact fallback plan.
+A filter result, row fragments, and final revision that agree must be accepted even
+when background hydration advanced past the revision observed before the request;
+that alone must not trigger another filter scan. Also verify local Load more,
+same-timestamp ordering, and pending archive/read changes.
 
 With GraphQL caching enabled (browser or native Tauri) and the email metadata backfill synchronized,
 All, Signal, Noise, Drafts, Sent, Calendar, and Shared support tab changes and new
