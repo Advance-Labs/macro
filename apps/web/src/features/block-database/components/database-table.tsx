@@ -121,6 +121,7 @@ export function DatabaseTable(props: {
   onSort: (columnId: string, direction: 'asc' | 'desc' | null) => void;
   onHide?: (columnId: string) => void;
   onMove?: (columnId: string, direction: 'left' | 'right') => void;
+  onInsertColumn?: (columnId: string, side: 'left' | 'right') => void;
 }) {
   const [columnPreview, setColumnPreview] = createSignal<HTMLElement>();
   const [columnDrop, setColumnDrop] = createSignal<{
@@ -508,6 +509,7 @@ export function DatabaseTable(props: {
                   onSort={props.onSort}
                   onHide={props.onHide}
                   onMove={props.onMove}
+                  onInsert={props.onInsertColumn}
                   canMoveLeft={index() > 0}
                   canMoveRight={index() < props.columns.length - 1}
                 />

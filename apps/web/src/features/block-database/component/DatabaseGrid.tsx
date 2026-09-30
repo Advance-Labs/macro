@@ -42,7 +42,7 @@ import {
   type DatabaseTableActions,
   DatabaseTableView,
 } from '../views/database-table-view';
-import { AddColumnMenu } from './AddColumnMenu';
+import { AddColumnMenu, createDefaultColumn } from './AddColumnMenu';
 
 export type DatabaseGridProps = {
   databaseId: string;
@@ -229,6 +229,13 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
             })
           }
           renderToolbar={props.renderToolbar}
+          createColumn={() =>
+            createDefaultColumn({
+              databaseId,
+              tableId: props.tableId,
+              columns: table().columns,
+            })
+          }
           addColumn={(label, initialType, variant, onCreated) => (
             <AddColumnMenu
               databaseId={databaseId}

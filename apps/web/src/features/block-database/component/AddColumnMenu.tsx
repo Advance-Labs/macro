@@ -9,6 +9,38 @@ import {
   defaultDatabaseColumnName,
 } from '../core/property-creation';
 
+/**
+ * Add a Text column with the next free default name at the table's end; its
+ * type is inferred from what is typed. Returns the new column's id.
+ */
+export async function createDefaultColumn(args: {
+  databaseId: string;
+  tableId: string;
+  columns: DatabaseColumnDetail[];
+}): Promise<string> {
+  const name = defaultDatabaseColumnName(
+    args.columns.map(
+      (entry) =>
+        entry.column.display_name ?? entry.definition.definition.display_name
+    )
+  );
+  const id = await createDatabaseColumn({
+    databaseId: args.databaseId,
+    tableId: args.tableId,
+    request: {
+      infer_type: true,
+      binding: {
+        kind: 'new',
+        name,
+        data_type: 'STRING',
+        is_multi_select: false,
+      },
+    },
+  });
+  if (!id) throw new Error('Could not add this column.');
+  return id;
+}
+
 /** A new column starts as Text; name and type are edited in its header. */
 export function AddColumnMenu(props: {
   databaseId: string;
@@ -26,27 +58,7 @@ export function AddColumnMenu(props: {
     setPending(true);
     setError('');
     try {
-      const name = defaultDatabaseColumnName(
-        props.columns.map(
-          (entry) =>
-            entry.column.display_name ??
-            entry.definition.definition.display_name
-        )
-      );
-      const id = await createDatabaseColumn({
-        databaseId: props.databaseId,
-        tableId: props.tableId,
-        request: {
-          infer_type: true,
-          binding: {
-            kind: 'new',
-            name,
-            data_type: 'STRING',
-            is_multi_select: false,
-          },
-        },
-      });
-      if (!id) throw new Error('Could not add this column.');
+      const id = await createDefaultColumn(props);
       props.onCreated?.(id);
     } catch (error) {
       setError(

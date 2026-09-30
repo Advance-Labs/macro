@@ -36,6 +36,9 @@ text. Changing a placement never changes another table that uses the same proper
 A relation can hold multiple records. **Delete column** opens a confirmation;
 it removes this table’s column and values while preserving other tables.
 Drag a column header left or right to reorder it, or use **Move left / Move right**.
+To add a column next to another, right-click its header and choose **Insert left** or
+**Insert right**: a Text column appears on that side with its name selected for
+editing, and its type is inferred from what you type.
 An orange insertion line shows the exact boundary before or after the target
 column. Release to place it there; Escape cancels. Original-position and
 offscreen boundaries show no line and do not change the order.

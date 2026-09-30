@@ -115,6 +115,8 @@ export function DatabaseTableView(props: {
     previousName: string
   ) => Promise<void>;
   renderToolbar?: (actions: DatabaseTableActions) => JSX.Element;
+  /** Create a new column at the end of the table and return its id. */
+  createColumn?: () => Promise<string | undefined>;
   addColumn: (
     label?: string,
     initialType?: DatabasePropertyType,
@@ -692,6 +694,27 @@ export function DatabaseTableView(props: {
       pendingColumnOrders--;
     }
   }
+  async function insertColumn(targetId: string, side: 'left' | 'right') {
+    const create = props.createColumn;
+    if (!create) return;
+    setSchemaError('');
+    try {
+      const created = await create();
+      if (!created || disposed) return;
+      // The new column arrives with the refreshed schema, at the table's end.
+      await until(() => columns().some((column) => column.id === created));
+      await reorderColumn(
+        created,
+        targetId,
+        side === 'left' ? 'before' : 'after'
+      );
+      focusColumn(created);
+    } catch (error) {
+      setSchemaError(
+        error instanceof Error ? error.message : 'Could not add this column.'
+      );
+    }
+  }
   function moveColumn(columnId: string, direction: 'left' | 'right') {
     const columns = visibleColumns();
     const target =
@@ -974,6 +997,11 @@ export function DatabaseTableView(props: {
                   onSort={sort}
                   onHide={props.onViewChange ? hideColumn : undefined}
                   onMove={props.onViewChange ? moveColumn : undefined}
+                  onInsertColumn={
+                    props.canEdit && props.createColumn
+                      ? (columnId, side) => void insertColumn(columnId, side)
+                      : undefined
+                  }
                   emptyState={
                     <Show
                       when={

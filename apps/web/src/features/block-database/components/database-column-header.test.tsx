@@ -76,6 +76,35 @@ describe('column header interactions', () => {
     expect(screen.queryByLabelText('Column name')).toBeNull();
   });
 
+  it('offers inserting a column to either side for editors', async () => {
+    const insert = vi.fn();
+    render(() => (
+      <DatabaseColumnHeader
+        column={column}
+        canRename
+        onRename={vi.fn(async () => {})}
+        onSort={vi.fn()}
+        onInsert={insert}
+      />
+    ));
+    const header = screen.getByRole('columnheader', { name: 'Name' });
+    fireEvent.contextMenu(header, { clientX: 40, clientY: 20 });
+    fireEvent(
+      await screen.findByRole('menuitem', { name: 'Insert left' }),
+      new MouseEvent('pointerup', { button: 0, bubbles: true })
+    );
+    expect(insert).toHaveBeenLastCalledWith('name', 'left');
+    await waitFor(() =>
+      expect(screen.queryByRole('menu', { hidden: true })).toBeNull()
+    );
+    fireEvent.contextMenu(header, { clientX: 40, clientY: 20 });
+    fireEvent(
+      await screen.findByRole('menuitem', { name: 'Insert right' }),
+      new MouseEvent('pointerup', { button: 0, bubbles: true })
+    );
+    expect(insert).toHaveBeenLastCalledWith('name', 'right');
+  });
+
   it('retains a failed draft and its original identity across refresh, then retries without duplicate writes', async () => {
     let reject!: (error: Error) => void;
     const rename = vi

@@ -783,6 +783,52 @@ describe('database table view', () => {
     }
   );
 
+  it('inserts a new column beside the one whose menu asked, then opens its name for editing', async () => {
+    const fixture = sourceFixture();
+    fixture.setColumns([
+      columns[0],
+      { ...columns[0], id: 'notes', name: 'Notes' },
+    ]);
+    const [view, setView] = createSignal(defaultDatabaseView());
+    const reorder = vi.fn(async (_order: string[]) => {});
+    const createColumn = vi.fn(async () => {
+      fixture.setColumns([
+        columns[0],
+        { ...columns[0], id: 'notes', name: 'Notes' },
+        { ...columns[0], id: 'added', name: 'Column 3' },
+      ]);
+      return 'added';
+    });
+    render(() => (
+      <DatabaseTableView
+        name="Projects"
+        source={fixture.source}
+        canEdit
+        view={view()}
+        onViewChange={setView}
+        onReorderColumns={reorder}
+        onRenameColumn={vi.fn(async () => {})}
+        createColumn={createColumn}
+        addColumn={() => null}
+      />
+    ));
+    fireEvent.keyDown(
+      screen.getByRole('button', { name: 'Notes column menu' }),
+      { key: 'Enter' }
+    );
+    fireEvent.keyDown(
+      await screen.findByRole('menuitem', { name: 'Insert left' }),
+      { key: 'Enter' }
+    );
+    await waitFor(() =>
+      expect(reorder).toHaveBeenCalledWith(['title', 'added', 'notes'])
+    );
+    expect(createColumn).toHaveBeenCalledOnce();
+    expect(view().columnOrder).toEqual(['title', 'added', 'notes']);
+    const nameField = await screen.findByLabelText('Column name');
+    expect((nameField as HTMLInputElement).value).toBe('Column 3');
+  });
+
   it('takes a record visited from elsewhere to its highlighted row without opening it', async () => {
     const fixture = sourceFixture();
     let actions!: DatabaseTableActions;

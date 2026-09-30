@@ -9,6 +9,8 @@ import ArrowLeftIcon from '@phosphor/arrow-left.svg';
 import ArrowRightIcon from '@phosphor/arrow-right.svg';
 import ArrowUpIcon from '@phosphor/arrow-up.svg';
 import CaretDownIcon from '@phosphor/caret-down.svg';
+import ColumnsPlusLeftIcon from '@phosphor/columns-plus-left.svg';
+import ColumnsPlusRightIcon from '@phosphor/columns-plus-right.svg';
 import EyeSlashIcon from '@phosphor/eye-slash.svg';
 import PencilIcon from '@phosphor/pencil-simple.svg';
 import TrashIcon from '@phosphor/trash.svg';
@@ -53,6 +55,8 @@ export type DatabaseColumnHeaderProps = {
   onSort: (columnId: string, direction: 'asc' | 'desc' | null) => void;
   onHide?: (columnId: string) => void;
   onMove?: (columnId: string, direction: 'left' | 'right') => void;
+  /** Add a new column beside this one. */
+  onInsert?: (columnId: string, side: 'left' | 'right') => void;
   canMoveLeft?: boolean;
   canMoveRight?: boolean;
 };
@@ -177,6 +181,22 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
             icon: PencilIcon,
             group: 'edit',
             run: rename,
+          },
+        ]
+      : []),
+    ...(canRename() && props.onInsert
+      ? [
+          {
+            label: 'Insert left',
+            icon: ColumnsPlusLeftIcon,
+            group: 'edit',
+            run: () => props.onInsert?.(props.column.id, 'left'),
+          },
+          {
+            label: 'Insert right',
+            icon: ColumnsPlusRightIcon,
+            group: 'edit',
+            run: () => props.onInsert?.(props.column.id, 'right'),
           },
         ]
       : []),
