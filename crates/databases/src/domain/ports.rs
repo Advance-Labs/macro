@@ -490,14 +490,17 @@ pub trait DatabasesService: Send + Sync + 'static {
         definition: QueryDefinition,
     ) -> impl Future<Output = Result<SavedQuery, QueryError>> + Send;
 
-    /// A saved query's definition. Definitions are readable by anyone
-    /// authenticated; what running one returns is permission-filtered.
+    /// A saved query's definition, readable by its creator and by anyone who
+    /// can view the live database it is scoped to. Anyone else gets
+    /// [`QueryError::NotFound`], so query ids cannot be probed.
     fn get_query(
         &self,
+        viewer: Viewer,
         id: QueryId,
-    ) -> impl Future<Output = Result<Option<SavedQuery>, QueryError>> + Send;
+    ) -> impl Future<Output = Result<SavedQuery, QueryError>> + Send;
 
-    /// Run a saved query as the viewer.
+    /// Run a saved query as the viewer, under the same read rule as
+    /// [`Self::get_query`]; what it returns is permission-filtered.
     fn run_query(
         &self,
         viewer: Viewer,

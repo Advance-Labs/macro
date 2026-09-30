@@ -24,25 +24,14 @@ where
         if sql.len() > MAX_SQL_LEN {
             return Err(QueryError::BudgetExceeded);
         }
-        if let Some(database_id) = database_id {
-            let visible = self
-                .access
-                .accessible_databases(&viewer)
+        if let Some(database_id) = database_id
+            && self
+                .live_database_grant(&viewer, database_id)
                 .await
-                .map_err(infra)?
-                .iter()
-                .any(|(id, _)| *id == database_id);
-            let live = visible
-                && self
-                    .repo
-                    .databases_by_ids(&[database_id])
-                    .await
-                    .map_err(infra)?
-                    .iter()
-                    .any(|database| database.trashed_at.is_none());
-            if !live {
-                return Err(QueryError::NotFound);
-            }
+                .map_err(QueryError::Infrastructure)?
+                .is_none()
+        {
+            return Err(QueryError::NotFound);
         }
         let entries = self.viewer_entries(&viewer, database_id).await?;
         let compiled = database_sql::compile(&catalog::engine_catalog(&entries), sql)
@@ -58,17 +47,42 @@ where
             .map_err(infra)
     }
 
-    pub(super) async fn run_saved_query(
+    /// A saved query the viewer may read: their own, or one scoped to a live
+    /// database they can view. Anything else is indistinguishable from a
+    /// missing query.
+    pub(super) async fn readable_query(
         &self,
-        viewer: Viewer,
+        viewer: &Viewer,
         id: QueryId,
-    ) -> Result<ExecOutcome, QueryError> {
+    ) -> Result<SavedQuery, QueryError> {
         let saved = self
             .repo
             .get_query(id)
             .await
             .map_err(infra)?
             .ok_or(QueryError::NotFound)?;
+        if saved.created_by == viewer.user_id.as_ref() {
+            return Ok(saved);
+        }
+        let Some(database_id) = saved.database_id else {
+            return Err(QueryError::NotFound);
+        };
+        match self
+            .live_database_grant(viewer, database_id)
+            .await
+            .map_err(QueryError::Infrastructure)?
+        {
+            Some(_) => Ok(saved),
+            None => Err(QueryError::NotFound),
+        }
+    }
+
+    pub(super) async fn run_saved_query(
+        &self,
+        viewer: Viewer,
+        id: QueryId,
+    ) -> Result<ExecOutcome, QueryError> {
+        let saved = self.readable_query(&viewer, id).await?;
         self.run_sql(
             viewer,
             ExecRequest {

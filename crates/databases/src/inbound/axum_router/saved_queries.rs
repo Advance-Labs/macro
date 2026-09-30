@@ -55,7 +55,7 @@ where
     Ok((StatusCode::CREATED, Json(saved)))
 }
 
-/// A saved query's definition.
+/// A saved query's definition, for its creator or a viewer of its database.
 #[utoipa::path(
     get,
     tag = "databases",
@@ -65,13 +65,13 @@ where
     responses(
         (status = 200, body = SavedQuery),
         (status = 401, description = "Missing or invalid credentials", body = ErrorResponse),
-        (status = 404, body = ErrorResponse),
+        (status = 404, description = "Missing, or not readable by the caller", body = ErrorResponse),
         (status = 500, body = ErrorResponse),
     )
 )]
 pub async fn get_query_handler<S, Eas, Auth>(
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    _user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
+    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
     Path(QueryPath { query_id }): Path<QueryPath>,
 ) -> Result<Json<SavedQuery>, QueryError>
 where
@@ -81,10 +81,9 @@ where
 {
     state
         .service
-        .get_query(query_id)
-        .await?
+        .get_query(viewer_of(&user), query_id)
+        .await
         .map(Json)
-        .ok_or(QueryError::NotFound)
 }
 
 /// Run a saved query as the caller; results are permission-filtered.
@@ -98,7 +97,7 @@ where
         (status = 200, body = ExecOutcome),
         (status = 400, description = "The query no longer compiles", body = ErrorResponse),
         (status = 401, description = "Missing or invalid credentials", body = ErrorResponse),
-        (status = 404, body = ErrorResponse),
+        (status = 404, description = "Missing, or not readable by the caller", body = ErrorResponse),
         (status = 422, description = "Query budget exceeded", body = ErrorResponse),
         (status = 500, body = ErrorResponse),
     )

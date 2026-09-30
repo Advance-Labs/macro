@@ -315,6 +315,33 @@ where
         Ok(grants)
     }
 
+    /// The viewer's grant on one live database; `None` when they hold none or
+    /// it is trashed, which callers treat as missing.
+    pub(super) async fn live_database_grant(
+        &self,
+        viewer: &Viewer,
+        database_id: DatabaseId,
+    ) -> Result<Option<AccessGrant>, rootcause::Report> {
+        let grant = self
+            .access
+            .accessible_databases(viewer)
+            .await
+            .map_err(|error| rootcause::Report::new(error).into_dynamic())?
+            .into_iter()
+            .find_map(|(id, grant)| (id == database_id).then_some(grant));
+        let Some(grant) = grant else {
+            return Ok(None);
+        };
+        let live = self
+            .repo
+            .databases_by_ids(&[database_id])
+            .await
+            .map_err(|error| rootcause::Report::new(error).into_dynamic())?
+            .iter()
+            .any(|database| database.trashed_at.is_none());
+        Ok(live.then_some(grant))
+    }
+
     /// The catalog entries that belong to one database, catalog names intact.
     fn entries_of(entries: Vec<TableEntry>, database_id: DatabaseId) -> Vec<TableEntry> {
         entries
@@ -1082,8 +1109,8 @@ where
     }
 
     #[tracing::instrument(skip(self), err)]
-    async fn get_query(&self, id: QueryId) -> Result<Option<SavedQuery>, QueryError> {
-        self.repo.get_query(id).await.map_err(infra)
+    async fn get_query(&self, viewer: Viewer, id: QueryId) -> Result<SavedQuery, QueryError> {
+        self.readable_query(&viewer, id).await
     }
 
     #[tracing::instrument(skip(self), err)]

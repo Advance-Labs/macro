@@ -467,8 +467,9 @@ impl DatabasesService for FakeService {
 
     async fn get_query(
         &self,
+        _viewer: Viewer,
         _id: crate::domain::models::QueryId,
-    ) -> Result<Option<crate::domain::models::SavedQuery>, QueryError> {
+    ) -> Result<crate::domain::models::SavedQuery, QueryError> {
         unimplemented!("no tool reads a saved query back")
     }
 
