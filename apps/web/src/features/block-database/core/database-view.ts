@@ -54,6 +54,9 @@ export type DatabaseSort = {
   direction: 'asc' | 'desc';
 };
 
+/** Whether a row must match every filter or any one of them. */
+export type DatabaseFilterConjunction = 'and' | 'or';
+
 export type DatabaseViewConfig = {
   layout: 'table' | 'board';
   groupBy: string | null;
@@ -62,6 +65,8 @@ export type DatabaseViewConfig = {
   /** Manual row ids per lane; a multi-select row can have a different position in each. */
   cardOrder?: Record<string, string[]>;
   filters: DatabaseFilter[];
+  /** Omitted on older views, which match every filter. */
+  filterConjunction?: DatabaseFilterConjunction;
   sorts: DatabaseSort[];
   hiddenColumns: string[];
   /** Omitted on older views; unlisted columns follow in schema order. */
@@ -88,6 +93,7 @@ export function defaultDatabaseView(): DatabaseViewConfig {
     layout: 'table',
     groupBy: null,
     filters: [],
+    filterConjunction: 'and',
     sorts: [],
     hiddenColumns: [],
     search: '',
@@ -157,7 +163,34 @@ export function filterNeedsValue(operator: DatabaseFilterOperator): boolean {
   return operator !== 'is_empty' && operator !== 'is_not_empty';
 }
 
+/** How the database engine can compare a column's cells. */
+export type DatabaseFilterKind =
+  | 'text'
+  | 'number'
+  | 'checkbox'
+  | 'date'
+  | 'select'
+  | 'reference';
+
+/** Relations and entity references hold ids, so they only filter by emptiness. */
+export function databaseFilterKind(
+  column: DatabaseViewColumn
+): DatabaseFilterKind {
+  if (column.relation) return 'reference';
+  return match<string, DatabaseFilterKind>(column.dataType)
+    .with('STRING', 'LINK', () => 'text')
+    .with('NUMBER', () => 'number')
+    .with('BOOLEAN', () => 'checkbox')
+    .with('DATE', () => 'date')
+    .with('SELECT_STRING', 'SELECT_NUMBER', 'TAG', () => 'select')
+    .otherwise(() => 'reference');
+}
+
 export function filterOperatorsFor(column: DatabaseViewColumn) {
+  if (databaseFilterKind(column) === 'reference')
+    return FILTER_OPERATORS.filter(
+      ({ value }) => value === 'is_empty' || value === 'is_not_empty'
+    );
   const numeric = column.dataType === 'NUMBER';
   const date = column.dataType === 'DATE';
   const categorical =
@@ -224,115 +257,6 @@ function isEmpty(
   return databaseCellValues(value, column).every(
     (item) => item === null || item === ''
   );
-}
-
-function comparable(value: DatabaseCellValue, column: DatabaseViewColumn) {
-  if (column.dataType === 'NUMBER' || column.dataType === 'BOOLEAN') {
-    return Number(value);
-  }
-  // Date filters are calendar-day comparisons. SQL values may carry an RFC3339
-  // time suffix, whereas a date input supplies YYYY-MM-DD.
-  if (column.dataType === 'DATE') return String(value).slice(0, 10);
-  return String(value).toLocaleLowerCase();
-}
-
-export function matchesDatabaseFilter(
-  value: DatabaseCellValue,
-  column: DatabaseViewColumn,
-  filter: DatabaseFilter
-): boolean {
-  if (filter.operator === 'is_empty') return isEmpty(value, column);
-  if (filter.operator === 'is_not_empty') return !isEmpty(value, column);
-  // An unfinished filter must not make a table appear to have lost its rows.
-  if (!filter.value.trim()) return true;
-  const right = comparable(filter.value, column);
-  if (typeof right === 'number' && !Number.isFinite(right)) return true;
-  const values = databaseCellValues(value, column)
-    .filter((item) => item !== null && item !== '')
-    .map((item) => comparable(item, column));
-  if (!values.length && !column.isMultiSelect) return false;
-  return match(filter.operator)
-    .with('equals', () => values.some((left) => left === right))
-    .with('not_equals', () => values.every((left) => left !== right))
-    .with('contains', () =>
-      values.some((left) => String(left).includes(String(right)))
-    )
-    .with('not_contains', () =>
-      values.every((left) => !String(left).includes(String(right)))
-    )
-    .with('starts_with', () =>
-      values.some((left) => String(left).startsWith(String(right)))
-    )
-    .with('gt', () => values.some((left) => left > right))
-    .with('gte', () => values.some((left) => left >= right))
-    .with('lt', () => values.some((left) => left < right))
-    .with('lte', () => values.some((left) => left <= right))
-    .exhaustive();
-}
-
-/** Search, then AND filters, then stable multi-column sorting. Never mutates rows. */
-export function applyDatabaseView<Row>(
-  rows: readonly Row[],
-  columns: readonly DatabaseViewColumn[],
-  view: DatabaseViewConfig,
-  getValue: (row: Row, columnId: string) => DatabaseCellValue
-): Row[] {
-  const byId = new Map(columns.map((column) => [column.id, column]));
-  const search = view.search.trim().toLocaleLowerCase();
-  const filtered = rows.filter((row) => {
-    if (
-      search &&
-      !columns.some((column) =>
-        databaseCellValues(getValue(row, column.id), column).some((value) =>
-          String(value ?? '')
-            .toLocaleLowerCase()
-            .includes(search)
-        )
-      )
-    )
-      return false;
-    return view.filters.every((filter) => {
-      const column = byId.get(filter.columnId);
-      return (
-        !column ||
-        matchesDatabaseFilter(getValue(row, column.id), column, filter)
-      );
-    });
-  });
-  if (!view.sorts.length) return filtered;
-  return filtered.sort((a, b) => {
-    for (const sort of view.sorts) {
-      const column = byId.get(sort.columnId);
-      if (!column) continue;
-      const aValue = getValue(a, column.id);
-      const bValue = getValue(b, column.id);
-      // Empty cells stay at the end in either direction.
-      if (isEmpty(aValue, column) && isEmpty(bValue, column)) continue;
-      if (isEmpty(aValue, column)) return 1;
-      if (isEmpty(bValue, column)) return -1;
-      const left = comparable(
-        column.relation
-          ? databaseCellValues(aValue, column).join(', ')
-          : aValue,
-        column
-      );
-      const right = comparable(
-        column.relation
-          ? databaseCellValues(bValue, column).join(', ')
-          : bValue,
-        column
-      );
-      const order =
-        typeof left === 'number' && typeof right === 'number'
-          ? left - right
-          : String(left).localeCompare(String(right), undefined, {
-              numeric: true,
-              sensitivity: 'base',
-            });
-      if (order) return sort.direction === 'asc' ? order : -order;
-    }
-    return 0;
-  });
 }
 
 export type DatabaseRowGroup<Row> = {
@@ -425,6 +349,9 @@ export function isDatabaseViewConfig(
     typeof value.search === 'string' &&
     Array.isArray(value.filters) &&
     value.filters.every(isFilter) &&
+    (value.filterConjunction === undefined ||
+      value.filterConjunction === 'and' ||
+      value.filterConjunction === 'or') &&
     Array.isArray(value.sorts) &&
     value.sorts.every(isSort) &&
     Array.isArray(value.hiddenColumns) &&
@@ -482,6 +409,7 @@ export function reconcileDatabaseView(
     groupBy,
     cardOrder: groupBy === view.groupBy ? view.cardOrder : undefined,
     filters: view.filters.filter((filter) => ids.has(filter.columnId)),
+    filterConjunction: view.filterConjunction ?? 'and',
     sorts: view.sorts.filter((sort) => ids.has(sort.columnId)),
     hiddenColumns: view.hiddenColumns.filter((id) => ids.has(id)),
   };

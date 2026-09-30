@@ -7,7 +7,7 @@ import {
   within,
 } from '@solidjs/testing-library';
 import userEvent from '@testing-library/user-event';
-import { createSignal } from 'solid-js';
+import { type Accessor, createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DatabaseToolbar } from '../components/database-toolbar';
 import {
@@ -20,6 +20,7 @@ import {
   type DatabaseViewConfig,
   defaultDatabaseView,
 } from '../core/database-view';
+import type { DatabaseRow } from '../core/table';
 import {
   type DatabaseTableActions,
   DatabaseTableView,
@@ -44,32 +45,60 @@ const columns: DatabaseViewColumn[] = [
   },
 ];
 
+/** What the fake table holds, before the view's statement narrows it. */
+type StoredTable = Omit<DatabaseRowsSnapshot, 'retained'>;
+
 function sourceFixture() {
   const [viewColumns, setColumns] = createSignal(columns);
-  const [snapshot, setSnapshot] = createSignal<DatabaseRowsSnapshot>({
+  const [table, setSnapshot] = createSignal<StoredTable>({
     version: 1,
     rows: [{ rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } }],
   });
+  // Stands in for the engine: the rows the view's statement returns, in order.
+  const [answerView, setAnswerView] = createSignal<
+    (rows: DatabaseRow[]) => DatabaseRow[]
+  >((rows) => rows);
+  const [retainedIds, setRetainedIds] = createSignal<
+    Accessor<readonly string[]>
+  >(() => []);
   const source: DatabaseRowsSource = {
     columns: viewColumns,
-    snapshot,
+    snapshot: () => ({
+      version: table().version,
+      rows: answerView()(table().rows),
+      retained: table().rows.filter((row) =>
+        retainedIds()().includes(row.rowId)
+      ),
+    }),
     loading: () => false,
     refreshing: () => false,
     error: () => undefined,
     refresh: vi.fn(async () => {}),
     write: vi.fn(async () => ({ version: 2, insertedRowIds: [] })),
     addOption: vi.fn(async () => {}),
+    retain: (rowIds) => setRetainedIds(() => rowIds),
   };
-  return { source, setSnapshot, setColumns };
+  return { source, table, setSnapshot, setColumns, setAnswerView };
+}
+
+/** A title search the way the engine answers it: case-insensitive contains. */
+function titleContains(term: string) {
+  return (rows: DatabaseRow[]) =>
+    rows.filter((row) =>
+      String(row.cells.title ?? '')
+        .toLowerCase()
+        .includes(term)
+    );
 }
 
 function persistWrites({
   source,
+  table,
   setSnapshot,
 }: ReturnType<typeof sourceFixture>) {
   let createdCount = 0;
   vi.mocked(source.write).mockImplementation(async (mutation) => {
-    const snapshot = source.snapshot()!;
+    const snapshot = table();
     const version = (snapshot.version ?? 0) + 1;
     const insertedRowIds =
       mutation.kind === 'create'
@@ -205,6 +234,14 @@ function cardPlacementFixture(sorted = false) {
     groupBy: 'status',
     sorts: sorted ? [{ columnId: 'title', direction: 'desc' }] : [],
   });
+  fixture.setAnswerView(
+    () => (rows: DatabaseRow[]) =>
+      view().sorts.length
+        ? [...rows].sort((a, b) =>
+            String(b.cells.title).localeCompare(String(a.cells.title))
+          )
+        : rows
+  );
   render(() => (
     <DatabaseTableView
       name="Projects"
@@ -1039,6 +1076,7 @@ describe('database table view', () => {
       columns[0],
       { ...columns[0], id: 'notes', name: 'Notes' },
     ]);
+    fixture.setAnswerView(() => titleContains('launch'));
     persistWrites(fixture);
     const commit = vi.mocked(fixture.source.write).getMockImplementation()!;
     let complete!: () => void;
@@ -1071,9 +1109,7 @@ describe('database table view', () => {
     fireEvent.input(notes, { target: { value: 'Keep these notes' } });
     await waitFor(() => expect(fixture.source.write).toHaveBeenCalledTimes(1));
     complete();
-    await waitFor(() =>
-      expect(fixture.source.snapshot()?.rows).toHaveLength(2)
-    );
+    await waitFor(() => expect(fixture.table().rows).toHaveLength(2));
     expect(screen.getByRole('textbox', { name: 'Edit Notes' })).toBe(notes);
     expect(document.activeElement).toBe(notes);
     expect((notes as HTMLInputElement).value).toBe('Keep these notes');
@@ -1096,14 +1132,19 @@ describe('database table view', () => {
       ).toBeNull()
     );
     expect(
-      fixture.source.snapshot()?.rows.find((row) => row.rowId === 'created')
-        ?.cells.notes
+      fixture.table().rows.find((row) => row.rowId === 'created')?.cells.notes
     ).toBe('Keep these notes');
-    expect(fixture.source.snapshot()?.rows).toHaveLength(2);
+    expect(fixture.table().rows).toHaveLength(2);
   });
 
   it('reveals a newly created filtered record only on request without changing the view', async () => {
     const fixture = sourceFixture();
+    fixture.setAnswerView(
+      () => (rows: DatabaseRow[]) =>
+        titleContains('launch')(rows).filter(
+          (row) => row.cells.status === 'To do'
+        )
+    );
     persistWrites(fixture);
     const changeView = vi.fn();
     render(() => (
@@ -1165,6 +1206,7 @@ describe('database table view', () => {
 
   it('reveals a card created outside search through its saved notice without creating it again', async () => {
     const fixture = sourceFixture();
+    fixture.setAnswerView(() => titleContains('launch'));
     persistWrites(fixture);
     const changeView = vi.fn();
     render(() => (
@@ -1212,6 +1254,10 @@ describe('database table view', () => {
 
   it('explains a card moved outside filters and lets the user reopen it without clearing them', async () => {
     const fixture = sourceFixture();
+    fixture.setAnswerView(
+      () => (rows: DatabaseRow[]) =>
+        rows.filter((row) => row.cells.status === 'To do')
+    );
     persistWrites(fixture);
     const changeView = vi.fn();
     render(() => (
@@ -1266,6 +1312,7 @@ describe('database table view', () => {
 
   it('keeps editing a record that stops matching search and removes the explanation when it matches again', async () => {
     const fixture = sourceFixture();
+    fixture.setAnswerView(() => titleContains('launch'));
     persistWrites(fixture);
     render(() => (
       <DatabaseTableView
@@ -1305,7 +1352,7 @@ describe('database table view', () => {
     expect(screen.getByRole('dialog')).toBe(dialog);
   });
 
-  it('retains an acknowledged new record for explicit reveal after refresh failure without offering a duplicate create retry', async () => {
+  it('keeps an acknowledged new record in the view when its refresh fails, without offering a duplicate create retry', async () => {
     const { source } = sourceFixture();
     vi.mocked(source.write).mockResolvedValue({
       version: 2,
@@ -1327,9 +1374,10 @@ describe('database table view', () => {
     const draft = await screen.findByRole('textbox', { name: 'Edit Name' });
     fireEvent.input(draft, { target: { value: 'Outside view' } });
     fireEvent.keyDown(draft, { key: 'Enter' });
-    await screen.findByText('Record created outside this view');
-    expect(screen.queryByRole('dialog')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Open record' }));
+    // Unread, the engine has not said whether it matches, so it stays put.
+    await screen.findByText('The latest data could not be refreshed.');
+    expect(screen.queryByText('Record created outside this view')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Outside view' }));
     const dialog = await screen.findByRole('dialog');
     expect(
       within(dialog).getByRole('textbox', { name: 'Edit Name' })
@@ -1340,6 +1388,10 @@ describe('database table view', () => {
 
   it('does not announce a failed move as saved and reveals it only after a successful Retry', async () => {
     const fixture = sourceFixture();
+    fixture.setAnswerView(
+      () => (rows: DatabaseRow[]) =>
+        rows.filter((row) => row.cells.status === 'To do')
+    );
     persistWrites(fixture);
     vi.mocked(fixture.source.write).mockRejectedValueOnce(
       new Error('Connection lost')

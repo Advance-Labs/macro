@@ -6,8 +6,12 @@ import {
   DatabaseWriteOutcomeUnknown,
 } from '../context/table-source';
 import type { DatabaseRowMutation } from '../core/table';
+
 import { createDraftRows } from './draft-rows';
 import { createTableController } from './table-controller';
+
+/** What the fake table holds; it retains no rows beyond the view's. */
+type StoredTable = Omit<DatabaseRowsSnapshot, 'retained'>;
 
 const disposers: (() => void)[] = [];
 afterEach(() => {
@@ -16,11 +20,11 @@ afterEach(() => {
 function fixture() {
   return createRoot((dispose) => {
     disposers.push(dispose);
-    const [snapshot, setSnapshot] = createSignal<DatabaseRowsSnapshot>({
+    const [snapshot, setSnapshot] = createSignal<StoredTable>({
       version: 1,
       rows: [],
     });
-    let database: DatabaseRowsSnapshot = { version: 1, rows: [] };
+    let database: StoredTable = { version: 1, rows: [] };
     let sequence = 0;
     const persisted: DatabaseRowMutation[] = [];
     const persist = async (
@@ -59,7 +63,7 @@ function fixture() {
     };
     const source: DatabaseRowsSource = {
       columns: () => [],
-      snapshot,
+      snapshot: () => ({ ...snapshot(), retained: [] }),
       loading: () => false,
       refreshing: () => false,
       error: () => undefined,
@@ -70,6 +74,7 @@ function fixture() {
       addOption: vi.fn(async () => {
         database = { ...database, version: (database.version ?? 0) + 1 };
       }),
+      retain: () => {},
     };
     const controller = createTableController(source);
     const drafts = createDraftRows(controller);

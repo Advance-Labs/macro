@@ -3,7 +3,10 @@ import type { DatabaseViewColumn } from '../core/database-view';
 import type { DatabaseRow, DatabaseRowMutation } from '../core/table';
 
 export type DatabaseRowsSnapshot = {
+  /** The rows the view's statement returned, in its order. */
   rows: DatabaseRow[];
+  /** Rows the view holds on to by id, such as an open record, in or out of the view. */
+  retained: DatabaseRow[];
   version: number | undefined;
 };
 export type DatabaseWriteResult = {
@@ -24,6 +27,8 @@ export type DatabaseRowsSource = {
     version: number | undefined
   ): Promise<DatabaseWriteResult>;
   addOption(columnId: string, label: string): Promise<void>;
+  /** Keep reading these rows by id, whether or not the view shows them. */
+  retain(rowIds: Accessor<readonly string[]>): void;
 };
 
 export class DatabaseWriteConflict extends Error {}

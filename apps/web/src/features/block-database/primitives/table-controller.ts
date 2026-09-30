@@ -236,31 +236,44 @@ export function createTableController(
     }
   }
 
+  const unreadWrites = createMemo(() => {
+    const version = source.snapshot()?.version;
+    return committed().filter(
+      (write) =>
+        write.version === undefined ||
+        version === undefined ||
+        write.version > version
+    );
+  });
+  const mutations = () => [
+    ...unreadWrites().map((write) => write.mutation),
+    ...pending().map((write) => write.mutation),
+  ];
+
+  const rows = createMemo(() => {
+    const read = source.snapshot()?.rows ?? [];
+    // Acknowledged inserts remain openable when only the follow-up read failed.
+    // Whether they match the view is unknown until then, so they stay on screen.
+    const created: DatabaseRow[] = unreadWrites().flatMap((write) => {
+      if (write.mutation.kind !== 'create') return [];
+      const cells = write.mutation.values;
+      return write.insertedRowIds
+        .filter((rowId) => !read.some((row) => row.rowId === rowId))
+        .map((rowId) => ({ rowId, cells }));
+    });
+    return optimisticRows([...read, ...created], mutations());
+  });
+
   return {
-    rows: createMemo(() => {
-      const snapshot = source.snapshot();
-      const saved = committed().filter(
-        (write) =>
-          write.version === undefined ||
-          snapshot?.version === undefined ||
-          write.version > snapshot.version
+    /** The rows the view's statement returned, with local writes applied until they are read back. */
+    rows,
+    /** The view's rows, then the rows it retains by id that it does not show. */
+    knownRows: createMemo(() => {
+      const shown = rows();
+      const retained = (source.snapshot()?.retained ?? []).filter(
+        (row) => !shown.some((known) => known.rowId === row.rowId)
       );
-      const rows = snapshot?.rows ?? [];
-      // Acknowledged inserts remain openable when only the follow-up read failed.
-      const created: DatabaseRow[] = saved.flatMap((write) => {
-        if (write.mutation.kind !== 'create') return [];
-        const cells = write.mutation.values;
-        return write.insertedRowIds
-          .filter((rowId) => !rows.some((row) => row.rowId === rowId))
-          .map((rowId) => ({ rowId, cells }));
-      });
-      return optimisticRows(
-        [...rows, ...created],
-        [
-          ...saved.map((write) => write.mutation),
-          ...pending().map((write) => write.mutation),
-        ]
-      );
+      return [...shown, ...optimisticRows(retained, mutations())];
     }),
     pending: () => pending().length > 0 || schemaPending() > 0,
     createPending: (intentId: string) =>

@@ -275,18 +275,6 @@ describe('board drop placement', () => {
     ).toBe(true);
   });
 
-  it('does not offer a drop that active filters would hide', () => {
-    const { onPlace } = board([]);
-    fireEvent.mouseDown(
-      screen.getByRole('button', { name: 'Open Moving card' }),
-      { button: 0, clientX: 560, clientY: 80 }
-    );
-    movePointer(30, 150);
-    expect(marker()).toBeNull();
-    dropPointer(30, 150);
-    expect(onPlace).not.toHaveBeenCalled();
-  });
-
   it('inserts into an empty lane without changing the chosen destination', async () => {
     const { onPlace } = board();
     fireEvent.mouseDown(

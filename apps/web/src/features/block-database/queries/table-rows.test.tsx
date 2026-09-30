@@ -7,11 +7,16 @@ import type {
 import { cleanup, render, waitFor } from '@solidjs/testing-library';
 import { QueryClient, QueryClientProvider } from '@tanstack/solid-query';
 import { err, ok } from 'neverthrow';
+import { type Accessor, createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   type DatabaseRowsSource,
   DatabaseWriteOutcomeUnknown,
 } from '../context/table-source';
+import {
+  type DatabaseViewConfig,
+  defaultDatabaseView,
+} from '../core/database-view';
 import type { DatabaseRowMutation } from '../core/table';
 import { createDraftRows } from '../primitives/draft-rows';
 import { createTableController } from '../primitives/table-controller';
@@ -115,6 +120,7 @@ function setup(
   options: {
     addOption?: DatabaseRowsSource['addOption'];
     onSource?: (source: DatabaseRowsSource) => void;
+    view?: Accessor<DatabaseViewConfig>;
   } = {}
 ) {
   const client = new QueryClient({
@@ -129,6 +135,7 @@ function setup(
       databaseId: 'db',
       // Deliberately retain old props: retries must use the refreshed cache.
       table: () => initialDetail.tables[0],
+      view: options.view ?? defaultDatabaseView,
       exec,
       applyVersions,
       addOption: options.addOption ?? (async () => {}),
@@ -149,6 +156,82 @@ afterEach(() => {
   for (const client of clients) client.clear();
   clients.length = 0;
   vi.resetAllMocks();
+});
+
+describe('database view reads', () => {
+  it("runs the view's statement and keeps the previous rows while a changed view loads", async () => {
+    const [view, setView] = createSignal(defaultDatabaseView());
+    let finishSearch!: (outcome: ExecOutcome) => void;
+    const exec = vi.fn<(request: ExecRequest) => Promise<ExecOutcome>>(
+      (request) =>
+        request.sql === 'SELECT * FROM "guests"'
+          ? Promise.resolve(read)
+          : new Promise((resolve) => {
+              finishSearch = resolve;
+            })
+    );
+    const { source } = setup(detail(), exec, { view });
+    await waitFor(() =>
+      expect(source.snapshot()?.rows).toEqual([
+        { rowId: 'record', cells: { name: 'Ada' } },
+      ])
+    );
+
+    setView({ ...defaultDatabaseView(), search: 'grace' });
+    await waitFor(() =>
+      expect(exec).toHaveBeenLastCalledWith({
+        sql: 'SELECT * FROM "guests" WHERE "Name" LIKE \'%grace%\'',
+      })
+    );
+    expect(source.loading()).toBe(false);
+    expect(source.snapshot()?.rows).toEqual([
+      { rowId: 'record', cells: { name: 'Ada' } },
+    ]);
+
+    finishSearch({
+      ...read,
+      results: [{ ...read.results[0], rows: [['other', 'Grace']] }],
+    });
+    await waitFor(() =>
+      expect(source.snapshot()?.rows).toEqual([
+        { rowId: 'other', cells: { name: 'Grace' } },
+      ])
+    );
+  });
+
+  it('reads the rows the view retains by id, apart from its statement', async () => {
+    const exec = vi.fn<(request: ExecRequest) => Promise<ExecOutcome>>(
+      async (request) =>
+        request.sql.includes('row_id IN')
+          ? {
+              ...read,
+              results: [{ ...read.results[0], rows: [['kept', 'Hidden']] }],
+            }
+          : read
+    );
+    const { source } = setup(detail(), exec, {
+      view: () => ({ ...defaultDatabaseView(), search: 'ada' }),
+    });
+    const [retained, setRetained] = createSignal<string[]>([]);
+    source.retain(retained);
+    await waitFor(() => expect(source.snapshot()?.retained).toEqual([]));
+    expect(exec).toHaveBeenCalledExactlyOnceWith({
+      sql: 'SELECT * FROM "guests" WHERE "Name" LIKE \'%ada%\'',
+    });
+
+    setRetained(['kept']);
+    await waitFor(() =>
+      expect(source.snapshot()?.retained).toEqual([
+        { rowId: 'kept', cells: { name: 'Hidden' } },
+      ])
+    );
+    expect(exec).toHaveBeenLastCalledWith({
+      sql: 'SELECT * FROM "guests" WHERE row_id IN (\'kept\')',
+    });
+    expect(source.snapshot()?.rows).toEqual([
+      { rowId: 'record', cells: { name: 'Ada' } },
+    ]);
+  });
 });
 
 describe('database rows SQL names', () => {
@@ -461,6 +544,7 @@ describe('accepted writes after switching tables', () => {
           cells: { name: 'Accepted record', status: 'In review' },
         },
       ],
+      retained: [],
     });
     expect(controller.failure()).toBeUndefined();
   });

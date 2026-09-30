@@ -8,7 +8,6 @@ import { DeleteDialog } from '@ui/components/DeleteDialog';
 import { Mutex } from 'async-mutex';
 import {
   type Accessor,
-  createMemo,
   createSignal,
   For,
   type JSX,
@@ -42,7 +41,6 @@ import {
 } from '../core/column-order';
 import type { DatabaseColumnTypeChange } from '../core/column-schema';
 import {
-  applyDatabaseView,
   type DatabaseCellValue,
   type DatabaseViewColumn,
   type DatabaseViewConfig,
@@ -169,15 +167,14 @@ export function DatabaseTableView(props: {
     orderDatabaseColumns(columns(), props.view.columnOrder).filter(
       (column) => !props.view.hiddenColumns.includes(column.id)
     );
-  const rows = createMemo(() =>
-    applyDatabaseView(controller.rows(), columns(), props.view, rowValue)
-  );
+  // The engine searched, filtered and sorted these for the view.
+  const rows = controller.rows;
   const groupColumn = () =>
     columns().find(
       (column) => column.id === props.view.groupBy && isBoardGroupColumn(column)
     ) ?? columns().find(isBoardGroupColumn);
   const selected = () =>
-    controller.rows().find((row) => row.rowId === selectedId());
+    controller.knownRows().find((row) => row.rowId === selectedId());
   const selectedPosition = () =>
     rows().findIndex((row) => row.rowId === selectedId());
   const constrained = () =>
@@ -193,9 +190,15 @@ export function DatabaseTableView(props: {
     return saved &&
       (saved.noEditableColumns ||
         !rows().some((row) => row.rowId === saved.rowId))
-      ? controller.rows().find((row) => row.rowId === saved.rowId)
+      ? controller.knownRows().find((row) => row.rowId === saved.rowId)
       : undefined;
   };
+  // Records being looked at or typed into stay readable when they leave the view.
+  props.source.retain(() =>
+    [selectedId(), hiddenSavedRecord()?.rowId, ...draftRows.serverIds()].filter(
+      (rowId): rowId is string => rowId !== undefined
+    )
+  );
   function recordSaved(
     mutation: DatabaseRowMutation,
     result: DatabaseWriteResult
@@ -297,7 +300,7 @@ export function DatabaseTableView(props: {
     const actualId = actualRowId(rowId);
     if (!props.canEdit || !actualId) return false;
     rowId = actualId;
-    const row = controller.rows().find((row) => row.rowId === rowId);
+    const row = controller.knownRows().find((row) => row.rowId === rowId);
     if (!row) return false;
     const intent =
       duplicateIntents.get(rowId) ??
@@ -322,7 +325,7 @@ export function DatabaseTableView(props: {
     const actualId = actualRowId(rowId);
     if (!props.canEdit || controller.pending() || !actualId) return;
     rowId = actualId;
-    const row = controller.rows().find((row) => row.rowId === rowId);
+    const row = controller.knownRows().find((row) => row.rowId === rowId);
     if (!row) return;
     if (document.activeElement instanceof HTMLElement)
       deleteReturnFocus = document.activeElement;
@@ -514,7 +517,9 @@ export function DatabaseTableView(props: {
   }
   async function placeCard(placement: DatabaseCardPlacement) {
     const column = groupColumn();
-    const row = controller.rows().find((row) => row.rowId === placement.rowId);
+    const row = controller
+      .knownRows()
+      .find((row) => row.rowId === placement.rowId);
     if (
       !column ||
       !row ||
@@ -1021,24 +1026,9 @@ export function DatabaseTableView(props: {
                     createPending={controller.createPending}
                     createComplete={controller.createComplete}
                     onOpen={open}
-                    projectMove={(rowId, value) =>
-                      applyDatabaseView(
-                        controller.rows().map((row) =>
-                          row.rowId === rowId
-                            ? {
-                                ...row,
-                                cells: { ...row.cells, [group().id]: value },
-                              }
-                            : row
-                        ),
-                        columns(),
-                        props.view,
-                        rowValue
-                      )
-                    }
                     onMove={async (rowId, value) => {
                       const row = controller
-                        .rows()
+                        .knownRows()
                         .find((row) => row.rowId === rowId);
                       return row
                         ? Boolean(

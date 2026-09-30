@@ -9,7 +9,7 @@ import type {
 
 type Writer = Pick<
   ReturnType<typeof createTableController>,
-  'rows' | 'runDraftWrites' | 'createResult' | 'createUncertain'
+  'knownRows' | 'runDraftWrites' | 'createResult' | 'createUncertain'
 >;
 type DraftRow = {
   id: string;
@@ -202,6 +202,12 @@ export function createDraftRows(writer: Writer) {
     setActive: (id: string | undefined) => setActiveId(id),
     has: (id: string) => !!entry(id),
     serverId,
+    /** Saved drafts stay on screen while being typed into, even outside the view. */
+    serverIds: () =>
+      entries().flatMap((row) => {
+        const id = serverId(row.id);
+        return id ? [id] : [];
+      }),
     isUnsaved: (id: string) => !!entry(id) && !serverId(id),
     isUncertain: writer.createUncertain,
     discardUncertain: (id: string) => {
@@ -239,7 +245,9 @@ export function createDraftRows(writer: Writer) {
           : row;
       });
       const visible = new Set(rows.map((row) => row.rowId));
-      const allRows = new Map(writer.rows().map((row) => [row.rowId, row]));
+      const allRows = new Map(
+        writer.knownRows().map((row) => [row.rowId, row])
+      );
       for (const local of drafts) {
         const id = serverId(local.id);
         if (!id) result.push({ rowId: local.id, cells: local.cells });

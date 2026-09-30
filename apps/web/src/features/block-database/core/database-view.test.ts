@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyDatabaseView,
   boardMoveValue,
   type DatabaseCellValue,
   type DatabaseFilter,
@@ -10,7 +9,6 @@ import {
   groupDatabaseRows,
   isBoardGroupColumn,
   isSavedDatabaseViewConfig,
-  matchesDatabaseFilter,
   moveDatabaseViewColumn,
   orderDatabaseCards,
   orderDatabaseColumns,
@@ -43,211 +41,25 @@ const filter = (
 ): DatabaseFilter => ({ id: 'filter', columnId: 'amount', operator, value });
 
 describe('database views', () => {
-  it('combines case-insensitive search with all filter rules without mutating rows', () => {
-    const rows: Row[] = [
-      { name: "Wolf's launch", amount: 120, status: 'Done' },
-      { name: "Wolf's launch", amount: 15, status: 'Backlog' },
-      { name: 'Other', amount: 150, status: 'Done' },
-    ];
-    const result = applyDatabaseView(
-      rows,
-      [name, amount, status],
-      {
-        ...defaultDatabaseView(),
-        search: "WOLF'S",
-        filters: [filter('gte', '100')],
-      },
-      getValue
-    );
-    expect(result).toEqual([rows[0]]);
-    expect(rows).toHaveLength(3);
-  });
-
-  it('distinguishes empty cells, zero, and unchecked checkboxes', () => {
-    expect(matchesDatabaseFilter(null, amount, filter('is_empty'))).toBe(true);
-    expect(matchesDatabaseFilter('', amount, filter('is_empty'))).toBe(true);
-    expect(matchesDatabaseFilter(0, amount, filter('is_empty'))).toBe(false);
-    expect(matchesDatabaseFilter(0, amount, filter('equals', '0'))).toBe(true);
-    expect(matchesDatabaseFilter(null, amount, filter('equals', '0'))).toBe(
-      false
-    );
-    expect(
-      matchesDatabaseFilter(
-        0,
-        { ...amount, dataType: 'BOOLEAN' },
-        filter('equals', '0')
-      )
-    ).toBe(true);
-  });
-
-  it('treats partial input as unfinished and preserves every row', () => {
-    expect(matchesDatabaseFilter(null, amount, filter('gt', ''))).toBe(true);
-    expect(matchesDatabaseFilter(null, amount, filter('gt', 'no number'))).toBe(
-      true
-    );
-    expect(matchesDatabaseFilter(12, amount, filter('gt', 'no number'))).toBe(
-      true
-    );
-  });
-
-  it('compares numbers numerically and dates by the displayed calendar day', () => {
-    expect(matchesDatabaseFilter(12, amount, filter('gt', '9'))).toBe(true);
-    const date = { ...name, dataType: 'DATE' };
-    expect(
-      matchesDatabaseFilter(
-        '2026-09-18T09:30:00Z',
-        date,
-        filter('equals', '2026-09-18')
-      )
-    ).toBe(true);
-    expect(
-      matchesDatabaseFilter(
-        '2026-09-19T00:00:00Z',
-        date,
-        filter('gt', '2026-09-18')
-      )
-    ).toBe(true);
-  });
-
-  it('matches multi-select membership by whole labels, including quotes and commas', () => {
+  it('names membership operators for multi-selects and offers only emptiness for references', () => {
     const tags = { ...status, isMultiSelect: true };
-    const values = JSON.stringify(['In progress', 'Design, "review"']);
+    expect(filterOperatorsFor(tags).map((operator) => operator.label)).toEqual([
+      'contains',
+      'does not contain',
+      'is empty',
+      'is not empty',
+    ]);
     expect(
-      matchesDatabaseFilter(values, tags, filter('equals', 'IN PROGRESS'))
-    ).toBe(true);
-    expect(
-      matchesDatabaseFilter(values, tags, filter('equals', 'progress'))
-    ).toBe(false);
-    expect(
-      matchesDatabaseFilter(values, tags, filter('equals', 'Design, "review"'))
-    ).toBe(true);
-    expect(
-      matchesDatabaseFilter(values, tags, filter('not_equals', 'In progress'))
-    ).toBe(false);
-    expect(
-      matchesDatabaseFilter(values, tags, filter('not_equals', 'Done'))
-    ).toBe(true);
-    expect(
-      filterOperatorsFor(tags).find(({ value }) => value === 'equals')?.label
-    ).toBe('contains');
-    expect(
-      filterOperatorsFor(tags).find(({ value }) => value === 'not_equals')
-        ?.label
-    ).toBe('does not contain');
-  });
-
-  it('treats empty multi-select lists as having no selected options', () => {
-    const tags = { ...status, isMultiSelect: true };
-    for (const value of [null, '', '[]', '[ ]']) {
-      expect(matchesDatabaseFilter(value, tags, filter('is_empty'))).toBe(true);
-      expect(matchesDatabaseFilter(value, tags, filter('equals', 'Done'))).toBe(
-        false
-      );
-      expect(
-        matchesDatabaseFilter(value, tags, filter('not_equals', 'Done'))
-      ).toBe(true);
-    }
-    expect(matchesDatabaseFilter('[]', name, filter('is_empty'))).toBe(false);
-    expect(matchesDatabaseFilter('[]', name, filter('equals', '[]'))).toBe(
-      true
-    );
-  });
-
-  it('handles numeric multi-values and keeps numeric select labels distinct', () => {
-    expect(
-      matchesDatabaseFilter(
-        '[0,2,10]',
-        { ...amount, isMultiSelect: true },
-        filter('equals', '0')
+      filterOperatorsFor({ ...name, dataType: 'ENTITY' }).map(
+        (operator) => operator.value
       )
-    ).toBe(true);
+    ).toEqual(['is_empty', 'is_not_empty']);
     expect(
-      matchesDatabaseFilter(
-        '[0,2,10]',
-        { ...amount, isMultiSelect: true },
-        filter('gt', '9')
-      )
-    ).toBe(true);
-    const numericTags = {
-      ...status,
-      dataType: 'SELECT_NUMBER',
-      isMultiSelect: true,
-    };
-    expect(
-      matchesDatabaseFilter('["2","10"]', numericTags, filter('equals', '2'))
-    ).toBe(true);
-    expect(
-      matchesDatabaseFilter('["2","10"]', numericTags, filter('equals', '02'))
-    ).toBe(false);
-  });
-
-  it('searches decoded multi-value labels and combines membership filters', () => {
-    const tags = { ...status, isMultiSelect: true };
-    const rows: Row[] = [
-      { status: JSON.stringify(['Design "review"', 'In progress']) },
-      { status: JSON.stringify(['Design "review"', 'Done']) },
-      { status: null },
-    ];
-    expect(
-      applyDatabaseView(
-        rows,
-        [tags],
-        {
-          ...defaultDatabaseView(),
-          search: '"review"',
-          filters: [{ ...filter('not_equals', 'Done'), columnId: tags.id }],
-        },
-        getValue
-      )
-    ).toEqual([rows[0]]);
-  });
-
-  it('sorts numbers, keeps ties stable, and puts empty cells last in both directions', () => {
-    const rows: Row[] = [
-      { name: 'empty', amount: null },
-      { name: 'a', amount: 10 },
-      { name: 'b', amount: 2 },
-      { name: 'c', amount: 10 },
-    ];
-    const view = {
-      ...defaultDatabaseView(),
-      sorts: [{ columnId: 'amount', direction: 'asc' as const }],
-    };
-    expect(
-      applyDatabaseView(rows, [name, amount], view, getValue).map(
-        (row) => row.name
-      )
-    ).toEqual(['b', 'a', 'c', 'empty']);
-    expect(
-      applyDatabaseView(
-        rows,
-        [name, amount],
-        { ...view, sorts: [{ columnId: 'amount', direction: 'desc' }] },
-        getValue
-      ).map((row) => row.name)
-    ).toEqual(['a', 'c', 'b', 'empty']);
-    expect(rows[0].name).toBe('empty');
-  });
-
-  it('uses later sort columns only to break ties', () => {
-    const rows: Row[] = [
-      { name: 'B', amount: 2 },
-      { name: 'A', amount: 2 },
-      { name: 'C', amount: 1 },
-    ];
-    const result = applyDatabaseView(
-      rows,
-      [name, amount],
-      {
-        ...defaultDatabaseView(),
-        sorts: [
-          { columnId: 'amount', direction: 'asc' },
-          { columnId: 'name', direction: 'asc' },
-        ],
-      },
-      getValue
-    );
-    expect(result.map((row) => row.name)).toEqual(['C', 'A', 'B']);
+      filterOperatorsFor({
+        ...name,
+        relation: { databaseId: 'db', tableId: 'customers' },
+      }).map((operator) => operator.value)
+    ).toEqual(['is_empty', 'is_not_empty']);
   });
 
   it('keeps unused select options and legacy values in separate board groups', () => {
@@ -301,6 +113,37 @@ describe('database views', () => {
     expect(isBoardGroupColumn({ ...status, writable: false })).toBe(true);
     expect(isBoardGroupColumn({ ...status, isMultiSelect: true })).toBe(true);
     expect(isBoardGroupColumn(name)).toBe(false);
+  });
+
+  it('reads a saved view without a filter conjunction as matching every filter', () => {
+    const saved = {
+      kind: 'database-view',
+      version: 1,
+      databaseId: 'db',
+      tableId: 'table',
+      view: {
+        layout: 'table',
+        groupBy: null,
+        filters: [],
+        sorts: [],
+        hiddenColumns: [],
+        search: '',
+      },
+    };
+    expect(isSavedDatabaseViewConfig(saved)).toBe(true);
+    expect(
+      reconcileDatabaseView(defaultDatabaseView(), [name]).filterConjunction
+    ).toBe('and');
+    expect(
+      reconcileDatabaseView({ ...saved.view, layout: 'table' }, [name])
+        .filterConjunction
+    ).toBe('and');
+    expect(
+      isSavedDatabaseViewConfig({
+        ...saved,
+        view: { ...saved.view, filterConjunction: 'xor' },
+      })
+    ).toBe(false);
   });
 
   it('rejects unrelated and malformed saved views', () => {

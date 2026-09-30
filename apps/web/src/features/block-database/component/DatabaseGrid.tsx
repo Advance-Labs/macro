@@ -95,6 +95,7 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
   const source = createDatabaseRowsSource({
     databaseId,
     table,
+    view: () => props.view ?? defaultDatabaseView(),
     exec,
     applyVersions: (versions) =>
       applyDatabaseTableVersions(databaseId, versions),

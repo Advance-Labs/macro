@@ -75,7 +75,6 @@ type DatabaseBoardProps = {
   onOpen: (rowId: string) => void;
   onMove: (rowId: string, value: DatabaseCellValue) => Promise<boolean>;
   onPlace?: (placement: DatabaseCardPlacement) => Promise<boolean>;
-  projectMove?: (rowId: string, value: DatabaseCellValue) => DatabaseRow[];
   onCreate: (
     value: DatabaseCellValue,
     title: string,
@@ -156,29 +155,15 @@ export function DatabaseBoard(props: DatabaseBoardProps) {
       <Kanban
         getViewport={() => viewport}
         canDropCard={(drop) => {
-          const row = props.rows.find((row) => row.rowId === drop.id);
           const target = groups().find((group) => group.key === drop.toLane);
-          const source = groups().find((group) => group.key === drop.fromLane);
-          if (
-            !row ||
-            !target ||
-            !props.canEdit ||
-            !props.groupColumn.writable ||
-            !canMoveTo(props.groupColumn, target.value) ||
-            (drop.fromLane === drop.toLane && !props.onPlace)
-          )
-            return false;
-          const value = boardMoveValue(
-            props.groupColumn,
-            rowValue(row, props.groupColumn.id),
-            target.value,
-            source?.value
+          return (
+            props.rows.some((row) => row.rowId === drop.id) &&
+            !!target &&
+            props.canEdit &&
+            props.groupColumn.writable &&
+            canMoveTo(props.groupColumn, target.value) &&
+            (drop.fromLane !== drop.toLane || !!props.onPlace)
           );
-          return props.projectMove
-            ? props
-                .projectMove(row.rowId, value)
-                .some((candidate) => candidate.rowId === row.rowId)
-            : true;
         }}
         onDrop={(drop) => {
           if (drop.kind === 'lane')

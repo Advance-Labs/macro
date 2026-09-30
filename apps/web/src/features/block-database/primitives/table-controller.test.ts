@@ -7,7 +7,11 @@ import {
   type DatabaseWriteResult,
 } from '../context/table-source';
 import type { DatabaseRowMutation } from '../core/table';
+
 import { createTableController } from './table-controller';
+
+/** What the fake table holds; it retains no rows beyond the view's. */
+type StoredTable = Omit<DatabaseRowsSnapshot, 'retained'>;
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -20,7 +24,7 @@ function deferred<T>() {
 }
 
 function setup(onSaved?: Parameters<typeof createTableController>[1]) {
-  const [snapshot, setSnapshot] = createSignal<DatabaseRowsSnapshot>({
+  const [snapshot, setSnapshot] = createSignal<StoredTable>({
     rows: [
       { rowId: 'record', cells: { status: 'To do', title: 'Plan launch' } },
     ],
@@ -28,7 +32,7 @@ function setup(onSaved?: Parameters<typeof createTableController>[1]) {
   });
   const source: DatabaseRowsSource = {
     columns: () => [],
-    snapshot,
+    snapshot: () => ({ ...snapshot(), retained: [] }),
     loading: () => false,
     refreshing: () => false,
     error: () => undefined,
@@ -38,6 +42,7 @@ function setup(onSaved?: Parameters<typeof createTableController>[1]) {
       version: (version ?? 0) + 1,
     })),
     addOption: vi.fn(async () => {}),
+    retain: () => {},
   };
   let dispose!: () => void;
   const controller = createRoot((cleanup) => {

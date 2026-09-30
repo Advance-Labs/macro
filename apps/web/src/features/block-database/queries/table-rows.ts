@@ -8,7 +8,11 @@ import type {
   ExecOutcome,
   ExecRequest,
 } from '@service-storage/databases';
-import { useQuery, useQueryClient } from '@tanstack/solid-query';
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/solid-query';
 import { type Accessor, createMemo, createSignal } from 'solid-js';
 import {
   type DatabaseRowsSource,
@@ -23,16 +27,18 @@ import { relatedRowIds } from '../core/database-relations';
 import type {
   DatabaseCellValue,
   DatabaseViewColumn,
+  DatabaseViewConfig,
 } from '../core/database-view';
-import type { DatabaseRowMutation } from '../core/table';
+import type { DatabaseRow, DatabaseRowMutation } from '../core/table';
 import {
   deleteRowStatement,
   insertRowStatement,
   ROW_ID_COLUMN,
   resultColumnName,
+  rowsByIdStatement,
   type SqlWriteValue,
-  selectAllStatement,
   updateCellStatement,
+  viewSelectStatement,
 } from '../sql';
 
 export function toViewColumn(column: DatabaseColumnDetail): DatabaseViewColumn {
@@ -106,9 +112,23 @@ export function writeValue(
   return value;
 }
 
+/** Lookup columns are not part of the grid, so a view never names them. */
+function isGridColumn(column: DatabaseColumnDetail) {
+  return column.column.config?.kind !== 'lookup';
+}
+
+function sameIds(left: readonly string[], right: readonly string[]) {
+  return (
+    left.length === right.length &&
+    left.every((id, index) => id === right[index])
+  );
+}
+
 export function createDatabaseRowsSource(props: {
   databaseId: string;
   table: Accessor<DatabaseTableDetail>;
+  /** The engine searches, filters and sorts the rows for this view. */
+  view: Accessor<DatabaseViewConfig>;
   exec: (request: ExecRequest) => Promise<ExecOutcome>;
   applyVersions: (versions: Record<string, number>) => void;
   addOption: (columnId: string, label: string) => Promise<void>;
@@ -147,19 +167,49 @@ export function createDatabaseRowsSource(props: {
   // Version-only schema updates must not recreate columns and remount editors.
   const details = createMemo(() => props.table().columns);
   const columns = createMemo(() =>
-    details()
-      .filter((column) => column.column.config?.kind !== 'lookup')
-      .map(toViewColumn)
+    details().filter(isGridColumn).map(toViewColumn)
   );
+  const viewStatement = (table: DatabaseTableDetail) =>
+    viewSelectStatement({
+      tableSqlName: table.sql_name,
+      columns: table.columns.filter(isGridColumn).map((column) => ({
+        column: toViewColumn(column),
+        sqlName: column.sql_name,
+      })),
+      view: props.view(),
+    });
+  const readStatement = createMemo(() => viewStatement(props.table()));
+  const rowsKey = databasesKeys.rows(props.databaseId, tableId).queryKey;
   const query = useQuery(() => ({
-    queryKey: databasesKeys.rows(props.databaseId, props.table().table.id)
-      .queryKey,
+    queryKey: [...rowsKey, readStatement()],
+    // Build from the cached schema: a refreshed table name must reach the retry.
+    queryFn: () => props.exec({ sql: viewStatement(currentTable()) }),
+    // A changed search or filter keeps the grid on screen until its rows arrive.
+    placeholderData: keepPreviousData,
+  }));
+  const [retainedIds, setRetainedIds] = createSignal<
+    Accessor<readonly string[]>
+  >(() => []);
+  const retainedRowIds = createMemo(
+    () => [...new Set(retainedIds()())].sort(),
+    [],
+    { equals: sameIds }
+  );
+  const retainedQuery = useQuery(() => ({
+    queryKey: [...rowsKey, 'retained', retainedRowIds()],
     queryFn: () =>
-      props.exec({ sql: selectAllStatement(currentTable().sql_name) }),
+      props.exec({
+        sql: rowsByIdStatement(currentTable().sql_name, retainedRowIds()),
+      }),
+    enabled: retainedRowIds().length > 0,
+    placeholderData: keepPreviousData,
   }));
   // Accepted draft writes can outlive the query observer's owner. Retain actual
   // reads so a post-unmount option change supplies its version to the next write.
-  const [refreshedOutcome, setRefreshedOutcome] = createSignal<ExecOutcome>();
+  const [refreshedOutcome, setRefreshedOutcome] = createSignal<{
+    statement: string;
+    outcome: ExecOutcome;
+  }>();
   function newerRead(
     current: ExecOutcome | undefined,
     candidate: ExecOutcome | undefined
@@ -172,11 +222,14 @@ export function createDatabaseRowsSource(props: {
       : current;
   }
   // Status reads are safe outside Suspense. data is read only after initial load.
-  const outcome = () =>
-    newerRead(!query.isPending ? query.data : undefined, refreshedOutcome());
-  const snapshot = () => {
-    const data = outcome();
-    if (!data) return undefined;
+  const outcome = () => {
+    const refreshed = refreshedOutcome();
+    return newerRead(
+      !query.isPending ? query.data : undefined,
+      refreshed?.statement === readStatement() ? refreshed.outcome : undefined
+    );
+  };
+  function rowsOf(data: ExecOutcome): DatabaseRow[] {
     const result = data.results[0];
     const rowIdIndex =
       result?.columns.findIndex((column) => column.name === ROW_ID_COLUMN) ??
@@ -188,21 +241,33 @@ export function createDatabaseRowsSource(props: {
           (entry) => entry.name === resultColumnName(column)
         ) ?? -1,
     }));
+    return (result?.rows ?? []).flatMap((row) => {
+      const rowId = row[rowIdIndex];
+      return typeof rowId === 'string'
+        ? [
+            {
+              rowId,
+              cells: Object.fromEntries(
+                indexes.map(({ id, index }) => [id, row[index] ?? null])
+              ),
+            },
+          ]
+        : [];
+    });
+  }
+  const retainedRows = () => {
+    const ids = retainedRowIds();
+    if (!ids.length || retainedQuery.isPending || !retainedQuery.data)
+      return [];
+    return rowsOf(retainedQuery.data).filter((row) => ids.includes(row.rowId));
+  };
+  const snapshot = () => {
+    const data = outcome();
+    if (!data) return undefined;
     return {
       version: data.read_versions[props.table().table.id],
-      rows: (result?.rows ?? []).flatMap((row) => {
-        const rowId = row[rowIdIndex];
-        return typeof rowId === 'string'
-          ? [
-              {
-                rowId,
-                cells: Object.fromEntries(
-                  indexes.map(({ id, index }) => [id, row[index] ?? null])
-                ),
-              },
-            ]
-          : [];
-      }),
+      rows: rowsOf(data),
+      retained: retainedRows(),
     };
   };
 
@@ -361,10 +426,23 @@ export function createDatabaseRowsSource(props: {
         staleSchemaError = query.error;
         await refreshSchema();
       }
-      const result = await query.refetch({ throwOnError: true });
-      setRefreshedOutcome((previous) => newerRead(previous, result.data));
+      const read = readStatement();
+      const [result] = await Promise.all([
+        query.refetch({ throwOnError: true }),
+        retainedRowIds().length
+          ? retainedQuery.refetch({ throwOnError: true })
+          : undefined,
+      ]);
+      setRefreshedOutcome((previous) => {
+        const outcome = newerRead(
+          previous?.statement === read ? previous.outcome : undefined,
+          result.data
+        );
+        return outcome && { statement: read, outcome };
+      });
     },
     addOption: props.addOption,
+    retain: (rowIds) => setRetainedIds(() => rowIds),
     write: async (mutation, version) => {
       const previousSchemaError = staleSchemaError;
       if (previousSchemaError) {
