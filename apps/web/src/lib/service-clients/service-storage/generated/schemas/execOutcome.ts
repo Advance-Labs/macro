@@ -4,6 +4,7 @@
  * document_storage_service
  * OpenAPI spec version: 0.1.0
  */
+import type { ExecOutcomeAlteredColumn } from './execOutcomeAlteredColumn';
 import type { ExecOutcomeNewVersions } from './execOutcomeNewVersions';
 import type { ExecOutcomeReadVersions } from './execOutcomeReadVersions';
 import type { QueryResult } from './queryResult';
@@ -12,6 +13,7 @@ import type { QueryResult } from './queryResult';
  * Outcome of an [`ExecRequest`].
  */
 export interface ExecOutcome {
+  altered_column?: ExecOutcomeAlteredColumn;
   /**
    * How many row changes were applied to Postgres.
    * @minimum 0

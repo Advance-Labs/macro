@@ -6354,12 +6354,45 @@ export const execDatabaseSqlBody = zod
   })
   .describe('Request body for `POST \/exec`.');
 
+export const execDatabaseSqlResponseAlteredColumnClearedCellsMin = 0;
+
+export const execDatabaseSqlResponseAlteredColumnTrimmedCellsMin = 0;
+
 export const execDatabaseSqlResponseChangesAppliedMin = 0;
 
 export const execDatabaseSqlResponseResultsItemRowsItemItemDefaultOne = null;
 
 export const execDatabaseSqlResponse = zod
   .object({
+    altered_column: zod
+      .union([
+        zod.null(),
+        zod
+          .object({
+            cleared_cells: zod
+              .number()
+              .min(execDatabaseSqlResponseAlteredColumnClearedCellsMin)
+              .describe(
+                'Cells `USING NULL` emptied because their value did not fit.'
+              ),
+            column_id: zod
+              .uuid()
+              .describe('The column placement; its id survives the change.'),
+            name: zod.string().describe("The column's name."),
+            table_id: zod.uuid().describe('The table.'),
+            to: zod.string().describe('The type it became, as SQL spells it.'),
+            trimmed_cells: zod
+              .number()
+              .min(execDatabaseSqlResponseAlteredColumnTrimmedCellsMin)
+              .describe(
+                'Cells that held several values and kept only their first.'
+              ),
+          })
+          .describe(
+            'A column whose type an `ALTER COLUMN … TYPE` statement changed.'
+          ),
+      ])
+      .optional(),
     changes_applied: zod
       .number()
       .min(execDatabaseSqlResponseChangesAppliedMin)
@@ -6543,12 +6576,45 @@ export const runDatabaseQueryParams = zod.object({
   query_id: zod.uuid().describe('Saved query id'),
 });
 
+export const runDatabaseQueryResponseAlteredColumnClearedCellsMin = 0;
+
+export const runDatabaseQueryResponseAlteredColumnTrimmedCellsMin = 0;
+
 export const runDatabaseQueryResponseChangesAppliedMin = 0;
 
 export const runDatabaseQueryResponseResultsItemRowsItemItemDefaultOne = null;
 
 export const runDatabaseQueryResponse = zod
   .object({
+    altered_column: zod
+      .union([
+        zod.null(),
+        zod
+          .object({
+            cleared_cells: zod
+              .number()
+              .min(runDatabaseQueryResponseAlteredColumnClearedCellsMin)
+              .describe(
+                'Cells `USING NULL` emptied because their value did not fit.'
+              ),
+            column_id: zod
+              .uuid()
+              .describe('The column placement; its id survives the change.'),
+            name: zod.string().describe("The column's name."),
+            table_id: zod.uuid().describe('The table.'),
+            to: zod.string().describe('The type it became, as SQL spells it.'),
+            trimmed_cells: zod
+              .number()
+              .min(runDatabaseQueryResponseAlteredColumnTrimmedCellsMin)
+              .describe(
+                'Cells that held several values and kept only their first.'
+              ),
+          })
+          .describe(
+            'A column whose type an `ALTER COLUMN … TYPE` statement changed.'
+          ),
+      ])
+      .optional(),
     changes_applied: zod
       .number()
       .min(runDatabaseQueryResponseChangesAppliedMin)
@@ -6685,12 +6751,45 @@ export const queryDatabaseSqlBody = zod
   })
   .describe('Request body for read-only SQL queries.');
 
+export const queryDatabaseSqlResponseAlteredColumnClearedCellsMin = 0;
+
+export const queryDatabaseSqlResponseAlteredColumnTrimmedCellsMin = 0;
+
 export const queryDatabaseSqlResponseChangesAppliedMin = 0;
 
 export const queryDatabaseSqlResponseResultsItemRowsItemItemDefaultOne = null;
 
 export const queryDatabaseSqlResponse = zod
   .object({
+    altered_column: zod
+      .union([
+        zod.null(),
+        zod
+          .object({
+            cleared_cells: zod
+              .number()
+              .min(queryDatabaseSqlResponseAlteredColumnClearedCellsMin)
+              .describe(
+                'Cells `USING NULL` emptied because their value did not fit.'
+              ),
+            column_id: zod
+              .uuid()
+              .describe('The column placement; its id survives the change.'),
+            name: zod.string().describe("The column's name."),
+            table_id: zod.uuid().describe('The table.'),
+            to: zod.string().describe('The type it became, as SQL spells it.'),
+            trimmed_cells: zod
+              .number()
+              .min(queryDatabaseSqlResponseAlteredColumnTrimmedCellsMin)
+              .describe(
+                'Cells that held several values and kept only their first.'
+              ),
+          })
+          .describe(
+            'A column whose type an `ALTER COLUMN … TYPE` statement changed.'
+          ),
+      ])
+      .optional(),
     changes_applied: zod
       .number()
       .min(queryDatabaseSqlResponseChangesAppliedMin)

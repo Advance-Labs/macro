@@ -18086,6 +18086,48 @@
         ],
         "description": "Events publishable to [`MacroAgentSessionLifecycleTopic`].\n\nThe serde tag and [`AgentSessionLifecycleEventName`] spell the same wire\nnames: subscribers filter on them, so they are API. The\n`event_names_match_the_wire` test holds the two in step. Exhaustive on\npurpose: a consumer's match should break when a variant is added."
       },
+      "AlteredColumn": {
+        "type": "object",
+        "description": "A column whose type an `ALTER COLUMN … TYPE` statement changed.",
+        "required": [
+          "table_id",
+          "column_id",
+          "name",
+          "to",
+          "cleared_cells",
+          "trimmed_cells"
+        ],
+        "properties": {
+          "cleared_cells": {
+            "type": "integer",
+            "description": "Cells `USING NULL` emptied because their value did not fit.",
+            "minimum": 0
+          },
+          "column_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The column placement; its id survives the change."
+          },
+          "name": {
+            "type": "string",
+            "description": "The column's name."
+          },
+          "table_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The table."
+          },
+          "to": {
+            "type": "string",
+            "description": "The type it became, as SQL spells it."
+          },
+          "trimmed_cells": {
+            "type": "integer",
+            "description": "Cells that held several values and kept only their first.",
+            "minimum": 0
+          }
+        }
+      },
       "Anchor": {
         "oneOf": [
           {
@@ -26458,6 +26500,17 @@
           "truncated_tables"
         ],
         "properties": {
+          "altered_column": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AlteredColumn",
+                "description": "The column an `ALTER COLUMN … TYPE` changed."
+              }
+            ]
+          },
           "changes_applied": {
             "type": "integer",
             "description": "How many row changes were applied to Postgres.",
