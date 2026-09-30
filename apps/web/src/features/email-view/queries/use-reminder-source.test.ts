@@ -176,7 +176,23 @@ describe('reminder source', () => {
     expect(source.hasMore()).toBe(false);
   });
 
-  it('refreshes the Soup page when not searching', async () => {
+  it('narrows the loaded page by description while searching', () => {
+    const { source, setEntities, setState } = mount();
+    setEntities([
+      reminder('Ping about invoice'),
+      reminder('Follow up with Teo'),
+    ]);
+    expect(ids(source)).toEqual(['Ping about invoice', 'Follow up with Teo']);
+
+    setState('search', 'teo');
+    expect(ids(source)).toEqual(['Follow up with Teo']);
+    expect(source.isLoading()).toBe(false);
+
+    setState('search', 'zzzz');
+    expect(ids(source)).toEqual([]);
+  });
+
+  it('refreshes the Soup page', async () => {
     const { source, query } = mount();
     await source.refresh();
     expect(query.refresh).toHaveBeenCalledOnce();

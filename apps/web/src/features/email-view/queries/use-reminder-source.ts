@@ -1,8 +1,4 @@
-import {
-  buildFlatSoupRows,
-  createSearchState,
-  createSoupLoadMoreRow,
-} from '@app/features/soup';
+import { buildFlatSoupRows, createSoupLoadMoreRow } from '@app/features/soup';
 import { withEntityNotifications } from '@app/features/soup/entity-notifications';
 import { useGlobalNotificationSource } from '@components/app/GlobalAppState';
 import type { EntityData } from '@entity';
@@ -10,7 +6,7 @@ import { useSoupAstItemsQuery } from '@queries/soup/items';
 import { createMemo } from 'solid-js';
 import {
   buildReminderQuery,
-  buildReminderSearchRequest,
+  reminderMatchesSearch,
   reminderMatchesStatus,
   reminderStatusFromFacets,
 } from './reminder-query';
@@ -22,8 +18,9 @@ import type {
 
 /**
  * The Reminders tab's list: the user's reminders in the selected status, from
- * Soup, with service search over the same slice. Inbox scope does not apply —
- * reminders belong to the user, not to a mailbox.
+ * Soup. Inbox scope does not apply — reminders belong to the user, not to a
+ * mailbox. Search narrows the loaded page by description: the search service
+ * has no reminders index, so a service query could never return one.
  */
 export function useReminderSource(
   state: EmailDataSourceInput
@@ -40,26 +37,12 @@ export function useReminderSource(
     meta: { insertFilter: (item) => item.tag === 'reminder' },
   }));
 
-  // The quick-access pool behind local search holds no reminders, so every
-  // search result comes from the search service.
-  const search = createSearchState({
-    text: () => state.search,
-    enabled,
-    disableLocalSearch: () => true,
-    buildRequest: (request) => buildReminderSearchRequest(status(), request),
-  });
-  const usesServiceSearch = search.usesServiceSearch;
-
   const isListPending = () => query.isLoading || query.isPlaceholderData;
 
   const rawEntities = (): EntityData[] => {
-    if (!search.isSearching()) {
-      // Previous-status rows are not valid results for the new query.
-      if (isListPending()) return [];
-      return query.data?.entities ?? [];
-    }
-    if (!usesServiceSearch() || search.searchQuery.isPlaceholderData) return [];
-    return search.data();
+    // Previous-status rows are not valid results for the new query.
+    if (isListPending()) return [];
+    return query.data?.entities ?? [];
   };
 
   // A row the cache hands back may have moved status since the page was
@@ -67,18 +50,16 @@ export function useReminderSource(
   // status check keeps optimistic updates honest until the refetch lands.
   const entities = createMemo(() =>
     rawEntities()
-      .filter((entity) => reminderMatchesStatus(entity, status()))
+      .filter(
+        (entity) =>
+          reminderMatchesStatus(entity, status()) &&
+          reminderMatchesSearch(entity, state.search)
+      )
       .map((entity) => withEntityNotifications(entity, notificationSource))
   );
 
-  const hasMore = () => {
-    if (usesServiceSearch()) return search.hasNextPage();
-    return !isListPending() && query.hasNextPage;
-  };
-  const isLoadingMore = () =>
-    usesServiceSearch()
-      ? search.isFetchingNextPage()
-      : query.isFetchingNextPage;
+  const hasMore = () => !isListPending() && query.hasNextPage;
+  const isLoadingMore = () => query.isFetchingNextPage;
 
   // Flat, like the standalone view was: Soup already orders reminders by
   // when they fire, and date headers would only restate that.
@@ -97,31 +78,15 @@ export function useReminderSource(
 
   return {
     items,
-    isLoading: () => {
-      if (!search.isSearching()) return isListPending();
-      if (entities().length > 0) return false;
-      return usesServiceSearch() ? search.isLoading() : query.isLoading;
-    },
-    isFetching: () => {
-      if (search.isSettling()) return true;
-      return usesServiceSearch() ? search.isFetching() : query.isFetching;
-    },
-    error: () =>
-      (usesServiceSearch() ? search.error() : query.error) ?? undefined,
+    isLoading: isListPending,
+    isFetching: () => query.isFetching,
+    error: () => query.error ?? undefined,
     hasMore,
     isLoadingMore,
     loadMore: async () => {
-      if (usesServiceSearch()) {
-        await search.fetchNextPage();
-        return;
-      }
       await query.fetchNextPage();
     },
     refresh: async () => {
-      if (usesServiceSearch()) {
-        await search.refetch();
-        return;
-      }
       await query.refresh();
     },
   };

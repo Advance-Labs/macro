@@ -8,13 +8,9 @@ import {
   compileClause,
   confine,
   type FacetSelection,
-  NIL_UUID,
-  type SoupSearchRequest,
 } from '@app/features/soup';
 import type { EntityData } from '@entity';
 import type { SoupAstItemsQueryArgs } from '@queries/soup/items';
-import type { SearchSoupQueryArgs } from '@queries/soup/search';
-import type { EntityFilters } from '@service-search/generated/models';
 import { match } from 'ts-pattern';
 import type { EmailFilterGroupId, ReminderStatusFilter } from '../types';
 
@@ -115,49 +111,17 @@ export function reminderMatchesStatus(
     .exhaustive();
 }
 
-// Every type the search service knows about other than reminders matches
-// nothing, so a search from the Reminders tab returns reminders alone.
-const nonReminderFilters: EntityFilters = {
-  calendar_event_filters: { calendar_event_ids: [NIL_UUID] },
-  call_filters: { call_ids: [NIL_UUID] },
-  channel_filters: { channel_ids: [NIL_UUID] },
-  channel_thread_filters: { thread_ids: [NIL_UUID] },
-  chat_filters: { chat_ids: [NIL_UUID] },
-  crm_company_filters: { company_ids: [NIL_UUID] },
-  document_filters: { document_ids: [NIL_UUID] },
-  email_filters: { email_thread_ids: [NIL_UUID] },
-  foreign_entity_filters: { ids: [NIL_UUID] },
-  project_filters: { project_ids: [NIL_UUID] },
-};
-
-/** Mirrors the Reminders tab's status scoping for service-backed search. */
-export function buildReminderSearchRequest(
-  status: ReminderStatusFilter,
-  search: SoupSearchRequest
-): SearchSoupQueryArgs {
-  const reminderFilters: NonNullable<EntityFilters['reminder_filters']> = match(
-    status
-  )
-    .with('active', () => ({
-      include: true,
-      completed: false,
-      fired: true,
-    }))
-    .with('scheduled', () => ({
-      include: true,
-      completed: false,
-      fired: false,
-    }))
-    .with('done', () => ({ include: true, completed: true }))
-    .exhaustive();
-
-  return {
-    params: { cursor: null, page_size: 100 },
-    body: {
-      query: search.query,
-      match_type: search.matchType,
-      search_on: 'name_content',
-      filters: { ...nonReminderFilters, reminder_filters: reminderFilters },
-    },
-  };
+/**
+ * Search narrows the loaded page by description. The search service accepts
+ * `reminder_filters` but indexes no reminders, so a service query would only
+ * ever answer "no results"; a reminder's whole text is its description, and
+ * the list is small enough to match locally.
+ */
+export function reminderMatchesSearch(
+  entity: EntityData,
+  search: string
+): boolean {
+  const term = search.trim().toLowerCase();
+  if (!term) return true;
+  return (entity.name ?? '').toLowerCase().includes(term);
 }

@@ -2,7 +2,7 @@ import type { ReminderEntity } from '@entity/types/entity';
 import { describe, expect, it, vi } from 'vitest';
 import {
   buildReminderQuery,
-  buildReminderSearchRequest,
+  reminderMatchesSearch,
   reminderMatchesStatus,
   reminderStatusFromFacets,
 } from './reminder-query';
@@ -115,33 +115,13 @@ describe('reminder status predicate', () => {
   });
 });
 
-describe('reminder search request', () => {
-  it('scopes service search to reminders in the selected status', () => {
-    const request = buildReminderSearchRequest('scheduled', {
-      query: 'follow',
-      matchType: 'partial',
-    });
-    expect(request.body.filters?.reminder_filters).toEqual({
-      include: true,
-      completed: false,
-      fired: false,
-    });
-    expect(request.body.filters?.email_filters).toEqual({
-      email_thread_ids: [NIL],
-    });
-    expect(request.body.filters?.document_filters).toEqual({
-      document_ids: [NIL],
-    });
-  });
-
-  it('leaves fired alone on Done', () => {
-    const request = buildReminderSearchRequest('done', {
-      query: 'follow',
-      matchType: 'partial',
-    });
-    expect(request.body.filters?.reminder_filters).toEqual({
-      include: true,
-      completed: true,
-    });
+describe('reminder search', () => {
+  it('matches the description case-insensitively and ignores blank text', () => {
+    const entity = reminder({ name: 'Follow up with Teo' });
+    expect(reminderMatchesSearch(entity, '')).toBe(true);
+    expect(reminderMatchesSearch(entity, '   ')).toBe(true);
+    expect(reminderMatchesSearch(entity, 'teo')).toBe(true);
+    expect(reminderMatchesSearch(entity, ' FOLLOW ')).toBe(true);
+    expect(reminderMatchesSearch(entity, 'invoice')).toBe(false);
   });
 });
