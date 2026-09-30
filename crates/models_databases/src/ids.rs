@@ -17,6 +17,18 @@ pub type RowId = Uuid;
 /// The cache key for query materializations and the invalidation signal for
 /// live query chips.
 #[derive(
-    utoipa::ToSchema, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize,
+    utoipa::ToSchema,
+    specta::Type,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
 )]
+// A version never nears 2^53, so TypeScript reads it as a plain number.
+#[specta(type = f64)]
 pub struct TableVersion(pub i64);

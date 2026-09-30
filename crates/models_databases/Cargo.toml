@@ -10,6 +10,7 @@ version = "0.1.0"
 [dependencies]
 chrono = { workspace = true }
 serde = { workspace = true }
+specta = { workspace = true, features = ["chrono", "uuid"] }
 utoipa = { workspace = true }
 uuid = { workspace = true }
 

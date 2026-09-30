@@ -11,7 +11,7 @@ use crate::ids::{ColumnId, DatabaseId, RowId, TableId, TableVersion};
 
 /// One write to a database's data. A request's ops apply together or not at
 /// all, and every op names a table of the database the request is for.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DatabaseOp {
     /// Append rows to a table, in order, each with the cells it starts with.
@@ -72,7 +72,7 @@ pub enum DatabaseOp {
 }
 
 /// One cell of a row: which column, and its new value.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
 pub struct CellWrite {
     /// The column placement.
     #[schema(value_type = Uuid)]
@@ -82,7 +82,7 @@ pub struct CellWrite {
 }
 
 /// Which rows an update writes, and with what.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RowChanges {
     /// The same cells on every row.
@@ -101,7 +101,7 @@ pub enum RowChanges {
 }
 
 /// One row's cells in a [`RowChanges::PerRow`] update.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
 pub struct RowChange {
     /// The row.
     #[schema(value_type = Uuid)]
@@ -112,7 +112,7 @@ pub struct RowChange {
 
 /// A cell's value. It must fit the column's type: text for a text column,
 /// options of the column for a select, and so on.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
 #[serde(tag = "type", content = "value", rename_all = "snake_case")]
 pub enum CellValue {
     /// Free text.
@@ -138,7 +138,7 @@ pub enum CellValue {
 }
 
 /// A select option, by its id or by its label.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum OptionRef {
     /// An option the column has.
@@ -149,7 +149,7 @@ pub enum OptionRef {
 }
 
 /// A reference to one Macro entity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct EntityRef {
     /// What kind of entity it is; it must be the kind the column points at.
@@ -159,7 +159,9 @@ pub struct EntityRef {
 }
 
 /// A kind of Macro entity a reference column can point at.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema, specta::Type,
+)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EntityKind {
     /// People.
@@ -187,7 +189,9 @@ pub enum EntityKind {
 }
 
 /// A type a column can have.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema, specta::Type,
+)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ColumnKind {
     /// Free text.
@@ -231,7 +235,7 @@ pub enum ColumnKind {
 }
 
 /// What one op did, in the order the ops were sent.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum OpResult {
     /// What an insert, update or delete did.
