@@ -80,7 +80,7 @@ agent_fold_wasm_target := justfile_directory() / "../../target/agent-fold-wasm"
 database_sql_wasm_target := justfile_directory() / "../../target/database-sql-wasm"
 
 [parallel]
-build-wasm: build-cache-wasm build-agent-fold-wasm
+build-wasm: build-cache-wasm build-agent-fold-wasm build-database-sql-wasm
 
 build-dev: build-wasm
     MODE=development NODE_ENV=production NODE_OPTIONS="{{node_heap}}" bun run --bun build
