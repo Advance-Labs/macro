@@ -1,3 +1,4 @@
+import { match } from 'ts-pattern';
 import type { EntityItem } from '@core/context/quickAccess';
 import { trackMention } from '@core/signal/mention';
 import type { DateOption } from '@core/util/dateSearch/useDateSearch';
@@ -83,10 +84,10 @@ async function handleEntityMention(
 
   let mentionId: string | undefined;
   if (blockId && tracksMentions(dependencies)) {
-    const trackType =
-      item.bucket === 'channel' || item.bucket === 'dm'
-        ? 'channel'
-        : 'document';
+    const trackType = match(item.bucket)
+      .with('channel', 'dm', () => 'channel' as const)
+      .with('database', () => 'database' as const)
+      .otherwise(() => 'document' as const);
     mentionId = await trackMention(blockId, trackType, entity.id);
   }
 

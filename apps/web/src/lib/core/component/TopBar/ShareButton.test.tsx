@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   getInitiativePermissions: vi.fn(),
   updateInitiativePermissions: vi.fn(),
   getDocumentPermissions: vi.fn(),
+  getDatabasePermissions: vi.fn(),
+  updateDatabasePermissions: vi.fn(),
   getChatPermissions: vi.fn(),
   updateChatPermissions: vi.fn(),
   fetchCallSharePermission: vi.fn(),
@@ -31,6 +33,10 @@ const mocks = vi.hoisted(() => ({
   blockPermissionsRead: vi.fn(),
   blockEditPermissionEnabled: true,
   inBlock: true,
+}));
+vi.mock('@queries/storage/databases', () => ({
+  getDatabaseSharePermissions: mocks.getDatabasePermissions,
+  updateDatabaseSharePermissions: mocks.updateDatabasePermissions,
 }));
 vi.mock('@app/lib/analytics/analytics-context', () => ({
   useAnalytics: () => ({ track: vi.fn() }),
@@ -1198,4 +1204,26 @@ describe('native project sharing', () => {
       'https://macro.com/app/component/initiative-view~initiative-1~overview'
     );
   });
+});
+
+it('database sharing reads its block permissions and disables public links', () => {
+  mocks.blockPermissionsRead.mockReturnValue({
+    isErr: () => false,
+    value: { id: 'database-id', owner: 'owner', channelSharePermissions: [] },
+  });
+  render(() => (
+    <ShareModal
+      id="database-id"
+      itemType="database"
+      blockAlias="database"
+      owner="owner"
+      name="Ideas"
+      userPermissions={Permissions.OWNER}
+      open
+      onOpenChange={() => {}}
+    />
+  ));
+  expect(mocks.blockPermissionsRead).toHaveBeenCalled();
+  expect(mocks.getDatabasePermissions).not.toHaveBeenCalled();
+  expect(screen.queryByText('Anyone with the link')).toBeNull();
 });

@@ -29,6 +29,7 @@ import {
   type ComponentMetaMap,
   resolveComponent,
 } from './componentRegistry';
+import { contentReference } from './content-reference';
 import {
   type ContentInstance,
   createContentInstanceRegistry,
@@ -1396,7 +1397,9 @@ export function createSplitLayout(
     type: SplitContentType,
     id: string
   ): SplitHandle | undefined {
-    const instance = contentInstances.find(contentIdentity({ type, id }));
+    const instance = contentInstances.find(
+      contentIdentity(contentReference(type, id))
+    );
     const match = state.splits.find(
       (s) =>
         (s.id === instance?.owner ||

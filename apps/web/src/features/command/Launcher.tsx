@@ -21,6 +21,7 @@ import { CHAT_INPUT_TEXT_AREA_ID } from '@core/component/AI/component/input/Chat
 import { getIconConfig } from '@core/component/EntityIcon';
 import {
   enableChatV3Agents,
+  enableDatabases,
   enableProjects,
   enableReminders,
   enableSnippets,
@@ -50,6 +51,7 @@ import type { Span } from '@macro-inc/observability';
 import ChatIcon from '@phosphor/chat.svg';
 import MagnifyingGlassIcon from '@phosphor/magnifying-glass.svg';
 import PlusIcon from '@phosphor/plus.svg';
+import { createDatabase } from '@queries/storage/databases';
 import { createProject } from '@queries/storage/projects';
 import { makePersisted } from '@solid-primitives/storage';
 import { useNavigate } from '@solidjs/router';
@@ -402,6 +404,15 @@ export function runCreateAction(
         shouldInsert,
       });
       return;
+    case 'database':
+      if (!isFeatureEnabled(enableDatabases)) return;
+      createBlock({
+        blockName: 'database',
+        loading: true,
+        createFn: () => createDatabase({ name: 'Untitled database', source }),
+        shouldInsert,
+      });
+      return;
     case 'code':
       createBlock({
         blockName: 'code',
@@ -541,6 +552,22 @@ export const CREATABLE_BLOCKS: CreatableBlock[] = [
     enabled: () => isFeatureEnabled(enableChatV3Agents),
     keyDownHandler: () => {
       runCreateAction('agent', { shouldInsert: pressedKeys().has('shift') });
+      return true;
+    },
+  },
+  {
+    label: 'Database',
+    icon: getIconConfig('database').icon,
+    description: 'Create database',
+    launcherHint: 'Tables and boards',
+    keywords: ['new', 'make', 'add', 'database', 'table', 'db', 'sql'],
+    blockName: 'database',
+    enabled: () => isFeatureEnabled(enableDatabases),
+    hotkeyToken: TOKENS.create.database,
+    altHotkeyToken: TOKENS.create.databaseNewSplit,
+    hotkey: 'b',
+    keyDownHandler: () => {
+      runCreateAction('database', { shouldInsert: pressedKeys().has('shift') });
       return true;
     },
   },
@@ -688,7 +715,7 @@ export const CREATABLE_BLOCKS: CreatableBlock[] = [
     blockName: 'spreadsheet',
     hotkeyToken: TOKENS.create.spreadsheet,
     altHotkeyToken: TOKENS.create.spreadsheetNewSplit,
-    hotkey: 'b',
+    hotkey: 'w',
     keyDownHandler: () => {
       runCreateAction('spreadsheet', {
         shouldInsert: pressedKeys().has('shift'),
@@ -759,9 +786,11 @@ export function useCreateMenuBlocks(
   const remindersFlag = useFeatureFlag(enableReminders);
   const agentsFlag = useFeatureFlag(enableChatV3Agents);
   const projectsFlag = useFeatureFlag(enableProjects);
+  const databasesFlag = useFeatureFlag(enableDatabases);
   return createMemo(() => {
     remindersFlag();
     agentsFlag();
+    databasesFlag();
     return (source() ?? commands).filter((block) => {
       if (block.blockName === 'spreadsheet') return spreadsheets();
       if (block.blockName === 'snippet') return snippetsFlag().enabled;

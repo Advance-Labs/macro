@@ -21,16 +21,24 @@ Its type icon stays in place while editing. SQL refers to tables and columns by
 their display names (double-quoted), so a rename changes the name a saved query
 must use.
 
-The header arrow menu groups schema and view actions. **Change type** offers Text,
-Number, Select, Multi-select, Date, Checkbox, URL, People, Documents, Tasks, and
-relations to tables in this database. A type change validates all existing values
-and either converts the whole column or leaves it unchanged. Numbers can become
-text; plain number strings can become numbers. Padding, leading zeros, ambiguous
-values, and multiple values that would be lost are rejected with an explanation.
-Changing a placement never changes another table that uses the same property.
+The header arrow menu groups schema and view actions. **Change type** checks the
+column's values against Text, Number, Select, Multi-select, Date, Checkbox, URL,
+People, Documents, Tasks, and relations to tables in this database, showing
+"Checking values…" meanwhile, then lists only the types the column can become (a
+checkbox can only become text; only an empty column can become People or a
+relation). A type some values would not survive shows how many, such
+as "3 values aren't numbers"; choosing it opens a confirmation listing a few of
+them, and **Convert anyway, clearing 3 values** converts the rest and empties
+those (a cell with several values keeps its first). Every other type converts
+immediately. Plain number strings can become numbers; padding, leading zeros and
+ambiguous values count as values that don't fit. A date becomes its `YYYY-MM-DD`
+text. Changing a placement never changes another table that uses the same property.
 A relation can hold multiple records. **Delete column** opens a confirmation;
 it removes this table’s column and values while preserving other tables.
 Drag a column header left or right to reorder it, or use **Move left / Move right**.
+To add a column next to another, right-click its header and choose **Insert left** or
+**Insert right**: a Text column appears on that side with its name selected for
+editing, and its type is inferred from what you type.
 An orange insertion line shows the exact boundary before or after the target
 column. Release to place it there; Escape cancels. Original-position and
 offscreen boundaries show no line and do not change the order.
@@ -59,6 +67,12 @@ the tab, or focus it and press F2. These actions also work on inactive tabs.
 The tab itself becomes an input. Enter or leaving the input saves; Escape cancels.
 Renaming preserves records and saved views. A concurrent rename asks you to reopen
 the editor, and a failed request keeps your draft available to retry.
+To reorder tables, drag a tab along the tab strip; an accent line shows where it
+will land, and Escape cancels the drag. From the keyboard, focus a tab, press
+Shift+F10 (or right-click it) and choose **Move left** or **Move right**; each is
+disabled at its end of the strip. The new order shows at once, is saved for every
+viewer, and survives a reload. If the save fails, the tabs return to their previous
+order and a toast says so.
 
 An editable empty row always follows the records. Enter a value in any of its
 cells to create a record; the next empty row appears immediately. Merely focusing
@@ -101,8 +115,9 @@ remove only the relationship, never the related record. Enter selects a match.
 Tab selects a searched match before moving to the next cell; with an empty search
 it only moves. Escape closes the picker and returns focus to the cell. Choosing a
 relation in the empty row creates the record and its links together. View-only
-users can open references but cannot select or remove them. Search, filters, and
-sorting use current record names; unavailable records have a readable label.
+users can open references but cannot select or remove them. Relation cells show
+current record names, and unavailable records have a readable label. Search and
+sorting skip relations; a relation filter can only test whether it is empty.
 
 Edits save automatically. A failed save appears as an actionable error above the grid.
 A concurrent edit can cause a version conflict: the latest values load and
@@ -122,6 +137,9 @@ show those same records. **New view** offers Table and Board. A Board requires a
 Select, Multi-select, or Checkbox property; choose any compatible property in
 **Group by**. The choice is based on the table's schema, without a special Status
 property. **View settings** can change the current layout or grouping later.
+Switching to Board there without a grouping picks the first Multi-select, else the
+first Select, else the first Checkbox; an existing grouping is kept. Its
+**Columns** list shows or hides each property with a switch.
 If the table has no grouping property, **Open table** returns to its grid so you
 can create a column and choose a suitable type from its header menu.
 
@@ -140,21 +158,32 @@ The card's **Move …** menu offers the same action without dragging. On a multi
 board a card can appear in several lanes: moving it replaces that lane's value
 and keeps its other selections; moving it to the unassigned lane clears them.
 
-**New** within a lane opens an inline title input. Enter creates a card with that
-lane's value; it appears immediately while saving, and another card can be started
-without waiting. Failed requests keep the typed draft for correction or retry.
-Open a card to edit its details. **New group** at the end of a select board adds
-another option and lane. Hiding a property does not change the record's title.
+**+ New** at the bottom of a lane (or the lane header's **+**) puts an empty,
+focused card title in that lane; nothing opens. Enter creates the card with the
+lane's value and opens another empty card below it, so several can be typed in a
+row; each appears in place while it saves. Shift+Enter creates the card and opens
+its record. Escape, or leaving an empty title, cancels; leaving a typed title
+saves it. From the keyboard, press **n** with focus on any card or control in a
+lane, or Enter on a focused lane header, to start a card there. The toolbar's
+**New** starts one in the first lane. Failed requests keep the typed draft for
+correction or retry; Enter in it retries. Open a card to edit its details. **New group** at the end of a select board adds
+another option and lane. Every new select option, a new group included, takes
+the next colour of the tag palette, so its pill is coloured wherever it shows. Hiding a property does not change the record's title.
 The table grid uses its always-ready empty row instead of a separate New button.
 
 **Filter**, **Sort**, **Search**, and **View settings** are grouped at the right of
 the views row. Boards also offer **New**.
 **Search** expands an inline **Search records** field; **Clear search** leaves
 filters intact and keeps that field focused. Escape clears and closes search.
-Multiple filters are combined with AND. Multi-select filters match the selected
-members. Column headers offer sorting, **Move left**, **Move right**, and
+In **Filter**, the first condition reads **Where** and each later one has an
+**And**/**Or** control; the choice applies to every condition at once. A
+condition with no value yet is ignored. Select and multi-select values are offered
+as the same colored pills the cells show, behind a **Choose** placeholder.
+Multi-select filters match the selected members. Search, filters, and sorting run
+in the database engine as one SQL statement, so text matches ignore case and dates
+compare by calendar day (UTC). Column headers offer sorting, **Move left**, **Move right**, and
 **Hide column** for the current view. Moves skip hidden columns; the Columns
-checkboxes in **View settings** restore a hidden column to its saved position.
+switches in **View settings** restore a hidden column to its saved position.
 Hidden columns remain available in the record dialog, and new columns appear
 after the saved layout.
 Creating or changing a record can make it fall outside the current search or

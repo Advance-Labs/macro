@@ -123,6 +123,16 @@ fragment SoupItemPreviewFields on GraphqlSoupEntity {
 		}
 	}
 	frecencyScore
+	... on GraphqlSoupDatabaseRow {
+		tableId
+		databaseId
+		position
+		ownerId
+		creatorId
+		createdAt
+		updatedAt
+		properties { ...SoupPropertyFields }
+	}
 	... on GraphqlSoupInitiative {
 		descriptionDocumentId
 		metadata { ownerId createdAt updatedAt viewedAt }

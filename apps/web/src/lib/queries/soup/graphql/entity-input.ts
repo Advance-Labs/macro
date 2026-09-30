@@ -37,8 +37,12 @@ export function buildGraphqlEntitiesSoupInput(
   const initiativeFilter = or(
     ids('INITIATIVE').map((id) => ({ literal: { id } }))
   );
+  const databaseRowFilter = or(
+    ids('DATABASE_ROW').map((id) => ({ literal: { id } }))
+  );
   const filters: GraphqlEntityFilterAst = {
     ...base,
+    ...(databaseRowFilter ? { databaseRowFilter } : {}),
     documentFilter:
       or(ids('DOCUMENT', 'TASK').map((id) => ({ literal: { id } }))) ??
       base.documentFilter,
@@ -115,6 +119,10 @@ export function buildGraphqlEntitySoupInput(
     .with('INITIATIVE', () => ({
       initiativeFilter: { literal: { id: entityId } },
     }))
+    .with('DATABASE_ROW', () => ({
+      databaseRowFilter: { literal: { id: entityId } },
+    }))
+    // Users are not Soup items.
     .with('USER', () => undefined)
     .exhaustive();
   if (!targetFilter) return undefined;

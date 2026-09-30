@@ -106,12 +106,13 @@ export function Tooltip(props: TooltipProps) {
   );
 
   onCleanup(() => setOpen(false));
+  const visible = () => open() && !props.disabled && tooltipsEnabled();
 
   return (
     <KobalteTooltip
-      open={open()}
+      open={visible()}
       onOpenChange={(isOpen) => {
-        setOpen(isOpen);
+        setOpen(isOpen && !props.disabled && tooltipsEnabled());
       }}
       placement={props.placement ?? 'bottom'}
       ignoreSafeArea={true}
@@ -133,7 +134,7 @@ export function Tooltip(props: TooltipProps) {
       >
         {props.children}
       </KobalteTooltip.Trigger>
-      <Show when={open()}>
+      <Show when={visible()}>
         <KobalteTooltip.Portal>
           <KobalteTooltip.Content class="z-tool-tip max-w-[calc(100vw-32px)]">
             <Surface class={tooltipClasses()} depth={3}>

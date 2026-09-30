@@ -653,6 +653,7 @@ export const isDisplayableSoupItem = (
   item: SoupPage['items'][number]
 ): item is DisplayableSoupItem =>
   Boolean(item) &&
+  item.tag !== 'databaseRow' &&
   (item.tag !== 'document' ||
     item.data.subType?.type !== 'initiative_description');
 
@@ -756,6 +757,11 @@ export const mapApiSoupItemToEntity = (
   item: DisplayableSoupItem
 ): SoupEntity => {
   const entity = match(item)
+    // Rows are read by the database SQL engine; isDisplayableSoupItem keeps
+    // them out of every list.
+    .with({ tag: 'databaseRow' }, () => {
+      throw new Error('Database rows are not rendered as Soup entities');
+    })
     .with({ tag: 'agentSession' }, (item) => ({
       ...item.data,
       type: 'agent_session' as const,

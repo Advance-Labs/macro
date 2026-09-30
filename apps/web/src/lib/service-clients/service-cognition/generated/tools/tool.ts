@@ -8,6 +8,11 @@ import * as schemas from './schemas';
 import type * as types from './types';
 
 type ToolParserMap = {
+  AddColumn: { call: types.AddColumn; response: types.AddColumnResponse };
+  AddColumnOptions: {
+    call: types.AddColumnOptions;
+    response: types.AddColumnOptionsResponse;
+  };
   BashCodeExecution: {
     call: types.BashCodeExecution;
     response: types.BashCodeExecutionResponse;
@@ -19,6 +24,10 @@ type ToolParserMap = {
   CalculateSpreadsheet: {
     call: types.CalculateSpreadsheet;
     response: types.SpreadsheetResponse;
+  };
+  ChangeColumnType: {
+    call: types.ChangeColumnType;
+    response: types.ChangeColumnTypeResponse;
   };
   CommentOnDocumentText: {
     call: types.CommentOnDocumentText;
@@ -41,6 +50,10 @@ type ToolParserMap = {
     call: types.CreateChannel;
     response: types.CreateChannelResponse;
   };
+  CreateDatabase: {
+    call: types.CreateDatabase;
+    response: types.CreateDatabaseResponse;
+  };
   CreateDocument: {
     call: types.CreateDocument;
     response: types.CreateDocumentResponse;
@@ -58,11 +71,16 @@ type ToolParserMap = {
     response: types.CreateProjectResponse;
   };
   CreateReminder: { call: types.CreateReminder; response: types.ToolReminder };
+  CreateTable: { call: types.CreateTable; response: types.CreateTableResponse };
   CreateTag: { call: types.CreateTag; response: types.CreateTagResponse };
   DeleteBot: { call: types.DeleteBot; response: types.DeleteBotResponse };
   DeleteCalendarEvent: {
     call: types.DeleteCalendarEvent;
     response: types.DeleteCalendarEventResponse;
+  };
+  DeleteColumn: {
+    call: types.DeleteColumn;
+    response: types.DeleteColumnResponse;
   };
   DeleteImportEntity: {
     call: types.DeleteImportEntity;
@@ -76,7 +94,12 @@ type ToolParserMap = {
     call: types.DeleteReminder;
     response: types.DeleteReminderResponse;
   };
+  DeleteTable: { call: types.DeleteTable; response: types.DeleteTableResponse };
   DeleteTag: { call: types.DeleteTag; response: types.DeleteTagResponse };
+  DescribeDatabase: {
+    call: types.DescribeDatabase;
+    response: types.ToolDatabaseSchema;
+  };
   DisplayResults: {
     call: types.DisplayResults;
     response: types.DisplayResultsResponse;
@@ -120,6 +143,10 @@ type ToolParserMap = {
   ListCompanies: {
     call: types.ListCompanies;
     response: types.ListCompaniesResponse;
+  };
+  ListDatabases: {
+    call: types.ListDatabases;
+    response: types.ListDatabasesResponse;
   };
   ListEntities: {
     call: types.ListEntities;
@@ -171,6 +198,10 @@ type ToolParserMap = {
     response: types.MoveToProjectResponse;
   };
   NameSearch: { call: types.NameSearch; response: types.SearchToolResponse };
+  QueryDatabase: {
+    call: types.QueryDatabase;
+    response: types.QueryDatabaseResponse;
+  };
   ReadActivity: {
     call: types.ReadActivity;
     response: types.ReadActivityResponse;
@@ -219,9 +250,26 @@ type ToolParserMap = {
     call: types.RenameChannel;
     response: types.RenameChannelResponse;
   };
+  RenameColumn: {
+    call: types.RenameColumn;
+    response: types.RenameColumnResponse;
+  };
+  RenameDatabase: {
+    call: types.RenameDatabase;
+    response: types.RenameDatabaseResponse;
+  };
   RenameDocument: {
     call: types.RenameDocument;
     response: types.RenameDocumentResponse;
+  };
+  RenameTable: { call: types.RenameTable; response: types.RenameTableResponse };
+  ReorderColumns: {
+    call: types.ReorderColumns;
+    response: types.ReorderColumnsResponse;
+  };
+  ReorderTables: {
+    call: types.ReorderTables;
+    response: types.ReorderTablesResponse;
   };
   ReplyToDocumentComment: {
     call: types.ReplyToDocumentComment;
@@ -230,6 +278,14 @@ type ToolParserMap = {
   ResolveDocumentComment: {
     call: types.ResolveDocumentComment;
     response: types.ResolveDocumentCommentResponse;
+  };
+  SaveDatabaseQuery: {
+    call: types.SaveDatabaseQuery;
+    response: types.SaveDatabaseQueryResponse;
+  };
+  SaveDatabaseView: {
+    call: types.SaveDatabaseView;
+    response: types.SavedDatabaseView;
   };
   SearchSkills: {
     call: types.SearchSkills;
@@ -292,6 +348,11 @@ type ToolParserMap = {
 };
 
 const toolParserMap = {
+  AddColumn: { call: schemas.AddColumn, response: schemas.AddColumnResponse },
+  AddColumnOptions: {
+    call: schemas.AddColumnOptions,
+    response: schemas.AddColumnOptionsResponse,
+  },
   BashCodeExecution: {
     call: schemas.BashCodeExecution,
     response: schemas.BashCodeExecutionResponse,
@@ -303,6 +364,10 @@ const toolParserMap = {
   CalculateSpreadsheet: {
     call: schemas.CalculateSpreadsheet,
     response: schemas.SpreadsheetResponse,
+  },
+  ChangeColumnType: {
+    call: schemas.ChangeColumnType,
+    response: schemas.ChangeColumnTypeResponse,
   },
   CommentOnDocumentText: {
     call: schemas.CommentOnDocumentText,
@@ -325,6 +390,10 @@ const toolParserMap = {
     call: schemas.CreateChannel,
     response: schemas.CreateChannelResponse,
   },
+  CreateDatabase: {
+    call: schemas.CreateDatabase,
+    response: schemas.CreateDatabaseResponse,
+  },
   CreateDocument: {
     call: schemas.CreateDocument,
     response: schemas.CreateDocumentResponse,
@@ -345,11 +414,19 @@ const toolParserMap = {
     call: schemas.CreateReminder,
     response: schemas.ToolReminder,
   },
+  CreateTable: {
+    call: schemas.CreateTable,
+    response: schemas.CreateTableResponse,
+  },
   CreateTag: { call: schemas.CreateTag, response: schemas.CreateTagResponse },
   DeleteBot: { call: schemas.DeleteBot, response: schemas.DeleteBotResponse },
   DeleteCalendarEvent: {
     call: schemas.DeleteCalendarEvent,
     response: schemas.DeleteCalendarEventResponse,
+  },
+  DeleteColumn: {
+    call: schemas.DeleteColumn,
+    response: schemas.DeleteColumnResponse,
   },
   DeleteImportEntity: {
     call: schemas.DeleteImportEntity,
@@ -363,7 +440,15 @@ const toolParserMap = {
     call: schemas.DeleteReminder,
     response: schemas.DeleteReminderResponse,
   },
+  DeleteTable: {
+    call: schemas.DeleteTable,
+    response: schemas.DeleteTableResponse,
+  },
   DeleteTag: { call: schemas.DeleteTag, response: schemas.DeleteTagResponse },
+  DescribeDatabase: {
+    call: schemas.DescribeDatabase,
+    response: schemas.ToolDatabaseSchema,
+  },
   DisplayResults: {
     call: schemas.DisplayResults,
     response: schemas.DisplayResultsResponse,
@@ -410,6 +495,10 @@ const toolParserMap = {
   ListCompanies: {
     call: schemas.ListCompanies,
     response: schemas.ListCompaniesResponse,
+  },
+  ListDatabases: {
+    call: schemas.ListDatabases,
+    response: schemas.ListDatabasesResponse,
   },
   ListEntities: {
     call: schemas.ListEntities,
@@ -473,6 +562,10 @@ const toolParserMap = {
     call: schemas.NameSearch,
     response: schemas.SearchToolResponse,
   },
+  QueryDatabase: {
+    call: schemas.QueryDatabase,
+    response: schemas.QueryDatabaseResponse,
+  },
   ReadActivity: {
     call: schemas.ReadActivity,
     response: schemas.ReadActivityResponse,
@@ -527,9 +620,29 @@ const toolParserMap = {
     call: schemas.RenameChannel,
     response: schemas.RenameChannelResponse,
   },
+  RenameColumn: {
+    call: schemas.RenameColumn,
+    response: schemas.RenameColumnResponse,
+  },
+  RenameDatabase: {
+    call: schemas.RenameDatabase,
+    response: schemas.RenameDatabaseResponse,
+  },
   RenameDocument: {
     call: schemas.RenameDocument,
     response: schemas.RenameDocumentResponse,
+  },
+  RenameTable: {
+    call: schemas.RenameTable,
+    response: schemas.RenameTableResponse,
+  },
+  ReorderColumns: {
+    call: schemas.ReorderColumns,
+    response: schemas.ReorderColumnsResponse,
+  },
+  ReorderTables: {
+    call: schemas.ReorderTables,
+    response: schemas.ReorderTablesResponse,
   },
   ReplyToDocumentComment: {
     call: schemas.ReplyToDocumentComment,
@@ -538,6 +651,14 @@ const toolParserMap = {
   ResolveDocumentComment: {
     call: schemas.ResolveDocumentComment,
     response: schemas.ResolveDocumentCommentResponse,
+  },
+  SaveDatabaseQuery: {
+    call: schemas.SaveDatabaseQuery,
+    response: schemas.SaveDatabaseQueryResponse,
+  },
+  SaveDatabaseView: {
+    call: schemas.SaveDatabaseView,
+    response: schemas.SavedDatabaseView,
   },
   SearchSkills: {
     call: schemas.SearchSkills,
@@ -617,6 +738,11 @@ type NamedRawTool = {
 };
 
 type ToolDataMap = {
+  AddColumn: { call: types.AddColumn; response: types.AddColumnResponse };
+  AddColumnOptions: {
+    call: types.AddColumnOptions;
+    response: types.AddColumnOptionsResponse;
+  };
   BashCodeExecution: {
     call: types.BashCodeExecution;
     response: types.BashCodeExecutionResponse;
@@ -628,6 +754,10 @@ type ToolDataMap = {
   CalculateSpreadsheet: {
     call: types.CalculateSpreadsheet;
     response: types.SpreadsheetResponse;
+  };
+  ChangeColumnType: {
+    call: types.ChangeColumnType;
+    response: types.ChangeColumnTypeResponse;
   };
   CommentOnDocumentText: {
     call: types.CommentOnDocumentText;
@@ -650,6 +780,10 @@ type ToolDataMap = {
     call: types.CreateChannel;
     response: types.CreateChannelResponse;
   };
+  CreateDatabase: {
+    call: types.CreateDatabase;
+    response: types.CreateDatabaseResponse;
+  };
   CreateDocument: {
     call: types.CreateDocument;
     response: types.CreateDocumentResponse;
@@ -667,11 +801,16 @@ type ToolDataMap = {
     response: types.CreateProjectResponse;
   };
   CreateReminder: { call: types.CreateReminder; response: types.ToolReminder };
+  CreateTable: { call: types.CreateTable; response: types.CreateTableResponse };
   CreateTag: { call: types.CreateTag; response: types.CreateTagResponse };
   DeleteBot: { call: types.DeleteBot; response: types.DeleteBotResponse };
   DeleteCalendarEvent: {
     call: types.DeleteCalendarEvent;
     response: types.DeleteCalendarEventResponse;
+  };
+  DeleteColumn: {
+    call: types.DeleteColumn;
+    response: types.DeleteColumnResponse;
   };
   DeleteImportEntity: {
     call: types.DeleteImportEntity;
@@ -685,7 +824,12 @@ type ToolDataMap = {
     call: types.DeleteReminder;
     response: types.DeleteReminderResponse;
   };
+  DeleteTable: { call: types.DeleteTable; response: types.DeleteTableResponse };
   DeleteTag: { call: types.DeleteTag; response: types.DeleteTagResponse };
+  DescribeDatabase: {
+    call: types.DescribeDatabase;
+    response: types.ToolDatabaseSchema;
+  };
   DisplayResults: {
     call: types.DisplayResults;
     response: types.DisplayResultsResponse;
@@ -729,6 +873,10 @@ type ToolDataMap = {
   ListCompanies: {
     call: types.ListCompanies;
     response: types.ListCompaniesResponse;
+  };
+  ListDatabases: {
+    call: types.ListDatabases;
+    response: types.ListDatabasesResponse;
   };
   ListEntities: {
     call: types.ListEntities;
@@ -780,6 +928,10 @@ type ToolDataMap = {
     response: types.MoveToProjectResponse;
   };
   NameSearch: { call: types.NameSearch; response: types.SearchToolResponse };
+  QueryDatabase: {
+    call: types.QueryDatabase;
+    response: types.QueryDatabaseResponse;
+  };
   ReadActivity: {
     call: types.ReadActivity;
     response: types.ReadActivityResponse;
@@ -828,9 +980,26 @@ type ToolDataMap = {
     call: types.RenameChannel;
     response: types.RenameChannelResponse;
   };
+  RenameColumn: {
+    call: types.RenameColumn;
+    response: types.RenameColumnResponse;
+  };
+  RenameDatabase: {
+    call: types.RenameDatabase;
+    response: types.RenameDatabaseResponse;
+  };
   RenameDocument: {
     call: types.RenameDocument;
     response: types.RenameDocumentResponse;
+  };
+  RenameTable: { call: types.RenameTable; response: types.RenameTableResponse };
+  ReorderColumns: {
+    call: types.ReorderColumns;
+    response: types.ReorderColumnsResponse;
+  };
+  ReorderTables: {
+    call: types.ReorderTables;
+    response: types.ReorderTablesResponse;
   };
   ReplyToDocumentComment: {
     call: types.ReplyToDocumentComment;
@@ -839,6 +1008,14 @@ type ToolDataMap = {
   ResolveDocumentComment: {
     call: types.ResolveDocumentComment;
     response: types.ResolveDocumentCommentResponse;
+  };
+  SaveDatabaseQuery: {
+    call: types.SaveDatabaseQuery;
+    response: types.SaveDatabaseQueryResponse;
+  };
+  SaveDatabaseView: {
+    call: types.SaveDatabaseView;
+    response: types.SavedDatabaseView;
   };
   SearchSkills: {
     call: types.SearchSkills;
