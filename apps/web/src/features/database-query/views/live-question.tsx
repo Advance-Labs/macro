@@ -47,7 +47,8 @@ export function LiveQuestion(props: {
     setRenaming(false);
     if (next && next !== title()) props.onRename?.(next);
   };
-  const titleInput = () => (
+  /** The field takes the title's exact place: same font, box and baseline. */
+  const titleInput = (fieldClass: string) => (
     <input
       ref={(input) =>
         queueMicrotask(() => {
@@ -56,7 +57,7 @@ export function LiveQuestion(props: {
         })
       }
       aria-label="Answer title"
-      class="min-w-0 flex-1 rounded border border-edge bg-input px-1.5 py-0.5 text-sm font-medium text-ink outline-none focus:border-ink/30"
+      class={fieldClass}
       value={draftTitle()}
       maxLength={100}
       on:input={(event) => setDraftTitle(event.currentTarget.value)}
@@ -116,7 +117,12 @@ export function LiveQuestion(props: {
       <Show
         when={props.source.displayMode !== 'scalar'}
         fallback={
-          <Show when={!renaming()} fallback={titleInput()}>
+          <Show
+            when={!renaming()}
+            fallback={titleInput(
+              'mx-0.5 min-w-0 rounded-md border border-edge bg-input px-1.5 py-0.5 align-baseline text-sm font-medium text-ink outline-none focus:border-ink/30'
+            )}
+          >
             <Popover.Trigger
               onDblClick={startRename}
               onKeyDown={(event) => {
@@ -153,7 +159,12 @@ export function LiveQuestion(props: {
           <div class="flex items-center justify-between gap-2 border-b border-edge-muted px-3 py-2.5">
             <span class="flex min-w-0 items-center gap-2 text-sm font-medium">
               <LightningIcon class="size-3.5 shrink-0 text-ink-muted" />
-              <Show when={!renaming()} fallback={titleInput()}>
+              <Show
+                when={!renaming()}
+                fallback={titleInput(
+                  '-mx-[7px] h-5 min-w-0 flex-1 rounded border border-edge bg-input px-1.5 py-0 text-sm leading-5 font-medium text-ink outline-none focus:border-ink/30'
+                )}
+              >
                 <span
                   class="truncate rounded outline-none focus-visible:ring-2 focus-visible:ring-ink/20"
                   tabIndex={props.onRename ? 0 : undefined}
