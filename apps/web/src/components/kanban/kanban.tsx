@@ -321,7 +321,7 @@ export function KanbanLane(props: {
           draggable.ref(node);
           droppable.ref(node);
         }}
-        class="relative flex w-72 shrink-0 flex-col rounded-xl border border-transparent bg-hover/50 p-2 transition-colors"
+        class="relative flex w-72 shrink-0 flex-col rounded-xl border border-transparent bg-surface-1 p-2 transition-colors"
         classList={{
           'opacity-35': draggable.isActiveDraggable,
         }}
@@ -381,7 +381,7 @@ export function KanbanCard(props: {
     >
       <article
         ref={draggable.ref}
-        class="group relative rounded-lg border border-edge-muted bg-panel shadow-sm transition-shadow hover:border-edge hover:shadow-md"
+        class="group relative rounded-lg border border-edge-muted bg-surface-3 shadow-sm transition-shadow hover:border-edge hover:shadow-md"
         classList={{
           'opacity-35': draggable.isActiveDraggable,
           'ring-1 ring-ink/20': !!props.pending,
