@@ -5350,6 +5350,7 @@ dependencies = [
  "macro_uuid",
  "model-entity",
  "model-error-response",
+ "models_databases",
  "models_permissions",
  "models_properties",
  "properties",
@@ -11964,6 +11965,17 @@ dependencies = [
  "strum 0.27.2",
  "utoipa",
  "workspace-hack",
+]
+
+[[package]]
+name = "models_databases"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "utoipa",
+ "uuid",
 ]
 
 [[package]]

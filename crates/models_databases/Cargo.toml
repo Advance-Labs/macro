@@ -1,0 +1,17 @@
+[package]
+edition = "2024"
+name = "models_databases"
+publish = false
+version = "0.1.0"
+
+# The write vocabulary of Macro databases, shared by the SQL engine (which
+# also runs in the browser), the HTTP API and the domain port. It stays
+# wasm-safe, so it takes no workspace-hack dependency (see .config/hakari.toml).
+[dependencies]
+chrono = { workspace = true }
+serde = { workspace = true }
+utoipa = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

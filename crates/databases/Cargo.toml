@@ -67,6 +67,7 @@ macro_user_id = { path = "../macro_user_id" }
 macro_uuid = { path = "../macro_uuid" }
 model-entity = { path = "../model-entity" }
 model-error-response = { path = "../model-error-response", optional = true }
+models_databases = { path = "../models_databases" }
 models_properties = { path = "../models_properties" }
 models_permissions = { path = "../models_permissions" }
 properties = { path = "../properties", optional = true, default-features = false, features = ["outbound"] }
