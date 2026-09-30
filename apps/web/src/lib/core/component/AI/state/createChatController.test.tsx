@@ -254,10 +254,9 @@ describe('createChatController: recovering a stream whose end never arrived', ()
     const first = controller.reconcile();
     const second = controller.reconcile();
     expect(loadMessages).toHaveBeenCalledTimes(1);
-    await expect(second).resolves.toBe(false);
 
     resolve([optimistic, persisted]);
-    await expect(first).resolves.toBe(true);
+    await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
     expect(controller.isGenerating()).toBe(false);
     dispose();
   });

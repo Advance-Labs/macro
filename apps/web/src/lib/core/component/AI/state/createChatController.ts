@@ -266,9 +266,12 @@ export function createChatController(
   }
 
   const loadMessages = options?.loadMessages ?? loadPersistedMessages;
-  // The id of the stream a reconcile is in flight for, so overlapping
-  // triggers (reconnect and refocus fire together) share one request.
-  let reconciling: string | undefined;
+  // Overlapping triggers (reconnect + refocus, or Stop during a reconcile)
+  // share one request so a caller that awaits reconcile does not see a
+  // premature "not finished" while the same stream is already being checked.
+  let reconciling:
+    | { streamId: string; promise: Promise<boolean> }
+    | undefined;
 
   /** The stream being waited on, if the chat is in `streaming`. */
   function awaitedStreamId(): string | undefined {
@@ -278,21 +281,26 @@ export function createChatController(
 
   async function reconcile(): Promise<boolean> {
     const streamId = awaitedStreamId();
-    if (!streamId || reconciling === streamId) return false;
-    reconciling = streamId;
-    try {
-      const persisted = await loadMessages(chatId);
-      // The stream may have finished on its own while the request was out.
-      if (awaitedStreamId() !== streamId) return false;
-      const message = persisted?.find(
-        (m) => m.id === streamId && m.role === 'assistant'
-      );
-      if (!message) return false;
-      dispatch({ type: 'stream_done', message });
-      return true;
-    } finally {
-      if (reconciling === streamId) reconciling = undefined;
-    }
+    if (!streamId) return false;
+    if (reconciling?.streamId === streamId) return reconciling.promise;
+
+    const promise = (async () => {
+      try {
+        const persisted = await loadMessages(chatId);
+        // The stream may have finished on its own while the request was out.
+        if (awaitedStreamId() !== streamId) return false;
+        const message = persisted?.find(
+          (m) => m.id === streamId && m.role === 'assistant'
+        );
+        if (!message) return false;
+        dispatch({ type: 'stream_done', message });
+        return true;
+      } finally {
+        if (reconciling?.streamId === streamId) reconciling = undefined;
+      }
+    })();
+    reconciling = { streamId, promise };
+    return promise;
   }
 
   function abandonStream() {
