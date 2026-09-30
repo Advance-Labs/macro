@@ -7,14 +7,17 @@
 //!
 //! ```text
 //! sql string ── parse ──▶ subset AST ── resolve ──▶ (catalog-bound query)
-//!            ── split ──▶ GraphQL query + post-processing ── fold ──▶ rows
+//!            ── split ──▶ one GraphQL query per table + post-processing
+//!            ── engine ──▶ fetch requests, one at a time ── fold ──▶ rows
 //! ```
 //!
 //! This crate compiles natively and to `wasm32`; keep it free of native-only
 //! dependencies.
 #![deny(missing_docs)]
 
+pub mod cast;
 pub mod catalog;
+pub mod engine;
 pub mod fold;
 pub mod parse;
 pub mod resolve;
@@ -22,13 +25,17 @@ pub mod run;
 pub mod split;
 #[cfg(test)]
 mod test_support;
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
 
+pub use cast::{Cast, ColumnType, Contents, cast};
 pub use catalog::Catalog;
-pub use fold::{Bin, Cell, Row, Table, fold_bins, fold_rows};
+pub use engine::{Engine, Request, Step};
+pub use fold::{Bin, Cell, Row, Table, fold_bins, fold_relations, fold_rows};
 pub use parse::{ParseError, parse};
 pub use resolve::{CompileError, Query, ResolveError, compile, resolve};
 pub use run::{
-    Outcome, OutcomeColumn, OutcomeKind, Page, RowFailure, RowSource, RowWriter, RunError,
-    SourceError, WriteError, run,
+    AlteredColumn, ColumnChange, Outcome, OutcomeColumn, OutcomeKind, Page, RowFailure, RowSource,
+    RowWriter, RunError, SourceError, WriteError, run,
 };
-pub use split::{GqlQuery, Plan, Shape, split};
+pub use split::{GqlQuery, JoinPlan, KeyHint, Plan, RelationPlan, Shape, split};

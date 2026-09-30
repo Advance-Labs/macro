@@ -1,10 +1,16 @@
 //! Looking names up in the catalog, case-insensitively, with a suggestion
-//! when nothing matches.
+//! when nothing matches. A [`Scope`] is the relations a `SELECT` reads and
+//! the keys it hands out for their columns.
 
-use crate::catalog::{Catalog, Column, Table};
-use crate::parse::{Ident, TableName};
+use uuid::Uuid;
 
-use super::ResolveError;
+use crate::catalog::{Catalog, Column, ColumnKind, EntityKind, Table};
+use crate::parse::{ColumnRef, FromItem, Ident, TableName};
+
+use super::{Binding, ResolveError, column_key, row_id_key};
+
+/// The name of a table's row id column.
+pub const ROW_ID: &str = "row_id";
 
 /// Case-insensitive equality on names.
 fn same(a: &str, b: &str) -> bool {
@@ -24,6 +30,20 @@ pub fn table<'c>(catalog: &'c Catalog, name: &TableName) -> Result<&'c Table, Re
                     .is_none_or(|database| same(&table.database, &database.0))
         })
         .collect();
+    // Names match case-insensitively, but when that is ambiguous the exact
+    // spelling decides: `Test.Table 1` and `test.Table 1` are different tables.
+    let exact: Vec<&Table> = matches
+        .iter()
+        .copied()
+        .filter(|table| {
+            table.name == name.table.0
+                && name
+                    .database
+                    .as_ref()
+                    .is_none_or(|database| table.database == database.0)
+        })
+        .collect();
+    let matches = if exact.len() == 1 { exact } else { matches };
     match matches.as_slice() {
         [table] => Ok(table),
         [] => Err(ResolveError::UnknownTable {
@@ -61,7 +81,7 @@ pub fn qualified(table: &Table) -> String {
     format!("{}.{}", table.database, table.name)
 }
 
-/// The column a statement names.
+/// The column a statement names in one table.
 pub fn column<'t>(table: &'t Table, name: &Ident) -> Result<&'t Column, ResolveError> {
     table
         .columns
@@ -75,6 +95,194 @@ pub fn column<'t>(table: &'t Table, name: &Ident) -> Result<&'t Column, ResolveE
                 table.columns.iter().map(|column| column.name.as_str()),
             ),
         })
+}
+
+/// One relation of a `SELECT`: a table and the alias qualifying its columns.
+pub struct ScopeRelation<'c> {
+    /// The alias: the one written, else the table name.
+    pub alias: String,
+    /// The table.
+    pub table: &'c Table,
+}
+
+/// The relations a `SELECT` reads, and every key handed out for their
+/// columns.
+pub struct Scope<'c> {
+    /// The relations, `FROM` first.
+    pub relations: Vec<ScopeRelation<'c>>,
+    /// Every column bound so far, first use first.
+    pub bindings: Vec<Binding>,
+}
+
+/// A column reference bound to a relation.
+#[derive(Debug, Clone)]
+pub struct Bound {
+    /// The key later stages use.
+    pub key: Uuid,
+    /// The relation the column belongs to.
+    pub relation: usize,
+    /// The column; for `row_id`, a stand-in entity column named `row_id`.
+    pub column: Column,
+    /// The property definition; `None` for `row_id`.
+    pub definition: Option<Uuid>,
+}
+
+impl<'c> Scope<'c> {
+    /// A scope with only the `FROM` table.
+    pub fn new(catalog: &'c Catalog, from: &FromItem) -> Result<Self, ResolveError> {
+        let mut scope = Scope {
+            relations: Vec::new(),
+            bindings: Vec::new(),
+        };
+        scope.add(catalog, from)?;
+        Ok(scope)
+    }
+
+    /// Bring one more table into scope; answers its relation index.
+    pub fn add(&mut self, catalog: &'c Catalog, item: &FromItem) -> Result<usize, ResolveError> {
+        let table = table(catalog, &item.table)?;
+        let alias = item
+            .alias
+            .as_ref()
+            .map_or_else(|| table.name.clone(), |alias| alias.0.clone());
+        if let Some(taken) = self
+            .relations
+            .iter()
+            .find(|relation| same(&relation.alias, &alias))
+        {
+            return Err(ResolveError::DuplicateAlias {
+                alias,
+                table: qualified(taken.table),
+            });
+        }
+        self.relations.push(ScopeRelation { alias, table });
+        Ok(self.relations.len() - 1)
+    }
+
+    /// Whether the scope has a single relation.
+    pub fn is_single(&self) -> bool {
+        self.relations.len() == 1
+    }
+
+    /// The column a reference names, recorded in the bindings.
+    pub fn column(&mut self, reference: &ColumnRef) -> Result<Bound, ResolveError> {
+        let bound = self.lookup(reference)?;
+        if !self.bindings.iter().any(|binding| binding.key == bound.key) {
+            self.bindings.push(Binding {
+                key: bound.key,
+                relation: bound.relation,
+                column: bound.definition,
+            });
+        }
+        Ok(bound)
+    }
+
+    fn lookup(&self, reference: &ColumnRef) -> Result<Bound, ResolveError> {
+        let candidates: Vec<usize> = match &reference.table {
+            Some(alias) => {
+                let index = self
+                    .relations
+                    .iter()
+                    .position(|relation| same(&relation.alias, &alias.0))
+                    .ok_or_else(|| ResolveError::UnknownAlias {
+                        alias: alias.0.clone(),
+                        column: reference.column.0.clone(),
+                        relations: self.describe_relations(),
+                    })?;
+                vec![index]
+            }
+            None => (0..self.relations.len()).collect(),
+        };
+
+        let name = &reference.column.0;
+        let found: Vec<Bound> = candidates
+            .iter()
+            .filter_map(|&index| self.bind(index, name))
+            .collect();
+        match found.len() {
+            1 => Ok(found.into_iter().next().expect("one match")),
+            0 => Err(self.unknown_column(&candidates, name)),
+            _ => Err(ResolveError::AmbiguousColumn {
+                name: name.clone(),
+                qualified: found
+                    .iter()
+                    .map(|bound| format!("{}.{}", self.relations[bound.relation].alias, name))
+                    .collect(),
+            }),
+        }
+    }
+
+    /// The column of that name in one relation, if it has one.
+    fn bind(&self, index: usize, name: &str) -> Option<Bound> {
+        let table = self.relations[index].table;
+        if same(name, ROW_ID) {
+            return Some(Bound {
+                key: row_id_key(table.id),
+                relation: index,
+                column: Column {
+                    id: row_id_key(table.id),
+                    name: ROW_ID.into(),
+                    kind: ColumnKind::Entity {
+                        multi: false,
+                        target: EntityKind::Row,
+                    },
+                },
+                definition: None,
+            });
+        }
+        table
+            .columns
+            .iter()
+            .find(|column| same(&column.name, name))
+            .map(|column| Bound {
+                key: column_key(index, column.id),
+                relation: index,
+                column: column.clone(),
+                definition: Some(column.id),
+            })
+    }
+
+    fn unknown_column(&self, candidates: &[usize], name: &str) -> ResolveError {
+        let tables: Vec<&Table> = candidates
+            .iter()
+            .map(|&index| self.relations[index].table)
+            .collect();
+        ResolveError::UnknownColumn {
+            name: name.to_owned(),
+            table: tables
+                .iter()
+                .map(|table| qualified(table))
+                .collect::<Vec<_>>()
+                .join(" or "),
+            suggestion: closest(
+                name,
+                tables
+                    .iter()
+                    .flat_map(|table| table.columns.iter().map(|column| column.name.as_str())),
+            ),
+        }
+    }
+
+    /// `crm.deals as d` for every relation, for messages.
+    pub fn describe_relations(&self) -> Vec<String> {
+        self.relations
+            .iter()
+            .map(|relation| format!("{} as {}", qualified(relation.table), relation.alias))
+            .collect()
+    }
+
+    /// How a bound column reads in a message: `alias.column` when the scope
+    /// has several relations, the bare name otherwise.
+    pub fn describe(&self, bound: &Bound) -> String {
+        if self.is_single() {
+            bound.column.name.clone()
+        } else {
+            format!(
+                "{}.{}",
+                self.relations[bound.relation].alias, bound.column.name
+            )
+        }
+    }
 }
 
 /// The candidate within a small edit distance of `name`, if any.

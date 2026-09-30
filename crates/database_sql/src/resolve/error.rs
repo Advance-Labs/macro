@@ -111,10 +111,76 @@ pub enum ResolveError {
         /// The value as written.
         written: String,
     },
+    /// A list written to a column that holds one value.
+    ListOnSingleValued {
+        /// The column.
+        column: String,
+        /// How many values the list had.
+        count: usize,
+    },
+    /// A list where a single value is compared.
+    ListInComparison {
+        /// The column.
+        column: String,
+    },
     /// A column named twice in an `INSERT` column list or `UPDATE`.
     DuplicateInsertColumn {
         /// The column.
         column: String,
+    },
+    /// Two tables of a `SELECT` share an alias.
+    DuplicateAlias {
+        /// The alias.
+        alias: String,
+        /// The table already using it.
+        table: String,
+    },
+    /// `alias.column` names an alias the query does not have.
+    UnknownAlias {
+        /// The alias as written.
+        alias: String,
+        /// The column as written.
+        column: String,
+        /// Every relation, as `database.table as alias`.
+        relations: Vec<String>,
+    },
+    /// A bare column name that several relations have.
+    AmbiguousColumn {
+        /// The name.
+        name: String,
+        /// The `alias.column` spellings that would pick one.
+        qualified: Vec<String>,
+    },
+    /// An `ON` equality that does not relate the joined table to an
+    /// earlier one.
+    JoinNotAcrossTables {
+        /// The joined table's alias.
+        alias: String,
+        /// The left column as written.
+        left: String,
+        /// The right column as written.
+        right: String,
+    },
+    /// A type change the cast rule never allows while the column holds
+    /// values.
+    CastNever {
+        /// The column.
+        column: String,
+        /// The type asked for, as SQL spells it.
+        to: String,
+        /// Why no value converts.
+        reason: &'static str,
+    },
+    /// An `ON` equality between columns of different kinds.
+    JoinKindMismatch {
+        /// The earlier table's column.
+        left: String,
+        /// Its kind.
+        left_kind: &'static str,
+        /// The joined table's column.
+        right: String,
+        /// Its kind.
+        right_kind: &'static str,
     },
 }
 
@@ -222,9 +288,52 @@ impl fmt::Display for ResolveError {
                 f,
                 "'{written}' is not a row id; row ids are the UUIDs a SELECT returns"
             ),
+            Self::ListOnSingleValued { column, count } => write!(
+                f,
+                "\"{column}\" holds one value; a list of {count} was given"
+            ),
+            Self::ListInComparison { column } => write!(
+                f,
+                "compare \"{column}\" to one value; lists are for INSERT and UPDATE"
+            ),
             Self::DuplicateInsertColumn { column } => {
                 write!(f, "\"{column}\" is listed twice in the column list")
             }
+            Self::DuplicateAlias { alias, table } => write!(
+                f,
+                "\"{alias}\" already names {table}; give the other table an alias, like JOIN crm.people p"
+            ),
+            Self::UnknownAlias {
+                alias,
+                column,
+                relations,
+            } => write!(
+                f,
+                "unknown table \"{alias}\" in {alias}.{column} — the query reads {}",
+                relations.join(" and ")
+            ),
+            Self::AmbiguousColumn { name, qualified } => write!(
+                f,
+                "\"{name}\" is ambiguous — qualify it as {}",
+                qualified.join(" or ")
+            ),
+            Self::JoinNotAcrossTables { alias, left, right } => write!(
+                f,
+                "ON {left} = {right} must compare a column of {alias} with a column of an earlier table"
+            ),
+            Self::CastNever { column, to, reason } => write!(
+                f,
+                "\"{column}\" can't become {to}: {reason} Add a new column instead."
+            ),
+            Self::JoinKindMismatch {
+                left,
+                left_kind,
+                right,
+                right_kind,
+            } => write!(
+                f,
+                "cannot join {left} ({left_kind}) to {right} ({right_kind}): join columns must hold the same kind of value"
+            ),
         }
     }
 }

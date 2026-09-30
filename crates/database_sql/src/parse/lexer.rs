@@ -8,13 +8,36 @@ use super::ParseError;
 
 /// A token kind. String-carrying variants hold the decoded text (quotes and
 /// escapes removed).
-#[derive(Logos, Debug, Clone, PartialEq)]
+#[derive(Logos, Debug, Clone, PartialEq, strum::IntoStaticStr)]
 #[logos(skip r"[ \t\r\n]+")]
+#[strum(serialize_all = "UPPERCASE")]
 pub enum Tok {
     #[regex("(?i)select")]
     Select,
+    #[regex("(?i)distinct")]
+    Distinct,
     #[regex("(?i)from")]
     From,
+    #[regex("(?i)as")]
+    As,
+    #[regex("(?i)join")]
+    Join,
+    #[regex("(?i)inner")]
+    Inner,
+    #[regex("(?i)left")]
+    Left,
+    #[regex("(?i)outer")]
+    Outer,
+    #[regex("(?i)on")]
+    On,
+    // Reserved so it can never be read as a table alias; the parser rejects
+    // it with a message the agent can act on.
+    #[regex("(?i)limit")]
+    Limit,
+    #[regex("(?i)offset")]
+    Offset,
+    #[regex("(?i)default")]
+    Default,
     #[regex("(?i)where")]
     Where,
     #[regex("(?i)group")]
@@ -85,6 +108,10 @@ pub enum Tok {
     Gt,
     #[token("(")]
     LParen,
+    #[token("[")]
+    LBracket,
+    #[token("]")]
+    RBracket,
     #[token(")")]
     RParen,
     #[token(",")]
@@ -106,6 +133,10 @@ pub enum Tok {
     Str(String),
     #[regex(r"([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?", |lex| lex.slice().parse().ok())]
     Num(f64),
+    /// Never produced by the lexer: appended by [`lex`] so every parser sees
+    /// a token at the end of the statement, with the statement's end as its
+    /// span.
+    End,
 }
 
 /// Strip the surrounding quotes and collapse doubled quotes.
@@ -142,11 +173,43 @@ pub fn lex(sql: &str) -> Result<Vec<Token>, ParseError> {
             }
         }
     }
+    tokens.push(Token {
+        kind: Tok::End,
+        span: sql.len()..sql.len(),
+    });
     Ok(tokens)
 }
 
 impl Tok {
     /// How the token reads in an error message.
+    /// The keyword's name in lower case, for a keyword used as a name after
+    /// `AS`; `None` for every other token.
+    pub fn keyword_name(&self) -> Option<String> {
+        match self {
+            Tok::Ident(_)
+            | Tok::QuotedIdent(_)
+            | Tok::Str(_)
+            | Tok::Num(_)
+            | Tok::Le
+            | Tok::Ge
+            | Tok::Ne
+            | Tok::Eq
+            | Tok::Lt
+            | Tok::Gt
+            | Tok::LParen
+            | Tok::LBracket
+            | Tok::RBracket
+            | Tok::RParen
+            | Tok::Comma
+            | Tok::Dot
+            | Tok::Star
+            | Tok::Minus
+            | Tok::Semi
+            | Tok::End => None,
+            keyword => Some(<&'static str>::from(keyword).to_lowercase()),
+        }
+    }
+
     pub fn describe(&self) -> String {
         match self {
             Tok::Ident(name) => format!("\"{name}\""),
@@ -160,13 +223,16 @@ impl Tok {
             Tok::Lt => "<".into(),
             Tok::Gt => ">".into(),
             Tok::LParen => "(".into(),
+            Tok::LBracket => "[".into(),
+            Tok::RBracket => "]".into(),
             Tok::RParen => ")".into(),
             Tok::Comma => ",".into(),
             Tok::Dot => ".".into(),
             Tok::Star => "*".into(),
             Tok::Minus => "-".into(),
             Tok::Semi => ";".into(),
-            keyword => format!("{keyword:?}").to_uppercase(),
+            Tok::End => "end of statement".into(),
+            keyword => <&'static str>::from(keyword).into(),
         }
     }
 }

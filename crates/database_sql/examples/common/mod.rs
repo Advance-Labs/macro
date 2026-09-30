@@ -141,12 +141,24 @@ pub fn print_plan(catalog: &Catalog, sql: &str) {
             .map(|expr| serde_json::to_string(expr).unwrap())
             .unwrap_or_else(|| "none".into())
     };
-    match &plan.gql {
-        GqlQuery::Soup { propf: p, .. } => println!("  gql: soup, propf = {}", propf(p)),
-        GqlQuery::GroupSoup { propf: p, .. } => println!(
-            "  gql: groupSoup (bins only, no rows fetched), propf = {}",
-            propf(p)
-        ),
+    for relation in &plan.relations {
+        let alias = &relation.relation.alias;
+        match &relation.gql {
+            GqlQuery::Soup { propf: p, .. } => {
+                println!("  gql [{alias}]: soup, propf = {}", propf(p))
+            }
+            GqlQuery::GroupSoup { propf: p, .. } => println!(
+                "  gql [{alias}]: groupSoup (bins only, no rows fetched), propf = {}",
+                propf(p)
+            ),
+            GqlQuery::People { .. } => println!("  gql [{alias}]: people"),
+        }
+    }
+    for join in &plan.joins {
+        println!(
+            "  join: {:?} {} on {:?}",
+            join.kind, plan.relations[join.relation].relation.alias, join.on
+        );
     }
     println!(
         "  residual: {}",

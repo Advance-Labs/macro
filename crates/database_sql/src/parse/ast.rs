@@ -2,12 +2,21 @@
 //! are [`Lit`]s; binding them to a catalog is the next stage's job. No spans:
 //! later stages report problems by quoting the identifier.
 
+use crate::cast::ColumnType;
+
 /// An identifier as written, quotes removed, case preserved.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ident(pub String);
 
 /// One parsed statement.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    not(target_arch = "wasm32"),
+    expect(
+        clippy::large_enum_variant,
+        reason = "a statement is parsed once and moved once; boxing the select would only add noise to every test literal"
+    )
+)]
 pub enum Statement {
     /// A `SELECT`.
     Select(Select),
@@ -17,21 +26,72 @@ pub enum Statement {
     Update(Update),
     /// A `DELETE FROM … WHERE row_id = …`.
     Delete(Delete),
+    /// An `ALTER TABLE … ALTER COLUMN … TYPE …`.
+    AlterColumnType(AlterColumnType),
 }
 
-/// `SELECT items FROM table [WHERE] [GROUP BY] [ORDER BY]`.
+/// `SELECT [DISTINCT] items FROM table [JOIN …] [WHERE] [GROUP BY] [ORDER BY]`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Select {
+    /// `DISTINCT`: drop repeated result rows.
+    pub distinct: bool,
     /// The select list.
     pub items: Vec<Item>,
-    /// The single table read.
-    pub table: TableName,
+    /// `item AS name`: the select-list position and the name it goes by.
+    pub aliases: Vec<(usize, Ident)>,
+    /// The table the `FROM` names.
+    pub from: FromItem,
+    /// The joined tables, in statement order.
+    pub joins: Vec<Join>,
     /// The `WHERE` condition.
     pub where_: Option<Cond>,
     /// The `GROUP BY` column.
-    pub group_by: Option<Ident>,
+    pub group_by: Option<ColumnRef>,
     /// The `ORDER BY` keys, in order.
     pub order_by: Vec<OrderBy>,
+    /// `LIMIT n`.
+    pub limit: Option<u32>,
+    /// `OFFSET n`.
+    pub offset: Option<u32>,
+}
+
+/// A table read, with the alias its columns are qualified by.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FromItem {
+    /// The table.
+    pub table: TableName,
+    /// `[AS] alias`; without one, the table name qualifies its columns.
+    pub alias: Option<Ident>,
+}
+
+/// `JOIN table ON left = right [AND left = right]…`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Join {
+    /// Inner or left.
+    pub kind: JoinKind,
+    /// The table joined in.
+    pub table: FromItem,
+    /// The equalities the joined rows must satisfy, all of them.
+    pub on: Vec<(ColumnRef, ColumnRef)>,
+}
+
+/// How unmatched rows are treated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JoinKind {
+    /// Only rows with a match on both sides.
+    Inner,
+    /// Every row of the earlier tables, matched or not.
+    Left,
+}
+
+/// A column as written: `column` or `alias.column`. The name `row_id` refers
+/// to a table's row entity id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ColumnRef {
+    /// The alias qualifying the column, if any.
+    pub table: Option<Ident>,
+    /// The column.
+    pub column: Ident,
 }
 
 /// `[database.]table`.
@@ -49,7 +109,7 @@ pub enum Item {
     /// `*`.
     Star,
     /// A column.
-    Column(Ident),
+    Column(ColumnRef),
     /// An aggregate call.
     Agg(Agg),
 }
@@ -60,11 +120,12 @@ pub struct Agg {
     /// Which aggregate.
     pub func: AggFn,
     /// The column aggregated; `None` only for `COUNT(*)`.
-    pub arg: Option<Ident>,
+    pub arg: Option<ColumnRef>,
 }
 
-/// The aggregate functions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The aggregate functions; the string form is the name as written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::IntoStaticStr)]
+#[strum(serialize_all = "UPPERCASE")]
 pub enum AggFn {
     /// `COUNT`.
     Count,
@@ -84,7 +145,7 @@ pub enum Cond {
     /// `column op value`.
     Cmp {
         /// The column.
-        column: Ident,
+        column: ColumnRef,
         /// The operator.
         op: CmpOp,
         /// The literal compared against.
@@ -93,7 +154,7 @@ pub enum Cond {
     /// `column [NOT] IN (values)`.
     In {
         /// The column.
-        column: Ident,
+        column: ColumnRef,
         /// The literals listed.
         values: Vec<Lit>,
         /// `NOT IN`.
@@ -102,7 +163,7 @@ pub enum Cond {
     /// `column [NOT] HAS value`: membership in a multi-valued column.
     Has {
         /// The column.
-        column: Ident,
+        column: ColumnRef,
         /// The member tested.
         value: Lit,
         /// `NOT HAS`.
@@ -111,16 +172,19 @@ pub enum Cond {
     /// `column IS [NOT] NULL`.
     IsNull {
         /// The column.
-        column: Ident,
+        column: ColumnRef,
         /// `IS NOT NULL`.
         negated: bool,
     },
     /// `column [NOT] LIKE pattern`.
     Like {
         /// The column.
-        column: Ident,
+        column: ColumnRef,
         /// The pattern, with SQL `%` and `_` wildcards.
         pattern: String,
+        /// `ESCAPE 'c'`: the character that makes the next pattern character
+        /// literal.
+        escape: Option<char>,
         /// `NOT LIKE`.
         negated: bool,
     },
@@ -130,20 +194,26 @@ pub enum Cond {
     Or(Vec<Cond>),
 }
 
-/// A comparison operator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A comparison operator; the string form is the symbol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::IntoStaticStr)]
 pub enum CmpOp {
     /// `=`.
+    #[strum(serialize = "=")]
     Eq,
     /// `!=` or `<>`.
+    #[strum(serialize = "!=")]
     Ne,
     /// `<`.
+    #[strum(serialize = "<")]
     Lt,
     /// `<=`.
+    #[strum(serialize = "<=")]
     Le,
     /// `>`.
+    #[strum(serialize = ">")]
     Gt,
     /// `>=`.
+    #[strum(serialize = ">=")]
     Ge,
 }
 
@@ -158,6 +228,9 @@ pub enum Lit {
     Bool(bool),
     /// `NULL`.
     Null,
+    /// `[value, …]`: several values for a multi-valued cell. Only in
+    /// `INSERT` rows and `UPDATE` assignments.
+    List(Vec<Lit>),
 }
 
 /// One `ORDER BY` key.
@@ -173,7 +246,7 @@ pub struct OrderBy {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OrderKey {
     /// A column.
-    Column(Ident),
+    Column(ColumnRef),
     /// An aggregate that also appears in the select list.
     Agg(Agg),
     /// A 1-based position in the select list.
@@ -194,9 +267,10 @@ pub enum Dir {
 pub struct Insert {
     /// The table written.
     pub table: TableName,
-    /// The columns named, in order.
+    /// The columns named, in order; empty for `DEFAULT VALUES`.
     pub columns: Vec<Ident>,
-    /// The rows; every row has exactly `columns.len()` values.
+    /// The rows; every row has exactly `columns.len()` values. `DEFAULT
+    /// VALUES` is one empty row.
     pub rows: Vec<Vec<Lit>>,
 }
 
@@ -218,4 +292,18 @@ pub struct Delete {
     pub table: TableName,
     /// The row, as written in the `WHERE`.
     pub row_id: String,
+}
+
+/// `ALTER TABLE table ALTER [COLUMN] column TYPE type [USING NULL]`: change
+/// one column's type, converting its values.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlterColumnType {
+    /// The table whose column changes.
+    pub table: TableName,
+    /// The column.
+    pub column: Ident,
+    /// The type it becomes.
+    pub to: ColumnType,
+    /// `USING NULL`: empty the values that do not fit instead of refusing.
+    pub clear_invalid: bool,
 }

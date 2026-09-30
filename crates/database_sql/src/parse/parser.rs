@@ -1,485 +1,669 @@
-//! Recursive descent over the token stream, one function per grammar rule.
-//! Every error message is written here, deliberately, for the agent reading
-//! it.
+//! nom combinators over the token stream, one function per grammar rule.
+//!
+//! Errors: a parser that fails before consuming anything returns
+//! `nom::Err::Error` so an `alt` can try the next branch; once a rule has
+//! committed (seen its keyword), everything after is wrapped in [`cut`] so a
+//! failure is final and carries the message written for that spot. The
+//! message text is the product for the agent reading it, so every leaf
+//! names what it expected.
 
-use std::ops::Range;
+use nom::branch::alt;
+use nom::combinator::{cut, opt};
+use nom::multi::separated_list1;
+use nom::sequence::{delimited, preceded};
+use nom::{IResult, Input, Parser};
+
+use strum::IntoEnumIterator;
 
 use super::ParseError;
 use super::ast::*;
 use super::lexer::{Tok, Token};
+use crate::cast::ColumnType;
+use crate::catalog::EntityKind;
 
-pub struct Parser<'a> {
-    sql: &'a str,
-    tokens: Vec<Token>,
-    pos: usize,
+/// The input: the statement's tokens, always ending in [`Tok::End`]. A
+/// newtype because nom implements [`Input`] only for bytes and `&str`.
+#[derive(Debug, Clone, Copy)]
+pub struct Tokens<'a>(&'a [Token]);
+
+impl<'a> std::ops::Deref for Tokens<'a> {
+    type Target = [Token];
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
 }
 
-impl<'a> Parser<'a> {
-    pub fn new(sql: &'a str, tokens: Vec<Token>) -> Self {
-        Self {
-            sql,
-            tokens,
-            pos: 0,
-        }
+impl<'a> Input for Tokens<'a> {
+    type Item = &'a Token;
+    type Iter = std::slice::Iter<'a, Token>;
+    type IterIndices = std::iter::Enumerate<std::slice::Iter<'a, Token>>;
+
+    fn input_len(&self) -> usize {
+        self.0.len()
     }
-
-    // ---- token access -------------------------------------------------
-
-    fn peek(&self) -> Option<&Tok> {
-        self.tokens.get(self.pos).map(|t| &t.kind)
+    fn take(&self, index: usize) -> Self {
+        Tokens(&self.0[..index])
     }
-
-    fn peek_at(&self, offset: usize) -> Option<&Tok> {
-        self.tokens.get(self.pos + offset).map(|t| &t.kind)
+    fn take_from(&self, index: usize) -> Self {
+        Tokens(&self.0[index..])
     }
-
-    fn bump(&mut self) -> Option<Tok> {
-        let token = self.tokens.get(self.pos).map(|t| t.kind.clone());
-        if token.is_some() {
-            self.pos += 1;
-        }
-        token
+    fn take_split(&self, index: usize) -> (Self, Self) {
+        let (head, tail) = self.0.split_at(index);
+        (Tokens(tail), Tokens(head))
     }
-
-    /// Consume the token if it is `kind`.
-    fn eat(&mut self, kind: Tok) -> bool {
-        if self.peek() == Some(&kind) {
-            self.pos += 1;
-            true
+    fn position<P: Fn(Self::Item) -> bool>(&self, predicate: P) -> Option<usize> {
+        self.0.iter().position(predicate)
+    }
+    fn iter_elements(&self) -> Self::Iter {
+        self.0.iter()
+    }
+    fn iter_indices(&self) -> Self::IterIndices {
+        self.0.iter().enumerate()
+    }
+    fn slice_index(&self, count: usize) -> Result<usize, nom::Needed> {
+        if count <= self.0.len() {
+            Ok(count)
         } else {
-            false
+            Err(nom::Needed::new(count - self.0.len()))
         }
     }
+}
 
-    /// Consume `kind` or fail with `expected`.
-    fn expect(&mut self, kind: Tok, expected: &str) -> Result<(), ParseError> {
-        if self.eat(kind) {
-            Ok(())
-        } else {
-            Err(self.error(expected))
+type In<'a> = Tokens<'a>;
+type R<'a, O> = IResult<In<'a>, O, ParseError>;
+
+impl nom::error::ParseError<Tokens<'_>> for ParseError {
+    fn from_error_kind(input: Tokens<'_>, kind: nom::error::ErrorKind) -> Self {
+        // Only reached through combinators we never leave a message on; the
+        // leaves below always say what they expected.
+        at(input, &format!("something else ({kind:?})"))
+    }
+
+    fn append(_: Tokens<'_>, _: nom::error::ErrorKind, other: Self) -> Self {
+        other
+    }
+}
+
+/// Parse one statement from its tokens.
+pub fn statement(tokens: &[Token]) -> Result<Statement, ParseError> {
+    match statement_rule(Tokens(tokens)) {
+        Ok((_, statement)) => Ok(statement),
+        Err(nom::Err::Error(error) | nom::Err::Failure(error)) => Err(error),
+        Err(nom::Err::Incomplete(_)) => unreachable!("the token stream is complete"),
+    }
+}
+
+// ---- errors ------------------------------------------------------------
+
+/// `expected …, found …` at the next token.
+fn at(input: In<'_>, expected: &str) -> ParseError {
+    let token = input.first().expect("the End token is always there");
+    ParseError {
+        span: token.span.clone(),
+        message: format!("expected {expected}, found {}", token.kind.describe()),
+    }
+}
+
+/// A message that stands on its own (not `expected …, found …`) at the next
+/// token.
+fn message_at(input: In<'_>, message: &str) -> ParseError {
+    let token = input.first().expect("the End token is always there");
+    ParseError {
+        span: token.span.clone(),
+        message: message.into(),
+    }
+}
+
+/// A parser that fails, recoverably, with `expected` at the next token.
+fn fail<'a, O>(input: In<'a>, expected: &str) -> R<'a, O> {
+    Err(nom::Err::Error(at(input, expected)))
+}
+
+/// Replace a recoverable failure's message with `expected`, keeping the
+/// position. For an `alt` whose branches each know only their own keyword.
+fn expecting<'a, O>(
+    expected: &'static str,
+    mut parser: impl Parser<In<'a>, Output = O, Error = ParseError>,
+) -> impl FnMut(In<'a>) -> R<'a, O> {
+    move |input| match parser.parse(input) {
+        Err(nom::Err::Error(_)) => fail(input, expected),
+        other => other,
+    }
+}
+
+// ---- tokens ------------------------------------------------------------
+
+/// The token `kind`, or a recoverable failure that names `expected`.
+fn tok<'a>(kind: Tok, expected: &'static str) -> impl Fn(In<'a>) -> R<'a, ()> {
+    move |input| match input.first() {
+        Some(token) if token.kind == kind => Ok((input.take_from(1), ())),
+        _ => fail(input, expected),
+    }
+}
+
+/// The token `kind` as a branch discriminator; the message is never shown
+/// because the enclosing `alt` supplies its own.
+fn kw<'a>(kind: Tok) -> impl Fn(In<'a>) -> R<'a, ()> {
+    tok(kind, "")
+}
+
+fn ident<'a>(expected: &'static str) -> impl Fn(In<'a>) -> R<'a, Ident> {
+    move |input| match input.first().map(|token| &token.kind) {
+        Some(Tok::Ident(name) | Tok::QuotedIdent(name)) => {
+            Ok((input.take_from(1), Ident(name.clone())))
+        }
+        _ => fail(input, expected),
+    }
+}
+
+fn string<'a>(expected: &'static str) -> impl Fn(In<'a>) -> R<'a, String> {
+    move |input| match input.first().map(|token| &token.kind) {
+        Some(Tok::Str(text)) => Ok((input.take_from(1), text.clone())),
+        _ => fail(input, expected),
+    }
+}
+
+fn lit(input: In<'_>) -> R<'_, Lit> {
+    let rest = input.take_from(1);
+    match input.first().map(|token| &token.kind) {
+        Some(Tok::Str(text)) => Ok((rest, Lit::Str(text.clone()))),
+        Some(Tok::Num(n)) => Ok((rest, Lit::Num(*n))),
+        Some(Tok::True) => Ok((rest, Lit::Bool(true))),
+        Some(Tok::False) => Ok((rest, Lit::Bool(false))),
+        Some(Tok::Null) => Ok((rest, Lit::Null)),
+        Some(Tok::Minus) => match rest.first().map(|token| &token.kind) {
+            Some(Tok::Num(n)) => Ok((rest.take_from(1), Lit::Num(-n))),
+            _ => Err(nom::Err::Failure(at(rest, "a number after -"))),
+        },
+        Some(Tok::Select) => Err(nom::Err::Failure(message_at(
+            input,
+            "subqueries are not supported: run the inner SELECT on its own first and use the values it returns",
+        ))),
+        Some(Tok::LParen) if rest.first().map(|token| &token.kind) == Some(&Tok::Select) => {
+            Err(nom::Err::Failure(message_at(
+                rest,
+                "subqueries are not supported: run the inner SELECT on its own first and use the values it returns",
+            )))
+        }
+        _ => fail(input, "a value: 'text', a number, TRUE, FALSE or NULL"),
+    }
+}
+
+/// A literal, or `[lit, …]` for a multi-valued cell.
+fn value(input: In<'_>) -> R<'_, Lit> {
+    alt((
+        delimited(
+            kw(Tok::LBracket),
+            cut(separated_list1(comma, lit)),
+            cut(tok(Tok::RBracket, ", or ] in the list")),
+        )
+        .map(Lit::List),
+        lit,
+    ))
+    .parse(input)
+}
+
+/// `column` or `alias.column`.
+fn column_ref<'a>(expected: &'static str) -> impl Fn(In<'a>) -> R<'a, ColumnRef> {
+    move |input| {
+        let (input, first) = ident(expected)(input)?;
+        match opt(preceded(
+            kw(Tok::Dot),
+            cut(ident("a column name after the .")),
+        ))
+        .parse(input)?
+        {
+            (input, Some(column)) => Ok((
+                input,
+                ColumnRef {
+                    table: Some(first),
+                    column,
+                },
+            )),
+            (input, None) => Ok((
+                input,
+                ColumnRef {
+                    table: None,
+                    column: first,
+                },
+            )),
         }
     }
+}
 
-    fn at_end(&self) -> bool {
-        self.pos >= self.tokens.len()
-    }
-
-    /// Span of the current token, or the empty range at end of input.
-    fn current_span(&self) -> Range<usize> {
-        match self.tokens.get(self.pos) {
-            Some(token) => token.span.clone(),
-            None => self.sql.len()..self.sql.len(),
+/// `[database.]table`.
+fn table<'a>(expected: &'static str) -> impl Fn(In<'a>) -> R<'a, TableName> {
+    move |input| {
+        let (input, first) = ident(expected)(input)?;
+        match opt(preceded(
+            kw(Tok::Dot),
+            cut(ident("a table name after the .")),
+        ))
+        .parse(input)?
+        {
+            (input, Some(table)) => Ok((
+                input,
+                TableName {
+                    database: Some(first),
+                    table,
+                },
+            )),
+            (input, None) => Ok((
+                input,
+                TableName {
+                    database: None,
+                    table: first,
+                },
+            )),
         }
     }
+}
 
-    /// `expected …, found …` at the current token.
-    fn error(&self, expected: &str) -> ParseError {
-        let found = match self.peek() {
-            Some(token) => token.describe(),
-            None => "end of statement".into(),
-        };
-        ParseError {
-            span: self.current_span(),
-            message: format!("expected {expected}, found {found}"),
-        }
+fn comma(input: In<'_>) -> R<'_, ()> {
+    kw(Tok::Comma)(input)
+}
+
+// ---- statements --------------------------------------------------------
+
+fn statement_rule(input: In<'_>) -> R<'_, Statement> {
+    let (input, statement) = expecting(
+        "SELECT, INSERT, UPDATE, DELETE or ALTER TABLE",
+        alt((
+            select.map(Statement::Select),
+            insert.map(Statement::Insert),
+            update.map(Statement::Update),
+            delete.map(Statement::Delete),
+            alter.map(Statement::AlterColumnType),
+        )),
+    )(input)?;
+    let (input, _) = opt(kw(Tok::Semi)).parse(input)?;
+    let (input, _) = cut(tok(Tok::End, "end of statement")).parse(input)?;
+    Ok((input, statement))
+}
+
+fn select(input: In<'_>) -> R<'_, Select> {
+    let (input, _) = kw(Tok::Select)(input)?;
+    let (input, distinct) = opt(kw(Tok::Distinct)).parse(input)?;
+    let (input, (items, aliases)) = cut(items).parse(input)?;
+    let (input, _) = cut(tok(Tok::From, "FROM")).parse(input)?;
+    let (input, from) =
+        cut(table_item("a table name after FROM, like database.table")).parse(input)?;
+    let (input, joins) = nom::multi::many0(join).parse(input)?;
+    if input.first().map(|token| &token.kind) == Some(&Tok::Comma) {
+        return Err(nom::Err::Failure(message_at(
+            input,
+            "tables are combined with JOIN … ON a.column = b.row_id, not a comma",
+        )));
     }
-
-    // ---- statements ---------------------------------------------------
-
-    pub fn statement(mut self) -> Result<Statement, ParseError> {
-        let statement = match self.peek() {
-            Some(Tok::Select) => Statement::Select(self.select()?),
-            Some(Tok::Insert) => Statement::Insert(self.insert()?),
-            Some(Tok::Update) => Statement::Update(self.update()?),
-            Some(Tok::Delete) => Statement::Delete(self.delete()?),
-            _ => return Err(self.error("SELECT, INSERT, UPDATE or DELETE")),
-        };
-        self.eat(Tok::Semi);
-        if !self.at_end() {
-            return Err(self.error("end of statement"));
-        }
-        Ok(statement)
-    }
-
-    fn select(&mut self) -> Result<Select, ParseError> {
-        self.expect(Tok::Select, "SELECT")?;
-        let items = self.items()?;
-        self.expect(Tok::From, "FROM")?;
-        let table = self.table()?;
-        let where_ = if self.eat(Tok::Where) {
-            Some(self.cond()?)
-        } else {
-            None
-        };
-        let group_by = if self.eat(Tok::Group) {
-            self.expect(Tok::By, "BY after GROUP")?;
-            Some(self.ident("a column name after GROUP BY")?)
-        } else {
-            None
-        };
-        let order_by = if self.eat(Tok::Order) {
-            self.expect(Tok::By, "BY after ORDER")?;
-            self.order_list()?
-        } else {
-            Vec::new()
-        };
-        Ok(Select {
+    let (input, where_) = opt(preceded(kw(Tok::Where), cut(cond))).parse(input)?;
+    let (input, group_by) = opt(preceded(
+        kw(Tok::Group),
+        cut(preceded(
+            tok(Tok::By, "BY after GROUP"),
+            column_ref("a column name after GROUP BY"),
+        )),
+    ))
+    .parse(input)?;
+    let (input, order_by) = opt(preceded(
+        kw(Tok::Order),
+        cut(preceded(
+            tok(Tok::By, "BY after ORDER"),
+            separated_list1(comma, order_by),
+        )),
+    ))
+    .parse(input)?;
+    let (input, limit) = opt(preceded(
+        kw(Tok::Limit),
+        cut(count("a row count after LIMIT")),
+    ))
+    .parse(input)?;
+    let (input, offset) = opt(preceded(
+        kw(Tok::Offset),
+        cut(count("a row count after OFFSET")),
+    ))
+    .parse(input)?;
+    Ok((
+        input,
+        Select {
+            distinct: distinct.is_some(),
             items,
-            table,
+            aliases,
+            from,
+            joins,
             where_,
             group_by,
-            order_by,
-        })
-    }
+            order_by: order_by.unwrap_or_default(),
+            limit,
+            offset,
+        },
+    ))
+}
 
-    fn items(&mut self) -> Result<Vec<Item>, ParseError> {
-        if self.eat(Tok::Star) {
-            return Ok(vec![Item::Star]);
-        }
-        let mut items = vec![self.item()?];
-        while self.eat(Tok::Comma) {
-            items.push(self.item()?);
-        }
-        Ok(items)
-    }
-
-    fn item(&mut self) -> Result<Item, ParseError> {
-        if self.is_agg_start() {
-            return Ok(Item::Agg(self.agg()?));
-        }
-        Ok(Item::Column(self.ident(
-            "a column name, an aggregate like COUNT(*) or SUM(column), or *",
-        )?))
-    }
-
-    fn is_agg_start(&self) -> bool {
-        matches!(
-            self.peek(),
-            Some(Tok::Count | Tok::Sum | Tok::Avg | Tok::Min | Tok::Max)
-        ) && self.peek_at(1) == Some(&Tok::LParen)
-    }
-
-    fn agg(&mut self) -> Result<Agg, ParseError> {
-        let func = match self.bump() {
-            Some(Tok::Count) => AggFn::Count,
-            Some(Tok::Sum) => AggFn::Sum,
-            Some(Tok::Avg) => AggFn::Avg,
-            Some(Tok::Min) => AggFn::Min,
-            Some(Tok::Max) => AggFn::Max,
-            _ => unreachable!("agg() is only called after is_agg_start()"),
-        };
-        self.expect(Tok::LParen, "( after the aggregate name")?;
-        let arg = if func == AggFn::Count && self.eat(Tok::Star) {
-            None
-        } else {
-            Some(self.ident(if func == AggFn::Count {
-                "* or a column name inside COUNT(…)"
-            } else {
-                "a column name inside the aggregate"
-            })?)
-        };
-        self.expect(Tok::RParen, ") to close the aggregate")?;
-        Ok(Agg { func, arg })
-    }
-
-    fn table(&mut self) -> Result<TableName, ParseError> {
-        let first = self.ident("a table name after FROM, like database.table")?;
-        if self.eat(Tok::Dot) {
-            let table = self.ident("a table name after the .")?;
-            Ok(TableName {
-                database: Some(first),
-                table,
-            })
-        } else {
-            Ok(TableName {
-                database: None,
-                table: first,
-            })
-        }
-    }
-
-    fn order_list(&mut self) -> Result<Vec<OrderBy>, ParseError> {
-        let mut keys = vec![self.order_by()?];
-        while self.eat(Tok::Comma) {
-            keys.push(self.order_by()?);
-        }
-        Ok(keys)
-    }
-
-    fn order_by(&mut self) -> Result<OrderBy, ParseError> {
-        let key =
-            if self.is_agg_start() {
-                OrderKey::Agg(self.agg()?)
-            } else if let Some(Tok::Num(n)) = self.peek() {
-                let n = *n;
-                if n.fract() != 0.0 || n < 1.0 {
-                    return Err(self
-                        .error("a column name or a 1-based select-list position after ORDER BY"));
-                }
-                self.bump();
-                OrderKey::Position(n as u32)
-            } else {
-                OrderKey::Column(self.ident(
-                    "a column name, an aggregate, or a select-list position after ORDER BY",
-                )?)
-            };
-        let dir = if self.eat(Tok::Desc) {
-            Dir::Desc
-        } else {
-            self.eat(Tok::Asc);
-            Dir::Asc
-        };
-        Ok(OrderBy { key, dir })
-    }
-
-    // ---- conditions ---------------------------------------------------
-
-    fn cond(&mut self) -> Result<Cond, ParseError> {
-        let mut alternatives = vec![self.and_chain()?];
-        while self.eat(Tok::Or) {
-            alternatives.push(self.and_chain()?);
-        }
-        Ok(flatten(alternatives, Cond::Or))
-    }
-
-    fn and_chain(&mut self) -> Result<Cond, ParseError> {
-        let mut conjuncts = vec![self.term()?];
-        while self.eat(Tok::And) {
-            conjuncts.push(self.term()?);
-        }
-        Ok(flatten(conjuncts, Cond::And))
-    }
-
-    fn term(&mut self) -> Result<Cond, ParseError> {
-        if self.eat(Tok::LParen) {
-            let inner = self.cond()?;
-            self.expect(Tok::RParen, ") to close the condition")?;
-            return Ok(inner);
-        }
-        self.atom()
-    }
-
-    fn atom(&mut self) -> Result<Cond, ParseError> {
-        let column = self.ident("a column name to compare")?;
-        let negated = self.eat(Tok::Not);
-        match self.peek() {
-            Some(Tok::In) => {
-                self.bump();
-                self.expect(Tok::LParen, "( after IN")?;
-                let mut values = vec![self.lit()?];
-                while self.eat(Tok::Comma) {
-                    values.push(self.lit()?);
-                }
-                self.expect(Tok::RParen, ", or ) in the IN list")?;
-                Ok(Cond::In {
-                    column,
-                    values,
-                    negated,
-                })
-            }
-            Some(Tok::Has) => {
-                self.bump();
-                let value = self.lit()?;
-                Ok(Cond::Has {
-                    column,
-                    value,
-                    negated,
-                })
-            }
-            Some(Tok::Like) => {
-                self.bump();
-                let pattern = match self.bump() {
-                    Some(Tok::Str(pattern)) => pattern,
-                    _ => {
-                        self.pos -= 1;
-                        return Err(self.error("a quoted pattern after LIKE"));
-                    }
-                };
-                Ok(Cond::Like {
-                    column,
-                    pattern,
-                    negated,
-                })
-            }
-            Some(Tok::Is) if !negated => {
-                self.bump();
-                let negated = self.eat(Tok::Not);
-                self.expect(Tok::Null, "NULL after IS")?;
-                Ok(Cond::IsNull { column, negated })
-            }
-            _ if negated => Err(self.error(&format!("IN, HAS or LIKE after \"{}\" NOT", column.0))),
-            Some(op @ (Tok::Eq | Tok::Ne | Tok::Lt | Tok::Le | Tok::Gt | Tok::Ge)) => {
-                let op = match op {
-                    Tok::Eq => CmpOp::Eq,
-                    Tok::Ne => CmpOp::Ne,
-                    Tok::Lt => CmpOp::Lt,
-                    Tok::Le => CmpOp::Le,
-                    Tok::Gt => CmpOp::Gt,
-                    _ => CmpOp::Ge,
-                };
-                self.bump();
-                let value = self.lit()?;
-                Ok(Cond::Cmp { column, op, value })
-            }
-            _ => Err(self.error(&format!(
-                "a comparison operator, IN, HAS, IS or LIKE after \"{}\"",
-                column.0
-            ))),
-        }
-    }
-
-    // ---- leaves -------------------------------------------------------
-
-    fn ident(&mut self, expected: &str) -> Result<Ident, ParseError> {
-        match self.peek() {
-            Some(Tok::Ident(name) | Tok::QuotedIdent(name)) => {
-                let name = name.clone();
-                self.bump();
-                Ok(Ident(name))
-            }
-            _ => Err(self.error(expected)),
-        }
-    }
-
-    fn lit(&mut self) -> Result<Lit, ParseError> {
-        match self.peek() {
-            Some(Tok::Str(s)) => {
-                let s = s.clone();
-                self.bump();
-                Ok(Lit::Str(s))
-            }
-            Some(Tok::Num(n)) => {
-                let n = *n;
-                self.bump();
-                Ok(Lit::Num(n))
-            }
-            Some(Tok::Minus) => {
-                self.bump();
-                match self.peek() {
-                    Some(Tok::Num(n)) => {
-                        let n = -*n;
-                        self.bump();
-                        Ok(Lit::Num(n))
-                    }
-                    _ => Err(self.error("a number after -")),
-                }
-            }
-            Some(Tok::True) => {
-                self.bump();
-                Ok(Lit::Bool(true))
-            }
-            Some(Tok::False) => {
-                self.bump();
-                Ok(Lit::Bool(false))
-            }
-            Some(Tok::Null) => {
-                self.bump();
-                Ok(Lit::Null)
-            }
-            _ => Err(self.error("a value: 'text', a number, TRUE, FALSE or NULL")),
-        }
-    }
-
-    // ---- insert -------------------------------------------------------
-
-    fn insert(&mut self) -> Result<Insert, ParseError> {
-        self.expect(Tok::Insert, "INSERT")?;
-        self.expect(Tok::Into, "INTO after INSERT")?;
-        let table = self.table()?;
-        self.expect(Tok::LParen, "( and the column list after the table name")?;
-        let mut columns = vec![self.ident("a column name in the column list")?];
-        while self.eat(Tok::Comma) {
-            columns.push(self.ident("a column name after the ,")?);
-        }
-        self.expect(Tok::RParen, ", or ) in the column list")?;
-        self.expect(Tok::Values, "VALUES after the column list")?;
-        let mut rows = vec![self.row(columns.len(), 1)?];
-        while self.eat(Tok::Comma) {
-            rows.push(self.row(columns.len(), rows.len() + 1)?);
-        }
-        Ok(Insert {
-            table,
-            columns,
-            rows,
-        })
-    }
-
-    fn row(&mut self, width: usize, number: usize) -> Result<Vec<Lit>, ParseError> {
-        let start = self.current_span().start;
-        self.expect(Tok::LParen, "( to start a row of values")?;
-        let mut values = vec![self.lit()?];
-        while self.eat(Tok::Comma) {
-            values.push(self.lit()?);
-        }
-        self.expect(Tok::RParen, ", or ) in the row of values")?;
-        if values.len() != width {
-            let end = self.tokens[self.pos - 1].span.end;
-            return Err(ParseError {
-                span: start..end,
-                message: format!(
-                    "row {number} has {} values but {width} columns were listed",
-                    values.len()
-                ),
-            });
-        }
-        Ok(values)
+/// `table [[AS] alias]`.
+fn table_item<'a>(expected: &'static str) -> impl Fn(In<'a>) -> R<'a, FromItem> {
+    move |input| {
+        let (input, table) = table(expected)(input)?;
+        let (input, alias) = alt((
+            preceded(kw(Tok::As), cut(ident("an alias after AS"))).map(Some),
+            ident("an alias").map(Some),
+            nom::combinator::success(None),
+        ))
+        .parse(input)?;
+        Ok((input, FromItem { table, alias }))
     }
 }
 
-impl Parser<'_> {
-    // ---- update and delete: one row by id ------------------------------
+/// `[INNER] JOIN table ON …` or `LEFT [OUTER] JOIN table ON …`.
+fn join(input: In<'_>) -> R<'_, Join> {
+    let (input, kind) = alt((
+        kw(Tok::Join).map(|()| JoinKind::Inner),
+        preceded(kw(Tok::Inner), cut(tok(Tok::Join, "JOIN after INNER"))).map(|()| JoinKind::Inner),
+        preceded(
+            kw(Tok::Left),
+            cut(preceded(
+                opt(kw(Tok::Outer)),
+                tok(Tok::Join, "JOIN after LEFT"),
+            )),
+        )
+        .map(|()| JoinKind::Left),
+    ))
+    .parse(input)?;
+    let (input, table) =
+        cut(table_item("a table name after JOIN, like database.table")).parse(input)?;
+    let (input, _) = cut(tok(Tok::On, "ON after the joined table")).parse(input)?;
+    let (input, on) = cut(separated_list1(kw(Tok::And), join_equality)).parse(input)?;
+    Ok((input, Join { kind, table, on }))
+}
 
-    fn update(&mut self) -> Result<Update, ParseError> {
-        self.expect(Tok::Update, "UPDATE")?;
-        let table = self.table()?;
-        self.expect(Tok::Set, "SET after the table name")?;
-        let mut assignments = vec![self.assignment()?];
-        while self.eat(Tok::Comma) {
-            assignments.push(self.assignment()?);
-        }
-        let row_id = self.row_id_clause("UPDATE")?;
-        Ok(Update {
-            table,
-            assignments,
-            row_id,
-        })
-    }
+/// `column = column`, the only condition a join accepts. `column HAS column`
+/// says the same thing about a multi-valued column: a join already matches
+/// any one of a cell's values.
+fn join_equality(input: In<'_>) -> R<'_, (ColumnRef, ColumnRef)> {
+    let (input, left) = column_ref("a column to join on, like alias.column")(input)?;
+    let (input, _) = cut(expecting(
+        "= between the two join columns",
+        alt((kw(Tok::Eq), kw(Tok::Has))),
+    ))
+    .parse(input)?;
+    let (input, right) = cut(column_ref("a column of the other table after =")).parse(input)?;
+    Ok((input, (left, right)))
+}
 
-    fn assignment(&mut self) -> Result<(Ident, Lit), ParseError> {
-        let column = self.ident("a column name to set")?;
-        self.expect(Tok::Eq, &format!("= after \"{}\"", column.0))?;
-        let value = self.lit()?;
-        Ok((column, value))
-    }
+/// The select list and the aliases some of its items were given.
+type SelectList = (Vec<Item>, Vec<(usize, Ident)>);
 
-    fn delete(&mut self) -> Result<Delete, ParseError> {
-        self.expect(Tok::Delete, "DELETE")?;
-        self.expect(Tok::From, "FROM after DELETE")?;
-        let table = self.table()?;
-        let row_id = self.row_id_clause("DELETE")?;
-        Ok(Delete { table, row_id })
-    }
-
-    /// `WHERE row_id = 'id'`, the only condition a write accepts.
-    fn row_id_clause(&mut self, statement: &str) -> Result<String, ParseError> {
-        let expected = format!("WHERE row_id = '<id>' ({statement} changes one row at a time)");
-        self.expect(Tok::Where, &expected)?;
-        match self.peek() {
-            Some(Tok::Ident(name)) if name.eq_ignore_ascii_case("row_id") => {
-                self.bump();
+fn items(input: In<'_>) -> R<'_, SelectList> {
+    alt((
+        kw(Tok::Star).map(|()| (vec![Item::Star], Vec::new())),
+        separated_list1(comma, aliased_item).map(|entries| {
+            let mut items = Vec::with_capacity(entries.len());
+            let mut aliases = Vec::new();
+            for (index, (item, alias)) in entries.into_iter().enumerate() {
+                items.push(item);
+                if let Some(alias) = alias {
+                    aliases.push((index, alias));
+                }
             }
-            _ => return Err(self.error(&format!("row_id ({statement} changes one row at a time)"))),
-        }
-        self.expect(Tok::Eq, "= after row_id")?;
-        match self.peek() {
-            Some(Tok::Str(id)) => {
-                let id = id.clone();
-                self.bump();
-                Ok(id)
-            }
-            _ => Err(self.error("a quoted row id")),
-        }
+            (items, aliases)
+        }),
+    ))
+    .parse(input)
+}
+
+/// The name after `AS`: an identifier, or a keyword such as `count` when the
+/// select list goes on after it (`,` or `FROM` follows), so `AS FROM` still
+/// reads as a missing name.
+fn alias_name(input: In<'_>) -> R<'_, Ident> {
+    let continues = matches!(
+        input.get(1).map(|token| &token.kind),
+        Some(Tok::Comma | Tok::From)
+    );
+    match input.first().and_then(|token| token.kind.keyword_name()) {
+        Some(name) if continues => Ok((input.take_from(1), Ident(name))),
+        _ => ident("a name for the column after AS")(input),
     }
+}
+
+/// `item [[AS] name]`.
+fn aliased_item(input: In<'_>) -> R<'_, (Item, Option<Ident>)> {
+    let (input, item) = item(input)?;
+    let (input, alias) = alt((
+        preceded(kw(Tok::As), cut(alias_name)).map(Some),
+        opt(ident("an alias")),
+    ))
+    .parse(input)?;
+    Ok((input, (item, alias)))
+}
+
+fn item(input: In<'_>) -> R<'_, Item> {
+    alt((
+        agg.map(Item::Agg),
+        column_ref("a column name, an aggregate like COUNT(*) or SUM(column), or *")
+            .map(Item::Column),
+    ))
+    .parse(input)
+}
+
+/// `COUNT(*)` or `FUNC(column)`. Only a branch if the name is followed by
+/// `(`: `count` alone is a column.
+fn agg(input: In<'_>) -> R<'_, Agg> {
+    let func = match input.first().map(|token| &token.kind) {
+        Some(Tok::Count) => AggFn::Count,
+        Some(Tok::Sum) => AggFn::Sum,
+        Some(Tok::Avg) => AggFn::Avg,
+        Some(Tok::Min) => AggFn::Min,
+        Some(Tok::Max) => AggFn::Max,
+        _ => return fail(input, "an aggregate"),
+    };
+    if input.get(1).map(|token| &token.kind) != Some(&Tok::LParen) {
+        return fail(input, "an aggregate");
+    }
+    let input = input.take_from(2);
+    let (input, arg) = if func == AggFn::Count {
+        alt((
+            kw(Tok::Star).map(|()| None),
+            column_ref("* or a column name inside COUNT(…)").map(Some),
+        ))
+        .parse(input)?
+    } else {
+        column_ref("a column name inside the aggregate")
+            .map(Some)
+            .parse(input)?
+    };
+    let (input, _) = cut(tok(Tok::RParen, ") to close the aggregate")).parse(input)?;
+    Ok((input, Agg { func, arg }))
+}
+
+fn order_by(input: In<'_>) -> R<'_, OrderBy> {
+    let (input, key) = match input.first().map(|token| &token.kind) {
+        Some(Tok::Num(n)) => {
+            if n.fract() != 0.0 || *n < 1.0 {
+                return fail(
+                    input,
+                    "a column name or a 1-based select-list position after ORDER BY",
+                );
+            }
+            (input.take_from(1), OrderKey::Position(*n as u32))
+        }
+        _ => alt((
+            agg.map(OrderKey::Agg),
+            column_ref("a column name, an aggregate, or a select-list position after ORDER BY")
+                .map(OrderKey::Column),
+        ))
+        .parse(input)?,
+    };
+    let (input, dir) = alt((
+        kw(Tok::Desc).map(|()| Dir::Desc),
+        opt(kw(Tok::Asc)).map(|_| Dir::Asc),
+    ))
+    .parse(input)?;
+    Ok((input, OrderBy { key, dir }))
+}
+
+// ---- conditions --------------------------------------------------------
+
+fn cond(input: In<'_>) -> R<'_, Cond> {
+    separated_list1(kw(Tok::Or), and_chain)
+        .map(|parts| flatten(parts, Cond::Or))
+        .parse(input)
+}
+
+fn and_chain(input: In<'_>) -> R<'_, Cond> {
+    separated_list1(kw(Tok::And), term)
+        .map(|parts| flatten(parts, Cond::And))
+        .parse(input)
+}
+
+fn term(input: In<'_>) -> R<'_, Cond> {
+    alt((
+        delimited(
+            kw(Tok::LParen),
+            cut(cond),
+            cut(tok(Tok::RParen, ") to close the condition")),
+        ),
+        atom,
+    ))
+    .parse(input)
+}
+
+fn atom(input: In<'_>) -> R<'_, Cond> {
+    let (input, column) = column_ref("a column name to compare")(input)?;
+    let (input, negated) = opt(kw(Tok::Not)).map(|not| not.is_some()).parse(input)?;
+
+    // The forms that take NOT: `NOT IN`, `NOT HAS`, `NOT LIKE`.
+    let negatable = |column: &ColumnRef| {
+        let column = column.clone();
+        alt((
+            preceded(
+                kw(Tok::In),
+                cut(delimited(
+                    tok(Tok::LParen, "( after IN"),
+                    separated_list1(comma, lit),
+                    tok(Tok::RParen, ", or ) in the IN list"),
+                )),
+            )
+            .map({
+                let column = column.clone();
+                move |values| Cond::In {
+                    column: column.clone(),
+                    values,
+                    negated,
+                }
+            }),
+            preceded(kw(Tok::Has), cut(lit)).map({
+                let column = column.clone();
+                move |value| Cond::Has {
+                    column: column.clone(),
+                    value,
+                    negated,
+                }
+            }),
+            preceded(kw(Tok::Like), cut(like_pattern)).map(move |(pattern, escape)| Cond::Like {
+                column: column.clone(),
+                pattern,
+                escape,
+                negated,
+            }),
+        ))
+    };
+
+    if negated {
+        let expected = format!("IN, HAS or LIKE after \"{}\" NOT", column.column.0);
+        return match negatable(&column).parse(input) {
+            Err(nom::Err::Error(_)) => Err(nom::Err::Failure(at(input, &expected))),
+            other => other,
+        };
+    }
+
+    let is_null = preceded(
+        kw(Tok::Is),
+        cut((opt(kw(Tok::Not)), tok(Tok::Null, "NULL after IS"))),
+    )
+    .map({
+        let column = column.clone();
+        move |(not, ())| Cond::IsNull {
+            column: column.clone(),
+            negated: not.is_some(),
+        }
+    });
+    let compare = (cmp_op, cut(lit)).map({
+        let column = column.clone();
+        move |(op, value)| Cond::Cmp {
+            column: column.clone(),
+            op,
+            value,
+        }
+    });
+    let expected = format!(
+        "a comparison operator, IN, HAS, IS or LIKE after \"{}\"",
+        column.column.0
+    );
+    match alt((negatable(&column), is_null, compare)).parse(input) {
+        Err(nom::Err::Error(_)) => Err(nom::Err::Failure(at(input, &expected))),
+        other => other,
+    }
+}
+
+/// `'pattern' [ESCAPE 'c']`. `ESCAPE` is read as a word rather than a
+/// keyword so a column named `escape` stays usable unquoted.
+fn like_pattern(input: In<'_>) -> R<'_, (String, Option<char>)> {
+    let (rest, pattern) = string("a quoted pattern after LIKE")(input)?;
+    let Some(Tok::Ident(word)) = rest.first().map(|token| &token.kind) else {
+        return Ok((rest, (pattern, None)));
+    };
+    if !word.eq_ignore_ascii_case("escape") {
+        return Ok((rest, (pattern, None)));
+    }
+    let after = rest.take_from(1);
+    let (end, escape) =
+        string("a quoted escape character after ESCAPE")(after).map_err(|error| match error {
+            nom::Err::Error(error) => nom::Err::Failure(error),
+            other => other,
+        })?;
+    let mut characters = escape.chars();
+    let (Some(escape), None) = (characters.next(), characters.next()) else {
+        return Err(nom::Err::Failure(message_at(
+            after,
+            "the ESCAPE character must be exactly one character",
+        )));
+    };
+    if ends_with_escape(&pattern, escape) {
+        return Err(nom::Err::Failure(message_at(
+            input,
+            "a LIKE pattern cannot end with its ESCAPE character",
+        )));
+    }
+    Ok((end, (pattern, Some(escape))))
+}
+
+/// Whether the last character is an escape with nothing left to escape.
+fn ends_with_escape(pattern: &str, escape: char) -> bool {
+    let mut escaping = false;
+    for character in pattern.chars() {
+        escaping = !escaping && character == escape;
+    }
+    escaping
+}
+
+/// A non-negative whole number.
+fn count<'a>(expected: &'static str) -> impl Fn(In<'a>) -> R<'a, u32> {
+    move |input| match input.first().map(|token| &token.kind) {
+        Some(Tok::Num(n)) if n.fract() == 0.0 && *n >= 0.0 => Ok((input.take_from(1), *n as u32)),
+        _ => fail(input, expected),
+    }
+}
+
+fn cmp_op(input: In<'_>) -> R<'_, CmpOp> {
+    let op = match input.first().map(|token| &token.kind) {
+        Some(Tok::Eq) => CmpOp::Eq,
+        Some(Tok::Ne) => CmpOp::Ne,
+        Some(Tok::Lt) => CmpOp::Lt,
+        Some(Tok::Le) => CmpOp::Le,
+        Some(Tok::Gt) => CmpOp::Gt,
+        Some(Tok::Ge) => CmpOp::Ge,
+        _ => return fail(input, "a comparison operator"),
+    };
+    Ok((input.take_from(1), op))
 }
 
 /// One element stays itself; several become the combining node.
@@ -489,4 +673,326 @@ fn flatten(mut parts: Vec<Cond>, combine: fn(Vec<Cond>) -> Cond) -> Cond {
     } else {
         combine(parts)
     }
+}
+
+// ---- writes ------------------------------------------------------------
+
+fn insert(input: In<'_>) -> R<'_, Insert> {
+    let (input, _) = kw(Tok::Insert)(input)?;
+    let (input, _) = cut(tok(Tok::Into, "INTO after INSERT")).parse(input)?;
+    let (input, table) = cut(table("a table name after INTO, like database.table")).parse(input)?;
+    if let Ok((input, ())) = kw(Tok::Default)(input) {
+        let (input, ()) = cut(tok(Tok::Values, "VALUES after DEFAULT")).parse(input)?;
+        return Ok((
+            input,
+            Insert {
+                table,
+                columns: Vec::new(),
+                rows: vec![Vec::new()],
+            },
+        ));
+    }
+    let (input, columns) = cut(delimited(
+        tok(
+            Tok::LParen,
+            "( and the column list, or DEFAULT VALUES, after the table name",
+        ),
+        separated_list1(comma, ident("a column name in the column list")),
+        tok(Tok::RParen, ", or ) in the column list"),
+    ))
+    .parse(input)?;
+    let (input, _) = cut(tok(Tok::Values, "VALUES after the column list")).parse(input)?;
+    let mut rows = Vec::new();
+    let mut input = input;
+    loop {
+        let (rest, row) = cut(|i| row(i, columns.len(), rows.len() + 1)).parse(input)?;
+        rows.push(row);
+        match comma(rest) {
+            Ok((rest, ())) => input = rest,
+            Err(_) => {
+                input = rest;
+                break;
+            }
+        }
+    }
+    Ok((
+        input,
+        Insert {
+            table,
+            columns,
+            rows,
+        },
+    ))
+}
+
+/// One `(v, …)` row, which must be as wide as the column list.
+fn row(input: In<'_>, width: usize, number: usize) -> R<'_, Vec<Lit>> {
+    let start = input
+        .first()
+        .map(|token| token.span.start)
+        .unwrap_or_default();
+    let (rest, values) = delimited(
+        tok(Tok::LParen, "( to start a row of values"),
+        cut(separated_list1(comma, value)),
+        cut(tok(Tok::RParen, ", or ) in the row of values")),
+    )
+    .parse(input)?;
+    if values.len() != width {
+        let consumed = input.len() - rest.len();
+        let end = input[consumed - 1].span.end;
+        return Err(nom::Err::Failure(ParseError {
+            span: start..end,
+            message: format!(
+                "row {number} has {} values but {width} columns were listed",
+                values.len()
+            ),
+        }));
+    }
+    Ok((rest, values))
+}
+
+fn update(input: In<'_>) -> R<'_, Update> {
+    let (input, _) = kw(Tok::Update)(input)?;
+    let (input, table) =
+        cut(table("a table name after UPDATE, like database.table")).parse(input)?;
+    let (input, _) = cut(tok(Tok::Set, "SET after the table name")).parse(input)?;
+    let (input, assignments) = cut(separated_list1(comma, assignment)).parse(input)?;
+    let (input, row_id) = cut(|i| row_id_clause(i, "UPDATE")).parse(input)?;
+    Ok((
+        input,
+        Update {
+            table,
+            assignments,
+            row_id,
+        },
+    ))
+}
+
+fn assignment(input: In<'_>) -> R<'_, (Ident, Lit)> {
+    let (input, column) = ident("a column name to set")(input)?;
+    let (input, _) = match kw(Tok::Eq)(input) {
+        Ok(ok) => ok,
+        Err(_) => {
+            return Err(nom::Err::Failure(at(
+                input,
+                &format!("= after \"{}\"", column.0),
+            )));
+        }
+    };
+    let (input, value) = cut(value).parse(input)?;
+    Ok((input, (column, value)))
+}
+
+fn delete(input: In<'_>) -> R<'_, Delete> {
+    let (input, _) = kw(Tok::Delete)(input)?;
+    let (input, _) = cut(tok(Tok::From, "FROM after DELETE")).parse(input)?;
+    let (input, table) = cut(table("a table name after FROM, like database.table")).parse(input)?;
+    let (input, row_id) = cut(|i| row_id_clause(i, "DELETE")).parse(input)?;
+    Ok((input, Delete { table, row_id }))
+}
+
+/// `WHERE row_id = 'id'`, the only condition a write accepts.
+fn row_id_clause<'a>(input: In<'a>, statement: &str) -> R<'a, String> {
+    let (input, _) = match kw(Tok::Where)(input) {
+        Ok(ok) => ok,
+        Err(_) => {
+            return Err(nom::Err::Failure(at(
+                input,
+                &format!("WHERE row_id = '<id>' ({statement} changes one row at a time)"),
+            )));
+        }
+    };
+    let input = match input.first().map(|token| &token.kind) {
+        Some(Tok::Ident(name)) if name.eq_ignore_ascii_case("row_id") => input.take_from(1),
+        _ => {
+            return Err(nom::Err::Failure(at(
+                input,
+                &format!("row_id ({statement} changes one row at a time)"),
+            )));
+        }
+    };
+    let (input, _) = cut(tok(Tok::Eq, "= after row_id")).parse(input)?;
+    cut(string("a quoted row id")).parse(input)
+}
+
+// ---- schema ------------------------------------------------------------
+
+/// The column types, as written; `entity` takes its kind in parentheses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumString, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case", ascii_case_insensitive)]
+enum TypeName {
+    Text,
+    Number,
+    Boolean,
+    Date,
+    Link,
+    Select,
+    SelectNumber,
+    Tag,
+    Entity,
+}
+
+const COLUMN_TYPES: &str = "text, number, boolean, date, link, select, select_number, tag or \
+                            entity(<KIND>) such as entity(USER); add [] after select, \
+                            select_number or entity(…) for several values";
+
+/// The unquoted word `name`, in any case. ALTER, TABLE, COLUMN, TYPE and
+/// USING are words rather than keywords so columns can still be named so.
+fn word<'a>(name: &'static str, expected: &'static str) -> impl Fn(In<'a>) -> R<'a, ()> {
+    move |input| match input.first().map(|token| &token.kind) {
+        Some(Tok::Ident(word)) if word.eq_ignore_ascii_case(name) => Ok((input.take_from(1), ())),
+        _ => fail(input, expected),
+    }
+}
+
+fn alter(input: In<'_>) -> R<'_, AlterColumnType> {
+    let (input, ()) = word("alter", "ALTER")(input)?;
+    let (input, ()) = cut(word("table", "TABLE after ALTER")).parse(input)?;
+    let (input, table) =
+        cut(table("a table name after ALTER TABLE, like database.table")).parse(input)?;
+    let (input, ()) = cut(word(
+        "alter",
+        "ALTER COLUMN after the table name (ALTER TABLE only changes a column's type)",
+    ))
+    .parse(input)?;
+    let (input, column) =
+        cut(ident("the column to change after ALTER COLUMN")).parse(skip_column_word(input))?;
+    let (input, ()) = cut(word("type", "TYPE and the new type after the column")).parse(input)?;
+    let (input, to) = column_type(input)?;
+    let (input, clear_invalid) = match word("using", "USING")(input) {
+        Ok((input, ())) => {
+            let (input, ()) = cut(tok(
+                Tok::Null,
+                "NULL after USING (USING NULL empties the values that do not fit)",
+            ))
+            .parse(input)?;
+            (input, true)
+        }
+        Err(_) => (input, false),
+    };
+    Ok((
+        input,
+        AlterColumnType {
+            table,
+            column,
+            to,
+            clear_invalid,
+        },
+    ))
+}
+
+/// Past the optional `COLUMN` of `ALTER [COLUMN] name`: a column itself
+/// named `column` is the one followed by `TYPE`.
+fn skip_column_word(input: In<'_>) -> In<'_> {
+    let is_word = |index: usize, name: &str| {
+        matches!(
+            input.get(index).map(|token| &token.kind),
+            Some(Tok::Ident(word)) if word.eq_ignore_ascii_case(name)
+        )
+    };
+    if is_word(0, "column") && !is_word(1, "type") {
+        input.take_from(1)
+    } else {
+        input
+    }
+}
+
+/// `name`, `entity(KIND)`, either with `[]` for several values.
+fn column_type(input: In<'_>) -> R<'_, ColumnType> {
+    let name = match input.first().map(|token| &token.kind) {
+        Some(Tok::Ident(name)) => name.as_str(),
+        Some(Tok::Select) => "select",
+        _ => {
+            return Err(nom::Err::Failure(at(
+                input,
+                &format!("a column type: {COLUMN_TYPES}"),
+            )));
+        }
+    };
+    let type_name: TypeName = name.parse().map_err(|_| {
+        nom::Err::Failure(message_at(
+            input,
+            &format!("unknown column type \"{name}\"; the types are {COLUMN_TYPES}"),
+        ))
+    })?;
+    let mut input = input.take_from(1);
+    let mut target = EntityKind::User;
+    if type_name == TypeName::Entity {
+        let (rest, kind) = entity_kind(input)?;
+        (input, target) = (rest, kind);
+    }
+    let bracket = input;
+    let several = kw(Tok::LBracket)(input).is_ok();
+    if several {
+        (input, ()) = cut(tok(Tok::RBracket, "] after [")).parse(input.take_from(1))?;
+    }
+    let single = |to: ColumnType| {
+        if several {
+            let name: &'static str = type_name.into();
+            Err(nom::Err::Failure(message_at(
+                bracket,
+                &format!("{name} holds one value; [] is for select, select_number and entity(…)"),
+            )))
+        } else {
+            Ok(to)
+        }
+    };
+    let to = match type_name {
+        TypeName::Text => single(ColumnType::Text)?,
+        TypeName::Number => single(ColumnType::Number)?,
+        TypeName::Boolean => single(ColumnType::Boolean)?,
+        TypeName::Date => single(ColumnType::Date)?,
+        TypeName::Link => single(ColumnType::Link)?,
+        TypeName::Select => ColumnType::Select { multi: several },
+        TypeName::SelectNumber => ColumnType::SelectNumber { multi: several },
+        TypeName::Entity => ColumnType::Entity {
+            target,
+            multi: several,
+        },
+        TypeName::Tag if several => {
+            return Err(nom::Err::Failure(message_at(
+                bracket,
+                "tag always holds several values; write tag",
+            )));
+        }
+        TypeName::Tag => ColumnType::Tag,
+    };
+    Ok((input, to))
+}
+
+/// `(KIND)` after `entity`.
+fn entity_kind(input: In<'_>) -> R<'_, EntityKind> {
+    let (input, ()) = cut(tok(
+        Tok::LParen,
+        "( and an entity kind after entity, like entity(USER)",
+    ))
+    .parse(input)?;
+    let Some(Tok::Ident(written)) = input.first().map(|token| &token.kind) else {
+        return Err(nom::Err::Failure(at(input, "an entity kind such as USER")));
+    };
+    let kind = match written.parse::<EntityKind>() {
+        Ok(EntityKind::Row) => {
+            return Err(nom::Err::Failure(message_at(
+                input,
+                "a relation to another table's rows is made with the ChangeColumnType tool's \
+                 linkToTableId, not ALTER COLUMN",
+            )));
+        }
+        Ok(kind) => kind,
+        Err(_) => {
+            let kinds: Vec<&str> = EntityKind::iter()
+                .filter(|kind| *kind != EntityKind::Row)
+                .map(EntityKind::sql_name)
+                .collect();
+            return Err(nom::Err::Failure(message_at(
+                input,
+                &format!(
+                    "unknown entity kind \"{written}\"; the kinds are {}",
+                    kinds.join(", ")
+                ),
+            )));
+        }
+    };
+    let (input, ()) = cut(tok(Tok::RParen, ") after the entity kind")).parse(input.take_from(1))?;
+    Ok((input, kind))
 }

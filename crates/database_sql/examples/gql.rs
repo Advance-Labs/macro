@@ -25,10 +25,13 @@ use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 
 use chrono::DateTime;
-use database_sql::catalog::{Catalog, Column, ColumnKind, SelectOption, Table};
+use database_sql::cast::ColumnType;
+use database_sql::catalog::{
+    Catalog, Column, ColumnKind, EntityKind, SelectOption, Table, TableSource,
+};
 use database_sql::fold::{Bin, Cell, Row};
 use database_sql::resolve::Value;
-use database_sql::run::{Page, RowSource, RowWriter, SourceError, WriteError, run};
+use database_sql::run::{ColumnChange, Page, RowSource, RowWriter, SourceError, WriteError, run};
 use database_sql::split::GqlQuery;
 use filter_ast::Expr;
 use item_filters::ast::properties::{PropertiesLiteral, PropertyMatchValue};
@@ -115,7 +118,7 @@ impl Api {
                 .as_str()
                 .unwrap_or("USER")
                 .to_owned();
-            self.definitions.insert(id, (multi, entity_type));
+            self.definitions.insert(id, (multi, entity_type.clone()));
             let mut options: Vec<(i64, SelectOption)> = definition["options"]
                 .as_array()
                 .unwrap_or(&vec![])
@@ -142,7 +145,10 @@ impl Api {
                 "NUMBER" => ColumnKind::Number,
                 "STRING" => ColumnKind::Text,
                 "LINK" => ColumnKind::Link,
-                "ENTITY" => ColumnKind::Entity { multi },
+                "ENTITY" => ColumnKind::Entity {
+                    multi,
+                    target: entity_type.parse().unwrap_or(EntityKind::User),
+                },
                 _ => ColumnKind::Select {
                     multi,
                     options: options.into_iter().map(|(_, option)| option).collect(),
@@ -160,6 +166,7 @@ impl Api {
                 database: "macro".into(),
                 name: "tasks".into(),
                 columns,
+                source: TableSource::Database,
             }],
         })
     }
@@ -372,6 +379,11 @@ impl Api {
             Some(Value::Entity(id)) => {
                 json!({ "entityReference": { "entityType": entity_type, "entityId": id } })
             }
+            Some(Value::Options(ids)) => json!({ "multiSelectOption": ids }),
+            Some(Value::Entities(ids)) => json!({ "multiEntityReference": ids
+                .iter()
+                .map(|id| json!({ "entityType": entity_type, "entityId": id }))
+                .collect::<Vec<_>>() }),
         }
     }
 
@@ -447,6 +459,15 @@ impl RowWriter for Api {
         Err(WriteError(
             "deleting tasks is not wired here; trash it in the app".into(),
         ))
+    }
+    async fn change_column_type(
+        &self,
+        _table: Uuid,
+        _column: Uuid,
+        _to: ColumnType,
+        _clear_invalid: bool,
+    ) -> Result<ColumnChange, WriteError> {
+        Err(WriteError("task properties keep their types here".into()))
     }
 }
 

@@ -3,25 +3,27 @@
 
 use chrono::{DateTime, NaiveDate, Utc};
 
-use crate::catalog::{Column, ColumnKind, Table};
+use crate::catalog::{Column, ColumnKind};
 use crate::parse::{CmpOp, Cond, Lit};
 
-use super::{Filter, ResolveError, Value, names};
+use super::names::Scope;
+use super::{Filter, ResolveError, Value};
 
-pub fn resolve(table: &Table, cond: Cond) -> Result<Filter, ResolveError> {
+pub fn resolve(scope: &mut Scope<'_>, cond: Cond) -> Result<Filter, ResolveError> {
     match cond {
         Cond::And(parts) => parts
             .into_iter()
-            .map(|part| resolve(table, part))
+            .map(|part| resolve(scope, part))
             .collect::<Result<_, _>>()
             .map(Filter::And),
         Cond::Or(parts) => parts
             .into_iter()
-            .map(|part| resolve(table, part))
+            .map(|part| resolve(scope, part))
             .collect::<Result<_, _>>()
             .map(Filter::Or),
         Cond::Cmp { column, op, value } => {
-            let column = names::column(table, &column)?;
+            let bound = scope.column(&column)?;
+            let column = &bound.column;
             if column.kind.is_multi() {
                 return Err(ResolveError::EqualityOnMultiValued {
                     column: column.name.clone(),
@@ -34,7 +36,7 @@ pub fn resolve(table: &Table, cond: Cond) -> Result<Filter, ResolveError> {
             }
             check_operator(column, op)?;
             Ok(Filter::Cmp {
-                column: column.id,
+                column: bound.key,
                 op,
                 value: typed(column, value)?,
             })
@@ -44,7 +46,8 @@ pub fn resolve(table: &Table, cond: Cond) -> Result<Filter, ResolveError> {
             values,
             negated,
         } => {
-            let column = names::column(table, &column)?;
+            let bound = scope.column(&column)?;
+            let column = &bound.column;
             if column.kind.is_multi() {
                 return Err(ResolveError::EqualityOnMultiValued {
                     column: column.name.clone(),
@@ -62,7 +65,7 @@ pub fn resolve(table: &Table, cond: Cond) -> Result<Filter, ResolveError> {
                 })
                 .collect::<Result<_, _>>()?;
             Ok(Filter::In {
-                column: column.id,
+                column: bound.key,
                 values,
                 negated,
             })
@@ -72,35 +75,39 @@ pub fn resolve(table: &Table, cond: Cond) -> Result<Filter, ResolveError> {
             value,
             negated,
         } => {
-            let column = names::column(table, &column)?;
+            let bound = scope.column(&column)?;
+            let column = &bound.column;
             if !column.kind.is_multi() {
                 return Err(ResolveError::HasOnSingleValued {
                     column: column.name.clone(),
                 });
             }
             Ok(Filter::Has {
-                column: column.id,
+                column: bound.key,
                 value: typed(column, value)?,
                 negated,
             })
         }
         Cond::IsNull { column, negated } => {
-            let column = names::column(table, &column)?;
+            let bound = scope.column(&column)?;
             Ok(Filter::IsNull {
-                column: column.id,
+                column: bound.key,
                 negated,
             })
         }
         Cond::Like {
             column,
             pattern,
+            escape,
             negated,
         } => {
-            let column = names::column(table, &column)?;
+            let bound = scope.column(&column)?;
+            let column = &bound.column;
             match column.kind {
                 ColumnKind::Text | ColumnKind::Link => Ok(Filter::Like {
-                    column: column.id,
+                    column: bound.key,
                     pattern,
+                    escape,
                     negated,
                 }),
                 _ => Err(ResolveError::OperatorNotSupported {
@@ -137,19 +144,53 @@ fn check_operator(column: &Column, op: CmpOp) -> Result<(), ResolveError> {
 impl CmpOp {
     /// The operator as written.
     pub fn symbol(self) -> &'static str {
-        match self {
-            CmpOp::Eq => "=",
-            CmpOp::Ne => "!=",
-            CmpOp::Lt => "<",
-            CmpOp::Le => "<=",
-            CmpOp::Gt => ">",
-            CmpOp::Ge => ">=",
-        }
+        self.into()
     }
 }
 
-/// Type a literal for the column it is compared to or stored in.
+/// Type a literal a column is compared to. Lists belong to writes.
 pub fn typed(column: &Column, lit: Lit) -> Result<Value, ResolveError> {
+    if matches!(lit, Lit::List(_)) {
+        return Err(ResolveError::ListInComparison {
+            column: column.name.clone(),
+        });
+    }
+    typed_one(column, lit)
+}
+
+/// Type a literal being stored in a cell: a list for a multi-valued column
+/// (or one element for a single-valued one), a bare value otherwise; a
+/// multi-valued column accepts a bare value as a one-element list.
+pub fn typed_cell(column: &Column, lit: Lit) -> Result<Value, ResolveError> {
+    let elements = match lit {
+        Lit::List(elements) => elements,
+        single => vec![single],
+    };
+    if !column.kind.is_multi() {
+        return match elements.len() {
+            1 => typed_one(column, elements.into_iter().next().expect("one element")),
+            count => Err(ResolveError::ListOnSingleValued {
+                column: column.name.clone(),
+                count,
+            }),
+        };
+    }
+    let mut options = Vec::new();
+    let mut entities = Vec::new();
+    for element in elements {
+        match typed_one(column, element)? {
+            Value::Option(id) => options.push(id),
+            Value::Entity(id) => entities.push(id),
+            other => unreachable!("multi-valued columns are select or entity: {other:?}"),
+        }
+    }
+    Ok(match column.kind {
+        ColumnKind::Entity { .. } => Value::Entities(entities),
+        _ => Value::Options(options),
+    })
+}
+
+fn typed_one(column: &Column, lit: Lit) -> Result<Value, ResolveError> {
     let mismatch = |expected, hint| ResolveError::TypeMismatch {
         column: column.name.clone(),
         expected,

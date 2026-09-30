@@ -30,7 +30,7 @@ pub fn resolve(table: &Table, insert: Insert) -> Result<InsertQuery, ResolveErro
             row.into_iter()
                 .zip(&columns)
                 .filter(|(value, _)| *value != Lit::Null)
-                .map(|(value, column)| Ok((column.id, filter::typed(column, value)?)))
+                .map(|(value, column)| Ok((column.id, filter::typed_cell(column, value)?)))
                 .collect::<Result<Vec<_>, ResolveError>>()
         })
         .collect::<Result<_, _>>()?;
@@ -52,7 +52,7 @@ pub fn resolve_update(table: &Table, update: Update) -> Result<UpdateQuery, Reso
         }
         let value = match value {
             Lit::Null => None,
-            value => Some(filter::typed(column, value)?),
+            value => Some(filter::typed_cell(column, value)?),
         };
         cells.push((column.id, value));
     }

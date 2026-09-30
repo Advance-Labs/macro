@@ -64,7 +64,9 @@ fn deals() -> Vec<Row> {
 fn plan(sql: &str) -> Plan {
     match compile(&catalog(), sql).unwrap() {
         Query::Select(select) => split(&catalog(), select),
-        Query::Insert(_) | Query::Update(_) | Query::Delete(_) => panic!("not a SELECT"),
+        Query::Insert(_) | Query::Update(_) | Query::Delete(_) | Query::AlterColumnType(_) => {
+            panic!("not a SELECT")
+        }
     }
 }
 
@@ -206,6 +208,28 @@ fn bins_answer_a_count_only_group() {
     );
 }
 
+#[test]
+fn limit_and_offset_apply_after_ordering() {
+    let windowed = plan("SELECT name FROM crm.deals ORDER BY name LIMIT 2 OFFSET 1");
+    assert_eq!(
+        fold_rows(&catalog(), &windowed, deals()),
+        vec![
+            vec![Some(Cell::Text("Globex".into()))],
+            vec![Some(Cell::Text("hooli".into()))],
+        ]
+    );
+
+    let top_group =
+        plan("SELECT stage, COUNT(*) FROM crm.deals GROUP BY stage ORDER BY 2 DESC LIMIT 1");
+    assert_eq!(
+        fold_rows(&catalog(), &top_group, deals()),
+        vec![vec![
+            Some(Cell::Options(vec![WON])),
+            Some(Cell::Number(2.0))
+        ]]
+    );
+}
+
 // ---- residual predicate semantics: which rows each WHERE keeps ---------------
 
 #[test]
@@ -231,6 +255,17 @@ fn residual_predicates_follow_sql_null_rules_and_macro_matching() {
         ("name LIKE '_cme'", &[ACME]),
         ("name NOT LIKE '%e%'", &[HOOLI]),
         ("name = 'Hooli'", &[]),
+        // ESCAPE makes the next pattern character literal
+        ("name LIKE 'acm_'", &[ACME]),
+        (r"name LIKE 'acm\_' ESCAPE '\'", &[]),
+        (r"name LIKE 'acm\e' ESCAPE '\'", &[ACME]),
+        (r"name LIKE '%\%%' ESCAPE '\'", &[]),
+        (
+            r"name NOT LIKE '%\%%' ESCAPE '\'",
+            &[ACME, GLOBEX, HOOLI, INITECH],
+        ),
+        ("name LIKE 'H%' ESCAPE '!'", &[HOOLI]),
+        ("name LIKE 'H!%' ESCAPE '!'", &[]),
         ("name < 'H'", &[ACME, GLOBEX]),
         // checkbox: an unset checkbox is not FALSE
         ("done = FALSE", &[INITECH]),
@@ -266,4 +301,91 @@ fn residual_predicates_follow_sql_null_rules_and_macro_matching() {
             .collect();
         assert_eq!(held, *kept, "\nWHERE {where_}");
     }
+}
+
+// ---- joins and DISTINCT ------------------------------------------------------
+
+#[test]
+fn distinct_keeps_the_first_of_equal_rows_after_sorting() {
+    let plan = plan("SELECT DISTINCT owner FROM crm.deals ORDER BY owner");
+    let (rows, ids) = fold_relations(&catalog(), &plan, vec![deals()]);
+    assert_eq!(
+        rows,
+        vec![
+            vec![Some(Cell::Entities(vec!["macro|ana@example.com".into()]))],
+            vec![Some(Cell::Entities(vec!["macro|sam@example.com".into()]))],
+            vec![None],
+        ]
+    );
+    // Hooli is Ana's; Acme is the first of Sam's two; Initech has no owner.
+    assert_eq!(ids, vec![HOOLI, ACME, INITECH]);
+}
+
+#[test]
+fn distinct_over_aggregates_changes_nothing() {
+    let plan =
+        plan("SELECT DISTINCT stage, COUNT(*) FROM crm.deals GROUP BY stage ORDER BY 2 DESC");
+    let (rows, ids) = fold_relations(&catalog(), &plan, vec![deals()]);
+    assert_eq!(rows.len(), 3);
+    assert_eq!(ids, Vec::<Uuid>::new());
+}
+
+#[test]
+fn join_matches_by_membership_and_leaves_empty_cells_unmatched() {
+    use crate::catalog::PEOPLE_ID;
+    use crate::resolve::column_key;
+
+    let plan = plan(
+        "SELECT d.name, p.name FROM crm.deals d LEFT JOIN macro.people p ON d.owner = p.id ORDER BY d.name",
+    );
+    let people = vec![
+        Row {
+            id: Uuid::from_u128(0x71),
+            cells: HashMap::from([
+                (
+                    column_key(1, PEOPLE_ID),
+                    Cell::Entities(vec!["macro|sam@example.com".into()]),
+                ),
+                (
+                    column_key(1, crate::catalog::PEOPLE_NAME),
+                    Cell::Text("Sam".into()),
+                ),
+            ]),
+        },
+        Row {
+            id: Uuid::from_u128(0x72),
+            cells: HashMap::from([
+                (
+                    column_key(1, PEOPLE_ID),
+                    Cell::Entities(vec!["macro|ana@example.com".into()]),
+                ),
+                (
+                    column_key(1, crate::catalog::PEOPLE_NAME),
+                    Cell::Text("Ana".into()),
+                ),
+            ]),
+        },
+    ];
+    let joined = join::join(&plan, vec![deals(), people.clone()]);
+    assert_eq!(joined.len(), 4);
+    let (rows, ids) = fold_relations(&catalog(), &plan, vec![deals(), people]);
+    assert_eq!(
+        rows,
+        vec![
+            vec![
+                Some(Cell::Text("Acme".into())),
+                Some(Cell::Text("Sam".into()))
+            ],
+            vec![
+                Some(Cell::Text("Globex".into())),
+                Some(Cell::Text("Sam".into()))
+            ],
+            vec![
+                Some(Cell::Text("hooli".into())),
+                Some(Cell::Text("Ana".into()))
+            ],
+            vec![Some(Cell::Text("Initech".into())), None],
+        ]
+    );
+    assert_eq!(ids, vec![ACME, GLOBEX, HOOLI, INITECH]);
 }

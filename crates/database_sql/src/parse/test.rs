@@ -1,4 +1,13 @@
 use super::*;
+use crate::cast::ColumnType;
+use crate::catalog::EntityKind;
+
+fn col(name: &str) -> ColumnRef {
+    ColumnRef {
+        table: None,
+        column: Ident(name.into()),
+    }
+}
 
 // ---- accepted statements: one full literal per grammar area ---------------
 
@@ -13,48 +22,56 @@ fn grouped_aggregate_with_mixed_where() {
     ";
 
     let expected = Statement::Select(Select {
+        distinct: false,
+        aliases: vec![],
         items: vec![
-            Item::Column(Ident("owner".into())),
+            Item::Column(col("owner")),
             Item::Agg(Agg {
                 func: AggFn::Sum,
-                arg: Some(Ident("amount".into())),
+                arg: Some(col("amount")),
             }),
             Item::Agg(Agg {
                 func: AggFn::Count,
                 arg: None,
             }),
         ],
-        table: TableName {
-            database: Some(Ident("crm".into())),
-            table: Ident("deals".into()),
+        from: FromItem {
+            table: TableName {
+                database: Some(Ident("crm".into())),
+                table: Ident("deals".into()),
+            },
+            alias: None,
         },
+        joins: vec![],
         where_: Some(Cond::And(vec![
             Cond::In {
-                column: Ident("stage".into()),
+                column: col("stage"),
                 values: vec![Lit::Str("Won".into()), Lit::Str("Lead".into())],
                 negated: false,
             },
             Cond::Cmp {
-                column: Ident("amount".into()),
+                column: col("amount"),
                 op: CmpOp::Gt,
                 value: Lit::Num(5000.0),
             },
             Cond::IsNull {
-                column: Ident("closed_at".into()),
+                column: col("closed_at"),
                 negated: true,
             },
         ])),
-        group_by: Some(Ident("owner".into())),
+        group_by: Some(col("owner")),
         order_by: vec![
             OrderBy {
                 key: OrderKey::Position(2),
                 dir: Dir::Desc,
             },
             OrderBy {
-                key: OrderKey::Column(Ident("owner".into())),
+                key: OrderKey::Column(col("owner")),
                 dir: Dir::Asc,
             },
         ],
+        limit: None,
+        offset: None,
     });
 
     assert_eq!(parse(sql).unwrap(), expected);
@@ -65,31 +82,37 @@ fn or_binds_looser_than_and_and_parens_override() {
     let sql = "SELECT * FROM deals WHERE a = 1 OR b = 2 AND (c = 3 OR d = 4)";
 
     let expected = Statement::Select(Select {
+        distinct: false,
+        aliases: vec![],
         items: vec![Item::Star],
-        table: TableName {
-            database: None,
-            table: Ident("deals".into()),
+        from: FromItem {
+            table: TableName {
+                database: None,
+                table: Ident("deals".into()),
+            },
+            alias: None,
         },
+        joins: vec![],
         where_: Some(Cond::Or(vec![
             Cond::Cmp {
-                column: Ident("a".into()),
+                column: col("a"),
                 op: CmpOp::Eq,
                 value: Lit::Num(1.0),
             },
             Cond::And(vec![
                 Cond::Cmp {
-                    column: Ident("b".into()),
+                    column: col("b"),
                     op: CmpOp::Eq,
                     value: Lit::Num(2.0),
                 },
                 Cond::Or(vec![
                     Cond::Cmp {
-                        column: Ident("c".into()),
+                        column: col("c"),
                         op: CmpOp::Eq,
                         value: Lit::Num(3.0),
                     },
                     Cond::Cmp {
-                        column: Ident("d".into()),
+                        column: col("d"),
                         op: CmpOp::Eq,
                         value: Lit::Num(4.0),
                     },
@@ -98,6 +121,8 @@ fn or_binds_looser_than_and_and_parens_override() {
         ])),
         group_by: None,
         order_by: vec![],
+        limit: None,
+        offset: None,
     });
 
     assert_eq!(parse(sql).unwrap(), expected);
@@ -120,64 +145,74 @@ fn every_atom_form_and_literal_kind() {
     ";
 
     let expected = Statement::Select(Select {
-        items: vec![Item::Column(Ident("name".into()))],
-        table: TableName {
-            database: Some(Ident("crm".into())),
-            table: Ident("deals".into()),
+        distinct: false,
+        aliases: vec![],
+        items: vec![Item::Column(col("name"))],
+        from: FromItem {
+            table: TableName {
+                database: Some(Ident("crm".into())),
+                table: Ident("deals".into()),
+            },
+            alias: None,
         },
+        joins: vec![],
         where_: Some(Cond::And(vec![
             Cond::In {
-                column: Ident("stage".into()),
+                column: col("stage"),
                 values: vec![Lit::Str("Lost".into())],
                 negated: true,
             },
             Cond::Has {
-                column: Ident("tags".into()),
+                column: col("tags"),
                 value: Lit::Str("vip".into()),
                 negated: false,
             },
             Cond::Has {
-                column: Ident("assignees".into()),
+                column: col("assignees"),
                 value: Lit::Str("macro|a@b.com".into()),
                 negated: true,
             },
             Cond::IsNull {
-                column: Ident("closed_at".into()),
+                column: col("closed_at"),
                 negated: false,
             },
             Cond::Like {
-                column: Ident("name".into()),
+                column: col("name"),
                 pattern: "A%".into(),
+                escape: None,
                 negated: false,
             },
             Cond::Like {
-                column: Ident("notes".into()),
+                column: col("notes"),
                 pattern: "%draft%".into(),
+                escape: None,
                 negated: true,
             },
             Cond::Cmp {
-                column: Ident("done".into()),
+                column: col("done"),
                 op: CmpOp::Eq,
                 value: Lit::Bool(true),
             },
             Cond::Cmp {
-                column: Ident("score".into()),
+                column: col("score"),
                 op: CmpOp::Ge,
                 value: Lit::Num(-1500.0),
             },
             Cond::Cmp {
-                column: Ident("Plus ones".into()),
+                column: col("Plus ones"),
                 op: CmpOp::Ne,
                 value: Lit::Num(0.5),
             },
             Cond::Cmp {
-                column: Ident("note".into()),
+                column: col("note"),
                 op: CmpOp::Ne,
                 value: Lit::Str("it's".into()),
             },
         ])),
         group_by: None,
         order_by: vec![],
+        limit: None,
+        offset: None,
     });
 
     assert_eq!(parse(sql).unwrap(), expected);
@@ -188,28 +223,34 @@ fn order_by_column_aggregate_and_position() {
     let sql = "SELECT stage, MAX(amount) FROM \"My CRM\".\"Big Deals\" GROUP BY stage ORDER BY stage, MAX(amount) DESC, 1 ASC";
 
     let expected = Statement::Select(Select {
+        distinct: false,
+        aliases: vec![],
         items: vec![
-            Item::Column(Ident("stage".into())),
+            Item::Column(col("stage")),
             Item::Agg(Agg {
                 func: AggFn::Max,
-                arg: Some(Ident("amount".into())),
+                arg: Some(col("amount")),
             }),
         ],
-        table: TableName {
-            database: Some(Ident("My CRM".into())),
-            table: Ident("Big Deals".into()),
+        from: FromItem {
+            table: TableName {
+                database: Some(Ident("My CRM".into())),
+                table: Ident("Big Deals".into()),
+            },
+            alias: None,
         },
+        joins: vec![],
         where_: None,
-        group_by: Some(Ident("stage".into())),
+        group_by: Some(col("stage")),
         order_by: vec![
             OrderBy {
-                key: OrderKey::Column(Ident("stage".into())),
+                key: OrderKey::Column(col("stage")),
                 dir: Dir::Asc,
             },
             OrderBy {
                 key: OrderKey::Agg(Agg {
                     func: AggFn::Max,
-                    arg: Some(Ident("amount".into())),
+                    arg: Some(col("amount")),
                 }),
                 dir: Dir::Desc,
             },
@@ -218,9 +259,192 @@ fn order_by_column_aggregate_and_position() {
                 dir: Dir::Asc,
             },
         ],
+        limit: None,
+        offset: None,
     });
 
     assert_eq!(parse(sql).unwrap(), expected);
+}
+
+#[test]
+fn distinct_aliases_and_joins() {
+    let sql = "
+        SELECT DISTINCT p.email, t.row_id
+        FROM macro.tasks AS t
+        INNER JOIN macro.people p ON t.assignees = p.id
+        LEFT OUTER JOIN crm.deals ON deals.owner = p.id AND deals.name = t.name
+        WHERE t.priority = 'High'
+        GROUP BY p.email
+        ORDER BY p.email
+    ";
+    let qualified = |table: &str, column: &str| ColumnRef {
+        table: Some(Ident(table.into())),
+        column: Ident(column.into()),
+    };
+
+    let expected = Statement::Select(Select {
+        distinct: true,
+        aliases: vec![],
+        items: vec![
+            Item::Column(qualified("p", "email")),
+            Item::Column(qualified("t", "row_id")),
+        ],
+        from: FromItem {
+            table: TableName {
+                database: Some(Ident("macro".into())),
+                table: Ident("tasks".into()),
+            },
+            alias: Some(Ident("t".into())),
+        },
+        joins: vec![
+            Join {
+                kind: JoinKind::Inner,
+                table: FromItem {
+                    table: TableName {
+                        database: Some(Ident("macro".into())),
+                        table: Ident("people".into()),
+                    },
+                    alias: Some(Ident("p".into())),
+                },
+                on: vec![(qualified("t", "assignees"), qualified("p", "id"))],
+            },
+            Join {
+                kind: JoinKind::Left,
+                table: FromItem {
+                    table: TableName {
+                        database: Some(Ident("crm".into())),
+                        table: Ident("deals".into()),
+                    },
+                    alias: None,
+                },
+                on: vec![
+                    (qualified("deals", "owner"), qualified("p", "id")),
+                    (qualified("deals", "name"), qualified("t", "name")),
+                ],
+            },
+        ],
+        where_: Some(Cond::Cmp {
+            column: qualified("t", "priority"),
+            op: CmpOp::Eq,
+            value: Lit::Str("High".into()),
+        }),
+        group_by: Some(qualified("p", "email")),
+        order_by: vec![OrderBy {
+            key: OrderKey::Column(qualified("p", "email")),
+            dir: Dir::Asc,
+        }],
+        limit: None,
+        offset: None,
+    });
+
+    assert_eq!(parse(sql).unwrap(), expected);
+}
+
+#[test]
+fn item_aliases_and_membership_joins() {
+    let sql = "
+        SELECT p.email AS person, COUNT(*) deals
+        FROM crm.deals d
+        JOIN crm.people p ON d.owner HAS p.id
+        GROUP BY p.email
+        ORDER BY deals DESC
+    ";
+    let qualified = |table: &str, column: &str| ColumnRef {
+        table: Some(Ident(table.into())),
+        column: Ident(column.into()),
+    };
+
+    let expected = Statement::Select(Select {
+        distinct: false,
+        items: vec![
+            Item::Column(qualified("p", "email")),
+            Item::Agg(Agg {
+                func: AggFn::Count,
+                arg: None,
+            }),
+        ],
+        aliases: vec![(0, Ident("person".into())), (1, Ident("deals".into()))],
+        from: FromItem {
+            table: TableName {
+                database: Some(Ident("crm".into())),
+                table: Ident("deals".into()),
+            },
+            alias: Some(Ident("d".into())),
+        },
+        joins: vec![Join {
+            kind: JoinKind::Inner,
+            table: FromItem {
+                table: TableName {
+                    database: Some(Ident("crm".into())),
+                    table: Ident("people".into()),
+                },
+                alias: Some(Ident("p".into())),
+            },
+            on: vec![(qualified("d", "owner"), qualified("p", "id"))],
+        }],
+        where_: None,
+        group_by: Some(qualified("p", "email")),
+        order_by: vec![OrderBy {
+            key: OrderKey::Column(col("deals")),
+            dir: Dir::Desc,
+        }],
+        limit: None,
+        offset: None,
+    });
+
+    assert_eq!(parse(sql).unwrap(), expected);
+}
+
+#[test]
+fn like_takes_an_escape_character() {
+    let sql = r"SELECT name FROM crm.deals WHERE name LIKE '50\%%' ESCAPE '\' OR notes NOT LIKE '%a!_b%' escape '!'";
+
+    let expected = Statement::Select(Select {
+        distinct: false,
+        aliases: vec![],
+        items: vec![Item::Column(col("name"))],
+        from: FromItem {
+            table: TableName {
+                database: Some(Ident("crm".into())),
+                table: Ident("deals".into()),
+            },
+            alias: None,
+        },
+        joins: vec![],
+        where_: Some(Cond::Or(vec![
+            Cond::Like {
+                column: col("name"),
+                pattern: r"50\%%".into(),
+                escape: Some('\\'),
+                negated: false,
+            },
+            Cond::Like {
+                column: col("notes"),
+                pattern: "%a!_b%".into(),
+                escape: Some('!'),
+                negated: true,
+            },
+        ])),
+        group_by: None,
+        order_by: vec![],
+        limit: None,
+        offset: None,
+    });
+
+    assert_eq!(parse(sql).unwrap(), expected);
+}
+
+#[test]
+fn a_keyword_after_as_is_the_alias() {
+    let sql = "SELECT stage AS count, SUM(amount) AS sum FROM crm.deals GROUP BY stage";
+
+    let Statement::Select(select) = parse(sql).unwrap() else {
+        panic!("a select");
+    };
+    assert_eq!(
+        select.aliases,
+        vec![(0, Ident("count".into())), (1, Ident("sum".into()))]
+    );
 }
 
 #[test]
@@ -229,24 +453,32 @@ fn keywords_are_usable_as_column_names_when_quoted() {
     let sql = "SELECT \"count\", COUNT(\"order\") FROM stats WHERE \"from\" = 'x'";
 
     let expected = Statement::Select(Select {
+        distinct: false,
+        aliases: vec![],
         items: vec![
-            Item::Column(Ident("count".into())),
+            Item::Column(col("count")),
             Item::Agg(Agg {
                 func: AggFn::Count,
-                arg: Some(Ident("order".into())),
+                arg: Some(col("order")),
             }),
         ],
-        table: TableName {
-            database: None,
-            table: Ident("stats".into()),
+        from: FromItem {
+            table: TableName {
+                database: None,
+                table: Ident("stats".into()),
+            },
+            alias: None,
         },
+        joins: vec![],
         where_: Some(Cond::Cmp {
-            column: Ident("from".into()),
+            column: col("from"),
             op: CmpOp::Eq,
             value: Lit::Str("x".into()),
         }),
         group_by: None,
         order_by: vec![],
+        limit: None,
+        offset: None,
     });
 
     assert_eq!(parse(sql).unwrap(), expected);
@@ -326,6 +558,70 @@ fn update_and_delete_one_row_by_id() {
     assert_eq!(parse(sql).unwrap(), expected);
 }
 
+#[test]
+fn list_values_default_values_and_limit_offset() {
+    let sql = "UPDATE crm.deals SET tags = ['vip', 'renewal'], owner = ['macro|sam@example.com'] WHERE row_id = '00000000-0000-0000-0000-0000000000a1'";
+    let expected = Statement::Update(Update {
+        table: TableName {
+            database: Some(Ident("crm".into())),
+            table: Ident("deals".into()),
+        },
+        assignments: vec![
+            (
+                Ident("tags".into()),
+                Lit::List(vec![Lit::Str("vip".into()), Lit::Str("renewal".into())]),
+            ),
+            (
+                Ident("owner".into()),
+                Lit::List(vec![Lit::Str("macro|sam@example.com".into())]),
+            ),
+        ],
+        row_id: "00000000-0000-0000-0000-0000000000a1".into(),
+    });
+    assert_eq!(parse(sql).unwrap(), expected);
+
+    let sql = "INSERT INTO crm.deals DEFAULT VALUES";
+    let expected = Statement::Insert(Insert {
+        table: TableName {
+            database: Some(Ident("crm".into())),
+            table: Ident("deals".into()),
+        },
+        columns: vec![],
+        rows: vec![vec![]],
+    });
+    assert_eq!(parse(sql).unwrap(), expected);
+
+    let sql = "SELECT name FROM crm.deals ORDER BY name LIMIT 10 OFFSET 20";
+    let expected = Statement::Select(Select {
+        distinct: false,
+        aliases: vec![],
+        items: vec![Item::Column(ColumnRef {
+            table: None,
+            column: Ident("name".into()),
+        })],
+        from: FromItem {
+            table: TableName {
+                database: Some(Ident("crm".into())),
+                table: Ident("deals".into()),
+            },
+            alias: None,
+        },
+        joins: vec![],
+        where_: None,
+        group_by: None,
+        order_by: vec![OrderBy {
+            key: OrderKey::Column(ColumnRef {
+                table: None,
+                column: Ident("name".into()),
+            }),
+            dir: Dir::Asc,
+        }],
+        limit: Some(10),
+        offset: Some(20),
+    });
+    assert_eq!(parse(sql).unwrap(), expected);
+}
+
 // ---- rejected statements: the span and the exact message the agent reads ---
 
 #[test]
@@ -337,19 +633,29 @@ fn rejections_point_at_the_offending_token() {
             "expected a comparison operator, IN, HAS, IS or LIKE after \"amount\", found *",
         ),
         (
-            "SELECT d.name FROM crm.deals d JOIN crm.people p ON p.id = d.owner",
-            8..9,
-            "expected FROM, found .",
+            "SELECT d.name FROM crm.deals d JOIN crm.people p WHERE p.id = d.owner",
+            49..54,
+            "expected ON after the joined table, found WHERE",
         ),
         (
-            "SELECT name AS n FROM crm.deals",
-            12..14,
-            "expected FROM, found \"AS\"",
+            "SELECT d.name FROM crm.deals d JOIN crm.people p ON p.id LIKE d.owner",
+            57..61,
+            "expected = between the two join columns, found LIKE",
         ),
         (
-            "SELECT name FROM crm.deals LIMIT 10",
-            27..32,
-            "expected end of statement, found \"LIMIT\"",
+            "SELECT d.name FROM crm.deals d LEFT crm.people p ON p.id = d.owner",
+            36..39,
+            "expected JOIN after LEFT, found \"crm\"",
+        ),
+        (
+            "SELECT name AS FROM crm.deals",
+            15..19,
+            "expected a name for the column after AS, found FROM",
+        ),
+        (
+            "SELECT d.name FROM crm.deals d, crm.people p",
+            30..31,
+            "tables are combined with JOIN … ON a.column = b.row_id, not a comma",
         ),
         (
             "SELECT stage, SUM(amount) FROM crm.deals GROUP BY stage HAVING SUM(amount) > 1",
@@ -359,7 +665,7 @@ fn rejections_point_at_the_offending_token() {
         (
             "SELECT name FROM crm.deals WHERE owner IN (SELECT id FROM crm.people)",
             43..49,
-            "expected a value: 'text', a number, TRUE, FALSE or NULL, found SELECT",
+            "subqueries are not supported: run the inner SELECT on its own first and use the values it returns",
         ),
         (
             "SELECT LOWER(name) FROM crm.deals",
@@ -380,6 +686,21 @@ fn rejections_point_at_the_offending_token() {
             "SELECT name FROM crm.deals WHERE stage NOT = 'Won'",
             43..44,
             "expected IN, HAS or LIKE after \"stage\" NOT, found =",
+        ),
+        (
+            "SELECT name FROM crm.deals WHERE name LIKE 'a%' ESCAPE '!!'",
+            55..59,
+            "the ESCAPE character must be exactly one character",
+        ),
+        (
+            "SELECT name FROM crm.deals WHERE name LIKE 'a!' ESCAPE '!'",
+            43..47,
+            "a LIKE pattern cannot end with its ESCAPE character",
+        ),
+        (
+            "SELECT name FROM crm.deals WHERE name LIKE 'a%' ESCAPE",
+            54..54,
+            "expected a quoted escape character after ESCAPE, found end of statement",
         ),
         (
             "SELECT name FROM crm.deals ORDER BY 0",
@@ -414,7 +735,7 @@ fn rejections_point_at_the_offending_token() {
         (
             "INSERT INTO crm.deals VALUES ('Acme')",
             22..28,
-            "expected ( and the column list after the table name, found VALUES",
+            "expected ( and the column list, or DEFAULT VALUES, after the table name, found VALUES",
         ),
         (
             "INSERT INTO crm.deals (name, stage) VALUES ('Acme', 'Won'), ('Globex')",
@@ -444,7 +765,7 @@ fn rejections_point_at_the_offending_token() {
         (
             "MERGE INTO crm.deals USING x",
             0..5,
-            "expected SELECT, INSERT, UPDATE or DELETE, found \"MERGE\"",
+            "expected SELECT, INSERT, UPDATE, DELETE or ALTER TABLE, found \"MERGE\"",
         ),
     ];
 
@@ -455,6 +776,136 @@ fn rejections_point_at_the_offending_token() {
             (span.clone(), *message),
             "\n{sql}\n{}^",
             " ".repeat(error.span.start)
+        );
+    }
+}
+
+// ---- ALTER TABLE … ALTER COLUMN … TYPE ------------------------------------
+
+#[test]
+fn alter_column_type_names_the_table_column_and_type() {
+    assert_eq!(
+        parse("ALTER TABLE crm.deals ALTER COLUMN amount TYPE text").unwrap(),
+        Statement::AlterColumnType(AlterColumnType {
+            table: TableName {
+                database: Some(Ident("crm".into())),
+                table: Ident("deals".into()),
+            },
+            column: Ident("amount".into()),
+            to: ColumnType::Text,
+            clear_invalid: false,
+        })
+    );
+}
+
+#[test]
+fn using_null_clears_what_does_not_fit_and_column_is_optional() {
+    assert_eq!(
+        parse("alter table deals alter \"closed at\" type select[] using null;").unwrap(),
+        Statement::AlterColumnType(AlterColumnType {
+            table: TableName {
+                database: None,
+                table: Ident("deals".into()),
+            },
+            column: Ident("closed at".into()),
+            to: ColumnType::Select { multi: true },
+            clear_invalid: true,
+        })
+    );
+}
+
+#[test]
+fn an_entity_type_names_its_kind_and_takes_brackets_for_several() {
+    assert_eq!(
+        parse("ALTER TABLE deals ALTER COLUMN owner TYPE entity(user)[]").unwrap(),
+        Statement::AlterColumnType(AlterColumnType {
+            table: TableName {
+                database: None,
+                table: Ident("deals".into()),
+            },
+            column: Ident("owner".into()),
+            to: ColumnType::Entity {
+                target: EntityKind::User,
+                multi: true,
+            },
+            clear_invalid: false,
+        })
+    );
+    assert_eq!(
+        parse("ALTER TABLE deals ALTER COLUMN column TYPE select_number").unwrap(),
+        Statement::AlterColumnType(AlterColumnType {
+            table: TableName {
+                database: None,
+                table: Ident("deals".into()),
+            },
+            column: Ident("column".into()),
+            to: ColumnType::SelectNumber { multi: false },
+            clear_invalid: false,
+        })
+    );
+}
+
+#[test]
+fn a_bad_alter_says_what_would_have_been_accepted() {
+    let types = "text, number, boolean, date, link, select, select_number, tag or \
+                 entity(<KIND>) such as entity(USER); add [] after select, select_number \
+                 or entity(…) for several values";
+    let cases: Vec<(&str, std::ops::Range<usize>, String)> = vec![
+        (
+            "ALTER TABLE deals ALTER COLUMN amount TYPE strin",
+            43..48,
+            format!("unknown column type \"strin\"; the types are {types}"),
+        ),
+        (
+            "ALTER TABLE deals ALTER COLUMN amount TYPE text[]",
+            47..48,
+            "text holds one value; [] is for select, select_number and entity(…)".into(),
+        ),
+        (
+            "ALTER TABLE deals ALTER COLUMN tags TYPE tag[]",
+            44..45,
+            "tag always holds several values; write tag".into(),
+        ),
+        (
+            "ALTER TABLE deals ALTER COLUMN owner TYPE entity",
+            48..48,
+            "expected ( and an entity kind after entity, like entity(USER), found end of statement"
+                .into(),
+        ),
+        (
+            "ALTER TABLE deals ALTER COLUMN owner TYPE entity(ROBOT)",
+            49..54,
+            "unknown entity kind \"ROBOT\"; the kinds are USER, DOCUMENT, TASK, COMPANY, \
+             CALL_RECORD, CHANNEL, CHAT, PROJECT, THREAD, CALENDAR_EVENT, INITIATIVE"
+                .into(),
+        ),
+        (
+            "ALTER TABLE deals ALTER COLUMN owner TYPE entity(DATABASE_ROW)",
+            49..61,
+            "a relation to another table's rows is made with the ChangeColumnType tool's \
+             linkToTableId, not ALTER COLUMN"
+                .into(),
+        ),
+        (
+            "ALTER TABLE deals ALTER COLUMN amount TYPE text USING 'x'",
+            54..57,
+            "expected NULL after USING (USING NULL empties the values that do not fit), found 'x'"
+                .into(),
+        ),
+        (
+            "ALTER TABLE deals ADD COLUMN notes text",
+            18..21,
+            "expected ALTER COLUMN after the table name (ALTER TABLE only changes a column's \
+             type), found \"ADD\""
+                .into(),
+        ),
+    ];
+    for (sql, span, message) in cases {
+        let error = parse(sql).unwrap_err();
+        assert_eq!(
+            (error.span.clone(), error.message.as_str()),
+            (span.clone(), message.as_str()),
+            "\n{sql}"
         );
     }
 }

@@ -7,56 +7,93 @@
 //!
 //! A top-level `AND` pushes its pushable conjuncts and keeps the rest; an
 //! `OR` pushes only when every side does, because a half-pushed `OR` would
-//! drop rows the other side wanted.
+//! drop rows the other side wanted. A conjunct pushes only when every column
+//! it tests belongs to one relation, since each relation is fetched on its
+//! own; the row id is not a property, so it never pushes.
 
 use filter_ast::Expr;
 use item_filters::ast::properties::{EntityRefId, PropertiesLiteral, PropertyMatchValue};
 
-use crate::resolve::{CmpOp, Filter, Value};
+use crate::resolve::{Binding, CmpOp, Filter, Value};
 
-/// The pushed-down expression and the filter that remains, either possibly
-/// absent.
-pub fn divide(filter: Filter) -> (Option<Expr<PropertiesLiteral>>, Option<Filter>) {
-    match filter {
+/// The expression pushed into each relation's query, indexed by relation,
+/// and the filter that remains.
+pub fn divide(
+    filter: Filter,
+    bindings: &[Binding],
+    relations: usize,
+) -> (Vec<Option<Expr<PropertiesLiteral>>>, Option<Filter>) {
+    let mut pushed: Vec<Option<Expr<PropertiesLiteral>>> = vec![None; relations];
+    let mut push_into = |relation: usize, expr: Expr<PropertiesLiteral>| {
+        pushed[relation] = Some(match pushed[relation].take() {
+            Some(existing) => Expr::and(existing, expr),
+            None => expr,
+        });
+    };
+    let residual = match filter {
         Filter::And(parts) => {
-            let mut pushed = Vec::new();
             let mut kept = Vec::new();
             for part in parts {
-                match push(&part) {
-                    Some(expr) => pushed.push(expr),
+                match pushable(&part, bindings) {
+                    Some((relation, expr)) => push_into(relation, expr),
                     None => kept.push(part),
                 }
             }
-            let residual = match kept.len() {
+            match kept.len() {
                 0 => None,
                 1 => kept.pop(),
                 _ => Some(Filter::And(kept)),
-            };
-            (pushed.into_iter().reduce(Expr::and), residual)
+            }
         }
-        other => match push(&other) {
-            Some(expr) => (Some(expr), None),
-            None => (None, Some(other)),
+        other => match pushable(&other, bindings) {
+            Some((relation, expr)) => {
+                push_into(relation, expr);
+                None
+            }
+            None => Some(other),
         },
+    };
+    (pushed, residual)
+}
+
+/// The relation a whole filter tests and its `propf` form, or `None` if it
+/// spans relations or any part of it cannot be expressed.
+fn pushable(filter: &Filter, bindings: &[Binding]) -> Option<(usize, Expr<PropertiesLiteral>)> {
+    let mut relation = None;
+    let mut spans = false;
+    filter.for_each_column(&mut |key| {
+        let owner = bindings
+            .iter()
+            .find(|binding| binding.key == key)
+            .map(|binding| binding.relation);
+        match (relation, owner) {
+            (None, Some(owner)) => relation = Some(owner),
+            (Some(current), Some(owner)) if current == owner => {}
+            _ => spans = true,
+        }
+    });
+    if spans {
+        return None;
     }
+    Some((relation?, push(filter, bindings)?))
 }
 
 /// The whole filter as a `propf` expression, or `None` if any part of it
 /// cannot be expressed.
-fn push(filter: &Filter) -> Option<Expr<PropertiesLiteral>> {
+fn push(filter: &Filter, bindings: &[Binding]) -> Option<Expr<PropertiesLiteral>> {
     match filter {
         Filter::Cmp {
             column,
             op: CmpOp::Eq,
             value,
-        } => literal(*column, value),
+        } => literal(*column, value, bindings),
         Filter::In {
             column,
             values,
             negated: false,
         } => values
             .iter()
-            .map(|value| literal(*column, value))
+            .map(|value| literal(*column, value, bindings))
             .collect::<Option<Vec<_>>>()?
             .into_iter()
             .reduce(Expr::or),
@@ -64,16 +101,16 @@ fn push(filter: &Filter) -> Option<Expr<PropertiesLiteral>> {
             column,
             value,
             negated: false,
-        } => literal(*column, value),
+        } => literal(*column, value, bindings),
         Filter::And(parts) => parts
             .iter()
-            .map(push)
+            .map(|part| push(part, bindings))
             .collect::<Option<Vec<_>>>()?
             .into_iter()
             .reduce(Expr::and),
         Filter::Or(parts) => parts
             .iter()
-            .map(push)
+            .map(|part| push(part, bindings))
             .collect::<Option<Vec<_>>>()?
             .into_iter()
             .reduce(Expr::or),
@@ -81,8 +118,14 @@ fn push(filter: &Filter) -> Option<Expr<PropertiesLiteral>> {
     }
 }
 
-/// A match on one option or one entity reference.
-fn literal(column: uuid::Uuid, value: &Value) -> Option<Expr<PropertiesLiteral>> {
+/// A match on one option or one entity reference of the property behind a
+/// key.
+fn literal(
+    key: uuid::Uuid,
+    value: &Value,
+    bindings: &[Binding],
+) -> Option<Expr<PropertiesLiteral>> {
+    let definition = bindings.iter().find(|binding| binding.key == key)?.column?;
     let value = match value {
         Value::Option(option) => PropertyMatchValue::SelectOption(*option),
         // Resolve accepted the id; the ref type rejects only quotes and
@@ -91,7 +134,7 @@ fn literal(column: uuid::Uuid, value: &Value) -> Option<Expr<PropertiesLiteral>>
         _ => return None,
     };
     Some(Expr::Literal(PropertiesLiteral {
-        property_definition_id: column,
+        property_definition_id: definition,
         entity_type: None,
         value,
     }))

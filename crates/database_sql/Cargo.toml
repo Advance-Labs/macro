@@ -4,21 +4,35 @@ name = "database_sql"
 publish = false
 version = "0.1.0"
 
+[lib]
+# `cdylib` for the browser build; `rlib` so services keep linking it normally.
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 chrono = { workspace = true }
 filter_ast = { path = "../filter_ast" }
 item_filters = { path = "../item_filters", default-features = false }
 logos = { workspace = true }
 maybe_send = { path = "../maybe_send" }
+nom = { workspace = true }
 serde = { workspace = true }
+strum = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }
 
+# The wasm-bindgen shell in `wasm`, which only exists on wasm32. Target-gated
+# rather than behind a feature so a native build never resolves any of it.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+serde-wasm-bindgen = { workspace = true }
 uuid = { workspace = true, features = ["js"] }
+wasm-bindgen = { workspace = true }
 
 [dev-dependencies]
 pollster = { workspace = true }
-reqwest = { workspace = true }
 serde_json = { workspace = true }
+
+# The gql example talks to a live stack; the crate's own tests and the wasm
+# build never need these.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+reqwest = { workspace = true }
 tokio = { workspace = true }

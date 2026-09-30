@@ -16,10 +16,13 @@ use std::io::{self, BufRead, Write};
 use std::sync::Mutex;
 
 use chrono::{TimeZone, Utc};
-use database_sql::catalog::{Catalog, Column, ColumnKind, SelectOption, Table};
+use database_sql::cast::ColumnType;
+use database_sql::catalog::{
+    Catalog, Column, ColumnKind, EntityKind, SelectOption, Table, TableSource,
+};
 use database_sql::fold::{Bin, Cell, Row};
 use database_sql::resolve::Value;
-use database_sql::run::{Page, RowSource, RowWriter, SourceError, WriteError, run};
+use database_sql::run::{ColumnChange, Page, RowSource, RowWriter, SourceError, WriteError, run};
 use database_sql::split::GqlQuery;
 use uuid::Uuid;
 
@@ -83,7 +86,10 @@ fn catalog() -> Catalog {
                 Column {
                     id: OWNER,
                     name: "owner".into(),
-                    kind: ColumnKind::Entity { multi: false },
+                    kind: ColumnKind::Entity {
+                        multi: false,
+                        target: EntityKind::User,
+                    },
                 },
                 Column {
                     id: TAGS,
@@ -108,6 +114,7 @@ fn catalog() -> Catalog {
                     kind: ColumnKind::Boolean,
                 },
             ],
+            source: TableSource::Database,
         }],
     }
 }
@@ -207,6 +214,7 @@ impl Memory {
     fn select(&self, query: &GqlQuery) -> Vec<Row> {
         let propf = match query {
             GqlQuery::Soup { propf, .. } | GqlQuery::GroupSoup { propf, .. } => propf,
+            GqlQuery::People { .. } => &None,
         };
         self.rows
             .lock()
@@ -259,6 +267,8 @@ fn cell(value: Value) -> Cell {
         Value::Date(d) => Cell::Date(d),
         Value::Option(id) => Cell::Options(vec![id]),
         Value::Entity(id) => Cell::Entities(vec![id]),
+        Value::Options(ids) => Cell::Options(ids),
+        Value::Entities(ids) => Cell::Entities(ids),
     }
 }
 
@@ -307,6 +317,16 @@ impl RowWriter for Memory {
             return Err(WriteError(format!("no row {row_id}")));
         }
         Ok(())
+    }
+
+    async fn change_column_type(
+        &self,
+        _table: Uuid,
+        _column: Uuid,
+        _to: ColumnType,
+        _clear_invalid: bool,
+    ) -> Result<ColumnChange, WriteError> {
+        Err(WriteError("the REPL's columns keep their types".into()))
     }
 }
 
