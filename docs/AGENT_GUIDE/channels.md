@@ -423,6 +423,30 @@ Deferred navigation waits until the destination is applied; an unavailable split
 must leave unread state unchanged. Join-only channels remain
 blocked after hydration, including on mobile.
 
+### Threads tab
+
+The `enable-channel-threads-preview` feature flag adds a third `Threads` tab.
+It is on in development; `VITE_ENABLE_CHANNEL_THREADS_PREVIEW` overrides it
+locally. The rail shows an `All threads` row above a `Conversations` section
+with the same sort and `+` controls as the All tab's sections. Conversations
+lists only channels and DMs that hold threads the user takes part in; it pages
+through the user's threads and loads their channels, so scrolling the section
+reveals more. Selecting a row filters the main pane instead of opening the
+conversation. `All threads` clears the filter.
+
+The main pane is a virtualized list of channel threads the user takes part in,
+newest reply first. It loads more as it nears the end and returns to the top
+when the selected conversation changes. Messages the user sent that have no
+replies are hidden. Each card shows the root message with its replies collapsed
+the same way as a channel timeline: the first reply groups, then a
+`N more replies` control that expands the rest in place. In `All threads`, each
+card is labelled with its conversation. An icon button (`View in channel`)
+appears at a card's top right on hover or focus, and always on touch; it
+switches back to `All` and opens the channel at that thread. Shift-clicking a
+conversation row opens it in a new split. The filter lives in the view's state,
+not the URL: it survives back/forward within the split and reloads, but a
+copied link opens the Threads tab on `All threads`.
+
 ### Channel labels
 
 Channel labels require the `enable-channel-tags` feature flag. The flag is off
