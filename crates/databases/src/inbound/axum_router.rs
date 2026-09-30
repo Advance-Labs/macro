@@ -890,7 +890,9 @@ impl IntoResponse for DatabaseError {
             DatabaseError::NotFound => StatusCode::NOT_FOUND,
             DatabaseError::Unauthorized => StatusCode::FORBIDDEN,
             DatabaseError::VersionConflict => StatusCode::CONFLICT,
-            DatabaseError::InvalidSchemaOperation(_) => StatusCode::BAD_REQUEST,
+            DatabaseError::InvalidSchemaOperation(_) | DatabaseError::InvalidSharing(_) => {
+                StatusCode::BAD_REQUEST
+            }
             DatabaseError::Repo(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
         let message = match &self {

@@ -384,7 +384,9 @@ pub(crate) fn database_error(error: DatabaseError) -> ToolCallError {
         DatabaseError::Unauthorized => {
             "The user does not have permission to do that to this database.".to_string()
         }
-        DatabaseError::InvalidSchemaOperation(message) => message.clone(),
+        DatabaseError::InvalidSchemaOperation(message) | DatabaseError::InvalidSharing(message) => {
+            message.clone()
+        }
         DatabaseError::VersionConflict => error.to_string(),
         DatabaseError::Repo(_) => "The databases service failed.".to_string(),
     };

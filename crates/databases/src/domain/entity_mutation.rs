@@ -28,9 +28,9 @@ impl From<DatabaseError> for EntityMutationErrorCode {
         match error {
             error @ DatabaseError::NotFound => Self::not_found(rootcause::report!(error)),
             error @ DatabaseError::Unauthorized => Self::forbidden(rootcause::report!(error)),
-            error @ (DatabaseError::InvalidSchemaOperation(_) | DatabaseError::VersionConflict) => {
-                Self::invalid(rootcause::report!(error))
-            }
+            error @ (DatabaseError::InvalidSchemaOperation(_)
+            | DatabaseError::InvalidSharing(_)
+            | DatabaseError::VersionConflict) => Self::invalid(rootcause::report!(error)),
             error @ DatabaseError::Repo(_) => Self::internal(rootcause::report!(error)),
         }
     }

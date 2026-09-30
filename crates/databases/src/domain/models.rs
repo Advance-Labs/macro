@@ -615,6 +615,10 @@ pub enum DatabaseError {
     /// A schema operation was invalid (duplicate placement, bad binding, …).
     #[error("invalid schema operation: {0}")]
     InvalidSchemaOperation(String),
+    /// A sharing change was invalid (a malformed channel grant, or a link or
+    /// team share databases do not support).
+    #[error("invalid sharing change: {0}")]
+    InvalidSharing(String),
     /// The schema changed after the client read its version.
     #[error("The table changed. Refresh before entering this value.")]
     VersionConflict,

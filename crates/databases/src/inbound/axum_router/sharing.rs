@@ -1,27 +1,21 @@
 //! Transport for the native database sharing dialog.
 
 use super::*;
-use crate::domain::sharing::{DatabaseSharePermissions, DatabaseSharingService};
+use crate::domain::sharing::DatabaseSharingService;
 use entity_access::domain::models::OwnerAccessLevel;
-use models_permissions::share_permission::channel_share_permission::UpdateChannelSharePermission;
+use models_permissions::share_permission::{SharePermissionV2, UpdateSharePermissionRequestV2};
 
-/// Explicit recipient updates; ownership cannot be changed here.
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateDatabasePermissionsRequest {
-    /// Channel and direct-message grants to change.
-    pub channel_share_permissions: Vec<UpdateChannelSharePermission>,
-}
-
-/// Read recipients for a database owned by the caller.
+/// Read recipients for a database owned by the caller. Link and team
+/// sharing are always `null`: databases do not support them yet.
 #[utoipa::path(get, tag = "databases", operation_id = "get_database_permissions",
     path = "/databases/{id}/permissions", params(("id" = Uuid, Path)),
-    responses((status = 200, body = DatabaseSharePermissions), (status = 401, body = ErrorResponse),
+    responses((status = 200, body = SharePermissionV2), (status = 401, body = ErrorResponse),
         (status = 403, body = ErrorResponse), (status = 404, body = ErrorResponse), (status = 500, body = ErrorResponse)))]
+#[tracing::instrument(err, skip_all)]
 pub async fn get_permissions_handler<S, Eas, Auth>(
     access: DatabaseAccessLevelExtractor<OwnerAccessLevel, Eas, Auth>,
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-) -> Result<Json<DatabaseSharePermissions>, DatabaseError>
+) -> Result<Json<SharePermissionV2>, DatabaseError>
 where
     S: DatabasesService + DatabaseSharingService,
     Eas: EntityAccessService,
@@ -34,18 +28,20 @@ where
         .map(Json)
 }
 
-/// Update recipients after proving database ownership.
+/// Update channel recipients after proving database ownership. Turning on
+/// link or team sharing is refused; ownership cannot be changed here.
 #[utoipa::path(patch, tag = "databases", operation_id = "update_database_permissions",
     path = "/databases/{id}/permissions", params(("id" = Uuid, Path)),
-    request_body = UpdateDatabasePermissionsRequest,
-    responses((status = 200, body = DatabaseSharePermissions), (status = 400, body = ErrorResponse),
+    request_body = UpdateSharePermissionRequestV2,
+    responses((status = 200, body = SharePermissionV2), (status = 400, body = ErrorResponse),
         (status = 401, body = ErrorResponse), (status = 403, body = ErrorResponse),
         (status = 404, body = ErrorResponse), (status = 500, body = ErrorResponse)))]
+#[tracing::instrument(err, skip_all)]
 pub async fn update_permissions_handler<S, Eas, Auth>(
     access: DatabaseAccessLevelExtractor<OwnerAccessLevel, Eas, Auth>,
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    Json(request): Json<UpdateDatabasePermissionsRequest>,
-) -> Result<Json<DatabaseSharePermissions>, DatabaseError>
+    Json(request): Json<UpdateSharePermissionRequestV2>,
+) -> Result<Json<SharePermissionV2>, DatabaseError>
 where
     S: DatabasesService + DatabaseSharingService,
     Eas: EntityAccessService,
@@ -53,10 +49,7 @@ where
 {
     state
         .service
-        .update_share_permissions(
-            access.entity_access_receipt,
-            request.channel_share_permissions,
-        )
+        .update_share_permissions(access.entity_access_receipt, request)
         .await
         .map(Json)
 }

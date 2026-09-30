@@ -1,25 +1,15 @@
-//! Sharing uses the same explicit channel grants as other collaboration entities.
+//! Sharing uses the same explicit channel grants as other collaboration
+//! entities, over the shared `SharePermissionV2` wire shape. Databases have
+//! no share link and no team share yet: both read back as `null`, and a
+//! request to turn either on is refused.
 
 use entity_access::domain::models::{EntityAccessReceipt, OwnerAccessLevel};
 use models_permissions::share_permission::channel_share_permission::{
     ChannelSharePermission, UpdateChannelSharePermission,
 };
-use serde::Serialize;
+use models_permissions::share_permission::{SharePermissionV2, UpdateSharePermissionRequestV2};
 
 use super::models::{DatabaseError, DatabaseId};
-
-/// Recipient grants shown in the native sharing interface.
-#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct DatabaseSharePermissions {
-    /// Database identifier; sharing has no separate policy entity.
-    #[schema(value_type = String, format = Uuid)]
-    pub id: DatabaseId,
-    /// Current database owner.
-    pub owner: String,
-    /// Directly shared channels, including direct messages.
-    pub channel_share_permissions: Vec<ChannelSharePermission>,
-}
 
 /// Persistence of direct channel grants, implemented through the owning access crate.
 pub trait DatabaseSharingRepo: Send + Sync + 'static {
@@ -46,12 +36,12 @@ pub trait DatabaseSharingService: Send + Sync + 'static {
     fn share_permissions(
         &self,
         receipt: EntityAccessReceipt<OwnerAccessLevel>,
-    ) -> impl Future<Output = Result<DatabaseSharePermissions, DatabaseError>> + Send;
+    ) -> impl Future<Output = Result<SharePermissionV2, DatabaseError>> + Send;
 
     /// Update explicit channel grants without modifying ownership.
     fn update_share_permissions(
         &self,
         receipt: EntityAccessReceipt<OwnerAccessLevel>,
-        grants: Vec<UpdateChannelSharePermission>,
-    ) -> impl Future<Output = Result<DatabaseSharePermissions, DatabaseError>> + Send;
+        request: UpdateSharePermissionRequestV2,
+    ) -> impl Future<Output = Result<SharePermissionV2, DatabaseError>> + Send;
 }
