@@ -9,12 +9,13 @@
  * src/lib/core/database-sql/wasm/ (gitignored).
  */
 
-import type { Bin, Catalog, Page, Step } from './protocol';
+import type { Bin, Catalog, Page, Step } from './generated/types';
 
 /**
- * One `SELECT` in flight. Mirrors `database_sql::wasm::Query`: read the
- * first step once, then feed each request's answer back until `done`.
- * Every method throws a string the agent should read.
+ * One `SELECT` in flight. Mirrors `database_sql::wasm::Query`, whose
+ * methods cross as untyped `JsValue`s: read the first step once, then feed
+ * each request's answer back until `done`. Every method throws a string the
+ * agent should read.
  */
 export interface DatabaseSqlQuery {
   start: () => Step;

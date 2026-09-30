@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DatabaseSqlError, runDatabaseSql } from './driver';
-import type { Bin, GqlQuery, Page } from './protocol';
+import type { Bin, GqlQuery, Page } from './generated/types';
 import { readTranscript, replay } from './tests/transcript';
 
 describe('runDatabaseSql', () => {

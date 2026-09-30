@@ -1,4 +1,4 @@
-import type { Outcome } from '@core/database-sql/protocol';
+import type { Outcome } from '@core/database-sql/generated/types';
 import type {
   DatabaseDetail,
   DatabaseTableDetail,

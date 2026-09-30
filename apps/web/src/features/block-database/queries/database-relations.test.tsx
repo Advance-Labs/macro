@@ -1,4 +1,4 @@
-import type { Outcome } from '@core/database-sql/protocol';
+import type { Outcome } from '@core/database-sql/generated/types';
 import type { DatabaseSqlQueryCapabilities } from '@queries/database-sql/create-database-sql-query';
 import type {
   DatabaseColumnDetail,

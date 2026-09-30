@@ -1,4 +1,4 @@
-import type { Catalog, Outcome } from '@core/database-sql/protocol';
+import type { Catalog, Outcome } from '@core/database-sql/generated/types';
 import type { DatabaseSqlQueryCapabilities } from '@queries/database-sql/create-database-sql-query';
 import { databaseCompletionRequest } from '@service-cognition/database-query-prompt';
 import type { DatabaseDetail } from '@service-storage/databases';

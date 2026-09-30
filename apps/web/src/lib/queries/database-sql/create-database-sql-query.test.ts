@@ -1,5 +1,5 @@
 import type { OpenEngine } from '@core/database-sql/driver';
-import type { Catalog, Page, Step } from '@core/database-sql/protocol';
+import type { Catalog, Page, Step } from '@core/database-sql/generated/types';
 import type { CacheHost } from '@graphql-cache/host/types';
 import type {
   CacheRevision,

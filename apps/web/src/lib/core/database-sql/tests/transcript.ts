@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import type { OpenEngine } from '../driver';
-import type { Bin, Catalog, Outcome, Page, Step } from '../protocol';
+import type { Bin, Catalog, Outcome, Page, Step } from '../generated/types';
 
 export type Exchange = { step: Exclude<Step, { step: 'done' }> } & (
   | { page: Page }

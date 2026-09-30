@@ -15,14 +15,14 @@ import type { RowSource } from '@core/database-sql/driver';
 import type {
   Bin,
   Catalog,
-  CatalogTable,
   Cell,
   GqlQuery,
   KeyHint,
   Page,
   Propf,
   Row,
-} from '@core/database-sql/protocol';
+  Table,
+} from '@core/database-sql/generated/types';
 import type { CacheHost } from '@graphql-cache/host/types';
 import { buildGraphqlEntitySoupInput } from '@queries/soup/graphql/entity-input';
 import {
@@ -180,30 +180,27 @@ function soupInput(
 
 /** The engine's `propf` wire form as the GraphQL properties filter. */
 function propertiesExpr(propf: Propf): GraphqlFilterPropertiesExpr {
-  if ('&' in propf) {
-    return {
-      and: {
-        left: propertiesExpr(propf['&'][0]),
-        right: propertiesExpr(propf['&'][1]),
+  return match(propf)
+    .returnType<GraphqlFilterPropertiesExpr>()
+    .with({ '&': P.nonNullable }, ({ '&': [left, right] }) => ({
+      and: { left: propertiesExpr(left), right: propertiesExpr(right) },
+    }))
+    .with({ '|': P.nonNullable }, ({ '|': [left, right] }) => ({
+      or: { left: propertiesExpr(left), right: propertiesExpr(right) },
+    }))
+    .with({ '!': P.nonNullable }, ({ '!': inner }) => ({
+      not: propertiesExpr(inner),
+    }))
+    .with({ l: P.nonNullable }, ({ l: { pd, v } }) => ({
+      literal: {
+        propertyDefinitionId: pd,
+        value: match(v)
+          .with({ so: P.string }, ({ so }) => ({ selectOption: so }))
+          .with({ er: P.string }, ({ er }) => ({ entityRef: er }))
+          .exhaustive(),
       },
-    };
-  }
-  if ('|' in propf) {
-    return {
-      or: {
-        left: propertiesExpr(propf['|'][0]),
-        right: propertiesExpr(propf['|'][1]),
-      },
-    };
-  }
-  if ('!' in propf) return { not: propertiesExpr(propf['!']) };
-  const { pd, v } = propf.l;
-  return {
-    literal: {
-      propertyDefinitionId: pd,
-      value: 'so' in v ? { selectOption: v.so } : { entityRef: v.er },
-    },
-  };
+    }))
+    .exhaustive();
 }
 
 /** A balanced OR keeps a long list inside the filter depth limit. */
@@ -459,7 +456,7 @@ async function peoplePage(
   ids: string[] | null
 ): Promise<Page> {
   const table = catalog.tables.find(
-    (candidate): candidate is CatalogTable => candidate.source === 'people'
+    (candidate): candidate is Table => candidate.source === 'people'
   );
   if (!table) throw new Error('this catalog has no people table');
   const column = (name: string) => {

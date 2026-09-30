@@ -1,4 +1,4 @@
-import type { Outcome, Step } from '@core/database-sql/protocol';
+import type { Outcome, Step } from '@core/database-sql/generated/types';
 import type { DatabaseSqlQueryCapabilities } from '@queries/database-sql/create-database-sql-query';
 import { databasesKeys } from '@queries/storage/keys';
 import type {

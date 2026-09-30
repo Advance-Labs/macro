@@ -10,7 +10,7 @@ import type {
   DatabaseDetail,
 } from '@service-storage/databases';
 import { match } from 'ts-pattern';
-import type { Catalog, CatalogTable, ColumnKind } from './protocol';
+import type { Catalog, ColumnKind, Table } from './generated/types';
 
 export function databaseSqlCatalog(
   databases: readonly DatabaseDetail[],
@@ -34,7 +34,7 @@ export function databaseSqlCatalog(
           !scoped.has(qualifiedName(database.name, table.name))
       )
       .map(
-        ({ database, table, columns }): CatalogTable => ({
+        ({ database, table, columns }): Table => ({
           id: table.id,
           database: database.name,
           name: table.name,

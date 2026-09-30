@@ -257,6 +257,14 @@ gen-agent-fold-types:
     cargo run -p agent_fold --bin export_types
     bunx biome format --write {{justfile_directory()}}/src/lib/service-clients/service-agent-fold/generated/types.ts
 
+# Regenerate src/lib/core/database-sql/generated/types.ts from the
+# database_sql engine's wire types with specta. Run after changing any type
+# that crosses the wasm boundary (see crates/database_sql/src/wasm.rs); biome
+# reformats specta's output for the same reason as gen-agent-fold-types.
+gen-database-sql-types:
+    cargo run -p database_sql --features cli --bin database_sql_types
+    bunx biome format --write {{justfile_directory()}}/src/lib/core/database-sql/generated/types.ts
+
 # Dev fast path: build the wasm pkg only when missing or its version drifts
 # from client/cache-wasm/Cargo.toml (bump that version to push a rebuild to
 # dev machines). See tooling/xtask/crates/xtask_cache_wasm/src/main.rs.

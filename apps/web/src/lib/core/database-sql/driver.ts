@@ -6,7 +6,14 @@
  */
 
 import { match } from 'ts-pattern';
-import type { Bin, Catalog, GqlQuery, Outcome, Page, Step } from './protocol';
+import type {
+  Bin,
+  Catalog,
+  GqlQuery,
+  Outcome,
+  Page,
+  Step,
+} from './generated/types';
 import { type DatabaseSqlQuery, openDatabaseSqlQuery } from './wasm-module';
 
 /** Where rows come from. Mirrors `database_sql::run::RowSource`. */

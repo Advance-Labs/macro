@@ -14,7 +14,7 @@ import type {
   SqlValue,
 } from '@service-storage/databases';
 import { match } from 'ts-pattern';
-import type { Catalog, CatalogTable, Cell, Outcome } from './protocol';
+import type { Catalog, Cell, Column, Outcome, Table } from './generated/types';
 
 /** The read half of an exec outcome. */
 export type DatabaseSqlAnswer = Pick<
@@ -24,8 +24,8 @@ export type DatabaseSqlAnswer = Pick<
 
 /** The column a definition is bound to, first in catalog order. */
 type BoundColumn = {
-  table: CatalogTable;
-  column: CatalogTable['columns'][number];
+  table: Table;
+  column: Column;
   detail: DatabaseColumnDetail | undefined;
 };
 
@@ -39,7 +39,7 @@ export function databaseSqlAnswer(
       database.tables.map((table) => [table.table.id, table] as const)
     )
   );
-  const boundColumn = (definition: string | undefined) => {
+  const boundColumn = (definition: string | null | undefined) => {
     if (!definition) return undefined;
     for (const table of catalog.tables) {
       const column = table.columns.find(
@@ -78,14 +78,16 @@ export function databaseSqlAnswer(
 
 function resultSets(
   outcome: Outcome,
-  boundColumn: (definition: string | undefined) => BoundColumn | undefined
+  boundColumn: (
+    definition: string | null | undefined
+  ) => BoundColumn | undefined
 ): QueryResult[] {
   if (outcome.columns.length === 0) return [];
   const rowShaped =
     (outcome.rowIds.length === outcome.rows.length &&
       outcome.rows.length > 0) ||
     (outcome.rows.length === 0 &&
-      outcome.columns.every((column) => column.column !== undefined));
+      outcome.columns.every((column) => typeof column.column === 'string'));
   const bound = outcome.columns.map((column) => boundColumn(column.column));
   const columns: ResultColumn[] = outcome.columns.map((column, index) => ({
     name: column.name,

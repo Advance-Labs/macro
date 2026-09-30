@@ -11,7 +11,7 @@ import {
   type RowSource,
   runDatabaseSql,
 } from '@core/database-sql/driver';
-import type { Catalog, Outcome } from '@core/database-sql/protocol';
+import type { Catalog, Outcome } from '@core/database-sql/generated/types';
 import { idToDisplayName, idToEmail } from '@core/user/util';
 import type { CacheHost } from '@graphql-cache/host/types';
 import { queryClient } from '@queries/client';

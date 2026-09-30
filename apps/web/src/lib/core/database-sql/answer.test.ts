@@ -1,7 +1,7 @@
 import type { DatabaseDetail } from '@service-storage/databases';
 import { describe, expect, it } from 'vitest';
 import { databaseSqlAnswer } from './answer';
-import type { Catalog } from './protocol';
+import type { Catalog } from './generated/types';
 
 const timestamps = {
   created_at: '2026-01-01T00:00:00Z',
