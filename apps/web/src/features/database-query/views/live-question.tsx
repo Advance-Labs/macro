@@ -147,7 +147,7 @@ export function LiveQuestion(props: {
         }
       >
         <div
-          class="my-3 overflow-hidden rounded-lg border border-edge-muted bg-panel text-ink"
+          class="overflow-hidden rounded-lg border border-edge-muted bg-panel text-ink"
           contentEditable={false}
         >
           <div class="flex items-center justify-between gap-2 border-b border-edge-muted px-3 py-2.5">
