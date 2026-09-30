@@ -1,4 +1,15 @@
+import { databaseSqlAnswer } from '@core/database-sql/answer';
+import { databaseSqlCatalog } from '@core/database-sql/catalog';
+import { DatabaseSqlError } from '@core/database-sql/driver';
 import { throwOnErr } from '@core/util/result';
+import {
+  createDatabaseSqlQuery,
+  type DatabaseSqlQuery,
+  type DatabaseSqlQueryCapabilities,
+  type DatabaseSqlStatement,
+  refreshInBackground,
+  sameDatabaseSqlStatement,
+} from '@queries/database-sql/create-database-sql-query';
 import { databasesKeys } from '@queries/storage/keys';
 import { storageServiceClient } from '@service-storage/client';
 import type {
@@ -8,12 +19,8 @@ import type {
   ExecOutcome,
   ExecRequest,
 } from '@service-storage/databases';
-import {
-  keepPreviousData,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/solid-query';
-import { type Accessor, createMemo, createSignal } from 'solid-js';
+import { useQueryClient } from '@tanstack/solid-query';
+import { type Accessor, createMemo, createSignal, untrack } from 'solid-js';
 import {
   type DatabaseRowsSource,
   DatabaseWriteOutcomeUnknown,
@@ -116,6 +123,19 @@ function isGridColumn(column: DatabaseColumnDetail) {
   return column.column.config?.kind !== 'lookup';
 }
 
+/** A stale table or column name, which a refreshed schema may resolve. */
+function isSqlError(error: unknown): error is Error {
+  return (
+    error instanceof DatabaseSqlError ||
+    (error instanceof Error && 'code' in error && error.code === 'SQL_ERROR')
+  );
+}
+
+function readError(error: unknown): Error | undefined {
+  if (error === undefined || error instanceof Error) return error;
+  return new Error(String(error));
+}
+
 function sameIds(left: readonly string[], right: readonly string[]) {
   return (
     left.length === right.length &&
@@ -128,7 +148,12 @@ export function createDatabaseRowsSource(props: {
   table: Accessor<DatabaseTableDetail>;
   /** The engine searches, filters and sorts the rows for this view. */
   view: Accessor<DatabaseViewConfig>;
+  /** Writes; reads run in the browser's SQL engine. */
   exec: (request: ExecRequest) => Promise<ExecOutcome>;
+  /** Where the engine reads rows from; the app's GraphQL client by default. */
+  read?: DatabaseSqlQueryCapabilities;
+  /** Calls back with the version of each change the gateway reports for this table. */
+  onTableChanged: (listener: (version: number) => void) => void;
   applyVersions: (versions: Record<string, number>) => void;
   addOption: (columnId: string, label: string) => Promise<void>;
 }): DatabaseRowsSource {
@@ -138,10 +163,14 @@ export function createDatabaseRowsSource(props: {
   let staleSchemaError: Error | undefined;
   // Only advance across schema changes this writer has itself acknowledged.
   const inferredVersions = new Map<number, number>();
+  const cachedDetail = () =>
+    queryClient.getQueryData<DatabaseDetail>(detailKey);
   const currentTable = () =>
-    queryClient
-      .getQueryData<DatabaseDetail>(detailKey)
-      ?.tables.find((entry) => entry.table.id === tableId) ?? props.table();
+    cachedDetail()?.tables.find((entry) => entry.table.id === tableId) ??
+    props.table();
+  // Reads are rebuilt from the cached schema: a refreshed table name must
+  // reach the retry even when the table prop has not caught up.
+  const [schemaRefreshes, setSchemaRefreshes] = createSignal(0);
 
   async function refreshSchema() {
     await queryClient.cancelQueries({ queryKey: detailKey, exact: true });
@@ -157,18 +186,38 @@ export function createDatabaseRowsSource(props: {
     if (!detail.tables.some((entry) => entry.table.id === tableId))
       throw new Error('This table is no longer available.');
     staleSchemaError = undefined;
-  }
-  function isSqlError(error: unknown): error is Error {
-    return (
-      error instanceof Error && 'code' in error && error.code === 'SQL_ERROR'
-    );
+    setSchemaRefreshes((count) => count + 1);
   }
   // Version-only schema updates must not recreate columns and remount editors.
   const details = createMemo(() => props.table().columns);
   const columns = createMemo(() =>
     details().filter(isGridColumn).map(toViewColumn)
   );
-  const viewStatement = (table: DatabaseTableDetail) =>
+  /** A statement over this table alone, built from the cached schema. */
+  const tableStatement = (
+    sql: (table: DatabaseTableDetail) => string | undefined
+  ) =>
+    createMemo(
+      (): DatabaseSqlStatement | undefined => {
+        props.table();
+        schemaRefreshes();
+        const detail = cachedDetail();
+        if (!detail) throw new Error('The database is not loaded.');
+        const table = currentTable();
+        const text = sql(table);
+        if (text === undefined) return undefined;
+        return {
+          catalog: databaseSqlCatalog(
+            [{ ...detail, tables: [table] }],
+            props.databaseId
+          ),
+          sql: text,
+        };
+      },
+      undefined,
+      { equals: sameDatabaseSqlStatement }
+    );
+  const viewStatement = tableStatement((table) =>
     viewSelectStatement({
       tableSqlName: table.sql_name,
       columns: table.columns.filter(isGridColumn).map((column) => ({
@@ -176,16 +225,9 @@ export function createDatabaseRowsSource(props: {
         sqlName: column.sql_name,
       })),
       view: props.view(),
-    });
-  const readStatement = createMemo(() => viewStatement(props.table()));
-  const rowsKey = databasesKeys.rows(props.databaseId, tableId).queryKey;
-  const query = useQuery(() => ({
-    queryKey: [...rowsKey, readStatement()],
-    // Build from the cached schema: a refreshed table name must reach the retry.
-    queryFn: () => props.exec({ sql: viewStatement(currentTable()) }),
-    // A changed search or filter keeps the grid on screen until its rows arrive.
-    placeholderData: keepPreviousData,
-  }));
+    })
+  );
+  const rowsQuery = createDatabaseSqlQuery(viewStatement, props.read);
   const [retainedIds, setRetainedIds] = createSignal<
     Accessor<readonly string[]>
   >(() => []);
@@ -194,42 +236,26 @@ export function createDatabaseRowsSource(props: {
     [],
     { equals: sameIds }
   );
-  const retainedQuery = useQuery(() => ({
-    queryKey: [...rowsKey, 'retained', retainedRowIds()],
-    queryFn: () =>
-      props.exec({
-        sql: rowsByIdStatement(currentTable().sql_name, retainedRowIds()),
-      }),
-    enabled: retainedRowIds().length > 0,
-    placeholderData: keepPreviousData,
-  }));
-  // Accepted draft writes can outlive the query observer's owner. Retain actual
-  // reads so a post-unmount option change supplies its version to the next write.
-  const [refreshedOutcome, setRefreshedOutcome] = createSignal<{
-    statement: string;
-    outcome: ExecOutcome;
-  }>();
-  function newerRead(
-    current: ExecOutcome | undefined,
-    candidate: ExecOutcome | undefined
-  ) {
-    if (!current) return candidate;
-    if (!candidate) return current;
-    return (candidate.read_versions[tableId] ?? -1) >
-      (current.read_versions[tableId] ?? -1)
-      ? candidate
-      : current;
-  }
-  // Status reads are safe outside Suspense. data is read only after initial load.
-  const outcome = () => {
-    const refreshed = refreshedOutcome();
-    return newerRead(
-      !query.isPending ? query.data : undefined,
-      refreshed?.statement === readStatement() ? refreshed.outcome : undefined
-    );
-  };
-  function rowsOf(data: ExecOutcome): DatabaseRow[] {
-    const result = data.results[0];
+  const retainedStatement = tableStatement((table) =>
+    retainedRowIds().length
+      ? rowsByIdStatement(table.sql_name, retainedRowIds())
+      : undefined
+  );
+  const retainedQuery = createDatabaseSqlQuery(retainedStatement, props.read);
+  // The table's version when the last completed read began. Accepted draft
+  // writes can outlive this owner, so it advances on any awaited refresh.
+  const [readVersion, setReadVersion] = createSignal(
+    untrack(() => currentTable().table.version)
+  );
+
+  function rowsOf(
+    query: DatabaseSqlQuery,
+    statement: Accessor<DatabaseSqlStatement | undefined>
+  ): DatabaseRow[] | undefined {
+    const outcome = query.outcome();
+    const current = statement();
+    if (!outcome || !current) return undefined;
+    const result = databaseSqlAnswer(outcome, current.catalog, []).results[0];
     const rowIdIndex =
       result?.columns.findIndex((column) => column.name === ROW_ID_COLUMN) ??
       -1;
@@ -256,19 +282,40 @@ export function createDatabaseRowsSource(props: {
   }
   const retainedRows = () => {
     const ids = retainedRowIds();
-    if (!ids.length || retainedQuery.isPending || !retainedQuery.data)
-      return [];
-    return rowsOf(retainedQuery.data).filter((row) => ids.includes(row.rowId));
+    if (!ids.length) return [];
+    return (rowsOf(retainedQuery, retainedStatement) ?? []).filter((row) =>
+      ids.includes(row.rowId)
+    );
   };
   const snapshot = () => {
-    const data = outcome();
-    if (!data) return undefined;
-    return {
-      version: data.read_versions[props.table().table.id],
-      rows: rowsOf(data),
-      retained: retainedRows(),
-    };
+    const rows = rowsOf(rowsQuery, viewStatement);
+    if (!rows) return undefined;
+    return { version: readVersion(), rows, retained: retainedRows() };
   };
+
+  /** Read from the network again; what comes back is at least `version`. */
+  async function readAgain(version: number) {
+    await Promise.all([
+      rowsQuery.refresh(),
+      retainedRowIds().length ? retainedQuery.refresh() : undefined,
+    ]);
+    setReadVersion((previous) => Math.max(previous, version));
+  }
+  async function refresh() {
+    const failed = rowsQuery.error();
+    if (isSqlError(failed)) {
+      staleSchemaError = failed;
+      await refreshSchema();
+    }
+    await readAgain(currentTable().table.version);
+  }
+  // Another viewer's edit. This writer's own edits read their version back.
+  props.onTableChanged((version) => {
+    if (version <= readVersion()) return;
+    refreshInBackground({
+      refresh: () => readAgain(Math.max(version, currentTable().table.version)),
+    });
+  });
 
   function columnForWrite(table: DatabaseTableDetail, columnId: string) {
     const column = table.columns.find(
@@ -423,29 +470,10 @@ export function createDatabaseRowsSource(props: {
   return {
     columns,
     snapshot,
-    loading: () => query.isPending,
-    refreshing: () => query.isFetching,
-    error: () => (query.isError ? query.error : undefined),
-    refresh: async () => {
-      if (query.isError && isSqlError(query.error)) {
-        staleSchemaError = query.error;
-        await refreshSchema();
-      }
-      const read = readStatement();
-      const [result] = await Promise.all([
-        query.refetch({ throwOnError: true }),
-        retainedRowIds().length
-          ? retainedQuery.refetch({ throwOnError: true })
-          : undefined,
-      ]);
-      setRefreshedOutcome((previous) => {
-        const outcome = newerRead(
-          previous?.statement === read ? previous.outcome : undefined,
-          result.data
-        );
-        return outcome && { statement: read, outcome };
-      });
-    },
+    loading: () => !rowsQuery.outcome() && rowsQuery.error() === undefined,
+    refreshing: rowsQuery.loading,
+    error: () => readError(rowsQuery.error()),
+    refresh,
     addOption: props.addOption,
     retain: (rowIds) => setRetainedIds(() => rowIds),
     write: async (mutation, version) => {

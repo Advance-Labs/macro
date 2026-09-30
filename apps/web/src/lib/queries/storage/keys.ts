@@ -105,10 +105,6 @@ export const databasesKeys = createQueryKeys('databases', {
   detail: (databaseId: string) => ({
     queryKey: [databaseId],
   }),
-  /** Rows of one table, re-fetched whenever the table's version moves. */
-  rows: (databaseId: string, tableId: string) => ({
-    queryKey: [databaseId, tableId, 'rows'],
-  }),
 });
 
 /** Viewer-specific read-only answers, shared by editors and document queries. */

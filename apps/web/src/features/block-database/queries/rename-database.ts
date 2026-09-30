@@ -1,8 +1,5 @@
 import { queryClient } from '@queries/client';
-import {
-  invalidateDatabase,
-  invalidateDatabaseRows,
-} from '@queries/storage/databases';
+import { invalidateDatabase } from '@queries/storage/databases';
 import { databasesKeys } from '@queries/storage/keys';
 import type { DatabaseDetail } from '@service-storage/databases';
 import type { RenameEntitiesMutationVariables } from '@service-storage/graphql/generated/graphql';
@@ -49,10 +46,6 @@ export async function renameDatabase(
   if (result.__typename === 'GraphqlMutationError') {
     throw new Error(result.message);
   }
-  const tableIds =
-    queryClient
-      .getQueryData<DatabaseDetail>(databasesKeys.detail(databaseId).queryKey)
-      ?.tables.map(({ table }) => table.id) ?? [];
   queryClient.setQueryData(
     databasesKeys.detail(databaseId).queryKey,
     (previous: DatabaseDetail | undefined) =>
@@ -61,10 +54,7 @@ export async function renameDatabase(
         : previous
   );
   void queryClient.invalidateQueries({ queryKey: databasesKeys.list.queryKey });
-  // Qualified SQL names include the database name. Reload the catalog before
-  // refreshing rows so the next read uses the renamed table identifiers.
+  // Qualified SQL names include the database name; open reads rerun against
+  // the reloaded catalog.
   await invalidateDatabase(databaseId);
-  await Promise.all(
-    tableIds.map((tableId) => invalidateDatabaseRows(databaseId, tableId))
-  );
 }

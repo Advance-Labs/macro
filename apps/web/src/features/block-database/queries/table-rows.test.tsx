@@ -1,14 +1,19 @@
+import type { Outcome, Step } from '@core/database-sql/protocol';
+import type { DatabaseSqlQueryCapabilities } from '@queries/database-sql/create-database-sql-query';
 import { databasesKeys } from '@queries/storage/keys';
 import type {
   DatabaseDetail,
   ExecOutcome,
   ExecRequest,
 } from '@service-storage/databases';
+import type { SoupQuery } from '@service-storage/graphql/generated/graphql';
 import { cleanup, render, waitFor } from '@solidjs/testing-library';
 import { QueryClient, QueryClientProvider } from '@tanstack/solid-query';
+import { CombinedError, createClient, type Exchange } from '@urql/core';
 import { err, ok } from 'neverthrow';
 import { type Accessor, createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { empty, fromValue, mergeMap, pipe } from 'wonka';
 import {
   type DatabaseRowsSource,
   DatabaseWriteOutcomeUnknown,
@@ -83,28 +88,31 @@ function detail(sqlName = '"guests"'): DatabaseDetail {
   };
 }
 
-const read: ExecOutcome = {
-  results: [
-    {
-      columns: [
-        { name: 'row_id', entity_type: null, origin: null },
-        { name: 'Name', entity_type: null, origin: null },
-      ],
-      rows: [['record', 'Ada']],
-    },
-  ],
-  changes_applied: 0,
-  inserted_row_ids: [],
-  new_versions: {},
-  read_tables: ['guests-table'],
-  read_versions: { 'guests-table': 5 },
-  truncated_tables: [],
-};
+/** The engine's answer for `SELECT * FROM "guests"` over one row. */
+function guests(
+  rows: { id: string; name: string | null }[] = [{ id: 'record', name: 'Ada' }]
+): Outcome {
+  return {
+    columns: [{ name: 'Name', column: 'definition', kind: 'text' }],
+    rows: rows.map((row) => [
+      row.name === null ? null : { type: 'text', value: row.name },
+    ]),
+    rowIds: rows.map((row) => row.id),
+    readTables: ['guests-table'],
+    truncated: false,
+    insertedRowIds: [],
+    changesApplied: 0,
+    failures: [],
+  };
+}
 const written: ExecOutcome = {
-  ...read,
   results: [],
   changes_applied: 1,
+  inserted_row_ids: [],
   new_versions: { 'guests-table': 6 },
+  read_tables: [],
+  read_versions: {},
+  truncated_tables: [],
 };
 const edit: DatabaseRowMutation = {
   kind: 'cell',
@@ -114,10 +122,75 @@ const edit: DatabaseRowMutation = {
 };
 const clients: QueryClient[] = [];
 
+/**
+ * The browser engine, answering each statement it compiles from `answer`
+ * after one Soup page. Soup fails while `offline` says so; `answer` throws
+ * a string the way the engine refuses a statement.
+ */
+function engine(
+  answer: (sql: string) => Outcome | Promise<Outcome> = () => guests(),
+  offline: () => boolean = () => false
+) {
+  const reads: string[] = [];
+  const exchange: Exchange = () => (incoming) =>
+    pipe(
+      incoming,
+      mergeMap((operation) => {
+        if (operation.kind === 'teardown') return empty;
+        if (offline())
+          return fromValue({
+            operation,
+            error: new CombinedError({ networkError: new Error('Offline') }),
+            stale: false,
+            hasNext: false,
+          });
+        const data: SoupQuery = {
+          user: {
+            id: 'macro|viewer@databases.test',
+            emailLinks: [],
+            soup: { items: [], nextCursor: null },
+          },
+        };
+        return fromValue({ operation, data, stale: false, hasNext: false });
+      })
+    );
+  const client = createClient({
+    url: 'http://test.invalid/graphql',
+    exchanges: [exchange],
+  });
+  const fetch: Step = {
+    step: 'fetch',
+    id: 0,
+    query: { type: 'soup', table: 'guests-table', propf: null, keyHint: null },
+    needs: ['definition'],
+    cursor: null,
+    limit: 500,
+  };
+  const read: DatabaseSqlQueryCapabilities = {
+    client: () => client,
+    cacheHost: () => undefined,
+    people: async () => [],
+    open: async (_catalog, sql) => {
+      reads.push(sql);
+      const outcome = await answer(sql);
+      return {
+        start: () => fetch,
+        feed_page: () => ({ step: 'done', ...outcome }),
+        feed_bins: () => {
+          throw 'no bins';
+        },
+        free: () => {},
+      };
+    },
+  };
+  return { read, reads };
+}
+
 function setup(
   initialDetail: DatabaseDetail,
   exec: (request: ExecRequest) => Promise<ExecOutcome>,
   options: {
+    read?: DatabaseSqlQueryCapabilities;
     addOption?: DatabaseRowsSource['addOption'];
     onSource?: (source: DatabaseRowsSource) => void;
     view?: Accessor<DatabaseViewConfig>;
@@ -128,7 +201,24 @@ function setup(
   });
   clients.push(client);
   client.setQueryData(databasesKeys.detail('db').queryKey, initialDetail);
-  const applyVersions = vi.fn();
+  // Like the app, a write's versions land in the cached schema.
+  const applyVersions = vi.fn((versions: Record<string, number>) =>
+    client.setQueryData(
+      databasesKeys.detail('db').queryKey,
+      (previous: DatabaseDetail | undefined) =>
+        previous && {
+          ...previous,
+          tables: previous.tables.map((entry) => ({
+            ...entry,
+            table: {
+              ...entry.table,
+              version: versions[entry.table.id] ?? entry.table.version,
+            },
+          })),
+        }
+    )
+  );
+  let tableChanged: (version: number) => void = () => {};
   let source!: DatabaseRowsSource;
   function Harness() {
     source = createDatabaseRowsSource({
@@ -137,6 +227,10 @@ function setup(
       table: () => initialDetail.tables[0],
       view: options.view ?? defaultDatabaseView,
       exec,
+      read: options.read ?? engine().read,
+      onTableChanged: (listener) => {
+        tableChanged = listener;
+      },
       applyVersions,
       addOption: options.addOption ?? (async () => {}),
     });
@@ -148,7 +242,13 @@ function setup(
       <Harness />
     </QueryClientProvider>
   ));
-  return { source, client, applyVersions, unmount };
+  return {
+    source,
+    client,
+    applyVersions,
+    unmount,
+    tableChanged: (version: number) => tableChanged(version),
+  };
 }
 
 afterEach(() => {
@@ -159,18 +259,18 @@ afterEach(() => {
 });
 
 describe('database view reads', () => {
-  it("runs the view's statement and keeps the previous rows while a changed view loads", async () => {
+  it("runs the view's statement in the engine and keeps the previous rows while a changed view loads", async () => {
     const [view, setView] = createSignal(defaultDatabaseView());
-    let finishSearch!: (outcome: ExecOutcome) => void;
-    const exec = vi.fn<(request: ExecRequest) => Promise<ExecOutcome>>(
-      (request) =>
-        request.sql === 'SELECT * FROM "guests"'
-          ? Promise.resolve(read)
-          : new Promise((resolve) => {
-              finishSearch = resolve;
-            })
+    let finishSearch!: (outcome: Outcome) => void;
+    const { read, reads } = engine((sql) =>
+      sql.includes('LIKE')
+        ? new Promise((resolve) => {
+            finishSearch = resolve;
+          })
+        : guests()
     );
-    const { source } = setup(detail(), exec, { view });
+    const exec = vi.fn<(request: ExecRequest) => Promise<ExecOutcome>>();
+    const { source } = setup(detail(), exec, { read, view });
     await waitFor(() =>
       expect(source.snapshot()?.rows).toEqual([
         { rowId: 'record', cells: { name: 'Ada' } },
@@ -179,45 +279,42 @@ describe('database view reads', () => {
 
     setView({ ...defaultDatabaseView(), search: 'grace' });
     await waitFor(() =>
-      expect(exec).toHaveBeenLastCalledWith({
-        sql: 'SELECT * FROM "guests" WHERE "Name" LIKE \'%grace%\'',
-      })
+      expect(reads.at(-1)).toBe(
+        'SELECT * FROM "guests" WHERE "Name" LIKE \'%grace%\' ORDER BY row_position'
+      )
     );
     expect(source.loading()).toBe(false);
+    expect(source.refreshing()).toBe(true);
     expect(source.snapshot()?.rows).toEqual([
       { rowId: 'record', cells: { name: 'Ada' } },
     ]);
 
-    finishSearch({
-      ...read,
-      results: [{ ...read.results[0], rows: [['other', 'Grace']] }],
-    });
+    finishSearch(guests([{ id: 'other', name: 'Grace' }]));
     await waitFor(() =>
       expect(source.snapshot()?.rows).toEqual([
         { rowId: 'other', cells: { name: 'Grace' } },
       ])
     );
+    expect(reads[0]).toBe('SELECT * FROM "guests" ORDER BY row_position');
+    expect(exec).not.toHaveBeenCalled();
   });
 
   it('reads the rows the view retains by id, apart from its statement', async () => {
-    const exec = vi.fn<(request: ExecRequest) => Promise<ExecOutcome>>(
-      async (request) =>
-        request.sql.includes('row_id IN')
-          ? {
-              ...read,
-              results: [{ ...read.results[0], rows: [['kept', 'Hidden']] }],
-            }
-          : read
+    const { read, reads } = engine((sql) =>
+      sql.includes('row_id IN')
+        ? guests([{ id: 'kept', name: 'Hidden' }])
+        : guests()
     );
-    const { source } = setup(detail(), exec, {
+    const { source } = setup(detail(), vi.fn(), {
+      read,
       view: () => ({ ...defaultDatabaseView(), search: 'ada' }),
     });
     const [retained, setRetained] = createSignal<string[]>([]);
     source.retain(retained);
     await waitFor(() => expect(source.snapshot()?.retained).toEqual([]));
-    expect(exec).toHaveBeenCalledExactlyOnceWith({
-      sql: 'SELECT * FROM "guests" WHERE "Name" LIKE \'%ada%\'',
-    });
+    expect(reads).toEqual([
+      'SELECT * FROM "guests" WHERE "Name" LIKE \'%ada%\' ORDER BY row_position',
+    ]);
 
     setRetained(['kept']);
     await waitFor(() =>
@@ -225,12 +322,59 @@ describe('database view reads', () => {
         { rowId: 'kept', cells: { name: 'Hidden' } },
       ])
     );
-    expect(exec).toHaveBeenLastCalledWith({
-      sql: 'SELECT * FROM "guests" WHERE row_id IN (\'kept\')',
-    });
+    expect(reads.at(-1)).toBe(
+      'SELECT * FROM "guests" WHERE row_id IN (\'kept\')'
+    );
     expect(source.snapshot()?.rows).toEqual([
       { rowId: 'record', cells: { name: 'Ada' } },
     ]);
+  });
+
+  it("reads again when another viewer changes the table, but not for this writer's own change", async () => {
+    let name = 'Ada';
+    const { read, reads } = engine(() => guests([{ id: 'record', name }]));
+    const exec = vi
+      .fn<(request: ExecRequest) => Promise<ExecOutcome>>()
+      .mockResolvedValue(written);
+    const { source, tableChanged } = setup(detail(), exec, { read });
+    await waitFor(() => expect(source.snapshot()?.version).toBe(5));
+
+    await source.write(edit, 5);
+    await source.refresh();
+    expect(source.snapshot()?.version).toBe(6);
+    const afterOwnWrite = reads.length;
+    tableChanged(6);
+    expect(reads).toHaveLength(afterOwnWrite);
+
+    name = 'Grace';
+    tableChanged(7);
+    await waitFor(() =>
+      expect(source.snapshot()).toEqual({
+        version: 7,
+        rows: [{ rowId: 'record', cells: { name: 'Grace' } }],
+        retained: [],
+      })
+    );
+    expect(reads).toHaveLength(afterOwnWrite + 1);
+  });
+
+  it('shows a failed read as the grid error and keeps the rows it had', async () => {
+    let offline = false;
+    const { read } = engine(
+      () => guests(),
+      () => offline
+    );
+    const { source, tableChanged } = setup(detail(), vi.fn(), { read });
+    await waitFor(() => expect(source.snapshot()?.rows).toHaveLength(1));
+
+    offline = true;
+    tableChanged(9);
+    await waitFor(() => expect(source.error()?.message).toContain('Offline'));
+    expect(source.snapshot()).toEqual({
+      version: 5,
+      rows: [{ rowId: 'record', cells: { name: 'Ada' } }],
+      retained: [],
+    });
   });
 });
 
@@ -245,7 +389,7 @@ describe('database rows SQL names', () => {
     };
     const exec = vi
       .fn<(request: ExecRequest) => Promise<ExecOutcome>>()
-      .mockResolvedValue(read);
+      .mockResolvedValue(written);
     const { source } = setup(schema, exec);
     await waitFor(() => expect(source.loading()).toBe(false));
     expect(source.columns()[0]).toMatchObject({
@@ -278,7 +422,7 @@ describe('database rows SQL names', () => {
     };
     const exec = vi
       .fn<(request: ExecRequest) => Promise<ExecOutcome>>()
-      .mockResolvedValue(read);
+      .mockResolvedValue(written);
     const { source } = setup(schema, exec);
     await waitFor(() => expect(source.loading()).toBe(false));
     exec.mockClear();
@@ -308,7 +452,7 @@ describe('database rows SQL names', () => {
     column.writable = false;
     const exec = vi
       .fn<(request: ExecRequest) => Promise<ExecOutcome>>()
-      .mockResolvedValue(read);
+      .mockResolvedValue(written);
     const { source } = setup(schema, exec);
     await waitFor(() => expect(source.loading()).toBe(false));
     exec.mockClear();
@@ -320,7 +464,7 @@ describe('database rows SQL names', () => {
   it('distinguishes an uncertain INSERT response from a definitive SQL refusal', async () => {
     const exec = vi
       .fn<(request: ExecRequest) => Promise<ExecOutcome>>()
-      .mockResolvedValue(read);
+      .mockResolvedValue(written);
     const { source } = setup(detail(), exec);
     await waitFor(() => expect(source.loading()).toBe(false));
     exec.mockRejectedValueOnce(
@@ -341,22 +485,20 @@ describe('database rows SQL names', () => {
   });
 
   it('reads through the quoted display name and matches result columns by display name', async () => {
-    const exec = vi.fn<(request: ExecRequest) => Promise<ExecOutcome>>(
-      async () => read
-    );
-    const { source } = setup(detail('"Guest List"'), exec);
+    const { read, reads } = engine();
+    const { source } = setup(detail('"Guest List"'), vi.fn(), { read });
     await waitFor(() =>
       expect(source.snapshot()?.rows).toEqual([
         { rowId: 'record', cells: { name: 'Ada' } },
       ])
     );
-    expect(exec).toHaveBeenCalledWith({ sql: 'SELECT * FROM "Guest List"' });
+    expect(reads).toEqual(['SELECT * FROM "Guest List" ORDER BY row_position']);
   });
 
   it('refreshes only this database after SQL_ERROR and rebuilds the physical write name on explicit retry', async () => {
     const exec = vi
       .fn<(request: ExecRequest) => Promise<ExecOutcome>>()
-      .mockResolvedValue(read);
+      .mockResolvedValue(written);
     const { source, client, applyVersions } = setup(detail(), exec);
     await waitFor(() => expect(source.loading()).toBe(false));
     const collision = Object.assign(new Error('no such table: guests'), {
@@ -368,7 +510,7 @@ describe('database rows SQL names', () => {
 
     await expect(source.write(edit, 5)).rejects.toBe(collision);
     expect(transport.get).toHaveBeenCalledExactlyOnceWith({ id: 'db' });
-    expect(exec).toHaveBeenCalledTimes(2);
+    expect(exec).toHaveBeenCalledTimes(1);
     expect(applyVersions).not.toHaveBeenCalled();
     expect(client.getQueryData(databasesKeys.detail('db').queryKey)).toEqual(
       refreshed
@@ -390,7 +532,7 @@ describe('database rows SQL names', () => {
   it('retains the original error and blocks stale writes until schema recovery succeeds', async () => {
     const exec = vi
       .fn<(request: ExecRequest) => Promise<ExecOutcome>>()
-      .mockResolvedValue(read);
+      .mockResolvedValue(written);
     const { source } = setup(detail(), exec);
     await waitFor(() => expect(source.loading()).toBe(false));
     const collision = Object.assign(new Error('no such table: guests'), {
@@ -404,7 +546,7 @@ describe('database rows SQL names', () => {
     await expect(source.write(edit, 5)).rejects.toBe(collision);
     await expect(source.write(edit, 5)).rejects.toBe(collision);
     expect(transport.get).toHaveBeenCalledTimes(2);
-    expect(exec).toHaveBeenCalledTimes(2);
+    expect(exec).toHaveBeenCalledTimes(1);
 
     transport.get.mockResolvedValue(ok(detail('"Personal Guests"')));
     await expect(source.write(edit, 5)).resolves.toEqual({
@@ -412,31 +554,34 @@ describe('database rows SQL names', () => {
       version: 6,
     });
     expect(transport.get).toHaveBeenCalledTimes(3);
-    expect(exec).toHaveBeenCalledTimes(3);
+    expect(exec).toHaveBeenCalledTimes(2);
     expect(exec).toHaveBeenLastCalledWith({
       sql: 'UPDATE "Personal Guests" SET "Name" = \'Grace\' WHERE row_id = \'record\'',
     });
   });
 
-  it('recovers a failed legacy read through the refreshed stable alias', async () => {
-    const collision = Object.assign(new Error('no such table: guests'), {
-      code: 'SQL_ERROR',
+  it('recovers a read of a stale table name through the refreshed schema', async () => {
+    let refused = true;
+    const { read, reads } = engine(() => {
+      if (refused) {
+        refused = false;
+        throw 'no such table: guests';
+      }
+      return guests();
     });
-    const exec = vi
-      .fn<(request: ExecRequest) => Promise<ExecOutcome>>()
-      .mockRejectedValueOnce(collision)
-      .mockResolvedValue(read);
-    const { source } = setup(detail(), exec);
-    await waitFor(() => expect(source.error()).toBe(collision));
+    const { source } = setup(detail(), vi.fn(), { read });
+    await waitFor(() =>
+      expect(source.error()?.message).toBe('no such table: guests')
+    );
     transport.get.mockResolvedValue(ok(detail('"Personal Guests"')));
 
     await source.refresh();
     await waitFor(() => expect(source.error()).toBeUndefined());
     expect(transport.get).toHaveBeenCalledExactlyOnceWith({ id: 'db' });
-    expect(exec).toHaveBeenNthCalledWith(1, { sql: 'SELECT * FROM "guests"' });
-    expect(exec).toHaveBeenNthCalledWith(2, {
-      sql: 'SELECT * FROM "Personal Guests"',
-    });
+    expect(reads[0]).toBe('SELECT * FROM "guests" ORDER BY row_position');
+    expect(reads.at(-1)).toBe(
+      'SELECT * FROM "Personal Guests" ORDER BY row_position'
+    );
     expect(source.snapshot()?.rows).toEqual([
       { rowId: 'record', cells: { name: 'Ada' } },
     ]);
@@ -455,34 +600,33 @@ describe('accepted writes after switching tables', () => {
     initial.tables[0].columns.push(status);
 
     let version = 5;
-    let persistedRows: (string | null)[][] = [];
+    let persisted: { id: string; name: string; status: string | null }[] = [];
     let releaseCreate!: () => void;
     const createReady = new Promise<void>((resolve) => {
       releaseCreate = resolve;
     });
+    const { read } = engine(() => ({
+      ...guests([]),
+      columns: [
+        { name: 'Name', column: 'definition', kind: 'text' },
+        { name: 'Status', column: 'status-definition', kind: 'text' },
+      ],
+      rows: persisted.map((row) => [
+        { type: 'text', value: row.name },
+        row.status === null ? null : { type: 'text', value: row.status },
+      ]),
+      rowIds: persisted.map((row) => row.id),
+    }));
     const writes: ExecRequest[] = [];
     const exec = vi.fn(async (request: ExecRequest): Promise<ExecOutcome> => {
-      if (request.sql.startsWith('SELECT')) {
-        return {
-          ...read,
-          results: [
-            {
-              columns: [
-                ...read.results[0].columns,
-                { name: 'Status', entity_type: null, origin: null },
-              ],
-              rows: structuredClone(persistedRows),
-            },
-          ],
-          read_versions: { 'guests-table': version },
-        };
-      }
       writes.push(request);
       const creating = request.sql.startsWith('INSERT');
       if (creating) await createReady;
       if (creating)
-        persistedRows = [['server-record', 'Accepted record', null]];
-      else persistedRows[0][2] = 'In review';
+        persisted = [
+          { id: 'server-record', name: 'Accepted record', status: null },
+        ];
+      else persisted[0].status = 'In review';
       version += 1;
       return {
         ...written,
@@ -497,6 +641,7 @@ describe('accepted writes after switching tables', () => {
     let drafts!: ReturnType<typeof createDraftRows>;
     let controller!: ReturnType<typeof createTableController>;
     const { source, unmount } = setup(initial, exec, {
+      read,
       addOption,
       onSource(source) {
         controller = createTableController(source);
@@ -540,21 +685,25 @@ describe('accepted writes after switching tables', () => {
   });
 
   it('keeps the last actual read when a refresh fails after disposal', async () => {
-    const exec = vi
-      .fn<(request: ExecRequest) => Promise<ExecOutcome>>()
-      .mockResolvedValue(read);
-    const { source, client, unmount } = setup(detail(), exec);
+    let offline = false;
+    const { read } = engine(
+      () => guests(),
+      () => offline
+    );
+    const { source, client, unmount } = setup(detail(), vi.fn(), { read });
     await waitFor(() => expect(source.snapshot()?.version).toBe(5));
     unmount();
-    const refreshed = { ...read, read_versions: { 'guests-table': 6 } };
-    exec.mockResolvedValueOnce(refreshed);
+    const newerSchema = detail();
+    newerSchema.tables[0].table.version = 6;
+    client.setQueryData(databasesKeys.detail('db').queryKey, newerSchema);
     await source.refresh();
     expect(source.snapshot()?.version).toBe(6);
 
-    const newerSchema = detail();
     newerSchema.tables[0].table.version = 10;
-    client.setQueryData(databasesKeys.detail('db').queryKey, newerSchema);
-    exec.mockRejectedValueOnce(new Error('Offline'));
+    client.setQueryData(databasesKeys.detail('db').queryKey, {
+      ...newerSchema,
+    });
+    offline = true;
     await expect(source.refresh()).rejects.toThrow('Offline');
     expect(source.snapshot()?.version).toBe(6);
     expect(source.snapshot()?.rows).toEqual([
@@ -586,7 +735,7 @@ describe('first-entry column types', () => {
       const initial = detail();
       initial.tables[0].columns[0].column.infer_type = true;
       const exec = vi.fn<(request: ExecRequest) => Promise<ExecOutcome>>(
-        async () => read
+        async () => written
       );
       const { source, client } = setup(initial, exec);
       await waitFor(() => expect(source.loading()).toBe(false));
@@ -618,7 +767,7 @@ describe('first-entry column types', () => {
     const initial = detail();
     initial.tables[0].columns[0].column.infer_type = true;
     const exec = vi.fn<(request: ExecRequest) => Promise<ExecOutcome>>(
-      async () => read
+      async () => written
     );
     const { source } = setup(initial, exec);
     await waitFor(() => expect(source.loading()).toBe(false));
@@ -647,7 +796,7 @@ describe('first-entry column types', () => {
 
   it('never infers a manually chosen text column or an empty value', async () => {
     const exec = vi.fn<(request: ExecRequest) => Promise<ExecOutcome>>(
-      async () => read
+      async () => written
     );
     const { source } = setup(detail(), exec);
     await waitFor(() => expect(source.loading()).toBe(false));
@@ -660,7 +809,7 @@ describe('first-entry column types', () => {
     const initial = detail();
     initial.tables[0].columns[0].column.infer_type = true;
     const exec = vi.fn<(request: ExecRequest) => Promise<ExecOutcome>>(
-      async () => read
+      async () => written
     );
     const { source } = setup(initial, exec);
     await waitFor(() => expect(source.loading()).toBe(false));
@@ -680,7 +829,7 @@ describe('first-entry column types', () => {
     const initial = detail();
     initial.tables[0].columns[0].column.infer_type = true;
     const exec = vi.fn<(request: ExecRequest) => Promise<ExecOutcome>>(
-      async () => read
+      async () => written
     );
     const { source } = setup(initial, exec);
     await waitFor(() => expect(source.loading()).toBe(false));

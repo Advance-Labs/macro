@@ -1,51 +1,65 @@
-import type { DatabaseTableDetail } from '@service-storage/databases';
+import type { Outcome } from '@core/database-sql/protocol';
+import type {
+  DatabaseDetail,
+  DatabaseTableDetail,
+} from '@service-storage/databases';
 import { describe, expect, it, vi } from 'vitest';
 import { exportDatabaseTableCsv, importDatabaseTable } from './transfer';
 
 const mocks = vi.hoisted(() => ({
-  query: vi.fn(),
+  read: vi.fn(),
   import: vi.fn(),
   invalidate: vi.fn(),
 }));
+vi.mock('@queries/database-sql/create-database-sql-query', () => ({
+  readDatabaseSql: mocks.read,
+}));
 vi.mock('@queries/storage/databases', () => ({
-  querySql: mocks.query,
   invalidateDatabase: mocks.invalidate,
 }));
 vi.mock('@service-storage/client', () => ({
   storageServiceClient: { databases: { importTable: mocks.import } },
 }));
 const table = {
-  table: { id: 'table', name: 'Contacts' },
-  sql_name: '"Contacts"',
+  table: { id: 'table', database_id: 'database', name: 'Contacts' },
+  sql_name: '"CRM"."Contacts"',
   columns: [
     {
       column: { id: 'name', display_name: 'Customer' },
       sql_name: '"Customer"',
-      definition: { definition: { display_name: 'Name' } },
+      definition: {
+        definition: {
+          id: 'name-definition',
+          display_name: 'Name',
+          data_type: 'STRING',
+        },
+        property_options: [],
+      },
     },
   ],
-} as DatabaseTableDetail;
-function outcome(
-  rows: (string | number | null)[][],
-  version = 1,
-  truncated: string[] = []
-) {
+} as unknown as DatabaseTableDetail;
+const database = {
+  database: { id: 'database', name: 'CRM' },
+  grant: 'view',
+  tables: [table],
+} as unknown as DatabaseDetail;
+function outcome(names: string[], truncated = false): Outcome {
   return {
-    results: [{ columns: [{ name: 'row_id' }, { name: 'Customer' }], rows }],
-    read_versions: { table: version },
-    truncated_tables: truncated,
+    columns: [{ name: 'Customer', column: 'name-definition', kind: 'text' }],
+    rows: names.map((name) => [{ type: 'text', value: name }]),
+    rowIds: names.map((_, index) => `id-${index}`),
+    readTables: ['table'],
+    truncated,
+    insertedRowIds: [],
+    changesApplied: 0,
+    failures: [],
   };
 }
 
 describe('CSV transfers', () => {
-  it('exports user-facing headers, quotes values, and excludes internal row IDs', async () => {
-    mocks.query.mockResolvedValueOnce(
-      outcome([
-        ['id-1', '00123'],
-        ['id-2', 'a,b'],
-      ])
-    );
-    const blob = await exportDatabaseTableCsv(table);
+  it('exports user-facing headers, quotes values, and excludes internal row IDs, in table order', async () => {
+    mocks.read.mockResolvedValueOnce(outcome(['00123', 'a,b']));
+    const blob = await exportDatabaseTableCsv(database, table);
     const text = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(String(reader.result));
@@ -53,29 +67,31 @@ describe('CSV transfers', () => {
       reader.readAsText(blob);
     });
     expect(text).toBe('Customer\n00123\n"a,b"');
-    expect(mocks.query).toHaveBeenLastCalledWith(
-      'SELECT * FROM "Contacts" LIMIT 5000 OFFSET 0'
-    );
-  });
-  it('refuses truncated data and schema mismatches instead of downloading partial CSV', async () => {
-    mocks.query.mockResolvedValueOnce(outcome([], 1, ['contacts']));
-    await expect(exportDatabaseTableCsv(table)).rejects.toThrow('too large');
-    mocks.query.mockResolvedValueOnce({
-      ...outcome([]),
-      results: [{ columns: [{ name: 'renamed' }], rows: [] }],
+    expect(mocks.read).toHaveBeenCalledExactlyOnceWith({
+      catalog: {
+        tables: [
+          {
+            id: 'table',
+            database: 'CRM',
+            name: 'Contacts',
+            source: 'database',
+            columns: [
+              {
+                id: 'name-definition',
+                name: 'Customer',
+                kind: { kind: 'text' },
+              },
+            ],
+          },
+        ],
+      },
+      sql: 'SELECT * FROM "CRM"."Contacts" ORDER BY row_position',
     });
-    await expect(exportDatabaseTableCsv(table)).rejects.toThrow(
-      'columns changed'
-    );
   });
-  it('rejects an export that spans table versions', async () => {
-    mocks.query
-      .mockResolvedValueOnce(
-        outcome(Array.from({ length: 5000 }, (_, i) => [`id-${i}`, 'Name']))
-      )
-      .mockResolvedValueOnce(outcome([['last', 'Name']], 2));
-    await expect(exportDatabaseTableCsv(table)).rejects.toThrow(
-      'table changed'
+  it('refuses a truncated read instead of downloading partial CSV', async () => {
+    mocks.read.mockResolvedValueOnce(outcome([], true));
+    await expect(exportDatabaseTableCsv(database, table)).rejects.toThrow(
+      'too large'
     );
   });
   it('retains the same import identity and reports validation errors', async () => {

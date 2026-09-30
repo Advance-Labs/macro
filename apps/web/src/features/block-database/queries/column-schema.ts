@@ -1,5 +1,4 @@
 import { queryClient } from '@queries/client';
-import { invalidateDatabaseRows } from '@queries/storage/databases';
 import { databasesKeys } from '@queries/storage/keys';
 import { storageServiceClient } from '@service-storage/client';
 import type { DatabaseColumnTypeChange } from '../core/column-schema';
@@ -38,13 +37,11 @@ export async function updateDatabaseColumns(params: {
             ...common,
             columnIds: mutation.columnIds,
           });
-  await Promise.all([
-    queryClient.invalidateQueries(
-      { queryKey: databasesKeys.detail(params.databaseId).queryKey },
-      { throwOnError: false }
-    ),
-    invalidateDatabaseRows(params.databaseId, params.tableId),
-  ]);
+  // Open reads rerun against the refreshed schema.
+  await queryClient.invalidateQueries(
+    { queryKey: databasesKeys.detail(params.databaseId).queryKey },
+    { throwOnError: false }
+  );
   if (result.isErr())
     throw new Error(
       result.error

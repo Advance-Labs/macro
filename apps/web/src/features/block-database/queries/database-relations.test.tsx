@@ -1,13 +1,16 @@
-import { databasesKeys } from '@queries/storage/keys';
+import type { Outcome } from '@core/database-sql/protocol';
+import type { DatabaseSqlQueryCapabilities } from '@queries/database-sql/create-database-sql-query';
 import type {
   DatabaseColumnDetail,
   DatabaseDetail,
-  ExecOutcome,
 } from '@service-storage/databases';
+import type { SoupQuery } from '@service-storage/graphql/generated/graphql';
 import { cleanup, render, waitFor } from '@solidjs/testing-library';
 import { QueryClient, QueryClientProvider } from '@tanstack/solid-query';
+import { createClient, type Exchange } from '@urql/core';
 import { ok } from 'neverthrow';
 import { afterEach, expect, it, vi } from 'vitest';
+import { empty, fromValue, mergeMap, pipe } from 'wonka';
 import type { DatabaseRelationSource } from '../context/relation-source';
 import { createDatabaseRelations } from './database-relations';
 
@@ -64,23 +67,68 @@ const detail: DatabaseDetail = {
     },
   ],
 };
-const outcome = (name: string): ExecOutcome => ({
-  results: [
-    {
-      columns: [
-        { name: 'row_id', entity_type: null, origin: null },
-        { name: 'Name', entity_type: null, origin: null },
-      ],
-      rows: [['customer-1', name]],
+/** The engine's answer for the customers table, after one Soup page. */
+function engine(names: () => string[]) {
+  const reads: string[] = [];
+  const exchange: Exchange = () => (incoming) =>
+    pipe(
+      incoming,
+      mergeMap((operation) => {
+        if (operation.kind === 'teardown') return empty;
+        const data: SoupQuery = {
+          user: {
+            id: 'macro|viewer@databases.test',
+            emailLinks: [],
+            soup: { items: [], nextCursor: null },
+          },
+        };
+        return fromValue({ operation, data, stale: false, hasNext: false });
+      })
+    );
+  const client = createClient({
+    url: 'http://test.invalid/graphql',
+    exchanges: [exchange],
+  });
+  const read: DatabaseSqlQueryCapabilities = {
+    client: () => client,
+    cacheHost: () => undefined,
+    people: async () => [],
+    open: async (_catalog, sql) => {
+      reads.push(sql);
+      const answer: Outcome = {
+        columns: [{ name: 'Name', column: 'name-definition', kind: 'text' }],
+        rows: names().map((name) => [{ type: 'text', value: name }]),
+        rowIds: names().map((_, index) => `customer-${index + 1}`),
+        readTables: ['customers'],
+        truncated: false,
+        insertedRowIds: [],
+        changesApplied: 0,
+        failures: [],
+      };
+      return {
+        start: () => ({
+          step: 'fetch',
+          id: 0,
+          query: {
+            type: 'soup',
+            table: 'customers',
+            propf: null,
+            keyHint: null,
+          },
+          needs: ['name-definition'],
+          cursor: null,
+          limit: 500,
+        }),
+        feed_page: () => ({ step: 'done', ...answer }),
+        feed_bins: () => {
+          throw 'no bins';
+        },
+        free: () => {},
+      };
     },
-  ],
-  changes_applied: 0,
-  inserted_row_ids: [],
-  new_versions: {},
-  read_tables: ['customers'],
-  read_versions: { customers: 1 },
-  truncated_tables: [],
-});
+  };
+  return { read, reads };
+}
 let client: QueryClient;
 afterEach(() => {
   cleanup();
@@ -88,10 +136,12 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-it('shares one target-table read across multiple relation columns and reacts to customer renames in the cache', async () => {
+it('shares one target-table read across relation columns and reads it again when the table changes', async () => {
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   transport.get.mockResolvedValue(ok(detail));
-  const exec = vi.fn(async () => outcome('Acme'));
+  let names = ['Acme'];
+  const { read, reads } = engine(() => names);
+  let tableChanged: (tableId: string) => void = () => {};
   let first!: DatabaseRelationSource;
   let second!: DatabaseRelationSource;
   function Harness() {
@@ -109,7 +159,10 @@ it('shares one target-table read across multiple relation columns and reacts to 
             },
           },
         })),
-      exec,
+      read,
+      onTableChanged: (listener) => {
+        tableChanged = listener;
+      },
     });
     first = relations('customers');
     second = relations('customers');
@@ -124,16 +177,14 @@ it('shares one target-table read across multiple relation columns and reacts to 
     expect(first.rows()).toEqual([{ id: 'customer-1', name: 'Acme' }])
   );
   expect(second.rows()).toEqual(first.rows());
+  expect(first.name()).toBe('Customers');
   expect(transport.get).toHaveBeenCalledTimes(1);
-  expect(exec).toHaveBeenCalledTimes(1);
-  expect(exec).toHaveBeenCalledWith({
-    sql: 'SELECT * FROM "Customers"',
-  });
-  client.setQueryData(
-    databasesKeys.rows('db', 'customers').queryKey,
-    outcome('Acme renamed')
-  );
+  expect(reads).toEqual(['SELECT * FROM "Customers" ORDER BY row_position']);
+
+  names = ['Acme renamed'];
+  tableChanged('other-table');
+  tableChanged('customers');
   await waitFor(() => expect(first.rows()[0].name).toBe('Acme renamed'));
   expect(second.rows()[0].name).toBe('Acme renamed');
-  expect(exec).toHaveBeenCalledTimes(1);
+  expect(reads).toHaveLength(2);
 });

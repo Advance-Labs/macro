@@ -1,5 +1,5 @@
 import { queryClient } from '@queries/client';
-import type { DatabaseDetail, ExecOutcome } from '@service-storage/databases';
+import type { DatabaseDetail } from '@service-storage/databases';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applyDatabaseTableVersions } from './databases';
 import { databasesKeys } from './keys';
@@ -50,23 +50,12 @@ const detail: DatabaseDetail = {
   ],
 };
 const key = databasesKeys.detail('db').queryKey;
-const rowsKey = databasesKeys.rows('db', 'tasks').queryKey;
-const rows: ExecOutcome = {
-  results: [],
-  changes_applied: 0,
-  inserted_row_ids: [],
-  new_versions: {},
-  read_tables: ['tasks'],
-  read_versions: { tasks: 5 },
-  truncated_tables: [],
-};
 
 afterEach(() => queryClient.clear());
 
 describe('database write version acknowledgments', () => {
   it('preserves a newer schema refresh when an older write response arrives later', async () => {
     queryClient.setQueryData(key, detail);
-    queryClient.setQueryData(rowsKey, rows);
     let acknowledge!: (versions: Record<string, number>) => void;
     const response = new Promise<Record<string, number>>((resolve) => {
       acknowledge = resolve;
@@ -93,13 +82,10 @@ describe('database write version acknowledgments', () => {
     await pendingWrite;
 
     expect(queryClient.getQueryData(key)).toEqual(refreshed);
-    // A schema acknowledgment cannot certify an older rows snapshot.
-    expect(queryClient.getQueryData(rowsKey)).toEqual(rows);
   });
 
-  it('advances only the acknowledged table and leaves rows at their actual read version', () => {
+  it('advances only the acknowledged table', () => {
     queryClient.setQueryData(key, detail);
-    queryClient.setQueryData(rowsKey, rows);
     applyDatabaseTableVersions('db', { tasks: 6, unknown: 10 });
     const updated = queryClient.getQueryData<DatabaseDetail>(key)!;
     expect(updated.tables[0]).toEqual({
@@ -107,6 +93,5 @@ describe('database write version acknowledgments', () => {
       table: { ...detail.tables[0].table, version: 6 },
     });
     expect(updated.tables[1]).toEqual(detail.tables[1]);
-    expect(queryClient.getQueryData(rowsKey)).toEqual(rows);
   });
 });

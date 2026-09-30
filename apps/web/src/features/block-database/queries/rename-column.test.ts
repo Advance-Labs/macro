@@ -1,9 +1,8 @@
 import { queryClient } from '@queries/client';
-import { databaseQueryKeys, databasesKeys } from '@queries/storage/keys';
+import { databasesKeys } from '@queries/storage/keys';
 import type {
   DatabaseColumnDetail,
   DatabaseDetail,
-  ExecOutcome,
   RenameColumnOutcome,
 } from '@service-storage/databases';
 import { QueryObserver } from '@tanstack/solid-query';
@@ -86,21 +85,6 @@ const params = {
   previousName: 'Name',
 };
 const key = databasesKeys.detail('db').queryKey;
-const rowsKey = databasesKeys.rows('db', 'tasks').queryKey;
-const rows: ExecOutcome = {
-  results: [
-    {
-      columns: [{ name: 'name', origin: null, entity_type: null }],
-      rows: [['Original task']],
-    },
-  ],
-  changes_applied: 0,
-  inserted_row_ids: [],
-  new_versions: {},
-  read_tables: ['tasks'],
-  read_versions: { tasks: 5 },
-  truncated_tables: [],
-};
 beforeEach(() => {
   vi.resetAllMocks();
   queryClient.setQueryData(key, detail);
@@ -109,97 +93,6 @@ beforeEach(() => {
 afterEach(() => queryClient.clear());
 
 describe('column rename cache and labels', () => {
-  it('refreshes the edited table snapshot and dependent answers before completing so the next write sees its current CAS version', async () => {
-    queryClient.setQueryData(rowsKey, rows);
-    const otherRowsKey = databasesKeys.rows('db', 'other').queryKey;
-    queryClient.setQueryData(otherRowsKey, rows);
-    const answerKey = databaseQueryKeys.answer(
-      'SELECT name FROM tasks'
-    ).queryKey;
-    queryClient.setQueryData(answerKey, rows);
-    const otherAnswerKey = databaseQueryKeys.answer(
-      'SELECT name FROM other'
-    ).queryKey;
-    queryClient.setQueryData(otherAnswerKey, {
-      ...rows,
-      read_versions: { other: 5 },
-    });
-    // An intervening edit means the rename response alone cannot certify old rows.
-    const latestRows: ExecOutcome = {
-      ...rows,
-      results: [{ ...rows.results[0], rows: [['Changed elsewhere']] }],
-      read_versions: { tasks: 7 },
-    };
-    let resolve!: (value: ExecOutcome) => void;
-    const refresh = vi.fn(
-      () =>
-        new Promise<ExecOutcome>((complete) => {
-          resolve = complete;
-        })
-    );
-    const observer = new QueryObserver(queryClient, {
-      queryKey: rowsKey,
-      queryFn: refresh,
-      staleTime: Infinity,
-      retry: false,
-    });
-    const unsubscribe = observer.subscribe(() => {});
-    try {
-      let completed = false;
-      const pending = (async () => {
-        await renameDatabaseColumn(params);
-        completed = true;
-      })();
-      await vi.waitFor(() => expect(refresh).toHaveBeenCalledOnce());
-      expect(completed).toBe(false);
-      expect(
-        queryClient.getQueryData<ExecOutcome>(rowsKey)?.read_versions.tasks
-      ).toBe(5);
-      resolve(latestRows);
-      await pending;
-      expect(queryClient.getQueryData<ExecOutcome>(rowsKey)).toEqual(
-        latestRows
-      );
-      expect(queryClient.getQueryState(otherRowsKey)?.isInvalidated).toBe(
-        false
-      );
-      expect(queryClient.getQueryState(answerKey)?.isInvalidated).toBe(true);
-      expect(queryClient.getQueryState(otherAnswerKey)?.isInvalidated).toBe(
-        false
-      );
-    } finally {
-      unsubscribe();
-    }
-  });
-
-  it('retains a successful rename when rows cannot refresh and does not certify stale rows with the rename version', async () => {
-    queryClient.setQueryData(rowsKey, rows);
-    const refresh = vi.fn(async (): Promise<ExecOutcome> => {
-      throw new Error('Offline');
-    });
-    const observer = new QueryObserver(queryClient, {
-      queryKey: rowsKey,
-      queryFn: refresh,
-      staleTime: Infinity,
-      retry: false,
-    });
-    const unsubscribe = observer.subscribe(() => {});
-    try {
-      await expect(renameDatabaseColumn(params)).resolves.toBeUndefined();
-      expect(refresh).toHaveBeenCalledOnce();
-      expect(
-        queryClient.getQueryData<DatabaseDetail>(key)?.tables[0].columns[0]
-          .column.display_name
-      ).toBe('Task');
-      expect(
-        queryClient.getQueryData<ExecOutcome>(rowsKey)?.read_versions.tasks
-      ).toBe(5);
-      expect(queryClient.getQueryState(rowsKey)?.status).toBe('error');
-    } finally {
-      unsubscribe();
-    }
-  });
-
   it('updates only the placement label and version, preserves SQL, and supplies the new label to grid and AI', async () => {
     const otherKey = databasesKeys.detail('other').queryKey;
     queryClient.setQueryData(otherKey, detail);

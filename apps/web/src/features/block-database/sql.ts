@@ -2,8 +2,9 @@
  * SQL text builders for the database grid, in the Macro Databases dialect
  * (`crates/database_sql`).
  *
- * `POST /databases/exec` takes SQL as one string and nothing else — there is
- * no parameter array — so every value is inlined as a literal here. Table and
+ * Reads run in the browser engine and writes through `POST /databases/exec`;
+ * both take SQL as one string and nothing else — there is no parameter
+ * array — so every value is inlined as a literal here. Table and
  * column names arrive from `GET /databases/{id}` already double-quoted
  * (`"Guest List"`) and are used verbatim; nothing in this module should ever
  * concatenate a raw string into a statement.
@@ -25,6 +26,12 @@ import {
 
 /** The virtual row identity column, first in every row-shaped SELECT. */
 export const ROW_ID_COLUMN = 'row_id';
+
+/**
+ * The virtual column holding a row's place in its table. Rows arrive in no
+ * particular order, so every read that lists rows ends its ORDER BY with it.
+ */
+const ROW_POSITION_COLUMN = 'row_position';
 
 /**
  * The name a result column carries for this table column: its display name,
@@ -81,9 +88,14 @@ export function sqlLiteral(value: SqlWriteValue): string {
   return `[${value.map((item) => sqlLiteral(item)).join(', ')}]`;
 }
 
-/** `SELECT * FROM <table>` — the grid's read; `row_id` comes back first. */
+/** `SELECT * FROM <table>`; `row_id` comes back first. */
 export function selectAllStatement(tableSqlName: string): string {
   return `SELECT * FROM ${sqlName(tableSqlName)}`;
+}
+
+/** Every row of a table, in the table's order. */
+export function tableRowsStatement(tableSqlName: string): string {
+  return `${selectAllStatement(tableSqlName)} ORDER BY ${ROW_POSITION_COLUMN}`;
 }
 
 /** A view column with the quoted name statements use for it. */
@@ -329,18 +341,21 @@ function searchCondition(
   return either(conditions) ?? NO_ROWS;
 }
 
-/** Relations hold row ids, not the labels shown, so they do not sort. */
+/**
+ * The view's sorts, then the table's order for rows they leave tied.
+ * Relations hold row ids, not the labels shown, so they do not sort.
+ */
 function orderBy(
   sorts: readonly DatabaseSort[],
   columns: ReadonlyMap<string, ViewStatementColumn>
-): string | undefined {
+): string {
   const keys = sorts.flatMap((sort) => {
     const target = columns.get(sort.columnId);
     return target && !target.column.relation
       ? [`${target.sqlName} ${sort.direction === 'asc' ? 'ASC' : 'DESC'}`]
       : [];
   });
-  return keys.length ? keys.join(', ') : undefined;
+  return [...keys, ROW_POSITION_COLUMN].join(', ');
 }
 
 /**
@@ -364,11 +379,10 @@ export function viewSelectStatement(args: {
     searchCondition(args.view.search, args.columns),
     args.view.filterConjunction === 'or' ? either(filters) : both(filters),
   ].filter((condition) => condition !== undefined);
-  const order = orderBy(args.view.sorts, columns);
   return [
     selectAllStatement(args.tableSqlName),
     ...(where.length ? [`WHERE ${where.join(' AND ')}`] : []),
-    ...(order ? [`ORDER BY ${order}`] : []),
+    `ORDER BY ${orderBy(args.view.sorts, columns)}`,
   ].join(' ');
 }
 
@@ -447,24 +461,4 @@ export function linkedFromStatement(args: {
     `SELECT ${ROW_ID_COLUMN} FROM ${sqlName(args.tableSqlName)} ` +
     `WHERE ${sqlName(args.columnSqlName)} HAS ${sqlLiteral(args.rowId)}`
   );
-}
-
-/**
- * One page of an export. Rows come back in table position order, so paging
- * is stable as long as the table version does not change between pages —
- * which the caller checks.
- */
-export function exportPageStatement(
-  tableSqlName: string,
-  offset: number,
-  limit: number
-): string {
-  if (
-    !Number.isSafeInteger(offset) ||
-    offset < 0 ||
-    !Number.isSafeInteger(limit) ||
-    limit < 1
-  )
-    throw new Error('Invalid export page');
-  return `${selectAllStatement(tableSqlName)} LIMIT ${limit} OFFSET ${offset}`;
 }

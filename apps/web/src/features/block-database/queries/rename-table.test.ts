@@ -1,10 +1,6 @@
 import { queryClient } from '@queries/client';
-import { databaseQueryKeys, databasesKeys } from '@queries/storage/keys';
-import type {
-  DatabaseDetail,
-  DatabaseTable,
-  ExecOutcome,
-} from '@service-storage/databases';
+import { databasesKeys } from '@queries/storage/keys';
+import type { DatabaseDetail, DatabaseTable } from '@service-storage/databases';
 import { QueryObserver } from '@tanstack/solid-query';
 import { err, type Ok, ok } from 'neverthrow';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -60,21 +56,6 @@ const parameters = {
   previousName: 'Guests',
 };
 const key = databasesKeys.detail('db').queryKey;
-const rowsKey = databasesKeys.rows('db', 'guests').queryKey;
-const rows: ExecOutcome = {
-  results: [
-    {
-      columns: [{ name: 'Name', origin: null, entity_type: null }],
-      rows: [['Original guest']],
-    },
-  ],
-  changes_applied: 0,
-  inserted_row_ids: [],
-  new_versions: {},
-  read_tables: ['guests'],
-  read_versions: { guests: 5 },
-  truncated_tables: [],
-};
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -116,93 +97,6 @@ describe('table rename cache', () => {
     expect(queryClient.getQueryData(key)).toEqual(detail);
     expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true);
     expect(queryClient.getQueryState(otherKey)?.isInvalidated).toBe(false);
-  });
-
-  it('awaits fresh rows and their CAS version, and invalidates only answers that read the renamed table', async () => {
-    queryClient.setQueryData(rowsKey, rows);
-    const otherRowsKey = databasesKeys.rows('db', 'other').queryKey;
-    queryClient.setQueryData(otherRowsKey, rows);
-    const answerKey = databaseQueryKeys.answer(
-      'SELECT Name FROM stable_guests_uuid'
-    ).queryKey;
-    queryClient.setQueryData(answerKey, rows);
-    const otherAnswerKey = databaseQueryKeys.answer(
-      'SELECT Name FROM other'
-    ).queryKey;
-    queryClient.setQueryData(otherAnswerKey, {
-      ...rows,
-      read_versions: { other: 5 },
-    });
-    const latestRows: ExecOutcome = {
-      ...rows,
-      results: [{ ...rows.results[0], rows: [['Updated guest']] }],
-      read_versions: { guests: 7 },
-    };
-    let resolve!: (value: ExecOutcome) => void;
-    const refresh = vi.fn(
-      () =>
-        new Promise<ExecOutcome>((complete) => {
-          resolve = complete;
-        })
-    );
-    const observer = new QueryObserver(queryClient, {
-      queryKey: rowsKey,
-      queryFn: refresh,
-      staleTime: Infinity,
-      retry: false,
-    });
-    const unsubscribe = observer.subscribe(() => {});
-    try {
-      let completed = false;
-      const pending = (async () => {
-        await renameDatabaseTable(parameters);
-        completed = true;
-      })();
-      await vi.waitFor(() => expect(refresh).toHaveBeenCalledOnce());
-      expect(completed).toBe(false);
-      expect(
-        queryClient.getQueryData<ExecOutcome>(rowsKey)?.read_versions.guests
-      ).toBe(5);
-      resolve(latestRows);
-      await pending;
-      expect(queryClient.getQueryData(rowsKey)).toEqual(latestRows);
-      expect(queryClient.getQueryState(otherRowsKey)?.isInvalidated).toBe(
-        false
-      );
-      expect(queryClient.getQueryState(answerKey)?.isInvalidated).toBe(true);
-      expect(queryClient.getQueryState(otherAnswerKey)?.isInvalidated).toBe(
-        false
-      );
-    } finally {
-      unsubscribe();
-    }
-  });
-
-  it('keeps a committed table rename successful if rows fail to refresh without assigning a newer version to old data', async () => {
-    queryClient.setQueryData(rowsKey, rows);
-    const refresh = vi.fn(async (): Promise<ExecOutcome> => {
-      throw new Error('Offline');
-    });
-    const observer = new QueryObserver(queryClient, {
-      queryKey: rowsKey,
-      queryFn: refresh,
-      staleTime: Infinity,
-      retry: false,
-    });
-    const unsubscribe = observer.subscribe(() => {});
-    try {
-      await expect(renameDatabaseTable(parameters)).resolves.toBeUndefined();
-      expect(refresh).toHaveBeenCalledOnce();
-      expect(
-        queryClient.getQueryData<DatabaseDetail>(key)?.tables[0].table.name
-      ).toBe('Attendees');
-      expect(
-        queryClient.getQueryData<ExecOutcome>(rowsKey)?.read_versions.guests
-      ).toBe(5);
-      expect(queryClient.getQueryState(rowsKey)?.status).toBe('error');
-    } finally {
-      unsubscribe();
-    }
   });
 
   it('keeps a committed rename successful when the follow-up schema refresh fails', async () => {

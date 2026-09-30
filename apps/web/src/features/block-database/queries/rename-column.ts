@@ -1,5 +1,4 @@
 import { queryClient } from '@queries/client';
-import { invalidateDatabaseRows } from '@queries/storage/databases';
 import { databasesKeys } from '@queries/storage/keys';
 import { storageServiceClient } from '@service-storage/client';
 import type { DatabaseDetail } from '@service-storage/databases';
@@ -55,11 +54,7 @@ export async function renameDatabaseColumn(params: {
         ),
       }
   );
-  // The next cell edit uses the rows snapshot's version, not the schema's.
-  // Re-read rows rather than assigning a new version to potentially older data.
-  // Neither refresh may report an already-committed rename as a failed write.
-  await Promise.all([
-    queryClient.invalidateQueries({ queryKey }, { throwOnError: false }),
-    invalidateDatabaseRows(params.databaseId, params.tableId),
-  ]);
+  // Open reads rerun against the refreshed schema. The refresh may not report
+  // an already-committed rename as a failed write.
+  await queryClient.invalidateQueries({ queryKey }, { throwOnError: false });
 }

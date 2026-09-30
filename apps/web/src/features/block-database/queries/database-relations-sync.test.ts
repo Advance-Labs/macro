@@ -9,7 +9,6 @@ const mock = vi.hoisted(() => ({
   refresh: undefined as (() => void) | undefined,
   subscribe: vi.fn(),
   invalidateDatabase: vi.fn(),
-  invalidateRows: vi.fn(),
 }));
 vi.mock('@service-connection/websocket', () => ({
   createConnectionWebsocketEffect: (handler: typeof mock.event) => {
@@ -24,12 +23,12 @@ vi.mock('@service-connection/client', () => ({
 }));
 vi.mock('@queries/storage/databases', () => ({
   invalidateDatabase: mock.invalidateDatabase,
-  invalidateDatabaseRows: mock.invalidateRows,
 }));
 
-it('subscribes to an external related database and invalidates its rows on gateway change/reconnect', () => {
+it('subscribes to an external related database, re-reads its schema on gateway change and its rows on reconnect', () => {
+  const refreshRows = vi.fn();
   const dispose = createRoot((dispose) => {
-    useRelatedDatabaseSync('crm-db', () => ['customers']);
+    useRelatedDatabaseSync('crm-db', refreshRows);
     return dispose;
   });
   expect(mock.subscribe).toHaveBeenCalledWith({
@@ -40,15 +39,14 @@ it('subscribes to an external related database and invalidates its rows on gatew
     type: 'database_table_changed',
     data: { databaseId: 'support-db', tableId: 'tickets', version: 3 },
   });
-  expect(mock.invalidateRows).not.toHaveBeenCalled();
+  expect(mock.invalidateDatabase).not.toHaveBeenCalled();
   mock.event?.({
     type: 'database_table_changed',
     data: { databaseId: 'crm-db', tableId: 'customers', version: 4 },
   });
   expect(mock.invalidateDatabase).toHaveBeenCalledWith('crm-db');
-  expect(mock.invalidateRows).toHaveBeenCalledWith('crm-db', 'customers');
-  mock.invalidateRows.mockClear();
+  expect(refreshRows).not.toHaveBeenCalled();
   mock.refresh?.();
-  expect(mock.invalidateRows).toHaveBeenCalledWith('crm-db', 'customers');
+  expect(refreshRows).toHaveBeenCalledOnce();
   dispose();
 });

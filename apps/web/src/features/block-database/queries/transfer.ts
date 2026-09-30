@@ -1,12 +1,16 @@
-import { invalidateDatabase, querySql } from '@queries/storage/databases';
+import { databaseSqlAnswer } from '@core/database-sql/answer';
+import { databaseSqlCatalog } from '@core/database-sql/catalog';
+import { readDatabaseSql } from '@queries/database-sql/create-database-sql-query';
+import { invalidateDatabase } from '@queries/storage/databases';
 import { storageServiceClient } from '@service-storage/client';
 import type {
+  DatabaseDetail,
   DatabaseTableDetail,
   ImportDatabaseTableRequest,
   SqlValue,
 } from '@service-storage/databases';
 import { encodeDatabaseCsv } from '../core/csv';
-import { exportPageStatement, resultColumnName } from '../sql';
+import { resultColumnName, tableRowsStatement } from '../sql';
 
 /** Request IDs survive a transport error; retrying resolves the original import. */
 export async function importDatabaseTable(
@@ -29,39 +33,32 @@ export async function importDatabaseTable(
   return result.value;
 }
 
-/** Never silently export a partial query or a mixture of table versions. */
+/** Never silently export a partial read. */
 export async function exportDatabaseTableCsv(
+  database: DatabaseDetail,
   table: DatabaseTableDetail
 ): Promise<Blob> {
-  const rows: SqlValue[][] = [];
-  let version: number | undefined;
   const columns = table.columns.filter(
     (column) => column.column.config?.kind !== 'lookup'
   );
-  for (let offset = 0; ; offset += 5000) {
-    const outcome = await querySql(
-      exportPageStatement(table.sql_name, offset, 5000)
-    );
-    if (outcome.truncated_tables.length)
-      throw new Error('This table is too large for CSV export.');
-    const current = outcome.read_versions[table.table.id];
-    if (current === undefined || (version !== undefined && version !== current))
-      throw new Error('The table changed during export. Please try again.');
-    version = current;
-    const result = outcome.results[0];
-    if (!result) throw new Error('The table could not be exported.');
-    const indexes = columns.map((column) =>
-      result.columns.findIndex(
-        (field) => field.name === resultColumnName(column)
-      )
-    );
-    if (indexes.some((index) => index < 0))
-      throw new Error(
-        'The columns changed. Refresh the database before exporting.'
-      );
-    rows.push(...result.rows.map((row) => indexes.map((index) => row[index])));
-    if (result.rows.length < 5000) break;
-  }
+  const catalog = databaseSqlCatalog(
+    [{ ...database, tables: [table] }],
+    database.database.id
+  );
+  const outcome = await readDatabaseSql({
+    catalog,
+    sql: tableRowsStatement(table.sql_name),
+  });
+  if (outcome.truncated)
+    throw new Error('This table is too large for CSV export.');
+  const result = databaseSqlAnswer(outcome, catalog, [database]).results[0];
+  if (!result) throw new Error('The table could not be exported.');
+  const indexes = columns.map((column) =>
+    result.columns.findIndex((field) => field.name === resultColumnName(column))
+  );
+  const rows: SqlValue[][] = result.rows.map((row) =>
+    indexes.map((index) => row[index])
+  );
   return new Blob(
     [
       encodeDatabaseCsv(

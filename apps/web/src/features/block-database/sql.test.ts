@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   deleteRowStatement,
-  exportPageStatement,
   insertRowStatement,
   linkedFromStatement,
   rowsByIdStatement,
   selectAllStatement,
   sqlLiteral,
+  tableRowsStatement,
   updateCellStatement,
   type ViewStatementColumn,
   viewSelectStatement,
@@ -28,8 +28,8 @@ describe('database row SQL', () => {
       "DELETE FROM \"rows\" WHERE row_id = 'a''b'"
     );
     expect(selectAllStatement('"Guests"')).toBe('SELECT * FROM "Guests"');
-    expect(exportPageStatement('"Guests"', 5000, 5000)).toBe(
-      'SELECT * FROM "Guests" LIMIT 5000 OFFSET 5000'
+    expect(tableRowsStatement('"Guests"')).toBe(
+      'SELECT * FROM "Guests" ORDER BY row_position'
     );
   });
   it('writes checkboxes, lists, and NULL in the dialect', () => {
@@ -203,7 +203,7 @@ describe('view statements', () => {
           search: '',
         },
       })
-    ).toBe('SELECT * FROM "Tasks"');
+    ).toBe('SELECT * FROM "Tasks" ORDER BY row_position');
   });
 
   it('searches text columns and matching select options case-insensitively, skipping numbers and dates', () => {
@@ -222,7 +222,7 @@ describe('view statements', () => {
         },
       })
     ).toBe(
-      'SELECT * FROM "Tasks" WHERE ("Name" LIKE \'%DESIGN%\' OR "Tags" HAS \'Design\' OR "Tags" HAS \'Design review\')'
+      'SELECT * FROM "Tasks" WHERE ("Name" LIKE \'%DESIGN%\' OR "Tags" HAS \'Design\' OR "Tags" HAS \'Design review\') ORDER BY row_position'
     );
   });
 
@@ -241,7 +241,7 @@ describe('view statements', () => {
           search: 'launch',
         },
       })
-    ).toBe('SELECT * FROM "Tasks" WHERE row_id IS NULL');
+    ).toBe('SELECT * FROM "Tasks" WHERE row_id IS NULL ORDER BY row_position');
   });
 
   it('escapes LIKE wildcards and quotes in a contains filter', () => {
@@ -267,7 +267,7 @@ describe('view statements', () => {
         },
       })
     ).toBe(
-      "SELECT * FROM \"Tasks\" WHERE \"Name\" LIKE '%50\\%\\_off\\\\Sam''s%' ESCAPE '\\'"
+      "SELECT * FROM \"Tasks\" WHERE \"Name\" LIKE '%50\\%\\_off\\\\Sam''s%' ESCAPE '\\' ORDER BY row_position"
     );
   });
 
@@ -307,7 +307,7 @@ describe('view statements', () => {
         },
       })
     ).toBe(
-      'SELECT * FROM "Tasks" WHERE ("Name" LIKE \'Plan\' AND ("Name" != \'\' AND "Name" NOT LIKE \'Draft\') AND ("Name" != \'\' AND "Name" NOT LIKE \'%old%\') AND "Name" LIKE \'P%\')'
+      'SELECT * FROM "Tasks" WHERE ("Name" LIKE \'Plan\' AND ("Name" != \'\' AND "Name" NOT LIKE \'Draft\') AND ("Name" != \'\' AND "Name" NOT LIKE \'%old%\') AND "Name" LIKE \'P%\') ORDER BY row_position'
     );
   });
 
@@ -330,7 +330,7 @@ describe('view statements', () => {
           search: '',
         },
       })
-    ).toBe('SELECT * FROM "Tasks"');
+    ).toBe('SELECT * FROM "Tasks" ORDER BY row_position');
   });
 
   it('treats null and empty text as empty', () => {
@@ -357,7 +357,7 @@ describe('view statements', () => {
         },
       })
     ).toBe(
-      'SELECT * FROM "Tasks" WHERE (("Name" IS NULL OR "Name" = \'\') AND "Amount" IS NOT NULL)'
+      'SELECT * FROM "Tasks" WHERE (("Name" IS NULL OR "Name" = \'\') AND "Amount" IS NOT NULL) ORDER BY row_position'
     );
   });
 
@@ -384,7 +384,9 @@ describe('view statements', () => {
           search: '',
         },
       })
-    ).toBe('SELECT * FROM "Tasks" WHERE ("Amount" >= 9 AND "Amount" != -1.5)');
+    ).toBe(
+      'SELECT * FROM "Tasks" WHERE ("Amount" >= 9 AND "Amount" != -1.5) ORDER BY row_position'
+    );
   });
 
   it('compares dates by calendar day', () => {
@@ -418,7 +420,7 @@ describe('view statements', () => {
         },
       })
     ).toBe(
-      'SELECT * FROM "Tasks" WHERE (("Due" >= \'2026-09-30\' AND "Due" < \'2026-10-01\') AND ("Due" < \'2026-12-31\' OR "Due" >= \'2027-01-01\') AND "Due" >= \'2026-03-01\' AND "Due" < \'2026-10-02\')'
+      'SELECT * FROM "Tasks" WHERE (("Due" >= \'2026-09-30\' AND "Due" < \'2026-10-01\') AND ("Due" < \'2026-12-31\' OR "Due" >= \'2027-01-01\') AND "Due" >= \'2026-03-01\' AND "Due" < \'2026-10-02\') ORDER BY row_position'
     );
   });
 
@@ -439,7 +441,7 @@ describe('view statements', () => {
           search: '',
         },
       })
-    ).toBe('SELECT * FROM "Tasks" WHERE "Done" = FALSE');
+    ).toBe('SELECT * FROM "Tasks" WHERE "Done" = FALSE ORDER BY row_position');
   });
 
   it('matches single selects by option and multi-selects by membership', () => {
@@ -467,7 +469,7 @@ describe('view statements', () => {
         },
       })
     ).toBe(
-      'SELECT * FROM "Tasks" WHERE ("Status" IN (\'Done\') AND "Tags" HAS \'Launch\' AND "Tags" NOT HAS \'Design\')'
+      'SELECT * FROM "Tasks" WHERE ("Status" IN (\'Done\') AND "Tags" HAS \'Launch\' AND "Tags" NOT HAS \'Design\') ORDER BY row_position'
     );
   });
 
@@ -512,7 +514,7 @@ describe('view statements', () => {
         },
       })
     ).toBe(
-      'SELECT * FROM "Tasks" WHERE ("Stage" HAS \'Design, "review"\' AND row_id IS NOT NULL)'
+      'SELECT * FROM "Tasks" WHERE ("Stage" HAS \'Design, "review"\' AND row_id IS NOT NULL) ORDER BY row_position'
     );
   });
 
@@ -538,7 +540,7 @@ describe('view statements', () => {
           search: '',
         },
       })
-    ).toBe('SELECT * FROM "Tasks" WHERE row_id IS NULL');
+    ).toBe('SELECT * FROM "Tasks" WHERE row_id IS NULL ORDER BY row_position');
   });
 
   it('joins filters with OR and still requires the search', () => {
@@ -560,7 +562,7 @@ describe('view statements', () => {
         },
       })
     ).toBe(
-      'SELECT * FROM "Tasks" WHERE "Name" LIKE \'%plan%\' AND ("Status" IN (\'Done\') OR "Amount" > 100)'
+      'SELECT * FROM "Tasks" WHERE "Name" LIKE \'%plan%\' AND ("Status" IN (\'Done\') OR "Amount" > 100) ORDER BY row_position'
     );
   });
 
@@ -588,7 +590,7 @@ describe('view statements', () => {
         },
       })
     ).toBe(
-      'SELECT * FROM "Tasks" WHERE ("Amount" > 100 OR row_id IS NOT NULL)'
+      'SELECT * FROM "Tasks" WHERE ("Amount" > 100 OR row_id IS NOT NULL) ORDER BY row_position'
     );
   });
 
@@ -610,7 +612,7 @@ describe('view statements', () => {
         },
       })
     ).toBe(
-      'SELECT * FROM "Tasks" WHERE ("Status" IN (\'Done\') AND "Amount" > 100)'
+      'SELECT * FROM "Tasks" WHERE ("Status" IN (\'Done\') AND "Amount" > 100) ORDER BY row_position'
     );
   });
 
@@ -642,7 +644,9 @@ describe('view statements', () => {
           search: '',
         },
       })
-    ).toBe('SELECT * FROM "Tasks" WHERE "Customer" IS NOT NULL');
+    ).toBe(
+      'SELECT * FROM "Tasks" WHERE "Customer" IS NOT NULL ORDER BY row_position'
+    );
   });
 
   it('orders by each sort in turn, skipping relations', () => {
@@ -664,6 +668,8 @@ describe('view statements', () => {
           search: '',
         },
       })
-    ).toBe('SELECT * FROM "Tasks" ORDER BY "Due" DESC, "Name" ASC');
+    ).toBe(
+      'SELECT * FROM "Tasks" ORDER BY "Due" DESC, "Name" ASC, row_position'
+    );
   });
 });

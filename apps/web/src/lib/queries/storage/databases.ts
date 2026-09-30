@@ -1,8 +1,9 @@
 /**
  * Server state for Macro Databases.
  *
- * Schema reads go through `GET /databases/{id}`; every row read and write
- * goes through `POST /databases/exec`, which is the whole data surface.
+ * Schema reads go through `GET /databases/{id}`; row writes go through
+ * `POST /databases/exec`. Row reads run in the browser's SQL engine over Soup
+ * (`@queries/database-sql`).
  */
 import { analytics } from '@app/lib/analytics';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
@@ -19,36 +20,84 @@ import type {
   ExecRequest,
   ListedDatabase,
 } from '@service-storage/databases';
-import { useQuery } from '@tanstack/solid-query';
+import { useQueries, useQuery } from '@tanstack/solid-query';
+import type { Accessor } from 'solid-js';
 import { queryClient } from '../client';
-import { databaseQueryKeys, databasesKeys } from './keys';
+import { databasesKeys } from './keys';
 
 const DATABASE_STALE_TIME = 30 * 1000;
+
+const databaseListQueryOptions = {
+  queryKey: databasesKeys.list.queryKey,
+  queryFn: async (): Promise<ListedDatabase[]> =>
+    throwOnErr(async () => await storageServiceClient.databases.list()),
+  staleTime: DATABASE_STALE_TIME,
+};
 
 export function useDatabasesQuery() {
   const flag = useFeatureFlag(enableDatabases);
   return useQuery(() => ({
-    queryKey: databasesKeys.list.queryKey,
+    ...databaseListQueryOptions,
     enabled: flag().enabled,
-    queryFn: async (): Promise<ListedDatabase[]> =>
-      throwOnErr(async () => await storageServiceClient.databases.list()),
-    staleTime: DATABASE_STALE_TIME,
   }));
+}
+
+function databaseDetailQueryOptions(id: string) {
+  return {
+    queryKey: databasesKeys.detail(id).queryKey,
+    queryFn: async (): Promise<DatabaseDetail> =>
+      throwOnErr(async () => await storageServiceClient.databases.get({ id })),
+    staleTime: DATABASE_STALE_TIME,
+  };
 }
 
 export function useDatabaseDetailQuery(databaseId: () => string | undefined) {
   return useQuery(() => {
     const id = databaseId();
-    return {
-      queryKey: databasesKeys.detail(id ?? '').queryKey,
-      queryFn: async (): Promise<DatabaseDetail> =>
-        throwOnErr(
-          async () => await storageServiceClient.databases.get({ id: id! })
-        ),
-      staleTime: DATABASE_STALE_TIME,
-      enabled: !!id,
-    };
+    return { ...databaseDetailQueryOptions(id ?? ''), enabled: !!id };
   });
+}
+
+function liveDatabaseIds(listed: readonly ListedDatabase[]): string[] {
+  return listed
+    .filter((entry) => entry.database.trashed_at === null)
+    .map((entry) => entry.database.id);
+}
+
+/**
+ * Every database the viewer can reach, in detail: what the server builds a
+ * statement's catalog from when it may read any of them.
+ */
+export function useViewerDatabases(): {
+  databases: Accessor<DatabaseDetail[] | undefined>;
+  error: Accessor<unknown>;
+} {
+  const list = useDatabasesQuery();
+  const details = useQueries(() => ({
+    queries: (list.isSuccess ? liveDatabaseIds(list.data) : []).map(
+      databaseDetailQueryOptions
+    ),
+  }));
+  return {
+    databases: () =>
+      list.isSuccess && details.every((detail) => detail.isSuccess)
+        ? details.map((detail) => detail.data)
+        : undefined,
+    error: () =>
+      list.isError
+        ? list.error
+        : details.find((detail) => detail.isError)?.error,
+  };
+}
+
+/** {@link useViewerDatabases}, read once. */
+export async function fetchViewerDatabases(): Promise<DatabaseDetail[]> {
+  const listed = await queryClient.fetchQuery(databaseListQueryOptions);
+  return Promise.all(
+    liveDatabaseIds(listed).map((id) =>
+      queryClient.fetchQuery(databaseDetailQueryOptions(id))
+    )
+  );
 }
 
 /** A refused `exec`: the service's message plus why it refused. */
@@ -89,33 +138,13 @@ export async function querySql(sql: string): Promise<ExecOutcome> {
 }
 
 /**
- * Re-read one database's schema.
- *
- * Deliberately narrow: rows live under their own key and are invalidated by
- * [`invalidateDatabaseRows`], so a schema change never re-runs every open
- * grid's `SELECT` — let alone another database's.
+ * Re-read one database's schema. Open reads rerun when the catalog they are
+ * built from changes, so a version-only change reruns nothing.
  */
 export function invalidateDatabase(databaseId: string) {
   return queryClient.invalidateQueries({
     queryKey: databasesKeys.detail(databaseId).queryKey,
   });
-}
-
-export function invalidateDatabaseRows(databaseId: string, tableId: string) {
-  return Promise.all([
-    queryClient.invalidateQueries({
-      queryKey: databasesKeys.rows(databaseId, tableId).queryKey,
-    }),
-    queryClient.invalidateQueries({
-      queryKey: databaseQueryKeys._def,
-      predicate: (query) => {
-        const data = query.state.data as
-          | { read_versions?: Record<string, number> }
-          | undefined;
-        return !!data?.read_versions && tableId in data.read_versions;
-      },
-    }),
-  ]);
 }
 
 /**
@@ -172,8 +201,8 @@ export async function createDatabaseColumn(params: {
  *
  * Returns `undefined` if the service refused. The updated column is folded
  * into the cached schema rather than refetched, so the dropdown that asked for
- * the option can offer it on the very next open; the table's rows are
- * invalidated because the option list is a CHECK on what they may hold.
+ * the option can offer it on the very next open; open reads rerun with the
+ * new option in their catalog.
  */
 export async function addDatabaseColumnOptions(params: {
   databaseId: string;
@@ -209,7 +238,6 @@ export async function addDatabaseColumnOptions(params: {
       };
     }
   );
-  await invalidateDatabaseRows(params.databaseId, params.tableId);
 
   return updated;
 }

@@ -75,7 +75,7 @@ export function DatabasePageActions(props: {
     setExporting(true);
     try {
       downloadFile(
-        await exportDatabaseTableCsv(table),
+        await exportDatabaseTableCsv(props.detail, table),
         `${table.table.name}.csv`
       );
     } catch (error) {

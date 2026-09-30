@@ -1,8 +1,5 @@
 import { queryClient } from '@queries/client';
-import {
-  invalidateDatabase,
-  invalidateDatabaseRows,
-} from '@queries/storage/databases';
+import { invalidateDatabase } from '@queries/storage/databases';
 import { databasesKeys } from '@queries/storage/keys';
 import { storageServiceClient } from '@service-storage/client';
 import type { DatabaseDetail } from '@service-storage/databases';
@@ -40,14 +37,10 @@ export async function renameDatabaseTable(params: {
         ),
       }
   );
-  // Physical SQL names can change throughout the catalog. Read aliases stay stable.
-  // Cell writes use the rows snapshot's version, which also advances on rename.
+  // SQL names can change throughout the catalog; open reads rerun against it.
   // A refresh failure does not turn the committed rename into a failed write.
-  await Promise.all([
-    queryClient.invalidateQueries(
-      { queryKey: databasesKeys.detail._def },
-      { throwOnError: false }
-    ),
-    invalidateDatabaseRows(params.databaseId, params.tableId),
-  ]);
+  await queryClient.invalidateQueries(
+    { queryKey: databasesKeys.detail._def },
+    { throwOnError: false }
+  );
 }

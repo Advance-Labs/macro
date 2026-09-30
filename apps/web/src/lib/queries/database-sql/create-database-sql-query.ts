@@ -41,6 +41,17 @@ export interface DatabaseSqlStatement {
   sql: string;
 }
 
+/** Equal statements answer alike, so a rebuilt but unchanged one need not rerun. */
+export function sameDatabaseSqlStatement(
+  left: DatabaseSqlStatement | undefined,
+  right: DatabaseSqlStatement | undefined
+): boolean {
+  return (
+    left?.sql === right?.sql &&
+    JSON.stringify(left?.catalog) === JSON.stringify(right?.catalog)
+  );
+}
+
 export interface DatabaseSqlQueryCapabilities {
   client: () => Client;
   cacheHost: () =>
@@ -123,8 +134,6 @@ export function createDatabaseSqlQuery(
       if (run === latest) setLoading(false);
     }
   };
-  // A failure is kept in `error`; only an explicit refresh rejects with it.
-  const quietly = (running: Promise<void>) => running.catch(() => {});
 
   createEffect(
     on(statement, (current) => {
@@ -136,7 +145,7 @@ export function createDatabaseSqlQuery(
         setOutcome(undefined);
         return;
       }
-      void quietly(run(current, 'cache-and-network', false));
+      void settled(run(current, 'cache-and-network', false));
     })
   );
 
@@ -148,7 +157,7 @@ export function createDatabaseSqlQuery(
     onCleanup(
       subscribeToVisibleCacheChanges(host, () => {
         const current = untrack(statement);
-        return current ? quietly(run(current, 'cache-first', true)) : undefined;
+        return current ? settled(run(current, 'cache-first', true)) : undefined;
       })
     );
   });
@@ -166,6 +175,22 @@ export function createDatabaseSqlQuery(
       if (current) await run(current, 'network-only', false);
     },
   };
+}
+
+/** A run's failure is kept in `error`; only an explicit refresh rejects with it. */
+async function settled(running: Promise<void>): Promise<void> {
+  try {
+    await running;
+  } catch {
+    // Kept in `error`.
+  }
+}
+
+/** Refresh without waiting; a failure shows through the reader's own error. */
+export function refreshInBackground(reader: {
+  refresh: () => Promise<void>;
+}): void {
+  void settled(reader.refresh());
 }
 
 /** One read of a statement from the network, for an answer nothing keeps live. */

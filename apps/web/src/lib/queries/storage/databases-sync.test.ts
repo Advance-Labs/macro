@@ -22,7 +22,6 @@ vi.mock('@service-storage/databases', () => ({
 }));
 vi.mock('./databases', () => ({
   invalidateDatabase: vi.fn(),
-  invalidateDatabaseRows: vi.fn(),
 }));
 
 function relay(

@@ -14,7 +14,7 @@ import {
 import { ReactiveMap } from '@solid-primitives/map';
 import { debounce } from '@solid-primitives/scheduled';
 import { type Accessor, createEffect, on, onCleanup, untrack } from 'solid-js';
-import { invalidateDatabase, invalidateDatabaseRows } from './databases';
+import { invalidateDatabase } from './databases';
 
 /** Gateway message type published by `crates/databases` on every write. */
 const TABLE_CHANGED_MESSAGE_TYPE = 'database_table_changed';
@@ -27,7 +27,8 @@ const AWARENESS_HEARTBEAT_MS = 20_000;
 const AWARENESS_EXPIRY_MS = 45_000;
 const AWARENESS_SWEEP_MS = 5_000;
 
-type TableChangedMessage = {
+/** One table's new version, as the gateway announces it. */
+export type DatabaseTableChange = {
   databaseId: string;
   tableId: string;
   version: number;
@@ -48,21 +49,37 @@ function parseMessageData<Data>(message: {
 }
 
 /**
- * Re-read a database whenever the gateway reports one of its tables changed.
- *
- * Results are never pushed — the message carries only the table's new version,
- * and every viewer re-executes its own queries as itself.
+ * Every table change the gateway reports, for the databases this client
+ * tracks. Results are never pushed — the message carries only the table's
+ * new version, and every viewer re-reads its own statements as itself.
  */
-export function useDatabaseTableChangedSync(
-  databaseId: () => string | undefined
+export function useDatabaseTableChanges(
+  onChange: (change: DatabaseTableChange) => void
 ) {
   createConnectionWebsocketEffect((message) => {
     if (message.type !== TABLE_CHANGED_MESSAGE_TYPE) return;
-    const data = parseMessageData<TableChangedMessage>(message);
-    if (!data?.databaseId || data.databaseId !== databaseId()) return;
+    const data = parseMessageData<Partial<DatabaseTableChange>>(message);
+    if (
+      typeof data?.databaseId !== 'string' ||
+      typeof data.tableId !== 'string' ||
+      typeof data.version !== 'number'
+    )
+      return;
+    onChange({
+      databaseId: data.databaseId,
+      tableId: data.tableId,
+      version: data.version,
+    });
+  });
+}
 
-    invalidateDatabase(data.databaseId);
-    if (data.tableId) invalidateDatabaseRows(data.databaseId, data.tableId);
+/** Re-read a database's schema whenever the gateway reports one of its tables changed. */
+export function useDatabaseTableChangedSync(
+  databaseId: () => string | undefined
+) {
+  useDatabaseTableChanges((change) => {
+    if (change.databaseId === databaseId())
+      void invalidateDatabase(change.databaseId);
   });
 }
 

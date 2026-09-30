@@ -1,11 +1,15 @@
 import { StaticMarkdownContext } from '@core/component/LexicalMarkdown/component/core/StaticMarkdown';
+import { refreshInBackground } from '@queries/database-sql/create-database-sql-query';
 import {
   addDatabaseColumnOptions,
   applyDatabaseTableVersions,
   execSql,
   useDatabaseDetailQuery,
 } from '@queries/storage/databases';
-import { useDatabaseAwareness } from '@queries/storage/databases-sync';
+import {
+  useDatabaseAwareness,
+  useDatabaseTableChanges,
+} from '@queries/storage/databases-sync';
 import type {
   DatabaseTableDetail,
   ExecRequest,
@@ -91,13 +95,18 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
     execSql({ ...request, scope: databaseId });
   const relations = createDatabaseRelations({
     columns: () => table().columns,
-    exec,
+    onTableChanged: (listener) =>
+      useDatabaseTableChanges((change) => listener(change.tableId)),
   });
   const source = createDatabaseRowsSource({
     databaseId,
     table,
     view: () => props.view ?? defaultDatabaseView(),
     exec,
+    onTableChanged: (listener) =>
+      useDatabaseTableChanges((change) => {
+        if (change.tableId === props.tableId) listener(change.version);
+      }),
     applyVersions: (versions) =>
       applyDatabaseTableVersions(databaseId, versions),
     addOption: async (columnId, label) => {
@@ -139,13 +148,11 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
     <>
       <For each={relatedDatabases()}>
         {(id) => {
-          useRelatedDatabaseSync(id, () => [
-            ...new Set(
-              relatedTargets()
-                .filter((target) => target.database_id === id)
-                .map((target) => target.table_id)
-            ),
-          ]);
+          useRelatedDatabaseSync(id, () => {
+            for (const target of relatedTargets())
+              if (target.database_id === id)
+                refreshInBackground(relations(target.table_id));
+          });
           return null;
         }}
       </For>
