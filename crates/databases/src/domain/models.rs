@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 
+use bot_id::BotId;
 use chrono::{DateTime, Utc};
 use macro_user_id::user_id::MacroUserIdStr;
 use model_entity::EntityType;
@@ -187,6 +188,8 @@ pub struct CreateDatabase {
     pub name: String,
     /// Owner.
     pub owner_id: MacroUserIdStr<'static>,
+    /// The agent creating it for the owner; `None` when the owner acts.
+    pub acting_bot: Option<BotId>,
 }
 
 /// Command to create a table in a database.
@@ -292,6 +295,9 @@ pub struct AddColumnOptions {
 pub struct Viewer {
     /// The user running the statement.
     pub user_id: MacroUserIdStr<'static>,
+    /// The agent running it for that user; `None` when the user acts. Only
+    /// attribution reads it: the catalog stays scoped to `user_id`.
+    pub acting_bot: Option<BotId>,
 }
 
 /// A request to execute SQL (any mix of reads and writes).

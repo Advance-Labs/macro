@@ -9,6 +9,7 @@
 //! liveness channel; see `outbound::gateway_event_publisher`.
 
 use activity::Actor;
+use bot_id::BotId;
 use chrono::{DateTime, Utc};
 use macro_event_broker::{Event, MacroEvent, TopicEvent};
 use macro_event_topics::MacroDatabasesTopic;
@@ -36,6 +37,17 @@ impl Attribution {
             on_behalf_of: None,
         }
     }
+
+    /// `user` acting, or `bot` acting for them.
+    pub fn acting(user: MacroUserIdStr<'static>, bot: Option<BotId>) -> Self {
+        match bot {
+            Some(bot) => Self {
+                actor: Actor::new_from_bot(bot),
+                on_behalf_of: Some(user),
+            },
+            None => Self::user(user),
+        }
+    }
 }
 
 /// Metadata for [`DatabaseTopicEvent::Created`].
@@ -49,6 +61,10 @@ pub struct DatabaseCreatedMetadata {
     pub name: String,
     /// Creation timestamp reported by the repository.
     pub created_at: DateTime<Utc>,
+    /// Who created it. Absent on events from before attribution, which read
+    /// as the owner acting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attribution: Option<Attribution>,
 }
 
 /// Metadata for [`DatabaseTopicEvent::Renamed`].
@@ -88,6 +104,16 @@ pub struct DatabaseRestoredMetadata {
 pub struct DatabasePurgedMetadata {
     /// The id of the permanently deleted database.
     pub database_id: String,
+}
+
+/// Metadata for [`DatabaseTopicEvent::SharingChanged`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DatabaseSharingChangedMetadata {
+    /// The database whose sharing changed.
+    pub database_id: String,
+    /// Who changed it; `None` for internal callers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attribution: Option<Attribution>,
 }
 
 /// One table whose contents or shape moved, and the version it moved to.
@@ -134,6 +160,9 @@ pub enum DatabaseTopicEvent {
     /// event per database per write, however many tables the write touched.
     #[serde(rename = "database.tables_changed")]
     TablesChanged(DatabaseTablesChangedMetadata),
+    /// Who the database is shared with changed.
+    #[serde(rename = "database.sharing_changed")]
+    SharingChanged(DatabaseSharingChangedMetadata),
 }
 
 impl TopicEvent for DatabaseTopicEvent {
@@ -194,6 +223,14 @@ impl DatabaseMacroEvent {
         Self::new(
             metadata.database_id.clone(),
             DatabaseTopicEvent::TablesChanged(metadata),
+        )
+    }
+
+    /// Build a sharing-changed event keyed by the database id.
+    pub fn sharing_changed(metadata: DatabaseSharingChangedMetadata) -> Self {
+        Self::new(
+            metadata.database_id.clone(),
+            DatabaseTopicEvent::SharingChanged(metadata),
         )
     }
 

@@ -182,6 +182,7 @@ where
 fn viewer_of<Auth>(user: &MacroAuthorizationExtractor<Auth, UserOrInternal>) -> Viewer {
     Viewer {
         user_id: user.authorization.user.macro_user_id.clone(),
+        acting_bot: None,
     }
 }
 
@@ -379,6 +380,7 @@ where
         .create_database(CreateDatabase {
             name: req.name,
             owner_id,
+            acting_bot: None,
         })
         .await?;
     Ok((StatusCode::CREATED, Json(database)))

@@ -50,7 +50,13 @@ impl ActivitySource for DatabaseTopicEvent {
 
         match self {
             DatabaseTopicEvent::Created(metadata) => single(
-                Attribution::direct(Actor::new_from_user(metadata.owner.clone())),
+                match &metadata.attribution {
+                    Some(attribution) => Attribution::new(
+                        attribution.actor.clone(),
+                        attribution.on_behalf_of.clone(),
+                    ),
+                    None => Attribution::direct(Actor::new_from_user(metadata.owner.clone())),
+                },
                 CommonAction::Created,
                 &metadata.database_id,
                 metadata.created_at,
@@ -73,6 +79,11 @@ impl ActivitySource for DatabaseTopicEvent {
                 &metadata.database_id,
             ),
             DatabaseTopicEvent::TablesChanged(metadata) => attributed(
+                &metadata.attribution,
+                CommonAction::Edited,
+                &metadata.database_id,
+            ),
+            DatabaseTopicEvent::SharingChanged(metadata) => attributed(
                 &metadata.attribution,
                 CommonAction::Edited,
                 &metadata.database_id,

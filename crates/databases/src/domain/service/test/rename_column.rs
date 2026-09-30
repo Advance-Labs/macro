@@ -187,6 +187,7 @@ async fn rename_refuses_foreign_columns_tables_and_trashed_database() {
         .create_database(CreateDatabase {
             name: "Other".into(),
             owner_id: user(OWNER),
+            acting_bot: None,
         })
         .await
         .unwrap();

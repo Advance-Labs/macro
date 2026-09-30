@@ -109,3 +109,38 @@ async fn committed_table_column_and_options_keep_ids_when_schema_refresh_fails()
     assert_eq!(calls.created_columns.len(), 1);
     assert_eq!(calls.added_options.len(), 1);
 }
+
+#[tokio::test]
+async fn writes_reach_the_service_as_the_contexts_agent_for_the_user() {
+    let agent = BotId::new_from_uuid(Uuid::from_u128(0x42));
+    let (context, calls) = context(FakeAccess::granting(AccessLevel::Owner));
+    let context = context.with_actor(agent);
+
+    CreateDatabase {
+        name: "Offsite".into(),
+    }
+    .call(ServiceContext(context.clone()), request_context())
+    .await
+    .unwrap();
+    RenameDatabase {
+        database_id: DATABASE_ID,
+        name: "Party Planning".to_string(),
+    }
+    .call(ServiceContext(context.clone()), request_context())
+    .await
+    .unwrap();
+    QueryDatabase {
+        database_id: None,
+        sql: "INSERT INTO guests (name) VALUES ('Ada')".to_string(),
+        base_versions: None,
+        display: None,
+    }
+    .call(ServiceContext(context), request_context())
+    .await
+    .unwrap();
+
+    assert_eq!(
+        calls.lock().unwrap().acting_bots,
+        [Some(agent), Some(agent), Some(agent)]
+    );
+}

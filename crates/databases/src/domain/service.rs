@@ -469,7 +469,7 @@ where
     async fn create_database(&self, cmd: CreateDatabase) -> Result<Database, DatabaseError> {
         let cmd = CreateDatabase {
             name: validate_name(&cmd.name)?,
-            owner_id: cmd.owner_id,
+            ..cmd
         };
         let database = self
             .repo
@@ -478,9 +478,10 @@ where
             .map_err(repo_err)?;
         self.emit(DatabaseMacroEvent::created(DatabaseCreatedMetadata {
             database_id: database.id.to_string(),
-            owner: cmd.owner_id,
+            owner: cmd.owner_id.clone(),
             name: database.name.clone(),
             created_at: database.created_at,
+            attribution: Some(events::Attribution::acting(cmd.owner_id, cmd.acting_bot)),
         }));
         Ok(database)
     }

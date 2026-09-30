@@ -17,6 +17,7 @@ const USER: &str = "macro|starter-database@macro.com";
 fn viewer() -> Viewer {
     Viewer {
         user_id: MacroUserIdStr::parse_from_str(USER).unwrap().into_owned(),
+        acting_bot: None,
     }
 }
 
@@ -150,6 +151,7 @@ async fn existing_database_skips_seed_even_after_it_is_deleted(pool: PgPool) {
             &CreateDatabase {
                 name: "Already mine".into(),
                 owner_id: viewer().user_id,
+                acting_bot: None,
             },
             "Tasks",
         )

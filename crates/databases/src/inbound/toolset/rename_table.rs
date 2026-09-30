@@ -10,7 +10,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{DatabasesToolContext, ToolDatabaseSchema, database_error, viewer_of};
+use super::{DatabasesToolContext, ToolDatabaseSchema, database_error};
 use crate::domain::ports::DatabasesService;
 
 /// Rename a table.
@@ -96,7 +96,7 @@ where
             .await?;
         let detail = service_context
             .service
-            .get_database(view_receipt, viewer_of(user_id))
+            .get_database(view_receipt, service_context.viewer(user_id))
             .await
             .map_err(database_error)?;
         let previous_name = detail

@@ -1584,6 +1584,7 @@ impl ToolServiceContext {
         self.project_tool_context = self.project_tool_context.with_actor(actor);
         self.initiative_tool_context = self.initiative_tool_context.with_actor(actor);
         self.channel_tool_context = self.channel_tool_context.with_actor(actor);
+        self.databases_tool_context = self.databases_tool_context.with_actor(actor);
         self
     }
 

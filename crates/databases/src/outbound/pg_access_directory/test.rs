@@ -57,6 +57,7 @@ async fn create_database(pool: &PgPool, owner: &MacroUserIdStr<'static>) -> Data
             &CreateDatabase {
                 name: "Offsite".to_string(),
                 owner_id: owner.clone(),
+                acting_bot: None,
             },
             "Table 1",
         )
@@ -90,6 +91,7 @@ async fn accessible(pool: &PgPool, user: &MacroUserIdStr<'static>) -> Vec<(Uuid,
     PgAccessDirectory::new(pool.clone())
         .accessible_databases(&Viewer {
             user_id: user.clone(),
+            acting_bot: None,
         })
         .await
         .expect("directory should answer")

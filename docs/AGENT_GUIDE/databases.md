@@ -249,3 +249,15 @@ values remain Text, preserving leading zeros and large identifiers; use a column
 type menu afterward to convert it. The limit is 8 MB, 100 columns, and 10,000 rows.
 A failed response offers **Retry import** with the same request, so retrying a
 completed import does not create a second table.
+
+## Side panel and activity
+
+The split header's `Show Side Panel` toggle (or `]`) opens the database side panel,
+closed by default. **Details** shows the Owner and Created time. **Activity** (behind
+the `enable-entity-activity-section` flag, like documents) lists who created,
+renamed, edited, shared, trashed, or restored the database, with the same glyph rail
+and folding as a document's Activity section. Every write is one entry: a cell edit,
+a SQL statement however many rows it touches, or a schema change such as a new
+table or column. Consecutive edits by one person fold into `made N edits`. Changes an
+AI agent made read as the agent acting for the user who asked. The same entries
+appear on `/app/component/activity`; clicking one opens the database.

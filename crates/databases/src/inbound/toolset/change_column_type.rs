@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use super::{
     ColumnType, DatabasesToolContext, ToolDatabaseSchema, ToolEntityType, column_of,
-    database_error, table_of, viewer_of,
+    database_error, table_of,
 };
 use crate::domain::models::{AddColumnOptions, ChangeColumnType as ChangeColumnTypeCommand};
 use crate::domain::ports::DatabasesService;
@@ -149,7 +149,7 @@ where
             .service
             .change_column_type(
                 receipt,
-                viewer_of(user_id),
+                service_context.viewer(user_id),
                 ChangeColumnTypeCommand {
                     table_id: self.table_id,
                     column_id: self.column_id,
@@ -179,7 +179,7 @@ where
                     .service
                     .add_column_options(
                         receipt,
-                        viewer_of(user_id),
+                        service_context.viewer(user_id),
                         AddColumnOptions {
                             table_id: self.table_id,
                             column_id: self.column_id,

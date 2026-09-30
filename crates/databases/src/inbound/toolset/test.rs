@@ -70,6 +70,8 @@ struct Calls {
     /// `(table, order, base version)`.
     reordered_columns: Vec<(Uuid, Vec<Uuid>, TableVersion)>,
     saved_queries: Vec<(Option<Uuid>, crate::domain::models::QueryDefinition)>,
+    /// The agent each attributed write reached the service as.
+    acting_bots: Vec<Option<BotId>>,
 }
 
 #[derive(Clone, Default)]
@@ -171,7 +173,9 @@ impl DatabasesService for FakeService {
         &self,
         cmd: crate::domain::models::CreateDatabase,
     ) -> Result<Database, DatabaseError> {
-        self.calls.lock().unwrap().created_databases.push(cmd.name);
+        let mut calls = self.calls.lock().unwrap();
+        calls.created_databases.push(cmd.name);
+        calls.acting_bots.push(cmd.acting_bot);
         Ok(database())
     }
 
@@ -215,14 +219,15 @@ impl DatabasesService for FakeService {
 
     async fn rename_database(
         &self,
-        _receipt: EntityAccessReceipt<EditAccessLevel>,
+        receipt: EntityAccessReceipt<EditAccessLevel>,
         name: String,
     ) -> Result<Database, DatabaseError> {
-        self.calls
-            .lock()
-            .unwrap()
-            .renamed_databases
-            .push(name.clone());
+        let mut calls = self.calls.lock().unwrap();
+        calls.renamed_databases.push(name.clone());
+        calls.acting_bots.push(match receipt.auth() {
+            entity_access::domain::models::EntityAccessAuth::Bot(bot) => Some(bot.bot_id()),
+            _ => None,
+        });
         Ok(Database { name, ..database() })
     }
 
@@ -401,9 +406,14 @@ impl DatabasesService for FakeService {
 
     async fn exec_sql(
         &self,
-        _viewer: Viewer,
+        viewer: Viewer,
         req: crate::domain::models::ExecRequest,
     ) -> Result<ExecOutcome, QueryError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .acting_bots
+            .push(viewer.acting_bot);
         self.calls.lock().unwrap().executed.push(req.sql);
         self.calls
             .lock()
@@ -534,12 +544,23 @@ impl EntityAccessService for FakeAccess {
 
     async fn generate_bot_entity_access_receipt<T: RequiredPermission>(
         &self,
-        _bot_id: BotId,
-        _scope: BotAccessScope,
-        _entity_id: &str,
-        _entity_type: AccessEntityType,
+        bot_id: BotId,
+        scope: BotAccessScope,
+        entity_id: &str,
+        entity_type: AccessEntityType,
     ) -> Result<EntityAccessReceipt<T>, AccessError> {
-        unimplemented!("databases tools never act as a bot")
+        let Some(access_level) = self.level else {
+            return Err(AccessError::Unauthorized);
+        };
+        EntityAccessReceipt::try_new_bot(
+            bot_id.into_storage_id(),
+            (&scope).into(),
+            AccessEntity {
+                entity_id: entity_id.to_string(),
+                entity_type,
+            },
+            EntityPermission::AccessLevel { access_level },
+        )
     }
 
     async fn get_access_level(

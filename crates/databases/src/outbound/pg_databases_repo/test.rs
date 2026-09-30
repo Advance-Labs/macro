@@ -29,7 +29,10 @@ fn user() -> MacroUserIdStr<'static> {
 }
 
 fn viewer() -> Viewer {
-    Viewer { user_id: user() }
+    Viewer {
+        user_id: user(),
+        acting_bot: None,
+    }
 }
 
 async fn insert_user(pool: &PgPool) {
@@ -82,6 +85,7 @@ async fn fixture(pool: &PgPool) -> (PgDatabasesRepo, Table, Uuid) {
             &CreateDatabase {
                 name: "Summer Offsite".to_string(),
                 owner_id: user(),
+                acting_bot: None,
             },
             "Table 1",
         )

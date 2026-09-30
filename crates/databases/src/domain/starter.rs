@@ -5,7 +5,7 @@ use macro_event_broker::MacroEventBroker;
 use serde::Serialize;
 use uuid::Uuid;
 
-use super::events::{DatabaseCreatedMetadata, DatabaseMacroEvent};
+use super::events::{Attribution, DatabaseCreatedMetadata, DatabaseMacroEvent};
 use super::models::{DatabaseError, DatabaseId, TableId, Viewer};
 
 /// Starter result. A missing database means the user already started or removed it.
@@ -125,9 +125,10 @@ impl<Repo: DatabaseStarterRepo, Broker: MacroEventBroker> DatabaseStarterService
         if outcome.created {
             let event = DatabaseMacroEvent::created(DatabaseCreatedMetadata {
                 database_id: blueprint.database_id.to_string(),
-                owner: viewer.user_id,
+                owner: viewer.user_id.clone(),
                 name: blueprint.name.into(),
                 created_at: Utc::now(),
+                attribution: Some(Attribution::acting(viewer.user_id, viewer.acting_bot)),
             });
             if let Err(error) = self.broker.send_event(&event) {
                 tracing::warn!(?error, "failed to publish starter database creation");

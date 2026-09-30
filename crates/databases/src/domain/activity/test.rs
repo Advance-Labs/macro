@@ -8,8 +8,8 @@ use uuid::Uuid;
 use super::*;
 use crate::domain::events::{
     Attribution as EventAttribution, DatabaseCreatedMetadata, DatabasePurgedMetadata,
-    DatabaseRenamedMetadata, DatabaseRestoredMetadata, DatabaseTablesChangedMetadata,
-    DatabaseTrashedMetadata, TableVersionChange,
+    DatabaseRenamedMetadata, DatabaseRestoredMetadata, DatabaseSharingChangedMetadata,
+    DatabaseTablesChangedMetadata, DatabaseTrashedMetadata, TableVersionChange,
 };
 use crate::domain::models::TableVersion;
 
@@ -45,6 +45,7 @@ fn created_maps_to_a_created_activity_at_the_repository_timestamp() {
         owner: user("macro|creator@example.com"),
         name: "Roadmap".to_string(),
         created_at,
+        attribution: None,
     }));
 
     let activity = single_activity(event.event.ingest(event.event_id));
@@ -87,6 +88,46 @@ fn renamed_restored_and_tables_changed_map_to_edited() {
         assert_eq!(activity.entity_id, DATABASE_ID);
         assert_eq!(activity.subject_id, "macro|editor@example.com");
     }
+}
+
+#[test]
+fn an_agent_creation_lands_on_the_owners_feed_as_the_agent() {
+    let created_at = Utc.with_ymd_and_hms(2026, 9, 1, 12, 0, 0).unwrap();
+    let bot = Actor::try_from("bot|00000000-0000-0000-0000-00000000a1a1".to_string())
+        .expect("valid bot actor");
+    let event = envelope(DatabaseTopicEvent::Created(DatabaseCreatedMetadata {
+        database_id: DATABASE_ID.to_string(),
+        owner: user("macro|creator@example.com"),
+        name: "Roadmap".to_string(),
+        created_at,
+        attribution: Some(EventAttribution {
+            actor: bot.clone(),
+            on_behalf_of: Some(user("macro|creator@example.com")),
+        }),
+    }));
+
+    let activity = single_activity(event.event.ingest(event.event_id));
+    assert_eq!(activity.action, Action::Created);
+    assert_eq!(activity.actor, bot);
+    assert_eq!(activity.subject_id, "macro|creator@example.com");
+    assert_eq!(activity.occurred_at, created_at);
+}
+
+#[test]
+fn sharing_changed_maps_to_edited() {
+    let event = envelope(DatabaseTopicEvent::SharingChanged(
+        DatabaseSharingChangedMetadata {
+            database_id: DATABASE_ID.to_string(),
+            attribution: by_user("macro|owner@example.com"),
+        },
+    ));
+
+    let activity = single_activity(event.event.ingest(event.event_id));
+    assert_eq!(activity.action, Action::Edited);
+    assert_eq!(activity.entity_type, EntityType::Database);
+    assert_eq!(activity.entity_id, DATABASE_ID);
+    assert_eq!(activity.subject_id, "macro|owner@example.com");
+    assert_eq!(activity.id, activity_id(event.event_id, 0));
 }
 
 #[test]

@@ -73,6 +73,14 @@ where
         {
             return Err(DatabaseError::NotFound);
         }
+        if !grants.is_empty() {
+            self.emit(DatabaseMacroEvent::sharing_changed(
+                events::DatabaseSharingChangedMetadata {
+                    database_id: database.id.to_string(),
+                    attribution: receipt_attribution(&receipt),
+                },
+            ));
+        }
         self.share_permissions(receipt).await
     }
 }

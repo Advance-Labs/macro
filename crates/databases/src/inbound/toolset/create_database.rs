@@ -85,6 +85,7 @@ where
             .create_database(CreateDatabaseCommand {
                 name: self.name.clone(),
                 owner_id: user_id.clone(),
+                acting_bot: Some(service_context.actor),
             })
             .await
             .map_err(database_error)?;

@@ -11,7 +11,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{DatabasesToolContext, query_error, sql_guide, viewer_of};
+use super::{DatabasesToolContext, query_error, sql_guide};
 use crate::domain::models::{ExecOutcome, ExecRequest, QueryResult, SqlValue};
 use crate::domain::ports::DatabasesService;
 
@@ -138,7 +138,10 @@ where
     ) -> ToolResult<Self::Output> {
         service_context
             .service
-            .query_sql(viewer_of(&request_context.user_id), self.sql.clone())
+            .query_sql(
+                service_context.viewer(&request_context.user_id),
+                self.sql.clone(),
+            )
             .await
             .map(Into::into)
             .map_err(query_error)
@@ -266,7 +269,7 @@ where
         let outcome = service_context
             .service
             .exec_sql(
-                viewer_of(&request_context.user_id),
+                service_context.viewer(&request_context.user_id),
                 ExecRequest {
                     scope: self.database_id,
                     sql: self.sql.clone(),

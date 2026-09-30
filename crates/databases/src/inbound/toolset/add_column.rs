@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{ColumnType, DatabasesToolContext, ToolDatabaseSchema, database_error, viewer_of};
+use super::{ColumnType, DatabasesToolContext, ToolDatabaseSchema, database_error};
 use crate::domain::models::{ColumnBinding, ColumnConfig, CreateColumn};
 use crate::domain::ports::DatabasesService;
 
@@ -161,7 +161,7 @@ where
             .service
             .create_column(
                 receipt,
-                viewer_of(user_id),
+                service_context.viewer(user_id),
                 CreateColumn {
                     infer_type: false,
                     table_id: self.table_id,

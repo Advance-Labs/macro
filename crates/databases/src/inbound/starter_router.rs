@@ -78,6 +78,7 @@ where
         .service
         .ensure_starter(Viewer {
             user_id: user.authorization.user.macro_user_id.clone(),
+            acting_bot: None,
         })
         .await
         .map(Json)

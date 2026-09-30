@@ -80,3 +80,39 @@ async fn invalid_share_requests_are_rejected_before_persistence() {
     ));
     assert_eq!(world.lock().unwrap().share_updates.len(), 1);
 }
+
+#[tokio::test]
+async fn sharing_changes_publish_a_sharing_changed_event() {
+    let seeded = seeded().await;
+    let (world, svc, database_id) = (seeded.world, seeded.service, seeded.database_id);
+    world.lock().unwrap().broker_events.clear();
+
+    svc.update_share_permissions(receipt(database_id, OWNER, AccessLevel::Owner), vec![])
+        .await
+        .unwrap();
+    assert!(world.lock().unwrap().broker_events.is_empty());
+
+    svc.update_share_permissions(
+        receipt(database_id, OWNER, AccessLevel::Owner),
+        vec![UpdateChannelSharePermission {
+            channel_id: "0199a000-0000-7000-8000-000000000001".into(),
+            operation: UpdateOperation::Add,
+            access_level: Some(
+                models_permissions::share_permission::access_level::AccessLevel::Edit,
+            ),
+        }],
+    )
+    .await
+    .unwrap();
+
+    let events = world.lock().unwrap().broker_events.clone();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["event_type"], "database.sharing_changed");
+    assert_eq!(
+        events[0]["metadata"],
+        serde_json::json!({
+            "database_id": database_id.to_string(),
+            "attribution": { "actor": OWNER },
+        })
+    );
+}

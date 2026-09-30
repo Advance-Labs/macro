@@ -6533,6 +6533,12 @@ type GraphqlUser {
 	"""
 	activity(input: ActivityFeedInput!): GraphqlActivityPage!
 	"""
+	The newest activity on a database the authenticated user can view,
+	newest first. Databases are not Soup items, so this stands in for the
+	`activity` edge Soup entities carry.
+	"""
+	databaseActivity(databaseId: ID!, limit: Int): [GraphqlActivityEvent!]!
+	"""
 	The authenticated user's activity over the trailing year, bucketed
 	into local dates in the requested time zone.
 	"""

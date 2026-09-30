@@ -130,7 +130,10 @@ where
             .map(|entry| (entry.table.id, entry.table.database_id))
             .collect();
         self.publish(
-            Some(events::Attribution::user(viewer.user_id.clone())),
+            Some(events::Attribution::acting(
+                viewer.user_id.clone(),
+                viewer.acting_bot,
+            )),
             &database_of,
             &new_versions,
         )

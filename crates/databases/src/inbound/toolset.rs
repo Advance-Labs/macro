@@ -91,8 +91,9 @@ pub(crate) use sql_guide;
 use std::sync::Arc;
 
 use ai_toolset::{AsyncToolCollection, ToolCallError};
+use bot_id::BotId;
 use entity_access::domain::{
-    models::{AccessError, EditAccessLevel, EntityAccessReceipt, ViewAccessLevel},
+    models::{AccessError, BotAccessScope, EditAccessLevel, EntityAccessReceipt, ViewAccessLevel},
     ports::EntityAccessService,
 };
 use macro_user_id::user_id::MacroUserIdStr;
@@ -137,6 +138,8 @@ pub struct DatabasesToolContext<S: DatabasesService, E: EntityAccessService> {
     pub entity_access_service: Arc<E>,
     /// Personal saved-view use case, backed by the owning saved_views port.
     pub views: Arc<dyn DatabaseViewService>,
+    /// The agent the tools act as, for the requesting user.
+    pub actor: BotId,
 }
 
 impl<S: DatabasesService, E: EntityAccessService> Clone for DatabasesToolContext<S, E> {
@@ -145,6 +148,7 @@ impl<S: DatabasesService, E: EntityAccessService> Clone for DatabasesToolContext
             service: self.service.clone(),
             entity_access_service: self.entity_access_service.clone(),
             views: self.views.clone(),
+            actor: self.actor,
         }
     }
 }
@@ -161,13 +165,30 @@ impl<S: DatabasesService, E: EntityAccessService> DatabasesToolContext<S, E> {
             views: Arc::new(DatabaseViewsServiceImpl::new(service.clone(), views)),
             service,
             entity_access_service,
+            actor: bot_id::MACRO_AI_BOT_ID,
+        }
+    }
+
+    /// Run the tools as `actor`, delegated for the requesting user, instead
+    /// of the default Macro AI bot.
+    pub fn with_actor(mut self, actor: BotId) -> Self {
+        self.actor = actor;
+        self
+    }
+
+    /// The requesting user, as the service's query surface understands them,
+    /// with this context's agent acting for them.
+    pub(crate) fn viewer(&self, user_id: &MacroUserIdStr<'static>) -> Viewer {
+        Viewer {
+            user_id: user_id.clone(),
+            acting_bot: Some(self.actor),
         }
     }
 
     /// Prove the caller may read `database_id`.
     pub(crate) async fn view_receipt(
         &self,
-        user_id: &MacroUserIdStr<'_>,
+        user_id: &MacroUserIdStr<'static>,
         database_id: Uuid,
     ) -> Result<EntityAccessReceipt<ViewAccessLevel>, ToolCallError> {
         self.receipt::<ViewAccessLevel>(user_id, database_id, "read")
@@ -177,7 +198,7 @@ impl<S: DatabasesService, E: EntityAccessService> DatabasesToolContext<S, E> {
     /// Prove the caller may change `database_id`'s schema.
     pub(crate) async fn edit_receipt(
         &self,
-        user_id: &MacroUserIdStr<'_>,
+        user_id: &MacroUserIdStr<'static>,
         database_id: Uuid,
     ) -> Result<EntityAccessReceipt<EditAccessLevel>, ToolCallError> {
         self.receipt::<EditAccessLevel>(user_id, database_id, "edit")
@@ -194,7 +215,7 @@ impl<S: DatabasesService, E: EntityAccessService> DatabasesToolContext<S, E> {
         let refreshed = async {
             let receipt = self.view_receipt(user_id, database_id).await?;
             self.service
-                .get_database(receipt, viewer_of(user_id))
+                .get_database(receipt, self.viewer(user_id))
                 .await
                 .map(ToolDatabaseSchema::from)
                 .map_err(database_error)
@@ -221,7 +242,7 @@ impl<S: DatabasesService, E: EntityAccessService> DatabasesToolContext<S, E> {
     ) -> Result<DatabaseDetail, ToolCallError> {
         let receipt = self.view_receipt(user_id, database_id).await?;
         self.service
-            .get_database(receipt, viewer_of(user_id))
+            .get_database(receipt, self.viewer(user_id))
             .await
             .map_err(database_error)
     }
@@ -232,14 +253,14 @@ impl<S: DatabasesService, E: EntityAccessService> DatabasesToolContext<S, E> {
     /// wrong id looking in the wrong place, so the two stay distinct.
     async fn receipt<T: entity_access::domain::models::RequiredPermission>(
         &self,
-        user_id: &MacroUserIdStr<'_>,
+        user_id: &MacroUserIdStr<'static>,
         database_id: Uuid,
         verb: &str,
     ) -> Result<EntityAccessReceipt<T>, ToolCallError> {
         self.entity_access_service
-            .generate_entity_access_receipt::<T>(
-                user_id,
-                None,
+            .generate_bot_entity_access_receipt::<T>(
+                self.actor,
+                BotAccessScope::user(user_id.clone()),
                 &database_id.to_string(),
                 EntityType::Database,
             )
@@ -343,13 +364,6 @@ pub(crate) fn column_label(column: &ColumnDetail) -> String {
         .display_name
         .clone()
         .unwrap_or_else(|| column.definition.definition.display_name.clone())
-}
-
-/// The acting user, as the service's query surface understands them.
-pub(crate) fn viewer_of(user_id: &MacroUserIdStr<'static>) -> Viewer {
-    Viewer {
-        user_id: user_id.clone(),
-    }
 }
 
 /// Turn a schema/persistence error into something the model can act on.

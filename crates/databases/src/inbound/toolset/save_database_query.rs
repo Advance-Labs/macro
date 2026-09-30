@@ -13,7 +13,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{DatabasesToolContext, QueryDatabaseDisplay, query_error, sql_guide, viewer_of};
+use super::{DatabasesToolContext, QueryDatabaseDisplay, query_error, sql_guide};
 use crate::domain::models::QueryDefinition;
 use crate::domain::ports::DatabasesService;
 
@@ -212,7 +212,7 @@ where
         let saved = service_context
             .service
             .save_query(
-                viewer_of(&request_context.user_id),
+                service_context.viewer(&request_context.user_id),
                 self.database_id,
                 QueryDefinition::V1 {
                     query: self.sql.clone(),

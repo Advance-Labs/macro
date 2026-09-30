@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use super::{DatabasesToolContext, ToolDatabaseSchema, database_error, sql_guide, viewer_of};
+use super::{DatabasesToolContext, ToolDatabaseSchema, database_error, sql_guide};
 use crate::domain::ports::DatabasesService;
 
 /// Read one database's schema.
@@ -68,7 +68,7 @@ where
 
         let detail = service_context
             .service
-            .get_database(receipt, viewer_of(user_id))
+            .get_database(receipt, service_context.viewer(user_id))
             .await
             .map_err(database_error)?;
 

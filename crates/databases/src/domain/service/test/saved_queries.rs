@@ -77,6 +77,7 @@ async fn a_saved_query_resolves_names_in_its_own_database() {
         .create_database(CreateDatabase {
             name: "Offsite".into(),
             owner_id: user(OWNER),
+            acting_bot: None,
         })
         .await
         .unwrap();

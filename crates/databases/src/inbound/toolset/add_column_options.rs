@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{DatabasesToolContext, ToolDatabaseSchema, database_error, viewer_of};
+use super::{DatabasesToolContext, ToolDatabaseSchema, database_error};
 use crate::domain::catalog::option_labels;
 use crate::domain::models::AddColumnOptions as AddColumnOptionsCommand;
 use crate::domain::ports::DatabasesService;
@@ -114,7 +114,7 @@ where
             .service
             .add_column_options(
                 receipt,
-                viewer_of(user_id),
+                service_context.viewer(user_id),
                 AddColumnOptionsCommand {
                     table_id: self.table_id,
                     column_id: self.column_id,

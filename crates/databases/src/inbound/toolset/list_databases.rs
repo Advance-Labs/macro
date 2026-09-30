@@ -8,7 +8,7 @@ use entity_access::domain::ports::EntityAccessService;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{DatabasesToolContext, ToolDatabase, database_error, viewer_of};
+use super::{DatabasesToolContext, ToolDatabase, database_error};
 use crate::domain::ports::DatabasesService;
 
 /// List the databases the current user can reach.
@@ -67,7 +67,7 @@ where
 
         let databases = service_context
             .service
-            .list_databases(viewer_of(&request_context.user_id))
+            .list_databases(service_context.viewer(&request_context.user_id))
             .await
             .map_err(database_error)?;
 

@@ -18,6 +18,7 @@ async fn discovery_includes_nested_tables_in_tab_order_but_not_private_or_trashe
         .create_database(CreateDatabase {
             name: "Private".into(),
             owner_id: user(STRANGER),
+            acting_bot: None,
         })
         .await
         .unwrap();
@@ -25,6 +26,7 @@ async fn discovery_includes_nested_tables_in_tab_order_but_not_private_or_trashe
         .create_database(CreateDatabase {
             name: "Archived".into(),
             owner_id: user(OWNER),
+            acting_bot: None,
         })
         .await
         .unwrap();

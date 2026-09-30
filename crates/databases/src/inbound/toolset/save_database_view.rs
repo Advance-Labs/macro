@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use super::{DatabasesToolContext, database_error, viewer_of};
+use super::{DatabasesToolContext, database_error};
 use crate::domain::ports::DatabasesService;
 use crate::domain::views::{DatabaseViewDefinition, SaveDatabaseViewCommand, SavedDatabaseView};
 
@@ -56,7 +56,7 @@ where
             .views
             .save_view(
                 receipt,
-                viewer_of(&request_context.user_id),
+                service_context.viewer(&request_context.user_id),
                 SaveDatabaseViewCommand {
                     table_id: self.table_id,
                     name: self.name.clone(),

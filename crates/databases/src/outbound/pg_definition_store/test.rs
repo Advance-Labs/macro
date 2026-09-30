@@ -14,6 +14,7 @@ fn viewer_for_tests() -> Viewer {
             "macro|definitions-test@macro.com",
         )
         .expect("valid user id"),
+        acting_bot: None,
     }
 }
 

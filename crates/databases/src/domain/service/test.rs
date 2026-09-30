@@ -45,7 +45,10 @@ fn user(id: &'static str) -> MacroUserIdStr<'static> {
 }
 
 fn viewer(id: &'static str) -> Viewer {
-    Viewer { user_id: user(id) }
+    Viewer {
+        user_id: user(id),
+        acting_bot: None,
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -853,6 +856,7 @@ async fn seeded() -> Seeded {
         .create_database(CreateDatabase {
             name: "Offsite".into(),
             owner_id: user(OWNER),
+            acting_bot: None,
         })
         .await
         .unwrap();
@@ -966,6 +970,7 @@ async fn create_database_grants_owner_and_starter_table() {
         .create_database(CreateDatabase {
             name: "  Offsite ".into(),
             owner_id: user(OWNER),
+            acting_bot: None,
         })
         .await
         .unwrap();
@@ -992,6 +997,7 @@ async fn create_database_grants_owner_and_starter_table() {
         .create_database(CreateDatabase {
             name: "   ".into(),
             owner_id: user(OWNER),
+            acting_bot: None,
         })
         .await
         .unwrap_err();
@@ -1134,6 +1140,7 @@ async fn table_rename_rejects_invalid_names_foreign_tables_and_trashed_databases
         .create_database(CreateDatabase {
             name: "Elsewhere".into(),
             owner_id: user(OWNER),
+            acting_bot: None,
         })
         .await
         .unwrap();
@@ -1630,6 +1637,7 @@ async fn bare_table_names_shared_across_databases_need_qualifying() {
         svc.create_database(CreateDatabase {
             name: name.into(),
             owner_id: user(OWNER),
+            acting_bot: None,
         })
         .await
         .unwrap();
@@ -1670,6 +1678,7 @@ async fn a_scoped_statement_reaches_its_own_table_past_an_identically_named_data
         svc.create_database(CreateDatabase {
             name: "Untitled database".into(),
             owner_id: user(OWNER),
+            acting_bot: None,
         })
         .await
         .unwrap();
@@ -2156,6 +2165,7 @@ async fn grants_scope_writes_per_database() {
         .create_database(CreateDatabase {
             name: "Venue".into(),
             owner_id: user(VIEWER),
+            acting_bot: None,
         })
         .await
         .unwrap();
@@ -2778,6 +2788,80 @@ async fn lifecycle_and_writes_publish_domain_events() {
         serde_json::json!([{ "table_id": seeded.table_id, "version": 2 }])
     );
     assert_eq!(events[4]["metadata"]["database_id"], db.to_string());
+}
+
+#[tokio::test]
+async fn an_agent_is_attributed_as_acting_for_the_user() {
+    let seeded = seeded().await;
+    let (world, svc, db, row_id) = (
+        seeded.world,
+        seeded.service,
+        seeded.database_id,
+        seeded.row_id,
+    );
+    world.lock().unwrap().broker_events.clear();
+    let agent = bot_id::MACRO_AI_BOT_ID;
+
+    svc.create_database(CreateDatabase {
+        name: "Agent Offsite".into(),
+        owner_id: user(OWNER),
+        acting_bot: Some(agent),
+    })
+    .await
+    .unwrap();
+    svc.rename_database(
+        EntityAccessReceipt::try_new_bot(
+            agent.into_storage_id(),
+            (&entity_access::domain::models::BotAccessScope::user(user(OWNER))).into(),
+            Entity {
+                entity_id: db.to_string(),
+                entity_type: EntityType::Database,
+            },
+            EntityPermission::AccessLevel {
+                access_level: AccessLevel::Owner,
+            },
+        )
+        .unwrap(),
+        "Winter Offsite".into(),
+    )
+    .await
+    .unwrap();
+    svc.exec_sql(
+        Viewer {
+            user_id: user(OWNER),
+            acting_bot: Some(agent),
+        },
+        ExecRequest {
+            scope: None,
+            sql: format!("UPDATE guests SET status = 'Declined' WHERE row_id = '{row_id}'"),
+            base_versions: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let events = world.lock().unwrap().broker_events.clone();
+    assert_eq!(
+        events
+            .iter()
+            .map(|event| event["event_type"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        [
+            "database.created",
+            "database.renamed",
+            "database.tables_changed"
+        ]
+    );
+    for event in &events {
+        assert_eq!(
+            event["metadata"]["attribution"],
+            serde_json::json!({
+                "actor": "bot|00000000-0000-0000-0000-00000000a1a1",
+                "on_behalf_of": OWNER,
+            }),
+            "{event}"
+        );
+    }
 }
 
 #[tokio::test]

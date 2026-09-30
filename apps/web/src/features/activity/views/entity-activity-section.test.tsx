@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ActivityContextProvider } from '../context/activity-context';
 import {
   createdEvent,
+  databaseCreatedEvent,
   editedEvent,
   openedEvent,
   propertyChangedEvent,
@@ -197,5 +198,21 @@ describe('EntityActivitySection', () => {
     const failed = renderSection();
     failed.graphql.latest('EntityActivity').fail('boom');
     expect(failed.container.textContent).toContain('Activity is unavailable');
+  });
+
+  it('reads a database, which is not a soup item, by its id', () => {
+    const context = createMockActivityContext();
+    render(() => (
+      <ActivityContextProvider value={context}>
+        <EntityActivitySection entityId="database-1" entityType="DATABASE" />
+      </ActivityContextProvider>
+    ));
+    context.graphqlMock.latest('DatabaseActivity').resolve({
+      user: { id: 'user-1', databaseActivity: [databaseCreatedEvent] },
+    });
+
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0]?.getAttribute('data-activity-action')).toBe('created');
+    expect(rows()[0]?.textContent).toContain('created this');
   });
 });
