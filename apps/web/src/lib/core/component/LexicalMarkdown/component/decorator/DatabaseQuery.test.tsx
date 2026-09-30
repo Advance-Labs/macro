@@ -57,7 +57,7 @@ vi.mock('@app/features/database-query/database-query', () => ({
       <div contentEditable={false}>
         <div data-testid="header">
           <span>RSVP Counts</span>
-          <button type="button">Edit question</button>
+          <button type="button">Details</button>
         </div>
         <details>
           <summary>View data</summary>
@@ -257,7 +257,7 @@ describe('pressing a database answer block', () => {
     test.root.remove();
   });
 
-  it.each(['Edit question', 'View data', 'Party Planner'])(
+  it.each(['Details', 'View data', 'Party Planner'])(
     'leaves a press on %s to that control',
     async (name) => {
       const test = createTestEditor();

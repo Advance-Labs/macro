@@ -143,33 +143,20 @@ function SavedQuestionSql(props: { queryId: string }) {
   );
 }
 
-/** Loads the saved SQL, then saves any edit as a new immutable query. */
-function EditSavedQuestion(props: {
+/** Asks a new question and saves its SQL as a query. */
+function AskQuestion(props: {
   source: SavedQuestion;
   onSave: (source: SavedQuestion) => void;
 }) {
-  const definition = useDatabaseQueryDefinition(() => props.source.queryId);
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal<string>();
-  const savedSql = () =>
-    definition.isSuccess ? definition.data.definition.query : '';
   const save = async (next: QueryDefinition) => {
     if (saving()) return;
     setSaving(true);
     setError();
     try {
       props.onSave(
-        await saveQuestion({
-          definition: next,
-          previous: props.source.queryId
-            ? {
-                queryId: props.source.queryId,
-                sql: savedSql(),
-                databaseId: props.source.databaseId,
-              }
-            : undefined,
-          save: saveQuestionSql,
-        })
+        await saveQuestion({ definition: next, save: saveQuestionSql })
       );
     } catch (failure) {
       setError(queryErrorMessage(failure));
@@ -178,35 +165,22 @@ function EditSavedQuestion(props: {
     }
   };
   return (
-    <Switch
-      fallback={
-        <p role="status" class="p-4 text-sm text-ink-muted">
-          Loading question…
+    <>
+      <ChooseQuestionSource
+        initial={{ ...props.source, sql: '' }}
+        onSave={(next) => void save(next)}
+      />
+      <Show when={saving()}>
+        <p role="status" class="px-4 pb-3 text-sm text-ink-muted">
+          Saving question…
         </p>
-      }
-    >
-      <Match when={props.source.queryId && definition.isError}>
-        <p role="alert" class="p-4 text-sm text-failure-ink">
-          {queryErrorMessage(definition.error)}
+      </Show>
+      <Show when={error()}>
+        <p role="alert" class="px-4 pb-3 text-sm text-failure-ink">
+          {error()}
         </p>
-      </Match>
-      <Match when={!props.source.queryId || definition.isSuccess}>
-        <ChooseQuestionSource
-          initial={{ ...props.source, sql: savedSql() }}
-          onSave={(next) => void save(next)}
-        />
-        <Show when={saving()}>
-          <p role="status" class="px-4 pb-3 text-sm text-ink-muted">
-            Saving question…
-          </p>
-        </Show>
-        <Show when={error()}>
-          <p role="alert" class="px-4 pb-3 text-sm text-failure-ink">
-            {error()}
-          </p>
-        </Show>
-      </Match>
-    </Switch>
+      </Show>
+    </>
   );
 }
 
@@ -254,7 +228,7 @@ export function DatabaseLiveQuestion(props: {
         editor={
           props.onSave
             ? (onClose) => (
-                <EditSavedQuestion
+                <AskQuestion
                   source={props.source}
                   onSave={(source) => {
                     props.onSave?.(source);

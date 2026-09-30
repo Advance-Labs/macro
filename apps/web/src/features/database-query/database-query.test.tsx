@@ -403,47 +403,37 @@ describe('database question production wiring', () => {
     client.clear();
   });
 
-  it('edits a saved answer by saving new SQL and repointing the node', async () => {
+  it('asks a new answer, saving its SQL as a query and pointing the node at it', async () => {
     adapters.useDatabasesQuery.mockReturnValue({ isPending: false, data: [] });
     adapters.useDatabaseDetailQuery.mockReturnValue({
       isPending: false,
       data: detail,
     });
-    adapters.useDatabaseQueryDefinition.mockReturnValue({
-      isSuccess: true,
-      isError: false,
-      data: {
-        id: 'saved-count',
-        definition: { version: 1, query: 'SELECT COUNT(*) FROM tickets' },
-        databaseId: 'source',
-        createdBy: 'owner',
-        createdAt: '',
-      },
-    });
     adapters.runSavedQuery.mockResolvedValue(outcome);
-    adapters.saveQuestionSql.mockResolvedValue('edited-count');
+    adapters.saveQuestionSql.mockResolvedValue('new-count');
     const onSave = vi.fn();
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
+    const fresh: SavedQuestion = {
+      queryId: '',
+      databaseId: 'source',
+      prompt: '',
+      displayMode: 'scalar',
+    };
     const result = render(() => (
       <QueryClientProvider client={client}>
-        <DatabaseLiveQuestion source={saved} onSave={onSave} />
+        <DatabaseLiveQuestion source={fresh} onSave={onSave} />
       </QueryClientProvider>
     ));
-    expect(result.getByLabelText('Initial SQL').textContent).toBe(
-      'SELECT COUNT(*) FROM tickets'
-    );
+    expect((await result.findByLabelText('Initial SQL')).textContent).toBe('');
     fireEvent.click(result.getByText('Save draft'));
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
     expect(adapters.saveQuestionSql).toHaveBeenCalledExactlyOnceWith({
       sql: 'SELECT COUNT(*) FROM open_tickets',
       databaseId: 'source',
     });
-    expect(onSave.mock.calls[0]?.[0]).toEqual({
-      ...saved,
-      queryId: 'edited-count',
-    });
+    expect(onSave.mock.calls[0]?.[0]).toMatchObject({ queryId: 'new-count' });
     expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty('sql');
     result.unmount();
     client.clear();

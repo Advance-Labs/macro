@@ -191,16 +191,14 @@ describe('answer titles', () => {
         editor={() => <textarea aria-label="Ask your database" />}
       />
     ));
-    await fireEvent.click(
-      rendered.getByRole('button', { name: 'Edit question' })
-    );
-    const field = await screen.findByLabelText('Ask your database');
-    await fireEvent.keyDown(field, { key: 'Escape' });
+    await fireEvent.click(rendered.getByRole('button', { name: 'Details' }));
+    const refresh = await screen.findByRole('button', { name: 'Refresh' });
+    await fireEvent.keyDown(refresh, { key: 'Escape' });
     expect(discard).not.toHaveBeenCalled();
     rendered.unmount();
   });
 
-  it('opens the question editor straight from the block’s Edit question', async () => {
+  it('offers a saved block only its details, never an editor', async () => {
     const rendered = render(() => (
       <LiveQuestion
         source={{
@@ -214,10 +212,13 @@ describe('answer titles', () => {
         editor={() => <textarea aria-label="Ask your database" />}
       />
     ));
-    await fireEvent.click(
-      rendered.getByRole('button', { name: 'Edit question' })
-    );
-    expect(await screen.findByLabelText('Ask your database')).toBeTruthy();
+    expect(
+      rendered.queryByRole('button', { name: 'Edit question' })
+    ).toBeNull();
+    await fireEvent.click(rendered.getByRole('button', { name: 'Details' }));
+    expect(await screen.findByRole('button', { name: 'Refresh' })).toBeTruthy();
+    expect(screen.queryByLabelText('Ask your database')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Edit question' })).toBeNull();
     rendered.unmount();
   });
 
@@ -244,9 +245,8 @@ describe('answer titles', () => {
       />
     ));
     await fireEvent.click(rendered.getByRole('button', { name: /RSVPs/ }));
-    expect(
-      await screen.findByRole('button', { name: 'Edit question' })
-    ).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Refresh' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Edit question' })).toBeNull();
     expect(screen.queryByLabelText('Ask your database')).toBeNull();
     rendered.unmount();
   });

@@ -1,7 +1,6 @@
 import { Popover } from '@kobalte/core/popover';
 import ArrowClockwiseIcon from '@phosphor/arrow-clockwise.svg';
 import LightningIcon from '@phosphor/lightning.svg';
-import PencilIcon from '@phosphor/pencil-simple.svg';
 import XIcon from '@phosphor/x.svg';
 import { Button } from '@ui';
 import { createSignal, type JSX, Show } from 'solid-js';
@@ -24,12 +23,13 @@ export function LiveQuestion(props: {
   onRename?: (title: string) => void;
   /** The saved SQL, rendered only once the details are opened. */
   sql?: () => JSX.Element;
+  /** The question box for an answer not asked yet; a saved answer is replaced, not edited. */
   editor?: (onClose: () => void) => JSX.Element;
   /** Leaving the editor of an answer that was never saved drops the answer. */
   onDiscard?: () => void;
 }) {
   const [open, setOpen] = createSignal(!props.source.queryId && !!props.editor);
-  const [editing, setEditing] = createSignal(!props.source.queryId);
+  const asking = () => !props.source.queryId && !!props.editor;
   let content: HTMLDivElement | undefined;
   const title = () =>
     props.source.title || props.source.chart?.title || 'Database answer';
@@ -109,7 +109,6 @@ export function LiveQuestion(props: {
       onOpenChange={(value) => {
         setOpen(value);
         if (!value && !props.source.queryId) props.onDiscard?.();
-        if (!value) setEditing(!props.source.queryId);
       }}
       placement="bottom-start"
       gutter={8}
@@ -181,12 +180,8 @@ export function LiveQuestion(props: {
                 </span>
               </Show>
             </span>
-            <Popover.Trigger
-              class="shrink-0 rounded px-2 py-1 text-xs text-ink-muted"
-              // "Edit question" opens the editor itself, not the details view.
-              onClick={() => setEditing(!!props.editor)}
-            >
-              {props.editor ? 'Edit question' : 'Details'}
+            <Popover.Trigger class="shrink-0 rounded px-2 py-1 text-xs text-ink-muted">
+              Details
             </Popover.Trigger>
           </div>
           <div class="p-3">
@@ -219,7 +214,7 @@ export function LiveQuestion(props: {
           class="z-action-menu w-[min(440px,calc(100vw-2rem))] max-h-[min(720px,var(--kb-popper-content-available-height,100dvh),calc(100dvh-1rem))] overflow-auto rounded-xl border border-edge-muted bg-panel text-ink shadow-xl"
           contentEditable={false}
           onOpenAutoFocus={(event) => {
-            if (!editing()) return;
+            if (!asking()) return;
             const prompt =
               content?.querySelector<HTMLTextAreaElement>('textarea');
             if (prompt) {
@@ -244,7 +239,7 @@ export function LiveQuestion(props: {
             </Popover.CloseButton>
           </div>
           <Show
-            when={editing() && props.editor}
+            when={asking() && props.editor}
             fallback={
               <div class="space-y-3 p-4">
                 <p class="text-sm font-medium">
@@ -285,12 +280,6 @@ export function LiveQuestion(props: {
                     <ArrowClockwiseIcon class="size-3.5" />
                     Refresh
                   </Button>
-                  <Show when={props.editor}>
-                    <Button size="sm" onClick={() => setEditing(true)}>
-                      <PencilIcon class="size-3.5" />
-                      Edit question
-                    </Button>
-                  </Show>
                 </div>
               </div>
             }
