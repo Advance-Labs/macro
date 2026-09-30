@@ -57,7 +57,7 @@ import {
   useMaybeNativeCallState,
 } from './native-call-state';
 import {
-  isNativeIosCallKitEnabled,
+  isNativeCallEnabled,
   registerCallKitCallEndedHandler,
 } from './use-callkit';
 
@@ -1649,7 +1649,7 @@ function createCallState() {
   });
 
   const unsubscribeNative =
-    isNativeIosCallKitEnabled() && nativeCall
+    isNativeCallEnabled() && nativeCall
       ? bindNativeCallLifecycle(nativeCall, lifecycle)
       : undefined;
 

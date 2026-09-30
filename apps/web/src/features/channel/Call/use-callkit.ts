@@ -202,8 +202,14 @@ function getActiveCallEndedHandler(): CallEndedHandler | undefined {
   return callEndedHandlers[callEndedHandlers.length - 1];
 }
 
+export function isNativeCallEnabled(): boolean {
+  return (
+    ENABLE_CALLKIT && isTauri() && (isPlatform('ios') || isPlatform('android'))
+  );
+}
+
 export function isNativeIosCallKitEnabled(): boolean {
-  return ENABLE_CALLKIT && isTauri() && isPlatform('ios');
+  return isNativeCallEnabled() && isPlatform('ios');
 }
 
 // Fresh CallKit launches can receive answer events before the router tree mounts.
@@ -247,16 +253,16 @@ async function joinChannelCallWhenReady(
 }
 
 /**
- * Sets up CallKit / PushKit integration for iOS.
+ * Sets up CallKit / PushKit integration for iOS and Android.
  *
  * - Registers VoIP tokens with the backend as they arrive from PushKit.
  * - When the user answers via the native incoming-call sheet, navigates to the
  *   channel and joins the call via the existing deep-link flow.
  *
- * Must be mounted once at app startup on iOS (no-op on all other platforms).
+ * Must be mounted once at app startup on mobile (no-op on desktop).
  */
 export function useCallKitSetup() {
-  if (!isNativeIosCallKitEnabled()) return;
+  if (!isNativeCallEnabled()) return;
 
   const nativeCall = useNativeCallState();
 
@@ -316,35 +322,37 @@ export function useCallKitSetup() {
         );
     }
 
-    // Token rotation: PushKit can hand us a new token at any point at runtime.
-    trackListener(
-      addPluginListener<VoipTokenPayload>(
-        'call-kit',
-        'voip-token-updated',
-        async ({ token }) => {
-          console.info('[callkit] received VoIP token update', {
-            tokenLength: token.length,
-          });
-          await registerVoipToken(token).catch((err) =>
-            console.error('[callkit] failed to register VoIP token', err)
-          );
-        }
-      ),
-      'voip-token-updated'
-    );
+    if (isPlatform('ios')) {
+      // Token rotation: PushKit can hand us a new token at any point at runtime.
+      trackListener(
+        addPluginListener<VoipTokenPayload>(
+          'call-kit',
+          'voip-token-updated',
+          async ({ token }) => {
+            console.info('[callkit] received VoIP token update', {
+              tokenLength: token.length,
+            });
+            await registerVoipToken(token).catch((err) =>
+              console.error('[callkit] failed to register VoIP token', err)
+            );
+          }
+        ),
+        'voip-token-updated'
+      );
 
-    // Cold start: drain any token that arrived from PushKit before the
-    // listener above was registered.
-    syncVoipRegistration().catch((err) =>
-      console.error('[callkit] failed to register cached VoIP token', err)
-    );
+      // Cold start: drain any token that arrived from PushKit before the
+      // listener above was registered.
+      syncVoipRegistration().catch((err) =>
+        console.error('[callkit] failed to register cached VoIP token', err)
+      );
 
-    // Account switch: rebind on login and remove on logout so the previous account's calls stop ringing this device. Registrations are idempotent upserts, so overlap between these three triggers is harmless.
-    const removeVoipLifecycle = registerPushRegistrationLifecycle({
-      syncRegistration: syncVoipRegistration,
-      unregisterForLogout: unregisterVoipForLogout,
-    });
-    onCleanup(removeVoipLifecycle);
+      // Account switch: rebind on login and remove on logout so the previous account's calls stop ringing this device. Registrations are idempotent upserts, so overlap between these three triggers is harmless.
+      const removeVoipLifecycle = registerPushRegistrationLifecycle({
+        syncRegistration: syncVoipRegistration,
+        unregisterForLogout: unregisterVoipForLogout,
+      });
+      onCleanup(removeVoipLifecycle);
+    }
 
     const handleCallAnswered = (
       { channelId, nativeMedia }: CallAnsweredPayload,
@@ -485,6 +493,7 @@ export function useCallKitSetup() {
     // the foreground so an ended call can never keep rendering as active.
     const handleVisibilityChange = () => {
       if (document.visibilityState !== 'visible') return;
+      drainPendingAnsweredCall();
       syncNativeCallState(nativeCall).catch((err) =>
         console.error('[callkit] foreground native call state sync failed', err)
       );
@@ -593,7 +602,7 @@ export async function syncNativeCallStateAfterLeave(
   nativeCall: NativeCallState,
   stateBeforeLeave: NativeCallStateBeforeLeave
 ): Promise<void> {
-  if (!isNativeIosCallKitEnabled()) return;
+  if (!isNativeCallEnabled()) return;
   await syncNativeCallState(nativeCall, {
     clearOnlyIfUnchangedSince: stateBeforeLeave,
   });
@@ -739,7 +748,7 @@ function useCallKitParticipantDisplayNameSync() {
 }
 
 export function CallKitSync() {
-  if (!isNativeIosCallKitEnabled()) return null;
+  if (!isNativeCallEnabled()) return null;
 
   useCallKitNativeMetadataSync();
   useCallKitParticipantDisplayNameSync();
@@ -844,7 +853,7 @@ function fallbackParticipantName(identity: string): string {
  * the user leaves from within the app rather than from the CallKit sheet.
  */
 export async function endCallKitCall(): Promise<void> {
-  if (!isNativeIosCallKitEnabled()) return;
+  if (!isNativeCallEnabled()) return;
   await invoke('plugin:call-kit|end_active_call').catch((err) =>
     console.error('[callkit] failed to end active call', err)
   );
@@ -854,7 +863,7 @@ export async function startNativeCallKitOutgoingCall(
   args: StartOutgoingCallArgs,
   nativeCall: Pick<NativeCallState, 'setBootstrapChannelId'>
 ): Promise<void> {
-  if (!isNativeIosCallKitEnabled()) return;
+  if (!isNativeCallEnabled()) return;
   console.info('[callkit] starting native outgoing call', {
     channelId: args.channelId,
     callId: args.callId,
@@ -868,7 +877,7 @@ export async function startNativeCallKitOutgoingCall(
 export async function setNativeCallKitVideoOverlayMode(
   mode: NativeCallSnapshot['videoOverlayMode']
 ): Promise<void> {
-  if (!isNativeIosCallKitEnabled()) return;
+  if (!isNativeCallEnabled()) return;
   await invoke('plugin:call-kit|set_video_overlay_mode', { mode }).catch(
     (err) =>
       console.error('[callkit] failed to set native video overlay mode', err)
@@ -878,7 +887,7 @@ export async function setNativeCallKitVideoOverlayMode(
 async function setNativeCallKitChannelTitle(
   channelTitle: string | null
 ): Promise<void> {
-  if (!isNativeIosCallKitEnabled()) return;
+  if (!isNativeCallEnabled()) return;
   await invoke('plugin:call-kit|set_call_drawer_channel_title', {
     channelTitle,
   }).catch((err) =>
@@ -890,7 +899,7 @@ async function setNativeCallKitParticipantDisplayName(
   identity: string,
   displayName: string | null
 ): Promise<void> {
-  if (!isNativeIosCallKitEnabled()) return;
+  if (!isNativeCallEnabled()) return;
   await invoke('plugin:call-kit|set_participant_display_name', {
     identity,
     displayName,

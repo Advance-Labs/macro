@@ -55,7 +55,10 @@ impl BuildEnv {
 }
 
 fn main() {
-    tauri_plugin::Builder::new(COMMANDS).try_build().unwrap();
+    tauri_plugin::Builder::new(COMMANDS)
+        .android_path("android")
+        .try_build()
+        .unwrap();
 
     let build_env = BuildEnv::from_env();
     if build_env.is_ios_target() {

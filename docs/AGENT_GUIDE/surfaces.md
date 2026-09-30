@@ -1703,3 +1703,14 @@ New conversations confirm selected model and effort settings before sending the
 first message. If startup reports a rejected setting or timeout, the first prompt
 has not been sent. See [effort capabilities](../AGENT_EFFORT.md) for the harness
 contracts and test coverage.
+
+### Android native channel calls
+
+Android channel calls use a native call activity rather than browser media.
+After joining, use its Mute, Camera, Switch camera, audio-route and End call
+controls. **Open Macro** returns to channel navigation; **Open call controls**
+in the web call controls restores the native surface. Leaving the channel does
+not end the call. Incoming calls expose Answer/Decline in the **Calls** notification
+channel, including while locked/backgrounded. PiP is a native, device-dependent
+flow. Browser-only tests cannot validate Telecom, FCM wakeup or background media;
+follow the hardware matrix in [Android development](../ANDROID_DEVELOPMENT.md#native-calling).
