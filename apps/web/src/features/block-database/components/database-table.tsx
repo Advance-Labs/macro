@@ -473,7 +473,7 @@ export function DatabaseTable(props: {
             <div
               role="columnheader"
               aria-label="Open record"
-              class="flex items-center justify-center border-r border-edge-muted/50 text-[10px] text-ink-placeholder"
+              class="sticky left-0 z-1 flex items-center justify-center border-r border-edge-muted/50 bg-panel text-[10px] text-ink-placeholder"
             >
               #
             </div>
@@ -552,7 +552,10 @@ export function DatabaseTable(props: {
                     ref={(element: HTMLElement) => {
                       createEffect(
                         on(highlighted, (on) => {
-                          if (on) element.scrollIntoView({ block: 'nearest' });
+                          if (!on) return;
+                          element.scrollIntoView({ block: 'nearest' });
+                          const first = props.columns[0];
+                          if (first) control(row().rowId, first.id)?.focus();
                         })
                       );
                     }}
@@ -568,7 +571,9 @@ export function DatabaseTable(props: {
                       role="gridcell"
                       aria-colindex={1}
                       tabindex={-1}
-                      class="flex items-center justify-center border-r border-edge-muted/40 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ink/50"
+                      // Opaque so cells scrolled beneath it stay hidden; the
+                      // overlay repeats the row's hover and highlight tint.
+                      class="sticky left-0 z-1 flex items-center justify-center border-r border-edge-muted/40 bg-panel outline-none before:pointer-events-none before:absolute before:inset-0 before:transition-colors before:duration-700 group-hover:before:bg-hover/50 group-data-highlighted:before:bg-accent/15 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ink/50"
                       data-grid-cell
                       data-grid-row={index()}
                       data-grid-column={0}

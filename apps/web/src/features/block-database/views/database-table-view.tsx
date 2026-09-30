@@ -272,15 +272,24 @@ export function DatabaseTableView(props: {
   const [highlightedRowId, setHighlightedRowId] = createSignal<string>();
   let highlightTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(highlightTimer));
-  /** Open a record arrived at from elsewhere, showing where it sits in the table. */
+  /**
+   * Show a record arrived at from elsewhere where it sits in the table. A
+   * record this view does not show (filtered out, or a board) opens instead.
+   */
   function reveal(rowId: string) {
+    if (
+      props.view.layout !== 'table' ||
+      !rows().some((row) => row.rowId === rowId)
+    ) {
+      open(rowId);
+      return;
+    }
     clearTimeout(highlightTimer);
     setHighlightedRowId(rowId);
     highlightTimer = setTimeout(
       () => setHighlightedRowId(undefined),
       HIGHLIGHT_MS
     );
-    open(rowId);
   }
   function editCreatedRow(rowId: string) {
     if (props.view.layout !== 'table') {

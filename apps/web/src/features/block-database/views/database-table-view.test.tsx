@@ -280,6 +280,8 @@ beforeEach(() => {
     '[role="menu"], [role="dialog"] { animation-name: none; }';
   document.head.append(style);
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+  // JSDOM has no layout, so a highlighted row cannot scroll itself into view.
+  Element.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal(
     'ResizeObserver',
     class {
@@ -780,6 +782,53 @@ describe('database table view', () => {
       expect(fixture.source.write).not.toHaveBeenCalled();
     }
   );
+
+  it('takes a record visited from elsewhere to its highlighted row without opening it', async () => {
+    const fixture = sourceFixture();
+    let actions!: DatabaseTableActions;
+    render(() => (
+      <DatabaseTableView
+        name="Projects"
+        source={fixture.source}
+        canEdit
+        view={defaultDatabaseView()}
+        addColumn={() => null}
+        renderToolbar={(ready) => {
+          actions = ready;
+          return null;
+        }}
+      />
+    ));
+    actions.openRecord('row');
+    const cell = await screen.findByRole('button', {
+      name: /Name: Plan launch/,
+    });
+    await waitFor(() => expect(document.activeElement).toBe(cell));
+    expect(
+      cell.closest('[data-grid-row-id="row"]')?.hasAttribute('data-highlighted')
+    ).toBe(true);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('opens a record visited from elsewhere when the view has no row to show it in', async () => {
+    const fixture = sourceFixture();
+    let actions!: DatabaseTableActions;
+    render(() => (
+      <DatabaseTableView
+        name="Projects"
+        source={fixture.source}
+        canEdit
+        view={{ ...defaultDatabaseView(), layout: 'board' }}
+        addColumn={() => null}
+        renderToolbar={(ready) => {
+          actions = ready;
+          return null;
+        }}
+      />
+    ));
+    actions.openRecord('row');
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+  });
 
   it('cancels pending initial cell focus when the table is unmounted', async () => {
     const fixture = sourceFixture();
