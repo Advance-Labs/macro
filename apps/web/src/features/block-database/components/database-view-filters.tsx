@@ -4,11 +4,19 @@ import { Button } from '@ui/components/Button';
 import { Index, Show } from 'solid-js';
 import {
   type DatabaseFilter,
+  type DatabaseFilterConjunction,
   type DatabaseViewColumn,
+  databaseFilterKind,
   filterNeedsValue,
   filterOperatorsFor,
 } from '../core/database-view';
+import { SelectPill } from './select-pill';
 import { ViewSelect } from './view-select';
+
+const CONJUNCTIONS: { value: DatabaseFilterConjunction; label: string }[] = [
+  { value: 'and', label: 'And' },
+  { value: 'or', label: 'Or' },
+];
 
 function FilterValue(props: {
   column: DatabaseViewColumn | undefined;
@@ -50,7 +58,14 @@ function FilterValue(props: {
         value={props.value}
         onChange={props.onChange}
         options={options()}
-        placeholder="Choose a value…"
+        placeholder="Choose"
+        renderOption={
+          props.column && databaseFilterKind(props.column) === 'select'
+            ? (option) => (
+                <SelectPill label={option.label} column={props.column} />
+              )
+            : undefined
+        }
       />
     </Show>
   );
@@ -59,7 +74,10 @@ function FilterValue(props: {
 export function FilterPanel(props: {
   columns: DatabaseViewColumn[];
   filters: DatabaseFilter[];
+  /** One conjunction joins every condition; mixing them per row would hide precedence. */
+  conjunction: DatabaseFilterConjunction;
   onChange: (filters: DatabaseFilter[]) => void;
+  onConjunctionChange: (conjunction: DatabaseFilterConjunction) => void;
 }) {
   const patch = (id: string, change: Partial<DatabaseFilter>) =>
     props.onChange(
@@ -81,24 +99,40 @@ export function FilterPanel(props: {
     ]);
   };
   return (
-    <div class="w-100 max-w-full">
-      <Show
-        when={props.filters.length}
-        fallback={
-          <p class="mb-3 max-w-72 text-xs leading-relaxed text-ink-muted">
-            Choose which records to show.
-          </p>
-        }
-      >
-        <p class="mb-2 text-xs text-ink-muted">Match all conditions</p>
+    <div class="w-118 max-w-full">
+      <Show when={!props.filters.length}>
+        <p class="mb-3 max-w-72 text-xs leading-relaxed text-ink-muted">
+          Choose which records to show.
+        </p>
       </Show>
       <div class="flex max-h-72 flex-col gap-2 overflow-auto">
         <Index each={props.filters}>
-          {(filter) => {
+          {(filter, index) => {
             const column = () =>
               props.columns.find((item) => item.id === filter().columnId);
             return (
               <div class="flex flex-wrap items-center gap-1.5">
+                <Show
+                  when={index > 0}
+                  fallback={
+                    <span class="w-16 shrink-0 px-2 text-xs text-ink-muted">
+                      Where
+                    </span>
+                  }
+                >
+                  <ViewSelect
+                    label="Match conditions with"
+                    value={props.conjunction}
+                    class="w-16 shrink-0"
+                    options={CONJUNCTIONS}
+                    onChange={(value) => {
+                      const next = CONJUNCTIONS.find(
+                        (option) => option.value === value
+                      );
+                      if (next) props.onConjunctionChange(next.value);
+                    }}
+                  />
+                </Show>
                 <ViewSelect
                   label="Filter property"
                   value={filter().columnId}

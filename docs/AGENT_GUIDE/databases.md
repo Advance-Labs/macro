@@ -101,8 +101,9 @@ remove only the relationship, never the related record. Enter selects a match.
 Tab selects a searched match before moving to the next cell; with an empty search
 it only moves. Escape closes the picker and returns focus to the cell. Choosing a
 relation in the empty row creates the record and its links together. View-only
-users can open references but cannot select or remove them. Search, filters, and
-sorting use current record names; unavailable records have a readable label.
+users can open references but cannot select or remove them. Relation cells show
+current record names, and unavailable records have a readable label. Search and
+sorting skip relations; a relation filter can only test whether it is empty.
 
 Edits save automatically. A failed save appears as an actionable error above the grid.
 A concurrent edit can cause a version conflict: the latest values load and
@@ -154,8 +155,13 @@ The table grid uses its always-ready empty row instead of a separate New button.
 the views row. Boards also offer **New**.
 **Search** expands an inline **Search records** field; **Clear search** leaves
 filters intact and keeps that field focused. Escape clears and closes search.
-Multiple filters are combined with AND. Multi-select filters match the selected
-members. Column headers offer sorting, **Move left**, **Move right**, and
+In **Filter**, the first condition reads **Where** and each later one has an
+**And**/**Or** control; the choice applies to every condition at once. A
+condition with no value yet is ignored. Select and multi-select values are offered
+as the same colored pills the cells show, behind a **Choose** placeholder.
+Multi-select filters match the selected members. Search, filters, and sorting run
+in the database engine as one SQL statement, so text matches ignore case and dates
+compare by calendar day (UTC). Column headers offer sorting, **Move left**, **Move right**, and
 **Hide column** for the current view. Moves skip hidden columns; the Columns
 switches in **View settings** restore a hidden column to its saved position.
 Hidden columns remain available in the record dialog, and new columns appear
