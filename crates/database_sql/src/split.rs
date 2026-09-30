@@ -11,6 +11,7 @@
 //!
 //! Split is total: every resolved query has a plan.
 
+mod propf;
 mod pushdown;
 #[cfg(test)]
 mod test;
@@ -18,10 +19,13 @@ mod test;
 use filter_ast::Expr;
 use item_filters::ast::properties::PropertiesLiteral;
 use serde::{Deserialize, Serialize};
+use specta::Type;
 use uuid::Uuid;
 
 use crate::catalog::{Catalog, Column, ColumnKind, TableSource};
 use crate::fold::Cell;
+pub use propf::{Propf, PropfLiteral, PropfValue};
+
 use crate::resolve::{
     AggFn, Binding, Filter, JoinKind, Order, OrderKey, Relation, SelectItem, SelectQuery,
 };
@@ -77,7 +81,7 @@ pub struct JoinPlan {
 }
 
 /// Every GraphQL query a plan can send.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(
     tag = "type",
     rename_all = "camelCase",
@@ -89,6 +93,7 @@ pub enum GqlQuery {
         /// The table whose rows are read.
         table: Uuid,
         /// The pushed-down part of `WHERE`, as the Soup `propf` expression.
+        #[specta(type = Option<Propf>)]
         propf: Option<Expr<PropertiesLiteral>>,
         /// For a joined relation, the values the join needs; a driver may
         /// narrow its fetch to rows carrying one of them. The fold applies
@@ -102,6 +107,7 @@ pub enum GqlQuery {
         /// The table whose rows are counted.
         table: Uuid,
         /// The pushed-down part of `WHERE`.
+        #[specta(type = Option<Propf>)]
         propf: Option<Expr<PropertiesLiteral>>,
         /// The column whose values form the bins.
         group_by: Uuid,
@@ -116,7 +122,7 @@ pub enum GqlQuery {
 }
 
 /// The values a joined relation is matched on.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct KeyHint {
     /// The property matched; `None` when the row id is.

@@ -5,10 +5,11 @@
 //! case, and hands it across the wasm boundary.
 
 use serde::{Deserialize, Serialize};
+use specta::Type;
 use uuid::Uuid;
 
 /// Every table a statement may name.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Catalog {
     /// The visible tables.
@@ -16,7 +17,7 @@ pub struct Catalog {
 }
 
 /// One table and its columns, in display order.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Table {
     /// The table id.
@@ -34,7 +35,7 @@ pub struct Table {
 
 /// Where a table's rows come from. The engine only says which; the driver
 /// serving its fetch requests decides how.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum TableSource {
     /// A Macro database table, read through Soup.
@@ -87,7 +88,7 @@ pub fn people_table() -> Table {
 }
 
 /// One column: a property definition bound to the table.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Column {
     /// The property definition id.
@@ -101,7 +102,7 @@ pub struct Column {
 /// The value type of a column, mirroring the property data types a query can
 /// compare against. The static string form is how the kind reads in an
 /// error message.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, strum::IntoStaticStr)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type, strum::IntoStaticStr)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 #[strum(serialize_all = "lowercase")]
 pub enum ColumnKind {
@@ -146,6 +147,7 @@ pub enum ColumnKind {
     Eq,
     Serialize,
     Deserialize,
+    Type,
     strum::EnumString,
     strum::IntoStaticStr,
     strum::EnumIter,
@@ -189,7 +191,7 @@ impl EntityKind {
 }
 
 /// One option of a select column.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SelectOption {
     /// The option id.

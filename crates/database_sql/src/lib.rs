@@ -38,4 +38,6 @@ pub use run::{
     AlteredColumn, ColumnChange, Outcome, OutcomeColumn, OutcomeKind, Page, RowFailure, RowSource,
     RowWriter, RunError, SourceError, WriteError, run,
 };
-pub use split::{GqlQuery, JoinPlan, KeyHint, Plan, RelationPlan, Shape, split};
+pub use split::{
+    GqlQuery, JoinPlan, KeyHint, Plan, Propf, PropfLiteral, PropfValue, RelationPlan, Shape, split,
+};

@@ -13,6 +13,7 @@
 mod test;
 
 use serde::{Deserialize, Serialize};
+use specta::Type;
 use uuid::Uuid;
 
 use crate::catalog::Catalog;
@@ -22,7 +23,7 @@ use crate::run::{Outcome, OutcomeColumn, PAGE_LIMIT, Page, ROW_CAP, RunError, de
 use crate::split::{GqlQuery, KeyHint, Plan, Shape, split};
 
 /// What the driver does next.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(tag = "step", rename_all = "camelCase")]
 pub enum Step {
     /// Fetch one page and feed it to [`Engine::feed_page`].
@@ -35,7 +36,7 @@ pub enum Step {
 }
 
 /// One fetch the engine wants.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Request {
     /// Identifies the request; the feed must quote it.
@@ -48,6 +49,7 @@ pub struct Request {
     /// Where to continue; `None` at the start of a relation.
     pub cursor: Option<String>,
     /// At most this many rows.
+    #[specta(type = u32)]
     pub limit: usize,
 }
 

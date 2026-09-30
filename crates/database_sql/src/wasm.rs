@@ -4,8 +4,9 @@
 //! constructs one with the catalog and the statement, reads the first
 //! [`Step`] from [`Query::start`], serves each request, and feeds the pages
 //! (or bins) back until a step is `done`. Values cross as plain JSON
-//! objects in the shapes `serde` gives the engine's types: see
-//! `apps/web/src/lib/core/database-sql/wasm-module.ts` for the mirror.
+//! objects in the shapes `serde` gives the engine's types, which
+//! `bin/database_sql_types.rs` writes out as TypeScript for
+//! `apps/web/src/lib/core/database-sql/wasm-module.ts`.
 //!
 //! Only the wasm-bindgen glue lives here; the engine knows nothing of it.
 

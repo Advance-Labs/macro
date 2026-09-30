@@ -19,6 +19,7 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use specta::Type;
 use uuid::Uuid;
 
 use crate::catalog::Catalog;
@@ -27,7 +28,7 @@ use crate::split::{Plan, Shape};
 
 /// A cell as fetched. An absent cell is `NULL`; an absent multi-valued cell
 /// is the empty set.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(tag = "type", content = "value", rename_all = "camelCase")]
 pub enum Cell {
     /// Text or link.
@@ -47,7 +48,7 @@ pub enum Cell {
 /// One fetched row: the entity id and the cells the plan asked for. After
 /// a join, the cells of every matched relation under their keys, with the
 /// `FROM` row's id.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 pub struct Row {
     /// The row entity id.
     pub id: Uuid,
@@ -60,11 +61,12 @@ pub struct Row {
 }
 
 /// One `groupSoup` bin: the grouped value and how many rows it holds.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 pub struct Bin {
     /// The group's value; `None` for rows with an empty cell.
     pub key: Option<Cell>,
     /// Rows in the group.
+    #[specta(type = u32)]
     pub count: u64,
 }
 

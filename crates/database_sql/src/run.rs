@@ -13,6 +13,7 @@ use std::future::Future;
 
 use maybe_send::MaybeSend;
 use serde::{Deserialize, Serialize};
+use specta::Type;
 use uuid::Uuid;
 
 use crate::cast::ColumnType;
@@ -33,7 +34,7 @@ pub const ROW_CAP: usize = 20_000;
 pub const PAGE_LIMIT: usize = 500;
 
 /// One page of rows from the server.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Page {
     /// The rows, carrying at least the columns asked for.
@@ -149,7 +150,7 @@ pub enum RunError {
 }
 
 /// What a statement produced.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Outcome {
     /// The result columns, in select-list order; empty for writes.
@@ -174,7 +175,7 @@ pub struct Outcome {
 }
 
 /// A column whose type an `ALTER COLUMN` changed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AlteredColumn {
     /// The table.
@@ -184,27 +185,29 @@ pub struct AlteredColumn {
     /// The type it became, as SQL spells it.
     pub to: String,
     /// Cells `USING NULL` emptied.
+    #[specta(type = u32)]
     pub cleared_cells: usize,
     /// Cells that kept only their first of several values.
+    #[specta(type = u32)]
     pub trimmed_cells: usize,
 }
 
 /// One result column.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct OutcomeColumn {
     /// The name as the statement would call it: the column's display name,
     /// or `SUM(amount)`.
     pub name: String,
     /// The column behind the values, when there is one.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub column: Option<Uuid>,
     /// What the values are.
     pub kind: OutcomeKind,
 }
 
 /// The value kind of a result column.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum OutcomeKind {
     /// Text or link.
@@ -222,11 +225,12 @@ pub enum OutcomeKind {
 }
 
 /// A write that did not land on one row.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RowFailure {
     /// 0-based position of the row in the statement; for `UPDATE` and
     /// `DELETE`, always 0.
+    #[specta(type = u32)]
     pub row: usize,
     /// Why, as the writer said it.
     pub message: String,
