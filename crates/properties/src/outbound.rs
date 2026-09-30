@@ -25,3 +25,6 @@ pub mod test;
 
 /// Transactional database-owned definition writer.
 pub mod database_definition_writer;
+
+/// Transactional database row cell and option writer.
+pub mod database_cell_writer;

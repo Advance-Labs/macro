@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use models_properties::db;
 use models_properties::service::property_option::{PropertyOption, PropertyOptionValue};
-use sqlx::{Pool, Postgres};
+use sqlx::{PgExecutor, Pool, Postgres};
 use uuid::Uuid;
 
 use crate::domain::model::{
@@ -42,9 +42,9 @@ pub async fn get_property_option(
 }
 
 /// Gets all property options for a property definition, ordered for display.
-#[tracing::instrument(skip(pool))]
+#[tracing::instrument(skip(executor))]
 pub async fn get_property_options(
-    pool: &Pool<Postgres>,
+    executor: impl PgExecutor<'_>,
     property_definition_id: Uuid,
 ) -> anyhow::Result<Vec<PropertyOption>> {
     let rows = sqlx::query_as!(
@@ -65,7 +65,7 @@ pub async fn get_property_options(
         "#,
         property_definition_id
     )
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await?;
 
     rows.into_iter()
@@ -127,7 +127,27 @@ pub async fn create_property_option(
     value: PropertyOptionValue,
     color: Option<String>,
 ) -> anyhow::Result<PropertyOption> {
-    let id = macro_uuid::generate_uuid_v7();
+    insert_property_option(
+        pool,
+        macro_uuid::generate_uuid_v7(),
+        property_definition_id,
+        display_order,
+        value,
+        color,
+    )
+    .await
+}
+
+/// Inserts a property option under an id the caller minted.
+#[tracing::instrument(skip(executor))]
+pub async fn insert_property_option(
+    executor: impl PgExecutor<'_>,
+    id: Uuid,
+    property_definition_id: Uuid,
+    display_order: i32,
+    value: PropertyOptionValue,
+    color: Option<String>,
+) -> anyhow::Result<PropertyOption> {
     let (number_value, string_value) = value.to_db_values();
 
     let row = sqlx::query!(
@@ -150,7 +170,7 @@ pub async fn create_property_option(
         string_value,
         color.clone()
     )
-    .fetch_one(pool)
+    .fetch_one(executor)
     .await?;
 
     Ok(PropertyOption {
