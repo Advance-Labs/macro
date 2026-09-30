@@ -829,6 +829,47 @@ describe('database table view', () => {
     expect((nameField as HTMLInputElement).value).toBe('Column 3');
   });
 
+  it('holds a row in place while it is being typed in, even after it stops matching the view', async () => {
+    const fixture = sourceFixture();
+    fixture.setSnapshot({
+      version: 1,
+      rows: [
+        { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        { rowId: 'other', cells: { title: 'Book venue', status: 'To do' } },
+      ],
+    });
+    render(() => (
+      <DatabaseTableView
+        name="Projects"
+        source={fixture.source}
+        canEdit
+        view={defaultDatabaseView()}
+        addColumn={() => null}
+      />
+    ));
+    const cell = screen.getByRole('button', { name: /Name: Plan launch/ });
+    fireEvent.click(cell);
+    const input = (await screen.findByRole('textbox', {
+      name: 'Edit Name',
+    })) as HTMLInputElement;
+    fireEvent.input(input, { target: { value: 'Plan the launch party' } });
+    // Someone else's edit makes this row stop matching the view's filters.
+    fixture.setSnapshot({
+      version: 2,
+      rows: [
+        { rowId: 'other', cells: { title: 'Book venue', status: 'To do' } },
+      ],
+    });
+    expect(screen.getByRole('textbox', { name: 'Edit Name' })).toBe(input);
+    expect(input.value).toBe('Plan the launch party');
+    fireEvent.keyDown(input, { key: 'Escape' });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: /Name: Plan launch/ })
+      ).toBeNull()
+    );
+  });
+
   it('takes a record visited from elsewhere to its highlighted row without opening it', async () => {
     const fixture = sourceFixture();
     let actions!: DatabaseTableActions;

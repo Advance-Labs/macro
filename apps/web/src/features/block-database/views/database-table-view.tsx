@@ -8,6 +8,7 @@ import { DeleteDialog } from '@ui/components/DeleteDialog';
 import { Mutex } from 'async-mutex';
 import {
   type Accessor,
+  createMemo,
   createSignal,
   For,
   type JSX,
@@ -201,12 +202,43 @@ export function DatabaseTableView(props: {
       ? controller.knownRows().find((row) => row.rowId === saved.rowId)
       : undefined;
   };
+  // The row whose cell is open for typing, so a refresh cannot pull it away.
+  const [editingRowId, setEditingRowId] = createSignal<string>();
   // Records being looked at or typed into stay readable when they leave the view.
   props.source.retain(() =>
-    [selectedId(), hiddenSavedRecord()?.rowId, ...draftRows.serverIds()].filter(
-      (rowId): rowId is string => rowId !== undefined
-    )
+    [
+      selectedId(),
+      hiddenSavedRecord()?.rowId,
+      editingRowId(),
+      ...draftRows.serverIds(),
+    ].filter((rowId): rowId is string => rowId !== undefined)
   );
+  /**
+   * The grid's rows. Someone else's edit can make the row being typed in stop
+   * matching the view; it keeps its place until the edit ends.
+   */
+  let shownBefore: DatabaseRow[] = [];
+  const gridRows = createMemo(() => {
+    const current =
+      props.canEdit && visibleColumns().some(canEditCell)
+        ? draftRows.project(rows())
+        : rows();
+    const held = editingRowId();
+    const index = shownBefore.findIndex((row) => row.rowId === held);
+    const shown =
+      held === undefined ||
+      index < 0 ||
+      current.some((row) => row.rowId === held)
+        ? current
+        : [
+            ...current.slice(0, index),
+            controller.knownRows().find((row) => row.rowId === held) ??
+              shownBefore[index],
+            ...current.slice(index),
+          ];
+    shownBefore = shown;
+    return shown;
+  });
   function recordSaved(
     mutation: DatabaseRowMutation,
     result: DatabaseWriteResult
@@ -934,14 +966,13 @@ export function DatabaseTableView(props: {
               fallback={
                 <DatabaseTable
                   name={props.name}
-                  rows={
-                    props.canEdit && visibleColumns().some(canEditCell)
-                      ? draftRows.project(rows())
-                      : rows()
-                  }
+                  rows={gridRows()}
                   isUnsavedRow={draftRows.isUnsaved}
                   onRowFocus={draftRows.setActive}
-                  onCellFocus={props.onCellFocus}
+                  onCellFocus={(cell) => {
+                    setEditingRowId(cell?.editing ? cell.rowId : undefined);
+                    props.onCellFocus?.(cell);
+                  }}
                   remoteUsers={props.remoteUsers}
                   highlightRowId={highlightedRowId()}
                   columns={visibleColumns()}
