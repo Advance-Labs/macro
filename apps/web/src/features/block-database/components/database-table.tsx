@@ -201,6 +201,16 @@ export function DatabaseTable(props: {
     editRequestedCell();
     return true;
   };
+  const navigateRow = (rowId: string, columnId: string, direction: 1 | -1) => {
+    if (!props.canEdit) return false;
+    const column = props.columns.find((candidate) => candidate.id === columnId);
+    const rowIndex = props.rows.findIndex((row) => row.rowId === rowId);
+    const row = props.rows[rowIndex + direction];
+    if (rowIndex < 0 || !row || !column || !canEditCell(column)) return false;
+    pendingEdit = { rowId: row.rowId, columnId };
+    editRequestedCell();
+    return true;
+  };
   let announcedCell: DatabaseCellFocus | undefined;
   const announceCell = (cell: DatabaseCellFocus | undefined) => {
     if (
@@ -291,7 +301,17 @@ export function DatabaseTable(props: {
     const column = props.columns[columnIndex - 1];
     const nextControl =
       row && column ? control(row.rowId, column.id) : undefined;
-    if (nextControl) nextControl.focus();
+    // Stepping down onto the new-record row starts typing there, like a spreadsheet.
+    if (
+      nextControl &&
+      delta[0] === 1 &&
+      props.canEdit &&
+      column &&
+      canEditCell(column) &&
+      props.isUnsavedRow?.(row.rowId)
+    )
+      nextControl.edit();
+    else if (nextControl) nextControl.focus();
     else
       (
         next.querySelector<HTMLElement>('button, input, [tabindex]') ?? next
@@ -607,6 +627,12 @@ export function DatabaseTable(props: {
                                 register(row().rowId, column().id, editor),
                               onNavigate: (direction) =>
                                 navigate(row().rowId, column().id, direction),
+                              onNavigateRow: (direction) =>
+                                navigateRow(
+                                  row().rowId,
+                                  column().id,
+                                  direction
+                                ),
                             })}
                             <Show when={presence().length}>
                               <span class="pointer-events-none absolute -top-px right-0 z-1 flex gap-px">

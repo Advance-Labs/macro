@@ -430,6 +430,15 @@ export function GridCell(props: GridCellProps) {
             focusEditor = focus;
             props.onEditorReady?.(focus);
           }}
+          onNavigateRow={
+            props.onNavigateRow
+              ? (direction) => {
+                  if (props.onNavigateRow?.(direction)) return true;
+                  queueMicrotask(() => trigger?.focus());
+                  return false;
+                }
+              : undefined
+          }
           onNavigate={(direction) => {
             if (props.onNavigate?.(direction)) return true;
             const previousFocus = document.activeElement;
@@ -490,6 +499,7 @@ function InlineEditor(props: {
   onClose: (restoreFocus?: boolean) => void;
   onEditorReady?: (focus: () => void) => void;
   onNavigate?: (direction: 1 | -1) => boolean;
+  onNavigateRow?: (direction: 1 | -1) => boolean;
 }) {
   let input: HTMLInputElement | undefined;
   let textFocus: (() => void) | undefined;
@@ -556,6 +566,17 @@ function InlineEditor(props: {
       if (!commit(false)) event.preventDefault();
       else if (props.onNavigate?.(event.shiftKey ? -1 : 1))
         event.preventDefault();
+    }
+    if (
+      (event.key === 'ArrowDown' || event.key === 'ArrowUp') &&
+      !event.shiftKey &&
+      !event.altKey &&
+      props.onNavigateRow
+    ) {
+      const direction = event.key === 'ArrowDown' ? 1 : -1;
+      if (!caretOnEdgeLine(event.currentTarget, direction)) return;
+      event.preventDefault();
+      if (commit(false)) props.onNavigateRow(direction);
     }
   };
   return (
@@ -1127,4 +1148,21 @@ function DateCell(props: GridCellProps) {
       </Dropdown.Content>
     </Dropdown>
   );
+}
+
+/** Multi-line text keeps its arrows until the caret is on the first or last line. */
+function caretOnEdgeLine(
+  target: EventTarget | null,
+  direction: 1 | -1
+): boolean {
+  if (target instanceof HTMLInputElement) return true;
+  if (!(target instanceof HTMLElement)) return false;
+  const selection = target.ownerDocument.getSelection();
+  if (!selection?.rangeCount || !selection.isCollapsed) return false;
+  const caret = selection.getRangeAt(0);
+  const rest = target.ownerDocument.createRange();
+  rest.selectNodeContents(target);
+  if (direction === 1) rest.setStart(caret.endContainer, caret.endOffset);
+  else rest.setEnd(caret.startContainer, caret.startOffset);
+  return !rest.toString().includes('\n');
 }

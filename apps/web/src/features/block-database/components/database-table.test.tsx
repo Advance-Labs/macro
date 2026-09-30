@@ -374,6 +374,31 @@ describe('spreadsheet interactions', () => {
     expect(onOpen).not.toHaveBeenCalled();
   });
 
+  it('saves with Down from the last record and starts editing the new-record row', async () => {
+    const { setRecords, setUnsavedRow, onWrite } = setup();
+    setUnsavedRow('draft');
+    setRecords([...rows, { rowId: 'draft', cells: {} }]);
+    screen.getByRole('button', { name: /Name: Second\./ }).focus();
+    await userEvent.keyboard('{Enter}Renamed{ArrowDown}');
+    expect(onWrite.mock.calls).toEqual([['two', 'name', 'Renamed']]);
+    expect(document.activeElement).toBe(
+      screen.getByRole('textbox', { name: 'Edit Name' })
+    );
+    expect(
+      document.activeElement?.closest<HTMLElement>('[data-grid-row-id]')
+        ?.dataset.gridRowId
+    ).toBe('draft');
+  });
+
+  it('steps Down onto the new-record row already editing it', async () => {
+    const { setRecords, setUnsavedRow, onWrite } = setup();
+    setUnsavedRow('draft');
+    setRecords([...rows, { rowId: 'draft', cells: {} }]);
+    screen.getByRole('button', { name: /Name: Second\./ }).focus();
+    await userEvent.keyboard('{ArrowDown}Third{Enter}');
+    expect(onWrite.mock.calls).toEqual([['draft', 'name', 'Third']]);
+  });
+
   it('types through consecutive select fields after Tab without exposing menu keyboard shortcuts', async () => {
     const { setColumns, onWrite } = setup();
     setColumns([
