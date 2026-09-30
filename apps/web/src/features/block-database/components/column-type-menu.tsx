@@ -63,9 +63,20 @@ export function ColumnTypeMenu(props: {
     props.column.isMultiSelect === !!change.isMultiSelect &&
     (props.column.specificEntityType ?? undefined) ===
       change.specificEntityType;
+  /** A type no value converts to is left out; until the dry run answers, nothing is listed. */
+  const offered = (change: DatabaseColumnTypeChange) =>
+    castOf(change)?.verdict !== 'never';
+  const checking = () => casts?.().status === 'loading';
+  const offeredTables = () =>
+    (props.tables ?? []).filter((table) =>
+      offered({
+        dataType: 'ENTITY',
+        isMultiSelect: true,
+        linkToTableId: table.id,
+      })
+    );
   const choose = (label: string, change: DatabaseColumnTypeChange) => {
     const cast = castOf(change);
-    if (cast?.verdict === 'never') return;
     if (cast?.verdict === 'checked' && cast.failures > 0)
       props.onConfirmClearing({ label, change, cast });
     else props.onChange(change);
@@ -82,53 +93,60 @@ export function ColumnTypeMenu(props: {
         <CaretRightIcon class="size-3" />
       </Dropdown.SubTrigger>
       <Dropdown.SubContent class="w-60 max-h-[min(28rem,80vh)] overflow-y-auto">
-        <Dropdown.Group>
-          <For each={types}>
-            {(type) => (
-              <TypeItem
-                label={type.label}
-                cast={castOf(type.change)}
-                icon={
-                  <PropertyIcon
-                    type={type.change.dataType}
-                    entityType={type.change.specificEntityType}
-                  />
-                }
-                selected={selected(type.change)}
-                onSelect={() => choose(type.label, type.change)}
-              />
-            )}
-          </For>
-        </Dropdown.Group>
-        <Show when={props.tables?.length}>
+        <Show when={checking()}>
+          <Dropdown.Item disabled>
+            <span class="text-xs text-ink-muted">Checking values…</span>
+          </Dropdown.Item>
+        </Show>
+        <Show when={!checking()}>
           <Dropdown.Group>
-            <Dropdown.GroupLabel>Related table</Dropdown.GroupLabel>
-            <For each={props.tables}>
-              {(table) => {
-                const change: DatabaseColumnTypeChange = {
-                  dataType: 'ENTITY',
-                  isMultiSelect: true,
-                  linkToTableId: table.id,
-                };
-                return (
-                  <TypeItem
-                    label={table.name}
-                    cast={castOf(change)}
-                    icon={<PropertyIcon type="ENTITY" relation />}
-                    selected={props.column.relation?.tableId === table.id}
-                    onSelect={() => choose(table.name, change)}
-                  />
-                );
-              }}
+            <For each={types.filter((type) => offered(type.change))}>
+              {(type) => (
+                <TypeItem
+                  label={type.label}
+                  cast={castOf(type.change)}
+                  icon={
+                    <PropertyIcon
+                      type={type.change.dataType}
+                      entityType={type.change.specificEntityType}
+                    />
+                  }
+                  selected={selected(type.change)}
+                  onSelect={() => choose(type.label, type.change)}
+                />
+              )}
             </For>
           </Dropdown.Group>
+          <Show when={offeredTables().length}>
+            <Dropdown.Group>
+              <Dropdown.GroupLabel>Related table</Dropdown.GroupLabel>
+              <For each={offeredTables()}>
+                {(table) => {
+                  const change: DatabaseColumnTypeChange = {
+                    dataType: 'ENTITY',
+                    isMultiSelect: true,
+                    linkToTableId: table.id,
+                  };
+                  return (
+                    <TypeItem
+                      label={table.name}
+                      cast={castOf(change)}
+                      icon={<PropertyIcon type="ENTITY" relation />}
+                      selected={props.column.relation?.tableId === table.id}
+                      onSelect={() => choose(table.name, change)}
+                    />
+                  );
+                }}
+              </For>
+            </Dropdown.Group>
+          </Show>
         </Show>
       </Dropdown.SubContent>
     </Dropdown.Sub>
   );
 }
 
-/** One type; a type no value converts to is disabled and says why. */
+/** One offered type; a checked one says what converting would clear. */
 function TypeItem(props: {
   label: string;
   cast: DatabaseColumnCast | undefined;
@@ -138,15 +156,10 @@ function TypeItem(props: {
 }) {
   const description = () => {
     const cast = props.cast;
-    if (cast?.verdict === 'never') return cast.reason;
-    if (cast?.verdict === 'checked') return cast.summary;
-    return undefined;
+    return cast?.verdict === 'checked' ? cast.summary : undefined;
   };
   return (
-    <Dropdown.Item
-      disabled={props.cast?.verdict === 'never'}
-      onSelect={props.onSelect}
-    >
+    <Dropdown.Item onSelect={props.onSelect}>
       {props.icon}
       <span class="flex min-w-0 flex-1 flex-col">
         <Dropdown.ItemLabel class="truncate">{props.label}</Dropdown.ItemLabel>

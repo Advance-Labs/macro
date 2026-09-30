@@ -123,18 +123,13 @@ function choose(item: HTMLElement) {
   fireEvent(item, new MouseEvent('pointerup', { button: 0, bubbles: true }));
 }
 
-it('greys out a type no value converts to, with the reason', async () => {
-  const { changeType, opened } = renderHeader();
+it('lists only the types the column can become', async () => {
+  const { opened } = renderHeader();
   await openTypeMenu();
 
-  const people = await screen.findByRole('menuitem', { name: 'People' });
-  expect(people.getAttribute('aria-disabled')).toBe('true');
-  expect(people.textContent).toContain(
-    'Only an empty column can become a reference column.'
-  );
+  expect(await screen.findByRole('menuitem', { name: /^Number/ })).toBeTruthy();
+  expect(screen.queryByRole('menuitem', { name: /^People/ })).toBeNull();
   expect(opened).toContain('price');
-  choose(people);
-  expect(changeType).not.toHaveBeenCalled();
 });
 
 it('confirms a checked type with failures, then converts with clearing', async () => {

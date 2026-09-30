@@ -21,12 +21,12 @@ Its type icon stays in place while editing. SQL refers to tables and columns by
 their display names (double-quoted), so a rename changes the name a saved query
 must use.
 
-The header arrow menu groups schema and view actions. **Change type** offers Text,
-Number, Select, Multi-select, Date, Checkbox, URL, People, Documents, Tasks, and
-relations to tables in this database. Opening it checks the column's values
-against every type. A type no value can become is greyed out, with the reason
-under its name (a checkbox can only become text; only an empty column can become
-People or a relation). A type some values would not survive shows how many, such
+The header arrow menu groups schema and view actions. **Change type** checks the
+column's values against Text, Number, Select, Multi-select, Date, Checkbox, URL,
+People, Documents, Tasks, and relations to tables in this database, showing
+"Checking values…" meanwhile, then lists only the types the column can become (a
+checkbox can only become text; only an empty column can become People or a
+relation). A type some values would not survive shows how many, such
 as "3 values aren't numbers"; choosing it opens a confirmation listing a few of
 them, and **Convert anyway, clearing 3 values** converts the rest and empties
 those (a cell with several values keeps its first). Every other type converts
