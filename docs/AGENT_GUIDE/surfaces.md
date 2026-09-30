@@ -1660,6 +1660,10 @@ spinner while sending.
 The mobile new-email composer nests the channel-style Send button inside its
 top-right glass toolbar, with an even 5px inset on the top, bottom, and right.
 The toolbar is 46px tall; attachment and schedule controls align with Send.
+The standalone draft view owns this header placement. Embedded AI email drafts
+keep Send inside their draft card, including on mobile; opening one must not add
+email controls to the agent or chat header. Check both a new email and an AI draft
+on mobile, and confirm desktop drafts still have Send in the composer toolbar.
 
 Channel, email, Markdown, and composer body text use `text-base`: 15px at the
 default root size. Supporting `text-sm` text is 14px and `text-xs` is 12px.

@@ -1,5 +1,9 @@
 import { MobileDrawer } from '@components/app/mobile/MobileDrawer';
-import { SplitHeaderLeft } from '@components/app/split-layout/components/SplitHeader';
+import { HeaderIsland } from '@components/app/split-layout/components/HeaderIsland';
+import {
+  SplitHeaderLeft,
+  SplitHeaderRight,
+} from '@components/app/split-layout/components/SplitHeader';
 import {
   SplitHeaderBadge,
   StaticSplitLabel,
@@ -20,7 +24,11 @@ import {
   type EmailComposerOptions,
 } from '../primitives/email-composer';
 import { ComposeLayout } from '../views/compose-layout';
-import { EmailComposeToolbar } from '../views/compose-toolbar';
+import {
+  EmailComposeToolbar,
+  MobileEmailComposeActions,
+  MobileEmailComposeScheduleSummary,
+} from './compose-toolbar';
 export type EmailComposeViewProps = Pick<
   EmailComposerOptions,
   | 'host'
@@ -131,6 +139,18 @@ export function EmailComposeView(props: EmailComposeViewProps) {
 
   return (
     <ComposeProvider value={ctxValue}>
+      <Show when={composeContext.presentation.isMobile()}>
+        <SplitHeaderLeft>
+          <HeaderIsland class="max-w-[55cqw] shrink px-2">
+            <MobileEmailComposeScheduleSummary />
+          </HeaderIsland>
+        </SplitHeaderLeft>
+        <SplitHeaderRight>
+          <HeaderIsland class="h-(--mobile-chrome-button-size) p-[5px]">
+            <MobileEmailComposeActions />
+          </HeaderIsland>
+        </SplitHeaderRight>
+      </Show>
       <Show when={!composeContext.presentation.isMobile()}>
         <SplitHeaderLeft>
           <StaticSplitLabel
@@ -175,7 +195,11 @@ export function EmailComposeView(props: EmailComposeViewProps) {
             )}
           >
             <ComposeLayout
-              toolbar={<EmailComposeToolbar editor={editor} />}
+              toolbar={
+                <Show when={!composeContext.presentation.isMobile()}>
+                  <EmailComposeToolbar editor={editor} />
+                </Show>
+              }
               notice={hasInboxError() ? <EmailPermissionsBanner /> : undefined}
               class="size-full p-4 touch:bg-surface max-h-full touch:max-h-none overflow-hidden flex flex-col min-h-0 touch:min-h-full"
             />

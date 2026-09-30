@@ -1,10 +1,5 @@
 import { MAX_ATTACHMENTS_BYTES_SIZE } from '@app/features/email-compose/core/constants';
 import { FormatButtons } from '@channel/Input/FormatButtons';
-import { HeaderIsland } from '@components/app/split-layout/components/HeaderIsland';
-import {
-  SplitHeaderLeft,
-  SplitHeaderRight,
-} from '@components/app/split-layout/components/SplitHeader';
 import { defaultSelectionData } from '@core/component/LexicalMarkdown/plugins';
 import {
   NODE_TRANSFORM,
@@ -22,12 +17,9 @@ import { EmailDateSelector } from '../components/email-date-selector';
 import { EmailScheduleSummary } from '../components/email-schedule-summary';
 import { useCompose } from '../context/compose-context';
 
-export function EmailComposeToolbar(props: {
-  editor?: () => LexicalEditor | undefined;
-}) {
+function createAttachmentHandler() {
   const ctx = useCompose();
-  const [showFormatRibbon, setShowFormatRibbon] = createSignal(false);
-  const handleAddAttachments = (files: File[]) => {
+  return (files: File[]) => {
     const currentAttachments = ctx.attachments();
 
     const attachmentsToAddByteSize = files.reduce((sum, f) => sum + f.size, 0);
@@ -61,11 +53,25 @@ export function EmailComposeToolbar(props: {
       }))
     );
   };
+}
+
+/** Renders controls in place; the owning view chooses their location. */
+export function EmailComposeToolbar(props: {
+  editor?: () => LexicalEditor | undefined;
+}) {
+  const ctx = useCompose();
+  const [showFormatRibbon, setShowFormatRibbon] = createSignal(false);
+  const handleAddAttachments = createAttachmentHandler();
 
   return (
     <Show
       when={!ctx.isMobile()}
-      fallback={<MobileToolbar handleAddAttachments={handleAddAttachments} />}
+      fallback={
+        <div class="mt-2 flex flex-wrap items-center justify-end gap-2">
+          <MobileEmailComposeScheduleSummary />
+          <MobileEmailComposeActions />
+        </div>
+      }
     >
       <Show when={showFormatRibbon()}>
         <div class="flex flex-row w-full gap-2 items-center p-2 -ml-3">
@@ -146,9 +152,7 @@ export function EmailComposeToolbar(props: {
   );
 }
 
-function MobileToolbar(props: {
-  handleAddAttachments: (files: File[]) => void;
-}) {
+export function MobileEmailComposeScheduleSummary() {
   const ctx = useCompose();
   const hasScheduleSummary = () => {
     const state = ctx.schedule.state();
@@ -156,61 +160,57 @@ function MobileToolbar(props: {
   };
 
   return (
-    <>
-      <SplitHeaderLeft>
-        <Show when={hasScheduleSummary()}>
-          <HeaderIsland class="max-w-[55cqw] shrink px-2">
-            <EmailScheduleSummary
-              state={ctx.schedule.state()}
-              operation={ctx.schedule.operation()}
-              onSelectTime={ctx.schedule.onSelect}
-              onCancelSchedule={ctx.schedule.onCancel}
-            />
-          </HeaderIsland>
-        </Show>
-      </SplitHeaderLeft>
-      <SplitHeaderRight>
-        <HeaderIsland class="h-(--mobile-chrome-button-size) p-[5px]">
-          <Show when={!ctx.hideAttachments}>
-            <div class="relative">
-              <Button
-                ref={(el) =>
-                  fileSelector(el, () => ({
-                    multiple: true,
-                    onSelect: props.handleAddAttachments,
-                  }))
-                }
-                size="icon-sm"
-                disabled={ctx.disabled()}
-              >
-                <PaperclipIcon />
-              </Button>
-            </div>
-          </Show>
+    <Show when={hasScheduleSummary()}>
+      <EmailScheduleSummary
+        state={ctx.schedule.state()}
+        operation={ctx.schedule.operation()}
+        onSelectTime={ctx.schedule.onSelect}
+        onCancelSchedule={ctx.schedule.onCancel}
+      />
+    </Show>
+  );
+}
 
-          <Show when={ctx.scheduleEnabled}>
-            <EmailDateSelector
-              mobile={ctx.isMobile()}
-              state={ctx.schedule.state()}
-              selectedTime={ctx.schedule.selectedTime()}
-              onSelectTime={ctx.schedule.onSelect}
-              onCancelSchedule={ctx.schedule.onCancel}
-              operation={ctx.schedule.operation()}
-              disabled={ctx.schedule.pickerDisabled()}
-              compact
-            />
-          </Show>
-          <SendButton
-            tooltip={
-              ctx.sendUnavailableReason?.() ?? ctx.schedule.actionLabel()
-            }
-            aria-label={ctx.schedule.actionLabel()}
-            disabled={ctx.isSavingDraft?.() || ctx.primaryActionDisabled()}
-            pending={ctx.isSending()}
-            onClick={() => ctx.onSend()}
-          />
-        </HeaderIsland>
-      </SplitHeaderRight>
-    </>
+export function MobileEmailComposeActions() {
+  const ctx = useCompose();
+  const handleAddAttachments = createAttachmentHandler();
+
+  return (
+    <div class="flex shrink-0 items-center gap-1">
+      <Show when={!ctx.hideAttachments}>
+        <Button
+          ref={(el) =>
+            fileSelector(el, () => ({
+              multiple: true,
+              onSelect: handleAddAttachments,
+            }))
+          }
+          tooltip="Attach"
+          size="icon-sm"
+          disabled={ctx.disabled()}
+        >
+          <PaperclipIcon />
+        </Button>
+      </Show>
+      <Show when={ctx.scheduleEnabled}>
+        <EmailDateSelector
+          mobile={ctx.isMobile()}
+          state={ctx.schedule.state()}
+          selectedTime={ctx.schedule.selectedTime()}
+          onSelectTime={ctx.schedule.onSelect}
+          onCancelSchedule={ctx.schedule.onCancel}
+          operation={ctx.schedule.operation()}
+          disabled={ctx.schedule.pickerDisabled()}
+          compact
+        />
+      </Show>
+      <SendButton
+        tooltip={ctx.sendUnavailableReason?.() ?? ctx.schedule.actionLabel()}
+        aria-label={ctx.schedule.actionLabel()}
+        disabled={ctx.isSavingDraft?.() || ctx.primaryActionDisabled()}
+        pending={ctx.isSending()}
+        onClick={() => ctx.onSend()}
+      />
+    </div>
   );
 }
