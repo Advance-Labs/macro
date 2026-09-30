@@ -1,4 +1,4 @@
-import { databaseQueryKeys } from '@queries/storage/keys';
+import { savedDatabaseQueryKeys } from '@queries/storage/database-queries';
 import { databaseCompletionRequest } from '@service-cognition/database-query-prompt';
 import type { DatabaseDetail, ExecOutcome } from '@service-storage/databases';
 import { render, waitFor } from '@solidjs/testing-library';
@@ -121,7 +121,7 @@ describe('query schema', () => {
 
 describe('live query source', () => {
   it('recovers from a failed refresh when a newer dependency event arrives', async () => {
-    const read = vi
+    const run = vi
       .fn<() => Promise<ExecOutcome>>()
       .mockResolvedValueOnce(outcome)
       .mockRejectedValueOnce(new Error('Temporary network failure'))
@@ -132,8 +132,8 @@ describe('live query source', () => {
     });
     function Harness() {
       const query = createLiveQuerySource({
-        sql: () => 'SELECT COUNT(*) FROM projects',
-        read,
+        queryId: () => 'project-count',
+        run,
         subscribe: (callback) => {
           emit = callback;
         },
@@ -150,21 +150,21 @@ describe('live query source', () => {
     await result.findByText('error');
     emit('watched', 6);
     await result.findByText('success');
-    expect(read).toHaveBeenCalledTimes(3);
+    expect(run).toHaveBeenCalledTimes(3);
     result.unmount();
     client.clear();
   });
 
   it('coalesces newer dependency events and releases pending refreshes on unmount', async () => {
-    const read = vi.fn(async () => outcome);
+    const run = vi.fn(async () => outcome);
     let emit!: (tableId: string, version: number) => void;
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
     function Harness() {
       createLiveQuerySource({
-        sql: () => 'SELECT 1',
-        read,
+        queryId: () => 'answer',
+        run,
         subscribe: (callback) => {
           emit = callback;
         },
@@ -178,24 +178,24 @@ describe('live query source', () => {
     ));
     await waitFor(() =>
       expect(
-        client.getQueryData(databaseQueryKeys.answer('SELECT 1').queryKey)
+        client.getQueryData(savedDatabaseQueryKeys.run('answer').queryKey)
       ).toEqual(outcome)
     );
     vi.useFakeTimers();
     emit('other', 9);
     emit('watched', 4);
     await vi.advanceTimersByTimeAsync(350);
-    expect(read).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledTimes(1);
     emit('watched', 5);
     emit('watched', 6);
     await vi.advanceTimersByTimeAsync(299);
-    expect(read).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
-    expect(read).toHaveBeenCalledTimes(2);
+    expect(run).toHaveBeenCalledTimes(2);
     emit('watched', 7);
     result.unmount();
     await vi.advanceTimersByTimeAsync(500);
-    expect(read).toHaveBeenCalledTimes(2);
+    expect(run).toHaveBeenCalledTimes(2);
     client.clear();
   });
 });

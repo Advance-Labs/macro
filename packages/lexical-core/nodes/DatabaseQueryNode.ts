@@ -1,5 +1,6 @@
 import {
   $applyNodeReplacement,
+  $createParagraphNode,
   DecoratorNode,
   type EditorConfig,
   type EditorThemeClasses,
@@ -11,6 +12,7 @@ import {
 } from 'lexical';
 import { type DecoratorComponent, getDecorator } from '../decoratorRegistry';
 import { $applyIdFromSerialized } from '../plugins/nodeIdPlugin';
+import { $createUnknownMentionNode } from './UnknownMentionNode';
 
 export const DATABASE_QUERY_TAG = 'm-db-query';
 export type DatabaseQueryDisplayMode =
@@ -20,10 +22,12 @@ export type DatabaseQueryDisplayMode =
   | 'line'
   | 'pie';
 export type DatabaseQueryChart = { x: string; y: string[]; title?: string };
+/** Points at an immutable saved query; the SQL lives on the server. */
 export type DatabaseQueryData = {
+  /** Empty while the question is still a draft. */
+  queryId: string;
   databaseId?: string;
   tableId?: string;
-  sql: string;
   prompt: string;
   title?: string;
   displayMode: DatabaseQueryDisplayMode;
@@ -45,7 +49,7 @@ export function parseDatabaseQueryData(
   if (!value || typeof value !== 'object') return;
   const record = value as Record<string, unknown>;
   if (
-    typeof record.sql !== 'string' ||
+    typeof record.queryId !== 'string' ||
     typeof record.prompt !== 'string' ||
     (record.databaseId !== undefined &&
       typeof record.databaseId !== 'string') ||
@@ -79,11 +83,11 @@ export function parseDatabaseQueryData(
     };
   }
   return {
+    queryId: record.queryId,
     ...(record.databaseId ? { databaseId: record.databaseId as string } : {}),
     ...(record.tableId ? { tableId: record.tableId as string } : {}),
-    sql: record.sql,
-    prompt: record.prompt,
     ...(record.title ? { title: record.title as string } : {}),
+    prompt: record.prompt,
     displayMode: record.displayMode as DatabaseQueryDisplayMode,
     ...(chart ? { chart } : {}),
   };
@@ -92,7 +96,7 @@ export function parseDatabaseQueryData(
 export function databaseQueryMarkdown(data: DatabaseQueryData): string {
   const source = parseDatabaseQueryData(data);
   if (!source) throw new Error('Invalid database query');
-  // Escaping '<' prevents user-authored SQL or prompts from closing the XML tag.
+  // Escaping '<' prevents user-authored titles or prompts from closing the XML tag.
   const json = JSON.stringify(source).replaceAll('<', '\\u003c');
   return `<${DATABASE_QUERY_TAG}>${json}</${DATABASE_QUERY_TAG}>`;
 }
@@ -100,9 +104,9 @@ export function databaseQueryMarkdown(data: DatabaseQueryData): string {
 export class DatabaseQueryNode extends DecoratorNode<
   DecoratorComponent<DatabaseQueryDecoratorProps> | undefined
 > {
+  __queryId: string;
   __databaseId?: string;
   __tableId?: string;
-  __sql: string;
   __prompt: string;
   __title?: string;
   __displayMode: DatabaseQueryDisplayMode;
@@ -116,9 +120,9 @@ export class DatabaseQueryNode extends DecoratorNode<
   }
   constructor(data: DatabaseQueryData, key?: NodeKey) {
     super(key);
+    this.__queryId = data.queryId;
     this.__databaseId = data.databaseId;
     this.__tableId = data.tableId;
-    this.__sql = data.sql;
     this.__prompt = data.prompt;
     this.__title = data.title;
     this.__displayMode = data.displayMode;
@@ -130,9 +134,18 @@ export class DatabaseQueryNode extends DecoratorNode<
   isKeyboardSelectable() {
     return true;
   }
-  static importJSON(serialized: SerializedDatabaseQueryNode) {
+  static importJSON(serialized: SerializedDatabaseQueryNode): LexicalNode {
     const data = parseDatabaseQueryData(serialized);
-    if (!data) throw new Error('Invalid database query node');
+    // Older inline-SQL answers degrade like their markdown form instead of
+    // failing the whole document.
+    if (!data) {
+      const fallback = $createUnknownMentionNode({
+        name: 'Unavailable database question',
+      });
+      return serialized.displayMode === 'scalar'
+        ? fallback
+        : $createParagraphNode().append(fallback);
+    }
     const node = $createDatabaseQueryNode(data);
     $applyIdFromSerialized(node, serialized);
     return node;
@@ -142,25 +155,25 @@ export class DatabaseQueryNode extends DecoratorNode<
       ...super.exportJSON(),
       ...this.exportComponentProps(),
       type: DatabaseQueryNode.getType(),
-      version: 1,
+      version: 2,
     };
   }
   exportComponentProps(): DatabaseQueryData {
     return {
+      queryId: this.__queryId,
       ...(this.__databaseId ? { databaseId: this.__databaseId } : {}),
       ...(this.__tableId ? { tableId: this.__tableId } : {}),
-      sql: this.__sql,
-      prompt: this.__prompt,
       ...(this.__title ? { title: this.__title } : {}),
+      prompt: this.__prompt,
       displayMode: this.__displayMode,
       ...(this.__chart ? { chart: this.__chart } : {}),
     };
   }
   setQuery(data: DatabaseQueryData) {
     const writable = this.getWritable();
+    writable.__queryId = data.queryId;
     writable.__databaseId = data.databaseId;
     writable.__tableId = data.tableId;
-    writable.__sql = data.sql;
     writable.__prompt = data.prompt;
     writable.__title = data.title;
     writable.__displayMode = data.displayMode;

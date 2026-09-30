@@ -14,7 +14,7 @@ describe('live database charts', () => {
     const rendered = render(() => (
       <LiveQuestion
         source={{
-          sql: 'SELECT status AS Status, COUNT(*) AS Count FROM projects GROUP BY status',
+          queryId: 'tasks-by-status',
           prompt: 'Tasks by status',
           displayMode: 'bar',
           chart: { x: 'Status', y: ['Count'] },
@@ -65,7 +65,7 @@ describe('live database charts', () => {
     const rendered = render(() => (
       <LiveQuestion
         source={{
-          sql: 'SELECT status AS Status, COUNT(*) AS Count FROM projects GROUP BY status',
+          queryId: 'tasks-by-status',
           prompt: 'Tasks by status',
           displayMode: 'bar',
           chart: { x: 'Status', y: ['Count'] },
@@ -94,7 +94,7 @@ describe('answer titles', () => {
       const rendered = render(() => (
         <LiveQuestion
           source={{
-            sql: 'SELECT 12',
+            queryId: 'twelve',
             prompt: 'Please tell me how many tickets we have right now',
             title: 'Open tickets',
             displayMode,
@@ -124,7 +124,7 @@ describe('answer titles', () => {
     const rendered = render(() => (
       <LiveQuestion
         source={{
-          sql: 'SELECT 1',
+          queryId: 'one',
           prompt: 'Question',
           title: 'Tickets',
           displayMode: 'table',
@@ -144,7 +144,7 @@ describe('answer titles', () => {
     const reader = render(() => (
       <LiveQuestion
         source={{
-          sql: 'SELECT 1',
+          queryId: 'one',
           prompt: 'Question',
           title: 'Tickets',
           displayMode: 'table',

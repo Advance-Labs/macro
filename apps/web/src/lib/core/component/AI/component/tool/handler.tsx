@@ -40,6 +40,7 @@ import {
   createTableHandler,
   describeDatabaseHandler,
   listDatabasesHandler,
+  pendingDatabaseTool,
   queryDatabaseHandler,
   renameTableHandler,
   saveDatabaseViewHandler,
@@ -241,11 +242,29 @@ type TriggerToolArgs = Omit<
 
 /** Schema support alone does not guarantee that this surface has a renderer. */
 export function hasToolRenderer(name: string): boolean {
-  return Object.hasOwn(toolHandlers, name);
+  return Object.hasOwn(toolHandlers, name) || !!pendingDatabaseTool(name);
 }
 
 export function RenderTool(props: ToolProps) {
   const databasesEnabled = useFeatureFlag(enableDatabases);
+  const PendingDatabaseTool = pendingDatabaseTool(props.name);
+  if (PendingDatabaseTool)
+    return (
+      <Show
+        when={databasesEnabled().enabled}
+        fallback={<span class="text-xs text-ink-muted">Database tool</span>}
+      >
+        <PendingDatabaseTool
+          json={props.json}
+          response={props.response}
+          isComplete={props.isComplete}
+          renderContext={{
+            isStreaming: props.renderContext.renderContext.isStreaming,
+            grouped: props.renderContext.renderContext.grouped,
+          }}
+        />
+      </Show>
+    );
   const maybeTool = deserializeToolCall({
     id: props.tool_id,
     json: props.json,

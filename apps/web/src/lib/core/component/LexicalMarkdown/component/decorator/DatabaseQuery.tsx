@@ -32,9 +32,9 @@ export function DatabaseQuery(props: DatabaseQueryDecoratorProps) {
   if (wrapper) onCleanup(wrapper.editor.registerEditableListener(setEditable));
   const canEdit = () => editable() && !!wrapper?.isInteractable();
   const source = (): DatabaseQueryData => ({
+    queryId: props.queryId,
     databaseId: props.databaseId,
     tableId: props.tableId,
-    sql: props.sql,
     prompt: props.prompt,
     title: props.title,
     displayMode: props.displayMode,

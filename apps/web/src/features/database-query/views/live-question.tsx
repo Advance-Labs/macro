@@ -10,28 +10,30 @@ import {
   formatQueryValue,
   isScalarAnswer,
   type QueryAnswer,
-  type QueryDefinition,
   queryErrorMessage,
+  type SavedQuestion,
 } from '../core/query';
 
 export function LiveQuestion(props: {
-  source: QueryDefinition;
+  source: SavedQuestion;
   answer?: QueryAnswer;
   loading: boolean;
   error?: unknown;
   onRefresh: () => void;
   onRename?: (title: string) => void;
+  /** The saved SQL, rendered only once the details are opened. */
+  sql?: () => JSX.Element;
   editor?: (onClose: () => void) => JSX.Element;
 }) {
-  const [open, setOpen] = createSignal(!props.source.sql && !!props.editor);
-  const [editing, setEditing] = createSignal(!props.source.sql);
+  const [open, setOpen] = createSignal(!props.source.queryId && !!props.editor);
+  const [editing, setEditing] = createSignal(!props.source.queryId);
   let content: HTMLDivElement | undefined;
   const title = () =>
     props.source.title || props.source.chart?.title || 'Database answer';
   const [renaming, setRenaming] = createSignal(false);
   const [draftTitle, setDraftTitle] = createSignal('');
   const startRename = (event: MouseEvent | KeyboardEvent) => {
-    if (!props.onRename || !props.source.sql) return;
+    if (!props.onRename || !props.source.queryId) return;
     event.preventDefault();
     event.stopPropagation();
     setOpen(false);
@@ -74,7 +76,7 @@ export function LiveQuestion(props: {
     />
   );
   const value = () => {
-    if (!props.source.sql) return 'Database';
+    if (!props.source.queryId) return 'Database';
     if (props.error) return 'Answer unavailable';
     if (!props.answer) return 'Loading answer…';
     if (isScalarAnswer(props.answer))
@@ -86,7 +88,7 @@ export function LiveQuestion(props: {
       open={open()}
       onOpenChange={(value) => {
         setOpen(value);
-        if (!value) setEditing(!props.source.sql);
+        if (!value) setEditing(!props.source.queryId);
       }}
       placement="bottom-start"
       gutter={8}
@@ -114,7 +116,7 @@ export function LiveQuestion(props: {
               }
             >
               <LightningIcon class="size-3 shrink-0" />
-              <Show when={props.source.sql}>
+              <Show when={props.source.queryId}>
                 <span class="truncate text-ink-muted">{title()}</span>
                 <span class="text-ink-extra-muted">·</span>
               </Show>
@@ -231,7 +233,7 @@ export function LiveQuestion(props: {
                 <details class="text-xs">
                   <summary class="text-ink-muted">View SQL</summary>
                   <pre class="mt-2 overflow-auto whitespace-pre-wrap rounded-md bg-input p-2">
-                    {props.source.sql}
+                    {props.sql?.()}
                   </pre>
                 </details>
                 <div class="flex items-center justify-between">

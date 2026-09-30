@@ -1,5 +1,9 @@
 import { throwOnErr } from '@core/util/result';
 import { queryClient } from '@queries/client';
+import {
+  createSavedDatabaseQuery,
+  fetchDatabaseQueryRun,
+} from '@queries/storage/database-queries';
 import { querySql } from '@queries/storage/databases';
 import { databaseQueryKeys, databasesKeys } from '@queries/storage/keys';
 import { useEntitySubscription } from '@service-connection/client';
@@ -32,7 +36,19 @@ export const queryCapabilities: QueryCapabilities = createQuestionCapabilities({
       staleTime: 0,
     }),
 });
-export const readLiveQuery = querySql;
+export const runSavedQuery = fetchDatabaseQueryRun;
+
+/** Saved queries are immutable: every new SQL text becomes a new row. */
+export async function saveQuestionSql(input: {
+  sql: string;
+  databaseId?: string;
+}): Promise<string> {
+  const saved = await createSavedDatabaseQuery({
+    definition: { version: 1, query: input.sql },
+    ...(input.databaseId ? { databaseId: input.databaseId } : {}),
+  });
+  return saved.id;
+}
 
 export function subscribeToQueryChanges(
   onChange: (tableId: string, version: number) => void

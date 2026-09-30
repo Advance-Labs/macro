@@ -16,6 +16,12 @@ export type QueryDefinition = {
   chart?: QueryChartConfig;
 };
 
+/**
+ * What a document stores: a pointer to an immutable saved query plus its
+ * presentation. An empty `queryId` is a draft that has not been saved yet.
+ */
+export type SavedQuestion = Omit<QueryDefinition, 'sql'> & { queryId: string };
+
 export type QuerySchema = {
   /** Undefined lets a document question discover its source automatically. */
   databaseId?: string;

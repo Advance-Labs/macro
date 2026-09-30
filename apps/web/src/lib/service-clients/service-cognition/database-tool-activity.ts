@@ -10,21 +10,23 @@ export function summarizeDatabaseActivity(
   const count = (name: string) =>
     successful.filter((entry) => entry.name === name).length;
   const summaries: string[] = [];
-  for (const [tool, label] of [
-    ['CreateDatabase', 'database'],
-    ['CreateTable', 'table'],
-    ['AddColumn', 'column'],
-    ['SaveDatabaseView', 'view'],
+  for (const [tool, verb, noun] of [
+    ['CreateDatabase', 'Created', 'database'],
+    ['CreateTable', 'Created', 'table'],
+    ['AddColumn', 'Added', 'column'],
+    ['SaveDatabaseView', 'Saved', 'view'],
+    ['RenameTable', 'Renamed', 'table'],
+    ['RenameColumn', 'Renamed', 'column'],
+    ['ChangeColumnType', 'Changed the type of', 'column'],
+    ['DeleteColumn', 'Deleted', 'column'],
+    ['ReorderColumns', 'Reordered columns in', 'table'],
+    ['DeleteTable', 'Deleted', 'table'],
+    ['RenameDatabase', 'Renamed', 'database'],
   ]) {
     const total = count(tool);
     if (total)
-      summaries.push(
-        `${tool === 'SaveDatabaseView' ? 'Saved' : tool === 'AddColumn' ? 'Added' : 'Created'} ${total} ${label}${total === 1 ? '' : 's'}`
-      );
+      summaries.push(`${verb} ${total} ${noun}${total === 1 ? '' : 's'}`);
   }
-  const renamed = count('RenameTable');
-  if (renamed)
-    summaries.push(`Renamed ${renamed} table${renamed === 1 ? '' : 's'}`);
   if (count('AddColumnOptions')) summaries.push('Added select options');
   const changed = successful.reduce(
     (total, entry) =>

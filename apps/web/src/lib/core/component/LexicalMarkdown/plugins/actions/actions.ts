@@ -89,7 +89,7 @@ export const ACTIONS: Action[] = [
         editor.update(() => {
           $insertNodes([
             $createDatabaseQueryNode({
-              sql: '',
+              queryId: '',
               prompt: '',
               displayMode: 'scalar',
             }),

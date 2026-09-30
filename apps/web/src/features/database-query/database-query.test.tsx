@@ -3,7 +3,12 @@ import { fireEvent, render, waitFor } from '@solidjs/testing-library';
 import { QueryClient, QueryClientProvider } from '@tanstack/solid-query';
 import { type Accessor, createSignal, type JSX, onCleanup } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { QueryAnswer, QueryDefinition, QuerySchema } from './core/query';
+import type {
+  QueryAnswer,
+  QueryDefinition,
+  QuerySchema,
+  SavedQuestion,
+} from './core/query';
 import {
   ChooseQuestionSource,
   DatabaseLiveQuestion,
@@ -13,8 +18,17 @@ import {
 const adapters = vi.hoisted(() => ({
   useDatabasesQuery: vi.fn(),
   useDatabaseDetailQuery: vi.fn(),
-  readLiveQuery: vi.fn<() => Promise<ExecOutcome>>(),
+  runSavedQuery: vi.fn<(queryId: string) => Promise<ExecOutcome>>(),
   trackQueryDatabase: vi.fn<(id: string, refresh: () => void) => void>(),
+  saveQuestionSql:
+    vi.fn<(input: { sql: string; databaseId?: string }) => Promise<string>>(),
+  useDatabaseQueryDefinition: vi.fn(),
+}));
+vi.mock('@queries/storage/database-queries', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('@queries/storage/database-queries')
+  >()),
+  useDatabaseQueryDefinition: adapters.useDatabaseQueryDefinition,
 }));
 vi.mock('@queries/storage/databases', () => ({
   useDatabasesQuery: adapters.useDatabasesQuery,
@@ -22,7 +36,8 @@ vi.mock('@queries/storage/databases', () => ({
 }));
 vi.mock('./queries/app-query-source', () => ({
   queryCapabilities: { generate: vi.fn(), read: vi.fn() },
-  readLiveQuery: adapters.readLiveQuery,
+  runSavedQuery: adapters.runSavedQuery,
+  saveQuestionSql: adapters.saveQuestionSql,
   subscribeToQueryChanges: () => {},
   trackQueryDatabase: adapters.trackQueryDatabase,
 }));
@@ -60,6 +75,7 @@ vi.mock('./views/query-editor', () => ({
   QueryEditor: (props: {
     initial: QueryDefinition;
     schema: QuerySchema;
+    onSave?: (definition: QueryDefinition) => void;
     sourcePicker?:
       | JSX.Element
       | ((schema: Accessor<QuerySchema>) => JSX.Element);
@@ -75,6 +91,19 @@ vi.mock('./views/query-editor', () => ({
           value={prompt()}
           onInput={(event) => setPrompt(event.currentTarget.value)}
         />
+        <span aria-label="Initial SQL">{props.initial.sql}</span>
+        <button
+          type="button"
+          onClick={() =>
+            props.onSave?.({
+              ...props.initial,
+              sql: 'SELECT COUNT(*) FROM open_tickets',
+              prompt: prompt(),
+            })
+          }
+        >
+          Save draft
+        </button>
         <span aria-label="Source name">{props.schema.name}</span>
         <span aria-label="Focused table">
           {
@@ -91,14 +120,27 @@ vi.mock('./views/query-editor', () => ({
   },
 }));
 vi.mock('./views/live-question', () => ({
-  LiveQuestion: (props: { answer?: QueryAnswer; error?: unknown }) => (
-    <div>{props.error ? 'failed' : props.answer ? 'answer' : 'loading'}</div>
+  LiveQuestion: (props: {
+    answer?: QueryAnswer;
+    error?: unknown;
+    editor?: (onClose: () => void) => JSX.Element;
+  }) => (
+    <>
+      <div>{props.error ? 'failed' : props.answer ? 'answer' : 'loading'}</div>
+      {props.editor?.(() => {})}
+    </>
   ),
 }));
 
 const initial: QueryDefinition = {
   databaseId: 'source',
   sql: 'SELECT COUNT(*) FROM joined_table',
+  prompt: 'Saved question',
+  displayMode: 'scalar',
+};
+const saved: SavedQuestion = {
+  queryId: 'saved-count',
+  databaseId: 'source',
   prompt: 'Saved question',
   displayMode: 'scalar',
 };
@@ -330,7 +372,7 @@ describe('database question production wiring', () => {
       tracked.add(id);
       onCleanup(() => tracked.delete(id));
     });
-    adapters.readLiveQuery
+    adapters.runSavedQuery
       .mockResolvedValueOnce(outcome)
       .mockRejectedValueOnce(new Error('Temporary network failure'))
       .mockResolvedValue(outcome);
@@ -339,10 +381,11 @@ describe('database question production wiring', () => {
     });
     const result = render(() => (
       <QueryClientProvider client={client}>
-        <DatabaseLiveQuestion source={initial} />
+        <DatabaseLiveQuestion source={saved} />
       </QueryClientProvider>
     ));
     await result.findByText('answer');
+    expect(adapters.runSavedQuery).toHaveBeenCalledWith('saved-count');
     await waitFor(() =>
       expect([...tracked]).toEqual(['source', 'joined_database'])
     );
@@ -354,6 +397,52 @@ describe('database question production wiring', () => {
     await result.findByText('answer');
     result.unmount();
     expect(tracked.size).toBe(0);
+    client.clear();
+  });
+
+  it('edits a saved answer by saving new SQL and repointing the node', async () => {
+    adapters.useDatabasesQuery.mockReturnValue({ isPending: false, data: [] });
+    adapters.useDatabaseDetailQuery.mockReturnValue({
+      isPending: false,
+      data: detail,
+    });
+    adapters.useDatabaseQueryDefinition.mockReturnValue({
+      isSuccess: true,
+      isError: false,
+      data: {
+        id: 'saved-count',
+        definition: { version: 1, query: 'SELECT COUNT(*) FROM tickets' },
+        databaseId: 'source',
+        createdBy: 'owner',
+        createdAt: '',
+      },
+    });
+    adapters.runSavedQuery.mockResolvedValue(outcome);
+    adapters.saveQuestionSql.mockResolvedValue('edited-count');
+    const onSave = vi.fn();
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const result = render(() => (
+      <QueryClientProvider client={client}>
+        <DatabaseLiveQuestion source={saved} onSave={onSave} />
+      </QueryClientProvider>
+    ));
+    expect(result.getByLabelText('Initial SQL').textContent).toBe(
+      'SELECT COUNT(*) FROM tickets'
+    );
+    fireEvent.click(result.getByText('Save draft'));
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(adapters.saveQuestionSql).toHaveBeenCalledExactlyOnceWith({
+      sql: 'SELECT COUNT(*) FROM open_tickets',
+      databaseId: 'source',
+    });
+    expect(onSave.mock.calls[0]?.[0]).toEqual({
+      ...saved,
+      queryId: 'edited-count',
+    });
+    expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty('sql');
+    result.unmount();
     client.clear();
   });
 });

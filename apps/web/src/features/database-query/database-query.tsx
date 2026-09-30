@@ -1,19 +1,28 @@
+import { useDatabaseQueryDefinition } from '@queries/storage/database-queries';
 import {
   useDatabaseDetailQuery,
   useDatabasesQuery,
 } from '@queries/storage/databases';
 import type { DatabaseDetail } from '@service-storage/databases';
-import { createSignal, For, type JSX, Show } from 'solid-js';
+import { createSignal, For, type JSX, Match, Show, Switch } from 'solid-js';
 import { QueryDatabasePicker } from './components/query-database-picker';
 import type { QueryCapabilities } from './context/query-context';
-import type { QueryAnswer, QueryDefinition, QuerySchema } from './core/query';
+import {
+  type QueryAnswer,
+  type QueryDefinition,
+  type QuerySchema,
+  queryErrorMessage,
+  type SavedQuestion,
+} from './core/query';
 import {
   queryCapabilities,
-  readLiveQuery,
+  runSavedQuery,
+  saveQuestionSql,
   subscribeToQueryChanges,
   trackQueryDatabase,
 } from './queries/app-query-source';
 import { createLiveQuerySource, toQuerySchema } from './queries/query-source';
+import { saveQuestion } from './queries/saved-question';
 import { LiveQuestion } from './views/live-question';
 import { QueryEditor } from './views/query-editor';
 
@@ -119,14 +128,93 @@ export function ChooseQuestionSource(props: {
   );
 }
 
+function SavedQuestionSql(props: { queryId: string }) {
+  const definition = useDatabaseQueryDefinition(() => props.queryId);
+  return (
+    <Switch fallback="Loading SQL…">
+      <Match when={definition.isSuccess && definition.data}>
+        {(saved) => saved().definition.query}
+      </Match>
+      <Match when={definition.isError}>SQL unavailable</Match>
+    </Switch>
+  );
+}
+
+/** Loads the saved SQL, then saves any edit as a new immutable query. */
+function EditSavedQuestion(props: {
+  source: SavedQuestion;
+  onSave: (source: SavedQuestion) => void;
+}) {
+  const definition = useDatabaseQueryDefinition(() => props.source.queryId);
+  const [saving, setSaving] = createSignal(false);
+  const [error, setError] = createSignal<string>();
+  const savedSql = () =>
+    definition.isSuccess ? definition.data.definition.query : '';
+  const save = async (next: QueryDefinition) => {
+    if (saving()) return;
+    setSaving(true);
+    setError();
+    try {
+      props.onSave(
+        await saveQuestion({
+          definition: next,
+          previous: props.source.queryId
+            ? {
+                queryId: props.source.queryId,
+                sql: savedSql(),
+                databaseId: props.source.databaseId,
+              }
+            : undefined,
+          save: saveQuestionSql,
+        })
+      );
+    } catch (failure) {
+      setError(queryErrorMessage(failure));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Switch
+      fallback={
+        <p role="status" class="p-4 text-sm text-ink-muted">
+          Loading question…
+        </p>
+      }
+    >
+      <Match when={props.source.queryId && definition.isError}>
+        <p role="alert" class="p-4 text-sm text-failure-ink">
+          {queryErrorMessage(definition.error)}
+        </p>
+      </Match>
+      <Match when={!props.source.queryId || definition.isSuccess}>
+        <ChooseQuestionSource
+          initial={{ ...props.source, sql: savedSql() }}
+          onSave={(next) => void save(next)}
+        />
+        <Show when={saving()}>
+          <p role="status" class="px-4 pb-3 text-sm text-ink-muted">
+            Saving question…
+          </p>
+        </Show>
+        <Show when={error()}>
+          <p role="alert" class="px-4 pb-3 text-sm text-failure-ink">
+            {error()}
+          </p>
+        </Show>
+      </Match>
+    </Switch>
+  );
+}
+
 /** Production wiring is loaded only when a document query enters the viewport. */
 export function DatabaseLiveQuestion(props: {
-  source: QueryDefinition;
-  onSave?: (source: QueryDefinition) => void;
+  source: SavedQuestion;
+  onSave?: (source: SavedQuestion) => void;
 }) {
   const query = createLiveQuerySource({
-    sql: () => props.source.sql,
-    read: readLiveQuery,
+    queryId: () => props.source.queryId,
+    run: runSavedQuery,
     subscribe: subscribeToQueryChanges,
   });
   const trackingIds = () =>
@@ -141,7 +229,7 @@ export function DatabaseLiveQuestion(props: {
       <For each={trackingIds()}>
         {(id) => {
           trackQueryDatabase(id, () => {
-            if (props.source.sql.trim()) void query.refetch();
+            if (props.source.queryId) void query.refetch();
           });
           return null;
         }}
@@ -157,11 +245,12 @@ export function DatabaseLiveQuestion(props: {
             ? (title) => props.onSave?.({ ...props.source, title })
             : undefined
         }
+        sql={() => <SavedQuestionSql queryId={props.source.queryId} />}
         editor={
           props.onSave
             ? (onClose) => (
-                <ChooseQuestionSource
-                  initial={props.source}
+                <EditSavedQuestion
+                  source={props.source}
                   onSave={(source) => {
                     props.onSave?.(source);
                     onClose();

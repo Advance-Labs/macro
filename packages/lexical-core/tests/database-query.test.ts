@@ -15,9 +15,9 @@ import { ALL_TRANSFORMERS } from '../transformers';
 import { markdownToPlainText } from '../utils/parsers';
 
 const source: DatabaseQueryData = {
+  queryId: '0b7d2c52-6f0e-4a8e-9f1f-5b0c1d2e3f40',
   databaseId: 'db-1',
   tableId: 'projects-table',
-  sql: 'SELECT COUNT(*) FROM projects',
   prompt: 'How many projects?',
   displayMode: 'scalar',
 };
@@ -151,20 +151,91 @@ describe('database query node', () => {
     restored.setEditorState(restored.parseEditorState(serialized));
     expect(exported(restored)).toBe(databaseQueryMarkdown(source));
   });
-  it('escapes closing tags in SQL and prompts', () => {
+  it('escapes closing tags in titles and prompts', () => {
     const tricky = {
       ...source,
       prompt: 'Count </m-db-query> things',
-      sql: `SELECT '</m-db-query>' AS answer`,
+      title: 'Open </m-db-query> title',
     };
     const text = databaseQueryMarkdown(tricky);
     expect(text.match(/<\/m-db-query>/g)).toHaveLength(1);
     expect(exported(parse(text))).toBe(text);
-    expect(markdownToPlainText(text)).toBe(tricky.prompt);
+    expect(markdownToPlainText(text)).toBe(tricky.title);
+  });
+  it('writes the saved-query payload the assistant emits', () => {
+    expect(
+      databaseQueryMarkdown({
+        ...source,
+        title: 'Open projects',
+        displayMode: 'bar',
+        chart: { x: 'Status', y: ['Count'] },
+      })
+    ).toBe(
+      `<m-db-query>{"queryId":"${source.queryId}","databaseId":"db-1","tableId":"projects-table","title":"Open projects","prompt":"How many projects?","displayMode":"bar","chart":{"x":"Status","y":["Count"]}}</m-db-query>`
+    );
+  });
+  it('never serializes SQL alongside a saved query', () => {
+    const editor = parse(
+      databaseQueryMarkdown({ ...source, ...{ sql: 'SELECT secret' } })
+    );
+    expect(JSON.stringify(editor.getEditorState().toJSON())).not.toContain(
+      'SELECT secret'
+    );
+    expect(exported(editor)).toBe(databaseQueryMarkdown(source));
   });
   it.each([
-    '<m-db-query>{"sql":"SELECT 1","displayMode":"chart"}</m-db-query>',
-    '<m-db-query>{"sql":"SELECT 1","prompt":"Count","tableId":42,"displayMode":"scalar"}</m-db-query>',
+    ['scalar', true],
+    ['table', false],
+  ] as const)(
+    'degrades an older inline-SQL %s node in saved JSON instead of failing the document',
+    (displayMode, inline) => {
+      const legacy = {
+        type: 'database-query',
+        version: 1,
+        sql: 'SELECT COUNT(*) FROM projects',
+        prompt: 'How many projects?',
+        displayMode,
+      };
+      const root = {
+        root: {
+          type: 'root',
+          version: 1,
+          direction: null,
+          format: '',
+          indent: 0,
+          children: [
+            inline
+              ? {
+                  type: 'paragraph',
+                  version: 1,
+                  direction: null,
+                  format: '',
+                  indent: 0,
+                  textFormat: 0,
+                  textStyle: '',
+                  children: [legacy],
+                }
+              : legacy,
+          ],
+        },
+      };
+      const editor = createEditor({ nodes: SupportedNodeTypes });
+      editor.setEditorState(editor.parseEditorState(JSON.stringify(root)));
+      editor.getEditorState().read(() => {
+        const paragraph = $getRoot().getFirstChild();
+        expect($isParagraphNode(paragraph)).toBe(true);
+        if (!$isParagraphNode(paragraph)) return;
+        expect(paragraph.getChildren().some($isUnknownMentionNode)).toBe(true);
+        expect(paragraph.getChildren().some($isDatabaseQueryNode)).toBe(false);
+      });
+    }
+  );
+  it.each([
+    '<m-db-query>{"queryId":"q","displayMode":"chart"}</m-db-query>',
+    '<m-db-query>{"queryId":"q","prompt":"Count","tableId":42,"displayMode":"scalar"}</m-db-query>',
+    '<m-db-query>{"sql":"SELECT 1","prompt":"Count","displayMode":"scalar"}</m-db-query>',
+    '<m-db-query>{"sql":"SELECT 1","prompt":"Count","displayMode":"table"}</m-db-query>',
+    '<m-db-query>{"queryId":7,"prompt":"Count","displayMode":"scalar"}</m-db-query>',
   ])('degrades malformed payloads to unavailable chips: %s', (markdown) => {
     const editor = parse(markdown);
     editor.getEditorState().read(() => {

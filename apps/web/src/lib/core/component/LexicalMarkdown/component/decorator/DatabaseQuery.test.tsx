@@ -38,7 +38,7 @@ describe('database answer rollout', () => {
       <DatabaseQuery
         key="query"
         theme={{}}
-        sql="SELECT 1"
+        queryId="saved-query"
         prompt="How many?"
         title="Open tickets"
         displayMode="scalar"

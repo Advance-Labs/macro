@@ -1,6 +1,5 @@
-import { databaseQueryKeys } from '@queries/storage/keys';
+import { useDatabaseQueryRun } from '@queries/storage/database-queries';
 import type { DatabaseDetail, ExecOutcome } from '@service-storage/databases';
-import { useQuery } from '@tanstack/solid-query';
 import { onCleanup } from 'solid-js';
 import type { QuerySchema } from '../core/query';
 
@@ -63,22 +62,13 @@ export function toQuerySchema(
   };
 }
 
+/** Runs a saved query and re-runs it when a table it read moves past that version. */
 export function createLiveQuerySource(input: {
-  sql: () => string;
-  read: (sql: string) => Promise<ExecOutcome>;
+  queryId: () => string;
+  run: (queryId: string) => Promise<ExecOutcome>;
   subscribe: (onChange: (tableId: string, version: number) => void) => void;
 }) {
-  const query = useQuery(() => {
-    const statement = input.sql();
-    return {
-      queryKey: databaseQueryKeys.answer(statement).queryKey,
-      queryFn: () => input.read(statement),
-      enabled: !!statement.trim(),
-      staleTime: 30_000,
-      retry: false,
-      refetchOnWindowFocus: true,
-    };
-  });
+  const query = useDatabaseQueryRun(input.queryId, input.run);
   let timer: ReturnType<typeof setTimeout> | undefined;
   input.subscribe((tableId, version) => {
     // A failed refresh hides the answer, but its last successful dependency

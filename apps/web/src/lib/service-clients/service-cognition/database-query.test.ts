@@ -88,6 +88,18 @@ describe('database AI transport boundaries', () => {
     });
   });
 
+  it('summarizes schema edits from the executed tools', () => {
+    expect(
+      summarizeDatabaseActivity([
+        { name: 'RenameColumn', success: true },
+        { name: 'DeleteColumn', success: true },
+        { name: 'DeleteColumn', success: true },
+        { name: 'DeleteTable', success: false },
+        { name: 'RenameDatabase', success: true },
+      ])
+    ).toBe('Renamed 1 column · Deleted 2 columns · Renamed 1 database.');
+  });
+
   it('does not claim changes for read-only calls, errors or unsupported tool names', () => {
     expect(
       summarizeDatabaseActivity([
