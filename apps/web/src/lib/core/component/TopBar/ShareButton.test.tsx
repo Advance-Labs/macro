@@ -1,7 +1,7 @@
 import { ForwardToChannel } from '@core/component/ForwardToChannel';
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { err, ok } from 'neverthrow';
-import { createSignal, For, type JSX, Suspense } from 'solid-js';
+import { createSignal, For, type JSX } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Permissions } from '../SharePermissions';
 import { ShareModal, ShareOptions, ShareTrigger } from './ShareButton';
@@ -1206,8 +1206,8 @@ describe('native project sharing', () => {
   });
 });
 
-it('database sharing uses its own permission resource and disables public links', async () => {
-  mocks.getDatabasePermissions.mockResolvedValue({
+it('database sharing reads its block permissions and disables public links', () => {
+  mocks.blockPermissionsRead.mockReturnValue({
     isErr: () => false,
     value: { id: 'database-id', owner: 'owner', channelSharePermissions: [] },
   });
@@ -1223,45 +1223,7 @@ it('database sharing uses its own permission resource and disables public links'
       onOpenChange={() => {}}
     />
   ));
-  expect(mocks.blockPermissionsRead).not.toHaveBeenCalled();
-  expect(mocks.getDatabasePermissions).toHaveBeenCalledWith('database-id');
-  expect(screen.queryByText('Anyone with the link')).toBeNull();
-});
-
-it('loading database sharing does not suspend the database page', async () => {
-  mocks.getDatabasePermissions.mockReturnValue(new Promise(() => {}));
-  render(() => (
-    <Suspense fallback={<span>Page suspended</span>}>
-      <span>Database contents</span>
-      <ShareModal
-        id="database-id"
-        itemType="database"
-        blockAlias="database"
-        owner="owner"
-        name="Ideas"
-        userPermissions={Permissions.OWNER}
-        open
-        onOpenChange={() => {}}
-      />
-    </Suspense>
-  ));
-  await Promise.resolve();
-  expect(screen.getByText('Database contents')).toBeTruthy();
-  expect(screen.queryByText('Page suspended')).toBeNull();
-});
-
-it('does not request database sharing details while the dialog is closed', () => {
-  render(() => (
-    <ShareModal
-      id="database-id"
-      itemType="database"
-      blockAlias="database"
-      owner="owner"
-      name="Ideas"
-      userPermissions={Permissions.OWNER}
-      open={false}
-      onOpenChange={() => {}}
-    />
-  ));
+  expect(mocks.blockPermissionsRead).toHaveBeenCalled();
   expect(mocks.getDatabasePermissions).not.toHaveBeenCalled();
+  expect(screen.queryByText('Anyone with the link')).toBeNull();
 });

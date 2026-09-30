@@ -760,18 +760,11 @@ export function ShareModal(props: ShareModalProps) {
   const isBlockContext =
     isInBlock() &&
     props.itemType !== 'agent_session' &&
-    props.itemType !== 'initiative' &&
-    props.itemType !== 'database';
+    props.itemType !== 'initiative';
   const [fallbackPermissionsResource, { refetch: refetchFallback }] =
     createResource(
       () => {
-        if (
-          isBlockContext ||
-          !props.id ||
-          (props.itemType === 'database' &&
-            (!props.open || props.userPermissions !== Permissions.OWNER))
-        )
-          return;
+        if (isBlockContext || !props.id) return;
         return { id: props.id, itemType: props.itemType };
       },
       async (source) => {
