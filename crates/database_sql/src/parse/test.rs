@@ -392,6 +392,19 @@ fn item_aliases_and_membership_joins() {
 }
 
 #[test]
+fn a_keyword_after_as_is_the_alias() {
+    let sql = "SELECT stage AS count, SUM(amount) AS sum FROM crm.deals GROUP BY stage";
+
+    let Statement::Select(select) = parse(sql).unwrap() else {
+        panic!("a select");
+    };
+    assert_eq!(
+        select.aliases,
+        vec![(0, Ident("count".into())), (1, Ident("sum".into()))]
+    );
+}
+
+#[test]
 fn keywords_are_usable_as_column_names_when_quoted() {
     // `count` unquoted is the aggregate keyword; quoted it is a column.
     let sql = "SELECT \"count\", COUNT(\"order\") FROM stats WHERE \"from\" = 'x'";

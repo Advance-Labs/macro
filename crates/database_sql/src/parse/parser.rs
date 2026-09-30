@@ -405,11 +405,25 @@ fn items(input: In<'_>) -> R<'_, SelectList> {
     .parse(input)
 }
 
+/// The name after `AS`: an identifier, or a keyword such as `count` when the
+/// select list goes on after it (`,` or `FROM` follows), so `AS FROM` still
+/// reads as a missing name.
+fn alias_name(input: In<'_>) -> R<'_, Ident> {
+    let continues = matches!(
+        input.get(1).map(|token| &token.kind),
+        Some(Tok::Comma | Tok::From)
+    );
+    match input.first().and_then(|token| token.kind.keyword_name()) {
+        Some(name) if continues => Ok((input.take_from(1), Ident(name))),
+        _ => ident("a name for the column after AS")(input),
+    }
+}
+
 /// `item [[AS] name]`.
 fn aliased_item(input: In<'_>) -> R<'_, (Item, Option<Ident>)> {
     let (input, item) = item(input)?;
     let (input, alias) = alt((
-        preceded(kw(Tok::As), cut(ident("a name for the column after AS"))).map(Some),
+        preceded(kw(Tok::As), cut(alias_name)).map(Some),
         opt(ident("an alias")),
     ))
     .parse(input)?;

@@ -182,6 +182,34 @@ pub fn lex(sql: &str) -> Result<Vec<Token>, ParseError> {
 
 impl Tok {
     /// How the token reads in an error message.
+    /// The keyword's name in lower case, for a keyword used as a name after
+    /// `AS`; `None` for every other token.
+    pub fn keyword_name(&self) -> Option<String> {
+        match self {
+            Tok::Ident(_)
+            | Tok::QuotedIdent(_)
+            | Tok::Str(_)
+            | Tok::Num(_)
+            | Tok::Le
+            | Tok::Ge
+            | Tok::Ne
+            | Tok::Eq
+            | Tok::Lt
+            | Tok::Gt
+            | Tok::LParen
+            | Tok::LBracket
+            | Tok::RBracket
+            | Tok::RParen
+            | Tok::Comma
+            | Tok::Dot
+            | Tok::Star
+            | Tok::Minus
+            | Tok::Semi
+            | Tok::End => None,
+            keyword => Some(<&'static str>::from(keyword).to_lowercase()),
+        }
+    }
+
     pub fn describe(&self) -> String {
         match self {
             Tok::Ident(name) => format!("\"{name}\""),
