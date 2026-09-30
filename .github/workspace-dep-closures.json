@@ -3927,6 +3927,7 @@
       "crates/teams",
       "crates/unfurl",
       "crates/user_api_key",
+      "crates/user_kv",
       "crates/user_quota",
       "crates/webhook",
       "crates/webhook_signature",

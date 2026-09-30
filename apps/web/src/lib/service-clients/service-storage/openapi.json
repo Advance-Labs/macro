@@ -14719,6 +14719,302 @@
         }
       }
     },
+    "/user-kv/{namespace}": {
+      "get": {
+        "tags": ["user-kv"],
+        "summary": "List the caller's entries in a namespace.",
+        "operationId": "list_user_kv",
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "description": "Lowercase slug grouping one use case, e.g. `tours`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserKvEntriesList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user-kv/{namespace}/{key}": {
+      "get": {
+        "tags": ["user-kv"],
+        "summary": "Fetch one of the caller's entries.",
+        "operationId": "get_user_kv",
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "description": "Lowercase slug grouping one use case, e.g. `tours`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "description": "Lowercase slug naming the entry, e.g. `calendar`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserKvEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["user-kv"],
+        "summary": "Create one of the caller's entries or replace its value.",
+        "operationId": "put_user_kv",
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "description": "Lowercase slug grouping one use case, e.g. `tours`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "description": "Lowercase slug naming the entry, e.g. `calendar`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutUserKvRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserKvEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["user-kv"],
+        "summary": "Remove one of the caller's entries.",
+        "operationId": "delete_user_kv",
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "description": "Lowercase slug grouping one use case, e.g. `tours`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "description": "Lowercase slug naming the entry, e.g. `calendar`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Entry deleted"
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/user_document_view_location/{document_id}": {
       "get": {
         "tags": [
@@ -25954,6 +26250,14 @@
           }
         }
       },
+      "KvKey": {
+        "type": "string",
+        "description": "Identifies an entry within its namespace, e.g. `calendar`."
+      },
+      "KvNamespace": {
+        "type": "string",
+        "description": "Groups the entries of one use case, e.g. `tours`."
+      },
       "LatestMessage": {
         "type": "object",
         "description": "Latest-message bundle for soup payloads.",
@@ -28536,6 +28840,17 @@
           }
         ],
         "description": "Property value (service representation).\n\nRepresents the actual value stored for an entity property.\nThis is serialized to/from JSONB in the database."
+      },
+      "PutUserKvRequest": {
+        "type": "object",
+        "description": "Request body for writing an entry.",
+        "required": ["value"],
+        "properties": {
+          "value": {
+            "type": "object",
+            "description": "The JSON object to store. Replaces any existing value."
+          }
+        }
       },
       "ReactionAction": {
         "type": "string",
@@ -32530,6 +32845,49 @@
             "type": "integer",
             "format": "int64",
             "description": "The total number of documents the user has"
+          }
+        }
+      },
+      "UserKvEntriesList": {
+        "type": "object",
+        "description": "The caller's entries in one namespace.",
+        "required": ["entries"],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserKvEntry"
+            },
+            "description": "Entries ordered by key."
+          }
+        }
+      },
+      "UserKvEntry": {
+        "type": "object",
+        "description": "One stored entry.",
+        "required": ["namespace", "key", "value", "createdAt", "updatedAt"],
+        "properties": {
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the entry was first written."
+          },
+          "key": {
+            "$ref": "#/components/schemas/KvKey",
+            "description": "The entry's key within its namespace."
+          },
+          "namespace": {
+            "$ref": "#/components/schemas/KvNamespace",
+            "description": "The entry's namespace."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the entry was last written."
+          },
+          "value": {
+            "type": "object",
+            "description": "The stored JSON object."
           }
         }
       },

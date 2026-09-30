@@ -66,6 +66,10 @@ use user_api_key::{
     domain::service::UserApiKeyServiceImpl, inbound::axum_router::UserApiKeyRouterState,
     outbound::pg_user_api_keys_repo::PgUserApiKeysRepo,
 };
+use user_kv::{
+    domain::service::UserKvServiceImpl, inbound::axum_router::UserKvRouterState,
+    outbound::pg_user_kv_repo::PgUserKvRepo,
+};
 
 use agent_session::{
     domain::search::{AgentSessionSearchMetadataService, AgentSessionSearchMetadataServiceImpl},
@@ -490,6 +494,12 @@ pub(crate) type UserApiKeyServiceType = UserApiKeyServiceImpl<PgUserApiKeysRepo>
 pub(crate) type DssUserApiKeyState =
     UserApiKeyRouterState<UserApiKeyServiceType, AuthorizationService>;
 
+/// Type alias for the per-user key-value service.
+pub(crate) type UserKvServiceType = UserKvServiceImpl<PgUserKvRepo>;
+
+/// Type alias for the per-user key-value router state.
+pub(crate) type DssUserKvState = UserKvRouterState<UserKvServiceType, AuthorizationService>;
+
 /// Type alias for the reminders service.
 pub(crate) type RemindersServiceType = RemindersServiceImpl<PgRemindersRepo>;
 
@@ -599,6 +609,7 @@ pub(crate) struct ApiContext {
     pub favorites_mutation_service: Arc<FavoritesMutationServiceType>,
     pub channel_labels_state: DssChannelLabelsState,
     pub user_api_key_state: DssUserApiKeyState,
+    pub user_kv_state: DssUserKvState,
     pub reminders_state: DssRemindersState,
     pub initiative_state: DssInitiativeState,
     pub graphql_initiative_context: graphql_initiative::InitiativeGraphqlContext,

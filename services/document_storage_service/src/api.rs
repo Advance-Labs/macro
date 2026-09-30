@@ -252,6 +252,10 @@ fn api_router(state: ApiContext) -> Router {
             ),
         )
         .nest(
+            "/user-kv",
+            user_kv::inbound::axum_router::user_kv_router(state.user_kv_state.clone()),
+        )
+        .nest(
             "/reminders",
             reminders::inbound::axum_router::reminders_router(state.reminders_state.clone()),
         )

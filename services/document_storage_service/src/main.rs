@@ -173,6 +173,10 @@ use user_api_key::{
     domain::service::UserApiKeyServiceImpl, inbound::axum_router::UserApiKeyRouterState,
     outbound::pg_user_api_keys_repo::PgUserApiKeysRepo,
 };
+use user_kv::{
+    domain::service::UserKvServiceImpl, inbound::axum_router::UserKvRouterState,
+    outbound::pg_user_kv_repo::PgUserKvRepo,
+};
 
 mod api;
 mod config;
@@ -1503,6 +1507,7 @@ async fn run() -> anyhow::Result<()> {
     let user_api_key_service = Arc::new(UserApiKeyServiceImpl::new(PgUserApiKeysRepo::new(
         db.clone(),
     )));
+    let user_kv_service = Arc::new(UserKvServiceImpl::new(PgUserKvRepo::new(db.clone())));
     let calendar_state = CalendarRouterState::new(
         Arc::new(calendar_events::domain::service::CalendarService::new(
             calendar_events::outbound::pg::PgCalendarRepository::new(readonly_db.clone()),
@@ -1630,6 +1635,7 @@ async fn run() -> anyhow::Result<()> {
             user_api_key_service,
             authorization_state.clone(),
         ),
+        user_kv_state: UserKvRouterState::new(user_kv_service, authorization_state.clone()),
         reminders_state: RemindersRouterState::new(
             Arc::new(reminders_service),
             entity_access_service.clone(),

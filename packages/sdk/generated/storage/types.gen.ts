@@ -6870,6 +6870,16 @@ export type ItemWithUserAccessLevel = {
 };
 
 /**
+ * Identifies an entry within its namespace, e.g. `calendar`.
+ */
+export type KvKey = string;
+
+/**
+ * Groups the entries of one use case, e.g. `tours`.
+ */
+export type KvNamespace = string;
+
+/**
  * Latest-message bundle for soup payloads.
  */
 export type LatestMessage = {
@@ -8258,6 +8268,18 @@ export type PropertyValue = {
      * Multi-select: {"type": "Link", "value": ["https://example.com", "https://other.com"]} (length 0+)
      */
     value: Array<string>;
+};
+
+/**
+ * Request body for writing an entry.
+ */
+export type PutUserKvRequest = {
+    /**
+     * The JSON object to store. Replaces any existing value.
+     */
+    value: {
+        [key: string]: unknown;
+    };
 };
 
 /**
@@ -10955,6 +10977,44 @@ export type UserDocumentsResponse = {
      * The total number of documents the user has
      */
     total: number;
+};
+
+/**
+ * The caller's entries in one namespace.
+ */
+export type UserKvEntriesList = {
+    /**
+     * Entries ordered by key.
+     */
+    entries: Array<UserKvEntry>;
+};
+
+/**
+ * One stored entry.
+ */
+export type UserKvEntry = {
+    /**
+     * When the entry was first written.
+     */
+    createdAt: string;
+    /**
+     * The entry's key within its namespace.
+     */
+    key: KvKey;
+    /**
+     * The entry's namespace.
+     */
+    namespace: KvNamespace;
+    /**
+     * When the entry was last written.
+     */
+    updatedAt: string;
+    /**
+     * The stored JSON object.
+     */
+    value: {
+        [key: string]: unknown;
+    };
 };
 
 export type UserPinsResponse = {
@@ -17233,6 +17293,128 @@ export type DeleteUserApiKeyResponses = {
 };
 
 export type DeleteUserApiKeyResponse = DeleteUserApiKeyResponses[keyof DeleteUserApiKeyResponses];
+
+export type ListUserKvData = {
+    body?: never;
+    path: {
+        /**
+         * Lowercase slug grouping one use case, e.g. `tours`.
+         */
+        namespace: string;
+    };
+    query?: never;
+    url: '/user-kv/{namespace}';
+};
+
+export type ListUserKvErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type ListUserKvError = ListUserKvErrors[keyof ListUserKvErrors];
+
+export type ListUserKvResponses = {
+    200: UserKvEntriesList;
+};
+
+export type ListUserKvResponse = ListUserKvResponses[keyof ListUserKvResponses];
+
+export type DeleteUserKvData = {
+    body?: never;
+    path: {
+        /**
+         * Lowercase slug grouping one use case, e.g. `tours`.
+         */
+        namespace: string;
+        /**
+         * Lowercase slug naming the entry, e.g. `calendar`.
+         */
+        key: string;
+    };
+    query?: never;
+    url: '/user-kv/{namespace}/{key}';
+};
+
+export type DeleteUserKvErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type DeleteUserKvError = DeleteUserKvErrors[keyof DeleteUserKvErrors];
+
+export type DeleteUserKvResponses = {
+    /**
+     * Entry deleted
+     */
+    204: void;
+};
+
+export type DeleteUserKvResponse = DeleteUserKvResponses[keyof DeleteUserKvResponses];
+
+export type GetUserKvData = {
+    body?: never;
+    path: {
+        /**
+         * Lowercase slug grouping one use case, e.g. `tours`.
+         */
+        namespace: string;
+        /**
+         * Lowercase slug naming the entry, e.g. `calendar`.
+         */
+        key: string;
+    };
+    query?: never;
+    url: '/user-kv/{namespace}/{key}';
+};
+
+export type GetUserKvErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetUserKvError = GetUserKvErrors[keyof GetUserKvErrors];
+
+export type GetUserKvResponses = {
+    200: UserKvEntry;
+};
+
+export type GetUserKvResponse = GetUserKvResponses[keyof GetUserKvResponses];
+
+export type PutUserKvData = {
+    body: PutUserKvRequest;
+    path: {
+        /**
+         * Lowercase slug grouping one use case, e.g. `tours`.
+         */
+        namespace: string;
+        /**
+         * Lowercase slug naming the entry, e.g. `calendar`.
+         */
+        key: string;
+    };
+    query?: never;
+    url: '/user-kv/{namespace}/{key}';
+};
+
+export type PutUserKvErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    413: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type PutUserKvError = PutUserKvErrors[keyof PutUserKvErrors];
+
+export type PutUserKvResponses = {
+    200: UserKvEntry;
+};
+
+export type PutUserKvResponse = PutUserKvResponses[keyof PutUserKvResponses];
 
 export type DeleteUserDocumentViewLocationData = {
     body?: never;

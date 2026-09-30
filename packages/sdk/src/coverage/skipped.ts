@@ -347,6 +347,11 @@ export const storageExcluded = [
   'uploadFolderHandler',
   'upsertHistoryHandler',
   'upsertUserDocumentViewLocation',
+  // Per-user key-value store for app-internal state such as tour progress.
+  'deleteUserKv',
+  'getUserKv',
+  'listUserKv',
+  'putUserKv',
 ] as const satisfies readonly (keyof StorageSdk)[];
 
 export const storageBacklog = [

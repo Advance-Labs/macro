@@ -35547,6 +35547,123 @@ export const deleteUserApiKeyParams = zod.object({
 });
 
 /**
+ * @summary List the caller's entries in a namespace.
+ */
+export const listUserKvParams = zod.object({
+  namespace: zod
+    .string()
+    .describe('Lowercase slug grouping one use case, e.g. `tours`.'),
+});
+
+export const listUserKvResponse = zod
+  .object({
+    entries: zod
+      .array(
+        zod
+          .object({
+            createdAt: zod.iso
+              .datetime({})
+              .describe('When the entry was first written.'),
+            key: zod
+              .string()
+              .describe(
+                'Identifies an entry within its namespace, e.g. `calendar`.'
+              ),
+            namespace: zod
+              .string()
+              .describe('Groups the entries of one use case, e.g. `tours`.'),
+            updatedAt: zod.iso
+              .datetime({})
+              .describe('When the entry was last written.'),
+            value: zod.object({}).describe('The stored JSON object.'),
+          })
+          .describe('One stored entry.')
+      )
+      .describe('Entries ordered by key.'),
+  })
+  .describe("The caller's entries in one namespace.");
+
+/**
+ * @summary Fetch one of the caller's entries.
+ */
+export const getUserKvParams = zod.object({
+  namespace: zod
+    .string()
+    .describe('Lowercase slug grouping one use case, e.g. `tours`.'),
+  key: zod
+    .string()
+    .describe('Lowercase slug naming the entry, e.g. `calendar`.'),
+});
+
+export const getUserKvResponse = zod
+  .object({
+    createdAt: zod.iso
+      .datetime({})
+      .describe('When the entry was first written.'),
+    key: zod
+      .string()
+      .describe('Identifies an entry within its namespace, e.g. `calendar`.'),
+    namespace: zod
+      .string()
+      .describe('Groups the entries of one use case, e.g. `tours`.'),
+    updatedAt: zod.iso
+      .datetime({})
+      .describe('When the entry was last written.'),
+    value: zod.object({}).describe('The stored JSON object.'),
+  })
+  .describe('One stored entry.');
+
+/**
+ * @summary Create one of the caller's entries or replace its value.
+ */
+export const putUserKvParams = zod.object({
+  namespace: zod
+    .string()
+    .describe('Lowercase slug grouping one use case, e.g. `tours`.'),
+  key: zod
+    .string()
+    .describe('Lowercase slug naming the entry, e.g. `calendar`.'),
+});
+
+export const putUserKvBody = zod
+  .object({
+    value: zod
+      .object({})
+      .describe('The JSON object to store. Replaces any existing value.'),
+  })
+  .describe('Request body for writing an entry.');
+
+export const putUserKvResponse = zod
+  .object({
+    createdAt: zod.iso
+      .datetime({})
+      .describe('When the entry was first written.'),
+    key: zod
+      .string()
+      .describe('Identifies an entry within its namespace, e.g. `calendar`.'),
+    namespace: zod
+      .string()
+      .describe('Groups the entries of one use case, e.g. `tours`.'),
+    updatedAt: zod.iso
+      .datetime({})
+      .describe('When the entry was last written.'),
+    value: zod.object({}).describe('The stored JSON object.'),
+  })
+  .describe('One stored entry.');
+
+/**
+ * @summary Remove one of the caller's entries.
+ */
+export const deleteUserKvParams = zod.object({
+  namespace: zod
+    .string()
+    .describe('Lowercase slug grouping one use case, e.g. `tours`.'),
+  key: zod
+    .string()
+    .describe('Lowercase slug naming the entry, e.g. `calendar`.'),
+});
+
+/**
  * @summary Gets a UserPdfDocumentLocation entry
  */
 export const getUserDocumentViewLocationParams = zod.object({

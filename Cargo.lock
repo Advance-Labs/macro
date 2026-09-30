@@ -6008,6 +6008,7 @@ dependencies = [
  "unicode-segmentation",
  "urlencoding",
  "user_api_key",
+ "user_kv",
  "utoipa",
  "utoipa-swagger-ui",
  "uuid",

@@ -238,6 +238,7 @@ user_api_key = { path = "../../crates/user_api_key", features = [
   "inbound",
   "postgres",
 ] }
+user_kv = { path = "../../crates/user_kv", features = ["inbound", "postgres"] }
 utoipa = { workspace = true, features = ["axum_extras"] }
 utoipa-swagger-ui = { workspace = true, features = ["axum"] }
 uuid = { workspace = true }

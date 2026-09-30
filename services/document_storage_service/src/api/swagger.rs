@@ -148,6 +148,8 @@ use soup::inbound::axum_router::{
 };
 use user_api_key::domain::models::{CreatedUserApiKey, UserApiKeyInfo};
 use user_api_key::inbound::axum_router::{CreateUserApiKeyRequest, UserApiKeysList};
+use user_kv::domain::models::{KvKey, KvNamespace, UserKvEntry};
+use user_kv::inbound::axum_router::{PutUserKvRequest, UserKvEntriesList};
 use utoipa::OpenApi;
 
 #[derive(OpenApi)]
@@ -380,6 +382,10 @@ use utoipa::OpenApi;
         user_api_key::inbound::axum_router::create_user_api_key_handler,
         user_api_key::inbound::axum_router::list_user_api_keys_handler,
         user_api_key::inbound::axum_router::delete_user_api_key_handler,
+        user_kv::inbound::axum_router::list_user_kv_handler,
+        user_kv::inbound::axum_router::get_user_kv_handler,
+        user_kv::inbound::axum_router::put_user_kv_handler,
+        user_kv::inbound::axum_router::delete_user_kv_handler,
 
         // reminders
         reminders::inbound::axum_router::list_reminders_handler,
@@ -544,6 +550,11 @@ use utoipa::OpenApi;
             CreateUserApiKeyRequest,
             UserApiKeyInfo,
             UserApiKeysList,
+            KvKey,
+            KvNamespace,
+            PutUserKvRequest,
+            UserKvEntriesList,
+            UserKvEntry,
             AddFavoriteRequest,
             FavoriteEntityRef,
             ReorderFavoritesRequest,
