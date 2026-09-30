@@ -275,6 +275,9 @@ fn check_soup_flat(
     if ast.initiative_filter.is_some() {
         return Eligibility::Unsupported(UnsupportedReason::Partition("initiative"));
     }
+    if ast.database_row_filter.is_some() {
+        return Eligibility::Unsupported(UnsupportedReason::Partition("database_row"));
+    }
     if ast.favorites_only == Some(true) {
         return Eligibility::Unsupported(UnsupportedReason::Literal("favorites"));
     }

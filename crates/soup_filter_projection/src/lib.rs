@@ -368,7 +368,8 @@ pub fn project_soup_item<T>(
         | SoupItem::ForeignEntity(_)
         | SoupItem::Reminder(_)
         | SoupItem::AgentSession(_)
-        | SoupItem::Initiative(_) => Ok(None),
+        | SoupItem::Initiative(_)
+        | SoupItem::DatabaseRow(_) => Ok(None),
     }
 }
 

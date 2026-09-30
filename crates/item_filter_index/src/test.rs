@@ -440,3 +440,17 @@ fn initiative_queries_use_server_instead_of_incomplete_local_index() {
         LocalCompileOutcome::Unsupported(UnsupportedReason::Partition("initiative"))
     );
 }
+
+#[test]
+fn database_row_queries_use_the_server_until_rows_are_indexed() {
+    let mut ast = excluded_deferred_partitions();
+    ast.database_row_filter = Some(Arc::new(Expr::val(
+        item_filters::ast::database_row::DatabaseRowLiteral::TableId(uuid::Uuid::from_u128(
+            0x7ab00000_0000_0000_0000_000000000001,
+        )),
+    )));
+    assert_eq!(
+        properties::compile_soup(&ast, request()).unwrap(),
+        LocalCompileOutcome::Unsupported(UnsupportedReason::Partition("database_row"))
+    );
+}

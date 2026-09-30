@@ -45,6 +45,7 @@ use uuid::Uuid;
 use super::*;
 
 mod database_activity;
+mod database_row;
 mod email_archive;
 mod initiative;
 mod soup_patches;

@@ -22,6 +22,7 @@ use system_properties::SystemPropertyKey;
 mod agent_session;
 mod calendar_event;
 mod candidate_gates;
+mod database_row;
 mod expanded;
 pub mod grouping;
 mod initiative;
@@ -231,7 +232,16 @@ impl SoupRepo for PgSoupRepo {
                 }),
         );
         items.extend(
-            initiative::by_ids(&self.pool.0, calendar_req)
+            initiative::by_ids(&self.pool.0, calendar_req.clone())
+                .await?
+                .into_iter()
+                .map(|item| SoupProjectionHydration {
+                    item,
+                    document_server_facts: None,
+                }),
+        );
+        items.extend(
+            database_row::by_ids(&self.pool.0, calendar_req)
                 .await?
                 .into_iter()
                 .map(|item| SoupProjectionHydration {
@@ -252,7 +262,8 @@ impl SoupRepo for PgSoupRepo {
                 .await?;
         items.extend(calendar_event::by_ids(&self.pool.0, calendar_req.clone()).await?);
         items.extend(agent_session::by_ids(&self.pool.0, calendar_req.clone()).await?);
-        items.extend(initiative::by_ids(&self.pool.0, calendar_req).await?);
+        items.extend(initiative::by_ids(&self.pool.0, calendar_req.clone()).await?);
+        items.extend(database_row::by_ids(&self.pool.0, calendar_req).await?);
         Ok(items)
     }
 
@@ -406,6 +417,7 @@ pub(crate) async fn populate_properties(
                 | SoupItem::ForeignEntity(_)
                 | SoupItem::Reminder(_)
                 | SoupItem::AgentSession(_) => None,
+                SoupItem::DatabaseRow(x) => properties_map.get(&x.id.to_string()),
             }
             .map(|properties| properties.iter().cloned().map(SoupProperty::from).collect())
             .unwrap_or_default();

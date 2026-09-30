@@ -1332,6 +1332,9 @@ function mapGraphqlReminderSchedule(entity: {
 }
 
 export function mapGraphqlSoupItem(item: GraphqlSoupItem): SoupApiItem | null {
+  // Rows are read by the database SQL engine, never listed as Soup items.
+  if (item.__typename === 'GraphqlSoupDatabaseRow') return null;
+
   const frecency = item.frecencyScore ?? 0;
 
   return match(item)

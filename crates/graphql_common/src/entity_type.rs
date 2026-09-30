@@ -30,6 +30,8 @@ pub enum GraphqlSoupEntityType {
     Reminder,
     /// AI coding agent session entity.
     AgentSession,
+    /// Row of a Macro database table.
+    DatabaseRow,
 }
 
 /// Canonical entity types accepted by cross-entity APIs.
@@ -104,14 +106,14 @@ impl GraphqlSoupEntityType {
             EntityType::Reminder => Self::Reminder,
             EntityType::AgentSession => Self::AgentSession,
             EntityType::Initiative => Self::Initiative,
+            EntityType::DatabaseRow => Self::DatabaseRow,
             EntityType::User
             | EntityType::Team
             | EntityType::StaticFile
             | EntityType::CrmContact
             | EntityType::Skill
             | EntityType::ScheduledAction
-            | EntityType::Database
-            | EntityType::DatabaseRow => return None,
+            | EntityType::Database => return None,
         })
     }
 
@@ -131,6 +133,7 @@ impl GraphqlSoupEntityType {
             Self::Reminder => EntityType::Reminder,
             Self::AgentSession => EntityType::AgentSession,
             Self::Initiative => EntityType::Initiative,
+            Self::DatabaseRow => EntityType::DatabaseRow,
         }
     }
 }
@@ -270,7 +273,9 @@ mod test {
     }
 
     #[test]
-    fn database_row_is_not_a_soup_entity_type() {
-        assert!(GraphqlSoupEntityType::try_new(EntityType::DatabaseRow).is_none());
+    fn database_row_round_trips_through_soup_entity_type() {
+        let graphql = GraphqlSoupEntityType::try_new(EntityType::DatabaseRow).unwrap();
+        assert!(matches!(graphql, GraphqlSoupEntityType::DatabaseRow));
+        assert_eq!(graphql.into_model(), EntityType::DatabaseRow);
     }
 }

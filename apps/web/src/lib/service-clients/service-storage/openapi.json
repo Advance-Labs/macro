@@ -33195,6 +33195,76 @@
           }
         }
       },
+      "SoupDatabaseRow_SoupPropertiesField": {
+        "allOf": [
+          {
+            "type": "object",
+            "description": "Property fields that can be flattened into property-bearing Soup items.",
+            "required": ["properties"],
+            "properties": {
+              "properties": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/SoupProperty"
+                },
+                "description": "Properties attached to the entity."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "tableId",
+              "databaseId",
+              "position",
+              "ownerId",
+              "createdAt",
+              "updatedAt"
+            ],
+            "properties": {
+              "createdAt": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Creation timestamp."
+              },
+              "createdBy": {
+                "type": ["string", "null"],
+                "description": "Who created the row, when they still exist."
+              },
+              "databaseId": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The database the table belongs to."
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "Row identifier."
+              },
+              "ownerId": {
+                "type": "string",
+                "description": "The database's owner, which owns every row in it."
+              },
+              "position": {
+                "type": "string",
+                "description": "Fractional index ordering the row within its table."
+              },
+              "tableId": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The table the row belongs to."
+              },
+              "updatedAt": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Last modification timestamp."
+              }
+            }
+          }
+        ],
+        "description": "A row of a Macro database table in the Soup feed. Its cells are its\nentity properties; access is its database's."
+      },
       "SoupDocumentSubType": {
         "oneOf": [
           {
@@ -33805,6 +33875,21 @@
               "tag": {
                 "type": "string",
                 "enum": ["agentSession"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Database row item.",
+            "required": ["data", "tag"],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/SoupDatabaseRow_SoupPropertiesField",
+                "description": "Database row item."
+              },
+              "tag": {
+                "type": "string",
+                "enum": ["databaseRow"]
               }
             }
           }
