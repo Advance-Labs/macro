@@ -5,9 +5,10 @@ import PencilIcon from '@phosphor/pencil-simple.svg';
 import XIcon from '@phosphor/x.svg';
 import { Button } from '@ui';
 import { createSignal, type JSX, Show } from 'solid-js';
-import { QueryResults } from '../components/query-results';
+import { QueryResults, ScalarValue } from '../components/query-results';
+import { useResultColumns } from '../context/answer-display';
+import { resultCell, resultCellText } from '../core/answer-cell';
 import {
-  formatQueryValue,
   isScalarAnswer,
   type QueryAnswer,
   queryErrorMessage,
@@ -75,12 +76,28 @@ export function LiveQuestion(props: {
       }}
     />
   );
+  const databaseColumn = useResultColumns(() => props.answer);
+  const scalarAnswer = () =>
+    props.source.queryId &&
+    !props.error &&
+    props.answer &&
+    isScalarAnswer(props.answer)
+      ? props.answer
+      : undefined;
   const value = () => {
     if (!props.source.queryId) return 'Database';
     if (props.error) return 'Answer unavailable';
     if (!props.answer) return 'Loading answer…';
-    if (isScalarAnswer(props.answer))
-      return formatQueryValue(props.answer.results[0]?.rows[0]?.[0]);
+    if (isScalarAnswer(props.answer)) {
+      const column = props.answer.results[0].columns[0];
+      return resultCellText(
+        resultCell(
+          props.answer.results[0].rows[0][0] ?? null,
+          column,
+          databaseColumn()(column)
+        )
+      );
+    }
     return `${props.answer.results[0]?.rows.length ?? 0} records`;
   };
   return (
@@ -120,7 +137,11 @@ export function LiveQuestion(props: {
                 <span class="truncate text-ink-muted">{title()}</span>
                 <span class="text-ink-extra-muted">·</span>
               </Show>
-              <span class="truncate tabular-nums">{value()}</span>
+              <span class="truncate tabular-nums">
+                <Show when={scalarAnswer()} fallback={value()}>
+                  {(answer) => <ScalarValue answer={answer()} />}
+                </Show>
+              </span>
             </Popover.Trigger>
           </Show>
         }

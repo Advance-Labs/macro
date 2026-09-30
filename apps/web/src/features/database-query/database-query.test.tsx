@@ -41,6 +41,9 @@ vi.mock('./queries/app-query-source', () => ({
   subscribeToQueryChanges: () => {},
   trackQueryDatabase: adapters.trackQueryDatabase,
 }));
+vi.mock('./answer-display', () => ({
+  AppAnswerDisplay: (props: { children: JSX.Element }) => props.children,
+}));
 vi.mock('./components/query-database-picker', () => ({
   QueryDatabasePicker: (props: {
     databases: { id: string; name: string }[];

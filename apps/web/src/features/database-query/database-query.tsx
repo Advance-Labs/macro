@@ -5,6 +5,7 @@ import {
 } from '@queries/storage/databases';
 import type { DatabaseDetail } from '@service-storage/databases';
 import { createSignal, For, type JSX, Match, Show, Switch } from 'solid-js';
+import { AppAnswerDisplay } from './answer-display';
 import { QueryDatabasePicker } from './components/query-database-picker';
 import type { QueryCapabilities } from './context/query-context';
 import {
@@ -39,24 +40,26 @@ export function DatabaseQuestionPanel(props: {
   promptPlaceholder?: string;
 }) {
   return (
-    <QueryEditor
-      autoFocus={props.autoFocus}
-      schema={toQuerySchema(props.detail, props.activeTableId)}
-      initial={
-        props.initial ?? {
-          databaseId: props.detail.database.id,
-          sql: '',
-          prompt: '',
-          displayMode: 'scalar',
+    <AppAnswerDisplay>
+      <QueryEditor
+        autoFocus={props.autoFocus}
+        schema={toQuerySchema(props.detail, props.activeTableId)}
+        initial={
+          props.initial ?? {
+            databaseId: props.detail.database.id,
+            sql: '',
+            prompt: '',
+            displayMode: 'scalar',
+          }
         }
-      }
-      capabilities={props.capabilities ?? queryCapabilities}
-      promptPlaceholder={props.promptPlaceholder}
-      onSave={props.onSave}
-      saveLabel={props.saveLabel}
-      saveHint={props.saveHint}
-      sourcePicker={props.sourcePicker}
-    />
+        capabilities={props.capabilities ?? queryCapabilities}
+        promptPlaceholder={props.promptPlaceholder}
+        onSave={props.onSave}
+        saveLabel={props.saveLabel}
+        saveHint={props.saveHint}
+        sourcePicker={props.sourcePicker}
+      />
+    </AppAnswerDisplay>
   );
 }
 
@@ -90,7 +93,7 @@ export function ChooseQuestionSource(props: {
         };
   };
   return (
-    <>
+    <AppAnswerDisplay>
       <QueryEditor
         autoFocus
         initial={{ ...props.initial, tableId: undefined }}
@@ -124,7 +127,7 @@ export function ChooseQuestionSource(props: {
           Loading database…
         </p>
       </Show>
-    </>
+    </AppAnswerDisplay>
   );
 }
 
@@ -225,7 +228,7 @@ export function DatabaseLiveQuestion(props: {
       ])
     );
   return (
-    <>
+    <AppAnswerDisplay>
       <For each={trackingIds()}>
         {(id) => {
           trackQueryDatabase(id, () => {
@@ -260,6 +263,6 @@ export function DatabaseLiveQuestion(props: {
             : undefined
         }
       />
-    </>
+    </AppAnswerDisplay>
   );
 }

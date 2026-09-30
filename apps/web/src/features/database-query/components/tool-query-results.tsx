@@ -1,5 +1,6 @@
 import { Select } from '@ui/components/Select';
 import { createMemo, createSignal } from 'solid-js';
+import { AppAnswerDisplay } from '../answer-display';
 import { isScalarAnswer, type QueryAnswer } from '../core/query';
 import { prepareQueryChart, type QueryDisplayMode } from '../core/query-chart';
 import { QueryResults } from './query-results';
@@ -59,11 +60,13 @@ export function ToolQueryResults(props: {
           {rowCount()} {rowCount() === 1 ? 'row' : 'rows'}
         </span>
       </div>
-      <QueryResults
-        answer={props.answer}
-        displayMode={display().value}
-        compact
-      />
+      <AppAnswerDisplay>
+        <QueryResults
+          answer={props.answer}
+          displayMode={display().value}
+          compact
+        />
+      </AppAnswerDisplay>
       <details class="text-xs text-ink-muted">
         <summary>View SQL</summary>
         <pre class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-hover p-2">

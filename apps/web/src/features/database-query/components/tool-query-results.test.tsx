@@ -1,12 +1,15 @@
 import { fireEvent, render, screen } from '@solidjs/testing-library';
 import userEvent from '@testing-library/user-event';
-import { createSignal } from 'solid-js';
+import { createSignal, type JSX } from 'solid-js';
 import { describe, expect, it, vi } from 'vitest';
 import type { QueryAnswer } from '../core/query';
 import { ToolQueryResults } from './tool-query-results';
 
 vi.mock('@solid-primitives/resize-observer', () => ({
   createElementSize: () => ({ width: 346, height: 300 }),
+}));
+vi.mock('../answer-display', () => ({
+  AppAnswerDisplay: (props: { children: JSX.Element }) => props.children,
 }));
 
 const answer: QueryAnswer = {

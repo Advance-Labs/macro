@@ -1,3 +1,4 @@
+import { resultCell, resultCellText } from './answer-cell';
 import type { QueryAnswer } from './query';
 
 export type QueryDisplayMode = 'scalar' | 'table' | 'bar' | 'line' | 'pie';
@@ -137,9 +138,14 @@ export function prepareQueryChart(
   return {
     data: {
       config,
-      labels: result.rows.map((row) =>
-        String(row[names.indexOf(config.x)] ?? 'Empty')
-      ),
+      labels: result.rows.map((row) => {
+        const value = row[names.indexOf(config.x)] ?? null;
+        return value === null
+          ? 'Empty'
+          : resultCellText(
+              resultCell(value, result.columns[names.indexOf(config.x)])
+            );
+      }),
       ...(positions ? { positions } : {}),
       series: series as QueryChartData['series'],
     },

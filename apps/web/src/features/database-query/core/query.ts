@@ -62,7 +62,12 @@ export type QueryProposal = {
   source?: QuerySchema;
 };
 export type QueryResult = {
-  columns: { name: string; entity_type: string | null }[];
+  columns: {
+    name: string;
+    entity_type: string | null;
+    /** The `[table, column]` a value was read from, when it traces to one. */
+    origin?: [string, string] | null;
+  }[];
   rows: (string | number | null)[][];
 };
 /**

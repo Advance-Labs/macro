@@ -29,16 +29,6 @@ export function QueryChart(props: {
   const right = () => width() - 12;
   const tickCount = () => (width() < 280 ? 2 : 4);
   const axisLabel = (category: string) => {
-    let text = category;
-    if (
-      /^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(category) &&
-      Number.isFinite(Date.parse(category))
-    )
-      text = new Intl.DateTimeFormat(undefined, {
-        month: 'short',
-        day: 'numeric',
-        timeZone: 'UTC',
-      }).format(new Date(category));
     const limit = Math.max(
       4,
       Math.min(
@@ -48,6 +38,9 @@ export function QueryChart(props: {
         )
       )
     );
+    // A date label gives up its year before it gives up its day.
+    const text =
+      category.length > limit ? category.replace(/, \d{4}$/, '') : category;
     return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
   };
   const values = createMemo(() =>

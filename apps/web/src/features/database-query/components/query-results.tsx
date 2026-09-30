@@ -1,10 +1,10 @@
 import { createMemo, For, Show } from 'solid-js';
+import { useResultColumns } from '../context/answer-display';
+import { resultCell, resultCellText } from '../core/answer-cell';
 import {
   displayedColumnIndexes,
-  formatQueryValue,
   isScalarAnswer,
   type QueryAnswer,
-  type QueryResult,
 } from '../core/query';
 import {
   isChartMode,
@@ -12,6 +12,7 @@ import {
   type QueryChartConfig,
   type QueryDisplayMode,
 } from '../core/query-chart';
+import { ResultValue } from './answer-value';
 import { QueryChart } from './query-chart';
 
 export function QueryResults(props: {
@@ -47,14 +48,14 @@ export function QueryResults(props: {
               props.displayMode !== 'table' &&
               isScalarAnswer(props.answer)
             }
-            fallback={<QueryResultTables results={props.answer.results} />}
+            fallback={<QueryResultTables answer={props.answer} />}
           >
             <div class="rounded-lg border border-edge-muted bg-hover/40 px-4 py-4">
               <div
                 class="text-3xl font-medium tracking-tight tabular-nums text-ink"
                 classList={{ 'text-xl': props.compact }}
               >
-                {formatQueryValue(props.answer.results[0]?.rows[0]?.[0])}
+                <ScalarValue answer={props.answer} />
               </div>
               <div class="mt-1 text-xs text-ink-muted">
                 {props.answer.results[0]?.columns[0]?.name.replaceAll('_', ' ')}
@@ -74,7 +75,7 @@ export function QueryResults(props: {
                 View data
               </summary>
               <div class="mt-2">
-                <QueryResultTables results={props.answer.results} />
+                <QueryResultTables answer={props.answer} />
               </div>
             </details>
           </>
@@ -84,9 +85,31 @@ export function QueryResults(props: {
   );
 }
 
-function QueryResultTables(props: { results: QueryResult[] }) {
+/** The single value of a scalar answer, drawn like the same value in a table. */
+export function ScalarValue(props: { answer: QueryAnswer }) {
+  const databaseColumn = useResultColumns(() => props.answer);
+  const column = () => props.answer.results[0]?.columns[0];
+  const value = () => props.answer.results[0]?.rows[0]?.[0] ?? null;
   return (
-    <For each={props.results}>
+    <Show when={column()} fallback="—">
+      {(resultColumn) => (
+        <ResultValue
+          cell={resultCell(
+            value(),
+            resultColumn(),
+            databaseColumn()(resultColumn())
+          )}
+          column={databaseColumn()(resultColumn())}
+        />
+      )}
+    </Show>
+  );
+}
+
+function QueryResultTables(props: { answer: QueryAnswer }) {
+  const databaseColumn = useResultColumns(() => props.answer);
+  return (
+    <For each={props.answer.results}>
       {(result) => {
         const columns = () => displayedColumnIndexes(result);
         return (
@@ -107,15 +130,29 @@ function QueryResultTables(props: { results: QueryResult[] }) {
                 <For each={result.rows.slice(0, 100)}>
                   {(row) => (
                     <tr class="hover:bg-hover/50">
-                      <For each={columns().map((index) => row[index] ?? null)}>
-                        {(cell) => (
-                          <td
-                            class="max-w-64 truncate border-b border-edge-muted/60 px-3 py-2 text-ink"
-                            title={cell === null ? 'Empty' : String(cell)}
-                          >
-                            {formatQueryValue(cell)}
-                          </td>
-                        )}
+                      <For each={columns()}>
+                        {(index) => {
+                          const column = () =>
+                            databaseColumn()(result.columns[index]);
+                          const cell = () =>
+                            resultCell(
+                              row[index] ?? null,
+                              result.columns[index],
+                              column()
+                            );
+                          return (
+                            <td
+                              class="max-w-64 truncate border-b border-edge-muted/60 px-3 py-2 text-ink"
+                              title={
+                                cell().kind === 'empty'
+                                  ? 'Empty'
+                                  : resultCellText(cell())
+                              }
+                            >
+                              <ResultValue cell={cell()} column={column()} />
+                            </td>
+                          );
+                        }}
                       </For>
                     </tr>
                   )}
