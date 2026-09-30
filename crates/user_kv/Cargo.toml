@@ -1,0 +1,42 @@
+[package]
+edition = "2024"
+name = "user_kv"
+publish = false
+version = "0.1.0"
+
+[features]
+default = []
+inbound = [
+  "dep:axum",
+  "dep:macro_authorization",
+  "dep:model-error-response",
+  "dep:utoipa",
+  "ports",
+]
+outbound = ["ports"]
+ports = ["dep:tracing"]
+postgres = ["dep:sqlx", "outbound"]
+
+[dependencies]
+axum = { workspace = true, optional = true }
+chrono = { workspace = true, features = ["serde"] }
+macro_authorization = { path = "../macro_authorization", optional = true, default-features = false, features = ["axum"] }
+macro_user_id = { path = "../macro_user_id" }
+model-error-response = { path = "../model-error-response", optional = true }
+rootcause = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true, features = ["json"], optional = true }
+thiserror = { workspace = true }
+tracing = { workspace = true, optional = true }
+utoipa = { workspace = true, optional = true }
+workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
+[dev-dependencies]
+axum = { workspace = true }
+http-body-util = { workspace = true }
+macro_db_migrator = { path = "../macro_db_migrator" }
+model_user = { path = "../model_user" }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tower = { workspace = true }
+uuid = { workspace = true, features = ["v7"] }
