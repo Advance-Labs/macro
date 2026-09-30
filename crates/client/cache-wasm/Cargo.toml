@@ -2,8 +2,8 @@
 edition = "2024"
 name = "cache-wasm"
 publish = false
-# Rebuild for the database row Soup entity.
-version = "0.6.29"
+# Rebuild for database rows in the local filter index.
+version = "0.6.30"
 
 [features]
 default = []

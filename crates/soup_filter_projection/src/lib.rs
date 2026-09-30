@@ -14,6 +14,7 @@ use soup::domain::models::SoupProjectionHydration;
 use thiserror::Error;
 
 pub mod channel;
+pub mod database_row;
 mod profile;
 mod wire;
 
