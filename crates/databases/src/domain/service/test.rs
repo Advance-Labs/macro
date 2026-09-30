@@ -21,8 +21,8 @@ use uuid::Uuid;
 
 use super::*;
 use crate::domain::models::{
-    Column, ColumnBinding, ColumnConfig, PropertyDefinitionId, RowId, RowRef, SqlValue,
-    TableDeletion, TableOrderOutcome, TableVersion,
+    Column, ColumnBinding, ColumnConfig, PropertyDefinitionId, RowId, RowRef, RowWrite, RowWrites,
+    RowWritesOutcome, SqlValue, TableDeletion, TableOrderOutcome, TableVersion,
 };
 
 mod casts;
@@ -30,6 +30,7 @@ mod columns;
 mod delete_table;
 mod discovery;
 mod infer_column_type;
+mod ops;
 mod relations;
 mod rename_column;
 mod saved_queries;
@@ -80,6 +81,8 @@ struct World {
     table_write_not_found: bool,
     /// Saved queries, oldest first.
     queries: Vec<SavedQuery>,
+    /// How many row-write batches the cell store was handed.
+    row_write_batches: usize,
 }
 
 type Shared = Arc<Mutex<World>>;
@@ -661,6 +664,145 @@ impl CellStore for FakeCells {
     async fn clear(&self, row: RowId) -> Result<(), FakeError> {
         self.0.lock().unwrap().cells.remove(&row);
         Ok(())
+    }
+    async fn apply_row_writes(&self, writes: &RowWrites) -> Result<RowWritesOutcome, FakeError> {
+        let mut w = self.0.lock().unwrap();
+        w.row_write_batches += 1;
+        let before = (
+            w.tables.clone(),
+            w.columns.clone(),
+            w.definitions.clone(),
+            w.rows.clone(),
+            w.cells.clone(),
+            w.settled.clone(),
+        );
+        let outcome = apply_in_world(&mut w, writes);
+        if !matches!(outcome, RowWritesOutcome::Applied { .. }) {
+            (
+                w.tables,
+                w.columns,
+                w.definitions,
+                w.rows,
+                w.cells,
+                w.settled,
+            ) = before;
+        }
+        Ok(outcome)
+    }
+}
+
+/// The fake cell store's batch, applied straight to the world; the caller
+/// rolls the world back unless everything applied.
+fn apply_in_world(w: &mut World, writes: &RowWrites) -> RowWritesOutcome {
+    for write in &writes.writes {
+        let table_id = write.table_id();
+        let live = w.tables.iter().find(|t| t.id == table_id).is_some_and(|t| {
+            w.databases
+                .iter()
+                .any(|d| d.id == t.database_id && d.trashed_at.is_none())
+        });
+        if !live || w.table_write_not_found {
+            return RowWritesOutcome::TableNotFound(table_id);
+        }
+    }
+    for option in &writes.options {
+        let Some(definition) = w.definitions.get_mut(&option.definition_id) else {
+            return RowWritesOutcome::TableNotFound(Uuid::nil());
+        };
+        let display_order = definition.property_options.len() as i32;
+        definition.property_options.push(PropertyOption {
+            id: option.id,
+            property_definition_id: option.definition_id,
+            display_order,
+            value: option.value.clone(),
+            color: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        });
+    }
+    let mut inserted = Vec::new();
+    for (index, write) in writes.writes.iter().enumerate() {
+        match write {
+            RowWrite::Insert { table_id, rows } => {
+                let table_rows = w.rows.entry(*table_id).or_default();
+                let mut ids = Vec::new();
+                for cells in rows {
+                    let id = Uuid::now_v7();
+                    table_rows.push(RowRef {
+                        id,
+                        position: format!("{:04}", table_rows.len()),
+                    });
+                    ids.push(id);
+                    w.cells.entry(id).or_default().extend(cells.iter().cloned());
+                    let valued: Vec<_> = cells.iter().map(|(definition, _)| *definition).collect();
+                    w.settled.push((*table_id, valued));
+                }
+                inserted.push(ids);
+            }
+            RowWrite::Update { table_id, rows } => {
+                for (row, cells) in rows {
+                    let owned = w
+                        .rows
+                        .get(table_id)
+                        .is_some_and(|rows| rows.iter().any(|r| r.id == *row));
+                    if !owned {
+                        return RowWritesOutcome::MissingRow {
+                            write: index,
+                            row: *row,
+                        };
+                    }
+                    let stored = w.cells.entry(*row).or_default();
+                    for (definition, value) in cells {
+                        match value {
+                            Some(value) => {
+                                stored.insert(*definition, value.clone());
+                            }
+                            None => {
+                                stored.remove(definition);
+                            }
+                        }
+                    }
+                }
+                inserted.push(Vec::new());
+            }
+            RowWrite::Delete { table_id, rows } => {
+                for row in rows {
+                    let table_rows = w.rows.entry(*table_id).or_default();
+                    let Some(position) = table_rows.iter().position(|r| r.id == *row) else {
+                        return RowWritesOutcome::MissingRow {
+                            write: index,
+                            row: *row,
+                        };
+                    };
+                    table_rows.remove(position);
+                    w.cells.remove(row);
+                }
+                inserted.push(Vec::new());
+            }
+        }
+    }
+    for (table_id, row) in &writes.related_rows {
+        if !w
+            .rows
+            .get(table_id)
+            .is_some_and(|rows| rows.iter().any(|r| r.id == *row))
+        {
+            return RowWritesOutcome::MissingRelatedRow(*row);
+        }
+    }
+    let mut table_versions = HashMap::new();
+    for write in writes.writes.iter().filter(|write| write.affected() > 0) {
+        let table_id = write.table_id();
+        if table_versions.contains_key(&table_id) {
+            continue;
+        }
+        let table = w.tables.iter_mut().find(|t| t.id == table_id).unwrap();
+        table.version.0 += 1;
+        table_versions.insert(table_id, table.version);
+    }
+    RowWritesOutcome::Applied {
+        inserted,
+        table_versions,
     }
 }
 

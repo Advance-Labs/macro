@@ -1,26 +1,35 @@
 //! Cells as entity properties, through the properties crate's own Postgres
-//! adapter: the `entity_properties` table stays that crate's to write.
+//! adapter: the `entity_properties` table stays that crate's to write. A
+//! batch of row writes runs on one transaction that the row identities, the
+//! cells and the new select options all share.
 
 use std::collections::HashMap;
 
 use models_properties::service::property_value::PropertyValue;
 use models_properties::{EntityReference, EntityType};
+use properties::domain::database_cell_writer::DatabaseCellWriter;
 use properties::domain::ports::PropertiesRepo;
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::domain::models::{PropertyDefinitionId, RowId};
+use crate::domain::models::{
+    PropertyDefinitionId, RowId, RowWrite, RowWrites, RowWritesOutcome, TableId,
+};
 use crate::domain::ports::CellStore;
+use crate::outbound::pg_databases_repo::rows;
 
-/// [`CellStore`] over the properties repository.
+/// [`CellStore`] over the properties repository, with the pool its batches
+/// open their transaction on.
 #[derive(Debug, Clone)]
 pub struct PgCellStore<Properties> {
+    pool: PgPool,
     properties: Properties,
 }
 
 impl<Properties> PgCellStore<Properties> {
     /// Wrap the properties repository.
-    pub fn new(properties: Properties) -> Self {
-        Self { properties }
+    pub fn new(pool: PgPool, properties: Properties) -> Self {
+        Self { pool, properties }
     }
 }
 
@@ -33,14 +42,31 @@ fn row_entity(row: RowId) -> EntityReference {
     }
 }
 
-/// The store's error: whatever the properties repository reports.
+/// The store's error, keeping the failing side's cause.
 #[derive(Debug, thiserror::Error)]
-#[error("properties: {0}")]
-pub struct PgCellStoreError(#[from] anyhow::Error);
+pub enum PgCellStoreError {
+    /// The properties repository failed.
+    #[error("properties: {0}")]
+    Properties(#[from] anyhow::Error),
+    /// A statement of a batch failed; nothing of it committed.
+    #[error("row batch: {0}")]
+    Sqlx(#[from] sqlx::Error),
+    /// The properties writer failed inside a batch; nothing of it committed.
+    #[error("row batch cells: {0}")]
+    Cells(#[source] Box<dyn std::error::Error + Send + Sync>),
+}
+
+fn cells_error(error: impl std::error::Error + Send + Sync + 'static) -> PgCellStoreError {
+    PgCellStoreError::Cells(Box::new(error))
+}
 
 impl<Properties> CellStore for PgCellStore<Properties>
 where
-    Properties: PropertiesRepo<Err = anyhow::Error> + Send + Sync + 'static,
+    Properties: PropertiesRepo<Err = anyhow::Error>
+        + DatabaseCellWriter<Transaction = Transaction<'static, Postgres>>
+        + Send
+        + Sync
+        + 'static,
 {
     type Err = PgCellStoreError;
 
@@ -98,5 +124,150 @@ where
             .delete_entity_properties(&row_entity(row))
             .await?;
         Ok(())
+    }
+
+    #[tracing::instrument(err, skip(self, writes), fields(writes = writes.writes.len()))]
+    async fn apply_row_writes(&self, writes: &RowWrites) -> Result<RowWritesOutcome, Self::Err> {
+        // Returning before the commit drops the transaction, which rolls
+        // everything back.
+        let mut transaction = self.pool.begin().await?;
+
+        let mut tables: Vec<TableId> = writes.writes.iter().map(RowWrite::table_id).collect();
+        tables.sort();
+        tables.dedup();
+        let live = rows::lock_live_tables(&mut *transaction, &tables).await?;
+        if let Some(gone) = tables.iter().find(|table| !live.contains(table)) {
+            return Ok(RowWritesOutcome::TableNotFound(*gone));
+        }
+
+        let mut options: Vec<(PropertyDefinitionId, Vec<_>)> = Vec::new();
+        for option in &writes.options {
+            let value = (option.id, option.value.clone());
+            match options
+                .iter_mut()
+                .find(|(definition, _)| *definition == option.definition_id)
+            {
+                Some((_, values)) => values.push(value),
+                None => options.push((option.definition_id, vec![value])),
+            }
+        }
+        for (definition, values) in &options {
+            self.properties
+                .add_options_in(&mut transaction, *definition, values)
+                .await
+                .map_err(cells_error)?;
+        }
+
+        let mut inserted = Vec::with_capacity(writes.writes.len());
+        for (index, write) in writes.writes.iter().enumerate() {
+            match write {
+                RowWrite::Insert { table_id, rows } => {
+                    let Some(minted) = rows::append_rows(
+                        &mut transaction,
+                        *table_id,
+                        &writes.created_by,
+                        rows.len(),
+                    )
+                    .await?
+                    else {
+                        return Ok(RowWritesOutcome::TableNotFound(*table_id));
+                    };
+                    let mut valued = Vec::new();
+                    for (row, cells) in minted.iter().zip(rows) {
+                        for (definition, value) in cells {
+                            self.properties
+                                .upsert_entity_property_in(
+                                    &mut transaction,
+                                    &row_entity(row.id),
+                                    *definition,
+                                    Some(value.clone()),
+                                )
+                                .await
+                                .map_err(cells_error)?;
+                            if !valued.contains(definition) {
+                                valued.push(*definition);
+                            }
+                        }
+                    }
+                    rows::settle_inference(&mut *transaction, *table_id, &valued).await?;
+                    inserted.push(minted.into_iter().map(|row| row.id).collect());
+                }
+                RowWrite::Update { table_id, rows } => {
+                    let named: Vec<RowId> = rows.iter().map(|(row, _)| *row).collect();
+                    let owned = rows::lock_rows(&mut *transaction, *table_id, &named).await?;
+                    if let Some(row) = named.iter().find(|row| !owned.contains(row)) {
+                        return Ok(RowWritesOutcome::MissingRow {
+                            write: index,
+                            row: *row,
+                        });
+                    }
+                    let mut valued = Vec::new();
+                    for (row, cells) in rows {
+                        for (definition, value) in cells {
+                            self.properties
+                                .upsert_entity_property_in(
+                                    &mut transaction,
+                                    &row_entity(*row),
+                                    *definition,
+                                    value.clone(),
+                                )
+                                .await
+                                .map_err(cells_error)?;
+                            if value.is_some() && !valued.contains(definition) {
+                                valued.push(*definition);
+                            }
+                        }
+                    }
+                    rows::settle_inference(&mut *transaction, *table_id, &valued).await?;
+                    inserted.push(Vec::new());
+                }
+                RowWrite::Delete { table_id, rows } => {
+                    for row in rows {
+                        if !rows::delete_row(&mut *transaction, *table_id, *row).await? {
+                            return Ok(RowWritesOutcome::MissingRow {
+                                write: index,
+                                row: *row,
+                            });
+                        }
+                        self.properties
+                            .delete_entity_properties_in(&mut transaction, &row_entity(*row))
+                            .await
+                            .map_err(cells_error)?;
+                    }
+                    inserted.push(Vec::new());
+                }
+            }
+        }
+
+        let mut related: Vec<(TableId, Vec<RowId>)> = Vec::new();
+        for (table, row) in &writes.related_rows {
+            match related.iter_mut().find(|(target, _)| target == table) {
+                Some((_, rows)) => rows.push(*row),
+                None => related.push((*table, vec![*row])),
+            }
+        }
+        for (table, named) in &related {
+            let held = rows::hold_rows(&mut *transaction, *table, named).await?;
+            if let Some(row) = named.iter().find(|row| !held.contains(row)) {
+                return Ok(RowWritesOutcome::MissingRelatedRow(*row));
+            }
+        }
+
+        let mut table_versions = HashMap::new();
+        for table in tables {
+            let changed = writes
+                .writes
+                .iter()
+                .any(|write| write.table_id() == table && write.affected() > 0);
+            if changed {
+                let version = rows::bump_table_version(&mut *transaction, table).await?;
+                table_versions.insert(table, version);
+            }
+        }
+        transaction.commit().await?;
+        Ok(RowWritesOutcome::Applied {
+            inserted,
+            table_versions,
+        })
     }
 }

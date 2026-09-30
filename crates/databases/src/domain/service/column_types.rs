@@ -447,8 +447,15 @@ fn date(value: &str) -> Result<chrono::DateTime<Utc>, Misfit> {
 /// A complete http or https URL.
 fn url(value: PropertyValue) -> Result<String, Misfit> {
     let text = text(value).ok_or(Misfit::NotUrl)?;
-    match url::Url::parse(&text) {
-        Ok(url) if matches!(url.scheme(), "http" | "https") && url.host_str().is_some() => Ok(text),
-        _ => Err(Misfit::NotUrl),
+    if is_complete_url(&text) {
+        Ok(text)
+    } else {
+        Err(Misfit::NotUrl)
     }
+}
+
+/// Whether text is a complete http or https URL, as a link cell holds.
+pub(super) fn is_complete_url(text: &str) -> bool {
+    url::Url::parse(text)
+        .is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some())
 }

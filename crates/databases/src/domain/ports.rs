@@ -4,8 +4,10 @@
 //! tables, column placements and row identities (`database_rows`: id,
 //! table, position). [`CellStore`] owns nothing: it is the domain's view of
 //! the properties system, where a row's cells live as entity properties of
-//! the `DATABASE_ROW` entity that the row id names. [`ColumnDefinitionStore`]
-//! is the same boundary for the definitions behind columns.
+//! the `DATABASE_ROW` entity that the row id names; for a batch of row writes
+//! it is also the one place row identities and cells commit together.
+//! [`ColumnDefinitionStore`] is the same boundary for the definitions behind
+//! columns.
 
 use std::collections::HashMap;
 
@@ -28,8 +30,10 @@ use crate::domain::models::{
     ChangeColumnType, ColumnCast, ColumnReplacement, ColumnSchemaOutcome, ColumnTypeChangeOutcome,
 };
 use crate::domain::models::{
-    QueryDefinition, QueryId, SavedQuery, TableDeletion, TableOrderOutcome,
+    QueryDefinition, QueryId, RowWrites, RowWritesOutcome, SavedQuery, TableDeletion,
+    TableOrderOutcome,
 };
+use models_databases::{DatabaseOp, OpResult};
 
 /// Persistence for databases, tables, column placements and row identities.
 pub trait DatabasesRepo: Send + Sync + 'static {
@@ -257,6 +261,16 @@ pub trait CellStore: Send + Sync + 'static {
 
     /// Remove every cell of a row.
     fn clear(&self, row: RowId) -> impl Future<Output = Result<(), Self::Err>> + Send;
+
+    /// Apply a request's row writes in one transaction, row identities and
+    /// cells together: each written table is locked and checked live, each
+    /// updated or deleted row checked to belong to its table, each related
+    /// row to its target table, and each changed table's version bumped
+    /// once. Anything but [`RowWritesOutcome::Applied`] wrote nothing.
+    fn apply_row_writes(
+        &self,
+        writes: &RowWrites,
+    ) -> impl Future<Output = Result<RowWritesOutcome, Self::Err>> + Send;
 }
 
 /// Which databases a viewer can reach, as `entity_access` answers it. The
@@ -497,6 +511,17 @@ pub trait DatabasesService: Send + Sync + 'static {
         viewer: Viewer,
         cmd: AddColumnOptions,
     ) -> impl Future<Output = Result<ColumnDetail, DatabaseError>> + Send;
+
+    /// Apply a batch of ops to the receipt's database: all of them, or,
+    /// when one is refused, none. Row ops are last-write-wins. A column type
+    /// change goes through [`Self::change_column_type`]'s rule and is sent
+    /// on its own.
+    fn apply_ops(
+        &self,
+        receipt: EntityAccessReceipt<EditAccessLevel>,
+        viewer: Viewer,
+        ops: Vec<DatabaseOp>,
+    ) -> impl Future<Output = Result<Vec<OpResult>, DatabaseError>> + Send;
 
     /// Run one statement, reads or writes.
     fn exec_sql(

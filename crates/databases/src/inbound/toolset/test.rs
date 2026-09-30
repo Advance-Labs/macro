@@ -199,6 +199,15 @@ impl DatabasesService for FakeService {
         unimplemented!("the toolset does not share awareness")
     }
 
+    async fn apply_ops(
+        &self,
+        _receipt: EntityAccessReceipt<EditAccessLevel>,
+        _viewer: Viewer,
+        _ops: Vec<models_databases::DatabaseOp>,
+    ) -> Result<Vec<models_databases::OpResult>, DatabaseError> {
+        unimplemented!("the toolset does not apply ops")
+    }
+
     async fn get_database(
         &self,
         _receipt: EntityAccessReceipt<ViewAccessLevel>,

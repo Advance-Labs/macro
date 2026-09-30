@@ -1,0 +1,157 @@
+//! Statements on row identities, over any connection: the repository runs
+//! them on the pool, the cell store inside a batch's transaction.
+
+use sqlx::{PgConnection, PgExecutor};
+
+use super::next_position;
+use crate::domain::models::{PropertyDefinitionId, RowId, RowRef, TableId, TableVersion};
+
+/// Append `count` empty rows to a live table, in order; `None` when the
+/// table is gone or its database is trashed.
+pub(crate) async fn append_rows(
+    connection: &mut PgConnection,
+    table_id: TableId,
+    created_by: &str,
+    count: usize,
+) -> Result<Option<Vec<RowRef>>, sqlx::Error> {
+    // Row writers and schema writers serialize on the table's version
+    // row, so positions are minted under the same lock.
+    let live = sqlx::query_scalar!(
+        r#"SELECT t.id FROM database_tables t
+               JOIN databases d ON d.id = t.database_id
+               WHERE t.id = $1 AND d.trashed_at IS NULL FOR UPDATE OF t"#,
+        table_id,
+    )
+    .fetch_optional(&mut *connection)
+    .await?;
+    if live.is_none() {
+        return Ok(None);
+    }
+    let max_position = sqlx::query_scalar!(
+        "SELECT MAX(position) FROM database_rows WHERE table_id = $1",
+        table_id
+    )
+    .fetch_one(&mut *connection)
+    .await?;
+    let mut last = max_position;
+    let mut rows = Vec::with_capacity(count);
+    for _ in 0..count {
+        let position = next_position(last.as_deref());
+        let id = macro_uuid::generate_uuid_v7();
+        sqlx::query!(
+            "INSERT INTO database_rows (id, table_id, position, created_by) VALUES ($1, $2, $3, $4)",
+            id,
+            table_id,
+            position,
+            created_by,
+        )
+        .execute(&mut *connection)
+        .await?;
+        rows.push(RowRef {
+            id,
+            position: position.clone(),
+        });
+        last = Some(position);
+    }
+    Ok(Some(rows))
+}
+
+/// Remove one row of a table; `false` if it was not there.
+pub(crate) async fn delete_row(
+    executor: impl PgExecutor<'_>,
+    table_id: TableId,
+    row_id: RowId,
+) -> Result<bool, sqlx::Error> {
+    let deleted = sqlx::query!(
+        "DELETE FROM database_rows WHERE id = $1 AND table_id = $2",
+        row_id,
+        table_id,
+    )
+    .execute(executor)
+    .await?;
+    Ok(deleted.rows_affected() == 1)
+}
+
+/// A first value landed in these columns: they no longer infer their type.
+pub(crate) async fn settle_inference(
+    executor: impl PgExecutor<'_>,
+    table_id: TableId,
+    definitions: &[PropertyDefinitionId],
+) -> Result<(), sqlx::Error> {
+    if definitions.is_empty() {
+        return Ok(());
+    }
+    sqlx::query!(
+        "UPDATE database_columns SET infer_type = FALSE
+             WHERE infer_type AND table_id = $1 AND property_definition_id = ANY($2)",
+        table_id,
+        definitions,
+    )
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
+/// Bump a table's version, answering the new one.
+pub(crate) async fn bump_table_version(
+    executor: impl PgExecutor<'_>,
+    table_id: TableId,
+) -> Result<TableVersion, sqlx::Error> {
+    let version = sqlx::query_scalar!(
+        r#"UPDATE database_tables SET version = version + 1 WHERE id = $1 RETURNING version"#,
+        table_id
+    )
+    .fetch_one(executor)
+    .await?;
+    Ok(TableVersion(version))
+}
+
+/// Lock the live tables among `table_ids`, in id order so concurrent batches
+/// take them in the same order, answering the ones that are live.
+pub(crate) async fn lock_live_tables(
+    executor: impl PgExecutor<'_>,
+    table_ids: &[TableId],
+) -> Result<Vec<TableId>, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT t.id FROM database_tables t
+           JOIN databases d ON d.id = t.database_id
+           WHERE t.id = ANY($1) AND d.trashed_at IS NULL
+           ORDER BY t.id
+           FOR UPDATE OF t"#,
+        table_ids,
+    )
+    .fetch_all(executor)
+    .await
+}
+
+/// Lock the rows among `row_ids` that belong to the table, for writing,
+/// answering them.
+pub(crate) async fn lock_rows(
+    executor: impl PgExecutor<'_>,
+    table_id: TableId,
+    row_ids: &[RowId],
+) -> Result<Vec<RowId>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "SELECT id FROM database_rows WHERE table_id = $1 AND id = ANY($2) ORDER BY id FOR UPDATE",
+        table_id,
+        row_ids,
+    )
+    .fetch_all(executor)
+    .await
+}
+
+/// Keep the rows among `row_ids` that belong to the table from being deleted
+/// until the transaction ends, answering them.
+pub(crate) async fn hold_rows(
+    executor: impl PgExecutor<'_>,
+    table_id: TableId,
+    row_ids: &[RowId],
+) -> Result<Vec<RowId>, sqlx::Error> {
+    sqlx::query_scalar!(
+        "SELECT id FROM database_rows WHERE table_id = $1 AND id = ANY($2) ORDER BY id FOR KEY SHARE",
+        table_id,
+        row_ids,
+    )
+    .fetch_all(executor)
+    .await
+}

@@ -44,7 +44,7 @@ pub fn build_service<Events: TableEventPublisher, Broker: MacroEventBroker>(
     DatabasesServiceImpl::new(
         PgDatabasesRepo::new(pool.clone()),
         PgDefinitionStore::new(PropertiesPgRepo::new(pool.clone())),
-        PgCellStore::new(PropertiesPgRepo::new(pool.clone())),
+        PgCellStore::new(pool.clone(), PropertiesPgRepo::new(pool.clone())),
         events,
         EntityAccessDirectory::new(EntityAccessServiceImpl::new(PgAccessRepository::new(pool))),
         broker,

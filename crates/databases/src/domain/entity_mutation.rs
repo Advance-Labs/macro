@@ -30,6 +30,7 @@ impl From<DatabaseError> for EntityMutationErrorCode {
             error @ DatabaseError::Unauthorized => Self::forbidden(rootcause::report!(error)),
             error @ (DatabaseError::InvalidSchemaOperation(_)
             | DatabaseError::InvalidSharing(_)
+            | DatabaseError::InvalidOp(_)
             | DatabaseError::VersionConflict) => Self::invalid(rootcause::report!(error)),
             error @ DatabaseError::Repo(_) => Self::internal(rootcause::report!(error)),
         }

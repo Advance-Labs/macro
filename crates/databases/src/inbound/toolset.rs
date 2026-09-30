@@ -398,7 +398,7 @@ pub(crate) fn database_error(error: DatabaseError) -> ToolCallError {
         DatabaseError::InvalidSchemaOperation(message) | DatabaseError::InvalidSharing(message) => {
             message.clone()
         }
-        DatabaseError::VersionConflict => error.to_string(),
+        DatabaseError::VersionConflict | DatabaseError::InvalidOp(_) => error.to_string(),
         DatabaseError::Repo(_) => "The databases service failed.".to_string(),
     };
 

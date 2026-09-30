@@ -11,6 +11,7 @@ mod column_types;
 mod columns;
 mod delete_table;
 mod infer_column_type;
+mod ops;
 mod query;
 mod rename_column;
 mod reorder_tables;
@@ -1069,6 +1070,16 @@ where
             cmd.column_id,
         )
         .await
+    }
+
+    #[tracing::instrument(skip(self, receipt, viewer, ops), fields(ops = ops.len()), err)]
+    async fn apply_ops(
+        &self,
+        receipt: EntityAccessReceipt<EditAccessLevel>,
+        viewer: Viewer,
+        ops: Vec<models_databases::DatabaseOp>,
+    ) -> Result<Vec<models_databases::OpResult>, DatabaseError> {
+        self.apply_database_ops(receipt, viewer, ops).await
     }
 
     #[tracing::instrument(skip(self, req), err)]

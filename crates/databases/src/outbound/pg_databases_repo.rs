@@ -8,6 +8,8 @@
 mod columns;
 mod delete_table;
 mod reorder_tables;
+/// Row identity statements, shared with the cell store's batches.
+pub(crate) mod rows;
 mod saved_queries;
 mod sharing;
 #[cfg(test)]
@@ -579,59 +581,16 @@ impl DatabasesRepo for PgDatabasesRepo {
         count: usize,
     ) -> Result<Option<Vec<RowRef>>, Self::Err> {
         let mut transaction = self.pool.begin().await?;
-        // Row writers and schema writers serialize on the table's version
-        // row, so positions are minted under the same lock.
-        let live = sqlx::query_scalar!(
-            r#"SELECT t.id FROM database_tables t
-               JOIN databases d ON d.id = t.database_id
-               WHERE t.id = $1 AND d.trashed_at IS NULL FOR UPDATE OF t"#,
-            table_id,
-        )
-        .fetch_optional(&mut *transaction)
-        .await?;
-        if live.is_none() {
-            return Ok(None);
+        let rows = rows::append_rows(&mut transaction, table_id, created_by, count).await?;
+        if rows.is_some() {
+            transaction.commit().await?;
         }
-        let max_position = sqlx::query_scalar!(
-            "SELECT MAX(position) FROM database_rows WHERE table_id = $1",
-            table_id
-        )
-        .fetch_one(&mut *transaction)
-        .await?;
-        let mut last = max_position;
-        let mut rows = Vec::with_capacity(count);
-        for _ in 0..count {
-            let position = next_position(last.as_deref());
-            let id = macro_uuid::generate_uuid_v7();
-            sqlx::query!(
-                "INSERT INTO database_rows (id, table_id, position, created_by) VALUES ($1, $2, $3, $4)",
-                id,
-                table_id,
-                position,
-                created_by,
-            )
-            .execute(&mut *transaction)
-            .await?;
-            rows.push(RowRef {
-                id,
-                position: position.clone(),
-            });
-            last = Some(position);
-        }
-        transaction.commit().await?;
-        Ok(Some(rows))
+        Ok(rows)
     }
 
     #[tracing::instrument(err, skip(self))]
     async fn delete_row(&self, table_id: TableId, row_id: RowId) -> Result<bool, Self::Err> {
-        let deleted = sqlx::query!(
-            "DELETE FROM database_rows WHERE id = $1 AND table_id = $2",
-            row_id,
-            table_id,
-        )
-        .execute(&self.pool)
-        .await?;
-        Ok(deleted.rows_affected() == 1)
+        Ok(rows::delete_row(&self.pool, table_id, row_id).await?)
     }
 
     #[tracing::instrument(err, skip(self))]
@@ -649,18 +608,7 @@ impl DatabasesRepo for PgDatabasesRepo {
         table_id: TableId,
         definitions: &[PropertyDefinitionId],
     ) -> Result<(), Self::Err> {
-        if definitions.is_empty() {
-            return Ok(());
-        }
-        sqlx::query!(
-            "UPDATE database_columns SET infer_type = FALSE
-             WHERE infer_type AND table_id = $1 AND property_definition_id = ANY($2)",
-            table_id,
-            definitions,
-        )
-        .execute(&self.pool)
-        .await?;
-        Ok(())
+        Ok(rows::settle_inference(&self.pool, table_id, definitions).await?)
     }
 
     #[tracing::instrument(skip(self), err)]
@@ -746,14 +694,7 @@ impl DatabasesRepo for PgDatabasesRepo {
 
     #[tracing::instrument(err, skip(self))]
     async fn bump_table_version(&self, table_id: TableId) -> Result<TableVersion, Self::Err> {
-        let version = sqlx::query_scalar!(
-            r#"UPDATE database_tables SET version = version + 1 WHERE id = $1 RETURNING version"#,
-            table_id
-        )
-        .fetch_one(&self.pool)
-        .await?;
-
-        Ok(TableVersion(version))
+        Ok(rows::bump_table_version(&self.pool, table_id).await?)
     }
 
     async fn table_versions(

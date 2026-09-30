@@ -8,6 +8,7 @@ use chrono::{DateTime, Utc};
 use macro_user_id::user_id::MacroUserIdStr;
 use model_entity::EntityType;
 use models_permissions::share_permission::access_level::AccessLevel;
+use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::service::property_value::PropertyValue;
 use models_properties::shared::DataType;
 use serde::{Deserialize, Serialize};
@@ -468,6 +469,134 @@ pub struct AlteredColumn {
     pub trimmed_cells: usize,
 }
 
+// ===== Batched row writes =====
+
+/// A select option an op names by a label its column does not have yet,
+/// under an id minted before anything is written.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NewOption {
+    /// The definition the option joins.
+    pub definition_id: PropertyDefinitionId,
+    /// The option's id.
+    pub id: Uuid,
+    /// Its stored value.
+    pub value: PropertyOptionValue,
+}
+
+/// Cells of one row to set, or with `None` to clear, by definition.
+pub type CellChanges = Vec<(PropertyDefinitionId, Option<PropertyValue>)>;
+
+/// One op's row writes, every cell already checked against its column.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RowWrite {
+    /// Append rows, in order, with the cells each starts with.
+    Insert {
+        /// The table.
+        table_id: TableId,
+        /// One entry per new row.
+        rows: Vec<Vec<(PropertyDefinitionId, PropertyValue)>>,
+    },
+    /// Set (or, with `None`, clear) cells of existing rows of the table.
+    Update {
+        /// The table the rows must belong to.
+        table_id: TableId,
+        /// Each row with its cells.
+        rows: Vec<(RowId, CellChanges)>,
+    },
+    /// Remove rows of the table with their cells.
+    Delete {
+        /// The table the rows must belong to.
+        table_id: TableId,
+        /// The rows.
+        rows: Vec<RowId>,
+    },
+}
+
+impl RowWrite {
+    /// The table the write lands in.
+    pub fn table_id(&self) -> TableId {
+        match self {
+            RowWrite::Insert { table_id, .. }
+            | RowWrite::Update { table_id, .. }
+            | RowWrite::Delete { table_id, .. } => *table_id,
+        }
+    }
+
+    /// How many rows it inserts, updates or deletes.
+    pub fn affected(&self) -> usize {
+        match self {
+            RowWrite::Insert { rows, .. } => rows.len(),
+            RowWrite::Update { rows, .. } => rows.len(),
+            RowWrite::Delete { rows, .. } => rows.len(),
+        }
+    }
+}
+
+/// A request's row writes, applied in one transaction: every write, option
+/// and version bump commits, or none does.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RowWrites {
+    /// Who the inserted rows are created by.
+    pub created_by: String,
+    /// Options to create before any cell names them.
+    pub options: Vec<NewOption>,
+    /// The writes, in the order the ops were sent.
+    pub writes: Vec<RowWrite>,
+    /// Rows relation cells point at, each with the table it must belong to.
+    pub related_rows: Vec<(TableId, RowId)>,
+}
+
+/// What applying [`RowWrites`] did. Anything but `Applied` wrote nothing.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RowWritesOutcome {
+    /// Everything committed.
+    Applied {
+        /// Per write, the rows it inserted; empty for updates and deletes.
+        inserted: Vec<Vec<RowId>>,
+        /// The new version of every table a write changed a row of, bumped
+        /// once.
+        table_versions: HashMap<TableId, TableVersion>,
+    },
+    /// A written table is gone, or its database is trashed.
+    TableNotFound(TableId),
+    /// A write named a row its table does not have.
+    MissingRow {
+        /// The write's index.
+        write: usize,
+        /// The row.
+        row: RowId,
+    },
+    /// A relation cell named a row its target table does not have.
+    MissingRelatedRow(RowId),
+}
+
+/// Why an op of a batch was refused: which op, and where relevant which row
+/// and column. Nothing in the batch was written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpRefusal {
+    /// The op's index in the request.
+    pub op: usize,
+    /// The row's index within the op.
+    pub row: Option<usize>,
+    /// The column placement.
+    pub column: Option<ColumnId>,
+    /// What is wrong.
+    pub reason: String,
+}
+
+impl std::fmt::Display for OpRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "op {}", self.op)?;
+        if let Some(row) = self.row {
+            write!(f, ", row {row}")?;
+        }
+        if let Some(column) = self.column {
+            write!(f, ", column {column}")?;
+        }
+        write!(f, ": {}", self.reason)
+    }
+}
+
 // ===== Saved queries =====
 
 /// Identifier of a saved query.
@@ -695,6 +824,9 @@ pub enum DatabaseError {
     /// The schema changed after the client read its version.
     #[error("The table changed. Refresh before entering this value.")]
     VersionConflict,
+    /// An op of a batch was refused, so none of the batch was written.
+    #[error("{0}")]
+    InvalidOp(OpRefusal),
     /// Persistence failure.
     #[error("repository error: {0:?}")]
     Repo(rootcause::Report),

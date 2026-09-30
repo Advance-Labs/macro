@@ -9,6 +9,8 @@ use crate::domain::models::Viewer;
 
 #[cfg(feature = "gateway")]
 mod alter_column;
+#[cfg(feature = "gateway")]
+mod apply_ops;
 mod rename_column;
 mod reorder_tables;
 mod saved_queries;
