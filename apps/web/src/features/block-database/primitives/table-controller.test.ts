@@ -74,7 +74,7 @@ describe('table controller', () => {
     expect(source.write).not.toHaveBeenCalled();
     option.resolve();
     await Promise.all([group, write]);
-    expect(source.write).toHaveBeenCalledWith(move, 4);
+    expect(source.write).toHaveBeenCalledWith(move, 4, false);
     expect(controller.pending()).toBe(false);
     dispose();
   });
@@ -290,14 +290,11 @@ describe('table controller', () => {
     dispose();
   });
 
-  it('registers a new option and refreshes its version before writing the selected label', async () => {
-    const { controller, source, setSnapshot, snapshot, dispose } = setup();
-    vi.mocked(source.refresh).mockImplementation(async () => {
-      setSnapshot({ ...snapshot(), version: 4 });
-    });
+  it('creates a new option with the write that first selects it', async () => {
+    const { controller, source, dispose } = setup();
     await controller.save(move, 'Status', 'Done');
-    expect(source.addOption).toHaveBeenCalledWith('status', 'Done');
-    expect(source.write).toHaveBeenCalledWith(move, 4);
+    expect(source.addOption).not.toHaveBeenCalled();
+    expect(source.write).toHaveBeenCalledExactlyOnceWith(move, 1, true);
     dispose();
   });
 

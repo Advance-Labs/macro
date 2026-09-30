@@ -501,8 +501,8 @@ describe('database table view', () => {
     persistWrites(fixture);
     const commit = vi.mocked(fixture.source.write).getMockImplementation()!;
     vi.mocked(fixture.source.write).mockImplementationOnce(
-      async (mutation, version) => {
-        await commit(mutation, version);
+      async (mutation, version, createOptions) => {
+        await commit(mutation, version, createOptions);
         throw new DatabaseWriteOutcomeUnknown('The response was lost.');
       }
     );
@@ -574,7 +574,8 @@ describe('database table view', () => {
     await waitFor(() =>
       expect(fixture.source.write).toHaveBeenCalledWith(
         { kind: 'cell', rowId: 'row', columnId: 'title', value: 'Launch plan' },
-        1
+        1,
+        false
       )
     );
     expect(
@@ -744,7 +745,8 @@ describe('database table view', () => {
         columnId: 'title',
         value: 'Updated launch',
       },
-      1
+      1,
+      false
     );
   });
 
@@ -1000,7 +1002,8 @@ describe('database table view', () => {
           columnId: 'notes',
           value: 'Typed into the new column',
         },
-        2
+        2,
+        false
       )
     );
     expect(fixture.source.snapshot()?.rows).toHaveLength(1);
@@ -1046,7 +1049,8 @@ describe('database table view', () => {
     expect(fixture.source.write).toHaveBeenCalledTimes(2);
     expect(fixture.source.write).toHaveBeenLastCalledWith(
       { kind: 'create', values: { title: 'Plan launch', status: 'To do' } },
-      1
+      1,
+      false
     );
   });
 
@@ -1094,7 +1098,8 @@ describe('database table view', () => {
     expect(fixture.source.write).toHaveBeenCalledTimes(2);
     expect(fixture.source.write).toHaveBeenLastCalledWith(
       { kind: 'delete', rowId: 'row' },
-      1
+      1,
+      false
     );
     expect(fixture.source.snapshot()?.rows.map((row) => row.rowId)).toEqual([
       'other',
@@ -1114,9 +1119,9 @@ describe('database table view', () => {
       });
       vi.mocked(fixture.source.write)
         .mockRejectedValueOnce(new Error('Connection lost'))
-        .mockImplementationOnce(async (mutation, version) => {
+        .mockImplementationOnce(async (mutation, version, createOptions) => {
           await pending;
-          return await commit(mutation, version);
+          return await commit(mutation, version, createOptions);
         });
       render(() => (
         <DatabaseTableView
@@ -1308,7 +1313,8 @@ describe('database table view', () => {
     expect(changeView).not.toHaveBeenCalled();
     expect(fixture.source.write).toHaveBeenCalledExactlyOnceWith(
       { kind: 'cell', rowId: 'row', columnId: 'status', value: 'Done' },
-      1
+      1,
+      false
     );
   });
 
@@ -1490,7 +1496,8 @@ describe('database table view', () => {
             kind: 'create',
             values: editsTitle ? { title: 'New project' } : { status: 'Done' },
           },
-          1
+          1,
+          false
         )
       );
     }
@@ -1565,7 +1572,8 @@ describe('database table view', () => {
     await waitFor(() =>
       expect(source.write).toHaveBeenCalledWith(
         { kind: 'create', values: { status: 'Done', title: 'New launch' } },
-        1
+        1,
+        false
       )
     );
   });
@@ -1626,7 +1634,8 @@ describe('database table view', () => {
       await waitFor(() =>
         expect(source.write).toHaveBeenCalledWith(
           { kind: 'create', values: { group: value } },
-          1
+          1,
+          false
         )
       );
     }
@@ -1665,7 +1674,8 @@ describe('database table view', () => {
           kind: 'create',
           values: { status: 'Done', title: 'From the toolbar' },
         },
-        1
+        1,
+        false
       )
     );
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -1691,7 +1701,8 @@ describe('database table view', () => {
     await waitFor(() =>
       expect(source.write).toHaveBeenCalledWith(
         { kind: 'create', values: { status: 'Done' } },
-        1
+        1,
+        false
       )
     );
   });
@@ -1780,7 +1791,8 @@ describe('database table view', () => {
     await waitFor(() =>
       expect(source.write).toHaveBeenCalledWith(
         { kind: 'delete', rowId: 'next' },
-        1
+        1,
+        false
       )
     );
     expect(source.write).toHaveBeenCalledTimes(1);
@@ -1832,7 +1844,8 @@ describe('database table view', () => {
     await waitFor(() =>
       expect(source.write).toHaveBeenCalledExactlyOnceWith(
         { kind: 'create', values: { title: 'Toolbar entry' } },
-        1
+        1,
+        false
       )
     );
   });
@@ -2121,7 +2134,8 @@ describe('database table view', () => {
     ).toBeTruthy();
     expect(fixture.source.write).toHaveBeenCalledExactlyOnceWith(
       { kind: 'create', values: { title: 'First record' } },
-      1
+      1,
+      false
     );
   });
 });

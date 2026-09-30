@@ -1,13 +1,14 @@
 /**
  * Server state for Macro Databases.
  *
- * Schema reads go through `GET /databases/{id}`; row writes go through
- * `POST /databases/exec`. Row reads run in the browser's SQL engine over Soup
- * (`@queries/database-sql`).
+ * Schema reads go through `GET /databases/{id}`; row writes are typed ops
+ * through `POST /databases/{id}/ops`. Row reads run in the browser's SQL
+ * engine over Soup (`@queries/database-sql`).
  */
 import { analytics } from '@app/lib/analytics';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { enableDatabases, isFeatureEnabled } from '@core/constant/featureFlags';
+import type { DatabaseOp, OpResult } from '@core/database-sql/generated/types';
 import type { FetchWithTokenErrorCode } from '@core/util/fetchWithToken';
 import { throwOnErr } from '@core/util/result';
 import { storageServiceClient } from '@service-storage/client';
@@ -15,9 +16,8 @@ import type {
   CreateColumnRequest,
   DatabaseColumnDetail,
   DatabaseDetail,
+  DatabaseOpsErrorCode,
   ExecErrorCode,
-  ExecOutcome,
-  ExecRequest,
   ListedDatabase,
 } from '@service-storage/databases';
 import { useQueries, useQuery } from '@tanstack/solid-query';
@@ -100,7 +100,7 @@ export async function fetchViewerDatabases(): Promise<DatabaseDetail[]> {
   );
 }
 
-/** A refused `exec`: the service's message plus why it refused. */
+/** A statement the server refused: the service's message plus why. */
 export class ExecError extends Error {
   constructor(
     readonly code: FetchWithTokenErrorCode | ExecErrorCode,
@@ -111,17 +111,50 @@ export class ExecError extends Error {
   }
 }
 
-/** Run SQL as the current viewer. Throws an [`ExecError`] on failure. */
-export async function execSql(request: ExecRequest): Promise<ExecOutcome> {
-  const result = await storageServiceClient.databases.exec(request);
+/** A batch of ops the service refused or never answered; nothing of it is known written. */
+export class DatabaseOpsError extends Error {
+  constructor(
+    readonly code: FetchWithTokenErrorCode | DatabaseOpsErrorCode,
+    message: string
+  ) {
+    super(message);
+    this.name = 'DatabaseOpsError';
+  }
+
+  /** The service answered and refused: the batch was not written. */
+  get definite(): boolean {
+    return [
+      'INVALID_OP',
+      'UNAUTHORIZED',
+      'FORBIDDEN',
+      'NOT_FOUND',
+      'CONFLICT',
+      'GONE',
+    ].includes(this.code);
+  }
+}
+
+/**
+ * Apply ops to one database's rows as the current viewer, together or not at
+ * all: the browser's `OpsSink.apply`. Throws a [`DatabaseOpsError`] on
+ * failure.
+ */
+export async function applyDatabaseOps(
+  databaseId: string,
+  ops: DatabaseOp[]
+): Promise<OpResult[]> {
+  const result = await storageServiceClient.databases.applyOps({
+    id: databaseId,
+    request: { ops },
+  });
   if (result.isErr()) {
     const failure = result.error[0];
-    throw new ExecError(
+    throw new DatabaseOpsError(
       failure?.code ?? 'HTTP_ERROR',
-      failure?.message ?? 'The database could not run that statement.'
+      failure?.message ?? 'The database could not apply that change.'
     );
   }
-  return result.value;
+  return result.value.results;
 }
 
 /**

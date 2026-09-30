@@ -1,6 +1,7 @@
 import { databaseSqlAnswer } from '@core/database-sql/answer';
 import { databaseSqlSchema } from '@core/database-sql/catalog';
 import { DatabaseSqlError } from '@core/database-sql/driver';
+import type { DatabaseOp, OpResult } from '@core/database-sql/generated/types';
 import { throwOnErr } from '@core/util/result';
 import {
   createDatabaseSqlQuery,
@@ -10,14 +11,13 @@ import {
   refreshInBackground,
   sameDatabaseSqlStatement,
 } from '@queries/database-sql/create-database-sql-query';
+import { DatabaseOpsError } from '@queries/storage/databases';
 import { databasesKeys } from '@queries/storage/keys';
 import { storageServiceClient } from '@service-storage/client';
 import type {
   DatabaseColumnDetail,
   DatabaseDetail,
   DatabaseTableDetail,
-  ExecOutcome,
-  ExecRequest,
 } from '@service-storage/databases';
 import { useQueryClient } from '@tanstack/solid-query';
 import { type Accessor, createMemo, createSignal, untrack } from 'solid-js';
@@ -25,25 +25,20 @@ import {
   type DatabaseRowsSource,
   DatabaseWriteOutcomeUnknown,
 } from '../context/table-source';
+import { mutationOp } from '../core/cell-ops';
 import {
   type DatabaseColumnType,
   inferDatabaseNumber,
 } from '../core/column-inference';
-import { relatedRowIds } from '../core/database-relations';
 import type {
-  DatabaseCellValue,
   DatabaseViewColumn,
   DatabaseViewConfig,
 } from '../core/database-view';
 import type { DatabaseRow, DatabaseRowMutation } from '../core/table';
 import {
-  deleteRowStatement,
-  insertRowStatement,
   ROW_ID_COLUMN,
   resultColumnName,
   rowsByIdStatement,
-  type SqlWriteValue,
-  updateCellStatement,
   viewSelectStatement,
 } from '../sql';
 
@@ -78,56 +73,16 @@ export function toViewColumn(column: DatabaseColumnDetail): DatabaseViewColumn {
   };
 }
 
-/** Cell values a multi-valued column holds, as the grid's JSON-array string. */
-function listedValues(value: DatabaseCellValue): (string | number)[] {
-  if (typeof value !== 'string' || !value) return [];
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return Array.isArray(parsed)
-      ? parsed.filter(
-          (item): item is string | number =>
-            typeof item === 'string' || typeof item === 'number'
-        )
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Spell a grid cell value the way the column's write expects it: a list of
- * row ids for a relation, a list of labels for a multi select, a list of ids
- * for a multi entity, `TRUE`/`FALSE` for a checkbox, and labels as text for a
- * single select. An empty string clears anything but a text cell.
- */
-export function writeValue(
-  column: DatabaseColumnDetail,
-  value: DatabaseCellValue
-): SqlWriteValue {
-  const definition = column.definition.definition;
-  if (column.column.config?.kind === 'link') return relatedRowIds(value);
-  if (definition.is_multi_select) return listedValues(value).map(String);
-  if (value === null) return null;
-  if (definition.data_type === 'BOOLEAN')
-    return typeof value === 'number'
-      ? value !== 0
-      : ['1', 'true'].includes(value.toLowerCase());
-  if (value === '' && !['STRING', 'LINK'].includes(definition.data_type))
-    return null;
-  if (definition.data_type.startsWith('SELECT_')) return String(value);
-  return value;
-}
-
 /** Lookup columns are not part of the grid, so a view never names them. */
 function isGridColumn(column: DatabaseColumnDetail) {
   return column.column.config?.kind !== 'lookup';
 }
 
 /** A stale table or column name, which a refreshed schema may resolve. */
-function isSqlError(error: unknown): error is Error {
+function isStaleSchemaError(error: unknown): error is Error {
   return (
     error instanceof DatabaseSqlError ||
-    (error instanceof Error && 'code' in error && error.code === 'SQL_ERROR')
+    (error instanceof DatabaseOpsError && error.code === 'INVALID_OP')
   );
 }
 
@@ -148,8 +103,8 @@ export function createDatabaseRowsSource(props: {
   table: Accessor<DatabaseTableDetail>;
   /** The engine searches, filters and sorts the rows for this view. */
   view: Accessor<DatabaseViewConfig>;
-  /** Writes; reads run in the browser's SQL engine. */
-  exec: (request: ExecRequest) => Promise<ExecOutcome>;
+  /** Applies a write's ops to this database; reads run in the browser's SQL engine. */
+  applyOps: (ops: DatabaseOp[]) => Promise<OpResult[]>;
   /** Where the engine reads rows from; the app's GraphQL client by default. */
   read?: DatabaseSqlQueryCapabilities;
   /** Calls back with the version of each change the gateway reports for this table. */
@@ -298,7 +253,7 @@ export function createDatabaseRowsSource(props: {
   }
   async function refresh() {
     const failed = rowsQuery.error();
-    if (isSqlError(failed)) {
+    if (isStaleSchemaError(failed)) {
       staleSchemaError = failed;
       await refreshSchema();
     }
@@ -318,32 +273,6 @@ export function createDatabaseRowsSource(props: {
     );
     if (!column?.writable) throw new Error('This property is read-only.');
     return column;
-  }
-
-  function statement(mutation: DatabaseRowMutation) {
-    // Read the refreshed cache directly; Solid props may notify after fetchQuery resolves.
-    const table = currentTable();
-    const tableSqlName = table.sql_name;
-    if (mutation.kind === 'cell') {
-      const column = columnForWrite(table, mutation.columnId);
-      return updateCellStatement({
-        tableSqlName,
-        rowId: mutation.rowId,
-        columnSqlName: column.sql_name,
-        value: writeValue(column, mutation.value),
-      });
-    }
-    if (mutation.kind === 'delete')
-      return deleteRowStatement({ tableSqlName, rowId: mutation.rowId });
-    return insertRowStatement({
-      tableSqlName,
-      values: Object.fromEntries(
-        Object.entries(mutation.values).map(([id, value]) => {
-          const column = columnForWrite(table, id);
-          return [column.sql_name, writeValue(column, value)];
-        })
-      ),
-    });
   }
 
   async function prepareFirstValues(
@@ -471,7 +400,7 @@ export function createDatabaseRowsSource(props: {
     refresh,
     addOption: props.addOption,
     retain: (rowIds) => setRetainedIds(() => rowIds),
-    write: async (mutation, version) => {
+    write: async (mutation, version, createOptions) => {
       const previousSchemaError = staleSchemaError;
       if (previousSchemaError) {
         try {
@@ -482,40 +411,46 @@ export function createDatabaseRowsSource(props: {
       }
       try {
         const prepared = await prepareFirstValues(mutation, version);
-        // Row writes are last-write-wins; live updates keep viewers current.
-        const request = { sql: statement(prepared.mutation) };
-        let written: ExecOutcome;
+        // Read the refreshed cache directly; Solid props may notify after fetchQuery resolves.
+        const table = currentTable();
+        const op = mutationOp(
+          tableId,
+          prepared.mutation,
+          (columnId) => columnForWrite(table, columnId),
+          createOptions
+        );
+        let written: OpResult | undefined;
         try {
-          written = await props.exec(request);
+          [written] = await props.applyOps([op]);
         } catch (error) {
-          const code =
-            error instanceof Error && 'code' in error ? error.code : undefined;
           if (
             mutation.kind === 'create' &&
-            ![
-              'SQL_ERROR',
-              'READ_ONLY',
-              'VERSION_CONFLICT',
-              'BUDGET_EXCEEDED',
-              'UNAUTHORIZED',
-              'FORBIDDEN',
-              'NOT_FOUND',
-              'GONE',
-              'CONFLICT',
-            ].includes(String(code))
+            !(error instanceof DatabaseOpsError && error.definite)
           )
             throw new DatabaseWriteOutcomeUnknown(
               'This row may already be saved. Check the latest rows before creating it again. Your draft is kept here.'
             );
           throw error;
         }
-        props.applyVersions(written.new_versions);
+        if (written?.kind !== 'rows_written')
+          throw new Error(
+            'The database answered the edit with something else.'
+          );
+        props.applyVersions({ [tableId]: written.tableVersion });
+        // New options live in the schema; read it so they show as options.
+        if (createOptions) {
+          try {
+            await refreshSchema();
+          } catch {
+            // The edit is saved; the next schema read shows the options.
+          }
+        }
         return {
-          insertedRowIds: written.inserted_row_ids,
-          version: written.new_versions[tableId],
+          insertedRowIds: written.inserted,
+          version: written.tableVersion,
         };
       } catch (error) {
-        if (isSqlError(error)) {
+        if (isStaleSchemaError(error)) {
           staleSchemaError = error;
           try {
             await refreshSchema();

@@ -121,7 +121,10 @@ sorting skip relations; a relation filter can only test whether it is empty.
 
 Rows are read in the browser: the grid, relation pickers, CSV export and live
 answers run their SQL in the database engine over Soup GraphQL
-(`/items/soup/graphql`), while edits still go through `POST /databases/exec`.
+(`/items/soup/graphql`), while every edit (a cell, a new or deleted record, a
+card moved between lanes, a new select option picked while editing) is one
+typed op sent to `POST /databases/{id}/ops`. The web app never calls
+`/databases/exec`; agents and MCP still write SQL there.
 Rows keep the table's order unless the view sorts them. After each of your own
 edits the grid reads its rows again, and another viewer's edit reaches an open
 grid or answer within a moment through the gateway's table-changed message; a

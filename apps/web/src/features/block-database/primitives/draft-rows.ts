@@ -50,12 +50,22 @@ export function createDraftRows(writer: Writer) {
       rows.map((row) => (row.id === id ? change(row) : row))
     );
   };
-  function acknowledge(id: string, saved: Record<string, DatabaseCellValue>) {
+  /** Saved cells, and the options their write created, are no longer pending. */
+  function acknowledge(
+    id: string,
+    saved: Record<string, DatabaseCellValue>,
+    created: Record<string, string>
+  ) {
     update(id, (row) => ({
       ...row,
       cells: Object.fromEntries(
         Object.entries(row.cells).filter(
           ([key, value]) => !(key in saved) || saved[key] !== value
+        )
+      ),
+      options: Object.fromEntries(
+        Object.entries(row.options).filter(
+          ([key, label]) => created[key] !== label
         )
       ),
     }));
@@ -66,22 +76,10 @@ export function createDraftRows(writer: Writer) {
       while (true) {
         const current = entry(id);
         if (!current?.started) return true;
-        const option = Object.entries(current.options)[0];
-        if (option) {
-          await writes.addGroup(option[0], option[1]);
-          update(id, (row) => ({
-            ...row,
-            options: Object.fromEntries(
-              Object.entries(row.options).filter(
-                ([key, value]) => key !== option[0] || value !== option[1]
-              )
-            ),
-          }));
-          continue;
-        }
         const rowId = serverId(id);
         if (!rowId) {
           const values = { ...current.cells };
+          const options = { ...current.options };
           const result = await writes.save(
             {
               kind: 'create',
@@ -91,7 +89,7 @@ export function createDraftRows(writer: Writer) {
                 : {}),
             },
             'new record',
-            undefined,
+            Object.values(options)[0],
             id
           );
           if (!result?.insertedRowIds[0]) {
@@ -101,7 +99,7 @@ export function createDraftRows(writer: Writer) {
             }));
             return false;
           }
-          acknowledge(id, values);
+          acknowledge(id, values, options);
           continue;
         }
         const field = Object.entries(current.cells)[0];
@@ -122,7 +120,8 @@ export function createDraftRows(writer: Writer) {
           mutation.columnTypes = { [field[0]]: current.columnTypes[field[0]] };
         else delete mutation.columnTypes;
         rowMutations.set(field[0], mutation);
-        const result = await writes.save(mutation, 'cell');
+        const option = current.options[field[0]];
+        const result = await writes.save(mutation, 'cell', option);
         if (!result) {
           update(id, (row) => ({
             ...row,
@@ -130,7 +129,11 @@ export function createDraftRows(writer: Writer) {
           }));
           return false;
         }
-        acknowledge(id, { [field[0]]: field[1] });
+        acknowledge(
+          id,
+          { [field[0]]: field[1] },
+          option === undefined ? {} : { [field[0]]: option }
+        );
         rowMutations.delete(field[0]);
       }
     } catch (error) {

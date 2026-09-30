@@ -1,11 +1,14 @@
-import type { Outcome, Step } from '@core/database-sql/generated/types';
-import type { DatabaseSqlQueryCapabilities } from '@queries/database-sql/create-database-sql-query';
-import { databasesKeys } from '@queries/storage/keys';
 import type {
-  DatabaseDetail,
-  ExecOutcome,
-  ExecRequest,
-} from '@service-storage/databases';
+  CellValue,
+  DatabaseOp,
+  OpResult,
+  Outcome,
+  Step,
+} from '@core/database-sql/generated/types';
+import type { DatabaseSqlQueryCapabilities } from '@queries/database-sql/create-database-sql-query';
+import { DatabaseOpsError } from '@queries/storage/databases';
+import { databasesKeys } from '@queries/storage/keys';
+import type { DatabaseDetail } from '@service-storage/databases';
 import type { SoupQuery } from '@service-storage/graphql/generated/graphql';
 import { cleanup, render, waitFor } from '@solidjs/testing-library';
 import { QueryClient, QueryClientProvider } from '@tanstack/solid-query';
@@ -104,15 +107,39 @@ function guests(
     changesApplied: 0,
   };
 }
-const written: ExecOutcome = {
-  results: [],
-  changes_applied: 1,
-  inserted_row_ids: [],
-  new_versions: { 'guests-table': 6 },
-  read_tables: [],
-  read_versions: {},
-  truncated_tables: [],
+const rowsWritten: Extract<OpResult, { kind: 'rows_written' }> = {
+  kind: 'rows_written',
+  tableVersion: 6,
+  inserted: [],
+  affected: 1,
 };
+const written: OpResult[] = [rowsWritten];
+/** The one op that sets `record`'s Name cell. */
+function nameEdit(value: CellValue): DatabaseOp[] {
+  return [
+    {
+      kind: 'update_rows',
+      table: 'guests-table',
+      changes: {
+        kind: 'per_row',
+        rows: [{ row: 'record', cells: [{ column: 'name', value }] }],
+      },
+      createMissingOptions: false,
+    },
+  ];
+}
+/** The one op that inserts a row with this Name. */
+function nameInsert(value: CellValue): DatabaseOp[] {
+  return [
+    {
+      kind: 'insert_rows',
+      table: 'guests-table',
+      rows: [[{ column: 'name', value }]],
+      createMissingOptions: false,
+    },
+  ];
+}
+type ApplyOps = (ops: DatabaseOp[]) => Promise<OpResult[]>;
 const edit: DatabaseRowMutation = {
   kind: 'cell',
   rowId: 'record',
@@ -215,7 +242,7 @@ function engine(
 
 function setup(
   initialDetail: DatabaseDetail,
-  exec: (request: ExecRequest) => Promise<ExecOutcome>,
+  applyOps: ApplyOps,
   options: {
     read?: DatabaseSqlQueryCapabilities;
     addOption?: DatabaseRowsSource['addOption'];
@@ -253,7 +280,7 @@ function setup(
       // Deliberately retain old props: retries must use the refreshed cache.
       table: () => initialDetail.tables[0],
       view: options.view ?? defaultDatabaseView,
-      exec,
+      applyOps,
       read: options.read ?? engine().read,
       onTableChanged: (listener) => {
         tableChanged = listener;
@@ -296,8 +323,8 @@ describe('database view reads', () => {
           })
         : guests()
     );
-    const exec = vi.fn<(request: ExecRequest) => Promise<ExecOutcome>>();
-    const { source } = setup(detail(), exec, { read, view });
+    const applyOps = vi.fn<ApplyOps>();
+    const { source } = setup(detail(), applyOps, { read, view });
     await waitFor(() =>
       expect(source.snapshot()?.rows).toEqual([
         { rowId: 'record', cells: { name: 'Ada' } },
@@ -323,7 +350,7 @@ describe('database view reads', () => {
       ])
     );
     expect(reads[0]).toBe('SELECT * FROM "guests" ORDER BY row_position');
-    expect(exec).not.toHaveBeenCalled();
+    expect(applyOps).not.toHaveBeenCalled();
   });
 
   it('reads the rows the view retains by id, apart from its statement', async () => {
@@ -360,13 +387,11 @@ describe('database view reads', () => {
   it("reads again when another viewer changes the table, but not for this writer's own change", async () => {
     let name = 'Ada';
     const { read, reads } = engine(() => guests([{ id: 'record', name }]));
-    const exec = vi
-      .fn<(request: ExecRequest) => Promise<ExecOutcome>>()
-      .mockResolvedValue(written);
-    const { source, tableChanged } = setup(detail(), exec, { read });
+    const applyOps = vi.fn<ApplyOps>().mockResolvedValue(written);
+    const { source, tableChanged } = setup(detail(), applyOps, { read });
     await waitFor(() => expect(source.snapshot()?.version).toBe(5));
 
-    await source.write(edit, 5);
+    await source.write(edit, 5, false);
     await source.refresh();
     expect(source.snapshot()?.version).toBe(6);
     const afterOwnWrite = reads.length;
@@ -414,17 +439,15 @@ describe('database rows SQL names', () => {
       database_id: 'db',
       table_id: 'customers',
     };
-    const exec = vi
-      .fn<(request: ExecRequest) => Promise<ExecOutcome>>()
-      .mockResolvedValue(written);
-    const { source } = setup(schema, exec);
+    const applyOps = vi.fn<ApplyOps>().mockResolvedValue(written);
+    const { source } = setup(schema, applyOps);
     await waitFor(() => expect(source.loading()).toBe(false));
     expect(source.columns()[0]).toMatchObject({
       writable: true,
       isMultiSelect: true,
       relation: { tableId: 'customers' },
     });
-    exec.mockResolvedValueOnce(written);
+    applyOps.mockResolvedValueOnce(written);
     await source.write(
       {
         kind: 'cell',
@@ -432,14 +455,33 @@ describe('database rows SQL names', () => {
         columnId: 'name',
         value: '["customer-1","customer-2"]',
       },
-      5
+      5,
+      false
     );
-    expect(exec).toHaveBeenLastCalledWith({
-      sql: "UPDATE \"guests\" SET \"Name\" = ['customer-1', 'customer-2'] WHERE row_id = 'record'",
-    });
+    expect(applyOps).toHaveBeenLastCalledWith([
+      {
+        kind: 'update_rows',
+        table: 'guests-table',
+        changes: {
+          kind: 'per_row',
+          rows: [
+            {
+              row: 'record',
+              cells: [
+                {
+                  column: 'name',
+                  value: { type: 'rows', value: ['customer-1', 'customer-2'] },
+                },
+              ],
+            },
+          ],
+        },
+        createMissingOptions: false,
+      },
+    ]);
   });
 
-  it('creates a Customer-first row with its links in one INSERT without assigning its identity', async () => {
+  it('creates a Customer-first row with its links in one insert without assigning its identity', async () => {
     const schema = detail();
     const column = schema.tables[0].columns[0];
     column.column.config = {
@@ -447,24 +489,22 @@ describe('database rows SQL names', () => {
       database_id: 'db',
       table_id: 'customers',
     };
-    const exec = vi
-      .fn<(request: ExecRequest) => Promise<ExecOutcome>>()
-      .mockResolvedValue(written);
-    const { source } = setup(schema, exec);
+    const applyOps = vi.fn<ApplyOps>().mockResolvedValue(written);
+    const { source } = setup(schema, applyOps);
     await waitFor(() => expect(source.loading()).toBe(false));
-    exec.mockClear();
-    exec.mockResolvedValueOnce({
-      ...written,
-      inserted_row_ids: ['new-record'],
-    });
+    applyOps.mockClear();
+    applyOps.mockResolvedValueOnce([
+      { ...rowsWritten, inserted: ['new-record'] },
+    ]);
     const result = await source.write(
       { kind: 'create', values: { name: '["customer-1"]' } },
-      5
+      5,
+      false
     );
-    expect(exec).toHaveBeenCalledTimes(1);
-    expect(exec).toHaveBeenCalledWith({
-      sql: 'INSERT INTO "guests" ("Name") VALUES ([\'customer-1\'])',
-    });
+    expect(applyOps).toHaveBeenCalledTimes(1);
+    expect(applyOps).toHaveBeenCalledWith(
+      nameInsert({ type: 'rows', value: ['customer-1'] })
+    );
     expect(result.insertedRowIds).toEqual(['new-record']);
   });
 
@@ -477,37 +517,31 @@ describe('database rows SQL names', () => {
       table_id: 'customers',
     };
     column.writable = false;
-    const exec = vi
-      .fn<(request: ExecRequest) => Promise<ExecOutcome>>()
-      .mockResolvedValue(written);
-    const { source } = setup(schema, exec);
+    const applyOps = vi.fn<ApplyOps>().mockResolvedValue(written);
+    const { source } = setup(schema, applyOps);
     await waitFor(() => expect(source.loading()).toBe(false));
-    exec.mockClear();
+    applyOps.mockClear();
     expect(source.columns()[0].writable).toBe(false);
-    await expect(source.write(edit, 5)).rejects.toThrow('read-only');
-    expect(exec).not.toHaveBeenCalled();
+    await expect(source.write(edit, 5, false)).rejects.toThrow('read-only');
+    expect(applyOps).not.toHaveBeenCalled();
   });
 
-  it('distinguishes an uncertain INSERT response from a definitive SQL refusal', async () => {
-    const exec = vi
-      .fn<(request: ExecRequest) => Promise<ExecOutcome>>()
-      .mockResolvedValue(written);
-    const { source } = setup(detail(), exec);
+  it('distinguishes an uncertain insert response from a definitive refusal', async () => {
+    const applyOps = vi.fn<ApplyOps>().mockResolvedValue(written);
+    const { source } = setup(detail(), applyOps);
     await waitFor(() => expect(source.loading()).toBe(false));
-    exec.mockRejectedValueOnce(
-      Object.assign(new Error('Connection closed'), { code: 'HTTP_ERROR' })
+    applyOps.mockRejectedValueOnce(
+      new DatabaseOpsError('HTTP_ERROR', 'Connection closed')
     );
     await expect(
-      source.write({ kind: 'create', values: { name: 'Ada' } }, 5)
+      source.write({ kind: 'create', values: { name: 'Ada' } }, 5, false)
     ).rejects.toBeInstanceOf(DatabaseWriteOutcomeUnknown);
 
-    const refused = Object.assign(new Error('Invalid value'), {
-      code: 'SQL_ERROR',
-    });
+    const refused = new DatabaseOpsError('INVALID_OP', 'op 0: Invalid value');
     transport.get.mockResolvedValue(ok(detail()));
-    exec.mockRejectedValueOnce(refused);
+    applyOps.mockRejectedValueOnce(refused);
     await expect(
-      source.write({ kind: 'create', values: { name: 'Ada' } }, 5)
+      source.write({ kind: 'create', values: { name: 'Ada' } }, 5, false)
     ).rejects.toBe(refused);
   });
 
@@ -522,34 +556,33 @@ describe('database rows SQL names', () => {
     expect(reads).toEqual(['SELECT * FROM "Guest List" ORDER BY row_position']);
   });
 
-  it('refreshes only this database after SQL_ERROR and rebuilds the physical write name on explicit retry', async () => {
-    const exec = vi
-      .fn<(request: ExecRequest) => Promise<ExecOutcome>>()
-      .mockResolvedValue(written);
-    const { source, client, applyVersions } = setup(detail(), exec);
+  it('refreshes only this database after a refused op and writes against the refreshed schema on retry', async () => {
+    const applyOps = vi.fn<ApplyOps>().mockResolvedValue(written);
+    const { source, client, applyVersions } = setup(detail(), applyOps);
     await waitFor(() => expect(source.loading()).toBe(false));
-    const collision = Object.assign(new Error('no such table: guests'), {
-      code: 'SQL_ERROR',
-    });
+    const collision = new DatabaseOpsError(
+      'INVALID_OP',
+      'op 0, row 0, column name: no such column in this table'
+    );
     const refreshed = detail('"Personal Guests"');
     transport.get.mockResolvedValue(ok(refreshed));
-    exec.mockRejectedValueOnce(collision).mockResolvedValueOnce(written);
+    applyOps.mockRejectedValueOnce(collision).mockResolvedValueOnce(written);
 
-    await expect(source.write(edit, 5)).rejects.toBe(collision);
+    await expect(source.write(edit, 5, false)).rejects.toBe(collision);
     expect(transport.get).toHaveBeenCalledExactlyOnceWith({ id: 'db' });
-    expect(exec).toHaveBeenCalledTimes(1);
+    expect(applyOps).toHaveBeenCalledTimes(1);
     expect(applyVersions).not.toHaveBeenCalled();
     expect(client.getQueryData(databasesKeys.detail('db').queryKey)).toEqual(
       refreshed
     );
 
-    await expect(source.write(edit, 5)).resolves.toEqual({
+    await expect(source.write(edit, 5, false)).resolves.toEqual({
       insertedRowIds: [],
       version: 6,
     });
-    expect(exec).toHaveBeenLastCalledWith({
-      sql: 'UPDATE "Personal Guests" SET "Name" = \'Grace\' WHERE row_id = \'record\'',
-    });
+    expect(applyOps).toHaveBeenLastCalledWith(
+      nameEdit({ type: 'text', value: 'Grace' })
+    );
     expect(transport.get).toHaveBeenCalledTimes(1);
     expect(applyVersions).toHaveBeenCalledExactlyOnceWith({
       'guests-table': 6,
@@ -557,34 +590,33 @@ describe('database rows SQL names', () => {
   });
 
   it('retains the original error and blocks stale writes until schema recovery succeeds', async () => {
-    const exec = vi
-      .fn<(request: ExecRequest) => Promise<ExecOutcome>>()
-      .mockResolvedValue(written);
-    const { source } = setup(detail(), exec);
+    const applyOps = vi.fn<ApplyOps>().mockResolvedValue(written);
+    const { source } = setup(detail(), applyOps);
     await waitFor(() => expect(source.loading()).toBe(false));
-    const collision = Object.assign(new Error('no such table: guests'), {
-      code: 'SQL_ERROR',
-    });
+    const collision = new DatabaseOpsError(
+      'INVALID_OP',
+      'op 0, row 0, column name: no such column in this table'
+    );
     transport.get.mockResolvedValue(
       err([{ code: 'HTTP_ERROR', message: 'Connection lost' }])
     );
-    exec.mockRejectedValueOnce(collision).mockResolvedValueOnce(written);
+    applyOps.mockRejectedValueOnce(collision).mockResolvedValueOnce(written);
 
-    await expect(source.write(edit, 5)).rejects.toBe(collision);
-    await expect(source.write(edit, 5)).rejects.toBe(collision);
+    await expect(source.write(edit, 5, false)).rejects.toBe(collision);
+    await expect(source.write(edit, 5, false)).rejects.toBe(collision);
     expect(transport.get).toHaveBeenCalledTimes(2);
-    expect(exec).toHaveBeenCalledTimes(1);
+    expect(applyOps).toHaveBeenCalledTimes(1);
 
     transport.get.mockResolvedValue(ok(detail('"Personal Guests"')));
-    await expect(source.write(edit, 5)).resolves.toEqual({
+    await expect(source.write(edit, 5, false)).resolves.toEqual({
       insertedRowIds: [],
       version: 6,
     });
     expect(transport.get).toHaveBeenCalledTimes(3);
-    expect(exec).toHaveBeenCalledTimes(2);
-    expect(exec).toHaveBeenLastCalledWith({
-      sql: 'UPDATE "Personal Guests" SET "Name" = \'Grace\' WHERE row_id = \'record\'',
-    });
+    expect(applyOps).toHaveBeenCalledTimes(2);
+    expect(applyOps).toHaveBeenLastCalledWith(
+      nameEdit({ type: 'text', value: 'Grace' })
+    );
   });
 
   it('recovers a read of a stale table name through the refreshed schema', async () => {
@@ -644,30 +676,30 @@ describe('accepted writes after switching tables', () => {
       ]),
       rowIds: persisted.map((row) => row.id),
     }));
-    const writes: ExecRequest[] = [];
-    const exec = vi.fn(async (request: ExecRequest): Promise<ExecOutcome> => {
-      writes.push(request);
-      const creating = request.sql.startsWith('INSERT');
+    const writes: DatabaseOp[][] = [];
+    const applyOps = vi.fn(async (ops: DatabaseOp[]): Promise<OpResult[]> => {
+      writes.push(ops);
+      const creating = ops[0]?.kind === 'insert_rows';
       if (creating) await createReady;
       if (creating)
         persisted = [
           { id: 'server-record', name: 'Accepted record', status: null },
         ];
+      // The cell's write creates the option it names, in one version.
       else persisted[0].status = 'In review';
       version += 1;
-      return {
-        ...written,
-        inserted_row_ids: creating ? ['server-record'] : [],
-        new_versions: { 'guests-table': version },
-      };
+      return [
+        {
+          ...rowsWritten,
+          tableVersion: version,
+          inserted: creating ? ['server-record'] : [],
+        },
+      ];
     });
-    const addOption = vi.fn(async () => {
-      // Real option creation changes the schema and advances the table's CAS.
-      version += 1;
-    });
+    const addOption = vi.fn(async () => {});
     let drafts!: ReturnType<typeof createDraftRows>;
     let controller!: ReturnType<typeof createTableController>;
-    const { source, unmount } = setup(initial, exec, {
+    const { source, unmount } = setup(initial, applyOps, {
       read,
       addOption,
       onSource(source) {
@@ -689,17 +721,34 @@ describe('accepted writes after switching tables', () => {
     releaseCreate();
 
     expect(await Promise.all([name, statusWrite])).toEqual([true, true]);
-    expect(addOption).toHaveBeenCalledExactlyOnceWith('status', 'In review');
+    // The option is created by the write that first uses it.
+    expect(addOption).not.toHaveBeenCalled();
     expect(writes).toEqual([
-      {
-        sql: 'INSERT INTO "guests" ("Name") VALUES (\'Accepted record\')',
-      },
-      {
-        sql: 'UPDATE "guests" SET "Status" = \'In review\' WHERE row_id = \'server-record\'',
-      },
+      nameInsert({ type: 'text', value: 'Accepted record' }),
+      [
+        {
+          kind: 'update_rows',
+          table: 'guests-table',
+          changes: {
+            kind: 'per_row',
+            rows: [
+              {
+                row: 'server-record',
+                cells: [
+                  {
+                    column: 'status',
+                    value: { type: 'text', value: 'In review' },
+                  },
+                ],
+              },
+            ],
+          },
+          createMissingOptions: true,
+        },
+      ],
     ]);
     expect(source.snapshot()).toEqual({
-      version: 8,
+      version: 7,
       rows: [
         {
           rowId: 'server-record',
@@ -753,36 +802,29 @@ describe('first-entry column types', () => {
   }
 
   it.each([
-    ['12.5', 'NUMBER', '12.5'],
-    ['00123', 'STRING', "'00123'"],
-    ['hello', 'STRING', "'hello'"],
+    ['12.5', 'NUMBER', { type: 'number', value: 12.5 }],
+    ['00123', 'STRING', { type: 'text', value: '00123' }],
+    ['hello', 'STRING', { type: 'text', value: 'hello' }],
   ] as const)(
     'settles the first %s entry and writes with the acknowledged schema version',
-    async (value, type, sqlValue) => {
+    async (value, type, cell) => {
       const initial = detail();
       initial.tables[0].columns[0].column.infer_type = true;
-      const exec = vi.fn<(request: ExecRequest) => Promise<ExecOutcome>>(
-        async () => written
-      );
-      const { source, client } = setup(initial, exec);
+      const applyOps = vi.fn<ApplyOps>(async () => written);
+      const { source, client } = setup(initial, applyOps);
       await waitFor(() => expect(source.loading()).toBe(false));
       transport.inferColumnType.mockResolvedValue(
         ok({ column: inferredDetail(type), table_version: 6 })
       );
-      exec.mockResolvedValue({
-        ...written,
-        new_versions: { 'guests-table': 7 },
-      });
-      await source.write({ kind: 'create', values: { name: value } }, 5);
+      applyOps.mockResolvedValue([{ ...rowsWritten, tableVersion: 7 }]);
+      await source.write({ kind: 'create', values: { name: value } }, 5, false);
       expect(transport.inferColumnType).toHaveBeenCalledExactlyOnceWith({
         id: 'db',
         tableId: 'guests-table',
         columnId: 'name',
         request: { data_type: type, base_version: 5 },
       });
-      expect(exec).toHaveBeenLastCalledWith({
-        sql: `INSERT INTO "guests" ("Name") VALUES (${sqlValue})`,
-      });
+      expect(applyOps).toHaveBeenLastCalledWith(nameInsert(cell));
       expect(
         client.getQueryData<DatabaseDetail>(databasesKeys.detail('db').queryKey)
           ?.tables[0].columns[0].column.infer_type
@@ -793,10 +835,8 @@ describe('first-entry column types', () => {
   it('uses the selected mention type and retains its entity ID', async () => {
     const initial = detail();
     initial.tables[0].columns[0].column.infer_type = true;
-    const exec = vi.fn<(request: ExecRequest) => Promise<ExecOutcome>>(
-      async () => written
-    );
-    const { source } = setup(initial, exec);
+    const applyOps = vi.fn<ApplyOps>(async () => written);
+    const { source } = setup(initial, applyOps);
     await waitFor(() => expect(source.loading()).toBe(false));
     transport.inferColumnType.mockResolvedValue(
       ok({ column: inferredDetail('ENTITY', 'USER'), table_version: 6 })
@@ -809,67 +849,67 @@ describe('first-entry column types', () => {
         value: 'macro|ada@example.com',
         columnTypes: { name: { dataType: 'ENTITY', entityType: 'USER' } },
       },
-      5
+      5,
+      false
     );
     expect(transport.inferColumnType.mock.calls[0][0].request).toEqual({
       data_type: 'ENTITY',
       specific_entity_type: 'USER',
       base_version: 5,
     });
-    expect(exec).toHaveBeenLastCalledWith({
-      sql: 'UPDATE "guests" SET "Name" = \'macro|ada@example.com\' WHERE row_id = \'record\'',
-    });
+    expect(applyOps).toHaveBeenLastCalledWith(
+      nameEdit({
+        type: 'entities',
+        value: [{ entityType: 'USER', entityId: 'macro|ada@example.com' }],
+      })
+    );
   });
 
   it('never infers a manually chosen text column or an empty value', async () => {
-    const exec = vi.fn<(request: ExecRequest) => Promise<ExecOutcome>>(
-      async () => written
-    );
-    const { source } = setup(detail(), exec);
+    const applyOps = vi.fn<ApplyOps>(async () => written);
+    const { source } = setup(detail(), applyOps);
     await waitFor(() => expect(source.loading()).toBe(false));
-    await source.write({ ...edit, value: '123' }, 5);
+    await source.write({ ...edit, value: '123' }, 5, false);
     expect(transport.inferColumnType).not.toHaveBeenCalled();
-    expect(exec.mock.calls.at(-1)?.[0].sql).toContain("= '123'");
+    expect(applyOps).toHaveBeenLastCalledWith(
+      nameEdit({ type: 'text', value: '123' })
+    );
   });
 
   it('after a competing first-entry type decision, writes the value against the refreshed column', async () => {
     const initial = detail();
     initial.tables[0].columns[0].column.infer_type = true;
-    const exec = vi.fn<(request: ExecRequest) => Promise<ExecOutcome>>(
-      async () => written
-    );
-    const { source } = setup(initial, exec);
+    const applyOps = vi.fn<ApplyOps>(async () => written);
+    const { source } = setup(initial, applyOps);
     await waitFor(() => expect(source.loading()).toBe(false));
     transport.inferColumnType.mockResolvedValue(
       err([{ code: 'VERSION_CONFLICT', message: 'Column changed' }])
     );
     transport.get.mockResolvedValue(ok(detail()));
-    await source.write({ ...edit, value: '123' }, 5);
+    await source.write({ ...edit, value: '123' }, 5, false);
     expect(transport.inferColumnType).toHaveBeenCalledOnce();
     expect(transport.get).toHaveBeenCalledOnce();
-    expect(exec).toHaveBeenLastCalledWith({
-      sql: 'UPDATE "guests" SET "Name" = \'123\' WHERE row_id = \'record\'',
-    });
+    expect(applyOps).toHaveBeenLastCalledWith(
+      nameEdit({ type: 'text', value: '123' })
+    );
   });
 
   it('retries a failed value write using its own completed type change without inferring again', async () => {
     const initial = detail();
     initial.tables[0].columns[0].column.infer_type = true;
-    const exec = vi.fn<(request: ExecRequest) => Promise<ExecOutcome>>(
-      async () => written
-    );
-    const { source } = setup(initial, exec);
+    const applyOps = vi.fn<ApplyOps>(async () => written);
+    const { source } = setup(initial, applyOps);
     await waitFor(() => expect(source.loading()).toBe(false));
     transport.inferColumnType.mockResolvedValue(
       ok({ column: inferredDetail('NUMBER'), table_version: 6 })
     );
-    exec.mockRejectedValueOnce(new Error('Offline'));
+    applyOps.mockRejectedValueOnce(new Error('Offline'));
     const mutation: DatabaseRowMutation = { ...edit, value: '12' };
-    await expect(source.write(mutation, 5)).rejects.toThrow('Offline');
-    await source.write(mutation, 5);
+    await expect(source.write(mutation, 5, false)).rejects.toThrow('Offline');
+    await source.write(mutation, 5, false);
     expect(transport.inferColumnType).toHaveBeenCalledOnce();
-    expect(exec).toHaveBeenLastCalledWith({
-      sql: 'UPDATE "guests" SET "Name" = 12 WHERE row_id = \'record\'',
-    });
+    expect(applyOps).toHaveBeenLastCalledWith(
+      nameEdit({ type: 'number', value: 12 })
+    );
   });
 });

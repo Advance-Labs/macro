@@ -22,6 +22,9 @@ import type { EntityType } from '@service-properties/generated/schemas/entityTyp
 import type { PropertyOption } from '@service-properties/generated/schemas/propertyOption';
 import type { PropertyOwner } from '@service-properties/generated/schemas/propertyOwner';
 import type { Result } from 'neverthrow';
+import { match } from 'ts-pattern';
+import type { ApplyOpsRequest } from './generated/schemas/applyOpsRequest';
+import type { ApplyOpsResponse } from './generated/schemas/applyOpsResponse';
 import type { SharePermissionV2 } from './generated/schemas/sharePermissionV2';
 import type { UpdateChannelSharePermission } from './generated/schemas/updateChannelSharePermission';
 
@@ -181,7 +184,7 @@ export interface QueryResult {
   rows: SqlValue[][];
 }
 
-/** Outcome of `POST /databases/exec`. */
+/** What the server answers a SQL statement with (`/databases/queries/{id}/run`). */
 export interface ExecOutcome {
   /** Result sets of the SELECT statements, in order. */
   results: QueryResult[];
@@ -220,22 +223,6 @@ export interface DatabaseAwareness {
   editing?: boolean;
   /** The caller left the database; viewers drop its state. */
   left?: boolean;
-}
-
-/** Body of `POST /databases/exec`. */
-export interface ExecRequest {
-  sql: string;
-  /**
-   * The database the statement is written from. A same-named table of
-   * another database is left out of name resolution when set, so two
-   * "Untitled database"s with a "Table 1" each stay addressable.
-   */
-  scope?: string;
-  /**
-   * Compare-and-swap: reject writes if any listed table has moved past the
-   * given version. Omitted → cell-level last-write-wins.
-   */
-  baseVersions?: Record<string, number>;
 }
 
 /** How a new column obtains its property definition. */
@@ -311,11 +298,10 @@ function databasesFetch<
 }
 
 /**
- * Why `POST /databases/exec` refused a statement, mirroring the status codes
- * `QueryError` maps to. The message is the service's `ErrorResponse.message`:
- * for `SQL_ERROR` that is the compiler's message, verbatim, often with a
- * suggestion (`did you mean "Status"?`). Writes no longer produce
- * `VERSION_CONFLICT`; it remains for the schema routes.
+ * Why the server refused a SQL statement (a saved query's run), mirroring
+ * the status codes `QueryError` maps to. The message is the service's
+ * `ErrorResponse.message`: for `SQL_ERROR` that is the compiler's message,
+ * verbatim, often with a suggestion (`did you mean "Status"?`).
  */
 export type ExecErrorCode =
   | 'SQL_ERROR'
@@ -349,22 +335,27 @@ function errorMessageFromBody(body: string, status: number): string {
   return `HTTP error! status: ${status}`;
 }
 
-async function execErrorResponseHandler(
+/**
+ * Why `POST /databases/{id}/ops` refused a batch. Nothing of it was written.
+ * `INVALID_OP` names the op (and row and column) and what is wrong with it.
+ */
+export type DatabaseOpsErrorCode = 'INVALID_OP';
+
+async function opsErrorResponseHandler(
   response: Response
-): Promise<ResultError<FetchWithTokenErrorCode | ExecErrorCode>> {
+): Promise<ResultError<FetchWithTokenErrorCode | DatabaseOpsErrorCode>> {
   const message = errorMessageFromBody(await response.text(), response.status);
-  switch (response.status) {
-    case 400:
-      return { code: 'SQL_ERROR', message };
-    case 403:
-      return { code: 'READ_ONLY', message };
-    case 409:
-      return { code: 'VERSION_CONFLICT', message };
-    case 422:
-      return { code: 'BUDGET_EXCEEDED', message };
-    default:
-      return { code: 'HTTP_ERROR', message };
-  }
+  return {
+    code: match(response.status)
+      .returnType<FetchWithTokenErrorCode | DatabaseOpsErrorCode>()
+      .with(400, () => 'INVALID_OP')
+      .with(401, () => 'UNAUTHORIZED')
+      .with(403, () => 'FORBIDDEN')
+      .with(404, () => 'NOT_FOUND')
+      .with(409, () => 'CONFLICT')
+      .otherwise(() => 'HTTP_ERROR'),
+    message,
+  };
 }
 
 /** All CSV values stay text; retries retain requestId. */
@@ -646,16 +637,16 @@ export const databasesClient = {
     );
   },
 
-  /**
-   * Run SQL as the caller. Reads and writes both go through here — there are
-   * no row CRUD endpoints.
-   */
-  async exec(request: ExecRequest) {
-    return await databasesFetch<ExecOutcome, ExecErrorCode>('/databases/exec', {
-      method: 'POST',
-      body: JSON.stringify(request),
-      errorResponseHandler: execErrorResponseHandler,
-    });
+  /** Apply a batch of typed ops to a database's rows, together or not at all. */
+  async applyOps({ id, request }: { id: string; request: ApplyOpsRequest }) {
+    return await databasesFetch<ApplyOpsResponse, DatabaseOpsErrorCode>(
+      `/databases/${id}/ops`,
+      {
+        method: 'POST',
+        body: JSON.stringify(request),
+        errorResponseHandler: opsErrorResponseHandler,
+      }
+    );
   },
 
   /** Tell the database's other viewers where the caller is. Responds 204. */

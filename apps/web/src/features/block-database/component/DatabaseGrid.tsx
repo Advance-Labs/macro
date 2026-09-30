@@ -2,18 +2,15 @@ import { StaticMarkdownContext } from '@core/component/LexicalMarkdown/component
 import { refreshInBackground } from '@queries/database-sql/create-database-sql-query';
 import {
   addDatabaseColumnOptions,
+  applyDatabaseOps,
   applyDatabaseTableVersions,
-  execSql,
   useDatabaseDetailQuery,
 } from '@queries/storage/databases';
 import {
   useDatabaseAwareness,
   useDatabaseTableChanges,
 } from '@queries/storage/databases-sync';
-import type {
-  DatabaseTableDetail,
-  ExecRequest,
-} from '@service-storage/databases';
+import type { DatabaseTableDetail } from '@service-storage/databases';
 import {
   createMemo,
   createSignal,
@@ -91,8 +88,6 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
   const relatedDatabases = () => [
     ...new Set(relatedTargets().map((target) => target.database_id)),
   ];
-  const exec = (request: ExecRequest) =>
-    execSql({ ...request, scope: databaseId });
   const relations = createDatabaseRelations({
     columns: () => table().columns,
     onTableChanged: (listener) =>
@@ -102,7 +97,7 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
     databaseId,
     table,
     view: () => props.view ?? defaultDatabaseView(),
-    exec,
+    applyOps: (ops) => applyDatabaseOps(databaseId, ops),
     onTableChanged: (listener) =>
       useDatabaseTableChanges((change) => {
         if (change.tableId === props.tableId) listener(change.version);

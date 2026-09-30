@@ -22,9 +22,11 @@ export type DatabaseRowsSource = {
   refreshing: Accessor<boolean>;
   error: Accessor<Error | undefined>;
   refresh(): Promise<void>;
+  /** `createOptions` lets labels a column lacks become new options. */
   write(
     mutation: DatabaseRowMutation,
-    version: number | undefined
+    version: number | undefined,
+    createOptions: boolean
   ): Promise<DatabaseWriteResult>;
   addOption(columnId: string, label: string): Promise<void>;
   /** Keep reading these rows by id, whether or not the view shows them. */

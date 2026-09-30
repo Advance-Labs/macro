@@ -49,7 +49,7 @@ function databaseQueriesFetch<T extends ObjectLike>(
   });
 }
 
-/** Same mapping as `/databases/exec`: the body's `message` is the compiler's. */
+/** The body's `message` is the compiler's, verbatim. */
 async function errorResponseHandler(
   response: Response
 ): Promise<ResultError<FetchWithTokenErrorCode | DatabaseQueryErrorCode>> {

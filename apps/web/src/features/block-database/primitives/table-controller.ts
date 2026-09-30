@@ -32,7 +32,6 @@ export type AcceptedDraftWrites = {
     option?: string,
     createIntentId?: string
   ) => Promise<DatabaseWriteResult | undefined>;
-  addGroup: (columnId: string, label: string) => Promise<void>;
 };
 
 /** One writer per mounted table. A queued edit always uses the latest completed read/write. */
@@ -94,10 +93,6 @@ export function createTableController(
           createIntentId && completedCreates().get(createIntentId);
         if (completed) return completed;
         try {
-          if (option !== undefined && mutation.kind === 'cell') {
-            await source.addOption(mutation.columnId, option);
-            await source.refresh();
-          }
           const readVersion = source.snapshot()?.version;
           const version =
             readVersion === undefined
@@ -105,7 +100,12 @@ export function createTableController(
               : lastWrittenVersion === undefined
                 ? readVersion
                 : Math.max(readVersion, lastWrittenVersion);
-          const written = await source.write(mutation, version);
+          // A new option is created by the write that first uses it.
+          const written = await source.write(
+            mutation,
+            version,
+            option !== undefined
+          );
           didWrite = true;
           batch(() => {
             if (createIntentId)
@@ -290,7 +290,7 @@ export function createTableController(
     // Admit the whole drain while mounted so those accepted writes survive a tab switch.
     runDraftWrites: (
       drain: (writes: AcceptedDraftWrites) => Promise<boolean>
-    ) => (disposed ? Promise.resolve(false) : drain({ save, addGroup })),
+    ) => (disposed ? Promise.resolve(false) : drain({ save })),
     retry,
     refresh,
     addGroup: (...args: Parameters<typeof addGroup>) =>

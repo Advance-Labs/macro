@@ -209,10 +209,8 @@ describe('editable blank row', () => {
     dispose();
     release();
     expect(await Promise.all([name, status])).toEqual([true, true]);
-    expect(source.addOption).toHaveBeenCalledExactlyOnceWith(
-      'status',
-      'In review'
-    );
+    // The field's write creates the option it names.
+    expect(source.addOption).not.toHaveBeenCalled();
     expect(database().rows).toEqual([
       {
         rowId: 'server-1',
@@ -220,9 +218,17 @@ describe('editable blank row', () => {
       },
     ]);
     expect(
-      vi.mocked(source.write).mock.calls.map(([, version]) => version)
-    ).toEqual([1, 3]);
-    expect(database().version).toBe(4);
+      vi
+        .mocked(source.write)
+        .mock.calls.map(([, version, createOptions]) => [
+          version,
+          createOptions,
+        ])
+    ).toEqual([
+      [1, false],
+      [2, true],
+    ]);
+    expect(database().version).toBe(3);
   });
 
   it('drops a failed mention type when its draft is replaced with plain text', async () => {
@@ -414,19 +420,22 @@ describe('editable blank row', () => {
     expect(controller.rows()).toHaveLength(1);
   });
 
-  it('retains a new option and row when adding the option fails, and retries without an empty insert', async () => {
+  it('retains a new option and row when the write creating them fails, and retries them together', async () => {
     const { source, drafts, database } = fixture();
-    vi.mocked(source.addOption).mockRejectedValueOnce(
-      new Error('Option offline')
-    );
+    vi.mocked(source.write).mockRejectedValueOnce(new Error('Offline'));
     const id = drafts.blankId();
     expect(await drafts.write(id, 'status', 'In review', 'In review')).toBe(
       false
     );
-    expect(drafts.error()?.error).toBe('Option offline');
-    expect(source.write).not.toHaveBeenCalled();
+    expect(drafts.error()?.error).toBe(
+      'Could not save this row. Your entries are kept here.'
+    );
     expect(await drafts.retry(id)).toBe(true);
-    expect(source.addOption).toHaveBeenCalledTimes(2);
+    expect(source.addOption).not.toHaveBeenCalled();
+    expect(vi.mocked(source.write).mock.calls).toEqual([
+      [{ kind: 'create', values: { status: 'In review' } }, 1, true],
+      [{ kind: 'create', values: { status: 'In review' } }, 1, true],
+    ]);
     expect(database().rows).toEqual([
       { rowId: 'server-1', cells: { status: 'In review' } },
     ]);
