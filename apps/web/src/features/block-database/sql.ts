@@ -161,6 +161,24 @@ function holdingNone(
     : `${sqlName} IS NOT NULL`;
 }
 
+/** The cell holds an option whose lower-case label passes the test. */
+function holdingOptionWhere(
+  target: ViewStatementColumn,
+  test: (label: string) => boolean
+): string {
+  return (
+    either(holdingAny(target, optionLabels(target.column, test))) ?? NO_ROWS
+  );
+}
+
+/** The cell holds no option whose lower-case label passes the test. */
+function holdingNoOptionWhere(
+  target: ViewStatementColumn,
+  test: (label: string) => boolean
+): string {
+  return holdingNone(target, optionLabels(target.column, test));
+}
+
 /** A finite number as a literal. */
 function numberLiteral(value: string): string | undefined {
   const number = Number(value);
@@ -224,15 +242,8 @@ function filterCondition(
       )
       .with(['is_not_empty', P._], () => `${name} IS NOT NULL`)
       .with(['equals', 'text'], () => like(name, literally(value)))
-      .with(
-        ['equals', 'select'],
-        () =>
-          either(
-            holdingAny(
-              target,
-              optionLabels(column, (label) => label === lower)
-            )
-          ) ?? NO_ROWS
+      .with(['equals', 'select'], () =>
+        holdingOptionWhere(target, (label) => label === lower)
       )
       .with(['equals', 'number'], () => compared('=', number))
       .with(['equals', 'checkbox'], () => compared('=', checkbox))
@@ -244,10 +255,7 @@ function filterCondition(
         both([`${name} != ''`, like(name, literally(value), 'NOT LIKE')])
       )
       .with(['not_equals', 'select'], () =>
-        holdingNone(
-          target,
-          optionLabels(column, (label) => label === lower)
-        )
+        holdingNoOptionWhere(target, (label) => label === lower)
       )
       .with(['not_equals', 'number'], () => compared('!=', number))
       .with(['not_equals', 'checkbox'], () => compared('!=', checkbox))
@@ -257,35 +265,18 @@ function filterCondition(
           date && either([`${name} < ${date.day}`, `${name} >= ${date.next}`])
       )
       .with(['contains', 'text'], () => like(name, `%${literally(value)}%`))
-      .with(
-        ['contains', 'select'],
-        () =>
-          either(
-            holdingAny(
-              target,
-              optionLabels(column, (label) => label.includes(lower))
-            )
-          ) ?? NO_ROWS
+      .with(['contains', 'select'], () =>
+        holdingOptionWhere(target, (label) => label.includes(lower))
       )
       .with(['not_contains', 'text'], () =>
         both([`${name} != ''`, like(name, `%${literally(value)}%`, 'NOT LIKE')])
       )
       .with(['not_contains', 'select'], () =>
-        holdingNone(
-          target,
-          optionLabels(column, (label) => label.includes(lower))
-        )
+        holdingNoOptionWhere(target, (label) => label.includes(lower))
       )
       .with(['starts_with', 'text'], () => like(name, `${literally(value)}%`))
-      .with(
-        ['starts_with', 'select'],
-        () =>
-          either(
-            holdingAny(
-              target,
-              optionLabels(column, (label) => label.startsWith(lower))
-            )
-          ) ?? NO_ROWS
+      .with(['starts_with', 'select'], () =>
+        holdingOptionWhere(target, (label) => label.startsWith(lower))
       )
       .with(['gt', 'number'], () => compared('>', number))
       .with(['gte', 'number'], () => compared('>=', number))
