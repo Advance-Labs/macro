@@ -4,7 +4,6 @@ import {
   MenuSeparator,
 } from '@core/component/ContextMenu';
 import { ContextMenu } from '@kobalte/core/context-menu';
-import { Dialog } from '@kobalte/core/dialog';
 import ArrowDownIcon from '@phosphor/arrow-down.svg';
 import ArrowLeftIcon from '@phosphor/arrow-left.svg';
 import ArrowRightIcon from '@phosphor/arrow-right.svg';
@@ -15,6 +14,7 @@ import EyeSlashIcon from '@phosphor/eye-slash.svg';
 import PencilIcon from '@phosphor/pencil-simple.svg';
 import TrashIcon from '@phosphor/trash.svg';
 import XIcon from '@phosphor/x.svg';
+import { DeleteDialog } from '@ui/components/DeleteDialog';
 import { Dropdown } from '@ui/components/Dropdown';
 import type { JSX } from 'solid-js';
 import { createSignal, createUniqueId, For, onCleanup, Show } from 'solid-js';
@@ -494,54 +494,31 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
           </ContextMenuContent>
         </ContextMenu.Portal>
       </ContextMenu>
-      <Dialog
+      <DeleteDialog
         open={deleteOpen()}
-        onOpenChange={(open) => {
-          if (!pending()) setDeleteOpen(open);
+        onOpenChange={setDeleteOpen}
+        title="Delete column?"
+        deleteLabel="Delete column"
+        pending={pending()}
+        onDelete={() => void remove()}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          restoreFocus();
         }}
-      >
-        <Dialog.Portal>
-          <Dialog.Overlay class="fixed inset-0 z-modal bg-modal-overlay/30" />
-          <Dialog.Content
-            class="portal-scope fixed top-1/2 left-1/2 z-modal w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-edge-muted bg-panel p-5 text-ink shadow-xl outline-none"
-            onCloseAutoFocus={(event) => {
-              event.preventDefault();
-              restoreFocus();
-            }}
-          >
-            <Dialog.Title class="text-base font-semibold">
-              Delete column?
-            </Dialog.Title>
-            <Dialog.Description class="mt-2 text-sm text-ink-muted">
+        body={
+          <>
+            <p>
               “{props.column.name}” and its values in this table will be
               deleted.
-            </Dialog.Description>
+            </p>
             <Show when={error()}>
-              <p role="alert" class="mt-3 text-xs text-failure-ink">
+              <p role="alert" class="mt-2 text-failure-ink">
                 {error()}
               </p>
             </Show>
-            <div class="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                disabled={pending()}
-                class="rounded-md px-3 py-1.5 text-sm hover:bg-hover disabled:opacity-50"
-                onClick={() => setDeleteOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={pending()}
-                class="rounded-md bg-failure/10 px-3 py-1.5 text-sm font-medium text-failure-ink disabled:opacity-50"
-                onClick={() => void remove()}
-              >
-                {pending() ? 'Deleting…' : 'Delete column'}
-              </button>
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog>
+          </>
+        }
+      />
     </>
   );
 }

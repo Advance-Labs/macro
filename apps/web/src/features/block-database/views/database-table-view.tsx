@@ -3,6 +3,7 @@ import EyeSlashIcon from '@phosphor/eye-slash.svg';
 import WarningIcon from '@phosphor/warning-circle.svg';
 import XIcon from '@phosphor/x.svg';
 import { until } from '@solid-primitives/promise';
+import { DeleteDialog } from '@ui/components/DeleteDialog';
 import { Mutex } from 'async-mutex';
 import {
   type Accessor,
@@ -28,7 +29,7 @@ import {
   DatabaseTable,
 } from '../components/database-table';
 import type { PropertyCreatorVariant } from '../components/property-creator';
-import { DeleteRecordDialog, RecordPanel } from '../components/record-panel';
+import { RecordPanel } from '../components/record-panel';
 import type {
   DatabaseRowsSource,
   DatabaseWriteResult,
@@ -154,6 +155,7 @@ export function DatabaseTableView(props: {
     noEditableColumns?: boolean;
   }>();
   let returnFocus: HTMLElement | undefined;
+  let deleteReturnFocus: HTMLElement | undefined;
   let disposed = false;
   let firstCellRequest: Promise<void> | undefined;
   let cancelFirstCellWait: (() => void) | undefined;
@@ -322,7 +324,7 @@ export function DatabaseTableView(props: {
     const row = controller.rows().find((row) => row.rowId === rowId);
     if (!row) return;
     if (document.activeElement instanceof HTMLElement)
-      returnFocus = document.activeElement;
+      deleteReturnFocus = document.activeElement;
     setDeleteTarget({ rowId, name: rowTitle(row, columns()) });
   }
   async function deleteRow(rowId: string) {
@@ -1090,22 +1092,42 @@ export function DatabaseTableView(props: {
               onClose={() => setSelectedId(undefined)}
               onNavigate={navigate}
               returnFocus={returnFocus}
-              onDelete={deleteRow}
+              onRequestDelete={() => requestDelete(row().rowId)}
             />
           )}
         </Show>
-        <Show when={deleteTarget()} keyed>
-          {(target) => (
-            <DeleteRecordDialog
-              name={target.name}
-              pending={controller.pending()}
-              error={deletionError()}
-              returnFocus={returnFocus}
-              onClose={() => setDeleteTarget(undefined)}
-              onDelete={() => void deleteRow(target.rowId)}
-            />
-          )}
-        </Show>
+        <DeleteDialog
+          open={!!deleteTarget()}
+          onOpenChange={(open) => {
+            if (!open) setDeleteTarget(undefined);
+          }}
+          title="Delete record?"
+          pending={controller.pending()}
+          onDelete={() => {
+            const target = deleteTarget();
+            if (target) void deleteRow(target.rowId);
+          }}
+          onCloseAutoFocus={(event) => {
+            const target = [deleteReturnFocus, returnFocus].find(
+              (element) => element?.isConnected
+            );
+            if (!target) return;
+            event.preventDefault();
+            target.focus();
+          }}
+          body={
+            <>
+              <p class="break-words">
+                “{deleteTarget()?.name}” will be deleted.
+              </p>
+              <Show when={deletionError()}>
+                <p role="alert" class="mt-2 text-failure-ink">
+                  {deletionError()}
+                </p>
+              </Show>
+            </>
+          }
+        />
       </div>
     </>
   );

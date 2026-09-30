@@ -20,6 +20,8 @@ export type DeleteDialogProps = ManagedDialogProps & {
   confirmationPhrase?: string;
   pending?: boolean;
   position?: DialogProps['position'];
+  /** Lets a caller that opened the dialog without a trigger restore focus. */
+  onCloseAutoFocus?: DialogProps['onCloseAutoFocus'];
   class?: string;
   onDelete: () => void;
 };
@@ -50,6 +52,7 @@ export function DeleteDialog(props: DeleteDialogProps) {
         if (!open) close();
       }}
       position={props.position ?? 'center'}
+      onCloseAutoFocus={props.onCloseAutoFocus}
       class={cn('w-110', props.class)}
       visibleScrim
     >

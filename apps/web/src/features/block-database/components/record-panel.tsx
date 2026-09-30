@@ -6,7 +6,7 @@ import RowsIcon from '@phosphor/rows.svg';
 import TrashIcon from '@phosphor/trash-simple.svg';
 import XIcon from '@phosphor/x.svg';
 import { Key } from '@solid-primitives/keyed';
-import { type Accessor, createSignal, type JSX, Show } from 'solid-js';
+import { type Accessor, type JSX, Show } from 'solid-js';
 import type {
   GridCellControl,
   GridCellEditorOptions,
@@ -38,22 +38,12 @@ type RecordPanelProps = {
   ) => JSX.Element;
   onClose: () => void;
   onNavigate: (delta: number) => void;
-  onDelete: (rowId: string) => Promise<boolean>;
+  onRequestDelete: () => void;
   returnFocus?: HTMLElement;
 };
 
 export function RecordPanel(props: RecordPanelProps) {
-  const [deleteRowId, setDeleteRowId] = createSignal<string>();
   let focusTitle: (() => void) | undefined;
-  function navigate(delta: number) {
-    setDeleteRowId(undefined);
-    props.onNavigate(delta);
-  }
-  async function remove() {
-    const rowId = deleteRowId();
-    if (!props.canEdit || props.pending || rowId !== props.row.rowId) return;
-    await props.onDelete(rowId);
-  }
   return (
     <Dialog
       open
@@ -109,7 +99,7 @@ export function RecordPanel(props: RecordPanelProps) {
               aria-label="Previous record"
               disabled={props.position <= 0}
               class="rounded p-1.5 text-ink-muted hover:bg-hover disabled:opacity-30"
-              onClick={() => navigate(-1)}
+              onClick={() => props.onNavigate(-1)}
             >
               <ArrowUpIcon class="size-3.5" />
             </button>
@@ -118,7 +108,7 @@ export function RecordPanel(props: RecordPanelProps) {
               aria-label="Next record"
               disabled={props.position < 0 || props.position >= props.total - 1}
               class="rounded p-1.5 text-ink-muted hover:bg-hover disabled:opacity-30"
-              onClick={() => navigate(1)}
+              onClick={() => props.onNavigate(1)}
             >
               <ArrowDownIcon class="size-3.5" />
             </button>
@@ -152,37 +142,14 @@ export function RecordPanel(props: RecordPanelProps) {
             </Key>
             <Show when={props.canEdit}>
               <div class="mt-3 flex min-h-8 items-center border-t border-edge-muted/60 pt-2">
-                <Show
-                  when={deleteRowId() === props.row.rowId}
-                  fallback={
-                    <button
-                      type="button"
-                      class="flex items-center gap-1.5 rounded px-1 py-1 text-xs text-ink-muted hover:text-failure-ink"
-                      onClick={() => setDeleteRowId(props.row.rowId)}
-                    >
-                      <TrashIcon class="size-3.5" /> Delete record
-                    </button>
-                  }
+                <button
+                  type="button"
+                  disabled={props.pending}
+                  class="flex items-center gap-1.5 rounded px-1 py-1 text-xs text-ink-muted hover:text-failure-ink disabled:opacity-50"
+                  onClick={props.onRequestDelete}
                 >
-                  <span class="mr-auto text-xs text-ink-muted">
-                    Delete this record?
-                  </span>
-                  <button
-                    type="button"
-                    disabled={props.pending}
-                    class="rounded px-2 py-1 text-xs font-medium text-failure-ink disabled:opacity-50"
-                    onClick={() => void remove()}
-                  >
-                    Delete
-                  </button>
-                  <button
-                    type="button"
-                    class="rounded px-2 py-1 text-xs text-ink-muted hover:bg-hover"
-                    onClick={() => setDeleteRowId(undefined)}
-                  >
-                    Cancel
-                  </button>
-                </Show>
+                  <TrashIcon class="size-3.5" /> Delete record
+                </button>
               </div>
             </Show>
           </div>
@@ -314,66 +281,5 @@ function RecordFields(
         </Key>
       </div>
     </>
-  );
-}
-
-export function DeleteRecordDialog(props: {
-  name: string;
-  pending: boolean;
-  error?: string;
-  onClose: () => void;
-  onDelete: () => void;
-  returnFocus?: HTMLElement;
-}) {
-  return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !props.pending) props.onClose();
-      }}
-    >
-      <Dialog.Portal>
-        <Dialog.Overlay class="fixed inset-0 z-modal bg-modal-overlay/30" />
-        <Dialog.Content
-          class="portal-scope fixed top-1/2 left-1/2 z-modal w-[min(24rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-edge-muted bg-panel p-5 text-ink shadow-xl outline-none"
-          onCloseAutoFocus={(event) => {
-            if (props.returnFocus?.isConnected) {
-              event.preventDefault();
-              props.returnFocus.focus();
-            }
-          }}
-        >
-          <Dialog.Title class="text-base font-semibold">
-            Delete record?
-          </Dialog.Title>
-          <Dialog.Description class="mt-2 break-words text-sm text-ink-muted">
-            “{props.name}” will be deleted.
-          </Dialog.Description>
-          <Show when={props.error}>
-            <p role="alert" class="mt-3 text-xs text-failure-ink">
-              {props.error}
-            </p>
-          </Show>
-          <div class="mt-5 flex justify-end gap-2">
-            <button
-              type="button"
-              disabled={props.pending}
-              class="rounded-md px-3 py-1.5 text-sm hover:bg-hover disabled:opacity-50"
-              onClick={props.onClose}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={props.pending}
-              class="rounded-md bg-failure/10 px-3 py-1.5 text-sm font-medium text-failure-ink disabled:opacity-50"
-              onClick={props.onDelete}
-            >
-              {props.pending ? 'Deleting…' : 'Delete'}
-            </button>
-          </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog>
   );
 }

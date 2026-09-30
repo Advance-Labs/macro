@@ -239,7 +239,8 @@ function cardPlacementFixture(sorted = false) {
 
 beforeEach(() => {
   const style = document.createElement('style');
-  style.textContent = '[role="menu"] { animation-name: none; }';
+  style.textContent =
+    '[role="menu"], [role="dialog"] { animation-name: none; }';
   document.head.append(style);
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
   vi.stubGlobal(
@@ -1655,7 +1656,7 @@ describe('database table view', () => {
     ).toBeTruthy();
   });
 
-  it('requires a new delete confirmation after navigating to another record', async () => {
+  it('deletes the record open in the panel after confirmation', async () => {
     const { source, setSnapshot } = sourceFixture();
     setSnapshot({
       version: 1,
@@ -1677,19 +1678,13 @@ describe('database table view', () => {
       />
     ));
     fireEvent.click(screen.getByRole('button', { name: 'Open Plan launch' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next record' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete record' }));
-    const previousConfirmation = screen.getByRole('button', {
-      name: 'Delete',
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Delete record?',
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Next record' }));
-    expect(screen.queryByText('Delete this record?')).toBeNull();
-    fireEvent.click(previousConfirmation);
     expect(source.write).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Previous record' }));
-    expect(screen.queryByText('Delete this record?')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Next record' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete record' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
     await waitFor(() =>
       expect(source.write).toHaveBeenCalledWith(
         { kind: 'delete', rowId: 'next' },
