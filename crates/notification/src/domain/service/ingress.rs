@@ -542,7 +542,7 @@ where
             .await
     }
 
-    async fn publish_delivery_intent(
+    pub(super) async fn publish_delivery_intent(
         &self,
         intent: crate::domain::models::delivery_outbox::ClaimedDeliveryIntent,
     ) -> Result<bool, Report> {
@@ -562,7 +562,11 @@ where
             serde_json::from_value(intent.payload)?;
         let active_recipients = self
             .repository
-            .get_active_delivery_recipients(intent.notification_id)
+            .get_active_delivery_recipients(
+                intent.notification_id,
+                intent.position,
+                intent.claim_token,
+            )
             .await?;
         let Some(message) = message.retain_active_recipients(&active_recipients) else {
             tracing::info!(

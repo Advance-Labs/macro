@@ -343,12 +343,16 @@ pub trait NotificationDeliveryRepository: Send + Sync + 'static {
         digest_receipt_cleanup_after: chrono::DateTime<chrono::Utc>,
     ) -> impl Future<Output = Result<bool, Report>> + Send;
 
-    /// Return recipients whose persisted lifecycle still permits delivery.
+    /// Return recipients whose persisted lifecycle still permits delivery,
+    /// but only while this exact intent claim still owns the durable row.
     /// Publication rechecks this after an intent is claimed so a previously
-    /// prepared payload can omit recipients dismissed before queue handoff.
+    /// prepared payload can omit recipients dismissed before queue handoff and
+    /// a stale claim cannot borrow recipients from a recreated generation.
     fn get_active_delivery_recipients(
         &self,
         notification_id: Uuid,
+        position: i32,
+        claim_token: DeliveryClaimToken,
     ) -> impl Future<Output = Result<HashSet<MacroUserIdStr<'static>>, Report>> + Send;
 
     /// Release a preparation claim after an ordinary failure.
@@ -481,9 +485,11 @@ where
     async fn get_active_delivery_recipients(
         &self,
         notification_id: Uuid,
+        position: i32,
+        claim_token: DeliveryClaimToken,
     ) -> Result<HashSet<MacroUserIdStr<'static>>, Report> {
         self.as_ref()
-            .get_active_delivery_recipients(notification_id)
+            .get_active_delivery_recipients(notification_id, position, claim_token)
             .await
     }
 

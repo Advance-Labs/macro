@@ -945,7 +945,18 @@ impl NotificationDeliveryRepository for MockRepository {
     async fn get_active_delivery_recipients(
         &self,
         notification_id: Uuid,
+        position: i32,
+        claim_token: DeliveryClaimToken,
     ) -> Result<HashSet<MacroUserIdStr<'static>>, Report> {
+        let owns_intent = self
+            .delivery_intents
+            .lock()
+            .unwrap()
+            .get(&(notification_id, position))
+            .is_some_and(|intent| intent.claim_token == Some(claim_token) && !intent.published);
+        if !owns_intent {
+            return Ok(HashSet::new());
+        }
         Ok(self
             .delivery_requests
             .lock()
@@ -1923,6 +1934,143 @@ async fn test_prepared_email_intent_completes_without_publish_after_dismissal(po
     .await
     .unwrap();
     assert!(published_at.is_some());
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn test_stale_intent_claim_cannot_publish_through_recreated_generation(pool: sqlx::PgPool) {
+    let notification_id = Uuid::now_v7();
+    let recipient = test_user_id("same-recipient-after-recreation@example.com");
+    let queue = Arc::new(FaultQueue::failing_on([1]));
+    let repository = DbNotificationRepository::new(pool.clone());
+    let service = NotificationIngressService::new(
+        DbNotificationRepository::new(pool.clone()),
+        queue.clone(),
+        MockStateMachine,
+    );
+
+    assert!(
+        service
+            .send_notification(conn_request(notification_id, recipient.clone()))
+            .await
+            .is_err()
+    );
+    sqlx::query(
+        "UPDATE notification_delivery_outbox_intent SET next_attempt_at = now() WHERE notification_id = $1",
+    )
+    .bind(notification_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let old_generation: Uuid = sqlx::query_scalar(
+        "SELECT generation FROM notification_delivery_outbox WHERE notification_id = $1",
+    )
+    .bind(notification_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let stale_intent = repository
+        .claim_delivery_intent(
+            Some(notification_id),
+            DeliveryClaimToken::new(),
+            DeliveryLease::until(Utc::now() + chrono::Duration::seconds(30)),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    let replacement_payload = stale_intent.payload.clone();
+
+    sqlx::query("DELETE FROM notification WHERE id = $1")
+        .bind(notification_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    repository
+        .persist_notification_with_delivery_request(
+            conn_request(notification_id, recipient.clone()),
+            "test",
+        )
+        .await
+        .unwrap();
+    let new_generation: Uuid = sqlx::query_scalar(
+        "SELECT generation FROM notification_delivery_outbox WHERE notification_id = $1",
+    )
+    .bind(notification_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_ne!(old_generation, new_generation);
+
+    let preparation_token = DeliveryClaimToken::new();
+    let claimed_request = repository
+        .claim_delivery_request(
+            Some(notification_id),
+            preparation_token,
+            DeliveryLease::until(Utc::now() + chrono::Duration::seconds(30)),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    let active_recipients: Vec<_> = claimed_request
+        .notifications
+        .iter()
+        .map(|notification| notification.owner_id.clone())
+        .collect();
+    assert!(
+        repository
+            .prepare_delivery_intents(
+                notification_id,
+                preparation_token,
+                &active_recipients,
+                None,
+                &[replacement_payload],
+                Utc::now() + chrono::Duration::seconds(30),
+            )
+            .await
+            .unwrap()
+    );
+    let replacement_intent = repository
+        .claim_delivery_intent(
+            Some(notification_id),
+            DeliveryClaimToken::new(),
+            DeliveryLease::until(Utc::now() + chrono::Duration::seconds(30)),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stale_intent.position, replacement_intent.position);
+
+    assert!(service.publish_delivery_intent(stale_intent).await.is_err());
+    assert_eq!(
+        queue.attempts.load(Ordering::Relaxed),
+        1,
+        "stale generation must be rejected before queue handoff"
+    );
+    assert_eq!(
+        repository
+            .get_active_delivery_recipients(
+                notification_id,
+                replacement_intent.position,
+                replacement_intent.claim_token,
+            )
+            .await
+            .unwrap(),
+        HashSet::from([recipient.clone()]),
+        "the replacement claim must still see its active recipient"
+    );
+
+    assert!(
+        service
+            .publish_delivery_intent(replacement_intent)
+            .await
+            .unwrap()
+    );
+    assert_eq!(queue.attempts.load(Ordering::Relaxed), 2);
+    let published = queue.published();
+    assert_eq!(published.len(), 1);
+    assert_eq!(
+        published[0]["content"]["ConnGateway"]["recipients"],
+        serde_json::json!([recipient.as_ref()])
+    );
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]

@@ -365,9 +365,11 @@ impl NotificationDeliveryRepository for SandboxNotificationRepository {
     async fn get_active_delivery_recipients(
         &self,
         notification_id: Uuid,
+        position: i32,
+        claim_token: DeliveryClaimToken,
     ) -> Result<HashSet<MacroUserIdStr<'static>>, Report> {
         self.inner
-            .get_active_delivery_recipients(notification_id)
+            .get_active_delivery_recipients(notification_id, position, claim_token)
             .await
     }
 

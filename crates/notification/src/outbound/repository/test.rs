@@ -1654,15 +1654,23 @@ async fn test_expired_claims_keep_acquisition_backoff_for_all_delivery_phases(
     );
 
     let intent_lease = Utc::now() + chrono::Duration::milliseconds(100);
+    let intent_token = DeliveryClaimToken::new();
     repository
         .claim_delivery_intent(
             Some(notification_id),
-            DeliveryClaimToken::new(),
+            intent_token,
             DeliveryLease::until(intent_lease),
         )
         .await
         .unwrap()
         .unwrap();
+    assert_eq!(
+        repository
+            .get_active_delivery_recipients(notification_id, 0, intent_token)
+            .await
+            .unwrap(),
+        HashSet::from([recipient.clone()])
+    );
     let intent_retry_at: chrono::DateTime<Utc> = sqlx::query_scalar(
         "SELECT next_attempt_at FROM notification_delivery_outbox_intent WHERE notification_id = $1",
     )
@@ -1694,6 +1702,14 @@ async fn test_expired_claims_keep_acquisition_backoff_for_all_delivery_phases(
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     assert!(
         repository
+            .get_active_delivery_recipients(notification_id, 0, intent_token)
+            .await
+            .unwrap()
+            .is_empty(),
+        "an expired claim must not authorize recipient lookup"
+    );
+    assert!(
+        repository
             .claim_delivery_intent(
                 Some(notification_id),
                 DeliveryClaimToken::new(),
@@ -1703,6 +1719,38 @@ async fn test_expired_claims_keep_acquisition_backoff_for_all_delivery_phases(
             .unwrap()
             .is_none(),
         "cancelled publication must not reclaim immediately at lease expiry"
+    );
+    sqlx::query(
+        "UPDATE notification_delivery_outbox_intent SET next_attempt_at = now() WHERE notification_id = $1",
+    )
+    .bind(notification_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let replacement_token = DeliveryClaimToken::new();
+    repository
+        .claim_delivery_intent(
+            Some(notification_id),
+            replacement_token,
+            DeliveryLease::until(Utc::now() + chrono::Duration::seconds(30)),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        repository
+            .get_active_delivery_recipients(notification_id, 0, intent_token)
+            .await
+            .unwrap()
+            .is_empty(),
+        "a reclaimed row must reject its prior token"
+    );
+    assert_eq!(
+        repository
+            .get_active_delivery_recipients(notification_id, 0, replacement_token)
+            .await
+            .unwrap(),
+        HashSet::from([recipient])
     );
     assert!(
         repository

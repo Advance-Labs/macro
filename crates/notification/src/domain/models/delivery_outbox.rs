@@ -16,10 +16,12 @@
 //! Per-intent progress prevents ordinary retry from replaying completed channel
 //! work, but this layer does not claim exactly-once delivery.
 //!
-//! Preparation serializes its active-recipient snapshot with lifecycle writes,
-//! and publication filters frozen payloads against current unseen, non-deleted
-//! recipients. A lifecycle change concurrent with the final database check and
-//! external queue handoff can still race; the outbox does not claim an atomic
+//! Preparation serializes its active-recipient snapshot with lifecycle writes.
+//! Publication filters frozen payloads against current unseen, non-deleted
+//! recipients only while the exact leased intent still owns its durable row,
+//! so a deleted generation cannot borrow a recreated generation's recipients.
+//! A lifecycle change concurrent with the final database check and external
+//! queue handoff can still race; the outbox does not claim an atomic
 //! status-check-to-SQS boundary.
 //!
 //! Hard-deleting a notification cascades its current outbox and intents, which

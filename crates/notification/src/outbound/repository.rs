@@ -2091,16 +2091,26 @@ impl NotificationDeliveryRepository for DbNotificationRepository<PgPool> {
     async fn get_active_delivery_recipients(
         &self,
         notification_id: Uuid,
+        position: i32,
+        claim_token: DeliveryClaimToken,
     ) -> Result<HashSet<MacroUserIdStr<'static>>, Report> {
         let user_ids = sqlx::query_scalar!(
             r#"
-            SELECT user_id
-            FROM user_notification
-            WHERE notification_id = $1
-              AND state = 'unseen'::notification_state
-              AND deleted_at IS NULL
+            SELECT user_notification.user_id
+            FROM notification_delivery_outbox_intent intent
+            JOIN user_notification
+              ON user_notification.notification_id = intent.notification_id
+            WHERE intent.notification_id = $1
+              AND intent.position = $2
+              AND intent.claim_token = $3
+              AND intent.claim_expires_at > now()
+              AND intent.published_at IS NULL
+              AND user_notification.state = 'unseen'::notification_state
+              AND user_notification.deleted_at IS NULL
             "#,
             notification_id,
+            position,
+            claim_token.into_uuid(),
         )
         .fetch_all(&self.db)
         .await?;
