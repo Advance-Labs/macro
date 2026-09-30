@@ -1,10 +1,12 @@
 import { mergeRegister } from '@lexical/utils';
 import {
   $createNodeSelection,
+  $getRoot,
   $getSelection,
   $isDecoratorNode,
   $isNodeSelection,
   $isRangeSelection,
+  $isRootNode,
   $setSelection,
   COMMAND_PRIORITY_LOW,
   type DecoratorNode,
@@ -12,6 +14,7 @@ import {
   KEY_ARROW_UP_COMMAND,
   type LexicalEditor,
   type LexicalNode,
+  type RangeSelection,
 } from 'lexical';
 import { $getCaretRect } from '../../utils';
 
@@ -69,6 +72,21 @@ function $neighbor(node: LexicalNode, direction: Direction) {
     : node.getPreviousSibling();
 }
 
+/**
+ * A caret on the root itself sits between two blocks, e.g. before a block that
+ * opens the document. Returns the block it would step onto, or `undefined`
+ * when the caret is inside a block instead.
+ */
+function $blockBesideRootCaret(
+  selection: RangeSelection,
+  direction: Direction
+): LexicalNode | null | undefined {
+  const root = selection.focus.getNode();
+  if (!$isRootNode(root)) return undefined;
+  const offset = selection.focus.offset;
+  return root.getChildAtIndex(direction === 'down' ? offset : offset - 1);
+}
+
 function $stopOnBlock(
   editor: LexicalEditor,
   event: KeyboardEvent | null,
@@ -87,6 +105,13 @@ function $stopOnBlock(
     return true;
   }
   if (!$isRangeSelection(selection) || !selection.isCollapsed()) return false;
+  const between = $blockBesideRootCaret(selection, direction);
+  if (between !== undefined) {
+    if (!$isStoppingBlock(between)) return false;
+    event?.preventDefault();
+    $selectBlock(between);
+    return true;
+  }
   const block = selection.focus.getNode().getTopLevelElement();
   if (!block) return false;
   const next = $neighbor(block, direction);
@@ -111,4 +136,15 @@ export function blockDecoratorNavigationPlugin() {
         COMMAND_PRIORITY_LOW
       )
     );
+}
+
+/**
+ * Where the caret lands when it walks into the document from above, e.g. from
+ * the title: a block that opens the document is selected, as it would be from
+ * any line above it.
+ */
+export function $selectDocumentStart() {
+  const first = $getRoot().getFirstChild();
+  if ($isStoppingBlock(first)) $selectBlock(first);
+  else first?.selectStart();
 }

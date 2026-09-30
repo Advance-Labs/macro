@@ -19,7 +19,10 @@ import {
   TextNode,
 } from 'lexical';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { blockDecoratorNavigationPlugin } from './blockDecoratorNavigationPlugin';
+import {
+  $selectDocumentStart,
+  blockDecoratorNavigationPlugin,
+} from './blockDecoratorNavigationPlugin';
 
 // jsdom has no layout: every element measures as an empty rect at the origin,
 // so the caret is on the edge line unless a test places it elsewhere.
@@ -136,5 +139,38 @@ describe('arrow keys across a database answer', () => {
 
     press(editor, KEY_ARROW_DOWN_COMMAND, 'ArrowDown');
     expect(selected(editor)).not.toEqual({ node: 'database-query' });
+  });
+
+  test('ArrowDown from a caret between blocks on the root selects the answer below it', () => {
+    const editor = createTestEditor();
+    editor.update(() => $getRoot().select(1, 1), { discrete: true });
+
+    press(editor, KEY_ARROW_DOWN_COMMAND, 'ArrowDown');
+    expect(selected(editor)).toEqual({ node: 'database-query' });
+  });
+
+  test('ArrowUp from a caret between blocks on the root selects the answer above it', () => {
+    const editor = createTestEditor();
+    editor.update(() => $getRoot().select(2, 2), { discrete: true });
+
+    press(editor, KEY_ARROW_UP_COMMAND, 'ArrowUp');
+    expect(selected(editor)).toEqual({ node: 'database-query' });
+  });
+
+  test('entering the document from above selects an answer that opens it', () => {
+    const editor = createTestEditor();
+    editor.update(() => $getRoot().getFirstChildOrThrow().remove(), {
+      discrete: true,
+    });
+
+    editor.update(() => $selectDocumentStart(), { discrete: true });
+    expect(selected(editor)).toEqual({ node: 'database-query' });
+  });
+
+  test('entering the document from above puts the caret at the start of its first line', () => {
+    const editor = createTestEditor();
+
+    editor.update(() => $selectDocumentStart(), { discrete: true });
+    expect(selected(editor)).toEqual({ text: 'Above', offset: 0 });
   });
 });
