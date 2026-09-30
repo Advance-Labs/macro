@@ -10,4 +10,5 @@ pub mod model_options;
 pub mod models;
 pub mod replay;
 pub mod session;
+pub mod tool_stream;
 pub mod user_input;
