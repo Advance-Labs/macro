@@ -269,9 +269,7 @@ export function createChatController(
   // Overlapping triggers (reconnect + refocus, or Stop during a reconcile)
   // share one request so a caller that awaits reconcile does not see a
   // premature "not finished" while the same stream is already being checked.
-  let reconciling:
-    | { streamId: string; promise: Promise<boolean> }
-    | undefined;
+  let reconciling: { streamId: string; promise: Promise<boolean> } | undefined;
 
   /** The stream being waited on, if the chat is in `streaming`. */
   function awaitedStreamId(): string | undefined {
