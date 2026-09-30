@@ -112,7 +112,7 @@ export function ChooseQuestionSource(props: {
           />
         )}
         onSave={props.onSave}
-        saveLabel={props.initial.sql ? 'Save changes' : 'Insert answer'}
+        saveLabel={props.initial.sql ? 'Save changes' : 'Insert'}
       />
       <Show when={databaseId() && detail.isError}>
         <p role="alert" class="px-4 pb-3 text-sm text-failure-ink">

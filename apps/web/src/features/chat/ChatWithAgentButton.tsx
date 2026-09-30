@@ -1,6 +1,6 @@
 import { globalSplitManager } from '@app/signal/splitLayout';
 import type { SplitHandle } from '@components/app/split-layout/layoutManager';
-import { DEFAULT_MODEL } from '@core/component/AI/constant';
+import { DEFAULT_MODEL, type Model } from '@core/component/AI/constant';
 import { setPendingSendData } from '@core/component/AI/signal/pendingSend';
 import type { Attachment } from '@core/component/AI/types';
 import {
@@ -63,6 +63,8 @@ function buildSeed(entity: ChatWithAgentEntity): {
 async function createAndOpenChat(seed: {
   input?: string;
   attachments?: Attachment[];
+  /** Preselected in the composer; the caller checks the plan allows it. */
+  model?: Model;
   /** When set, sent immediately when the chat opens instead of seeding the input */
   message?: string;
   /** When set, replaces this split's content in place instead of opening a new split. */
@@ -91,7 +93,7 @@ async function createAndOpenChat(seed: {
     setPendingSendData({
       content: message,
       attachments: seed.attachments ?? [],
-      model: DEFAULT_MODEL,
+      model: seed.model ?? DEFAULT_MODEL,
     });
   } else {
     storeChatStateImmediate(result.chatId, stored);
@@ -113,8 +115,11 @@ export async function openChatWithAgent(entity: ChatWithAgentEntity) {
   return createAndOpenChat({ input, attachments: [attachment] });
 }
 
-export async function openChatWithInput(initialInput: string) {
-  await createAndOpenChat({ input: initialInput });
+export async function openChatWithInput(
+  initialInput: string,
+  options?: { model?: Model }
+) {
+  await createAndOpenChat({ input: initialInput, model: options?.model });
 }
 
 /**

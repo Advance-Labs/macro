@@ -6,7 +6,14 @@ import {
   type DatabaseQueryData,
   type DatabaseQueryDecoratorProps,
 } from '@macro-inc/lexical-core/nodes/DatabaseQueryNode';
-import { $createParagraphNode, $getNodeByKey, $isParagraphNode } from 'lexical';
+import { cn } from '@ui';
+import {
+  $createNodeSelection,
+  $createParagraphNode,
+  $getNodeByKey,
+  $isParagraphNode,
+  $setSelection,
+} from 'lexical';
 import {
   createSignal,
   lazy,
@@ -15,6 +22,7 @@ import {
   Suspense,
   useContext,
 } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import { LexicalWrapperContext } from '../../context/LexicalWrapperContext';
 import { LazyDecorator } from './LazyDecorator';
 
@@ -31,6 +39,27 @@ export function DatabaseQuery(props: DatabaseQueryDecoratorProps) {
   );
   if (wrapper) onCleanup(wrapper.editor.registerEditableListener(setEditable));
   const canEdit = () => editable() && !!wrapper?.isInteractable();
+  const isSelectedAsNode = () => {
+    const selection = wrapper?.selection;
+    return selection?.type === 'node' && selection.nodeKeys.has(props.key);
+  };
+  // Clicking the block's chrome selects it like an image; its controls, and
+  // anything portaled out of it, keep their own clicks.
+  const selectOnClick = (event: MouseEvent & { currentTarget: Element }) => {
+    if (!wrapper || !editable() || isSelectedAsNode()) return;
+    const target = event.target;
+    if (!(target instanceof Element) || !event.currentTarget.contains(target))
+      return;
+    const control = target.closest(
+      'button, a, input, select, textarea, summary, [role="button"], [role="menuitem"], [contenteditable="true"]'
+    );
+    if (control && event.currentTarget.contains(control)) return;
+    wrapper.editor.update(() => {
+      const selection = $createNodeSelection();
+      selection.add(props.key);
+      $setSelection(selection);
+    });
+  };
   const source = (): DatabaseQueryData => ({
     queryId: props.queryId,
     databaseId: props.databaseId,
@@ -72,17 +101,24 @@ export function DatabaseQuery(props: DatabaseQueryDecoratorProps) {
       when={enabled().enabled && !wrapper?.skipPreviewFetch}
       fallback={placeholder()}
     >
-      <LazyDecorator
-        placeholder={placeholder()}
-        render={() => (
-          <Suspense fallback={placeholder()}>
-            <LiveQuestion
-              source={source()}
-              onSave={canEdit() ? save : undefined}
-            />
-          </Suspense>
-        )}
-      />
+      <Dynamic
+        component={props.displayMode === 'scalar' ? 'span' : 'div'}
+        data-database-query-selected={isSelectedAsNode() || undefined}
+        class={cn('rounded-lg', isSelectedAsNode() && 'ring-3 ring-edge-muted')}
+        onClick={props.displayMode === 'scalar' ? undefined : selectOnClick}
+      >
+        <LazyDecorator
+          placeholder={placeholder()}
+          render={() => (
+            <Suspense fallback={placeholder()}>
+              <LiveQuestion
+                source={source()}
+                onSave={canEdit() ? save : undefined}
+              />
+            </Suspense>
+          )}
+        />
+      </Dynamic>
     </Show>
   );
 }

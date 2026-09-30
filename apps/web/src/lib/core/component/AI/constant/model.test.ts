@@ -119,14 +119,23 @@ describe('alternateProviderModel', () => {
     expect(PROVIDER_OF(first!)).toBe('openai');
     current = first!;
 
-    // OpenAI then also fails → there is no un-failed provider left, so we must
-    // NOT bounce the user back to Anthropic (which already failed this session).
+    // OpenAI then also fails → Google is the only provider left.
     failedProviders.add(PROVIDER_OF(current));
     const second = alternateProviderModel(current, {
       candidates,
       failedProviders,
     });
-    expect(second).toBeUndefined();
+    expect(PROVIDER_OF(second!)).toBe('google');
+    current = second!;
+
+    // Google fails too → no un-failed provider is left, so we must NOT bounce
+    // the user back to Anthropic (which already failed this session).
+    failedProviders.add(PROVIDER_OF(current));
+    const third = alternateProviderModel(current, {
+      candidates,
+      failedProviders,
+    });
+    expect(third).toBeUndefined();
   });
 
   it('still avoids the current provider when no failures are recorded', () => {

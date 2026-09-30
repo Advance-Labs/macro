@@ -1,3 +1,4 @@
+import { ROW_ID_COLUMN } from '@app/features/block-database/sql';
 import {
   isChartMode,
   parseQueryChart,
@@ -64,6 +65,17 @@ export type QueryResult = {
   columns: { name: string; entity_type: string | null }[];
   rows: (string | number | null)[][];
 };
+/**
+ * Indexes of the columns a result table shows. Row identity stays in the data
+ * for linking but is not displayed, unless it is the only column.
+ */
+export function displayedColumnIndexes(result: QueryResult): number[] {
+  const indexes = result.columns.flatMap((column, index) =>
+    column.name === ROW_ID_COLUMN ? [] : [index]
+  );
+  return indexes.length > 0 ? indexes : result.columns.map((_, index) => index);
+}
+
 export type QueryAnswer = {
   results: QueryResult[];
   read_tables: string[];

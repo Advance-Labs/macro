@@ -4,6 +4,7 @@ import CodeIcon from '@phosphor/code.svg';
 import PlayIcon from '@phosphor/play.svg';
 import TableIcon from '@phosphor/table.svg';
 import { Button } from '@ui/components/Button';
+import { Hotkey } from '@ui/components/Hotkey';
 import {
   type Accessor,
   createSignal,
@@ -113,6 +114,45 @@ export function QueryEditor(props: {
     if (!canAsk()) return;
     void (needsGeneration() ? composer.generate() : composer.run());
   };
+  // A current answer is accepted with Enter; changing the prompt asks again.
+  const canAccept = () => !!answer() && !!props.onSave;
+  const accept = () => {
+    const current = answer();
+    if (!current || !props.onSave) return;
+    props.onSave(
+      {
+        databaseId: composer.answerDatabaseId(),
+        ...(composer.tableId() ? { tableId: composer.tableId() } : {}),
+        sql: composer.sql().trim(),
+        prompt: composer.prompt().trim(),
+        title: composer.presentation().title,
+        displayMode:
+          isChartMode(displayMode()) && !savedChart() ? 'table' : displayMode(),
+        ...(savedChart() ? { chart: savedChart() } : {}),
+      },
+      current
+    );
+  };
+  const editPrompt = () => {
+    if (!promptInput) return;
+    promptInput.focus();
+    const end = promptInput.value.length;
+    promptInput.setSelectionRange(end, end);
+  };
+  const isPlainEnter = (event: KeyboardEvent) =>
+    event.key === 'Enter' &&
+    !event.shiftKey &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    !event.isComposing &&
+    event.keyCode !== 229;
+  // Controls with their own Enter (buttons, menus, the SQL editor) keep it.
+  const ownsEnter = (target: EventTarget | null) =>
+    target instanceof Element &&
+    !!target.closest(
+      'button, a, select, input, textarea, [contenteditable="true"]'
+    );
   onMount(() => {
     if (props.autoFocus) promptInput?.focus();
     if (props.initial.sql.trim() && !composer.needsGeneration())
@@ -120,7 +160,16 @@ export function QueryEditor(props: {
   });
 
   return (
-    <div class="flex min-h-0 flex-col gap-3 p-4" data-database-query-editor>
+    <div
+      class="flex min-h-0 flex-col gap-3 p-4"
+      data-database-query-editor
+      onKeyDown={(event) => {
+        if (!isPlainEnter(event) || !canAccept() || ownsEnter(event.target))
+          return;
+        event.preventDefault();
+        accept();
+      }}
+    >
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -151,7 +200,9 @@ export function QueryEditor(props: {
                 if (event.isComposing || event.keyCode === 229) return;
                 if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault();
-                  ask();
+                  event.stopPropagation();
+                  if (canAccept()) accept();
+                  else ask();
                 }
               }}
             />
@@ -161,25 +212,27 @@ export function QueryEditor(props: {
               />
             </Show>
           </div>
-          <div class="flex items-center justify-end gap-2">
-            <Button type="submit" size="sm" disabled={!canAsk()}>
-              <Show
-                when={busy()}
-                fallback={
-                  <>
-                    {composer.preview() && composer.needsGeneration()
-                      ? 'Update answer'
-                      : 'Ask'}{' '}
-                    <ArrowUpIcon class="size-3.5" />
-                  </>
-                }
-              >
-                {composer.phase() === 'generating'
-                  ? 'Thinking…'
-                  : 'Finding answer…'}
-              </Show>
-            </Button>
-          </div>
+          <Show when={!canAccept()}>
+            <div class="flex items-center justify-end gap-2">
+              <Button type="submit" size="sm" disabled={!canAsk()}>
+                <Show
+                  when={busy()}
+                  fallback={
+                    <>
+                      {composer.preview() && composer.needsGeneration()
+                        ? 'Update answer'
+                        : 'Ask'}{' '}
+                      <ArrowUpIcon class="size-3.5" />
+                    </>
+                  }
+                >
+                  {composer.phase() === 'generating'
+                    ? 'Thinking…'
+                    : 'Finding answer…'}
+                </Show>
+              </Button>
+            </div>
+          </Show>
         </div>
       </form>
       <div class="flex min-w-0 items-center justify-between gap-3 text-xs">
@@ -369,32 +422,14 @@ export function QueryEditor(props: {
                 </details>
               </Show>
             </div>
-            <Show when={answer() && props.onSave}>
-              <div class="flex flex-wrap items-center justify-between gap-2 border-t border-edge-muted pt-3">
-                <Button
-                  size="sm"
-                  class="ml-auto"
-                  onClick={() =>
-                    props.onSave?.(
-                      {
-                        databaseId: composer.answerDatabaseId(),
-                        ...(composer.tableId()
-                          ? { tableId: composer.tableId() }
-                          : {}),
-                        sql: composer.sql().trim(),
-                        prompt: composer.prompt().trim(),
-                        title: composer.presentation().title,
-                        displayMode:
-                          isChartMode(displayMode()) && !savedChart()
-                            ? 'table'
-                            : displayMode(),
-                        ...(savedChart() ? { chart: savedChart() } : {}),
-                      },
-                      preview().answer
-                    )
-                  }
-                >
-                  {props.saveLabel ?? 'Insert answer'}
+            <Show when={canAccept()}>
+              <div class="flex flex-wrap items-center justify-end gap-2 border-t border-edge-muted pt-3">
+                <Button variant="ghost" size="sm" onClick={editPrompt}>
+                  Edit
+                </Button>
+                <Button size="sm" onClick={accept}>
+                  {props.saveLabel ?? 'Insert'}
+                  <Hotkey shortcut="enter" theme="current" aria-hidden="true" />
                 </Button>
                 <Show when={props.saveHint}>
                   <p class="w-full text-[11px] leading-5 text-ink-muted">

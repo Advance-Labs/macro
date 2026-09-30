@@ -87,4 +87,56 @@ describe('question result display', () => {
     expect(result.getByText('Ready')).toBeTruthy();
     result.unmount();
   });
+
+  it('hides row ids from result tables', () => {
+    const answer: QueryAnswer = {
+      ...scalar,
+      results: [
+        {
+          columns: [
+            { name: 'row_id', entity_type: null },
+            { name: 'Title', entity_type: null },
+          ],
+          rows: [
+            ['0190a3c4-row-1', 'Launch plan'],
+            ['0190a3c4-row-2', 'Hiring'],
+          ],
+        },
+      ],
+    };
+    const result = render(() => (
+      <QueryResults answer={answer} displayMode="table" />
+    ));
+    const table = result.getByRole('table');
+    expect(
+      Array.from(table.querySelectorAll('th')).map((cell) => cell.textContent)
+    ).toEqual(['Title']);
+    expect(
+      Array.from(table.querySelectorAll('td')).map((cell) => cell.textContent)
+    ).toEqual(['Launch plan', 'Hiring']);
+    result.unmount();
+  });
+
+  it('shows row ids when they are the only column', () => {
+    const answer: QueryAnswer = {
+      ...scalar,
+      results: [
+        {
+          columns: [{ name: 'row_id', entity_type: null }],
+          rows: [['0190a3c4-row-1'], ['0190a3c4-row-2']],
+        },
+      ],
+    };
+    const result = render(() => (
+      <QueryResults answer={answer} displayMode="table" />
+    ));
+    const table = result.getByRole('table');
+    expect(
+      Array.from(table.querySelectorAll('th')).map((cell) => cell.textContent)
+    ).toEqual(['row id']);
+    expect(
+      Array.from(table.querySelectorAll('td')).map((cell) => cell.textContent)
+    ).toEqual(['0190a3c4-row-1', '0190a3c4-row-2']);
+    result.unmount();
+  });
 });

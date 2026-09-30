@@ -169,7 +169,7 @@ describe('question editor', () => {
     expect(
       result.getByRole('img', { name: 'Total by Stage. Line chart.' })
     ).toBeTruthy();
-    fireEvent.click(result.getByRole('button', { name: 'Insert answer' }));
+    fireEvent.click(result.getByRole('button', { name: 'Insert' }));
     expect(save).toHaveBeenLastCalledWith(
       expect.objectContaining({
         displayMode: 'line',
@@ -256,7 +256,7 @@ describe('question editor', () => {
     expect(
       (result.getByLabelText('Display answer as') as HTMLSelectElement).value
     ).toBe('bar');
-    fireEvent.click(result.getByRole('button', { name: 'Insert answer' }));
+    fireEvent.click(result.getByRole('button', { name: 'Insert' }));
     expect(save).toHaveBeenLastCalledWith(
       expect.objectContaining({ displayMode: 'bar', chart }),
       chartAnswer
@@ -267,7 +267,7 @@ describe('question editor', () => {
     expect(
       result.getByRole('img', { name: 'Tasks by status. Line chart.' })
     ).toBeTruthy();
-    fireEvent.click(result.getByRole('button', { name: 'Insert answer' }));
+    fireEvent.click(result.getByRole('button', { name: 'Insert' }));
     expect(save).toHaveBeenLastCalledWith(
       expect.objectContaining({ displayMode: 'line', chart }),
       chartAnswer
@@ -407,7 +407,7 @@ describe('question editor', () => {
       })
     );
     expect(result.getByRole('button', { name: 'Support' })).toBeTruthy();
-    fireEvent.click(result.getByRole('button', { name: 'Insert answer' }));
+    fireEvent.click(result.getByRole('button', { name: 'Insert' }));
     expect(save).toHaveBeenCalledWith(
       expect.objectContaining({ databaseId: 'support' }),
       answer
@@ -440,22 +440,22 @@ describe('question editor', () => {
         onSave={save}
       />
     ));
-    await result.findByRole('button', { name: 'Insert answer' });
+    await result.findByRole('button', { name: 'Insert' });
     const prompt = result.getByLabelText(
       'Ask your database'
     ) as HTMLTextAreaElement;
     setSchema({ databaseId: 'sales', name: 'Sales', tables: [] });
     expect(prompt.value).toBe('How many records?');
-    expect(result.queryByRole('button', { name: 'Insert answer' })).toBeNull();
+    expect(result.queryByRole('button', { name: 'Insert' })).toBeNull();
     fireEvent.keyDown(prompt, { key: 'Enter' });
-    await result.findByRole('button', { name: 'Insert answer' });
+    await result.findByRole('button', { name: 'Insert' });
     expect(generate).toHaveBeenCalledWith(
       expect.objectContaining({
         schema: expect.objectContaining({ databaseId: 'sales' }),
       })
     );
     expect(save).not.toHaveBeenCalled();
-    fireEvent.click(result.getByRole('button', { name: 'Insert answer' }));
+    fireEvent.click(result.getByRole('button', { name: 'Insert' }));
     expect(save).toHaveBeenCalledWith(
       expect.objectContaining({ databaseId: 'sales' }),
       answer
@@ -594,16 +594,16 @@ describe('question editor', () => {
         onSave={save}
       />
     ));
-    await result.findByRole('button', { name: 'Insert answer' });
+    await result.findByRole('button', { name: 'Insert' });
     expect(read).toHaveBeenCalledExactlyOnceWith(
       'SELECT COUNT(*) FROM projects',
       expect.objectContaining({ databaseId: 'db' })
     );
     expect(result.queryByRole('button', { name: 'Show answer' })).toBeNull();
     expect(result.queryByRole('button', { name: 'Run SQL' })).toBeNull();
-    fireEvent.click(result.getByRole('button', { name: 'Ask' }));
+    fireEvent.click(result.getByRole('button', { name: 'Refresh answer' }));
     await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
-    await result.findByRole('button', { name: 'Insert answer' });
+    await result.findByRole('button', { name: 'Insert' });
     expect(read).toHaveBeenLastCalledWith(
       'SELECT COUNT(*) FROM projects',
       expect.objectContaining({ databaseId: 'db' })
@@ -682,7 +682,7 @@ describe('question editor', () => {
     });
     await Promise.resolve();
     expect(result.queryByText('999')).toBeNull();
-    fireEvent.click(result.getByRole('button', { name: 'Insert answer' }));
+    fireEvent.click(result.getByRole('button', { name: 'Insert' }));
     expect(save).toHaveBeenCalledWith(
       expect.objectContaining({ prompt: 'New question', sql: 'SELECT 7' }),
       answer
@@ -750,9 +750,9 @@ describe('question editor', () => {
       />
     ));
     fireEvent.click(result.getByRole('button', { name: 'Ask' }));
-    await result.findByRole('button', { name: 'Insert answer' });
+    await result.findByRole('button', { name: 'Insert' });
     expect(result.queryByLabelText('Display answer as')).toBeNull();
-    fireEvent.click(result.getByRole('button', { name: 'Insert answer' }));
+    fireEvent.click(result.getByRole('button', { name: 'Insert' }));
     expect(save).toHaveBeenCalledWith(
       expect.objectContaining({ displayMode: 'table' }),
       tableAnswer
@@ -783,13 +783,13 @@ describe('question editor', () => {
     expect(format.selectedOptions[0]?.label).toBe('Result table');
     fireEvent.click(result.getByRole('button', { name: 'Refresh answer' }));
     await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
-    await result.findByRole('button', { name: 'Insert answer' });
+    await result.findByRole('button', { name: 'Insert' });
     const refreshedFormat = result.getByRole('combobox', {
       name: 'Display answer as',
     }) as HTMLSelectElement;
     expect(refreshedFormat.value).toBe('table');
     expect(refreshedFormat.selectedOptions[0]?.label).toBe('Result table');
-    fireEvent.click(result.getByRole('button', { name: 'Insert answer' }));
+    fireEvent.click(result.getByRole('button', { name: 'Insert' }));
     expect(save).toHaveBeenLastCalledWith(
       expect.objectContaining({ displayMode: 'table' }),
       answer
@@ -797,9 +797,124 @@ describe('question editor', () => {
     fireEvent.change(refreshedFormat, { target: { value: 'scalar' } });
     expect(refreshedFormat.value).toBe('scalar');
     expect(refreshedFormat.selectedOptions[0]?.label).toBe('Inline answer');
-    fireEvent.click(result.getByRole('button', { name: 'Insert answer' }));
+    fireEvent.click(result.getByRole('button', { name: 'Insert' }));
     expect(save).toHaveBeenLastCalledWith(
       expect.objectContaining({ displayMode: 'scalar' }),
+      answer
+    );
+    result.unmount();
+  });
+
+  it('inserts a proposed answer when Enter is pressed again', async () => {
+    const generate = vi.fn(async () => ({
+      sql: 'SELECT COUNT(*) AS Count FROM projects',
+      explanation: 'Counts projects.',
+    }));
+    const save = vi.fn();
+    const result = render(() => (
+      <QueryEditor
+        initial={{ sql: '', prompt: '', displayMode: 'scalar' }}
+        schema={{ databaseId: 'db', name: 'Projects', tables: [] }}
+        capabilities={{ generate, read: vi.fn(async () => answer) }}
+        onSave={save}
+      />
+    ));
+    const prompt = result.getByLabelText('Ask your database');
+    fireEvent.input(prompt, { target: { value: 'How many projects?' } });
+    fireEvent.keyDown(prompt, { key: 'Enter' });
+    await result.findByRole('button', { name: 'Insert' });
+    expect(result.getByRole('button', { name: 'Edit' })).toBeTruthy();
+    expect(result.queryByRole('button', { name: 'Ask' })).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(prompt, { key: 'Enter' });
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenLastCalledWith(
+      {
+        databaseId: 'db',
+        sql: 'SELECT COUNT(*) AS Count FROM projects',
+        prompt: 'How many projects?',
+        title: undefined,
+        displayMode: 'scalar',
+      },
+      answer
+    );
+    result.unmount();
+  });
+
+  it('inserts with Enter pressed anywhere in the box, but not from its controls', async () => {
+    const save = vi.fn();
+    const result = render(() => (
+      <QueryEditor
+        initial={{
+          sql: 'SELECT COUNT(*) AS Count FROM projects',
+          prompt: 'How many projects?',
+          displayMode: 'scalar',
+        }}
+        schema={{ databaseId: 'db', name: 'Projects', tables: [] }}
+        capabilities={{ generate: vi.fn(), read: vi.fn(async () => answer) }}
+        onSave={save}
+        saveLabel="Save changes"
+      />
+    ));
+    await result.findByRole('button', { name: 'Save changes' });
+    fireEvent.keyDown(result.getByRole('button', { name: 'SQL' }), {
+      key: 'Enter',
+    });
+    expect(save).not.toHaveBeenCalled();
+    fireEvent.keyDown(result.getByText('7'), { key: 'Enter' });
+    expect(save).toHaveBeenCalledTimes(1);
+    result.unmount();
+  });
+
+  it('returns to the prompt with Edit, then Enter on a changed prompt regenerates', async () => {
+    const generate = vi
+      .fn()
+      .mockResolvedValueOnce({ sql: 'SELECT COUNT(*) AS Count FROM projects' })
+      .mockResolvedValueOnce({
+        sql: "SELECT COUNT(*) AS Count FROM projects WHERE stage = 'Done'",
+      });
+    const save = vi.fn();
+    const result = render(() => (
+      <QueryEditor
+        initial={{ sql: '', prompt: '', displayMode: 'scalar' }}
+        schema={{ databaseId: 'db', name: 'Projects', tables: [] }}
+        capabilities={{ generate, read: vi.fn(async () => answer) }}
+        onSave={save}
+      />
+    ));
+    const prompt = result.getByLabelText(
+      'Ask your database'
+    ) as HTMLTextAreaElement;
+    fireEvent.input(prompt, { target: { value: 'How many projects?' } });
+    fireEvent.keyDown(prompt, { key: 'Enter' });
+    await result.findByRole('button', { name: 'Insert' });
+
+    const edit = result.getByRole('button', { name: 'Edit' });
+    edit.focus();
+    fireEvent.click(edit);
+    expect(document.activeElement).toBe(prompt);
+    expect(prompt.value).toBe('How many projects?');
+    expect(prompt.selectionStart).toBe('How many projects?'.length);
+
+    fireEvent.input(prompt, {
+      target: { value: 'How many projects are done?' },
+    });
+    expect(result.queryByRole('button', { name: 'Insert' })).toBeNull();
+    fireEvent.keyDown(prompt, { key: 'Enter' });
+    expect(save).not.toHaveBeenCalled();
+    await waitFor(() => expect(generate).toHaveBeenCalledTimes(2));
+    expect(generate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ prompt: 'How many projects are done?' })
+    );
+    await result.findByRole('button', { name: 'Insert' });
+    fireEvent.keyDown(prompt, { key: 'Enter' });
+    expect(save).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        prompt: 'How many projects are done?',
+        sql: "SELECT COUNT(*) AS Count FROM projects WHERE stage = 'Done'",
+      }),
       answer
     );
     result.unmount();

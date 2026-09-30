@@ -10,7 +10,7 @@ vi.mock('./client', () => ({
   cognitionApiServiceClient: { structuredCompletion: complete },
 }));
 vi.mock('@core/component/AI/constant', () => ({
-  DEFAULT_MODEL: 'anthropic/claude-sonnet-5',
+  DATABASE_MODEL: 'google/gemini-3.8-flash',
 }));
 
 import { generateDatabaseQuery, runDatabaseAssistant } from './database-query';
@@ -39,6 +39,7 @@ describe('database AI transport boundaries', () => {
   it('gives document questions only read-only discovery and preserves chart configuration', async () => {
     complete.mockResolvedValue(ok({ result: proposal, toolActivity: [] }));
     const result = await generateDatabaseQuery(input);
+    expect(complete.mock.calls[0][0].model).toBe('google/gemini-3.8-flash');
     expect(complete.mock.calls[0][0].toolset).toEqual({
       type: 'databases_read_only',
     });
@@ -61,6 +62,7 @@ describe('database AI transport boundaries', () => {
       })
     );
     const result = await runDatabaseAssistant(input);
+    expect(complete.mock.calls[0][0].model).toBe('google/gemini-3.8-flash');
     expect(complete.mock.calls[0][0].toolset).toEqual({ type: 'databases' });
     expect(result.actionSummary).toBe(
       'Created 1 table · Applied 2 row changes.'

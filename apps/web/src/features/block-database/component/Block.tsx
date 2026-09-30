@@ -3,6 +3,7 @@ import { toQuerySchema } from '@app/features/database-query/queries/query-source
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { makePersistedState } from '@app/lib/persistence';
 import { useGlobalBlockOrchestrator } from '@components/app/GlobalAppState';
+import { SidePanel } from '@components/app/side-panel';
 import { useSplitLayout } from '@components/app/split-layout/layout';
 import {
   returnSplitToRecentListView,
@@ -10,10 +11,13 @@ import {
   useSplitPanelOrThrow,
 } from '@components/app/split-layout/layoutUtils';
 import { useNavigatedFromJK } from '@components/app/useNavigatedFromJK';
+import { useHasPaidAccess } from '@core/auth/license';
 import { useBlockId } from '@core/block';
+import { DATABASE_MODEL, modelsForPlan } from '@core/component/AI/constant';
 import { DocumentBlockContainer } from '@core/component/DocumentBlockContainer';
 import { toast } from '@core/component/Toast/Toast';
 import { enableDatabases } from '@core/constant/featureFlags';
+import { PaywallKey, usePaywallState } from '@core/constant/PaywallState';
 import { useUserId } from '@core/context/user';
 import { createMethodRegistration } from '@core/orchestrator';
 import { blockHandleSignal } from '@core/signal/load';
@@ -60,6 +64,7 @@ import { trashDatabase } from '../queries/trash-database';
 import { DatabasePageActions } from '../views/database-page-actions';
 import { AddColumnMenu } from './AddColumnMenu';
 import { DatabaseGrid } from './DatabaseGrid';
+import { DatabaseSidePanelSections } from './sidepanel/DatabaseSidePanelSections';
 import { TableTabs } from './TableTabs';
 
 const Block: Component = () => {
@@ -160,14 +165,23 @@ const Block: Component = () => {
     void gridEntry.focus();
   };
   const [openingChat, setOpeningChat] = createSignal(false);
+  const hasPaidAccess = useHasPaidAccess();
+  const { showPaywall } = usePaywallState();
   async function openDatabaseChat() {
     const current = detail();
     if (!current || openingChat()) return;
     setOpeningChat(true);
+    // A locked model gets the picker's treatment: the chat opens on the plan's
+    // model and the paywall says why.
+    const canUseDatabaseModel = modelsForPlan(hasPaidAccess()).includes(
+      DATABASE_MODEL
+    );
     try {
       await openChatWithInput(
-        databaseChatContext(toQuerySchema(current, activeTableId()))
+        databaseChatContext(toQuerySchema(current, activeTableId())),
+        canUseDatabaseModel ? { model: DATABASE_MODEL } : undefined
       );
+      if (!canUseDatabaseModel) showPaywall(PaywallKey.O1_LIMIT);
     } finally {
       setOpeningChat(false);
     }
@@ -362,227 +376,236 @@ const Block: Component = () => {
 
   return (
     <DocumentBlockContainer>
-      <div
-        class="@container/database flex size-full min-h-0 min-w-0 flex-col overflow-hidden bg-canvas-base text-ink"
-        style={{ '--database-title-column-width': '18rem' }}
-      >
-        <header class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-edge-muted px-4 py-3 @min-[900px]/database:flex-nowrap @min-[900px]/database:px-5">
-          {/* Align the table rail with the first grid column's trailing edge,
+      <SidePanel.Layout defaultOpen={false}>
+        <DatabaseSidePanelSections
+          databaseId={databaseId}
+          database={detail()?.database}
+        />
+        <div
+          class="@container/database flex size-full min-h-0 min-w-0 flex-col overflow-hidden bg-canvas-base text-ink"
+          style={{ '--database-title-column-width': '18rem' }}
+        >
+          <header class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-edge-muted px-4 py-3 @min-[900px]/database:flex-nowrap @min-[900px]/database:px-5">
+            {/* Align the table rail with the first grid column's trailing edge,
               accounting for the row gutter, header padding, and header gap. */}
-          <div class="flex min-w-0 flex-1 items-center gap-2.5 @min-[900px]/database:w-[calc(var(--database-title-column-width)+2.75rem-2.25rem)] @min-[900px]/database:flex-none">
-            <div class="grid size-8 shrink-0 place-items-center rounded-lg bg-accent/10 text-accent">
-              <DatabaseIcon class="size-4" />
+            <div class="flex min-w-0 flex-1 items-center gap-2.5 @min-[900px]/database:w-[calc(var(--database-title-column-width)+2.75rem-2.25rem)] @min-[900px]/database:flex-none">
+              <div class="grid size-8 shrink-0 place-items-center rounded-lg bg-accent/10 text-accent">
+                <DatabaseIcon class="size-4" />
+              </div>
+              <div class="min-w-0 flex-1">
+                <Show
+                  when={detail()}
+                  fallback={<span class="text-lg font-semibold">Database</span>}
+                >
+                  <DatabaseTitle
+                    name={detail()?.database.name ?? 'Database'}
+                    canEdit={canEdit()}
+                    onConfirm={enterFirstCell}
+                    onEditReady={(edit) => (editTitle = edit)}
+                    autoFocus={
+                      canAutofocus &&
+                      !navigatedFromJK() &&
+                      detail()?.database.name === 'Untitled database'
+                    }
+                    onRename={(name) =>
+                      renameDatabase(getEntityGraphqlClient(), databaseId, name)
+                    }
+                  />
+                </Show>
+                <Show when={detail() && !canEdit()}>
+                  <span class="mt-0.5 inline-flex items-center gap-1 text-[11px] text-ink-muted">
+                    <LockIcon class="size-3" /> Read only
+                  </span>
+                </Show>
+              </div>
             </div>
-            <div class="min-w-0 flex-1">
-              <Show
-                when={detail()}
-                fallback={<span class="text-lg font-semibold">Database</span>}
-              >
-                <DatabaseTitle
-                  name={detail()?.database.name ?? 'Database'}
-                  canEdit={canEdit()}
-                  onConfirm={enterFirstCell}
-                  onEditReady={(edit) => (editTitle = edit)}
-                  autoFocus={
-                    canAutofocus &&
-                    !navigatedFromJK() &&
-                    detail()?.database.name === 'Untitled database'
-                  }
-                  onRename={(name) =>
-                    renameDatabase(getEntityGraphqlClient(), databaseId, name)
-                  }
-                />
-              </Show>
-              <Show when={detail() && !canEdit()}>
-                <span class="mt-0.5 inline-flex items-center gap-1 text-[11px] text-ink-muted">
-                  <LockIcon class="size-3" /> Read only
-                </span>
-              </Show>
-            </div>
-          </div>
-          <Show when={detail()}>
-            <div class="order-3 w-full min-w-0 @min-[900px]/database:order-none @min-[900px]/database:w-auto @min-[900px]/database:flex-1 @min-[900px]/database:border-l @min-[900px]/database:border-edge-muted @min-[900px]/database:pl-4">
-              <TableTabs
-                databaseId={databaseId}
-                tables={tables()}
-                activeTableId={activeTableId()}
-                canEdit={canEdit()}
-                onSelect={(tableId) =>
-                  setSelection((current) => ({ ...current, tableId }))
-                }
-              />
-            </div>
-          </Show>
-          <div class="ml-auto flex shrink-0 items-center gap-1">
             <Show when={detail()}>
-              {(database) => (
-                <DatabasePageActions
-                  detail={database()}
-                  table={activeTable()}
-                  onRename={() => editTitle?.()}
-                  onDelete={async () => {
-                    await trashDatabase(getEntityGraphqlClient(), databaseId);
-                    returnSplitToRecentListView(panel.handle);
-                  }}
-                  onImported={(tableId) =>
+              <div class="order-3 w-full min-w-0 @min-[900px]/database:order-none @min-[900px]/database:w-auto @min-[900px]/database:flex-1 @min-[900px]/database:border-l @min-[900px]/database:border-edge-muted @min-[900px]/database:pl-4">
+                <TableTabs
+                  databaseId={databaseId}
+                  tables={tables()}
+                  activeTableId={activeTableId()}
+                  canEdit={canEdit()}
+                  onSelect={(tableId) =>
                     setSelection((current) => ({ ...current, tableId }))
                   }
                 />
-              )}
+              </div>
             </Show>
-            <Button
-              variant="ghost"
-              size="sm"
-              class="h-8 gap-1.5 px-2 text-xs"
-              disabled={!detail() || openingChat()}
-              aria-label="Database AI"
-              aria-busy={openingChat()}
-              onClick={() => void openDatabaseChat()}
-            >
-              <SparkleIcon class="size-4" />
-              <span>AI</span>
-            </Button>
-          </div>
-        </header>
-        <ErrorBoundary
-          fallback={(error: unknown, reset) => (
-            <div
-              class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
-              role="alert"
-            >
-              <p class="font-medium">This database could not be displayed</p>
-              <p class="max-w-md text-sm text-ink-muted">
-                {error instanceof Error
-                  ? error.message
-                  : 'Please try opening it again.'}
-              </p>
+            <div class="ml-auto flex shrink-0 items-center gap-1">
+              <Show when={detail()}>
+                {(database) => (
+                  <DatabasePageActions
+                    detail={database()}
+                    table={activeTable()}
+                    onRename={() => editTitle?.()}
+                    onDelete={async () => {
+                      await trashDatabase(getEntityGraphqlClient(), databaseId);
+                      returnSplitToRecentListView(panel.handle);
+                    }}
+                    onImported={(tableId) =>
+                      setSelection((current) => ({ ...current, tableId }))
+                    }
+                  />
+                )}
+              </Show>
               <Button
-                variant="outline"
-                onClick={() => {
-                  reset();
-                  void detailQuery.refetch();
-                }}
+                variant="ghost"
+                size="sm"
+                class="h-8 gap-1.5 px-2 text-xs"
+                disabled={!detail() || openingChat()}
+                aria-label="Database AI"
+                aria-busy={openingChat()}
+                onClick={() => void openDatabaseChat()}
               >
-                Try again
+                <SparkleIcon class="size-4" />
+                <span>AI</span>
               </Button>
             </div>
-          )}
-        >
-          <Show when={!detailQuery.isPending} fallback={<DatabaseSkeleton />}>
-            <Show
-              when={detail()}
-              fallback={
-                <div
-                  class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
-                  role="alert"
+          </header>
+          <ErrorBoundary
+            fallback={(error: unknown, reset) => (
+              <div
+                class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
+                role="alert"
+              >
+                <p class="font-medium">This database could not be displayed</p>
+                <p class="max-w-md text-sm text-ink-muted">
+                  {error instanceof Error
+                    ? error.message
+                    : 'Please try opening it again.'}
+                </p>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    reset();
+                    void detailQuery.refetch();
+                  }}
                 >
-                  <p class="font-medium">Could not open this database</p>
-                  <p class="max-w-md text-sm text-ink-muted">
-                    It may be unavailable, or you may no longer have access.
-                  </p>
-                  <Button
-                    variant="outline"
-                    onClick={() => void detailQuery.refetch()}
-                  >
-                    Try again
-                  </Button>
-                </div>
-              }
-            >
+                  Try again
+                </Button>
+              </div>
+            )}
+          >
+            <Show when={!detailQuery.isPending} fallback={<DatabaseSkeleton />}>
               <Show
-                when={activeTable()}
+                when={detail()}
                 fallback={
-                  <div class="grid flex-1 place-items-center p-6 text-sm text-ink-muted">
-                    Add a table to start organizing your data.
+                  <div
+                    class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
+                    role="alert"
+                  >
+                    <p class="font-medium">Could not open this database</p>
+                    <p class="max-w-md text-sm text-ink-muted">
+                      It may be unavailable, or you may no longer have access.
+                    </p>
+                    <Button
+                      variant="outline"
+                      onClick={() => void detailQuery.refetch()}
+                    >
+                      Try again
+                    </Button>
                   </div>
                 }
               >
-                <Show when={saved.query.isError}>
-                  <div
-                    class="flex items-center justify-between gap-2 border-edge border-b px-4 py-2 text-xs text-ink-muted"
-                    role="status"
-                  >
-                    Saved views could not be loaded.
-                    <Button
-                      size="xs"
-                      onClick={() => void saved.query.refetch()}
+                <Show
+                  when={activeTable()}
+                  fallback={
+                    <div class="grid flex-1 place-items-center p-6 text-sm text-ink-muted">
+                      Add a table to start organizing your data.
+                    </div>
+                  }
+                >
+                  <Show when={saved.query.isError}>
+                    <div
+                      class="flex items-center justify-between gap-2 border-edge border-b px-4 py-2 text-xs text-ink-muted"
+                      role="status"
                     >
-                      Retry
-                    </Button>
+                      Saved views could not be loaded.
+                      <Button
+                        size="xs"
+                        onClick={() => void saved.query.refetch()}
+                      >
+                        Retry
+                      </Button>
+                    </div>
+                  </Show>
+                  <div class="flex min-h-0 min-w-0 flex-1 flex-col @min-[1000px]/database:flex-row">
+                    <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+                      <Show when={activeTable()}>
+                        {(table) => (
+                          <DatabaseGrid
+                            databaseId={databaseId}
+                            table={table()}
+                            canEdit={canEdit()}
+                            view={view()}
+                            onViewChange={changeView}
+                            onOpenRelated={openRelated}
+                            renderToolbar={(actions) => {
+                              gridEntry = {
+                                tableId: table().table.id,
+                                focus: actions.focusFirstCell,
+                                openRecord: actions.openRecord,
+                              };
+                              if (requestedRecord)
+                                queueMicrotask(openRequestedRecord);
+                              if (requestedGridEntry)
+                                queueMicrotask(enterFirstCell);
+                              return (
+                                <DatabaseToolbar
+                                  columns={columns()}
+                                  value={view()}
+                                  onChange={changeView}
+                                  savedViews={saved.views()}
+                                  selectedViewId={selectedViewId()}
+                                  isDirty={isDirty()}
+                                  saving={
+                                    saved.save.isPending ||
+                                    saved.rename.isPending ||
+                                    saved.remove.isPending
+                                  }
+                                  onSelectView={selectView}
+                                  onSaveView={saveView}
+                                  onUpdateView={updateView}
+                                  onRenameView={async (id, name) => {
+                                    await saved.rename.mutateAsync({
+                                      id,
+                                      name,
+                                    });
+                                  }}
+                                  onDeleteView={removeView}
+                                  onCreateRecord={
+                                    canEdit()
+                                      ? () => void actions.createRecord()
+                                      : undefined
+                                  }
+                                  canCreateRecord={columns().length > 0}
+                                  creating={actions.pending()}
+                                  addColumn={
+                                    <Show when={canEdit()}>
+                                      <AddColumnMenu
+                                        databaseId={databaseId}
+                                        tableId={table().table.id}
+                                        columns={table().columns}
+                                        label="Add column"
+                                        onCreated={actions.focusColumn}
+                                      />
+                                    </Show>
+                                  }
+                                />
+                              );
+                            }}
+                          />
+                        )}
+                      </Show>
+                    </div>
                   </div>
                 </Show>
-                <div class="flex min-h-0 min-w-0 flex-1 flex-col @min-[1000px]/database:flex-row">
-                  <div class="flex min-h-0 min-w-0 flex-1 flex-col">
-                    <Show when={activeTable()}>
-                      {(table) => (
-                        <DatabaseGrid
-                          databaseId={databaseId}
-                          table={table()}
-                          canEdit={canEdit()}
-                          view={view()}
-                          onViewChange={changeView}
-                          onOpenRelated={openRelated}
-                          renderToolbar={(actions) => {
-                            gridEntry = {
-                              tableId: table().table.id,
-                              focus: actions.focusFirstCell,
-                              openRecord: actions.openRecord,
-                            };
-                            if (requestedRecord)
-                              queueMicrotask(openRequestedRecord);
-                            if (requestedGridEntry)
-                              queueMicrotask(enterFirstCell);
-                            return (
-                              <DatabaseToolbar
-                                columns={columns()}
-                                value={view()}
-                                onChange={changeView}
-                                savedViews={saved.views()}
-                                selectedViewId={selectedViewId()}
-                                isDirty={isDirty()}
-                                saving={
-                                  saved.save.isPending ||
-                                  saved.rename.isPending ||
-                                  saved.remove.isPending
-                                }
-                                onSelectView={selectView}
-                                onSaveView={saveView}
-                                onUpdateView={updateView}
-                                onRenameView={async (id, name) => {
-                                  await saved.rename.mutateAsync({ id, name });
-                                }}
-                                onDeleteView={removeView}
-                                onCreateRecord={
-                                  canEdit()
-                                    ? () => void actions.createRecord()
-                                    : undefined
-                                }
-                                canCreateRecord={columns().length > 0}
-                                creating={actions.pending()}
-                                addColumn={
-                                  <Show when={canEdit()}>
-                                    <AddColumnMenu
-                                      databaseId={databaseId}
-                                      tableId={table().table.id}
-                                      columns={table().columns}
-                                      label="Add column"
-                                      onCreated={actions.focusColumn}
-                                    />
-                                  </Show>
-                                }
-                              />
-                            );
-                          }}
-                        />
-                      )}
-                    </Show>
-                  </div>
-                </div>
               </Show>
             </Show>
-          </Show>
-        </ErrorBoundary>
-      </div>
+          </ErrorBoundary>
+        </div>
+      </SidePanel.Layout>
     </DocumentBlockContainer>
   );
 };

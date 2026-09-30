@@ -1,4 +1,4 @@
-import { DEFAULT_MODEL } from '@core/component/AI/constant';
+import { DATABASE_MODEL } from '@core/component/AI/constant';
 import {
   parseQueryProposal,
   QueryActionError,
@@ -14,7 +14,7 @@ import { summarizeDatabaseActivity } from './database-tool-activity';
 /** Live document questions discover accessible sources using strictly read-only tools. */
 export async function generateDatabaseQuery(input: DatabaseAssistantInput) {
   const result = await cognitionApiServiceClient.structuredCompletion({
-    model: DEFAULT_MODEL,
+    model: DATABASE_MODEL,
     ...databaseCompletionRequest(input, 'question'),
   });
   if (result.isErr())
@@ -27,7 +27,7 @@ export async function generateDatabaseQuery(input: DatabaseAssistantInput) {
 /** The editing surface has scoped database tools and server-authored execution receipts. */
 export async function runDatabaseAssistant(input: DatabaseAssistantInput) {
   const result = await cognitionApiServiceClient.structuredCompletion({
-    model: DEFAULT_MODEL,
+    model: DATABASE_MODEL,
     ...databaseCompletionRequest(input, 'assistant'),
   });
   if (result.isErr()) {
