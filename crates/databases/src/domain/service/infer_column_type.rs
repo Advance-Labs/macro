@@ -40,7 +40,7 @@ where
             .column_detail(
                 &viewer,
                 database.id,
-                AccessGrant::Edit,
+                AccessLevel::Edit,
                 table.id,
                 cmd.column_id,
             )

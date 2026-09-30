@@ -155,7 +155,7 @@ fn option(label: &str, display_order: i32) -> PropertyOption {
     }
 }
 
-fn detail(grant: AccessGrant) -> DatabaseDetail {
+fn detail(grant: AccessLevel) -> DatabaseDetail {
     DatabaseDetail {
         database: database(),
         grant,
@@ -183,7 +183,7 @@ impl DatabasesService for FakeService {
         self.calls.lock().unwrap().listed += 1;
         Ok(vec![ListedDatabase {
             database: database(),
-            grant: AccessGrant::Owner,
+            grant: AccessLevel::Owner,
             tables: vec![table()],
         }])
     }
@@ -209,7 +209,7 @@ impl DatabasesService for FakeService {
                     .into_dynamic(),
             ));
         }
-        let mut database = detail(AccessGrant::Owner);
+        let mut database = detail(AccessLevel::Owner);
         database.tables[0].columns[0]
             .definition
             .definition
@@ -1148,7 +1148,7 @@ fn an_empty_list_says_so_rather_than_looking_like_a_failure() {
 /// ids they are stored under — writing an id would be rejected.
 #[test]
 fn describing_a_database_renders_option_labels() {
-    let schema = ToolDatabaseSchema::from(detail(AccessGrant::Owner));
+    let schema = ToolDatabaseSchema::from(detail(AccessLevel::Owner));
 
     assert_eq!(schema.tables[0].sql_name, "\"Offsite\".\"Guests\"");
     assert_eq!(schema.tables[0].version, 3);
@@ -1162,7 +1162,7 @@ fn describing_a_database_renders_option_labels() {
 
 #[test]
 fn describing_a_renamed_column_supplies_its_current_label_as_the_sql_identifier() {
-    let mut database = detail(AccessGrant::Owner);
+    let mut database = detail(AccessLevel::Owner);
     database.tables[0].columns[0].column.display_name = Some("RSVP".into());
     database.tables[0].columns[0].sql_name = "\"RSVP\"".into();
     let schema = ToolDatabaseSchema::from(database);
@@ -1174,7 +1174,7 @@ fn describing_a_renamed_column_supplies_its_current_label_as_the_sql_identifier(
 
 #[test]
 fn describing_an_entity_column_preserves_the_actual_entity_kind() {
-    let mut database = detail(AccessGrant::Owner);
+    let mut database = detail(AccessLevel::Owner);
     let definition = &mut database.tables[0].columns[0].definition.definition;
     definition.data_type = DataType::Entity;
     definition.specific_entity_type = Some(models_properties::shared::EntityType::User);
@@ -1190,14 +1190,14 @@ fn describing_an_entity_column_preserves_the_actual_entity_kind() {
 /// that the executor rejects after the user has been promised an edit.
 #[test]
 fn a_view_only_database_reads_as_unwritable() {
-    let schema = ToolDatabaseSchema::from(detail(AccessGrant::View));
+    let schema = ToolDatabaseSchema::from(detail(AccessLevel::View));
     assert_eq!(schema.grant, ToolGrant::View);
     assert!(!schema.tables[0].writable);
 }
 
 #[test]
 fn the_response_serializes_with_camel_case_keys() {
-    let schema = ToolDatabaseSchema::from(detail(AccessGrant::Owner));
+    let schema = ToolDatabaseSchema::from(detail(AccessLevel::Owner));
     let json = serde_json::to_value(&schema).expect("schema should serialize");
 
     assert!(json["tables"][0]["sqlName"].is_string());

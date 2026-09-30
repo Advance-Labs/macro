@@ -78,13 +78,12 @@ use collab_surface::inbound::axum_router::{
     CollabSurfaceResponse, CollabSurfaceTokenResponse, EnsureCollabSurfaceRequest,
 };
 use databases::domain::models::{
-    AccessGrant as DatabaseAccessGrant, Awareness as DatabaseAwareness, Column as DatabaseColumn,
-    ColumnConfig as DatabaseColumnConfig, ColumnDetail as DatabaseColumnDetail, Database,
-    DatabaseDetail, ExecOutcome as DatabaseExecOutcome, ListedDatabase,
-    QueryDefinition as DatabaseQueryDefinition, QueryResult as DatabaseQueryResult,
-    ResultColumn as DatabaseResultColumn, SavedQuery as DatabaseSavedQuery,
-    SqlValue as DatabaseSqlValue, Table as DatabaseTable, TableDetail as DatabaseTableDetail,
-    TableVersion as DatabaseTableVersion,
+    Awareness as DatabaseAwareness, Column as DatabaseColumn, ColumnConfig as DatabaseColumnConfig,
+    ColumnDetail as DatabaseColumnDetail, Database, DatabaseDetail,
+    ExecOutcome as DatabaseExecOutcome, ListedDatabase, QueryDefinition as DatabaseQueryDefinition,
+    QueryResult as DatabaseQueryResult, ResultColumn as DatabaseResultColumn,
+    SavedQuery as DatabaseSavedQuery, SqlValue as DatabaseSqlValue, Table as DatabaseTable,
+    TableDetail as DatabaseTableDetail, TableVersion as DatabaseTableVersion,
 };
 use databases::inbound::axum_router::{
     AddColumnOptionsRequest as DatabaseAddColumnOptionsRequest,
@@ -606,7 +605,6 @@ use utoipa::OpenApi;
             DatabaseColumn,
             DatabaseColumnConfig,
             DatabaseTableVersion,
-            DatabaseAccessGrant,
             ListedDatabase,
             DatabaseDetail,
             DatabaseTableDetail,

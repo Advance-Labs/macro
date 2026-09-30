@@ -18,6 +18,7 @@ use database_sql::split::GqlQuery;
 use filter_ast::Expr;
 use item_filters::ast::properties::{PropertiesLiteral, PropertyMatchValue};
 use macro_event_broker::MacroEventBroker;
+use models_permissions::share_permission::access_level::AccessLevel;
 use models_properties::service::property_value::PropertyValue;
 use models_properties::shared::EntityReference;
 use uuid::Uuid;
@@ -78,7 +79,7 @@ where
                 return Err(QueryError::ReadOnly("queries cannot change data".into()));
             }
             let entry = entry_for(&entries, table)?;
-            if !entry.grant.can_write() {
+            if entry.grant < AccessLevel::Edit {
                 return Err(QueryError::ReadOnly(format!(
                     "table {} is read-only",
                     entry.table.name
@@ -426,7 +427,7 @@ where
     fn entry(&self, table: TableId) -> Result<&TableEntry, WriteError> {
         let entry =
             entry_for(self.entries, table).map_err(|error| WriteError(error.to_string()))?;
-        if !entry.grant.can_write() {
+        if entry.grant < AccessLevel::Edit {
             return Err(WriteError(format!(
                 "table {} is read-only",
                 entry.table.name

@@ -59,7 +59,7 @@ async fn discovery_includes_nested_tables_in_tab_order_but_not_private_or_trashe
     let listed = service.list_databases(viewer(STRANGER)).await.unwrap();
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].database.id, private.id);
-    assert_eq!(listed[0].grant, AccessGrant::Owner);
+    assert_eq!(listed[0].grant, AccessLevel::Owner);
     assert_eq!(listed[0].tables.len(), 1);
     assert_eq!(listed[0].tables[0].name, "Table 1");
 }

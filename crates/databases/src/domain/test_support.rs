@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 
 use chrono::Utc;
+use models_permissions::share_permission::access_level::AccessLevel;
 use models_properties::service::property_definition::PropertyDefinition;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
 use models_properties::service::property_option::{PropertyOption, PropertyOptionValue};
@@ -14,7 +15,7 @@ use rand::{Rng, SeedableRng};
 use uuid::Uuid;
 
 use crate::domain::catalog::{TableEntry, build_entries};
-use crate::domain::models::{AccessGrant, Column, ColumnConfig, DatabaseId, Table, TableVersion};
+use crate::domain::models::{Column, ColumnConfig, DatabaseId, Table, TableVersion};
 
 /// A property definition of the given type with no options.
 pub fn definition(name: &str, data_type: DataType, multi: bool) -> PropertyDefinitionWithOptions {
@@ -92,7 +93,7 @@ pub fn entries_for(
     table: &Table,
     columns: &[Column],
     definitions: &[PropertyDefinitionWithOptions],
-    grant: AccessGrant,
+    grant: AccessLevel,
 ) -> Vec<TableEntry> {
     let definitions: HashMap<_, _> = definitions
         .iter()

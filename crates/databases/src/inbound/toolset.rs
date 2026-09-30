@@ -93,7 +93,10 @@ use std::sync::Arc;
 use ai_toolset::{AsyncToolCollection, ToolCallError};
 use bot_id::BotId;
 use entity_access::domain::{
-    models::{AccessError, BotAccessScope, EditAccessLevel, EntityAccessReceipt, ViewAccessLevel},
+    models::{
+        AccessError, AccessLevel, BotAccessScope, EditAccessLevel, EntityAccessReceipt,
+        ViewAccessLevel,
+    },
     ports::EntityAccessService,
 };
 use macro_user_id::user_id::MacroUserIdStr;
@@ -105,8 +108,8 @@ use uuid::Uuid;
 
 use crate::domain::catalog::{option_labels, sql_table_name};
 use crate::domain::models::{
-    AccessGrant, ColumnConfig, ColumnDetail, DatabaseDetail, DatabaseError, ListedDatabase,
-    QueryError, TableDetail, Viewer,
+    ColumnConfig, ColumnDetail, DatabaseDetail, DatabaseError, ListedDatabase, QueryError,
+    TableDetail, Viewer,
 };
 use crate::domain::ports::DatabasesService;
 use crate::domain::views::{DatabaseViewService, DatabaseViewsServiceImpl};
@@ -456,13 +459,13 @@ pub enum ToolGrant {
     Owner,
 }
 
-impl From<AccessGrant> for ToolGrant {
-    fn from(grant: AccessGrant) -> Self {
-        match grant {
-            AccessGrant::View => ToolGrant::View,
-            AccessGrant::Comment => ToolGrant::Comment,
-            AccessGrant::Edit => ToolGrant::Edit,
-            AccessGrant::Owner => ToolGrant::Owner,
+impl From<AccessLevel> for ToolGrant {
+    fn from(level: AccessLevel) -> Self {
+        match level {
+            AccessLevel::View => ToolGrant::View,
+            AccessLevel::Comment => ToolGrant::Comment,
+            AccessLevel::Edit => ToolGrant::Edit,
+            AccessLevel::Owner => ToolGrant::Owner,
         }
     }
 }
@@ -701,7 +704,7 @@ pub struct ToolDatabaseSchema {
 
 impl From<DatabaseDetail> for ToolDatabaseSchema {
     fn from(detail: DatabaseDetail) -> Self {
-        let writable = detail.grant.can_write();
+        let writable = detail.grant >= AccessLevel::Edit;
         Self {
             id: detail.database.id,
             name: detail.database.name,

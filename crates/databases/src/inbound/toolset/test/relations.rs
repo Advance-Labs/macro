@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn relation_schema_names_the_target_table() {
-    let mut database = detail(AccessGrant::Owner);
+    let mut database = detail(AccessLevel::Owner);
     let target = Uuid::new_v4();
     let column = &mut database.tables[0].columns[0];
     column.definition.definition.data_type = DataType::Entity;

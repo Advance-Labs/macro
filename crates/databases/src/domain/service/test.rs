@@ -66,7 +66,7 @@ struct World {
     rows: HashMap<TableId, Vec<RowRef>>,
     /// The cell store: a row's cells keyed by definition.
     cells: HashMap<RowId, HashMap<Uuid, PropertyValue>>,
-    grants: HashMap<String, Vec<(DatabaseId, AccessGrant)>>,
+    grants: HashMap<String, Vec<(DatabaseId, AccessLevel)>>,
     published: Vec<(TableId, TableVersion)>,
     /// Every awareness relay the service asked for.
     awareness: Vec<(DatabaseId, String, Awareness)>,
@@ -121,7 +121,7 @@ impl DatabasesRepo for FakeRepo {
         w.grants
             .entry(cmd.owner_id.as_ref().to_string())
             .or_default()
-            .push((database.id, AccessGrant::Owner));
+            .push((database.id, AccessLevel::Owner));
         Ok(database)
     }
     async fn get_database(
@@ -750,7 +750,7 @@ impl AccessDirectory for FakeAccess {
     async fn accessible_databases(
         &self,
         viewer: &Viewer,
-    ) -> Result<Vec<(DatabaseId, AccessGrant)>, FakeError> {
+    ) -> Result<Vec<(DatabaseId, AccessLevel)>, FakeError> {
         Ok(self
             .0
             .lock()
@@ -759,6 +759,23 @@ impl AccessDirectory for FakeAccess {
             .get(viewer.user_id.as_ref())
             .cloned()
             .unwrap_or_default())
+    }
+    async fn database_access(
+        &self,
+        viewer: &Viewer,
+        database_id: DatabaseId,
+    ) -> Result<Option<AccessLevel>, FakeError> {
+        Ok(self
+            .0
+            .lock()
+            .unwrap()
+            .grants
+            .get(viewer.user_id.as_ref())
+            .into_iter()
+            .flatten()
+            .filter(|(id, _)| *id == database_id)
+            .map(|(_, level)| *level)
+            .max())
     }
 }
 
@@ -925,7 +942,7 @@ async fn seeded() -> Seeded {
         .grants
         .entry(VIEWER.into())
         .or_default()
-        .push((database.id, AccessGrant::View));
+        .push((database.id, AccessLevel::View));
     let inserted = service
         .exec_sql(
             viewer(OWNER),
@@ -977,7 +994,7 @@ async fn create_database_grants_owner_and_starter_table() {
     assert_eq!(db.name, "Offsite");
     let listed = svc.list_databases(viewer(OWNER)).await.unwrap();
     assert_eq!(listed.len(), 1);
-    assert_eq!(listed[0].grant, AccessGrant::Owner);
+    assert_eq!(listed[0].grant, AccessLevel::Owner);
     assert_eq!(listed[0].tables.len(), 1);
     assert_eq!(listed[0].tables[0].name, "Table 1");
     assert!(
@@ -1318,7 +1335,7 @@ async fn schema_operations_respect_receipts() {
         )
         .await
         .unwrap();
-    assert_eq!(detail.grant, AccessGrant::View);
+    assert_eq!(detail.grant, AccessLevel::View);
     assert_eq!(detail.tables.len(), 1);
     assert_eq!(detail.tables[0].sql_name, "\"Offsite\".\"Guests\"");
     assert_eq!(detail.tables[0].read_sql_name, "\"Offsite\".\"Guests\"");
@@ -1339,7 +1356,7 @@ async fn schema_operations_respect_receipts() {
         )
         .await
         .unwrap();
-    assert_eq!(detail.grant, AccessGrant::Owner);
+    assert_eq!(detail.grant, AccessLevel::Owner);
     assert!(detail.tables[0].columns.iter().all(|c| c.writable));
 }
 

@@ -11,18 +11,18 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 use entity_access::domain::models::{
-    EditAccessLevel, EntityAccessReceipt, OwnerAccessLevel, ViewAccessLevel,
+    AccessLevel, EditAccessLevel, EntityAccessReceipt, OwnerAccessLevel, ViewAccessLevel,
 };
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
 use models_properties::service::property_option::{PropertyOption, PropertyOptionValue};
 use models_properties::service::property_value::PropertyValue;
 
 use crate::domain::models::{
-    AccessGrant, AddColumnOptions, Awareness, Column, ColumnBinding, ColumnDetail, ColumnId,
-    CreateColumn, CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId,
-    ExecOutcome, ExecRequest, InferColumnType, InferColumnTypeOutcome, ListedDatabase,
-    PropertyDefinitionId, QueryError, RenameColumnOutcome, RowId, RowRef, Table, TableId,
-    TableMutationOutcome, TableVersion, Viewer,
+    AddColumnOptions, Awareness, Column, ColumnBinding, ColumnDetail, ColumnId, CreateColumn,
+    CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId, ExecOutcome,
+    ExecRequest, InferColumnType, InferColumnTypeOutcome, ListedDatabase, PropertyDefinitionId,
+    QueryError, RenameColumnOutcome, RowId, RowRef, Table, TableId, TableMutationOutcome,
+    TableVersion, Viewer,
 };
 use crate::domain::models::{ChangeColumnType, ColumnReplacement, ColumnSchemaOutcome};
 use crate::domain::models::{QueryDefinition, QueryId, SavedQuery, TableDeletion};
@@ -247,18 +247,26 @@ pub trait CellStore: Send + Sync + 'static {
     fn clear(&self, row: RowId) -> impl Future<Output = Result<(), Self::Err>> + Send;
 }
 
-/// Which databases a viewer can reach, and the grant written at creation.
-/// Backed by the shared `entity_access` table; the domain treats it as the
-/// authorization boundary for SQL (the catalog is built from it).
+/// Which databases a viewer can reach, as `entity_access` answers it. The
+/// domain treats it as the authorization boundary for SQL (the catalog is
+/// built from it). Trash is not its concern: a trashed database's grants are
+/// still answered, and the service drops them.
 pub trait AccessDirectory: Send + Sync + 'static {
     /// The error type returned by directory operations.
     type Err: std::error::Error + Send + Sync + 'static;
 
-    /// Every database the viewer can see, with their grant on each.
+    /// Every database the viewer holds a grant on, at the highest level.
     fn accessible_databases(
         &self,
         viewer: &Viewer,
-    ) -> impl Future<Output = Result<Vec<(DatabaseId, AccessGrant)>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Vec<(DatabaseId, AccessLevel)>, Self::Err>> + Send;
+
+    /// The viewer's highest level on one database; `None` without a grant.
+    fn database_access(
+        &self,
+        viewer: &Viewer,
+        database_id: DatabaseId,
+    ) -> impl Future<Output = Result<Option<AccessLevel>, Self::Err>> + Send;
 }
 
 /// The definitions behind columns: creating database-owned ones, binding

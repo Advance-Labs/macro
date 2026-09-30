@@ -48,31 +48,29 @@ where
                 "Choose a supported column type and its reference target.".into(),
             ));
         }
-        if let Some((database_id, table_id)) = cmd.relation {
-            let grants = self
-                .access
-                .accessible_databases(&viewer)
+        if let Some((database_id, table_id)) = cmd.relation
+            && (self
+                .live_database_grant(&viewer, database_id)
                 .await
-                .map_err(repo_err)?;
-            if !grants.iter().any(|(id, _)| *id == database_id)
+                .map_err(DatabaseError::Repo)?
+                .is_none()
                 || !self
                     .repo
                     .tables_for_databases(&[database_id])
                     .await
                     .map_err(repo_err)?
                     .iter()
-                    .any(|table| table.id == table_id)
-            {
-                return Err(DatabaseError::InvalidSchemaOperation(
-                    "The related table is not accessible.".into(),
-                ));
-            }
+                    .any(|table| table.id == table_id))
+        {
+            return Err(DatabaseError::InvalidSchemaOperation(
+                "The related table is not accessible.".into(),
+            ));
         }
         let detail = self
             .column_detail(
                 &viewer,
                 database.id,
-                AccessGrant::Edit,
+                AccessLevel::Edit,
                 table.id,
                 cmd.column_id,
             )

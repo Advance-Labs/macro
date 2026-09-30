@@ -39,8 +39,8 @@ postgres = [
   "dep:entity_access_db_utils",
   "dep:properties",
   "dep:sqlx",
-  # The Postgres adapters ask entity_access for a viewer's source ids rather
-  # than re-deriving them.
+  # The composition root builds entity_access's Postgres repository behind
+  # the access directory.
   "entity_access/outbound",
   "outbound",
 ]

@@ -7,6 +7,7 @@ use bot_id::BotId;
 use chrono::{DateTime, Utc};
 use macro_user_id::user_id::MacroUserIdStr;
 use model_entity::EntityType;
+use models_permissions::share_permission::access_level::AccessLevel;
 use models_properties::service::property_value::PropertyValue;
 use models_properties::shared::DataType;
 use serde::{Deserialize, Serialize};
@@ -518,47 +519,13 @@ pub enum TableDeletion {
 
 // ===== Access & rendering models =====
 
-/// The access a viewer holds on a database, from its `entity_access` rows.
-#[derive(
-    utoipa::ToSchema, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum AccessGrant {
-    /// Read rows and run read-only SQL.
-    View,
-    /// View plus comments (no additional database rights).
-    Comment,
-    /// Write rows/links and change the schema.
-    Edit,
-    /// Everything, including sharing and deletion.
-    Owner,
-}
-
-impl AccessGrant {
-    /// Whether SQL may write to the database's tables.
-    pub fn can_write(self) -> bool {
-        matches!(self, AccessGrant::Edit | AccessGrant::Owner)
-    }
-
-    /// Parse the `AccessLevel` enum text stored in `entity_access`.
-    pub fn parse(level: &str) -> Option<Self> {
-        match level.to_ascii_lowercase().as_str() {
-            "view" => Some(AccessGrant::View),
-            "comment" => Some(AccessGrant::Comment),
-            "edit" => Some(AccessGrant::Edit),
-            "owner" => Some(AccessGrant::Owner),
-            _ => None,
-        }
-    }
-}
-
 /// A database as listed for a viewer.
 #[derive(utoipa::ToSchema, Debug, Clone, Serialize)]
 pub struct ListedDatabase {
     /// The database.
     pub database: Database,
     /// The viewer's access.
-    pub grant: AccessGrant,
+    pub grant: AccessLevel,
     /// Tables in tab order, so discovery can find a table independently of
     /// the containing database's display name.
     pub tables: Vec<Table>,
@@ -572,7 +539,7 @@ pub struct DatabaseDetail {
     /// The database.
     pub database: Database,
     /// The viewer's access.
-    pub grant: AccessGrant,
+    pub grant: AccessLevel,
     /// Tables in tab order.
     pub tables: Vec<TableDetail>,
 }

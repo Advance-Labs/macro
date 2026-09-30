@@ -38,9 +38,9 @@ use crate::domain::events::{
     DatabaseTrashedMetadata, TableVersionChange,
 };
 use crate::domain::models::{
-    AccessGrant, AddColumnOptions, Awareness, ColumnBinding, ColumnConfig, ColumnDetail, ColumnId,
-    CreateColumn, CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId,
-    ExecOutcome, ExecRequest, InferColumnType, InferColumnTypeOutcome, ListedDatabase, QueryError,
+    AddColumnOptions, Awareness, ColumnBinding, ColumnConfig, ColumnDetail, ColumnId, CreateColumn,
+    CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId, ExecOutcome,
+    ExecRequest, InferColumnType, InferColumnTypeOutcome, ListedDatabase, QueryError,
     RenameColumnOutcome, Table, TableDetail, TableId, TableMutationOutcome, TableVersion, Viewer,
 };
 use crate::domain::models::{ChangeColumnType, ColumnReplacement, ColumnSchemaOutcome};
@@ -90,26 +90,15 @@ fn receipt_database_id<T: RequiredPermission>(
     Uuid::parse_str(&receipt.entity().entity_id).map_err(|_| DatabaseError::NotFound)
 }
 
-impl From<AccessLevel> for AccessGrant {
-    fn from(level: AccessLevel) -> Self {
-        match level {
-            AccessLevel::View => AccessGrant::View,
-            AccessLevel::Comment => AccessGrant::Comment,
-            AccessLevel::Edit => AccessGrant::Edit,
-            AccessLevel::Owner => AccessGrant::Owner,
-        }
-    }
-}
-
 /// The grant a receipt proves. Receipts minted for internal callers carry no
 /// level; the extractor already enforced the route's requirement, so they
 /// get exactly `floor`.
 fn receipt_grant<T: RequiredPermission>(
     receipt: &EntityAccessReceipt<T>,
-    floor: AccessGrant,
-) -> AccessGrant {
+    floor: AccessLevel,
+) -> AccessLevel {
     match receipt.entity_permission() {
-        EntityPermission::AccessLevel { access_level } => AccessGrant::from(*access_level),
+        EntityPermission::AccessLevel { access_level } => *access_level,
         _ => floor,
     }
 }
@@ -253,7 +242,7 @@ where
     /// Build catalog entries for a set of databases the viewer holds grants on.
     pub(super) async fn entries_for(
         &self,
-        grants: &HashMap<DatabaseId, AccessGrant>,
+        grants: &HashMap<DatabaseId, AccessLevel>,
     ) -> Result<Vec<TableEntry>, QueryError> {
         let database_ids: Vec<DatabaseId> = grants.keys().copied().collect();
         let mut databases = self
@@ -303,9 +292,9 @@ where
         &self,
         viewer: &Viewer,
         database_id: DatabaseId,
-        grant: AccessGrant,
-    ) -> Result<HashMap<DatabaseId, AccessGrant>, Access::Err> {
-        let mut grants: HashMap<DatabaseId, AccessGrant> = self
+        grant: AccessLevel,
+    ) -> Result<HashMap<DatabaseId, AccessLevel>, Access::Err> {
+        let mut grants: HashMap<DatabaseId, AccessLevel> = self
             .access
             .accessible_databases(viewer)
             .await?
@@ -321,14 +310,12 @@ where
         &self,
         viewer: &Viewer,
         database_id: DatabaseId,
-    ) -> Result<Option<AccessGrant>, rootcause::Report> {
+    ) -> Result<Option<AccessLevel>, rootcause::Report> {
         let grant = self
             .access
-            .accessible_databases(viewer)
+            .database_access(viewer, database_id)
             .await
-            .map_err(|error| rootcause::Report::new(error).into_dynamic())?
-            .into_iter()
-            .find_map(|(id, grant)| (id == database_id).then_some(grant));
+            .map_err(|error| rootcause::Report::new(error).into_dynamic())?;
         let Some(grant) = grant else {
             return Ok(None);
         };
@@ -350,7 +337,7 @@ where
             .collect()
     }
 
-    fn detail(database: Database, grant: AccessGrant, entries: Vec<TableEntry>) -> DatabaseDetail {
+    fn detail(database: Database, grant: AccessLevel, entries: Vec<TableEntry>) -> DatabaseDetail {
         DatabaseDetail {
             database,
             grant,
@@ -440,7 +427,7 @@ where
         &self,
         viewer: &Viewer,
         database_id: DatabaseId,
-        grant: AccessGrant,
+        grant: AccessLevel,
         table_id: TableId,
         column_id: ColumnId,
     ) -> Result<ColumnDetail, DatabaseError> {
@@ -595,7 +582,7 @@ where
 
     #[tracing::instrument(skip(self), err)]
     async fn list_databases(&self, viewer: Viewer) -> Result<Vec<ListedDatabase>, DatabaseError> {
-        let grants: HashMap<DatabaseId, AccessGrant> = self
+        let grants: HashMap<DatabaseId, AccessLevel> = self
             .access
             .accessible_databases(&viewer)
             .await
@@ -643,7 +630,7 @@ where
         viewer: Viewer,
     ) -> Result<DatabaseDetail, DatabaseError> {
         let database_id = receipt_database_id(&receipt)?;
-        let grant = receipt_grant(&receipt, AccessGrant::View);
+        let grant = receipt_grant(&receipt, AccessLevel::View);
         let (database, _tables) = self
             .repo
             .get_database(database_id)
@@ -800,14 +787,12 @@ where
             table_id,
         }) = &cmd.config
         {
-            let visible: HashMap<DatabaseId, AccessGrant> = self
-                .access
-                .accessible_databases(&viewer)
+            if self
+                .live_database_grant(&viewer, *database_id)
                 .await
-                .map_err(repo_err)?
-                .into_iter()
-                .collect();
-            if !visible.contains_key(database_id) {
+                .map_err(DatabaseError::Repo)?
+                .is_none()
+            {
                 return Err(DatabaseError::InvalidSchemaOperation(
                     "link target database is not accessible".into(),
                 ));
@@ -1054,7 +1039,7 @@ where
         self.column_detail(
             &viewer,
             database.id,
-            receipt_grant(&receipt, AccessGrant::Edit),
+            receipt_grant(&receipt, AccessLevel::Edit),
             cmd.table_id,
             cmd.column_id,
         )

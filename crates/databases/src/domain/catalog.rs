@@ -11,13 +11,14 @@ use std::collections::HashMap;
 use database_sql::catalog::{
     Catalog, Column as EngineColumn, ColumnKind, SelectOption, Table as EngineTable, TableSource,
 };
+use models_permissions::share_permission::access_level::AccessLevel;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
 use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::shared::DataType;
 use uuid::Uuid;
 
 use crate::domain::models::{
-    AccessGrant, Column, ColumnConfig, Database, DatabaseId, PropertyDefinitionId, Table, TableId,
+    Column, ColumnConfig, Database, DatabaseId, PropertyDefinitionId, Table, TableId,
 };
 
 /// One table the viewer can see, with what the service needs to run SQL
@@ -29,7 +30,7 @@ pub struct TableEntry {
     /// The table.
     pub table: Table,
     /// The viewer's grant on the database.
-    pub grant: AccessGrant,
+    pub grant: AccessLevel,
     /// The columns, in display order. Lookup columns are not here: they are
     /// derived and have no cells.
     pub columns: Vec<ColumnEntry>,
@@ -82,7 +83,7 @@ pub fn build_entries(
     tables: &[Table],
     columns: &[Column],
     definitions: &HashMap<PropertyDefinitionId, PropertyDefinitionWithOptions>,
-    grants: &HashMap<DatabaseId, AccessGrant>,
+    grants: &HashMap<DatabaseId, AccessLevel>,
 ) -> Vec<TableEntry> {
     let databases_by_id: HashMap<DatabaseId, &Database> =
         databases.iter().map(|d| (d.id, d)).collect();
@@ -98,7 +99,7 @@ pub fn build_entries(
         .filter_map(|table| {
             let grant = *grants.get(&table.database_id)?;
             let database = *databases_by_id.get(&table.database_id)?;
-            let writable = grant.can_write();
+            let writable = grant >= AccessLevel::Edit;
             let columns = columns_by_table
                 .get(&table.id)
                 .into_iter()
