@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::domain::{
     models::{
-        EnrichedGithubPullRequest, GITHUB_PULL_REQUEST_FOREIGN_ENTITY_SOURCE,
+        EnrichedGithubPullRequest, GITHUB_PULL_REQUEST_FOREIGN_ENTITY_SOURCE, GitRef,
         GithubAppInstallationSource, GithubAuthenticatedUser, GithubError,
         GithubInstallationAccessToken, GithubKey, GithubPullRequestCheckRun,
         GithubPullRequestComment, GithubPullRequestDetails, GithubPullRequestStatus,
@@ -1361,7 +1361,10 @@ fn expected_pull_request_metadata(
         labels: None,
         reviews: None,
         base: None,
-        head: None,
+        head: Some(GitRef {
+            name: Some("feature/some-branch".to_string()),
+            sha: None,
+        }),
     })
     .unwrap()
 }
@@ -1579,7 +1582,11 @@ fn expected_pull_request_metadata_from_details(
         labels: None,
         reviews: None,
         base: None,
-        head: None,
+        // The fixture's webhook supplies the head even when live details omit it.
+        head: Some(GitRef {
+            name: Some("feature/some-branch".to_string()),
+            sha: None,
+        }),
     })
     .unwrap()
 }
