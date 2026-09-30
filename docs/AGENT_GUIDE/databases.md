@@ -119,6 +119,15 @@ users can open references but cannot select or remove them. Relation cells show
 current record names, and unavailable records have a readable label. Search and
 sorting skip relations; a relation filter can only test whether it is empty.
 
+Rows are read in the browser: the grid, relation pickers, CSV export and live
+answers run their SQL in the database engine over Soup GraphQL
+(`/items/soup/graphql`), while edits still go through `POST /databases/exec`.
+Rows keep the table's order unless the view sorts them. After each of your own
+edits the grid reads its rows again, and another viewer's edit reaches an open
+grid or answer within a moment through the gateway's table-changed message; a
+changed search or filter keeps the current rows on screen until the new ones
+arrive.
+
 Edits save automatically. A failed save appears as an actionable error above the grid.
 A concurrent edit can cause a version conflict: the latest values load and
 **Retry** reapplies the rejected change. A failed refresh after a successful save
