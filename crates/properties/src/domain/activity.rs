@@ -31,7 +31,10 @@ fn entity_type(property_entity: &PropertyEntityType) -> Option<EntityType> {
         PropertyEntityType::Thread => Some(EntityType::EmailThread),
         PropertyEntityType::CallRecord => Some(EntityType::Call),
         PropertyEntityType::Company => Some(EntityType::CrmCompany),
-        PropertyEntityType::CalendarEvent | PropertyEntityType::User => None,
+        // Rows are not Soup items; their cell edits have no activity surface.
+        PropertyEntityType::CalendarEvent
+        | PropertyEntityType::User
+        | PropertyEntityType::DatabaseRow => None,
     }
 }
 

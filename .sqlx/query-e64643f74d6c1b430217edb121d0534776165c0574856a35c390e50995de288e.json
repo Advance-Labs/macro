@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            ep.property_definition_id,\n            pd.team_id,\n            pd.user_id,\n            pd.display_name,\n            pd.data_type as \"data_type: DataType\",\n            pd.is_multi_select,\n            pd.is_system,\n            ep.values as \"values: serde_json::Value\"\n        FROM entity_properties ep\n        INNER JOIN property_definitions pd ON pd.id = ep.property_definition_id\n        WHERE ep.entity_id = $1\n          AND ep.entity_type = $2\n          AND (\n            pd.data_type <> $4\n            OR pd.user_id = $3\n            OR pd.team_id IN (SELECT tu.team_id FROM team_user tu WHERE tu.user_id = $3)\n          )\n        ORDER BY LOWER(pd.display_name)\n        ",
+  "query": "\n        INSERT INTO property_definitions (\n            id,\n            team_id,\n            user_id,\n            display_name,\n            data_type,\n            is_multi_select,\n            specific_entity_type\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7)\n        RETURNING\n            id,\n            team_id,\n            user_id,\n            database_id,\n            display_name,\n            data_type as \"data_type: DataType\",\n            is_multi_select,\n            specific_entity_type as \"specific_entity_type: Option<EntityType>\",\n            created_at,\n            updated_at\n        ",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "property_definition_id",
+        "name": "id",
         "type_info": "Uuid"
       },
       {
@@ -20,11 +20,16 @@
       },
       {
         "ordinal": 3,
+        "name": "database_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
         "name": "display_name",
         "type_info": "Text"
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "data_type: DataType",
         "type_info": {
           "Custom": {
@@ -46,25 +51,14 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "is_multi_select",
         "type_info": "Bool"
       },
       {
-        "ordinal": 6,
-        "name": "is_system",
-        "type_info": "Bool"
-      },
-      {
         "ordinal": 7,
-        "name": "values: serde_json::Value",
-        "type_info": "Jsonb"
-      }
-    ],
-    "parameters": {
-      "Left": [
-        "Text",
-        {
+        "name": "specific_entity_type: Option<EntityType>",
+        "type_info": {
           "Custom": {
             "name": "property_entity_type",
             "kind": {
@@ -79,11 +73,29 @@
                 "TASK",
                 "CALL_RECORD",
                 "CALENDAR_EVENT",
-                "INITIATIVE"
+                "INITIATIVE",
+                "DATABASE_ROW"
               ]
             }
           }
-        },
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
         "Text",
         {
           "Custom": {
@@ -102,6 +114,28 @@
               ]
             }
           }
+        },
+        "Bool",
+        {
+          "Custom": {
+            "name": "property_entity_type",
+            "kind": {
+              "Enum": [
+                "CHANNEL",
+                "CHAT",
+                "DOCUMENT",
+                "PROJECT",
+                "THREAD",
+                "USER",
+                "COMPANY",
+                "TASK",
+                "CALL_RECORD",
+                "CALENDAR_EVENT",
+                "INITIATIVE",
+                "DATABASE_ROW"
+              ]
+            }
+          }
         }
       ]
     },
@@ -109,12 +143,14 @@
       false,
       true,
       true,
+      true,
       false,
       false,
       false,
+      true,
       false,
-      true
+      false
     ]
   },
-  "hash": "f54491fb1559e95fd91f725c67f260e2057b1bf4679801f170bcf8f891027282"
+  "hash": "e64643f74d6c1b430217edb121d0534776165c0574856a35c390e50995de288e"
 }

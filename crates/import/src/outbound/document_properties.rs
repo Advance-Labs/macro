@@ -14,7 +14,7 @@ use models_properties::api::{
 };
 use models_properties::service::property_definition::PropertyDefinition;
 use models_properties::service::property_option::{PropertyOption, PropertyOptionValue};
-use models_properties::{DataType, EntityType};
+use models_properties::{DataType, EntityType, option_color};
 use properties::domain::model::TagScope;
 use properties::{EditReceipt, PropertiesService};
 use uuid::Uuid;
@@ -95,7 +95,7 @@ impl<P: PropertiesService> DocumentPropertiesApplicator<P> {
                     &definition,
                     &mut options,
                     label,
-                    Some(imported_tag_color(index)),
+                    Some(option_color(index)),
                 )
                 .await;
             let Some(option_id) = option_id else {
@@ -602,12 +602,4 @@ fn find_definition_by_name<'a>(
     definitions
         .iter()
         .find(|definition| definition.display_name.eq_ignore_ascii_case(name))
-}
-
-fn imported_tag_color(index: usize) -> &'static str {
-    const COLORS: [&str; 12] = [
-        "#0091FF", "#46A758", "#8E4EC6", "#F76B15", "#E93D82", "#12A594", "#FFB224", "#3E63DD",
-        "#E5484D", "#F5D90A", "#889096", "#E54D2E",
-    ];
-    COLORS[index % COLORS.len()]
 }

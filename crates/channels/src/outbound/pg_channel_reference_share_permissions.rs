@@ -82,6 +82,20 @@ async fn ensure_referenced_item_visible_to_channel(
             .context("failed to insert thread share permissions")?;
     }
 
+    // Database mentions grant view access without downgrading a recipient
+    // whose edit/comment grant was explicitly selected by the owner.
+    if item.entity_type() == ReferencedShareItemType::Database {
+        entity_access_db_utils::insert_direct_channel_grant_if_absent(
+            db,
+            &entity_id,
+            entity_access_db_utils::EntityType::Database,
+            &channel_id,
+            level,
+        )
+        .await?;
+        return Ok(());
+    }
+
     // Session and calendar event channel grants are canonical entity-access
     // rows. A reference must preserve explicit sharing and the originating
     // channel's control grant. Calendar events carry no SharePermission row.
@@ -144,6 +158,7 @@ async fn ensure_referenced_item_visible_to_channel(
 fn entity_access_type_for(item_type: ReferencedShareItemType) -> EntityType {
     match item_type {
         ReferencedShareItemType::AgentSession => EntityType::AgentSession,
+        ReferencedShareItemType::Database => EntityType::Database,
         ReferencedShareItemType::Document => EntityType::Document,
         ReferencedShareItemType::Chat => EntityType::Chat,
         ReferencedShareItemType::Project => EntityType::Project,
@@ -158,6 +173,7 @@ fn entity_access_db_type_for(
 ) -> entity_access_db_utils::EntityType {
     match item_type {
         ReferencedShareItemType::AgentSession => entity_access_db_utils::EntityType::AgentSession,
+        ReferencedShareItemType::Database => entity_access_db_utils::EntityType::Database,
         ReferencedShareItemType::Document => entity_access_db_utils::EntityType::Document,
         ReferencedShareItemType::Chat => entity_access_db_utils::EntityType::Chat,
         ReferencedShareItemType::Project => entity_access_db_utils::EntityType::Project,

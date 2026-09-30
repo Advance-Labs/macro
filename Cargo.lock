@@ -3299,7 +3299,7 @@ dependencies = [
 
 [[package]]
 name = "cache-wasm"
-version = "0.6.28"
+version = "0.6.30"
 dependencies = [
  "async-lock",
  "cache-core",
@@ -8021,6 +8021,7 @@ dependencies = [
  "async-stream",
  "chrono",
  "chrono-tz",
+ "entity_access",
  "futures",
  "graphql_common",
  "macro_user_id",

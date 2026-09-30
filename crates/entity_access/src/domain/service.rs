@@ -8,7 +8,7 @@ use crate::domain::{
         CrmEntityAccess, Entity, EntityAccessAuth, EntityAccessReceipt, EntityPermission,
         EntityType, RequiredPermission, TeamRole, UserTeamInfo, ViewAccessLevel,
     },
-    ports::{AccessRepository, EntityAccessService},
+    ports::{AccessRepository, AccessibleDatabases, EntityAccessService},
 };
 use futures::{StreamExt, stream};
 use macro_user_id::{
@@ -68,6 +68,8 @@ where
                 Ok(direct.max(inherited))
             }
             EntityType::Initiative => self.repo.get_initiative_access(entity_id, user_id).await,
+            EntityType::Database => self.repo.get_database_access(entity_id, user_id).await,
+            EntityType::DatabaseRow => self.repo.get_database_row_access(entity_id, user_id).await,
             EntityType::CalendarEvent => {
                 self.repo
                     .get_calendar_event_access(entity_id, user_id)
@@ -196,7 +198,9 @@ where
             | EntityType::Project
             | EntityType::EmailThread
             | EntityType::Call
-            | EntityType::Initiative => {
+            | EntityType::Initiative
+            | EntityType::Database
+            | EntityType::DatabaseRow => {
                 let access_level = self
                     .repo
                     .get_team_entity_access(bot_id, team_id, entity_id, entity_type)
@@ -272,6 +276,19 @@ where
                 Err(AccessError::BadRequest("Unsupported bot entity type"))
             }
         }
+    }
+}
+
+impl<R> AccessibleDatabases for EntityAccessServiceImpl<R>
+where
+    R: AccessRepository,
+{
+    #[tracing::instrument(err, skip(self))]
+    async fn accessible_databases(
+        &self,
+        user_id: &MacroUserId<Lowercase<'_>>,
+    ) -> Result<Vec<(Uuid, AccessLevel)>, AccessError> {
+        self.repo.list_database_access(user_id).await
     }
 }
 
@@ -440,7 +457,9 @@ where
             | EntityType::Call
             | EntityType::CalendarEvent
             | EntityType::AgentSession
-            | EntityType::Initiative => {
+            | EntityType::Initiative
+            | EntityType::Database
+            | EntityType::DatabaseRow => {
                 self.get_optimized_access(entity_id, user_id, entity_type)
                     .await
             }
@@ -517,7 +536,9 @@ where
             | EntityType::Call
             | EntityType::CalendarEvent
             | EntityType::AgentSession
-            | EntityType::Initiative => {
+            | EntityType::Initiative
+            | EntityType::Database
+            | EntityType::DatabaseRow => {
                 let access = self
                     .get_optimized_access(entity_id, user_id, entity_type)
                     .await?;
@@ -620,6 +641,8 @@ where
             // Agent sessions grant their owner directly and their originating
             // channel as a channel source, both of which the generic accessor
             // query expands.
+            // A database's audience is exactly its `entity_access` rows, so it
+            // resolves the same way a document's does.
             EntityType::Document
             | EntityType::Chat
             | EntityType::Project
@@ -627,12 +650,27 @@ where
             | EntityType::AgentSession
             | EntityType::Initiative
             | EntityType::CrmCompany
-            | EntityType::CrmContact => {
+            | EntityType::CrmContact
+            | EntityType::Database => {
                 let entity_id = Uuid::parse_str(entity_id).map_err(|_| {
                     AccessError::BadRequest("invalid entity_id for get_users_by_entity")
                 })?;
 
                 self.repo.get_entity_users(&entity_id, entity_type).await
+            }
+            // A row's audience is its database's: rows carry no grants.
+            EntityType::DatabaseRow => {
+                let row_id = Uuid::parse_str(entity_id).map_err(|_| {
+                    AccessError::BadRequest("invalid row_id for get_users_by_entity")
+                })?;
+                match self.repo.get_database_row_database(&row_id).await? {
+                    Some(database_id) => {
+                        self.repo
+                            .get_entity_users(&database_id, EntityType::Database)
+                            .await
+                    }
+                    None => Ok(Vec::new()),
+                }
             }
             EntityType::Channel => {
                 let channel_id = Uuid::parse_str(entity_id).map_err(|_| {

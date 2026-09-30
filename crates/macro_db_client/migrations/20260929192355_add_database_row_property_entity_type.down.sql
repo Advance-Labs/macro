@@ -1,0 +1,1 @@
+-- Postgres cannot drop an enum value; the type keeps DATABASE_ROW.
