@@ -17,7 +17,59 @@ use ai_toolset::ToolSet as _;
 
 #[test]
 fn subagent_toolset_passes_schema_validation() {
-    let _ = subagent_toolset();
+    let tools = subagent_toolset();
+    for name in [
+        "ListDatabases",
+        "DescribeDatabase",
+        "QueryDatabase",
+        "CreateDatabase",
+        "CreateTable",
+        "RenameTable",
+        "AddColumn",
+        "AddColumnOptions",
+        "SaveDatabaseView",
+    ] {
+        assert!(
+            tools.tools.contains_key(name),
+            "delegated agents need {name}"
+        );
+    }
+}
+
+#[test]
+fn database_only_toolset_exposes_exactly_its_database_capabilities() {
+    let tools = database_tools();
+    let names = tools
+        .tools
+        .keys()
+        .map(String::as_str)
+        .collect::<std::collections::BTreeSet<_>>();
+    let expected = [
+        "ListDatabases",
+        "DescribeDatabase",
+        "QueryDatabase",
+        "CreateDatabase",
+        "CreateTable",
+        "RenameDatabase",
+        "RenameTable",
+        "ReorderTables",
+        "DeleteTable",
+        "AddColumn",
+        "AddColumnOptions",
+        "RenameColumn",
+        "ChangeColumnType",
+        "DeleteColumn",
+        "ReorderColumns",
+        "SaveDatabaseView",
+        "SaveDatabaseQuery",
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(names, expected);
+    assert!(
+        tools.user_tools.is_empty(),
+        "database actions must not expose email/calendar composers"
+    );
 }
 
 #[test]
@@ -71,6 +123,23 @@ fn project_workflows_are_available_in_every_host_alongside_folder_and_property_t
             );
         }
     }
+}
+
+#[test]
+fn document_answers_expose_only_discovery_and_read_only_query() {
+    let tools = database_read_only_tools();
+    let names = tools
+        .tools
+        .keys()
+        .map(String::as_str)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        names,
+        ["ListDatabases", "DescribeDatabase", "QueryDatabase"]
+            .into_iter()
+            .collect()
+    );
+    assert!(tools.user_tools.is_empty());
 }
 
 /// An agent session finishes user tools in the turn, so it keeps chat's

@@ -843,6 +843,7 @@ dependencies = [
  "contacts",
  "cool_asserts",
  "crm",
+ "databases",
  "dateparser",
  "documents",
  "email",
@@ -895,6 +896,7 @@ dependencies = [
  "remote_env_var",
  "reqwest 0.13.4",
  "rootcause",
+ "saved_views",
  "schemars 1.2.1",
  "search_service_client",
  "secretsmanager_client",
@@ -5323,6 +5325,52 @@ dependencies = [
 ]
 
 [[package]]
+name = "databases"
+version = "0.1.0"
+dependencies = [
+ "activity",
+ "ai_toolset",
+ "anyhow",
+ "async-trait",
+ "axum",
+ "bot_id",
+ "chrono",
+ "connection_gateway_client",
+ "database_sql",
+ "entity_access",
+ "entity_access_db_utils",
+ "entity_mutation",
+ "filter_ast",
+ "item_filters",
+ "macro_authorization",
+ "macro_db_migrator",
+ "macro_event_broker",
+ "macro_event_topics",
+ "macro_user_id",
+ "macro_uuid",
+ "model-entity",
+ "model-error-response",
+ "models_permissions",
+ "models_properties",
+ "properties",
+ "rand 0.9.4",
+ "rootcause",
+ "saved_views",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "url",
+ "utoipa",
+ "uuid",
+ "workspace-hack",
+]
+
+[[package]]
 name = "dataloss_prevention_handler"
 version = "0.1.0"
 dependencies = [
@@ -5778,6 +5826,7 @@ dependencies = [
  "connection_gateway_client",
  "cookie",
  "crm",
+ "databases",
  "document_storage_service_client",
  "documents",
  "doppleganger",
@@ -5910,6 +5959,7 @@ dependencies = [
  "cool_asserts",
  "cowlike",
  "crm",
+ "databases",
  "dictation",
  "document_sub_type",
  "documents",
@@ -11367,6 +11417,7 @@ dependencies = [
  "connection_gateway_client",
  "crm",
  "database_env_vars",
+ "databases",
  "documents",
  "doppler-config",
  "email",

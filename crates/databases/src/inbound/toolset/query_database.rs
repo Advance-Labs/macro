@@ -1,0 +1,383 @@
+//! QueryDatabase tool: the read *and* write verb for Macro Databases.
+
+use std::collections::HashMap;
+
+use ai_toolset::{
+    AsyncTool, RequestContext, ServiceContext, ToolAnnotated, ToolAnnotations, ToolResult,
+};
+use async_trait::async_trait;
+use entity_access::domain::ports::EntityAccessService;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use super::{DatabasesToolContext, query_error, sql_guide};
+use crate::domain::models::{AlteredColumn, ExecOutcome, ExecRequest, QueryResult, SqlValue};
+use crate::domain::ports::DatabasesService;
+
+/// Run SQL against the user's databases.
+#[derive(Debug, Deserialize, JsonSchema, Clone)]
+#[serde(rename_all = "camelCase")]
+#[schemars(
+    title = "QueryDatabase",
+    description = concat!(
+        "\
+Run SQL against the current user's Macro databases — the only way to read or change their \
+rows. SELECT to answer a question, INSERT/UPDATE/DELETE to change data. One statement per \
+call.\n\
+\n\
+**Every table the user can see is already in scope, across all of their databases.** The \
+statement runs as the user against exactly what they are allowed to read: a table they cannot \
+see simply does not exist, and a table they only have view access to is read-only. Always pass \
+`databaseId` for the database the statement is about, so its tables win name ties.\n\
+\n\
+**Call DescribeDatabase first unless you already know the exact table and column names.** \
+Names are the display names the user typed, so quote the ones with spaces. If a statement \
+fails, the error names what was wrong and suggests the closest name — read it, fix it, retry.\n\
+\n\
+## Dialect\n\
+\n",
+        sql_guide!(),
+        "\n\
+\n\
+To change records, first SELECT the rows you mean (the first column is `row_id`), then \
+UPDATE or DELETE each one by its id. After changing rows, SELECT the affected records to \
+verify the actual result. On a connection failure, inspect before retrying an INSERT.\n\
+To create a row and relate it in one go, INSERT it with the relation column set to the target \
+row ids (`INSERT INTO invites (guest, status) VALUES (['<guest row id>'], 'Sent')`); the new \
+row's id is in `insertedRowIds`.\n\
+\n\
+Results come back as columns and rows. A column whose values are entity ids carries an \
+`entityType`, which is how the app renders it as a clickable chip rather than as raw text — \
+prefer selecting an entity column over stringifying it. Writes report `changesApplied` and, \
+for inserts, the `insertedRowIds` the server minted.\n\
+\n\
+To answer a question about the data or draw a chart for the user, check the SELECT here, then \
+save it with SaveDatabaseQuery and paste the block it returns: it stays live, where a pasted \
+result goes stale."
+    )
+)]
+pub struct QueryDatabase {
+    /// The statement(s) to run.
+    #[schemars(
+        description = "The statement to run, as one string. Use the table and column names \
+                       DescribeDatabase reported, quoted when they have spaces."
+    )]
+    pub sql: String,
+    /// The database the statement is about, when known. Its tables win over
+    /// same-named tables of other databases, so a name collision such as two
+    /// databases each holding a "Table 1" never has to be qualified away.
+    #[schemars(
+        description = "Id of the database the statement is about, from ListDatabases or \
+                       DescribeDatabase. Pass it whenever you know it: this database's tables \
+                       take precedence when another database has a table of the same name. \
+                       Tables of other databases stay reachable for joins."
+    )]
+    #[serde(default)]
+    pub database_id: Option<Uuid>,
+    /// Optional versions from a previous QueryDatabase read. Reject the write
+    /// if a listed table being written changed. Read-only dependencies are not
+    /// guarded; omit for a read or intentional blind edit.
+    #[serde(default)]
+    pub base_versions: Option<Vec<ToolTableVersion>>,
+    /// Preferred native result presentation. For an explicit chart request,
+    /// select bar, line, or pie and return a label column plus numeric values.
+    /// The app falls back to a table if the data cannot support that display.
+    #[serde(default)]
+    pub display: Option<QueryDatabaseDisplay>,
+}
+
+/// Presentation hint for a query result; it does not affect SQL execution.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum QueryDatabaseDisplay {
+    /// Show the returned rows and columns.
+    Table,
+    /// Show one numeric value.
+    Scalar,
+    /// Compare categories with a bar chart.
+    Bar,
+    /// Show an ordered trend with a line chart.
+    Line,
+    /// Show category proportions with a pie chart.
+    Pie,
+}
+
+/// Read-only query capability for document answers and automatic discovery.
+#[derive(Debug, Deserialize, JsonSchema, Clone)]
+#[serde(rename_all = "camelCase")]
+#[schemars(
+    title = "QueryDatabase",
+    description = concat!(
+        "Read Macro database records with a SELECT. Discover the relevant database with ListDatabases, then call DescribeDatabase to see ALL of its tables and exact columns. This tool cannot change records, schema, or saved views; the query service rejects writes regardless of the caller's edit permission. Results are permission-filtered for the current user. Inspect truncatedTables before reporting totals.\n\n## Dialect\n\n",
+        sql_guide!(),
+    )
+)]
+pub struct ReadOnlyQueryDatabase {
+    /// The SELECT to run, using the names DescribeDatabase reported.
+    pub sql: String,
+}
+
+impl ToolAnnotated for ReadOnlyQueryDatabase {
+    const ANNOTATIONS: ToolAnnotations = ToolAnnotations::read_only("Query database");
+}
+
+#[async_trait]
+impl<S, E> AsyncTool<DatabasesToolContext<S, E>> for ReadOnlyQueryDatabase
+where
+    S: DatabasesService,
+    E: EntityAccessService,
+{
+    type Output = QueryDatabaseResponse;
+
+    #[tracing::instrument(skip_all, fields(user_id = ?request_context.user_id), err)]
+    async fn call(
+        &self,
+        service_context: ServiceContext<DatabasesToolContext<S, E>>,
+        request_context: RequestContext,
+    ) -> ToolResult<Self::Output> {
+        service_context
+            .service
+            .query_sql(
+                service_context.viewer(&request_context.user_id),
+                self.sql.clone(),
+            )
+            .await
+            .map(Into::into)
+            .map_err(query_error)
+    }
+}
+
+/// Version of one table actually read by a query.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolTableVersion {
+    /// Stable table id, not a SQL name.
+    pub table_id: Uuid,
+    /// Version acknowledged by the read.
+    pub version: i64,
+}
+
+impl ToolAnnotated for QueryDatabase {
+    // Not read-only: the same tool is the write path. Not idempotent either —
+    // re-running an INSERT inserts again.
+    const ANNOTATIONS: ToolAnnotations = ToolAnnotations::destructive("Query database");
+}
+
+/// One result column, with the provenance that drives chip rendering.
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolResultColumn {
+    /// Column name or alias, as the statement named it.
+    pub name: String,
+    /// The kind of entity this column's ids refer to, when it holds ids. The
+    /// app renders those as chips.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity_type: Option<String>,
+}
+
+/// One SELECT's result set.
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolResultSet {
+    /// Result columns, in select order.
+    pub columns: Vec<ToolResultColumn>,
+    /// Rows as JSON scalars, in column order.
+    pub rows: Vec<Vec<serde_json::Value>>,
+}
+
+impl From<QueryResult> for ToolResultSet {
+    fn from(result: QueryResult) -> Self {
+        Self {
+            columns: result
+                .columns
+                .into_iter()
+                .map(|column| ToolResultColumn {
+                    name: column.name,
+                    entity_type: column.entity_type.map(|t| t.as_ref().to_string()),
+                })
+                .collect(),
+            rows: result
+                .rows
+                .into_iter()
+                .map(|row| row.into_iter().map(json_scalar).collect())
+                .collect(),
+        }
+    }
+}
+
+/// Render one cell as a plain JSON scalar.
+fn json_scalar(value: SqlValue) -> serde_json::Value {
+    match value {
+        SqlValue::Null => serde_json::Value::Null,
+        SqlValue::Integer(i) => serde_json::Value::from(i),
+        SqlValue::Real(f) => serde_json::Number::from_f64(f)
+            .map(serde_json::Value::Number)
+            // A non-finite REAL has no JSON spelling; its text form is better
+            // than dropping the cell to null and pretending it was empty.
+            .unwrap_or_else(|| serde_json::Value::String(f.to_string())),
+        SqlValue::Text(text) => serde_json::Value::String(text),
+    }
+}
+
+/// Response from the QueryDatabase tool.
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryDatabaseResponse {
+    /// One result set per SELECT, in statement order.
+    pub results: Vec<ToolResultSet>,
+    /// How many rows the statement changed.
+    pub changes_applied: usize,
+    /// Ids the server minted for inserted rows, in insertion order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inserted_row_ids: Vec<Uuid>,
+    /// New version of every table written, keyed by table id.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub new_versions: HashMap<Uuid, i64>,
+    /// Versions of the tables this query actually read. Supply these as
+    /// baseVersions to guard tables a later edit writes. Tables it only reads
+    /// are not guarded.
+    pub read_versions: Vec<ToolTableVersion>,
+    /// Magic tables whose materialization hit its row cap. Any aggregate over
+    /// one of these is computed on a partial table — say so rather than
+    /// reporting the number as a total.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub truncated_tables: Vec<String>,
+    /// A human-readable summary of what the statement did.
+    pub summary: String,
+}
+
+#[async_trait]
+impl<S, E> AsyncTool<DatabasesToolContext<S, E>> for QueryDatabase
+where
+    S: DatabasesService,
+    E: EntityAccessService,
+{
+    type Output = QueryDatabaseResponse;
+
+    #[tracing::instrument(skip_all, fields(user_id = ?request_context.user_id), err)]
+    async fn call(
+        &self,
+        service_context: ServiceContext<DatabasesToolContext<S, E>>,
+        request_context: RequestContext,
+    ) -> ToolResult<Self::Output> {
+        tracing::info!("Query database");
+
+        // No receipt here, and that is the design: the catalog the service
+        // builds for this viewer *is* the authorization, so there is no single
+        // entity to mint a receipt for.
+        let outcome = service_context
+            .service
+            .exec_sql(
+                service_context.viewer(&request_context.user_id),
+                ExecRequest {
+                    scope: self.database_id,
+                    sql: self.sql.clone(),
+                    base_versions: self.base_versions.as_ref().map(|versions| {
+                        versions
+                            .iter()
+                            .map(|entry| {
+                                (
+                                    entry.table_id,
+                                    crate::domain::models::TableVersion(entry.version),
+                                )
+                            })
+                            .collect()
+                    }),
+                },
+            )
+            .await
+            .map_err(query_error)?;
+
+        Ok(outcome.into())
+    }
+}
+
+impl From<ExecOutcome> for QueryDatabaseResponse {
+    fn from(outcome: ExecOutcome) -> Self {
+        let results: Vec<ToolResultSet> = outcome.results.into_iter().map(Into::into).collect();
+        let mut summary = summarize(&results, outcome.changes_applied, &outcome.truncated_tables);
+        if let Some(altered) = &outcome.altered_column {
+            summary = altered_summary(altered);
+        }
+        let mut read_versions: Vec<_> = outcome
+            .read_versions
+            .into_iter()
+            .map(|(table_id, version)| ToolTableVersion {
+                table_id,
+                version: version.0,
+            })
+            .collect();
+        read_versions.sort_by_key(|entry| entry.table_id);
+
+        Self {
+            results,
+            changes_applied: outcome.changes_applied,
+            inserted_row_ids: outcome.inserted_row_ids,
+            truncated_tables: outcome.truncated_tables,
+            new_versions: outcome
+                .new_versions
+                .into_iter()
+                .map(|(table_id, version)| (table_id, version.0))
+                .collect(),
+            summary,
+            read_versions,
+        }
+    }
+}
+
+/// What an `ALTER COLUMN` did, including what `USING NULL` cost.
+fn altered_summary(altered: &AlteredColumn) -> String {
+    let mut summary = format!("Changed \"{}\" to {}.", altered.name, altered.to);
+    if altered.cleared_cells > 0 {
+        let plural = if altered.cleared_cells == 1 { "" } else { "s" };
+        summary.push_str(&format!(
+            " Emptied {} cell{plural} whose value did not fit.",
+            altered.cleared_cells
+        ));
+    }
+    if altered.trimmed_cells > 0 {
+        let plural = if altered.trimmed_cells == 1 { "" } else { "s" };
+        summary.push_str(&format!(
+            " Kept only the first value of {} cell{plural}.",
+            altered.trimmed_cells
+        ));
+    }
+    summary
+}
+
+/// Say what happened, so a model does not have to infer "it worked" from an
+/// empty result set — which reads identically to "nothing matched".
+pub(super) fn summarize(
+    results: &[ToolResultSet],
+    changes_applied: usize,
+    truncated_tables: &[String],
+) -> String {
+    let rows: usize = results.iter().map(|r| r.rows.len()).sum();
+    let mut parts = Vec::new();
+
+    if !results.is_empty() {
+        parts.push(match rows {
+            0 => "No rows matched.".to_string(),
+            1 => "Returned 1 row.".to_string(),
+            n => format!("Returned {n} rows."),
+        });
+    }
+    if changes_applied > 0 {
+        let plural = if changes_applied == 1 { "" } else { "s" };
+        parts.push(format!("Applied {changes_applied} row change{plural}."));
+    }
+    if !truncated_tables.is_empty() {
+        // A capped table looks exactly like a complete one in the result set,
+        // and a model that cannot tell will report a partial COUNT as a total.
+        parts.push(format!(
+            "These tables hit their row cap and are incomplete: {}. Narrow the query rather \
+             than treating any aggregate over them as a total.",
+            truncated_tables.join(", ")
+        ));
+    }
+    if parts.is_empty() {
+        return "The statement ran and changed nothing.".to_string();
+    }
+    parts.join(" ")
+}

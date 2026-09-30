@@ -257,6 +257,15 @@ pub async fn build_tool_service_context(
             pool.clone(),
             entity_access_service.clone(),
         ),
+        // No gateway credentials or Kafka in this host, so database writes
+        // commit without a liveness ping or a domain event; open clients
+        // refresh on their own.
+        databases_tool_context: ai_tools::build_databases_tool_context(
+            pool.clone(),
+            entity_access_service.clone(),
+            ai_tools::ToolTableEventPublisher::NoOp(Default::default()),
+            ai_tools::MaybeToolEventBroker::NoOp(Default::default()),
+        ),
         import_tool_context: ToolImportToolContext::unwired(),
         chat_tool_context,
         channel_tool_context: ai_tools::build_channel_tool_context(
@@ -265,7 +274,7 @@ pub async fn build_tool_service_context(
         ),
         bot_tool_context: ai_tools::build_bot_tool_context(
             pool.clone(),
-            ai_tools::ToolBotEventBroker::NoOp(Default::default()),
+            ai_tools::MaybeToolEventBroker::NoOp(Default::default()),
             entity_access_service.clone(),
             config.document_storage_service_url.clone(),
         ),

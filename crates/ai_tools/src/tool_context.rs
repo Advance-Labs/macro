@@ -28,6 +28,7 @@ use connection::domain::ports::ConnectionService;
 use connection_gateway_client::ConnectionGatewayClient;
 use contacts::{domain::service::SqsContactsIngress, outbound::ingress::SqsContactsQueue};
 use crm::inbound::toolset::CrmToolContext;
+use databases::inbound::toolset::DatabasesToolContext;
 use documents::{
     domain::ports::{TaskPropertiesPort, task_property_edit_receipt},
     inbound::toolset::DocumentToolContext,
@@ -106,17 +107,17 @@ pub type ToolEmailService = EmailServiceImpl<
 /// graceful shutdown by the hosting process.
 pub type ToolEventBroker = MacroEventBrokerService<KafkaEventPublisher, TaskTracker>;
 
-/// Event broker used by bot tools across hosts that either do or do not have
-/// Kafka lifecycle publishing configured.
+/// Event broker for tool domains (bots, databases) across hosts that either
+/// do or do not have Kafka configured.
 #[derive(Clone)]
-pub enum ToolBotEventBroker {
-    /// Publish bot lifecycle events through the shared Kafka broker.
+pub enum MaybeToolEventBroker {
+    /// Publish through the shared Kafka broker.
     Real(ToolEventBroker),
-    /// Drop lifecycle events in hosts that do not configure Kafka.
+    /// Drop events in hosts that do not configure Kafka.
     NoOp(NoopMacroEventBroker),
 }
 
-impl MacroEventBroker for ToolBotEventBroker {
+impl MacroEventBroker for MaybeToolEventBroker {
     fn send_event<E: MacroEvent + ?Sized>(
         &self,
         event: &E,
@@ -129,7 +130,7 @@ impl MacroEventBroker for ToolBotEventBroker {
 }
 
 /// Concrete bot domain service used by AI tools.
-pub type ToolBotService = BotServiceImpl<PgBotsRepo, ToolBotEventBroker>;
+pub type ToolBotService = BotServiceImpl<PgBotsRepo, MaybeToolEventBroker>;
 
 /// Bot-management AI tool context.
 pub type ToolBotToolContext = BotToolContext<ToolBotService, ToolEntityAccessService>;
@@ -138,7 +139,7 @@ pub type ToolBotToolContext = BotToolContext<ToolBotService, ToolEntityAccessSer
 /// entity-access service.
 pub fn build_bot_tool_context(
     pool: sqlx::PgPool,
-    event_broker: ToolBotEventBroker,
+    event_broker: MaybeToolEventBroker,
     entity_access_service: Arc<ToolEntityAccessService>,
     document_storage_service_url: String,
 ) -> ToolBotToolContext {
@@ -900,7 +901,7 @@ pub type ToolPropertiesService = properties::PropertiesServiceImpl<
     properties::PropertiesPgRepo,
     properties::PermissionServiceImpl<ToolEntityAccessService>,
     NoOpNotificationService,
-    ToolBotEventBroker,
+    MaybeToolEventBroker,
 >;
 
 /// Imported-document property enrichment backed by the AI tool host's Properties service.
@@ -919,7 +920,7 @@ pub fn build_properties_service(
     properties_service_with_events(
         pool,
         entity_access_service,
-        ToolBotEventBroker::NoOp(Default::default()),
+        MaybeToolEventBroker::NoOp(Default::default()),
     )
 }
 
@@ -932,14 +933,14 @@ pub fn build_properties_service_with_broker(
     properties_service_with_events(
         pool,
         entity_access_service,
-        ToolBotEventBroker::Real(broker),
+        MaybeToolEventBroker::Real(broker),
     )
 }
 
 fn properties_service_with_events(
     pool: sqlx::PgPool,
     entity_access_service: Arc<ToolEntityAccessService>,
-    broker: ToolBotEventBroker,
+    broker: MaybeToolEventBroker,
 ) -> Arc<ToolPropertiesService> {
     Arc::new(
         properties::PropertiesServiceImpl::new(
@@ -1040,6 +1041,43 @@ pub fn build_reminders_tool_context(
             reminders::outbound::pg_reminders_repo::PgRemindersRepo::new(pool),
         ),
         entity_access_service,
+    )
+}
+
+/// Table-changed fan-out for AI tool hosts.
+///
+/// Owned by the databases crate, where the HTTP roots reach it too; re-exported
+/// under the tool-host name the AI tool wiring uses.
+pub use databases::outbound::gateway_event_publisher::MaybeGatewayTableEventPublisher as ToolTableEventPublisher;
+
+/// Type alias for the databases service implementation used by AI tools.
+///
+/// The same port implementations the HTTP surface runs on, so an agent's SQL
+/// is compiled by `database_sql` against the acting user's catalog exactly as
+/// the HTTP surface's is.
+pub type ToolDatabasesService =
+    databases::outbound::build::PgDatabasesService<ToolTableEventPublisher, MaybeToolEventBroker>;
+
+/// Type alias for the databases tool context.
+pub type ToolDatabasesToolContext =
+    DatabasesToolContext<ToolDatabasesService, ToolEntityAccessService>;
+
+/// Build the databases tool context from a database pool.
+///
+/// The schema tools go through the same access receipts the HTTP API does, so
+/// this needs the entity access service as well as the pool; the publisher is
+/// what lets an agent's write reach open clients, and the broker is what puts
+/// it on the acting user's activity feed.
+pub fn build_databases_tool_context(
+    pool: sqlx::PgPool,
+    entity_access_service: Arc<ToolEntityAccessService>,
+    events: ToolTableEventPublisher,
+    broker: MaybeToolEventBroker,
+) -> ToolDatabasesToolContext {
+    DatabasesToolContext::new(
+        databases::outbound::build_service(pool.clone(), events, broker),
+        entity_access_service,
+        saved_views::PgViewStorage::new(pool),
     )
 }
 
@@ -1485,6 +1523,7 @@ pub struct ToolServiceContext {
     pub calendar_tool_context: ToolCalendarToolContext,
     pub notification_tool_context: ToolNotificationToolContext,
     pub reminders_tool_context: ToolRemindersToolContext,
+    pub databases_tool_context: ToolDatabasesToolContext,
     /// Import staging/tracking tools. `unwired` in hosts that can't build
     /// the import service — calls there fail with a clear error.
     pub import_tool_context: ToolImportToolContext,
@@ -1521,6 +1560,7 @@ impl ToolServiceContext {
         self.project_tool_context = self.project_tool_context.with_actor(actor);
         self.initiative_tool_context = self.initiative_tool_context.with_actor(actor);
         self.channel_tool_context = self.channel_tool_context.with_actor(actor);
+        self.databases_tool_context = self.databases_tool_context.with_actor(actor);
         self
     }
 

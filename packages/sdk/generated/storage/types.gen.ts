@@ -5,6 +5,11 @@ export type ClientOptions = {
 };
 
 /**
+ * The access a viewer holds on a database, from its `entity_access` rows.
+ */
+export type AccessGrant = 'view' | 'comment' | 'edit' | 'owner';
+
+/**
  * Ordered from least to most access top -> bottom
  */
 export type AccessLevel = 'view' | 'comment' | 'edit' | 'owner';
@@ -72,6 +77,16 @@ export type ActiveMeetingsResponse = {
 export type ActivityType = 'view' | 'interact';
 
 /**
+ * Request body for adding options to a select column.
+ */
+export type AddColumnOptionsRequest = {
+    /**
+     * Display labels to add. Labels the column already has are ignored.
+     */
+    labels: Array<string>;
+};
+
+/**
  * Request body for favoriting an entity.
  */
 export type AddFavoriteRequest = {
@@ -82,7 +97,7 @@ export type AddFavoriteRequest = {
     /**
      * The type of the entity to favorite.
      */
-    entityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative';
+    entityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row';
 };
 
 /**
@@ -2240,6 +2255,33 @@ export type CallTokenResponse = {
 };
 
 /**
+ * Explicit column type configuration. Existing values must convert without loss.
+ */
+export type ChangeColumnTypeRequest = {
+    /**
+     * Table version shown when the type menu opened.
+     */
+    baseVersion: TableVersion;
+    /**
+     * Requested property type.
+     */
+    dataType: DataType;
+    /**
+     * Whether select, link or entity values may hold multiple items.
+     */
+    isMultiSelect?: boolean;
+    /**
+     * Related database; defaults to the current database.
+     */
+    linkToDatabaseId?: string | null;
+    /**
+     * Related table, when choosing a database-row relationship.
+     */
+    linkToTableId?: string | null;
+    specificEntityType?: null | EntityType;
+};
+
+/**
  * Channel metadata in soup payloads.
  */
 export type Channel = {
@@ -3133,7 +3175,7 @@ export type CollabSurfaceResponse = {
     /**
      * Type of the parent entity.
      */
-    parentEntityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative';
+    parentEntityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row';
     /**
      * Lifecycle state (`ready` for every surface visible via the API).
      */
@@ -3148,6 +3190,142 @@ export type CollabSurfaceTokenResponse = {
      * The signed JWT to pass to the sync-service websocket connect.
      */
     token: string;
+};
+
+/**
+ * A column: the placement of a property definition on a table.
+ *
+ * The definition carries name, [`DataType`], multi-select flag, and options;
+ * this carries only where it appears and column-kind configuration.
+ */
+export type Column = {
+    config?: null | ColumnConfig;
+    /**
+     * Optional label for this placement. The property's name still defines
+     * its SQL identifier, so renaming a column does not break saved queries.
+     */
+    display_name?: string | null;
+    /**
+     * Identifier of the placement.
+     */
+    id: string;
+    /**
+     * Whether the first nonempty value may settle this new text column's type.
+     */
+    infer_type?: boolean;
+    /**
+     * Fractional index for column ordering.
+     */
+    position: string;
+    /**
+     * The bound property definition.
+     */
+    property_definition_id: string;
+    /**
+     * Table the column appears on.
+     */
+    table_id: string;
+};
+
+/**
+ * How a new column obtains its definition.
+ */
+export type ColumnBindingRequest = {
+    /**
+     * Value type.
+     */
+    data_type: DataType;
+    /**
+     * Whether the column holds multiple values.
+     */
+    is_multi_select?: boolean;
+    kind: 'new';
+    /**
+     * Column display name.
+     */
+    name: string;
+    /**
+     * For a select or tag column, the labels SQL will accept. A select
+     * column created without any accepts nothing until options are added.
+     */
+    options?: Array<string>;
+} | {
+    kind: 'existing';
+    /**
+     * The definition to bind.
+     */
+    property_definition_id: string;
+};
+
+/**
+ * Column-kind specific configuration stored on the placement.
+ */
+export type ColumnConfig = {
+    /**
+     * Target database.
+     */
+    database_id: string;
+    kind: 'link';
+    /**
+     * Target table.
+     */
+    table_id: string;
+} | {
+    kind: 'lookup';
+    /**
+     * Target field on the other side (a definition id or magic column name).
+     */
+    target: string;
+    /**
+     * The link/entity column the lookup reads through.
+     */
+    via_column_id: string;
+};
+
+/**
+ * One column placement with the definition behind it.
+ */
+export type ColumnDetail = {
+    /**
+     * The placement.
+     */
+    column: Column;
+    /**
+     * The bound definition (name, type, options).
+     */
+    definition: PropertyDefinitionWithOptions;
+    /**
+     * Exact junction name for multi-valued or relation columns.
+     */
+    junction_sql_name?: string | null;
+    /**
+     * Whether this viewer can insert/delete edges in the junction.
+     */
+    junction_writable: boolean;
+    /**
+     * Stable read-only junction alias, when it is unambiguous in the catalog.
+     */
+    read_junction_sql_name?: string | null;
+    /**
+     * Name to use in SQL.
+     */
+    sql_name: string;
+    /**
+     * Whether SQL may write this column.
+     */
+    writable: boolean;
+};
+
+/**
+ * Table versions changed by a placement deletion or reorder.
+ */
+export type ColumnSchemaOutcome = {
+    /**
+     * Includes both endpoint tables when deleting relationship edges.
+     */
+    table_versions: {
+        [key: string]: TableVersion;
+    };
 };
 
 export type Comment = {
@@ -3451,6 +3629,38 @@ export type CreateChannelScopedBotResponse = {
     token: BotToken;
 };
 
+/**
+ * Request body for creating a column.
+ */
+export type CreateColumnRequest = {
+    /**
+     * Definition source.
+     */
+    binding: ColumnBindingRequest;
+    /**
+     * Infer the first value type of a newly owned text column.
+     */
+    infer_type?: boolean;
+    /**
+     * Database of the linked table (defaults to this database).
+     */
+    linkToDatabaseId?: string;
+    /**
+     * Link this column to another table (many-to-many).
+     */
+    linkToTableId?: string;
+};
+
+/**
+ * Response for a created column.
+ */
+export type CreateColumnResponse = {
+    /**
+     * Identifier of the new column placement.
+     */
+    columnId: string;
+};
+
 export type CreateCommentRequest = {
     anchor?: null | AnchorRequest;
     mentions?: null | Mentions;
@@ -3516,6 +3726,16 @@ export type CreateCrmContactRequest = {
     email: string;
     /**
      * Display name for the contact.
+     */
+    name: string;
+};
+
+/**
+ * Request body for creating a database.
+ */
+export type CreateDatabaseRequest = {
+    /**
+     * Display name.
      */
     name: string;
 };
@@ -3797,7 +4017,7 @@ export type CreateReminderRequest = {
     /**
      * Type of the entity to attach the reminder to. Requires `entityId`.
      */
-    entityType?: null | 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative';
+    entityType?: null | 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row';
     /**
      * When and how often the reminder fires.
      */
@@ -3861,6 +4081,16 @@ export type CreateSnippetResponse = {
      * The document ID of the created snippet.
      */
     documentId: string;
+};
+
+/**
+ * Request body for creating a table.
+ */
+export type CreateTableRequest = {
+    /**
+     * Display name.
+     */
+    name: string;
 };
 
 /**
@@ -4466,8 +4696,82 @@ export type CustomSpeakerAssignment = {
  */
 export type DataType = 'BOOLEAN' | 'DATE' | 'NUMBER' | 'STRING' | 'SELECT_NUMBER' | 'SELECT_STRING' | 'TAG' | 'ENTITY' | 'LINK';
 
+/**
+ * A database: a named collection of tables, owned and shared as one entity.
+ */
+export type Database = {
+    /**
+     * Creation time.
+     */
+    created_at: string;
+    /**
+     * Identifier.
+     */
+    id: string;
+    /**
+     * Display name.
+     */
+    name: string;
+    /**
+     * Owning user.
+     */
+    owner_id: string;
+    /**
+     * Set when trashed.
+     */
+    trashed_at?: string | null;
+};
+
+/**
+ * Everything a client needs to render and edit one database: tables,
+ * column placements with their definitions, and the SQL names the query
+ * surface exposes them under.
+ */
+export type DatabaseDetail = {
+    /**
+     * The database.
+     */
+    database: Database;
+    /**
+     * The viewer's access.
+     */
+    grant: AccessGrant;
+    /**
+     * Tables in tab order.
+     */
+    tables: Array<TableDetail>;
+};
+
+/**
+ * Recipient grants shown in the native sharing interface.
+ */
+export type DatabaseSharePermissions = {
+    /**
+     * Directly shared channels, including direct messages.
+     */
+    channelSharePermissions: Array<ChannelSharePermission>;
+    /**
+     * Database identifier; sharing has no separate policy entity.
+     */
+    id: string;
+    /**
+     * Current database owner.
+     */
+    owner: string;
+};
+
 export type DeleteAnchorInfo = AnchorId & {
     deleted: boolean;
+};
+
+/**
+ * Guard a column deletion against concurrent writes.
+ */
+export type DeleteColumnRequest = {
+    /**
+     * Table version shown in the confirmation.
+     */
+    baseVersion: TableVersion;
 };
 
 export type DeleteCommentRequest = {
@@ -5436,7 +5740,7 @@ export type EnsureCollabSurfaceRequest = {
     /**
      * Type of the parent entity access derives from.
      */
-    parentEntityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative';
+    parentEntityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row';
 };
 
 /**
@@ -5570,7 +5874,7 @@ export type EntityReference = {
 /**
  * Type of entity that can be referenced by entity properties.
  */
-export type EntityType = 'CALENDAR_EVENT' | 'CALL_RECORD' | 'CHANNEL' | 'CHAT' | 'COMPANY' | 'DOCUMENT' | 'INITIATIVE' | 'PROJECT' | 'TASK' | 'THREAD' | 'USER';
+export type EntityType = 'CALENDAR_EVENT' | 'CALL_RECORD' | 'CHANNEL' | 'CHAT' | 'COMPANY' | 'DATABASE_ROW' | 'DOCUMENT' | 'INITIATIVE' | 'PROJECT' | 'TASK' | 'THREAD' | 'USER';
 
 /**
  * A plain old json error response for use with axum.
@@ -5687,6 +5991,70 @@ export type ExcludedDefaultView = {
     userId: string;
 };
 
+/**
+ * Outcome of an [`ExecRequest`].
+ */
+export type ExecOutcome = {
+    /**
+     * How many row changes were applied to Postgres.
+     */
+    changes_applied: number;
+    /**
+     * Server-minted ids for rows the statement inserted.
+     */
+    inserted_row_ids: Array<string>;
+    /**
+     * New versions of every written table, for client-side liveness.
+     */
+    new_versions: {
+        [key: string]: TableVersion;
+    };
+    /**
+     * Databases containing the read dependencies, for live subscriptions.
+     */
+    read_database_ids: Array<string>;
+    /**
+     * Dependency set of the statement, for liveness subscription.
+     */
+    read_tables: Array<string>;
+    /**
+     * The version every user table in [`ExecOutcome::read_tables`] was at
+     * when this statement materialized it. Send these back as
+     * [`ExecRequest::base_versions`] to guard tables the follow-up statement
+     * writes. Versions for tables it only reads are ignored.
+     */
+    read_versions: {
+        [key: string]: TableVersion;
+    };
+    /**
+     * Result sets of the SELECT statements, in order.
+     */
+    results: Array<QueryResult>;
+    /**
+     * Magic tables whose materialization hit its row cap; aggregates over
+     * them are incomplete.
+     */
+    truncated_tables: Array<string>;
+};
+
+/**
+ * Request body for `POST /exec`.
+ */
+export type ExecRequestBody = {
+    /**
+     * Optional compare-and-swap: reject writes if a listed table being written
+     * has moved past the given version. Read-only dependencies are not guarded.
+     * Omitted → cell-level last-write-wins.
+     */
+    baseVersions?: {
+        [key: string]: number;
+    };
+    /**
+     * The statements to run, executed in one transaction.
+     */
+    sql: string;
+};
+
 export type ExportDocumentResponse = {
     /**
      * The presigned url to download the raw content of the document
@@ -5727,7 +6095,7 @@ export type Favorite = {
     /**
      * The type of the favorited entity.
      */
-    entityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative';
+    entityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row';
     /**
      * File type of the favorited document, when applicable.
      */
@@ -5749,7 +6117,7 @@ export type FavoriteEntityRef = {
     /**
      * The type of the favorited entity.
      */
-    entityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative';
+    entityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row';
 };
 
 /**
@@ -6668,6 +7036,28 @@ export type HashMap = {
 export type HighlightType = 1 | 2 | 3;
 
 /**
+ * An import is identified once, before sending, so retries cannot duplicate rows.
+ */
+export type ImportTable = {
+    /**
+     * Header names, in order. All imported values remain text.
+     */
+    columns: Array<string>;
+    /**
+     * New table's display name.
+     */
+    name: string;
+    /**
+     * Stable key for this import, retained through retries.
+     */
+    requestId: string;
+    /**
+     * Rectangular text rows. Empty fields are preserved.
+     */
+    rows: Array<Array<string>>;
+};
+
+/**
  * Display attribution for a comment imported from an external document.
  */
 export type ImportedAuthor = {
@@ -6694,6 +7084,35 @@ export type InFlightTurnSummary = {
      * Position in the session's log.
      */
     turn: number;
+};
+
+/**
+ * Settled schema and the version against which its first value can be written.
+ */
+export type InferColumnTypeOutcome = {
+    /**
+     * Updated placement, property definition, and stable SQL identifier.
+     */
+    column: ColumnDetail;
+    /**
+     * Version after settling the column.
+     */
+    table_version: TableVersion;
+};
+
+/**
+ * Request to settle an empty column's first-value type.
+ */
+export type InferColumnTypeRequest = {
+    /**
+     * Table version used when interpreting the first value.
+     */
+    base_version: TableVersion;
+    /**
+     * First-value type: STRING, NUMBER, or ENTITY.
+     */
+    data_type: DataType;
+    specific_entity_type?: null | EntityType;
 };
 
 /**
@@ -6902,6 +7321,25 @@ export type ListWebhooksResponse = {
      * The caller's webhooks, newest first. Signing secrets are omitted.
      */
     webhooks: Array<Webhook>;
+};
+
+/**
+ * A database as listed for a viewer.
+ */
+export type ListedDatabase = {
+    /**
+     * The database.
+     */
+    database: Database;
+    /**
+     * The viewer's access.
+     */
+    grant: AccessGrant;
+    /**
+     * Tables in tab order, so discovery can find a table independently of
+     * the containing database's display name.
+     */
+    tables: Array<Table>;
 };
 
 export type LocationResponseData = {
@@ -8124,6 +8562,14 @@ export type PropertyDefinition = {
 };
 
 /**
+ * Property definition with its associated options (service representation).
+ */
+export type PropertyDefinitionWithOptions = {
+    definition: PropertyDefinition;
+    property_options: Array<PropertyOption>;
+};
+
+/**
  * A single property-based filter condition.
  *
  * Each filter targets a specific property definition on entities of a given type,
@@ -8166,7 +8612,37 @@ export type PropertyInput = {
 };
 
 /**
- * Defines who owns a property - user-scoped, team-scoped, or system.
+ * A selectable option for select-type properties (service representation).
+ */
+export type PropertyOption = {
+    color?: string | null;
+    created_at: string;
+    display_order: number;
+    id: string;
+    property_definition_id: string;
+    updated_at: string;
+    value: PropertyOptionValue;
+};
+
+/**
+ * The value of a property option - either a string or a number.
+ */
+export type PropertyOptionValue = {
+    type: 'string';
+    /**
+     * String value for SelectString properties
+     */
+    value: string;
+} | {
+    type: 'number';
+    /**
+     * Number value for SelectNumber properties
+     */
+    value: number;
+};
+
+/**
+ * Defines who owns a property - user-scoped, team-scoped, database-scoped, or system.
  */
 export type PropertyOwner = {
     scope: 'user';
@@ -8174,6 +8650,9 @@ export type PropertyOwner = {
 } | {
     scope: 'team';
     team_id: string;
+} | {
+    database_id: string;
+    scope: 'database';
 } | {
     scope: 'system';
 };
@@ -8239,6 +8718,30 @@ export type PropertyValue = {
 };
 
 /**
+ * Request body for read-only SQL queries.
+ */
+export type QueryRequestBody = {
+    /**
+     * SQL to read. Writes are refused by the domain service.
+     */
+    sql: string;
+};
+
+/**
+ * A SELECT's result set with provenance for hydration and write-through.
+ */
+export type QueryResult = {
+    /**
+     * Result columns.
+     */
+    columns: Array<ResultColumn>;
+    /**
+     * Row values as JSON scalars.
+     */
+    rows: Array<Array<SqlValue>>;
+};
+
+/**
  * Reaction mutation action.
  */
 export type ReactionAction = 'Add' | 'Remove';
@@ -8299,7 +8802,7 @@ export type Reminder = {
     /**
      * Type of the associated entity, when the reminder is attached to one.
      */
-    entityType?: null | 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative';
+    entityType?: null | 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row';
     /**
      * Reminder id.
      */
@@ -8414,6 +8917,62 @@ export type RenameChannelLabelRequest = {
 };
 
 /**
+ * A renamed placement and its table's version after the atomic update.
+ */
+export type RenameColumnOutcome = {
+    /**
+     * The placement with its new display label; IDs and binding are preserved.
+     */
+    column: Column;
+    /**
+     * Monotonic table version used to reconcile concurrent client refreshes.
+     */
+    table_version: TableVersion;
+};
+
+/**
+ * Rename one column placement without changing its property's SQL identifier.
+ */
+export type RenameColumnRequest = {
+    /**
+     * New display name.
+     */
+    name: string;
+    /**
+     * Label shown when the rename editor opened.
+     */
+    previousName: string;
+};
+
+/**
+ * Request body for renaming a table without overwriting a concurrent rename.
+ */
+export type RenameTableRequest = {
+    /**
+     * New display name.
+     */
+    name: string;
+    /**
+     * Name shown when the rename editor opened.
+     */
+    previousName: string;
+};
+
+/**
+ * A complete placement order, identified by stable column IDs.
+ */
+export type ReorderColumnsRequest = {
+    /**
+     * Table version used to build the order.
+     */
+    baseVersion: TableVersion;
+    /**
+     * Every column, exactly once.
+     */
+    columnIds: Array<string>;
+};
+
+/**
  * Request body for reordering favorites.
  */
 export type ReorderFavoritesRequest = {
@@ -8455,6 +9014,28 @@ export type ReplaceCrmStagesRequest = {
  * arrives preselected to this. Approval is what actually sets ownership.
  */
 export type RequestedHarnessScope = 'private' | 'team';
+
+/**
+ * One result column with its origin.
+ */
+export type ResultColumn = {
+    /**
+     * Entity type of id values, when known — drives chip rendering.
+     */
+    entity_type?: null | 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row';
+    /**
+     * Column name or alias.
+     */
+    name: string;
+    /**
+     * Origin `(table, column)` when the column traces to a single base
+     * column — the precondition for write-through.
+     */
+    origin?: [
+        string,
+        string
+    ] | null;
+};
 
 /**
  * Per-user status of an incoming-call ring, as reported by the
@@ -10048,7 +10629,7 @@ export type SoupReminderReference = {
     /**
      * The referenced entity's type.
      */
-    entityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative';
+    entityType: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row';
     /**
      * File type, when the reference is a document — `md`, `pdf`, and so on.
      */
@@ -10196,6 +10777,43 @@ export type SoupThreadReply = {
 };
 
 /**
+ * A value in the SQLite materialization, kept engine-agnostic so the domain
+ * never depends on rusqlite types. Serializes as a plain JSON scalar.
+ */
+export type SqlValue = null | number | number | string;
+
+/**
+ * The bytes of a SQLite database file.
+ *
+ * Its only job is to make the response body binary in the OpenAPI document;
+ * `Vec<u8>` would be described as an array of integers and generate clients
+ * that parse the file as JSON.
+ */
+export type SqliteFile = Blob | File;
+
+/**
+ * Starter result. A missing database means the user already started or removed it.
+ */
+export type StarterDatabase = {
+    /**
+     * Whether this request created the example.
+     */
+    created: boolean;
+    /**
+     * Accessible starter database, if still present.
+     */
+    databaseId?: string | null;
+    /**
+     * Initial table, returned only on first creation.
+     */
+    tableId?: string | null;
+    /**
+     * Initial board view, returned only on first creation.
+     */
+    viewId?: string | null;
+};
+
+/**
  * The deterministic starter document ids for the current user.
  */
 export type StarterDocumentsResponse = {
@@ -10250,6 +10868,63 @@ export type SystemSkillSummary = {
      */
     name: string;
 };
+
+/**
+ * One table (tab) of a database.
+ */
+export type Table = {
+    /**
+     * Owning database.
+     */
+    database_id: string;
+    /**
+     * Identifier.
+     */
+    id: string;
+    /**
+     * Display name; also the basis of the table's SQL name.
+     */
+    name: string;
+    /**
+     * Fractional index for tab ordering.
+     */
+    position: string;
+    /**
+     * Current version.
+     */
+    version: TableVersion;
+};
+
+/**
+ * One table with its columns and SQL name.
+ */
+export type TableDetail = {
+    /**
+     * Columns in display order.
+     */
+    columns: Array<ColumnDetail>;
+    /**
+     * Immutable read-only name for persisted queries; unaffected by renames
+     * or the other tables a viewer can access.
+     */
+    read_sql_name: string;
+    /**
+     * Name to use in SQL (`FROM guests`).
+     */
+    sql_name: string;
+    /**
+     * The table.
+     */
+    table: Table;
+};
+
+/**
+ * Monotonic per-table version, bumped on every row/column/link mutation.
+ *
+ * The cache key for query materializations and the invalidation signal for
+ * live query chips.
+ */
+export type TableVersion = number;
 
 /**
  * How multiple `tag_option_ids` combine when filtering.
@@ -10740,6 +11415,16 @@ export type UpdateCrmTeamSettingsRequest = {
      * Replacement team-views array (whole-blob, last write wins).
      */
     team_views?: unknown;
+};
+
+/**
+ * Explicit recipient updates; ownership cannot be changed here.
+ */
+export type UpdateDatabasePermissionsRequest = {
+    /**
+     * Channel and direct-message grants to change.
+     */
+    channelSharePermissions: Array<UpdateChannelSharePermission>;
 };
 
 /**
@@ -14124,6 +14809,597 @@ export type PutCrmTeamStagesResponses = {
 
 export type PutCrmTeamStagesResponse = PutCrmTeamStagesResponses[keyof PutCrmTeamStagesResponses];
 
+export type ListDatabasesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/databases';
+};
+
+export type ListDatabasesErrors = {
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type ListDatabasesError = ListDatabasesErrors[keyof ListDatabasesErrors];
+
+export type ListDatabasesResponses = {
+    200: Array<ListedDatabase>;
+};
+
+export type ListDatabasesResponse = ListDatabasesResponses[keyof ListDatabasesResponses];
+
+export type CreateDatabaseData = {
+    body: CreateDatabaseRequest;
+    path?: never;
+    query?: never;
+    url: '/databases';
+};
+
+export type CreateDatabaseErrors = {
+    400: ErrorResponse;
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type CreateDatabaseError = CreateDatabaseErrors[keyof CreateDatabaseErrors];
+
+export type CreateDatabaseResponses = {
+    201: Database;
+};
+
+export type CreateDatabaseResponse = CreateDatabaseResponses[keyof CreateDatabaseResponses];
+
+export type ExecDatabaseSqlData = {
+    body: ExecRequestBody;
+    path?: never;
+    query?: never;
+    url: '/databases/exec';
+};
+
+export type ExecDatabaseSqlErrors = {
+    /**
+     * SQL error (message verbatim from SQLite) or untranslatable change
+     */
+    400: ErrorResponse;
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * Write to a read-only table or column
+     */
+    403: ErrorResponse;
+    /**
+     * A written table moved past its base version
+     */
+    409: ErrorResponse;
+    /**
+     * Query budget exceeded
+     */
+    422: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type ExecDatabaseSqlError = ExecDatabaseSqlErrors[keyof ExecDatabaseSqlErrors];
+
+export type ExecDatabaseSqlResponses = {
+    200: ExecOutcome;
+};
+
+export type ExecDatabaseSqlResponse = ExecDatabaseSqlResponses[keyof ExecDatabaseSqlResponses];
+
+export type QueryDatabaseSqlData = {
+    body: QueryRequestBody;
+    path?: never;
+    query?: never;
+    url: '/databases/query';
+};
+
+export type QueryDatabaseSqlErrors = {
+    /**
+     * Invalid SQL
+     */
+    400: ErrorResponse;
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * Queries cannot write data
+     */
+    403: ErrorResponse;
+    /**
+     * Query budget exceeded
+     */
+    422: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type QueryDatabaseSqlError = QueryDatabaseSqlErrors[keyof QueryDatabaseSqlErrors];
+
+export type QueryDatabaseSqlResponses = {
+    200: ExecOutcome;
+};
+
+export type QueryDatabaseSqlResponse = QueryDatabaseSqlResponses[keyof QueryDatabaseSqlResponses];
+
+export type EnsureStarterHandlerData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/databases/starter';
+};
+
+export type EnsureStarterHandlerErrors = {
+    /**
+     * Authentication required
+     */
+    401: unknown;
+    /**
+     * Provisioning failed; safe to retry
+     */
+    500: unknown;
+};
+
+export type EnsureStarterHandlerResponses = {
+    200: StarterDatabase;
+};
+
+export type EnsureStarterHandlerResponse = EnsureStarterHandlerResponses[keyof EnsureStarterHandlerResponses];
+
+export type GetDatabaseData = {
+    body?: never;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/databases/{id}';
+};
+
+export type GetDatabaseErrors = {
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * No access to the database
+     */
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetDatabaseError = GetDatabaseErrors[keyof GetDatabaseErrors];
+
+export type GetDatabaseResponses = {
+    200: DatabaseDetail;
+};
+
+export type GetDatabaseResponse = GetDatabaseResponses[keyof GetDatabaseResponses];
+
+export type ImportDatabaseTableData = {
+    body: ImportTable;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/import';
+};
+
+export type ImportDatabaseTableErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type ImportDatabaseTableError = ImportDatabaseTableErrors[keyof ImportDatabaseTableErrors];
+
+export type ImportDatabaseTableResponses = {
+    200: Table;
+};
+
+export type ImportDatabaseTableResponse = ImportDatabaseTableResponses[keyof ImportDatabaseTableResponses];
+
+export type GetDatabasePermissionsData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/permissions';
+};
+
+export type GetDatabasePermissionsErrors = {
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetDatabasePermissionsError = GetDatabasePermissionsErrors[keyof GetDatabasePermissionsErrors];
+
+export type GetDatabasePermissionsResponses = {
+    200: DatabaseSharePermissions;
+};
+
+export type GetDatabasePermissionsResponse = GetDatabasePermissionsResponses[keyof GetDatabasePermissionsResponses];
+
+export type UpdateDatabasePermissionsData = {
+    body: UpdateDatabasePermissionsRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/permissions';
+};
+
+export type UpdateDatabasePermissionsErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type UpdateDatabasePermissionsError = UpdateDatabasePermissionsErrors[keyof UpdateDatabasePermissionsErrors];
+
+export type UpdateDatabasePermissionsResponses = {
+    200: DatabaseSharePermissions;
+};
+
+export type UpdateDatabasePermissionsResponse = UpdateDatabasePermissionsResponses[keyof UpdateDatabasePermissionsResponses];
+
+export type DownloadDatabaseSqliteData = {
+    body?: never;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/sqlite';
+};
+
+export type DownloadDatabaseSqliteErrors = {
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * No access to the database
+     */
+    403: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type DownloadDatabaseSqliteError = DownloadDatabaseSqliteErrors[keyof DownloadDatabaseSqliteErrors];
+
+export type DownloadDatabaseSqliteResponses = {
+    /**
+     * A SQLite database file
+     */
+    200: SqliteFile;
+};
+
+export type DownloadDatabaseSqliteResponse = DownloadDatabaseSqliteResponses[keyof DownloadDatabaseSqliteResponses];
+
+export type CreateDatabaseTableData = {
+    body: CreateTableRequest;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables';
+};
+
+export type CreateDatabaseTableErrors = {
+    400: ErrorResponse;
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * No edit access to the database
+     */
+    403: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type CreateDatabaseTableError = CreateDatabaseTableErrors[keyof CreateDatabaseTableErrors];
+
+export type CreateDatabaseTableResponses = {
+    201: Table;
+};
+
+export type CreateDatabaseTableResponse = CreateDatabaseTableResponses[keyof CreateDatabaseTableResponses];
+
+export type RenameDatabaseTableData = {
+    body: RenameTableRequest;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+        /**
+         * Table id
+         */
+        table_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/{table_id}';
+};
+
+export type RenameDatabaseTableErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type RenameDatabaseTableError = RenameDatabaseTableErrors[keyof RenameDatabaseTableErrors];
+
+export type RenameDatabaseTableResponses = {
+    200: Table;
+};
+
+export type RenameDatabaseTableResponse = RenameDatabaseTableResponses[keyof RenameDatabaseTableResponses];
+
+export type CreateDatabaseColumnData = {
+    body: CreateColumnRequest;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+        /**
+         * Table id
+         */
+        table_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/{table_id}/columns';
+};
+
+export type CreateDatabaseColumnErrors = {
+    400: ErrorResponse;
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * No edit access to the database
+     */
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type CreateDatabaseColumnError = CreateDatabaseColumnErrors[keyof CreateDatabaseColumnErrors];
+
+export type CreateDatabaseColumnResponses = {
+    201: CreateColumnResponse;
+};
+
+export type CreateDatabaseColumnResponse = CreateDatabaseColumnResponses[keyof CreateDatabaseColumnResponses];
+
+export type ReorderDatabaseColumnsData = {
+    body: ReorderColumnsRequest;
+    path: {
+        id: string;
+        table_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/{table_id}/columns/order';
+};
+
+export type ReorderDatabaseColumnsErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    409: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type ReorderDatabaseColumnsError = ReorderDatabaseColumnsErrors[keyof ReorderDatabaseColumnsErrors];
+
+export type ReorderDatabaseColumnsResponses = {
+    200: ColumnSchemaOutcome;
+};
+
+export type ReorderDatabaseColumnsResponse = ReorderDatabaseColumnsResponses[keyof ReorderDatabaseColumnsResponses];
+
+export type DeleteDatabaseColumnData = {
+    body: DeleteColumnRequest;
+    path: {
+        id: string;
+        table_id: string;
+        column_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/{table_id}/columns/{column_id}';
+};
+
+export type DeleteDatabaseColumnErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    409: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type DeleteDatabaseColumnError = DeleteDatabaseColumnErrors[keyof DeleteDatabaseColumnErrors];
+
+export type DeleteDatabaseColumnResponses = {
+    200: ColumnSchemaOutcome;
+};
+
+export type DeleteDatabaseColumnResponse = DeleteDatabaseColumnResponses[keyof DeleteDatabaseColumnResponses];
+
+export type RenameDatabaseColumnData = {
+    body: RenameColumnRequest;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+        /**
+         * Table id
+         */
+        table_id: string;
+        /**
+         * Column id
+         */
+        column_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/{table_id}/columns/{column_id}';
+};
+
+export type RenameDatabaseColumnErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type RenameDatabaseColumnError = RenameDatabaseColumnErrors[keyof RenameDatabaseColumnErrors];
+
+export type RenameDatabaseColumnResponses = {
+    200: RenameColumnOutcome;
+};
+
+export type RenameDatabaseColumnResponse = RenameDatabaseColumnResponses[keyof RenameDatabaseColumnResponses];
+
+export type InferDatabaseColumnTypeData = {
+    body: InferColumnTypeRequest;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+        /**
+         * Table id
+         */
+        table_id: string;
+        /**
+         * Column id
+         */
+        column_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/{table_id}/columns/{column_id}/infer-type';
+};
+
+export type InferDatabaseColumnTypeErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    409: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type InferDatabaseColumnTypeError = InferDatabaseColumnTypeErrors[keyof InferDatabaseColumnTypeErrors];
+
+export type InferDatabaseColumnTypeResponses = {
+    200: InferColumnTypeOutcome;
+};
+
+export type InferDatabaseColumnTypeResponse = InferDatabaseColumnTypeResponses[keyof InferDatabaseColumnTypeResponses];
+
+export type AddDatabaseColumnOptionsData = {
+    body: AddColumnOptionsRequest;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+        /**
+         * Table id
+         */
+        table_id: string;
+        /**
+         * Column id
+         */
+        column_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/{table_id}/columns/{column_id}/options';
+};
+
+export type AddDatabaseColumnOptionsErrors = {
+    /**
+     * Not a select column, or an invalid label
+     */
+    400: ErrorResponse;
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * No edit access to the database
+     */
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type AddDatabaseColumnOptionsError = AddDatabaseColumnOptionsErrors[keyof AddDatabaseColumnOptionsErrors];
+
+export type AddDatabaseColumnOptionsResponses = {
+    200: ColumnDetail;
+};
+
+export type AddDatabaseColumnOptionsResponse = AddDatabaseColumnOptionsResponses[keyof AddDatabaseColumnOptionsResponses];
+
+export type ChangeDatabaseColumnTypeData = {
+    body: ChangeColumnTypeRequest;
+    path: {
+        id: string;
+        table_id: string;
+        column_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/{table_id}/columns/{column_id}/type';
+};
+
+export type ChangeDatabaseColumnTypeErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    409: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type ChangeDatabaseColumnTypeError = ChangeDatabaseColumnTypeErrors[keyof ChangeDatabaseColumnTypeErrors];
+
+export type ChangeDatabaseColumnTypeResponses = {
+    200: ColumnSchemaOutcome;
+};
+
+export type ChangeDatabaseColumnTypeResponse = ChangeDatabaseColumnTypeResponses[keyof ChangeDatabaseColumnTypeResponses];
+
 export type TranscribeDictationData = {
     /**
      * OpenAPI representation of the raw encoded audio body extracted as `Bytes`.
@@ -15226,7 +16502,7 @@ export type ListFavoritesData = {
         /**
          * Restrict to favorites whose entity is one of these types.
          */
-        entityType?: Array<'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative'>;
+        entityType?: Array<'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row'>;
         /**
          * Restrict to favorites whose entity is one of these ids.
          */
@@ -15295,7 +16571,7 @@ export type RemoveFavoriteByEntityData = {
         /**
          * The type of an entity in Macro
          */
-        entity_type: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative';
+        entity_type: 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row';
         /**
          * The id of the favorited entity.
          */
@@ -16802,7 +18078,7 @@ export type ListRemindersData = {
         /**
          * Restrict to reminders attached to an entity of these types.
          */
-        entityType?: Array<'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative'>;
+        entityType?: Array<'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row'>;
         /**
          * Restrict to reminders attached to these entity ids.
          */
