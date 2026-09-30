@@ -92,9 +92,28 @@ export class QueryOutcomeUnknownError extends Error {
  * completion offers and results carry.
  */
 export function unquoteIdentifier(sqlName: string): string {
-  return sqlName.startsWith('"') && sqlName.endsWith('"')
-    ? sqlName.slice(1, -1).replaceAll('""', '"')
-    : sqlName;
+  // A table's SQL name is qualified (`"Database"."Table"`); the last quoted
+  // segment is the table's own name.
+  const own = sqlName.endsWith('"') ? lastQuotedSegment(sqlName) : sqlName;
+  return own.startsWith('"') && own.endsWith('"')
+    ? own.slice(1, -1).replaceAll('""', '"')
+    : own;
+}
+
+function lastQuotedSegment(sqlName: string): string {
+  let end = sqlName.length - 1;
+  let start = end - 1;
+  while (start >= 0) {
+    if (sqlName[start] === '"') {
+      if (sqlName[start - 1] === '"') {
+        start -= 2;
+        continue;
+      }
+      break;
+    }
+    start -= 1;
+  }
+  return start >= 0 ? sqlName.slice(start, end + 1) : sqlName;
 }
 
 export function queryFocusTable(schema: QuerySchema) {

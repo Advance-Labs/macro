@@ -655,3 +655,39 @@ fn rejections_quote_what_the_agent_wrote() {
         assert_eq!(error.to_string(), *message, "\n{sql}");
     }
 }
+
+/// Names match case-insensitively, but between `Test` and `test` the exact
+/// spelling picks the table rather than reporting an ambiguity.
+#[test]
+fn exact_case_resolves_a_case_insensitive_collision() {
+    use crate::catalog::{Column, ColumnKind, Table, TableSource};
+    let table = |id: u128, database: &str| Table {
+        id: Uuid::from_u128(id),
+        database: database.into(),
+        name: "Table 1".into(),
+        source: TableSource::Database,
+        columns: vec![Column {
+            id: Uuid::from_u128(id + 0x100),
+            name: "Name".into(),
+            kind: ColumnKind::Text,
+        }],
+    };
+    let catalog = Catalog {
+        tables: vec![table(1, "Test"), table(2, "test")],
+    };
+    let Query::Select(select) = compile(&catalog, "SELECT * FROM test.\"Table 1\"").unwrap() else {
+        panic!("a select");
+    };
+    assert_eq!(select.relations[0].table, Uuid::from_u128(2));
+    let Query::Select(select) = compile(&catalog, "SELECT * FROM \"Test\".\"Table 1\"").unwrap()
+    else {
+        panic!("a select");
+    };
+    assert_eq!(select.relations[0].table, Uuid::from_u128(1));
+    assert_eq!(
+        compile(&catalog, "SELECT * FROM \"TEST\".\"Table 1\"")
+            .unwrap_err()
+            .to_string(),
+        "table \"Table 1\" exists in Test and test — qualify it as Test.Table 1 or test.Table 1"
+    );
+}

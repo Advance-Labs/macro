@@ -146,8 +146,8 @@ fn detail(grant: AccessGrant) -> DatabaseDetail {
         grant,
         tables: vec![TableDetail {
             table: table(),
-            sql_name: "\"Guests\"".to_string(),
-            read_sql_name: "\"Guests\"".to_string(),
+            sql_name: "\"Offsite\".\"Guests\"".to_string(),
+            read_sql_name: "\"Offsite\".\"Guests\"".to_string(),
             columns: vec![status_column()],
         }],
     }
@@ -768,7 +768,7 @@ async fn creating_a_table_with_edit_access_succeeds() {
     assert_eq!(calls.lock().unwrap().created_tables, vec!["Sessions"]);
     assert_eq!(
         response.database.expect("schema refresh succeeds").tables[0].sql_name,
-        "\"Guests\"",
+        "\"Offsite\".\"Guests\"",
         "the SQL name is the display name, quoted"
     );
 }
@@ -959,7 +959,10 @@ async fn listing_renders_the_grant() {
     assert_eq!(response.databases[0].name, "Offsite");
     assert_eq!(response.databases[0].tables[0].name, "Guests");
     assert_eq!(response.databases[0].tables[0].id, TABLE_ID);
-    assert_eq!(response.databases[0].tables[0].sql_name, "\"Guests\"");
+    assert_eq!(
+        response.databases[0].tables[0].sql_name,
+        "\"Offsite\".\"Guests\""
+    );
     assert_eq!(response.summary, "Found 1 database.");
 }
 
@@ -974,7 +977,7 @@ fn an_empty_list_says_so_rather_than_looking_like_a_failure() {
 fn describing_a_database_renders_option_labels() {
     let schema = ToolDatabaseSchema::from(detail(AccessGrant::Owner));
 
-    assert_eq!(schema.tables[0].sql_name, "\"Guests\"");
+    assert_eq!(schema.tables[0].sql_name, "\"Offsite\".\"Guests\"");
     assert_eq!(schema.tables[0].version, 3);
     assert!(schema.tables[0].writable);
     let column = &schema.tables[0].columns[0];

@@ -121,7 +121,7 @@ async fn a_new_table_is_empty_and_queryable_by_its_quoted_name() {
             .iter()
             .map(|table| table.sql_name.as_str())
             .collect::<Vec<_>>(),
-        vec!["\"Guests\"", "\"Ticket sales\""]
+        vec!["\"Offsite\".\"Guests\"", "\"Offsite\".\"Ticket sales\""]
     );
     assert!(detail.tables[1].columns.is_empty());
 

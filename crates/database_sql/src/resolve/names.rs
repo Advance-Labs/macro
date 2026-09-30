@@ -30,6 +30,20 @@ pub fn table<'c>(catalog: &'c Catalog, name: &TableName) -> Result<&'c Table, Re
                     .is_none_or(|database| same(&table.database, &database.0))
         })
         .collect();
+    // Names match case-insensitively, but when that is ambiguous the exact
+    // spelling decides: `Test.Table 1` and `test.Table 1` are different tables.
+    let exact: Vec<&Table> = matches
+        .iter()
+        .copied()
+        .filter(|table| {
+            table.name == name.table.0
+                && name
+                    .database
+                    .as_ref()
+                    .is_none_or(|database| table.database == database.0)
+        })
+        .collect();
+    let matches = if exact.len() == 1 { exact } else { matches };
     match matches.as_slice() {
         [table] => Ok(table),
         [] => Err(ResolveError::UnknownTable {

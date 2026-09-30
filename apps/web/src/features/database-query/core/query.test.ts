@@ -4,6 +4,7 @@ import {
   parseQueryProposal,
   type QuerySchema,
   queryStarters,
+  unquoteIdentifier,
 } from './query';
 
 const schema: QuerySchema = {
@@ -26,6 +27,14 @@ const schema: QuerySchema = {
     },
   ],
 };
+describe('unquoteIdentifier', () => {
+  it('takes the table segment of a database-qualified name', () => {
+    expect(unquoteIdentifier('"Untitled database"."Table 1"')).toBe('Table 1');
+    expect(unquoteIdentifier('"my""db"."a""b"')).toBe('a"b');
+    expect(unquoteIdentifier('"Status"')).toBe('Status');
+  });
+});
+
 describe('database questions', () => {
   it('does not silently replace an unavailable selected table with the first table', () => {
     expect(queryStarters({ ...schema, focusTableId: 'removed-table' })).toEqual(

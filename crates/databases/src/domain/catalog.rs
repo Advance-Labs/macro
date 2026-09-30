@@ -178,6 +178,12 @@ pub fn sql_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
+/// A table as SQL names it: qualified by its database, so every new
+/// database's `Table 1` is its own table.
+pub fn sql_table_name(database: &str, table: &str) -> String {
+    format!("{}.{}", sql_identifier(database), sql_identifier(table))
+}
+
 /// An option's label as users write it.
 pub fn option_display(value: &PropertyOptionValue) -> String {
     match value {

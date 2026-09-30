@@ -87,7 +87,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::domain::catalog::{option_labels, sql_identifier};
+use crate::domain::catalog::{option_labels, sql_table_name};
 use crate::domain::models::{
     AccessGrant, ColumnConfig, DatabaseDetail, DatabaseError, ListedDatabase, QueryError, Viewer,
 };
@@ -451,14 +451,14 @@ impl From<ListedDatabase> for ToolDatabase {
     fn from(listed: ListedDatabase) -> Self {
         Self {
             id: listed.database.id,
-            name: listed.database.name,
+            name: listed.database.name.clone(),
             grant: listed.grant.into(),
             tables: listed
                 .tables
                 .into_iter()
                 .map(|table| ToolTableSummary {
                     id: table.id,
-                    sql_name: sql_identifier(&table.name),
+                    sql_name: sql_table_name(&listed.database.name, &table.name),
                     name: table.name,
                 })
                 .collect(),
