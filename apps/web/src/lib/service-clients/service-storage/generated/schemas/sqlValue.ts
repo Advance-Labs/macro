@@ -6,7 +6,7 @@
  */
 
 /**
- * A value in the SQLite materialization, kept engine-agnostic so the domain
-never depends on rusqlite types. Serializes as a plain JSON scalar.
+ * A value in a statement's result, kept engine-agnostic so the wire shape
+does not follow `database_sql`'s types. Serializes as a plain JSON scalar.
  */
 export type SqlValue = null | number | number | string;

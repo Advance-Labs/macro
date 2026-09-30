@@ -7663,7 +7663,7 @@
             }
           },
           "400": {
-            "description": "SQL error (message verbatim from SQLite) or untranslatable change",
+            "description": "SQL error (message verbatim from the SQL engine) or a refused write",
             "content": {
               "application/json": {
                 "schema": {
@@ -7694,6 +7694,237 @@
           },
           "409": {
             "description": "A written table moved past its base version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Query budget exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/databases/queries": {
+      "post": {
+        "tags": ["databases"],
+        "summary": "Save an immutable query. Editing a question saves a new one.",
+        "operationId": "save_database_query",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveQueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedQuery"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The query does not compile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The query is not a SELECT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The database is missing or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Query budget exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/databases/queries/{query_id}": {
+      "get": {
+        "tags": ["databases"],
+        "summary": "A saved query's definition, for its creator or a viewer of its database.",
+        "operationId": "get_database_query",
+        "parameters": [
+          {
+            "name": "query_id",
+            "in": "path",
+            "description": "Saved query id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedQuery"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Missing, or not readable by the caller",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/databases/queries/{query_id}/run": {
+      "post": {
+        "tags": ["databases"],
+        "summary": "Run a saved query as the caller; results are permission-filtered.",
+        "operationId": "run_database_query",
+        "parameters": [
+          {
+            "name": "query_id",
+            "in": "path",
+            "description": "Saved query id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecOutcome"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The query no longer compiles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Missing, or not readable by the caller",
             "content": {
               "application/json": {
                 "schema": {
@@ -7900,6 +8131,70 @@
         }
       }
     },
+    "/databases/{id}/awareness": {
+      "put": {
+        "tags": ["databases"],
+        "summary": "Tell a database's other viewers where the caller is.",
+        "operationId": "share_database_awareness",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Awareness"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Relayed"
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No access to the database",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/databases/{id}/import": {
       "post": {
         "tags": ["databases"],
@@ -7993,7 +8288,7 @@
     "/databases/{id}/permissions": {
       "get": {
         "tags": ["databases"],
-        "summary": "Read recipients for a database owned by the caller.",
+        "summary": "Read recipients for a database owned by the caller. Link and team\nsharing are always `null`: databases do not support them yet.",
         "operationId": "get_database_permissions",
         "parameters": [
           {
@@ -8012,7 +8307,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DatabaseSharePermissions"
+                  "$ref": "#/components/schemas/SharePermissionV2"
                 }
               }
             }
@@ -8061,7 +8356,7 @@
       },
       "patch": {
         "tags": ["databases"],
-        "summary": "Update recipients after proving database ownership.",
+        "summary": "Update channel recipients after proving database ownership. Turning on\nlink or team sharing is refused; ownership cannot be changed here.",
         "operationId": "update_database_permissions",
         "parameters": [
           {
@@ -8078,7 +8373,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateDatabasePermissionsRequest"
+                "$ref": "#/components/schemas/UpdateSharePermissionRequestV2"
               }
             }
           },
@@ -8090,7 +8385,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DatabaseSharePermissions"
+                  "$ref": "#/components/schemas/SharePermissionV2"
                 }
               }
             }
@@ -8230,6 +8525,88 @@
       }
     },
     "/databases/{id}/tables/{table_id}": {
+      "delete": {
+        "tags": ["databases"],
+        "summary": "Delete a table with its rows and columns. A database keeps at least one.",
+        "operationId": "delete_database_table",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "table_id",
+            "in": "path",
+            "description": "Table id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "400": {
+            "description": "The last table, or a relation still points at it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
       "patch": {
         "tags": ["databases"],
         "summary": "Rename a table in a database.",
@@ -17023,11 +17400,6 @@
   },
   "components": {
     "schemas": {
-      "AccessGrant": {
-        "type": "string",
-        "description": "The access a viewer holds on a database, from its `entity_access` rows.",
-        "enum": ["view", "comment", "edit", "owner"]
-      },
       "AccessLevel": {
         "type": "string",
         "description": "Ordered from least to most access top -> bottom",
@@ -18954,6 +19326,36 @@
         "type": "string",
         "description": "RSVP state for an attendee.",
         "enum": ["needs_action", "accepted", "declined", "tentative"]
+      },
+      "Awareness": {
+        "type": "object",
+        "description": "Where one viewer is inside a database right now: ephemeral, relayed to\nthe other viewers and never stored. A missing row or column means the\nviewer is on the table but on no cell.",
+        "required": ["tableId"],
+        "properties": {
+          "columnId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The column placement of the focused cell, if any."
+          },
+          "editing": {
+            "type": "boolean",
+            "description": "Whether the cell is open for editing."
+          },
+          "left": {
+            "type": "boolean",
+            "description": "Whether the viewer left the database; other viewers drop their state."
+          },
+          "rowId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The row of the focused cell, if any."
+          },
+          "tableId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The table the viewer is looking at."
+          }
+        }
       },
       "BTreeMap": {
         "type": "object",
@@ -22260,9 +22662,9 @@
             "$ref": "#/components/schemas/ColumnBindingRequest",
             "description": "Definition source."
           },
-          "infer_type": {
+          "inferType": {
             "type": "boolean",
-            "description": "Infer the first value type of a newly owned text column."
+            "description": "Infer the first value type of a newly owned text column. `infer_type`\nis still accepted from clients that predate the camelCase name."
           },
           "linkToDatabaseId": {
             "type": "string",
@@ -23674,7 +24076,7 @@
             "description": "The database."
           },
           "grant": {
-            "$ref": "#/components/schemas/AccessGrant",
+            "$ref": "#/components/schemas/AccessLevel",
             "description": "The viewer's access."
           },
           "tables": {
@@ -23683,29 +24085,6 @@
               "$ref": "#/components/schemas/TableDetail"
             },
             "description": "Tables in tab order."
-          }
-        }
-      },
-      "DatabaseSharePermissions": {
-        "type": "object",
-        "description": "Recipient grants shown in the native sharing interface.",
-        "required": ["id", "owner", "channelSharePermissions"],
-        "properties": {
-          "channelSharePermissions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ChannelSharePermission"
-            },
-            "description": "Directly shared channels, including direct messages."
-          },
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Database identifier; sharing has no separate policy entity."
-          },
-          "owner": {
-            "type": "string",
-            "description": "Current database owner."
           }
         }
       },
@@ -25868,6 +26247,11 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          "scope": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The database the statement is written from. A same-named table of\nanother database is left out of name resolution when this is set."
           },
           "sql": {
             "type": "string",
@@ -28183,7 +28567,7 @@
             "description": "The database."
           },
           "grant": {
-            "$ref": "#/components/schemas/AccessGrant",
+            "$ref": "#/components/schemas/AccessLevel",
             "description": "The viewer's access."
           },
           "tables": {
@@ -30796,6 +31180,21 @@
         ],
         "description": "Property value (service representation).\n\nRepresents the actual value stored for an entity property.\nThis is serialized to/from JSONB in the database."
       },
+      "QueryDefinition": {
+        "type": "object",
+        "description": "A versioned query definition.",
+        "required": ["version", "query"],
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "A read-only SELECT in the databases dialect."
+          },
+          "version": {
+            "type": "integer",
+            "enum": [1]
+          }
+        }
+      },
       "QueryRequestBody": {
         "type": "object",
         "description": "Request body for read-only SQL queries.",
@@ -31346,6 +31745,52 @@
           "presignedUrl": {
             "type": ["string", "null"],
             "description": "If the document is an editable file, we provide a presigned url to save the updated file to."
+          }
+        }
+      },
+      "SaveQueryRequest": {
+        "type": "object",
+        "description": "Request body for saving a query.",
+        "required": ["definition"],
+        "properties": {
+          "databaseId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The database whose tables win name resolution. The caller must be\nable to see it."
+          },
+          "definition": {
+            "$ref": "#/components/schemas/QueryDefinition",
+            "description": "What the query asks: `{\"version\": 1, \"query\": \"<SELECT>\"}`."
+          }
+        }
+      },
+      "SavedQuery": {
+        "type": "object",
+        "description": "A stored, immutable query. Editing a question saves a new one.",
+        "required": ["id", "definition", "createdBy", "createdAt"],
+        "properties": {
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When it was saved."
+          },
+          "createdBy": {
+            "type": "string",
+            "description": "Who saved it."
+          },
+          "databaseId": {
+            "type": ["string", "null"],
+            "format": "uuid",
+            "description": "The database whose tables win name resolution; `null` once that\ndatabase is deleted, or when none was given."
+          },
+          "definition": {
+            "$ref": "#/components/schemas/QueryDefinition",
+            "description": "What it asks."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Identifier."
           }
         }
       },
@@ -33895,7 +34340,7 @@
             "description": "Text (also ids, dates as ISO-8601, resolved option display values)."
           }
         ],
-        "description": "A value in the SQLite materialization, kept engine-agnostic so the domain\nnever depends on rusqlite types. Serializes as a plain JSON scalar."
+        "description": "A value in a statement's result, kept engine-agnostic so the wire shape\ndoes not follow `database_sql`'s types. Serializes as a plain JSON scalar."
       },
       "StarterDatabase": {
         "type": "object",
@@ -34768,20 +35213,6 @@
           },
           "team_views": {
             "description": "Replacement team-views array (whole-blob, last write wins)."
-          }
-        }
-      },
-      "UpdateDatabasePermissionsRequest": {
-        "type": "object",
-        "description": "Explicit recipient updates; ownership cannot be changed here.",
-        "required": ["channelSharePermissions"],
-        "properties": {
-          "channelSharePermissions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/UpdateChannelSharePermission"
-            },
-            "description": "Channel and direct-message grants to change."
           }
         }
       },

@@ -6292,9 +6292,7 @@ export const listDatabasesResponseItem = zod
       ),
     grant: zod
       .enum(['view', 'comment', 'edit', 'owner'])
-      .describe(
-        'The access a viewer holds on a database, from its `entity_access` rows.'
-      ),
+      .describe('Ordered from least to most access top -> bottom'),
     tables: zod
       .array(
         zod
@@ -6343,6 +6341,12 @@ export const execDatabaseSqlBody = zod
       .optional()
       .describe(
         'Optional compare-and-swap: reject writes if a listed table being written\nhas moved past the given version. Read-only dependencies are not guarded.\nOmitted → cell-level last-write-wins.'
+      ),
+    scope: zod
+      .uuid()
+      .optional()
+      .describe(
+        'The database the statement is written from. A same-named table of\nanother database is left out of name resolution when this is set.'
       ),
     sql: zod
       .string()
@@ -6462,7 +6466,196 @@ export const execDatabaseSqlResponse = zod
                         ),
                     ])
                     .describe(
-                      'A value in the SQLite materialization, kept engine-agnostic so the domain\nnever depends on rusqlite types. Serializes as a plain JSON scalar.'
+                      "A value in a statement's result, kept engine-agnostic so the wire shape\ndoes not follow `database_sql`'s types. Serializes as a plain JSON scalar."
+                    )
+                )
+              )
+              .describe('Row values as JSON scalars.'),
+          })
+          .describe(
+            "A SELECT's result set with provenance for hydration and write-through."
+          )
+      )
+      .describe('Result sets of the SELECT statements, in order.'),
+    truncated_tables: zod
+      .array(zod.string())
+      .describe(
+        "Tables whose read hit the engine's row cap; aggregates over them are\nincomplete."
+      ),
+  })
+  .describe('Outcome of an [`ExecRequest`].');
+
+/**
+ * @summary Save an immutable query. Editing a question saves a new one.
+ */
+export const saveDatabaseQueryBody = zod
+  .object({
+    databaseId: zod
+      .uuid()
+      .optional()
+      .describe(
+        'The database whose tables win name resolution. The caller must be\nable to see it.'
+      ),
+    definition: zod
+      .object({
+        query: zod
+          .string()
+          .describe('A read-only SELECT in the databases dialect.'),
+        version: zod.literal(1),
+      })
+      .describe('A versioned query definition.'),
+  })
+  .describe('Request body for saving a query.');
+
+/**
+ * @summary A saved query's definition, for its creator or a viewer of its database.
+ */
+export const getDatabaseQueryParams = zod.object({
+  query_id: zod.uuid().describe('Saved query id'),
+});
+
+export const getDatabaseQueryResponse = zod
+  .object({
+    createdAt: zod.iso.datetime({}).describe('When it was saved.'),
+    createdBy: zod.string().describe('Who saved it.'),
+    databaseId: zod
+      .uuid()
+      .nullish()
+      .describe(
+        'The database whose tables win name resolution; `null` once that\ndatabase is deleted, or when none was given.'
+      ),
+    definition: zod
+      .object({
+        query: zod
+          .string()
+          .describe('A read-only SELECT in the databases dialect.'),
+        version: zod.literal(1),
+      })
+      .describe('A versioned query definition.'),
+    id: zod.uuid().describe('Identifier.'),
+  })
+  .describe('A stored, immutable query. Editing a question saves a new one.');
+
+/**
+ * @summary Run a saved query as the caller; results are permission-filtered.
+ */
+export const runDatabaseQueryParams = zod.object({
+  query_id: zod.uuid().describe('Saved query id'),
+});
+
+export const runDatabaseQueryResponseChangesAppliedMin = 0;
+
+export const runDatabaseQueryResponseResultsItemRowsItemItemDefaultOne = null;
+
+export const runDatabaseQueryResponse = zod
+  .object({
+    changes_applied: zod
+      .number()
+      .min(runDatabaseQueryResponseChangesAppliedMin)
+      .describe('How many row changes were applied to Postgres.'),
+    inserted_row_ids: zod
+      .array(zod.uuid())
+      .describe('Server-minted ids for rows the statement inserted.'),
+    new_versions: zod
+      .record(
+        zod.string(),
+        zod
+          .number()
+          .describe(
+            'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+          )
+      )
+      .describe(
+        'New versions of every written table, for client-side liveness.'
+      ),
+    read_database_ids: zod
+      .array(zod.uuid())
+      .describe(
+        'Databases containing the read dependencies, for live subscriptions.'
+      ),
+    read_tables: zod
+      .array(zod.uuid())
+      .describe('Dependency set of the statement, for liveness subscription.'),
+    read_versions: zod
+      .record(
+        zod.string(),
+        zod
+          .number()
+          .describe(
+            'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+          )
+      )
+      .describe(
+        'The version every user table in [`ExecOutcome::read_tables`] was at\nwhen this statement materialized it. Send these back as\n[`ExecRequest::base_versions`] to guard tables the follow-up statement\nwrites. Versions for tables it only reads are ignored.'
+      ),
+    results: zod
+      .array(
+        zod
+          .object({
+            columns: zod
+              .array(
+                zod
+                  .object({
+                    entity_type: zod
+                      .union([
+                        zod.null(),
+                        zod
+                          .enum([
+                            'user',
+                            'chat',
+                            'channel',
+                            'channel_message',
+                            'document',
+                            'project',
+                            'email_thread',
+                            'calendar_event',
+                            'team',
+                            'call',
+                            'foreign_entity',
+                            'static_file',
+                            'crm_company',
+                            'crm_contact',
+                            'reminder',
+                            'skill',
+                            'agent_session',
+                            'scheduled_action',
+                            'initiative',
+                            'database',
+                            'database_row',
+                          ])
+                          .describe('The type of an entity in Macro'),
+                      ])
+                      .optional()
+                      .describe(
+                        'Entity type of id values, when known — drives chip rendering.'
+                      ),
+                    name: zod.string().describe('Column name or alias.'),
+                    origin: zod
+                      .tuple([zod.string(), zod.string()])
+                      .nullish()
+                      .describe(
+                        'Origin `(table, column)` when the column traces to a single base\ncolumn — the precondition for write-through.'
+                      ),
+                  })
+                  .describe('One result column with its origin.')
+              )
+              .describe('Result columns.'),
+            rows: zod
+              .array(
+                zod.array(
+                  zod
+                    .union([
+                      zod.null().describe('SQL NULL.'),
+                      zod.number().describe('Integer (also booleans as 0\/1).'),
+                      zod.number().describe('Float.'),
+                      zod
+                        .string()
+                        .describe(
+                          'Text (also ids, dates as ISO-8601, resolved option display values).'
+                        ),
+                    ])
+                    .describe(
+                      "A value in a statement's result, kept engine-agnostic so the wire shape\ndoes not follow `database_sql`'s types. Serializes as a plain JSON scalar."
                     )
                 )
               )
@@ -6604,7 +6797,7 @@ export const queryDatabaseSqlResponse = zod
                         ),
                     ])
                     .describe(
-                      'A value in the SQLite materialization, kept engine-agnostic so the domain\nnever depends on rusqlite types. Serializes as a plain JSON scalar.'
+                      "A value in a statement's result, kept engine-agnostic so the wire shape\ndoes not follow `database_sql`'s types. Serializes as a plain JSON scalar."
                     )
                 )
               )
@@ -6673,9 +6866,7 @@ export const getDatabaseResponse = zod
       ),
     grant: zod
       .enum(['view', 'comment', 'edit', 'owner'])
-      .describe(
-        'The access a viewer holds on a database, from its `entity_access` rows.'
-      ),
+      .describe('Ordered from least to most access top -> bottom'),
     tables: zod
       .array(
         zod
@@ -6948,6 +7139,39 @@ export const getDatabaseResponse = zod
   );
 
 /**
+ * @summary Tell a database's other viewers where the caller is.
+ */
+export const shareDatabaseAwarenessParams = zod.object({
+  id: zod.uuid().describe('Database id'),
+});
+
+export const shareDatabaseAwarenessBody = zod
+  .object({
+    columnId: zod
+      .uuid()
+      .optional()
+      .describe('The column placement of the focused cell, if any.'),
+    editing: zod
+      .boolean()
+      .optional()
+      .describe('Whether the cell is open for editing.'),
+    left: zod
+      .boolean()
+      .optional()
+      .describe(
+        'Whether the viewer left the database; other viewers drop their state.'
+      ),
+    rowId: zod
+      .uuid()
+      .optional()
+      .describe('The row of the focused cell, if any.'),
+    tableId: zod.uuid().describe('The table the viewer is looking at.'),
+  })
+  .describe(
+    'Where one viewer is inside a database right now: ephemeral, relayed to\nthe other viewers and never stored. A missing row or column means the\nviewer is on the table but on no cell.'
+  );
+
+/**
  * @summary Import a new table and every row atomically; retries carry the same request ID.
  */
 export const importDatabaseTableParams = zod.object({
@@ -6988,81 +7212,148 @@ export const importDatabaseTableResponse = zod
   .describe('One table (tab) of a database.');
 
 /**
- * @summary Read recipients for a database owned by the caller.
+ * @summary Read recipients for a database owned by the caller. Link and team
+sharing are always `null`: databases do not support them yet.
  */
 export const getDatabasePermissionsParams = zod.object({
   id: zod.uuid(),
 });
 
-export const getDatabasePermissionsResponse = zod
-  .object({
-    channelSharePermissions: zod
-      .array(
-        zod
-          .object({
-            access_level: zod
-              .enum(['view', 'comment', 'edit', 'owner'])
-              .describe('Ordered from least to most access top -> bottom'),
-            channel_id: zod.string().describe('The channel id'),
-          })
-          .describe('The channel share permission')
-      )
-      .describe('Directly shared channels, including direct messages.'),
-    id: zod
-      .uuid()
-      .describe('Database identifier; sharing has no separate policy entity.'),
-    owner: zod.string().describe('Current database owner.'),
-  })
-  .describe('Recipient grants shown in the native sharing interface.');
+export const getDatabasePermissionsResponse = zod.object({
+  channelSharePermissions: zod
+    .array(
+      zod
+        .object({
+          access_level: zod
+            .enum(['view', 'comment', 'edit', 'owner'])
+            .describe('Ordered from least to most access top -> bottom'),
+          channel_id: zod.string().describe('The channel id'),
+        })
+        .describe('The channel share permission')
+    )
+    .nullish()
+    .describe('The channel share permissions for the item'),
+  id: zod.string().describe('The share permission id'),
+  linkShare: zod
+    .union([
+      zod.null(),
+      zod
+        .enum(['PUBLIC', 'TEAM'])
+        .describe('Defines who can access an item through its share link.'),
+    ])
+    .optional(),
+  linkShareAccessLevel: zod
+    .union([
+      zod.null(),
+      zod
+        .enum(['view', 'comment', 'edit', 'owner'])
+        .describe('Ordered from least to most access top -> bottom'),
+    ])
+    .optional(),
+  owner: zod.string().describe('The owner of the item'),
+  teamShareAccessLevel: zod
+    .union([
+      zod.null(),
+      zod
+        .enum(['view', 'comment', 'edit', 'owner'])
+        .describe('Ordered from least to most access top -> bottom'),
+    ])
+    .optional(),
+});
 
 /**
- * @summary Update recipients after proving database ownership.
+ * @summary Update channel recipients after proving database ownership. Turning on
+link or team sharing is refused; ownership cannot be changed here.
  */
 export const updateDatabasePermissionsParams = zod.object({
   id: zod.uuid(),
 });
 
-export const updateDatabasePermissionsBody = zod
-  .object({
-    channelSharePermissions: zod
-      .array(
-        zod.object({
-          accessLevel: zod
-            .union([
-              zod.null(),
-              zod
-                .enum(['view', 'comment', 'edit', 'owner'])
-                .describe('Ordered from least to most access top -> bottom'),
-            ])
-            .optional(),
-          channelId: zod.string().describe('The channel id'),
-          operation: zod.enum(['add', 'remove', 'replace']),
-        })
-      )
-      .describe('Channel and direct-message grants to change.'),
-  })
-  .describe('Explicit recipient updates; ownership cannot be changed here.');
-
-export const updateDatabasePermissionsResponse = zod
-  .object({
-    channelSharePermissions: zod
-      .array(
-        zod
-          .object({
-            access_level: zod
+export const updateDatabasePermissionsBody = zod.object({
+  channelSharePermissions: zod
+    .array(
+      zod.object({
+        accessLevel: zod
+          .union([
+            zod.null(),
+            zod
               .enum(['view', 'comment', 'edit', 'owner'])
               .describe('Ordered from least to most access top -> bottom'),
-            channel_id: zod.string().describe('The channel id'),
-          })
-          .describe('The channel share permission')
-      )
-      .describe('Directly shared channels, including direct messages.'),
-    id: zod
-      .uuid()
-      .describe('Database identifier; sharing has no separate policy entity.'),
-    owner: zod.string().describe('Current database owner.'),
-  })
-  .describe('Recipient grants shown in the native sharing interface.');
+          ])
+          .optional(),
+        channelId: zod.string().describe('The channel id'),
+        operation: zod.enum(['add', 'remove', 'replace']),
+      })
+    )
+    .nullish()
+    .describe('Any channel share permissions to be created\/updated\/removed'),
+  linkShare: zod
+    .union([
+      zod.null(),
+      zod
+        .enum(['PUBLIC', 'TEAM'])
+        .describe('Defines who can access an item through its share link.'),
+    ])
+    .optional(),
+  linkShareAccessLevel: zod
+    .union([
+      zod.null(),
+      zod
+        .enum(['view', 'comment', 'edit', 'owner'])
+        .describe('Ordered from least to most access top -> bottom'),
+    ])
+    .optional(),
+  teamShareAccessLevel: zod
+    .union([
+      zod.null(),
+      zod
+        .enum(['view', 'comment', 'edit', 'owner'])
+        .describe('Ordered from least to most access top -> bottom'),
+    ])
+    .optional(),
+});
+
+export const updateDatabasePermissionsResponse = zod.object({
+  channelSharePermissions: zod
+    .array(
+      zod
+        .object({
+          access_level: zod
+            .enum(['view', 'comment', 'edit', 'owner'])
+            .describe('Ordered from least to most access top -> bottom'),
+          channel_id: zod.string().describe('The channel id'),
+        })
+        .describe('The channel share permission')
+    )
+    .nullish()
+    .describe('The channel share permissions for the item'),
+  id: zod.string().describe('The share permission id'),
+  linkShare: zod
+    .union([
+      zod.null(),
+      zod
+        .enum(['PUBLIC', 'TEAM'])
+        .describe('Defines who can access an item through its share link.'),
+    ])
+    .optional(),
+  linkShareAccessLevel: zod
+    .union([
+      zod.null(),
+      zod
+        .enum(['view', 'comment', 'edit', 'owner'])
+        .describe('Ordered from least to most access top -> bottom'),
+    ])
+    .optional(),
+  owner: zod.string().describe('The owner of the item'),
+  teamShareAccessLevel: zod
+    .union([
+      zod.null(),
+      zod
+        .enum(['view', 'comment', 'edit', 'owner'])
+        .describe('Ordered from least to most access top -> bottom'),
+    ])
+    .optional(),
+});
 
 /**
  * @summary Create a table in a database.
@@ -7076,6 +7367,14 @@ export const createDatabaseTableBody = zod
     name: zod.string().describe('Display name.'),
   })
   .describe('Request body for creating a table.');
+
+/**
+ * @summary Delete a table with its rows and columns. A database keeps at least one.
+ */
+export const deleteDatabaseTableParams = zod.object({
+  id: zod.uuid().describe('Database id'),
+  table_id: zod.uuid().describe('Table id'),
+});
 
 /**
  * @summary Rename a table in a database.
@@ -7165,10 +7464,12 @@ export const createDatabaseColumnBody = zod
           .describe('Bind an existing user\/team\/system definition.'),
       ])
       .describe('How a new column obtains its definition.'),
-    infer_type: zod
+    inferType: zod
       .boolean()
       .optional()
-      .describe('Infer the first value type of a newly owned text column.'),
+      .describe(
+        'Infer the first value type of a newly owned text column. `infer_type`\nis still accepted from clients that predate the camelCase name.'
+      ),
     linkToDatabaseId: zod
       .uuid()
       .optional()

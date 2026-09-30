@@ -5,7 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-import type { AccessGrant } from './accessGrant';
+import type { AccessLevel } from './accessLevel';
 import type { Database } from './database';
 import type { Table } from './table';
 
@@ -16,7 +16,7 @@ export interface ListedDatabase {
   /** The database. */
   database: Database;
   /** The viewer's access. */
-  grant: AccessGrant;
+  grant: AccessLevel;
   /** Tables in tab order, so discovery can find a table independently of
 the containing database's display name. */
   tables: Table[];

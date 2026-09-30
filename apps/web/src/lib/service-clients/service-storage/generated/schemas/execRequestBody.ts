@@ -14,6 +14,9 @@ export interface ExecRequestBody {
 has moved past the given version. Read-only dependencies are not guarded.
 Omitted → cell-level last-write-wins. */
   baseVersions?: ExecRequestBodyBaseVersions;
+  /** The database the statement is written from. A same-named table of
+another database is left out of name resolution when this is set. */
+  scope?: string;
   /** The statements to run, executed in one transaction. */
   sql: string;
 }

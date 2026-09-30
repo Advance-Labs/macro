@@ -5,7 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-import type { AccessGrant } from './accessGrant';
+import type { AccessLevel } from './accessLevel';
 import type { Database } from './database';
 import type { TableDetail } from './tableDetail';
 
@@ -18,7 +18,7 @@ export interface DatabaseDetail {
   /** The database. */
   database: Database;
   /** The viewer's access. */
-  grant: AccessGrant;
+  grant: AccessLevel;
   /** Tables in tab order. */
   tables: TableDetail[];
 }
