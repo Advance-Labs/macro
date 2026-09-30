@@ -10,6 +10,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
+use database_sql::catalog::Catalog;
 use database_sql::fold::{Bin, Cell, Row as EngineRow};
 use database_sql::resolve::{Query, column_key};
 use database_sql::run::{
@@ -64,8 +65,7 @@ where
         if req.sql.len() > MAX_SQL_LEN {
             return Err(QueryError::BudgetExceeded);
         }
-        let entries = self.viewer_entries(&viewer, req.scope).await?;
-        let engine_catalog = catalog::engine_catalog(&entries);
+        let (entries, engine_catalog) = self.viewer_catalog(&viewer, req.scope).await?;
 
         let query = database_sql::compile(&engine_catalog, &req.sql)
             .map_err(|error| QueryError::Sql(error.to_string()))?;
@@ -164,12 +164,13 @@ where
         })
     }
 
-    /// Every table the viewer can see, `scope`'s winning name ties.
-    pub(super) async fn viewer_entries(
+    /// The catalog a statement run from `scope` sees, and the entries of
+    /// its tables.
+    pub(super) async fn viewer_catalog(
         &self,
         viewer: &Viewer,
         scope: Option<DatabaseId>,
-    ) -> Result<Vec<TableEntry>, QueryError> {
+    ) -> Result<(Vec<TableEntry>, Catalog), QueryError> {
         let grants: HashMap<DatabaseId, _> = self
             .access
             .accessible_databases(viewer)
@@ -178,10 +179,14 @@ where
             .into_iter()
             .collect();
         let mut entries = self.entries_for(&grants).await?;
-        if let Some(scope) = scope {
-            catalog::scope_entries(&mut entries, scope);
-        }
-        Ok(entries)
+        let catalog = catalog::engine_catalog(&entries, scope);
+        entries.retain(|entry| {
+            catalog
+                .tables
+                .iter()
+                .any(|table| table.id == entry.table.id)
+        });
+        Ok((entries, catalog))
     }
 
     /// A table's rows with their cells, in position order.

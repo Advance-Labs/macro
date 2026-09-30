@@ -1,12 +1,19 @@
 //! What the caller can see: tables, their columns, and the columns' types and
-//! select options. Built once per request by the caller from the databases
-//! the viewer has access to; a table that is not in the catalog does not exist
-//! as far as a query is concerned. A driver builds it in JSON, in camel
-//! case, and hands it across the wasm boundary.
+//! select options. Built once per request by [`build`] from a [`Schema`] of
+//! the databases the viewer has access to; a table that is not in the catalog
+//! does not exist as far as a query is concerned. It crosses the wasm
+//! boundary as JSON, in camel case.
+
+mod schema;
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use uuid::Uuid;
+
+pub use schema::{
+    ColumnSchema, DataType, DatabaseSchema, OptionSchema, OptionValue, PlatformTable, PropertyType,
+    Schema, TableSchema, build, number_label,
+};
 
 /// Every table a statement may name.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, Type)]

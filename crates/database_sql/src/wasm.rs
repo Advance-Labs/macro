@@ -1,6 +1,7 @@
 //! The engine, as the browser calls it.
 //!
-//! One entry point: [`Query`], a statement held open between steps. A driver
+//! Two entry points: [`build_catalog`], the catalog a statement names tables
+//! in, and [`Query`], a statement held open between steps. A driver
 //! constructs one with the catalog and the statement, reads the first
 //! [`Step`] from [`Query::start`], serves each request, and feeds the pages,
 //! bins or op results back until a step is `done`. Values cross as plain JSON
@@ -13,9 +14,10 @@
 use models_databases::OpResult;
 use serde::Serialize;
 use serde_wasm_bindgen::Serializer;
+use uuid::Uuid;
 use wasm_bindgen::prelude::*;
 
-use crate::catalog::Catalog;
+use crate::catalog::{Catalog, Schema, build};
 use crate::engine::{Engine, Step};
 use crate::fold::Bin;
 use crate::run::Page;
@@ -88,6 +90,23 @@ impl Query {
             .map_err(|error| JsValue::from_str(&error.to_string()))?;
         to_js(&step)
     }
+}
+
+/// The catalog a statement run from `scope` (a database id) names tables in,
+/// built from `schema` (a `Schema` as JSON).
+///
+/// # Errors
+///
+/// Returns a JS string when the schema or the scope cannot be read.
+#[wasm_bindgen(js_name = buildCatalog)]
+pub fn build_catalog(schema: JsValue, scope: Option<String>) -> Result<JsValue, JsValue> {
+    let schema: Schema = serde_wasm_bindgen::from_value(schema)
+        .map_err(|error| JsValue::from_str(&format!("schema is not readable: {error}")))?;
+    let scope = scope
+        .map(|scope| Uuid::parse_str(&scope))
+        .transpose()
+        .map_err(|error| JsValue::from_str(&format!("scope is not a database id: {error}")))?;
+    to_js(&build(&schema, scope))
 }
 
 /// Plain objects and arrays, as JSON would give them: maps become objects

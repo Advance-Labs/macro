@@ -33,8 +33,8 @@ where
         {
             return Err(QueryError::NotFound);
         }
-        let entries = self.viewer_entries(&viewer, database_id).await?;
-        let compiled = database_sql::compile(&catalog::engine_catalog(&entries), sql)
+        let (_, catalog) = self.viewer_catalog(&viewer, database_id).await?;
+        let compiled = database_sql::compile(&catalog, sql)
             .map_err(|error| QueryError::Sql(error.to_string()))?;
         if !matches!(compiled, Query::Select(_)) {
             return Err(QueryError::ReadOnly(

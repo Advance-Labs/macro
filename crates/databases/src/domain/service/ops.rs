@@ -680,7 +680,7 @@ impl Planner<'_> {
 fn label_key(data_type: DataType, label: &str) -> String {
     match label.trim().parse::<f64>() {
         Ok(number) if data_type == DataType::SelectNumber && number.is_finite() => {
-            catalog::format_number(number)
+            database_sql::catalog::number_label(number)
         }
         _ => option_key(label),
     }

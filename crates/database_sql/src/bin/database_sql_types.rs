@@ -6,7 +6,9 @@
 //! cargo run -p database_sql --features cli --bin database_sql_types
 //! ```
 
+use database_sql::catalog::Schema;
 use database_sql::{Bin, Catalog, Page, Step};
+use models_databases::OpResult;
 use specta::Types;
 use specta::datatype::{DataType, Fields};
 use specta_typescript::Typescript;
@@ -19,12 +21,15 @@ const FIELD_DEFAULT: &str = "serde:field:default";
 const FIELD_SKIP_SERIALIZING_IF: &str = "serde:field:skip_serializing_if";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // What `wasm::Query` reads and returns; everything else is reached from these.
+    // What `wasm::Query` and `wasm::build_catalog` read and return;
+    // everything else is reached from these.
     let types = Types::default()
+        .register::<Schema>()
         .register::<Catalog>()
         .register::<Step>()
         .register::<Page>()
-        .register::<Bin>();
+        .register::<Bin>()
+        .register::<OpResult>();
     // serde-wasm-bindgen hands `NaN` and the infinities across as numbers,
     // so an `f64` is a plain `number` rather than JSON's `number | null`.
     let types = Configuration::empty()
@@ -32,6 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .apply_types(&types)
         .into_owned();
     let types = symmetric_omissions(types);
+    let types = apart_from_the_catalog(types);
     let output = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../apps/web/src/lib/core/database-sql/generated/types.ts");
 
@@ -44,6 +50,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(output.parent().ok_or("the output has a directory")?)?;
     fs::write(output, format!("{generated}\n"))?;
     Ok(())
+}
+
+/// The ops name a column type and an entity kind as the catalog does, but
+/// mean something narrower (no options, no relations); TypeScript gets them
+/// under names of their own.
+fn apart_from_the_catalog(types: Types) -> Types {
+    types.map(|mut named| {
+        if named.module_path.starts_with("models_databases") {
+            match named.name.as_ref() {
+                "ColumnKind" => named.name = "OpColumnKind".into(),
+                "EntityKind" => named.name = "OpEntityKind".into(),
+                _ => {}
+            }
+        }
+        named
+    })
 }
 
 /// `specta_serde::Format` refuses every `skip_serializing_if`, because an

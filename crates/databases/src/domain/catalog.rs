@@ -10,8 +10,8 @@ use std::collections::HashMap;
 
 use database_sql::cast::{Cast, ColumnType, Contents, TARGETS, cast};
 use database_sql::catalog::{
-    Catalog, Column as EngineColumn, ColumnKind, EntityKind, SelectOption, Table as EngineTable,
-    TableSource,
+    Catalog, ColumnKind, ColumnSchema, DataType as StoredDataType, DatabaseSchema, EntityKind,
+    OptionSchema, OptionValue, PropertyType as StoredType, Schema, TableSchema,
 };
 use models_permissions::share_permission::access_level::AccessLevel;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
@@ -22,6 +22,9 @@ use uuid::Uuid;
 use crate::domain::models::{
     Column, ColumnConfig, Database, DatabaseId, PropertyDefinitionId, Table, TableId,
 };
+
+#[cfg(test)]
+mod test;
 
 /// One table the viewer can see, with what the service needs to run SQL
 /// against it and to describe it.
@@ -126,51 +129,51 @@ pub fn build_entries(
         .collect()
 }
 
-/// Keep the statement addressable from `scope`: a table of another database
-/// whose database and table names both match one of the scoped database's
-/// (case-insensitively, as the engine matches) is dropped, so the scoped
-/// table wins instead of the statement being ambiguous.
-pub fn scope_entries(entries: &mut Vec<TableEntry>, scope: DatabaseId) {
-    let scoped: Vec<(String, String)> = entries
-        .iter()
-        .filter(|entry| entry.database.id == scope)
-        .map(|entry| {
-            (
-                entry.database.name.to_lowercase(),
-                entry.table.name.to_lowercase(),
-            )
-        })
-        .collect();
-    entries.retain(|entry| {
-        entry.database.id == scope
-            || !scoped.contains(&(
-                entry.database.name.to_lowercase(),
-                entry.table.name.to_lowercase(),
-            ))
-    });
+/// The entries as the schema the engine builds its catalog from, tables in
+/// their order.
+pub fn schema(entries: &[TableEntry]) -> Schema {
+    let mut databases: Vec<DatabaseSchema> = Vec::new();
+    for entry in entries {
+        let table = TableSchema {
+            id: entry.table.id,
+            name: entry.table.name.clone(),
+            columns: entry.columns.iter().map(column_schema).collect(),
+        };
+        match databases.last_mut() {
+            Some(database) if database.id == entry.database.id => database.tables.push(table),
+            _ => databases.push(DatabaseSchema {
+                id: entry.database.id,
+                name: entry.database.name.clone(),
+                tables: vec![table],
+            }),
+        }
+    }
+    Schema {
+        databases,
+        platform: Vec::new(),
+    }
 }
 
-/// The entries as the engine's catalog.
-pub fn engine_catalog(entries: &[TableEntry]) -> Catalog {
-    Catalog {
-        tables: entries
+/// The catalog a statement run from `scope` sees.
+pub fn engine_catalog(entries: &[TableEntry], scope: Option<DatabaseId>) -> Catalog {
+    database_sql::catalog::build(&schema(entries), scope)
+}
+
+/// One column as the schema describes it.
+pub fn column_schema(column: &ColumnEntry) -> ColumnSchema {
+    ColumnSchema {
+        id: column.column.id,
+        definition: column.definition.definition.id,
+        name: column.name().to_owned(),
+        property: PropertyType::of(&column.column, &column.definition).stored(),
+        options: column
+            .definition
+            .property_options
             .iter()
-            .map(|entry| EngineTable {
-                id: entry.table.id,
-                database_id: entry.database.id,
-                database: entry.database.name.clone(),
-                name: entry.table.name.clone(),
-                source: TableSource::Database,
-                columns: entry
-                    .columns
-                    .iter()
-                    .map(|column| EngineColumn {
-                        id: column.definition.definition.id,
-                        placement: column.column.id,
-                        name: column.name().to_owned(),
-                        kind: column_kind(column),
-                    })
-                    .collect(),
+            .map(|option| OptionSchema {
+                id: option.id,
+                value: option_value(&option.value),
+                order: option.display_order,
             })
             .collect(),
     }
@@ -178,16 +181,7 @@ pub fn engine_catalog(entries: &[TableEntry]) -> Catalog {
 
 /// The engine's view of a column's type.
 pub fn column_kind(column: &ColumnEntry) -> ColumnKind {
-    match PropertyType::of(&column.column, &column.definition).kind() {
-        ColumnKind::Select { multi, .. } => ColumnKind::Select {
-            multi,
-            options: option_labels(&column.definition)
-                .into_iter()
-                .map(|(id, label)| SelectOption { id, label })
-                .collect(),
-        },
-        kind => kind,
-    }
+    column_schema(column).kind()
 }
 
 /// A column's type as the properties system stores it: what a column is,
@@ -251,29 +245,26 @@ impl PropertyType {
 
     /// The engine's kind for a column of this type, without options.
     pub fn kind(&self) -> ColumnKind {
-        if self.relation {
-            return ColumnKind::Entity {
-                multi: true,
-                target: EntityKind::Row,
-            };
-        }
-        match self.data_type {
-            DataType::String => ColumnKind::Text,
-            DataType::Number => ColumnKind::Number,
-            DataType::Boolean => ColumnKind::Boolean,
-            DataType::Date => ColumnKind::Date,
-            DataType::Link => ColumnKind::Link,
-            DataType::SelectString | DataType::SelectNumber | DataType::Tag => ColumnKind::Select {
-                multi: self.is_multi_select,
-                options: Vec::new(),
+        self.stored().kind(Vec::new())
+    }
+
+    /// The type as the engine's schema spells it.
+    pub fn stored(&self) -> StoredType {
+        StoredType {
+            data_type: match self.data_type {
+                DataType::String => StoredDataType::String,
+                DataType::Number => StoredDataType::Number,
+                DataType::Boolean => StoredDataType::Boolean,
+                DataType::Date => StoredDataType::Date,
+                DataType::Link => StoredDataType::Link,
+                DataType::SelectString => StoredDataType::SelectString,
+                DataType::SelectNumber => StoredDataType::SelectNumber,
+                DataType::Tag => StoredDataType::Tag,
+                DataType::Entity => StoredDataType::Entity,
             },
-            DataType::Entity => ColumnKind::Entity {
-                multi: self.is_multi_select,
-                target: entity_kind(
-                    self.specific_entity_type
-                        .unwrap_or(models_properties::EntityType::User),
-                ),
-            },
+            multi: self.is_multi_select,
+            entity_type: self.specific_entity_type.map(entity_kind),
+            relation: self.relation,
         }
     }
 }
@@ -352,12 +343,17 @@ pub fn sql_table_name(database: &str, table: &str) -> String {
     format!("{}.{}", sql_identifier(database), sql_identifier(table))
 }
 
+/// An option's value as the engine's schema holds it.
+pub fn option_value(value: &PropertyOptionValue) -> OptionValue {
+    match value {
+        PropertyOptionValue::String(text) => OptionValue::String(text.clone()),
+        PropertyOptionValue::Number(number) => OptionValue::Number(*number),
+    }
+}
+
 /// An option's label as users write it.
 pub fn option_display(value: &PropertyOptionValue) -> String {
-    match value {
-        PropertyOptionValue::String(text) => text.clone(),
-        PropertyOptionValue::Number(number) => format_number(*number),
-    }
+    option_value(value).label()
 }
 
 /// Every option of a definition with its label, in display order.
@@ -368,13 +364,4 @@ pub fn option_labels(definition: &PropertyDefinitionWithOptions) -> Vec<(Uuid, S
         .into_iter()
         .map(|option| (option.id, option_display(&option.value)))
         .collect()
-}
-
-/// A number the way a label shows it: no trailing `.0` on whole numbers.
-pub fn format_number(number: f64) -> String {
-    if number.fract() == 0.0 && number.abs() < 1e15 {
-        format!("{}", number as i64)
-    } else {
-        number.to_string()
-    }
 }
