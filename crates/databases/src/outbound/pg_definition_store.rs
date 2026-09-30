@@ -1,4 +1,4 @@
-//! Postgres implementation of the [`ColumnDefinitionStore`] port.
+//! The [`ColumnDefinitionStore`] port over the properties domain.
 //!
 //! A database column IS a `property_definitions` row. Definitions created for a
 //! column are owned by the database (`database_id` set, `user_id`/`team_id`
@@ -11,57 +11,37 @@
 #[cfg(test)]
 mod test;
 
-use models_properties::service::property_definition::PropertyDefinition;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
 use models_properties::service::property_option::{PropertyOption, PropertyOptionValue};
-use models_properties::{DataType, EntityType, db};
+use models_properties::{DataType, EntityType};
 use properties::domain::ports::PropertiesRepo;
-use properties::outbound::property_option_queries::{
-    create_property_option, get_property_options, get_property_options_batch,
-};
-use sqlx::PgPool;
 
 use crate::domain::models::{ColumnBinding, DatabaseId, PropertyDefinitionId, Viewer};
 use crate::domain::ports::ColumnDefinitionStore;
 
-/// Errors from the Postgres column-definition store.
+/// Errors from the column-definition store.
 #[derive(Debug, thiserror::Error)]
 pub enum PgDefinitionStoreError {
-    /// Underlying database failure.
-    #[error("database error")]
-    Sqlx(#[from] sqlx::Error),
     /// Failure from the owning properties domain.
     #[error("properties error: {0}")]
     Properties(#[source] anyhow::Error),
-    /// A binding referenced a property definition that does not exist.
+    /// A binding referenced a property definition that does not exist, or
+    /// one the viewer may not bind.
     #[error("property definition {0} not found")]
     NotFound(PropertyDefinitionId),
-    /// A stored option row could not be decoded into a `PropertyOption`.
-    #[error("malformed property option: {0}")]
-    MalformedOption(String),
 }
 
-/// The `properties` option helpers are anyhow-typed; their only failure modes
-/// are a query error and a malformed option row.
-fn from_properties_error(error: anyhow::Error) -> PgDefinitionStoreError {
-    match error.downcast::<sqlx::Error>() {
-        Ok(sqlx_error) => PgDefinitionStoreError::Sqlx(sqlx_error),
-        Err(other) => PgDefinitionStoreError::MalformedOption(other.to_string()),
-    }
-}
-
-/// [`ColumnDefinitionStore`] backed by MacroDB's `property_definitions` and
-/// `property_options` tables.
+/// [`ColumnDefinitionStore`] over the properties domain's repository, which
+/// owns `property_definitions` and `property_options`.
 #[derive(Debug, Clone)]
 pub struct PgDefinitionStore<P> {
-    pool: PgPool,
     properties: P,
 }
 
 impl<P: PropertiesRepo<Err = anyhow::Error>> PgDefinitionStore<P> {
-    /// Create a store with the owning properties domain port.
-    pub fn new(pool: PgPool, properties: P) -> Self {
-        Self { pool, properties }
+    /// Create a store over the owning properties domain port.
+    pub fn new(properties: P) -> Self {
+        Self { properties }
     }
 
     /// Insert a definition owned by `database_id`, returning its id.
@@ -108,31 +88,13 @@ impl<P: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore for PgDefinit
                 self.create_database_definition(database_id, name, *data_type, *is_multi_select)
                     .await
             }
-            ColumnBinding::ExistingDefinition(id) => {
-                // Only definitions the viewer can already see may be bound:
-                // system-owned, their own, one of their teams', or this
-                // database's. Anything else is indistinguishable from missing.
-                let user_id: &str = viewer.user_id.as_ref();
-                sqlx::query_scalar!(
-                    r#"
-                    SELECT id
-                    FROM property_definitions
-                    WHERE id = $1
-                      AND (
-                        is_system
-                        OR user_id = $2
-                        OR database_id = $3
-                        OR team_id IN (SELECT team_id FROM team_user WHERE user_id = $2)
-                      )
-                    "#,
-                    id,
-                    user_id,
-                    database_id,
-                )
-                .fetch_optional(&self.pool)
-                .await?
-                .ok_or(PgDefinitionStoreError::NotFound(*id))
-            }
+            ColumnBinding::ExistingDefinition(id) => self
+                .properties
+                .get_bindable_property_definition(*id, viewer.user_id.as_ref(), database_id)
+                .await
+                .map_err(PgDefinitionStoreError::Properties)?
+                .map(|definition| definition.id)
+                .ok_or(PgDefinitionStoreError::NotFound(*id)),
         }
     }
 
@@ -179,9 +141,11 @@ impl<P: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore for PgDefinit
         }
         // New options go after the ones already there, so the order the user
         // sees (and the labels the catalog derives from it) is stable.
-        let mut display_order = get_property_options(&self.pool, definition_id)
+        let mut display_order = self
+            .properties
+            .get_property_options(definition_id)
             .await
-            .map_err(from_properties_error)?
+            .map_err(PgDefinitionStoreError::Properties)?
             .iter()
             .map(|option| option.display_order)
             .max()
@@ -190,15 +154,10 @@ impl<P: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore for PgDefinit
         let mut created = Vec::with_capacity(values.len());
         for value in values {
             created.push(
-                create_property_option(
-                    &self.pool,
-                    definition_id,
-                    display_order,
-                    value.clone(),
-                    None,
-                )
-                .await
-                .map_err(from_properties_error)?,
+                self.properties
+                    .create_property_option(definition_id, display_order, value.clone(), None)
+                    .await
+                    .map_err(PgDefinitionStoreError::Properties)?,
             );
             display_order += 1;
         }
@@ -210,58 +169,9 @@ impl<P: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore for PgDefinit
         &self,
         ids: &[PropertyDefinitionId],
     ) -> Result<Vec<PropertyDefinitionWithOptions>, Self::Err> {
-        if ids.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let rows = sqlx::query!(
-            r#"
-            SELECT
-                id,
-                team_id,
-                user_id,
-                database_id,
-                display_name,
-                data_type as "data_type: DataType",
-                is_multi_select,
-                specific_entity_type as "specific_entity_type: Option<EntityType>",
-                created_at,
-                updated_at,
-                is_system
-            FROM property_definitions
-            WHERE id = ANY($1)
-            "#,
-            ids
-        )
-        .fetch_all(&self.pool)
-        .await?;
-
-        let mut options = get_property_options_batch(&self.pool, ids)
+        self.properties
+            .get_property_definitions_with_options(ids)
             .await
-            .map_err(from_properties_error)?;
-
-        Ok(rows
-            .into_iter()
-            .map(|row| {
-                let id = row.id;
-                let definition = PropertyDefinition::from(db::PropertyDefinition {
-                    id,
-                    team_id: row.team_id,
-                    user_id: row.user_id,
-                    database_id: row.database_id,
-                    display_name: row.display_name,
-                    data_type: row.data_type,
-                    is_multi_select: row.is_multi_select,
-                    specific_entity_type: row.specific_entity_type.flatten(),
-                    created_at: row.created_at,
-                    updated_at: row.updated_at,
-                    is_system: row.is_system,
-                });
-                PropertyDefinitionWithOptions {
-                    definition,
-                    property_options: options.remove(&id).unwrap_or_default(),
-                }
-            })
-            .collect())
+            .map_err(PgDefinitionStoreError::Properties)
     }
 }

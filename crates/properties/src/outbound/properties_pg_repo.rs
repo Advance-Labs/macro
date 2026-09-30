@@ -183,6 +183,34 @@ impl PropertiesRepo for PropertiesPgRepo {
     }
 
     #[tracing::instrument(skip(self), err)]
+    async fn get_bindable_property_definition(
+        &self,
+        property_definition_id: Uuid,
+        user_id: &str,
+        database_id: Uuid,
+    ) -> Result<Option<PropertyDefinition>, Self::Err> {
+        property_definition_queries::get_bindable_property_definition(
+            &self.pool,
+            property_definition_id,
+            user_id,
+            database_id,
+        )
+        .await
+    }
+
+    #[tracing::instrument(skip(self), err)]
+    async fn get_property_definitions_with_options(
+        &self,
+        property_definition_ids: &[Uuid],
+    ) -> Result<Vec<PropertyDefinitionWithOptions>, Self::Err> {
+        property_definition_queries::get_property_definitions_with_options(
+            &self.pool,
+            property_definition_ids,
+        )
+        .await
+    }
+
+    #[tracing::instrument(skip(self), err)]
     async fn get_property_options(
         &self,
         property_definition_id: Uuid,

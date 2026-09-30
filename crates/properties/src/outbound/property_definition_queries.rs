@@ -467,6 +467,84 @@ pub async fn create_database_property_definition(
     Ok(row.into())
 }
 
+/// A definition a user may bind as a column of `database_id`: a system one,
+/// their own, one of their teams', or one the database owns. `None` for
+/// anything else, which is indistinguishable from a missing definition.
+#[tracing::instrument(skip(pool), err)]
+pub async fn get_bindable_property_definition(
+    pool: &Pool<Postgres>,
+    property_definition_id: Uuid,
+    user_id: &str,
+    database_id: Uuid,
+) -> anyhow::Result<Option<PropertyDefinition>> {
+    let row = sqlx::query_as!(
+        db::PropertyDefinition,
+        r#"
+        SELECT
+            id, team_id, user_id, database_id, display_name,
+            data_type AS "data_type: DataType",
+            is_multi_select,
+            specific_entity_type AS "specific_entity_type: EntityType",
+            created_at, updated_at, is_system
+        FROM property_definitions
+        WHERE id = $1
+          AND (
+            is_system
+            OR user_id = $2
+            OR database_id = $3
+            OR team_id IN (SELECT team_id FROM team_user WHERE user_id = $2)
+          )
+        "#,
+        property_definition_id,
+        user_id,
+        database_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(PropertyDefinition::from))
+}
+
+/// Definitions by id with their options, database-owned ones included.
+/// Missing ids are skipped. Authorization is the caller's.
+#[tracing::instrument(skip(pool), err)]
+pub async fn get_property_definitions_with_options(
+    pool: &Pool<Postgres>,
+    property_definition_ids: &[Uuid],
+) -> anyhow::Result<Vec<PropertyDefinitionWithOptions>> {
+    if property_definition_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = sqlx::query_as!(
+        db::PropertyDefinition,
+        r#"
+        SELECT
+            id, team_id, user_id, database_id, display_name,
+            data_type AS "data_type: DataType",
+            is_multi_select,
+            specific_entity_type AS "specific_entity_type: EntityType",
+            created_at, updated_at, is_system
+        FROM property_definitions
+        WHERE id = ANY($1)
+        "#,
+        property_definition_ids,
+    )
+    .fetch_all(pool)
+    .await?;
+    let mut options =
+        super::property_option_queries::get_property_options_batch(pool, property_definition_ids)
+            .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let property_options = options.remove(&row.id).unwrap_or_default();
+            PropertyDefinitionWithOptions {
+                definition: PropertyDefinition::from(row),
+                property_options,
+            }
+        })
+        .collect())
+}
+
 /// Inserts a property option within an existing transaction.
 pub(super) async fn create_property_option_tx(
     tx: &mut sqlx::Transaction<'_, Postgres>,

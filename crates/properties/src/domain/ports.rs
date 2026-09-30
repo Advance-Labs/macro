@@ -104,6 +104,23 @@ pub trait PropertiesRepo: Send + Sync + 'static {
         specific_entity_type: Option<EntityType>,
     ) -> impl Future<Output = Result<PropertyDefinition, Self::Err>> + Send;
 
+    /// A definition a user may bind as a column of `database_id`: a system
+    /// one, their own, one of their teams', or one the database owns.
+    /// `None` for anything else, including a missing definition.
+    fn get_bindable_property_definition(
+        &self,
+        property_definition_id: Uuid,
+        user_id: &str,
+        database_id: Uuid,
+    ) -> impl Future<Output = Result<Option<PropertyDefinition>, Self::Err>> + Send;
+
+    /// Definitions by id with their options, database-owned ones included.
+    /// Missing ids are skipped; authorization is the caller's.
+    fn get_property_definitions_with_options(
+        &self,
+        property_definition_ids: &[Uuid],
+    ) -> impl Future<Output = Result<Vec<PropertyDefinitionWithOptions>, Self::Err>> + Send;
+
     /// Delete a property definition and all associated data (cascades).
     /// A no-op if the definition doesn't exist.
     fn delete_property_definition(

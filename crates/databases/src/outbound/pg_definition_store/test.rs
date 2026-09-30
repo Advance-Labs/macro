@@ -92,7 +92,6 @@ fn new_definition(name: &str, data_type: DataType) -> ColumnBinding {
 async fn new_binding_creates_a_database_owned_definition(pool: PgPool) {
     let database_id = insert_database(&pool).await;
     let store = PgDefinitionStore::new(
-        pool.clone(),
         properties::outbound::properties_pg_repo::PropertiesPgRepo::new(pool),
     );
 
@@ -128,7 +127,6 @@ async fn new_binding_creates_a_database_owned_definition(pool: PgPool) {
 async fn a_column_may_reuse_a_reserved_system_property_name(pool: PgPool) {
     let database_id = insert_database(&pool).await;
     let store = PgDefinitionStore::new(
-        pool.clone(),
         properties::outbound::properties_pg_repo::PropertiesPgRepo::new(pool),
     );
 
@@ -148,7 +146,6 @@ async fn a_column_may_reuse_a_reserved_system_property_name(pool: PgPool) {
 async fn existing_binding_returns_the_definition_id(pool: PgPool) {
     let database_id = insert_database(&pool).await;
     let store = PgDefinitionStore::new(
-        pool.clone(),
         properties::outbound::properties_pg_repo::PropertiesPgRepo::new(pool),
     );
 
@@ -177,7 +174,6 @@ async fn existing_binding_returns_the_definition_id(pool: PgPool) {
 async fn existing_binding_rejects_an_unknown_definition(pool: PgPool) {
     let database_id = insert_database(&pool).await;
     let store = PgDefinitionStore::new(
-        pool.clone(),
         properties::outbound::properties_pg_repo::PropertiesPgRepo::new(pool),
     );
     let missing = macro_uuid::generate_uuid_v7();
@@ -201,7 +197,6 @@ async fn existing_binding_rejects_an_unknown_definition(pool: PgPool) {
 async fn definitions_attaches_options_and_ignores_unknown_ids(pool: PgPool) {
     let database_id = insert_database(&pool).await;
     let store = PgDefinitionStore::new(
-        pool.clone(),
         properties::outbound::properties_pg_repo::PropertiesPgRepo::new(pool.clone()),
     );
 
@@ -256,7 +251,6 @@ async fn definitions_attaches_options_and_ignores_unknown_ids(pool: PgPool) {
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn definitions_of_nothing_is_empty(pool: PgPool) {
     let store = PgDefinitionStore::new(
-        pool.clone(),
         properties::outbound::properties_pg_repo::PropertiesPgRepo::new(pool),
     );
 
@@ -269,7 +263,6 @@ async fn definitions_of_nothing_is_empty(pool: PgPool) {
 async fn add_options_appends_to_the_definition(pool: PgPool) {
     let database_id = insert_database(&pool).await;
     let store = PgDefinitionStore::new(
-        pool.clone(),
         properties::outbound::properties_pg_repo::PropertiesPgRepo::new(pool),
     );
 
@@ -328,7 +321,6 @@ async fn add_options_appends_to_the_definition(pool: PgPool) {
 async fn add_options_stores_numbers_for_a_numeric_select(pool: PgPool) {
     let database_id = insert_database(&pool).await;
     let store = PgDefinitionStore::new(
-        pool.clone(),
         properties::outbound::properties_pg_repo::PropertiesPgRepo::new(pool),
     );
 
@@ -360,7 +352,6 @@ async fn add_options_stores_numbers_for_a_numeric_select(pool: PgPool) {
 async fn add_options_of_nothing_writes_nothing(pool: PgPool) {
     let database_id = insert_database(&pool).await;
     let store = PgDefinitionStore::new(
-        pool.clone(),
         properties::outbound::properties_pg_repo::PropertiesPgRepo::new(pool),
     );
     let definition_id = store
