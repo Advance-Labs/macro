@@ -1,4 +1,5 @@
 import { Popover } from '@kobalte/core/popover';
+import ArrowRightIcon from '@phosphor/arrow-right.svg';
 import ArrowUpRightIcon from '@phosphor/arrow-up-right.svg';
 import CheckIcon from '@phosphor/check.svg';
 import LinkIcon from '@phosphor/link-simple.svg';
@@ -47,9 +48,14 @@ export function DatabaseRelationCell(props: DatabaseRelationCellProps) {
   const listId = createUniqueId();
   const editable = () => props.canEdit && props.column.writable;
   const ids = () => relatedRowIds(props.value);
+  const available = (id: string) =>
+    props.source.rows().some((row) => row.id === id);
   const name = (id: string) =>
     props.source.rows().find((row) => row.id === id)?.name ??
     (props.source.loading() ? 'Loading…' : 'Unavailable record');
+  /** Chips shown in the cell; each carries an arrow to its record. */
+  const shown = () => ids().slice(0, 2);
+  const openable = () => shown().filter(available);
   const candidates = () =>
     props.source
       .rows()
@@ -170,71 +176,102 @@ export function DatabaseRelationCell(props: DatabaseRelationCellProps) {
       overlap
       overflowPadding={8}
     >
-      <button
-        ref={trigger}
-        type="button"
-        class="flex min-h-9 w-full min-w-0 items-center gap-1 rounded px-2.5 py-1.5 text-left text-[13px] outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50"
-        aria-label={`${props.column.name}: ${ids().map(name).join(', ') || 'Empty'}. ${editable() ? 'Choose related records' : 'View related records'}`}
-        aria-haspopup="dialog"
-        aria-expanded={open()}
-        onClick={() => begin()}
-        onKeyDown={(event) => {
-          if (
-            event.isComposing ||
-            event.keyCode === 229 ||
-            event.metaKey ||
-            event.ctrlKey ||
-            event.altKey
-          )
-            return;
-          if (
-            event.key === 'Tab' &&
-            props.onNavigate?.(event.shiftKey ? -1 : 1)
-          ) {
-            event.preventDefault();
-            event.stopPropagation();
-          } else if (
-            event.key === 'Enter' ||
-            event.key === 'F2' ||
-            event.key.length === 1
-          ) {
-            event.preventDefault();
-            event.stopPropagation();
-            begin(event.key.length === 1 ? event.key : '');
-          } else if (
-            editable() &&
-            (event.key === 'Delete' || event.key === 'Backspace')
-          ) {
-            event.preventDefault();
-            event.stopPropagation();
-            void write([]);
-          }
-        }}
-      >
-        <Show
-          when={ids().length}
-          fallback={<span class="text-ink-placeholder opacity-40">—</span>}
-        >
-          <span class="flex min-w-0 items-center gap-1 overflow-hidden">
-            <For each={ids().slice(0, 2)}>
-              {(id) => (
-                <span
-                  class="inline-flex min-w-0 max-w-44 items-center gap-1 rounded border border-edge-muted/60 bg-hover/60 px-1.5 py-0.5 text-xs text-ink"
-                  title={name(id)}
-                >
-                  <LinkIcon class="size-3 shrink-0 text-ink-muted" />
-                  <span class="truncate">{name(id)}</span>
+      <div class="relative flex min-h-9 w-full min-w-0 items-center">
+        {/*
+          The trigger is the whole cell. The chips sit above it and let clicks
+          through, so only their arrow buttons are separate controls, reached
+          by Tab from the trigger and leaving the cell after the last one.
+        */}
+        <button
+          ref={trigger}
+          type="button"
+          class="absolute inset-0 rounded outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50"
+          aria-label={`${props.column.name}: ${ids().map(name).join(', ') || 'Empty'}. ${editable() ? 'Choose related records' : 'View related records'}`}
+          aria-haspopup="dialog"
+          aria-expanded={open()}
+          onClick={() => begin()}
+          onKeyDown={(event) => {
+            if (
+              event.isComposing ||
+              event.keyCode === 229 ||
+              event.metaKey ||
+              event.ctrlKey ||
+              event.altKey
+            )
+              return;
+            if (event.key === 'Tab' && !event.shiftKey && openable().length)
+              return;
+            if (
+              event.key === 'Tab' &&
+              props.onNavigate?.(event.shiftKey ? -1 : 1)
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+            } else if (
+              event.key === 'Enter' ||
+              event.key === 'F2' ||
+              event.key.length === 1
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+              begin(event.key.length === 1 ? event.key : '');
+            } else if (
+              editable() &&
+              (event.key === 'Delete' || event.key === 'Backspace')
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+              void write([]);
+            }
+          }}
+        />
+        <span class="pointer-events-none relative flex min-w-0 flex-1 items-center gap-1 px-2.5 py-1.5 text-left text-[13px]">
+          <Show
+            when={ids().length}
+            fallback={<span class="text-ink-placeholder opacity-40">—</span>}
+          >
+            <span class="flex min-w-0 items-center gap-1 overflow-hidden">
+              <For each={shown()}>
+                {(id) => (
+                  <span
+                    class="inline-flex min-w-0 max-w-44 items-center gap-1 rounded border border-edge-muted/60 bg-hover/60 py-0.5 pl-1.5 text-xs text-ink"
+                    title={name(id)}
+                  >
+                    <LinkIcon class="size-3 shrink-0 text-ink-muted" />
+                    <span class="truncate">{name(id)}</span>
+                    <button
+                      type="button"
+                      class="pointer-events-auto grid size-5 shrink-0 place-items-center rounded-r text-ink-muted outline-none hover:bg-hover hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/50 disabled:opacity-40"
+                      aria-label={`Open ${name(id)}`}
+                      title={`Open ${name(id)}`}
+                      disabled={!available(id)}
+                      onClick={() => openRecord(id)}
+                      onKeyDown={(event) => {
+                        if (
+                          event.key === 'Tab' &&
+                          !event.shiftKey &&
+                          openable().at(-1) === id &&
+                          props.onNavigate?.(1)
+                        ) {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }
+                      }}
+                    >
+                      <ArrowRightIcon class="size-3" />
+                    </button>
+                  </span>
+                )}
+              </For>
+              <Show when={ids().length > 2}>
+                <span class="shrink-0 text-xs text-ink-muted">
+                  +{ids().length - 2}
                 </span>
-              )}
-            </For>
-            <Show when={ids().length > 2}>
-              <span class="shrink-0 text-xs text-ink-muted">
-                +{ids().length - 2}
-              </span>
-            </Show>
-          </span>
-        </Show>
-      </button>
+              </Show>
+            </span>
+          </Show>
+        </span>
+      </div>
       <Popover.Portal>
         <Popover.Content
           class="z-action-menu flex w-80 max-w-[calc(100vw-1.5rem)] min-h-0 flex-col overflow-hidden rounded-lg border border-edge bg-menu text-ink shadow-menu outline-none"

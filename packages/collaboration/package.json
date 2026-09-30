@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./collab/*": "./src/collab/*.ts",
+    "./palette": "./src/internal/palette.ts",
     "./sync-service/*": "./src/sync-service/*.ts",
     "./websocket": "./src/websocket/index.ts",
     "./websocket/*": "./src/websocket/*.ts"

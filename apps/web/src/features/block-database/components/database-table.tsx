@@ -3,7 +3,14 @@ import {
   MenuItem,
   MenuSeparator,
 } from '@core/component/ContextMenu';
+import {
+  getDisplayNameParts,
+  getInitials,
+  macroIdToEmail,
+  tryMacroId,
+} from '@core/user';
 import { ContextMenu } from '@kobalte/core/context-menu';
+import { paletteColorForKey } from '@macro-inc/collaboration/palette';
 import ArrowSquareOutIcon from '@phosphor/arrow-square-out.svg';
 import CopyIcon from '@phosphor/copy.svg';
 import PencilIcon from '@phosphor/pencil-simple.svg';
@@ -41,6 +48,27 @@ import { canEditCell, type DatabaseRow } from '../core/table';
 import type { DatabaseColumnHeaderProps } from './database-column-header';
 import { DatabaseColumnHeader } from './database-column-header';
 
+/** The cell this client has focused, as shared with the table's other viewers. */
+export type DatabaseCellFocus = {
+  rowId: string;
+  columnId?: string;
+  editing: boolean;
+};
+
+/** Another viewer of the same table; no row or column means no cell. */
+export type DatabaseCellPresence = {
+  userId: string;
+  rowId?: string;
+  columnId?: string;
+  editing: boolean;
+};
+
+/** Focus inside one of these means the cell's inline editor is open. */
+const EDITOR_FIELDS =
+  'input:not([type="checkbox"]), textarea, [contenteditable="true"]';
+/** Portaled editors keep the cell current while they hold focus. */
+const PORTALED_EDITORS = '[role="dialog"], [role="listbox"]';
+
 export function DatabaseTable(props: {
   name: string;
   rows: DatabaseRow[];
@@ -48,6 +76,10 @@ export function DatabaseTable(props: {
   titleColumnId?: string;
   isUnsavedRow?: (rowId: string) => boolean;
   onRowFocus?: (rowId: string | undefined) => void;
+  onCellFocus?: (cell: DatabaseCellFocus | undefined) => void;
+  remoteUsers?: DatabaseCellPresence[];
+  /** Scrolled into view and briefly tinted, e.g. the target of a relation. */
+  highlightRowId?: string;
   view: DatabaseViewConfig;
   canEdit: boolean;
   canCreateRecord: boolean;
@@ -169,6 +201,36 @@ export function DatabaseTable(props: {
     editRequestedCell();
     return true;
   };
+  let announcedCell: DatabaseCellFocus | undefined;
+  const announceCell = (cell: DatabaseCellFocus | undefined) => {
+    if (
+      cell?.rowId === announcedCell?.rowId &&
+      cell?.columnId === announcedCell?.columnId &&
+      cell?.editing === announcedCell?.editing
+    )
+      return;
+    announcedCell = cell;
+    props.onCellFocus?.(cell);
+  };
+  const cellAt = (
+    target: EventTarget | null
+  ): DatabaseCellFocus | undefined => {
+    if (!(target instanceof HTMLElement)) return undefined;
+    const cell = target.closest<HTMLElement>('[data-grid-cell]');
+    const rowId =
+      cell?.closest<HTMLElement>('[data-grid-row-id]')?.dataset.gridRowId;
+    if (!cell || !rowId) return undefined;
+    const column = props.columns[Number(cell.dataset.gridColumn) - 1];
+    return {
+      rowId,
+      columnId: column?.id,
+      editing: target.matches(EDITOR_FIELDS),
+    };
+  };
+  const presenceAt = (rowId: string, columnId: string) =>
+    props.remoteUsers?.filter(
+      (user) => user.rowId === rowId && user.columnId === columnId
+    ) ?? [];
   const template = () =>
     `2.75rem ${props.columns.map((_, index) => (index === 0 ? 'min(var(--database-title-column-width, 18rem), max(9rem, calc(100cqw - 11.5rem)))' : '12rem')).join(' ')} ${props.canEdit ? '8.75rem' : ''}`;
   function moveFocus(event: KeyboardEvent) {
@@ -362,18 +424,23 @@ export function DatabaseTable(props: {
                     ?.dataset.gridRowId
                 : undefined;
             if (rowId) props.onRowFocus?.(rowId);
+            announceCell(cellAt(event.target));
           }}
           onFocusOut={(event) => {
             const grid = event.currentTarget;
             queueMicrotask(() => {
               const active = document.activeElement;
               if (
-                active instanceof HTMLElement &&
-                active !== document.body &&
-                !grid.contains(active) &&
-                !active.closest('[role="menu"]')
+                !(active instanceof HTMLElement) ||
+                active === document.body ||
+                grid.contains(active) ||
+                active.closest('[role="menu"]')
               )
-                props.onRowFocus?.(undefined);
+                return;
+              props.onRowFocus?.(undefined);
+              if (active.closest(PORTALED_EDITORS) && announcedCell)
+                announceCell({ ...announcedCell, editing: true });
+              else announceCell(undefined);
             });
           }}
         >
@@ -457,14 +524,24 @@ export function DatabaseTable(props: {
                 }
                 setContextColumn(columnId);
               };
+              const highlighted = () => props.highlightRowId === row().rowId;
               return (
                 <ContextMenu>
                   <ContextMenu.Trigger
                     as="div"
+                    ref={(element: HTMLElement) => {
+                      createEffect(
+                        on(highlighted, (on) => {
+                          if (on) element.scrollIntoView({ block: 'nearest' });
+                        })
+                      );
+                    }}
                     role="row"
                     data-grid-row-id={row().rowId}
+                    data-highlighted={highlighted() ? '' : undefined}
                     aria-rowindex={index() + 2}
-                    class="group grid min-h-10 border-b border-edge-muted/60 hover:bg-hover/50"
+                    class="group grid min-h-10 border-b border-edge-muted/60 transition-colors duration-700 hover:bg-hover/50"
+                    classList={{ 'bg-accent/15': highlighted() }}
                     style={{ 'grid-template-columns': template() }}
                   >
                     <div
@@ -501,27 +578,46 @@ export function DatabaseTable(props: {
                       </Show>
                     </div>
                     <Key each={props.columns} by="id">
-                      {(column, columnIndex) => (
-                        <div
-                          role="gridcell"
-                          aria-colindex={columnIndex() + 2}
-                          tabindex={-1}
-                          class="min-w-0 border-r border-edge-muted/40 px-0.5 py-0.5 outline-none focus-within:ring-1 focus-within:ring-inset focus-within:ring-ink/40 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ink/50"
-                          data-grid-cell
-                          data-grid-row={index()}
-                          data-grid-column={columnIndex() + 1}
-                          onContextMenu={(event) =>
-                            captureContext(event, column().id)
-                          }
-                        >
-                          {props.renderCell(row, column, {
-                            onReady: (editor) =>
-                              register(row().rowId, column().id, editor),
-                            onNavigate: (direction) =>
-                              navigate(row().rowId, column().id, direction),
-                          })}
-                        </div>
-                      )}
+                      {(column, columnIndex) => {
+                        const presence = () =>
+                          presenceAt(row().rowId, column().id);
+                        return (
+                          <div
+                            role="gridcell"
+                            aria-colindex={columnIndex() + 2}
+                            tabindex={-1}
+                            class="relative min-w-0 border-r border-edge-muted/40 px-0.5 py-0.5 outline-none focus-within:ring-1 focus-within:ring-inset focus-within:ring-ink/40 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ink/50"
+                            data-grid-cell
+                            data-grid-row={index()}
+                            data-grid-column={columnIndex() + 1}
+                            data-remote-users={
+                              presence().length
+                                ? presence()
+                                    .map((user) => user.userId)
+                                    .join(' ')
+                                : undefined
+                            }
+                            style={presenceOutline(presence()[0])}
+                            onContextMenu={(event) =>
+                              captureContext(event, column().id)
+                            }
+                          >
+                            {props.renderCell(row, column, {
+                              onReady: (editor) =>
+                                register(row().rowId, column().id, editor),
+                              onNavigate: (direction) =>
+                                navigate(row().rowId, column().id, direction),
+                            })}
+                            <Show when={presence().length}>
+                              <span class="pointer-events-none absolute -top-px right-0 z-1 flex gap-px">
+                                <For each={presence()}>
+                                  {(user) => <PresenceTag user={user} />}
+                                </For>
+                              </span>
+                            </Show>
+                          </div>
+                        );
+                      }}
                     </Key>
                     <Show when={props.canEdit}>
                       <div
@@ -671,6 +767,47 @@ export function DatabaseTable(props: {
         {columnPreview()}
       </DragOverlay>
     </DragDropProvider>
+  );
+}
+
+/** Same color for the same viewer on every client's grid. */
+function presenceColor(userId: string) {
+  return `var(--color-${paletteColorForKey(userId)}, var(--color-pink))`;
+}
+
+function presenceOutline(
+  user: DatabaseCellPresence | undefined
+): JSX.CSSProperties | undefined {
+  if (!user) return undefined;
+  return {
+    outline: `2px ${user.editing ? 'dashed' : 'solid'} ${presenceColor(user.userId)}`,
+    'outline-offset': '-2px',
+  };
+}
+
+/** First name when known, else initials from the user's email. */
+function presenceName(userId: string) {
+  const macroId = tryMacroId(userId);
+  const { firstName, lastName } = getDisplayNameParts(macroId);
+  return (
+    firstName ||
+    getInitials(firstName, lastName, macroId ? macroIdToEmail(macroId) : userId)
+  );
+}
+
+function PresenceTag(props: { user: DatabaseCellPresence }) {
+  const label = () =>
+    `${presenceName(props.user.userId)} is ${props.user.editing ? 'editing' : 'here'}`;
+  return (
+    <span
+      role="note"
+      aria-label={label()}
+      title={label()}
+      class="max-w-24 truncate rounded-bl px-1 text-[10px] leading-4 font-medium text-surface"
+      style={{ 'background-color': presenceColor(props.user.userId) }}
+    >
+      {presenceName(props.user.userId)}
+    </span>
   );
 }
 

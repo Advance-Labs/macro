@@ -17,6 +17,17 @@ import {
 import type { DatabaseRow } from '../core/table';
 import { DatabaseTable } from './database-table';
 
+vi.mock('@core/user', () => ({
+  tryMacroId: (id: string) => (id.startsWith('macro|') ? id : undefined),
+  macroIdToEmail: (id: string) => id.slice(6),
+  getDisplayNameParts: (id: string | undefined) =>
+    id === 'macro|alex@example.com'
+      ? { firstName: 'Alex', lastName: 'Rivera', fullName: 'Alex Rivera' }
+      : { firstName: '', lastName: '', fullName: '' },
+  getInitials: (first: string, last: string, email: string) =>
+    (first[0] ?? '') + (last[0] ?? '') || email[0].toUpperCase(),
+}));
+
 const name: DatabaseViewColumn = {
   id: 'name',
   name: 'Name',
@@ -104,6 +115,7 @@ async function selectMenu(name: string) {
 let menuStyles: HTMLStyleElement;
 beforeEach(() => {
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+  Element.prototype.scrollIntoView = vi.fn();
   // JSDOM reports an empty animation name; presence expects CSS's default none.
   menuStyles = document.createElement('style');
   menuStyles.textContent = '[role=menu] { animation-name: none; }';
@@ -535,5 +547,95 @@ describe('spreadsheet interactions', () => {
     expect(
       within(menu).getByRole('menuitem', { name: 'Open record' })
     ).toBeTruthy();
+  });
+});
+
+describe('presence and reveal', () => {
+  it('marks the cell a remote viewer is on and shares the focused cell', () => {
+    const onCellFocus = vi.fn();
+    const [remoteUsers, setRemoteUsers] = createSignal([
+      {
+        userId: 'macro|alex@example.com',
+        rowId: 'two',
+        columnId: 'notes',
+        editing: false,
+      },
+      {
+        userId: 'macro|sam@example.com',
+        rowId: 'one',
+        columnId: 'name',
+        editing: true,
+      },
+      { userId: 'macro|pat@example.com', editing: false },
+    ]);
+    const [highlightRowId, setHighlightRowId] = createSignal<string>();
+    render(() => (
+      <DatabaseTable
+        name="Tasks"
+        rows={rows}
+        columns={[name, notes]}
+        titleColumnId="name"
+        view={defaultDatabaseView()}
+        canEdit
+        canCreateRecord
+        pending={false}
+        addColumn={<button>Add column</button>}
+        getRowTitle={(row) => String(row.cells.name)}
+        onOpen={vi.fn()}
+        onCreate={vi.fn()}
+        onSort={vi.fn()}
+        onCellFocus={onCellFocus}
+        remoteUsers={remoteUsers()}
+        highlightRowId={highlightRowId()}
+        renderCell={(row, column, options) => (
+          <GridCell
+            column={column()}
+            value={row().cells[column().id] ?? null}
+            canEdit
+            onWrite={async () => true}
+            onAddOption={async () => true}
+            {...options}
+          />
+        )}
+      />
+    ));
+    const alexTag = screen.getByRole('note', { name: 'Alex is here' });
+    expect(alexTag.textContent).toBe('Alex');
+    expect(alexTag.title).toBe('Alex is here');
+    const alexCell = alexTag.closest<HTMLElement>('[data-grid-cell]')!;
+    expect(alexCell.dataset.gridRow).toBe('1');
+    expect(alexCell.dataset.gridColumn).toBe('2');
+    expect(alexCell.dataset.remoteUsers).toBe('macro|alex@example.com');
+    expect(alexCell.style.outline).toContain('2px solid');
+    // Sam has no cached name: initials from the email, dashed while editing.
+    const samTag = screen.getByRole('note', { name: 'S is editing' });
+    const samCell = samTag.closest<HTMLElement>('[data-grid-cell]')!;
+    expect(samCell.style.outline).toContain('dashed');
+    expect(samCell.style.outline).not.toBe(alexCell.style.outline);
+    // Pat is on the table with no cell: nothing to draw.
+    expect(document.querySelectorAll('[data-remote-users]')).toHaveLength(2);
+    setRemoteUsers([]);
+    expect(screen.queryByRole('note')).toBeNull();
+    expect(alexCell.style.outline).toBe('');
+
+    const secondNotes = screen
+      .getAllByRole('row')[2]
+      .querySelectorAll('[data-grid-cell]')[2];
+    within(secondNotes as HTMLElement)
+      .getByRole('button')
+      .focus();
+    expect(onCellFocus).toHaveBeenLastCalledWith({
+      rowId: 'two',
+      columnId: 'notes',
+      editing: false,
+    });
+
+    const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView');
+    setHighlightRowId('two');
+    const row = screen.getAllByRole('row')[2];
+    expect(row.dataset.highlighted).toBe('');
+    expect(scrollIntoView).toHaveBeenCalled();
+    setHighlightRowId(undefined);
+    expect(row.dataset.highlighted).toBeUndefined();
   });
 });

@@ -5,12 +5,21 @@ import {
   execSql,
   useDatabaseDetailQuery,
 } from '@queries/storage/databases';
+import { useDatabaseAwareness } from '@queries/storage/databases-sync';
 import type {
   DatabaseTableDetail,
   ExecRequest,
 } from '@service-storage/databases';
-import { createMemo, For, type JSX, Show, Suspense } from 'solid-js';
+import {
+  createMemo,
+  createSignal,
+  For,
+  type JSX,
+  Show,
+  Suspense,
+} from 'solid-js';
 import { DatabaseRelationCell } from '../components/database-relation-cell';
+import type { DatabaseCellFocus } from '../components/database-table';
 import { mergeDatabaseColumnOrder } from '../core/column-order';
 import type { DatabaseRelatedDestination } from '../core/database-relations';
 import {
@@ -99,6 +108,13 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
       if (!updated) throw new Error('That option could not be added.');
     },
   });
+  const [focusedCell, setFocusedCell] = createSignal<DatabaseCellFocus>();
+  const awareness = useDatabaseAwareness(
+    () => databaseId,
+    () => ({ tableId: props.tableId, ...focusedCell() })
+  );
+  const remoteUsers = () =>
+    awareness.remote().filter((user) => user.tableId === props.tableId);
   const rawColumns = source.columns;
   source.columns = createMemo(() =>
     rawColumns().map((column) =>
@@ -138,6 +154,8 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
           canEdit={props.canEdit}
           view={props.view ?? defaultDatabaseView()}
           onViewChange={props.onViewChange}
+          onCellFocus={setFocusedCell}
+          remoteUsers={remoteUsers()}
           renderTextEditor={(editor) => <DatabaseTextEditor {...editor} />}
           renderTextValue={(value) => <DatabaseTextValue value={value} />}
           renderMentionPicker={(picker) => (

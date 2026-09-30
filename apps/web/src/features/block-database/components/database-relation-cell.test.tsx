@@ -244,8 +244,9 @@ describe('database relationships', () => {
     const trigger = screen.getByRole('button', {
       name: 'Customer: Acme. Choose related records',
     });
-    expect(trigger.textContent).toContain('Acme');
-    expect(trigger.textContent).not.toContain('acme-id');
+    const cell = trigger.parentElement!;
+    expect(cell.textContent).toContain('Acme');
+    expect(cell.textContent).not.toContain('acme-id');
     fireEvent.click(trigger);
     const input = await screen.findByRole('combobox', {
       name: 'Search Customers',
@@ -326,5 +327,36 @@ describe('database relationships', () => {
     expect(
       screen.getByRole('button', { name: 'Remove Northwind' })
     ).toBeTruthy();
+  });
+});
+
+describe('opening a related record from its chip', () => {
+  it('opens the chip’s record without the picker, from the pointer and from the keyboard', async () => {
+    const navigate = vi.fn(() => true);
+    const { open } = setup({ value: '["acme-id","north-id"]', navigate });
+    fireEvent.click(screen.getByRole('button', { name: 'Open Northwind' }));
+    expect(open).toHaveBeenCalledWith('north-id');
+    expect(screen.queryByRole('combobox')).toBeNull();
+
+    const trigger = screen.getByRole('button', {
+      name: 'Customer: Acme, Northwind. Choose related records',
+    });
+    trigger.focus();
+    // Tab from the trigger visits the arrows before the next cell.
+    fireEvent.keyDown(trigger, { key: 'Tab' });
+    expect(navigate).not.toHaveBeenCalled();
+    const lastArrow = screen.getByRole('button', { name: 'Open Northwind' });
+    fireEvent.keyDown(lastArrow, { key: 'Tab' });
+    expect(navigate).toHaveBeenCalledWith(1);
+    fireEvent.keyDown(trigger, { key: 'Tab', shiftKey: true });
+    expect(navigate).toHaveBeenCalledWith(-1);
+  });
+
+  it('disables the arrow for a record the source cannot resolve', () => {
+    setup({ value: '["ghost-id"]' });
+    const arrow = screen.getByRole('button', {
+      name: 'Open Unavailable record',
+    });
+    expect(arrow).toHaveProperty('disabled', true);
   });
 });

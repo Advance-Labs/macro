@@ -181,6 +181,21 @@ export interface ExecOutcome {
   truncated_tables: string[];
 }
 
+/**
+ * Body of `PUT /databases/{id}/awareness`: where the caller is inside the
+ * database. Relayed to the other viewers as a `database_awareness` gateway
+ * message and never stored. No row or column means "on the table, no cell".
+ */
+export interface DatabaseAwareness {
+  tableId: string;
+  rowId?: string;
+  columnId?: string;
+  /** The focused cell has an editor open. */
+  editing?: boolean;
+  /** The caller left the database; viewers drop its state. */
+  left?: boolean;
+}
+
 /** Body of `POST /databases/exec`. */
 export interface ExecRequest {
   sql: string;
@@ -594,5 +609,13 @@ export const databasesClient = {
       body: JSON.stringify(request),
       errorResponseHandler: execErrorResponseHandler,
     });
+  },
+
+  /** Tell the database's other viewers where the caller is. Responds 204. */
+  async shareAwareness(databaseId: string, state: DatabaseAwareness) {
+    return await databasesFetch<Record<string, never>>(
+      `/databases/${databaseId}/awareness`,
+      { method: 'PUT', body: JSON.stringify(state) }
+    );
   },
 };

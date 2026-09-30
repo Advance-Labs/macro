@@ -22,7 +22,11 @@ import {
   DatabaseBoard,
   type DatabaseCardPlacement,
 } from '../components/database-board';
-import { DatabaseTable } from '../components/database-table';
+import {
+  type DatabaseCellFocus,
+  type DatabaseCellPresence,
+  DatabaseTable,
+} from '../components/database-table';
 import type { PropertyCreatorVariant } from '../components/property-creator';
 import { DeleteRecordDialog, RecordPanel } from '../components/record-panel';
 import type {
@@ -66,6 +70,9 @@ export type DatabaseTableActions = {
   pending: Accessor<boolean>;
 };
 
+/** How long a revealed row stays tinted. */
+const HIGHLIGHT_MS = 1_600;
+
 type CardOrderState = Pick<DatabaseViewConfig, 'sorts' | 'cardOrder'>;
 
 type CardPlacementBurst = {
@@ -89,6 +96,8 @@ export function DatabaseTableView(props: {
   renderMentionValue?: GridCellProps['renderMentionValue'];
   renderRelationCell?: (props: GridCellProps) => JSX.Element;
   relationTables?: { id: string; name: string }[];
+  onCellFocus?: (cell: DatabaseCellFocus | undefined) => void;
+  remoteUsers?: DatabaseCellPresence[];
   onChangeColumnType?: (
     columnId: string,
     change: DatabaseColumnTypeChange
@@ -253,6 +262,19 @@ export function DatabaseTableView(props: {
     if (document.activeElement instanceof HTMLElement)
       returnFocus = document.activeElement;
     setSelectedId(rowId);
+  }
+  const [highlightedRowId, setHighlightedRowId] = createSignal<string>();
+  let highlightTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(highlightTimer));
+  /** Open a record arrived at from elsewhere, showing where it sits in the table. */
+  function reveal(rowId: string) {
+    clearTimeout(highlightTimer);
+    setHighlightedRowId(rowId);
+    highlightTimer = setTimeout(
+      () => setHighlightedRowId(undefined),
+      HIGHLIGHT_MS
+    );
+    open(rowId);
   }
   function editCreatedRow(rowId: string) {
     if (props.view.layout !== 'table') {
@@ -672,7 +694,7 @@ export function DatabaseTableView(props: {
           props.view.layout === 'table' ? focusBlankRow() : createRow(),
         focusFirstCell,
         focusColumn,
-        openRecord: open,
+        openRecord: reveal,
         pending: controller.pending,
       })}
       <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -872,6 +894,9 @@ export function DatabaseTableView(props: {
                   }
                   isUnsavedRow={draftRows.isUnsaved}
                   onRowFocus={draftRows.setActive}
+                  onCellFocus={props.onCellFocus}
+                  remoteUsers={props.remoteUsers}
+                  highlightRowId={highlightedRowId()}
                   columns={visibleColumns()}
                   view={props.view}
                   canEdit={props.canEdit}
