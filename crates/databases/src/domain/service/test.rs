@@ -851,6 +851,7 @@ async fn seeded() -> Seeded {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: "INSERT INTO guests (name, status, \"Plus ones\") VALUES ('Sam', 'Going', 2)"
                     .into(),
                 base_versions: None,
@@ -1309,6 +1310,7 @@ async fn select_answers_row_id_first_and_maps_every_value_kind() {
     svc.exec_sql(
         viewer(OWNER),
         ExecRequest {
+            scope: None,
             sql: format!(
                 "UPDATE guests SET confirmed = TRUE, tags = ['speaker', 'vip'] WHERE row_id = '{row_id}'"
             ),
@@ -1369,6 +1371,7 @@ async fn select_filters_orders_and_counts_by_group() {
     svc.exec_sql(
         viewer(OWNER),
         ExecRequest {
+            scope: None,
             sql: "INSERT INTO guests (name, status, \"Plus ones\") VALUES ('Ada', 'Declined', 0), ('Bo', 'Going', 1), ('Cy', NULL, 3)".into(),
             base_versions: None,
         },
@@ -1475,6 +1478,7 @@ async fn compile_errors_surface_the_engines_message() {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: "INSERT INTO guests (name, status) VALUES ('Bo', 'Waitlisted')".into(),
                 base_versions: None,
             },
@@ -1494,6 +1498,7 @@ async fn compile_errors_surface_the_engines_message() {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: format!(
                     "UPDATE guests SET status = ['Going', 'Declined'] WHERE row_id = '{row_id}'"
                 ),
@@ -1582,6 +1587,59 @@ async fn bare_table_names_shared_across_databases_need_qualifying() {
     );
 }
 
+#[tokio::test]
+async fn a_scoped_statement_reaches_its_own_table_past_an_identically_named_database() {
+    let world: Shared = Arc::default();
+    let svc = service(&world);
+    for _ in 0..2 {
+        svc.create_database(CreateDatabase {
+            name: "Untitled database".into(),
+            owner_id: user(OWNER),
+        })
+        .await
+        .unwrap();
+    }
+    let (first, second) = {
+        let w = world.lock().unwrap();
+        (w.databases[0].id, w.databases[1].id)
+    };
+
+    let unscoped = svc
+        .query_sql(
+            viewer(OWNER),
+            "SELECT COUNT(*) FROM \"Untitled database\".\"Table 1\"".into(),
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(unscoped, QueryError::Sql(ref message) if message.starts_with("table \"Table 1\" exists in")),
+        "{unscoped:?}"
+    );
+
+    let scoped = svc
+        .exec_sql(
+            viewer(OWNER),
+            ExecRequest {
+                scope: Some(second),
+                sql: "INSERT INTO \"Untitled database\".\"Table 1\" DEFAULT VALUES".into(),
+                base_versions: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(scoped.inserted_row_ids.len(), 1);
+    let w = world.lock().unwrap();
+    let second_table = w
+        .tables
+        .iter()
+        .find(|t| t.database_id == second)
+        .unwrap()
+        .id;
+    let first_table = w.tables.iter().find(|t| t.database_id == first).unwrap().id;
+    assert_eq!(w.rows.get(&second_table).map(Vec::len), Some(1));
+    assert!(w.rows.get(&first_table).is_none_or(Vec::is_empty));
+}
+
 // ===== SQL: writes =====
 
 #[tokio::test]
@@ -1607,6 +1665,7 @@ async fn insert_mints_rows_and_lands_cells_in_the_cell_store() {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: "INSERT INTO guests (name, status, \"Plus ones\") VALUES ('Ada', 'Declined', 1), ('Bo', NULL, 0)".into(),
                 base_versions: None,
             },
@@ -1686,6 +1745,7 @@ async fn insert_default_values_mints_an_empty_row() {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: "INSERT INTO guests DEFAULT VALUES".into(),
                 base_versions: None,
             },
@@ -1716,6 +1776,7 @@ async fn update_by_row_id_sets_and_clears_cells() {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: format!(
                     "UPDATE guests SET status = 'Declined', \"Plus ones\" = NULL WHERE row_id = '{row_id}'"
                 ),
@@ -1774,6 +1835,7 @@ async fn delete_by_row_id_removes_the_row_and_its_cells() {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: format!("DELETE FROM guests WHERE row_id = '{row_id}'"),
                 base_versions: None,
             },
@@ -1809,6 +1871,7 @@ async fn delete_by_row_id_removes_the_row_and_its_cells() {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: format!("DELETE FROM guests WHERE row_id = '{row_id}'"),
                 base_versions: None,
             },
@@ -1873,6 +1936,7 @@ async fn a_write_to_a_row_of_another_table_is_refused() {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: format!("UPDATE sessions SET title = 'Hijacked' WHERE row_id = '{row_id}'"),
                 base_versions: None,
             },
@@ -1887,6 +1951,7 @@ async fn a_write_to_a_row_of_another_table_is_refused() {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: format!("DELETE FROM sessions WHERE row_id = '{row_id}'"),
                 base_versions: None,
             },
@@ -1954,6 +2019,7 @@ async fn view_grant_can_read_but_not_write() {
         .exec_sql(
             viewer(VIEWER),
             ExecRequest {
+                scope: None,
                 sql: "SELECT COUNT(*) FROM guests".into(),
                 base_versions: None,
             },
@@ -1971,6 +2037,7 @@ async fn view_grant_can_read_but_not_write() {
             .exec_sql(
                 viewer(VIEWER),
                 ExecRequest {
+                    scope: None,
                     sql: sql.clone(),
                     base_versions: None,
                 },
@@ -1993,6 +2060,7 @@ async fn view_grant_can_read_but_not_write() {
         .exec_sql(
             viewer(STRANGER),
             ExecRequest {
+                scope: None,
                 sql: "SELECT * FROM guests".into(),
                 base_versions: None,
             },
@@ -2049,6 +2117,7 @@ async fn grants_scope_writes_per_database() {
         .exec_sql(
             viewer(VIEWER),
             ExecRequest {
+                scope: None,
                 sql: "INSERT INTO rooms (name) VALUES ('Main Hall')".into(),
                 base_versions: None,
             },
@@ -2063,6 +2132,7 @@ async fn grants_scope_writes_per_database() {
         .exec_sql(
             viewer(VIEWER),
             ExecRequest {
+                scope: None,
                 sql: "INSERT INTO guests (name) VALUES ('Main Hall')".into(),
                 base_versions: None,
             },
@@ -2121,6 +2191,7 @@ async fn has_predicate_runs_end_to_end() {
     svc.exec_sql(
         viewer(OWNER),
         ExecRequest {
+            scope: None,
             sql: "INSERT INTO guests (name, tags) VALUES ('Tara', ['vip']), ('Uma', NULL)".into(),
             base_versions: None,
         },
@@ -2165,6 +2236,7 @@ async fn has_predicate_runs_end_to_end() {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: "INSERT INTO guests (name, tags) VALUES ('Vic', ['nope'])".into(),
                 base_versions: None,
             },
@@ -2205,6 +2277,7 @@ async fn a_select_column_with_no_options_accepts_nothing() {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: "INSERT INTO guests (name, stage) VALUES ('Ada', 'Main')".into(),
                 base_versions: None,
             },
@@ -2268,6 +2341,7 @@ async fn add_column_options_extends_what_sql_accepts_and_bumps_the_version() {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: "INSERT INTO guests (name, status) VALUES ('Bo', 'Waitlisted')".into(),
                 base_versions: None,
             },
@@ -2427,6 +2501,7 @@ async fn numeric_select_options_are_parsed_as_numbers() {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: "INSERT INTO guests (name, priority) VALUES ('Ada', '2')".into(),
                 base_versions: None,
             },
@@ -2585,6 +2660,7 @@ async fn lifecycle_and_writes_publish_domain_events() {
     svc.exec_sql(
         viewer(OWNER),
         ExecRequest {
+            scope: None,
             sql: format!("UPDATE guests SET status = 'Declined' WHERE row_id = '{row_id}'"),
             base_versions: None,
         },

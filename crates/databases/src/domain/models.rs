@@ -299,6 +299,12 @@ pub struct Viewer {
 pub struct ExecRequest {
     /// The statements to run, executed in one transaction.
     pub sql: String,
+    /// The database the statement is written from, when a client knows it
+    /// (the grid always does). Names are resolved against the whole catalog,
+    /// but a table of another database whose qualified name collides with
+    /// one of this database's is left out, so two databases both called
+    /// "Untitled database" with a "Table 1" each stay addressable.
+    pub scope: Option<DatabaseId>,
     /// Compare-and-set, **opt in per table**. A written table named here is
     /// refused (nothing commits) unless it is still at the given version;
     /// entries for tables the statement does not write are ignored.

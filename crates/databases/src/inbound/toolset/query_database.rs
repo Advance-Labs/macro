@@ -254,6 +254,7 @@ where
             .exec_sql(
                 viewer_of(&request_context.user_id),
                 ExecRequest {
+                    scope: None,
                     sql: self.sql.clone(),
                     base_versions: self.base_versions.as_ref().map(|versions| {
                         versions

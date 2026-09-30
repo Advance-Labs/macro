@@ -123,6 +123,30 @@ pub fn build_entries(
         .collect()
 }
 
+/// Keep the statement addressable from `scope`: a table of another database
+/// whose database and table names both match one of the scoped database's
+/// (case-insensitively, as the engine matches) is dropped, so the scoped
+/// table wins instead of the statement being ambiguous.
+pub fn scope_entries(entries: &mut Vec<TableEntry>, scope: DatabaseId) {
+    let scoped: Vec<(String, String)> = entries
+        .iter()
+        .filter(|entry| entry.database.id == scope)
+        .map(|entry| {
+            (
+                entry.database.name.to_lowercase(),
+                entry.table.name.to_lowercase(),
+            )
+        })
+        .collect();
+    entries.retain(|entry| {
+        entry.database.id == scope
+            || !scoped.contains(&(
+                entry.database.name.to_lowercase(),
+                entry.table.name.to_lowercase(),
+            ))
+    });
+}
+
 /// The entries as the engine's catalog.
 pub fn engine_catalog(entries: &[TableEntry]) -> Catalog {
     Catalog {

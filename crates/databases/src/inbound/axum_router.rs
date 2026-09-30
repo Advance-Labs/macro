@@ -256,6 +256,11 @@ pub struct ExecRequestBody {
     /// Omitted → cell-level last-write-wins.
     #[schema(nullable = false)]
     pub base_versions: Option<HashMap<Uuid, i64>>,
+    /// The database the statement is written from. A same-named table of
+    /// another database is left out of name resolution when this is set.
+    #[serde(default)]
+    #[schema(nullable = false)]
+    pub scope: Option<Uuid>,
 }
 
 /// Request body for read-only SQL queries.
@@ -424,6 +429,7 @@ where
         .exec_sql(
             viewer_of(&user),
             ExecRequest {
+                scope: req.scope,
                 sql: req.sql,
                 base_versions: req.base_versions.map(|versions| {
                     versions

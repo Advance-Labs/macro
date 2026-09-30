@@ -1031,6 +1031,7 @@ where
         self.run_sql(
             viewer,
             ExecRequest {
+                scope: None,
                 sql,
                 base_versions: None,
             },

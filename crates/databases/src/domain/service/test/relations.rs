@@ -71,6 +71,7 @@ async fn linked() -> Linked {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: "INSERT INTO sessions (title) VALUES ('Keynote')".into(),
                 base_versions: None,
             },
@@ -122,6 +123,7 @@ async fn a_relation_written_as_a_list_reads_back_as_row_ids() {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: format!(
                     "UPDATE guests SET sessions = ['{keynote_row}'] WHERE row_id = '{row_id}'"
                 ),
@@ -181,6 +183,7 @@ async fn a_relation_written_as_a_list_reads_back_as_row_ids() {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: format!(
                     "INSERT INTO guests (name, sessions) VALUES ('Ada', ['{keynote_row}'])"
                 ),
@@ -223,6 +226,7 @@ async fn null_clears_a_relation_and_an_empty_list_is_not_a_value() {
     svc.exec_sql(
         viewer(OWNER),
         ExecRequest {
+            scope: None,
             sql: format!(
                 "UPDATE guests SET sessions = ['{keynote_row}'] WHERE row_id = '{row_id}'"
             ),
@@ -236,6 +240,7 @@ async fn null_clears_a_relation_and_an_empty_list_is_not_a_value() {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: format!("UPDATE guests SET sessions = [] WHERE row_id = '{row_id}'"),
                 base_versions: None,
             },
@@ -263,6 +268,7 @@ async fn null_clears_a_relation_and_an_empty_list_is_not_a_value() {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: format!("UPDATE guests SET sessions = NULL WHERE row_id = '{row_id}'"),
                 base_versions: None,
             },
@@ -297,6 +303,7 @@ async fn relation_values_must_be_ids_and_a_viewer_cannot_write_them() {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: format!("UPDATE guests SET sessions = ['Keynote'] WHERE row_id = '{row_id}'"),
                 base_versions: None,
             },
@@ -316,6 +323,7 @@ async fn relation_values_must_be_ids_and_a_viewer_cannot_write_them() {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: format!("SELECT name FROM guests WHERE sessions = '{keynote_row}'"),
                 base_versions: None,
             },
@@ -335,6 +343,7 @@ async fn relation_values_must_be_ids_and_a_viewer_cannot_write_them() {
         .exec_sql(
             viewer(VIEWER),
             ExecRequest {
+                scope: None,
                 sql: format!(
                     "UPDATE guests SET sessions = ['{keynote_row}'] WHERE row_id = '{row_id}'"
                 ),
@@ -369,6 +378,7 @@ async fn changing_a_linked_columns_type_requires_clearing_its_relations_first() 
     svc.exec_sql(
         viewer(OWNER),
         ExecRequest {
+            scope: None,
             sql: format!(
                 "UPDATE guests SET sessions = ['{keynote_row}'] WHERE row_id = '{row_id}'"
             ),

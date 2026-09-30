@@ -69,7 +69,10 @@ where
             .map_err(infra)?
             .into_iter()
             .collect();
-        let entries = self.entries_for(&grants).await?;
+        let mut entries = self.entries_for(&grants).await?;
+        if let Some(scope) = req.scope {
+            catalog::scope_entries(&mut entries, scope);
+        }
         let engine_catalog = catalog::engine_catalog(&entries);
 
         let query = database_sql::compile(&engine_catalog, &req.sql)

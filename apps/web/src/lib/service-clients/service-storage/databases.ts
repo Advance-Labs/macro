@@ -185,6 +185,12 @@ export interface ExecOutcome {
 export interface ExecRequest {
   sql: string;
   /**
+   * The database the statement is written from. A same-named table of
+   * another database is left out of name resolution when set, so two
+   * "Untitled database"s with a "Table 1" each stay addressable.
+   */
+  scope?: string;
+  /**
    * Compare-and-swap: reject writes if any listed table has moved past the
    * given version. Omitted → cell-level last-write-wins.
    */

@@ -95,6 +95,7 @@ async fn number_inference_preserves_label_old_definition_and_accepts_first_write
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: "INSERT INTO guests (hours) VALUES (12)".into(),
                 base_versions: None,
             },
@@ -428,6 +429,7 @@ async fn sql_first_value_settles_text_type_and_later_inference_cannot_retype() {
         .exec_sql(
             viewer(OWNER),
             ExecRequest {
+                scope: None,
                 sql: "INSERT INTO guests (estimate) VALUES ('first text')".into(),
                 base_versions: None,
             },

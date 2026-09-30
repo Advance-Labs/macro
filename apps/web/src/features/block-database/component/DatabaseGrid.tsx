@@ -5,7 +5,10 @@ import {
   execSql,
   useDatabaseDetailQuery,
 } from '@queries/storage/databases';
-import type { DatabaseTableDetail } from '@service-storage/databases';
+import type {
+  DatabaseTableDetail,
+  ExecRequest,
+} from '@service-storage/databases';
 import { createMemo, For, type JSX, Show, Suspense } from 'solid-js';
 import { DatabaseRelationCell } from '../components/database-relation-cell';
 import { mergeDatabaseColumnOrder } from '../core/column-order';
@@ -74,14 +77,16 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
   const relatedDatabases = () => [
     ...new Set(relatedTargets().map((target) => target.database_id)),
   ];
+  const exec = (request: ExecRequest) =>
+    execSql({ ...request, scope: databaseId });
   const relations = createDatabaseRelations({
     columns: () => table().columns,
-    exec: execSql,
+    exec,
   });
   const source = createDatabaseRowsSource({
     databaseId,
     table,
-    exec: execSql,
+    exec,
     applyVersions: (versions) =>
       applyDatabaseTableVersions(databaseId, versions),
     addOption: async (columnId, label) => {
