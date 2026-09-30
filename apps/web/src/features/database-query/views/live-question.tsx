@@ -25,6 +25,8 @@ export function LiveQuestion(props: {
   /** The saved SQL, rendered only once the details are opened. */
   sql?: () => JSX.Element;
   editor?: (onClose: () => void) => JSX.Element;
+  /** Leaving the editor of an answer that was never saved drops the answer. */
+  onDiscard?: () => void;
 }) {
   const [open, setOpen] = createSignal(!props.source.queryId && !!props.editor);
   const [editing, setEditing] = createSignal(!props.source.queryId);
@@ -106,6 +108,7 @@ export function LiveQuestion(props: {
       open={open()}
       onOpenChange={(value) => {
         setOpen(value);
+        if (!value && !props.source.queryId) props.onDiscard?.();
         if (!value) setEditing(!props.source.queryId);
       }}
       placement="bottom-start"

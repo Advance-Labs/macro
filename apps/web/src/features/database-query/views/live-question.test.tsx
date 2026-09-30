@@ -158,6 +158,48 @@ describe('answer titles', () => {
     reader.unmount();
   });
 
+  it('discards a never-saved answer when its question editor is dismissed', async () => {
+    const discard = vi.fn();
+    const rendered = render(() => (
+      <LiveQuestion
+        source={{ queryId: '', prompt: '', displayMode: 'table' }}
+        loading={false}
+        onRefresh={vi.fn()}
+        onDiscard={discard}
+        editor={() => <textarea aria-label="Ask your database" />}
+      />
+    ));
+    const field = await screen.findByLabelText('Ask your database');
+    await fireEvent.keyDown(field, { key: 'Escape' });
+    expect(discard).toHaveBeenCalledOnce();
+    rendered.unmount();
+  });
+
+  it('keeps a saved answer when its question editor is dismissed', async () => {
+    const discard = vi.fn();
+    const rendered = render(() => (
+      <LiveQuestion
+        source={{
+          queryId: 'one',
+          prompt: 'How many RSVPs?',
+          title: 'RSVP Counts',
+          displayMode: 'table',
+        }}
+        loading={false}
+        onRefresh={vi.fn()}
+        onDiscard={discard}
+        editor={() => <textarea aria-label="Ask your database" />}
+      />
+    ));
+    await fireEvent.click(
+      rendered.getByRole('button', { name: 'Edit question' })
+    );
+    const field = await screen.findByLabelText('Ask your database');
+    await fireEvent.keyDown(field, { key: 'Escape' });
+    expect(discard).not.toHaveBeenCalled();
+    rendered.unmount();
+  });
+
   it('opens the question editor straight from the block’s Edit question', async () => {
     const rendered = render(() => (
       <LiveQuestion

@@ -214,6 +214,7 @@ function EditSavedQuestion(props: {
 export function DatabaseLiveQuestion(props: {
   source: SavedQuestion;
   onSave?: (source: SavedQuestion) => void;
+  onDiscard?: () => void;
 }) {
   const query = createLiveQuerySource({
     queryId: () => props.source.queryId,
@@ -249,6 +250,7 @@ export function DatabaseLiveQuestion(props: {
             : undefined
         }
         sql={() => <SavedQuestionSql queryId={props.source.queryId} />}
+        onDiscard={props.onDiscard}
         editor={
           props.onSave
             ? (onClose) => (

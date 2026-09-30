@@ -136,6 +136,18 @@ export function DatabaseQuery(props: DatabaseQueryDecoratorProps) {
       } else node.setQuery(data);
     });
   };
+  // An answer inserted from the actions menu and never asked is left behind as
+  // an empty block when its editor closes; take it out again.
+  const discard = () => {
+    if (!canEdit() || !wrapper) return;
+    wrapper.editor.update(() => {
+      const node = $getNodeByKey(props.key);
+      if (!$isDatabaseQueryNode(node)) return;
+      // The caret goes back to where the block was inserted.
+      node.selectPrevious();
+      node.remove();
+    });
+  };
   const answer = () => (
     <LazyDecorator
       placeholder={placeholder()}
@@ -144,6 +156,7 @@ export function DatabaseQuery(props: DatabaseQueryDecoratorProps) {
           <LiveQuestion
             source={source()}
             onSave={canEdit() ? save : undefined}
+            onDiscard={canEdit() ? discard : undefined}
           />
         </Suspense>
       )}
