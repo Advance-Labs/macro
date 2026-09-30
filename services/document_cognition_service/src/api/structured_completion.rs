@@ -82,7 +82,13 @@ pub async fn structured_completion(
     Json(request): Json<StructuredCompletionRequest>,
 ) -> Result<Json<StructuredCompletionResponse>, StructuredCompletionError> {
     let ctx = Arc::new(state);
-    let model = model_access.best_model();
+    // The caller's model when the plan allows it; callers that send a model
+    // the plan does not include keep getting the plan's default, as before.
+    let model = if model_access.has_access(&request.model) {
+        request.model.clone()
+    } else {
+        model_access.best_model().to_string()
+    };
 
     let user_id = user.authorization.user.macro_user_id.clone();
 
@@ -148,7 +154,7 @@ pub async fn structured_completion(
     };
     let rig_messages = agent::to_rig_messages(&[user_message]);
 
-    let agent_loop = AgentLoop::new(ctx.tool_service_context.recorder.clone()).with_model(model);
+    let agent_loop = AgentLoop::new(ctx.tool_service_context.recorder.clone()).with_model(&model);
     let usage_ctx =
         ai_usage::UsageContext::new(ai_usage::AiFeature::DynamicCompletionsApi, user_id.clone());
     // Carry the feature on the context so tool-spawned subagents attribute to it.
