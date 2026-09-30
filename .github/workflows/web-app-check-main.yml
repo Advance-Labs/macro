@@ -107,6 +107,16 @@ jobs:
       if: needs.path-check.outputs.api_changed == 'true'
       run: bun run gen-api -- --check
       working-directory: apps/web
+    - name: Check Specta Types
+      if: needs.path-check.outputs.api_changed == 'true'
+      run: |
+        just gen-agent-fold-types
+        just gen-database-sql-types
+        if ! git diff --exit-code -- src/lib/service-clients/service-agent-fold/generated src/lib/core/database-sql/generated; then
+          echo "Generated wasm wire types are stale. Run 'just gen-agent-fold-types' and 'just gen-database-sql-types' in apps/web and commit the result."
+          exit 1
+        fi
+      working-directory: apps/web
     - name: show sccache stats
       if: always() && needs.path-check.outputs.api_changed == 'true'
       run: sccache --show-stats || true
