@@ -14,6 +14,7 @@ import {
   renameColumnHandler,
   renameDatabaseHandler,
   reorderColumnsHandler,
+  reorderTablesHandler,
   saveDatabaseQueryHandler,
   saveDatabaseViewHandler,
 } from './DatabaseTools';
@@ -174,6 +175,16 @@ describe('database schema tool activity', () => {
       { databaseId, tableId, database }
     );
     expect(line(rendered)).toBe('Reorder 2 columns in Tickets');
+  });
+
+  it('renders ReorderTables with its database', () => {
+    const rendered = renderTool(
+      reorderTablesHandler,
+      'ReorderTables',
+      { databaseId, tableIds: [tableId, otherColumnId] },
+      { databaseId, tableIds: [tableId, otherColumnId], database }
+    );
+    expect(line(rendered)).toBe('Reorder 2 tables in Launch');
   });
 
   it('renders a delete without a refreshed schema', () => {

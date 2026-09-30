@@ -267,6 +267,10 @@ type ToolParserMap = {
     call: types.ReorderColumns;
     response: types.ReorderColumnsResponse;
   };
+  ReorderTables: {
+    call: types.ReorderTables;
+    response: types.ReorderTablesResponse;
+  };
   ReplyToDocumentComment: {
     call: types.ReplyToDocumentComment;
     response: types.ReplyToDocumentCommentResponse;
@@ -636,6 +640,10 @@ const toolParserMap = {
     call: schemas.ReorderColumns,
     response: schemas.ReorderColumnsResponse,
   },
+  ReorderTables: {
+    call: schemas.ReorderTables,
+    response: schemas.ReorderTablesResponse,
+  },
   ReplyToDocumentComment: {
     call: schemas.ReplyToDocumentComment,
     response: schemas.ReplyToDocumentCommentResponse,
@@ -988,6 +996,10 @@ type ToolDataMap = {
   ReorderColumns: {
     call: types.ReorderColumns;
     response: types.ReorderColumnsResponse;
+  };
+  ReorderTables: {
+    call: types.ReorderTables;
+    response: types.ReorderTablesResponse;
   };
   ReplyToDocumentComment: {
     call: types.ReplyToDocumentComment;

@@ -3854,7 +3854,7 @@ export interface DeleteTagResponse {
  * - **Relation columns hold the ids of rows in another table.** Write them as a list of row ids (`guests = ['<row id>']`), test them with `HAS '<row id>'`, and join through them with `ON i.guest = g.row_id` (`ON i.guest HAS g.row_id` means the same). Never compare a relation to a name.
  * - **Entity columns hold Macro ids** such as `macro|sam@example.com` for a person. Respect each column's `specificEntityType`; never invent an id or replace it with a name.
  * - **Names are display names.** Quote a table or column name with double quotes when it has spaces or punctuation (`FROM "Guest List" WHERE "Due Date" < '2026-09-01'`); names match case-insensitively, and a miss suggests the closest name. A table may be qualified by its database's name (`FROM "Offsite"."Guests"`).
- * - **Schema uses tools, not SQL DDL:** CreateDatabase, RenameDatabase, CreateTable, RenameTable, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.
+ * - **Schema uses tools, not SQL DDL:** CreateDatabase, RenameDatabase, CreateTable, RenameTable, ReorderTables, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.
  * - Tables you only hold view access on are read-only.
  */
 export interface DescribeDatabase {
@@ -5552,7 +5552,7 @@ export interface NameSearch {
  * - **Relation columns hold the ids of rows in another table.** Write them as a list of row ids (`guests = ['<row id>']`), test them with `HAS '<row id>'`, and join through them with `ON i.guest = g.row_id` (`ON i.guest HAS g.row_id` means the same). Never compare a relation to a name.
  * - **Entity columns hold Macro ids** such as `macro|sam@example.com` for a person. Respect each column's `specificEntityType`; never invent an id or replace it with a name.
  * - **Names are display names.** Quote a table or column name with double quotes when it has spaces or punctuation (`FROM "Guest List" WHERE "Due Date" < '2026-09-01'`); names match case-insensitively, and a miss suggests the closest name. A table may be qualified by its database's name (`FROM "Offsite"."Guests"`).
- * - **Schema uses tools, not SQL DDL:** CreateDatabase, RenameDatabase, CreateTable, RenameTable, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.
+ * - **Schema uses tools, not SQL DDL:** CreateDatabase, RenameDatabase, CreateTable, RenameTable, ReorderTables, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.
  * - Tables you only hold view access on are read-only.
  *
  * To change records, first SELECT the rows you mean (the first column is `row_id`), then UPDATE or DELETE each one by its id. After changing rows, SELECT the affected records to verify the actual result. On a connection failure, inspect before retrying an INSERT.
@@ -6934,6 +6934,44 @@ export interface ReorderColumnsResponse {
   warning?: string | null;
 }
 /**
+ * Set the order a database's tables — what the user sees as tabs — appear in, left to right. Records, columns and names are untouched.
+ *
+ * Use it when the user asks to move a tab, put tables in a particular order, or when tables you created should read in a sensible sequence (e.g. "Projects" before "Tasks"). Pass every table id of the database exactly once, in the new order; call DescribeDatabase first for the current ids, since a list that misses or adds a table is refused.
+ *
+ * Requires edit access to the database. The response is the schema after the change. If `database` is null, the reorder still succeeded; call DescribeDatabase using databaseId before continuing.
+ */
+export interface ReorderTables {
+  /**
+   * Id of the database, from ListDatabases.
+   */
+  databaseId: string;
+  /**
+   * Every table id of the database, exactly once, in the new left-to-right order, from DescribeDatabase.
+   */
+  tableIds: string[];
+}
+/**
+ * Response from the ReorderTables tool.
+ */
+export interface ReorderTablesResponse {
+  /**
+   * Database whose tables were reordered.
+   */
+  databaseId: string;
+  /**
+   * The table ids in their new order.
+   */
+  tableIds: string[];
+  /**
+   * The database's schema after the change.
+   */
+  database?: ToolDatabaseSchema | null;
+  /**
+   * A failed follow-up read does not undo the committed order.
+   */
+  warning?: string | null;
+}
+/**
  * Reply in a comment thread on a document, or post a new comment in the document's Discussion panel, on behalf of the user. Only use this when explicitly asked to reply to or comment on a document. Thread ids come from the comments ReadContent returns. To start a new inline comment on a passage of the document, use CommentOnDocumentText.
  */
 export interface ReplyToDocumentComment {
@@ -7027,7 +7065,7 @@ export interface ResolveDocumentCommentResponse {
  * - **Relation columns hold the ids of rows in another table.** Write them as a list of row ids (`guests = ['<row id>']`), test them with `HAS '<row id>'`, and join through them with `ON i.guest = g.row_id` (`ON i.guest HAS g.row_id` means the same). Never compare a relation to a name.
  * - **Entity columns hold Macro ids** such as `macro|sam@example.com` for a person. Respect each column's `specificEntityType`; never invent an id or replace it with a name.
  * - **Names are display names.** Quote a table or column name with double quotes when it has spaces or punctuation (`FROM "Guest List" WHERE "Due Date" < '2026-09-01'`); names match case-insensitively, and a miss suggests the closest name. A table may be qualified by its database's name (`FROM "Offsite"."Guests"`).
- * - **Schema uses tools, not SQL DDL:** CreateDatabase, RenameDatabase, CreateTable, RenameTable, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.
+ * - **Schema uses tools, not SQL DDL:** CreateDatabase, RenameDatabase, CreateTable, RenameTable, ReorderTables, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.
  * - Tables you only hold view access on are read-only.
  */
 export interface SaveDatabaseQuery {

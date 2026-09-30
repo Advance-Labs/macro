@@ -16,6 +16,7 @@ export function summarizeDatabaseActivity(
     ['AddColumn', 'Added', 'column'],
     ['SaveDatabaseView', 'Saved', 'view'],
     ['RenameTable', 'Renamed', 'table'],
+    ['ReorderTables', 'Reordered tables in', 'database'],
     ['RenameColumn', 'Renamed', 'column'],
     ['ChangeColumnType', 'Changed the type of', 'column'],
     ['DeleteColumn', 'Deleted', 'column'],

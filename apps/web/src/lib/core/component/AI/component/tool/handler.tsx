@@ -48,6 +48,7 @@ import {
   renameDatabaseHandler,
   renameTableHandler,
   reorderColumnsHandler,
+  reorderTablesHandler,
   saveDatabaseQueryHandler,
   saveDatabaseViewHandler,
 } from './DatabaseTools';
@@ -162,6 +163,7 @@ const toolHandlers: ToolHandlerMap<RenderContext> = {
   CreateDatabase: createDatabaseHandler,
   CreateTable: createTableHandler,
   RenameTable: renameTableHandler,
+  ReorderTables: reorderTablesHandler,
   AddColumn: addColumnHandler,
   AddColumnOptions: addColumnOptionsHandler,
   SaveDatabaseView: saveDatabaseViewHandler,
@@ -275,6 +277,7 @@ export function RenderTool(props: ToolProps) {
     'CreateDatabase',
     'CreateTable',
     'RenameTable',
+    'ReorderTables',
     'AddColumn',
     'AddColumnOptions',
     'SaveDatabaseView',

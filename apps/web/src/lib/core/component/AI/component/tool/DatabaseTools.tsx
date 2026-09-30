@@ -222,6 +222,24 @@ export const renameTableHandler = createToolRenderer({
   ),
 });
 
+export const reorderTablesHandler = createToolRenderer({
+  name: 'ReorderTables',
+  render: (ctx) => {
+    const count = () => ctx.tool.data.tableIds.length;
+    return (
+      <BaseTool icon={TableIcon} renderContext={ctx.renderContext} type="call">
+        <span class="min-w-0 truncate">
+          Reorder{' '}
+          <span class="text-ink">
+            {count()} table{count() === 1 ? '' : 's'}
+          </span>
+          <Scope name={ctx.response?.data.database?.name} preposition="in" />
+        </span>
+      </BaseTool>
+    );
+  },
+});
+
 export const addColumnHandler = createToolRenderer({
   name: 'AddColumn',
   render: (ctx) => {
