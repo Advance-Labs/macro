@@ -15,22 +15,10 @@ import DatabaseIcon from '@phosphor/database.svg';
 import TableIcon from '@phosphor/table.svg';
 import { queryClient } from '@queries/client';
 import type { NamedTool } from '@service-cognition/generated/tools/tool';
-import {
-  type Component,
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  Show,
-} from 'solid-js';
-import { z } from 'zod';
+import { createEffect, createSignal, For, Show } from 'solid-js';
 import { BaseTool } from './BaseTool';
 import { Tool } from './Tool';
-import {
-  createToolRenderer,
-  type RenderContext,
-  ToolErrorContext,
-} from './ToolRenderer';
+import { createToolRenderer } from './ToolRenderer';
 
 type DatabaseSchema = NamedTool<'DescribeDatabase', 'response'>['data'];
 
@@ -326,236 +314,197 @@ export const saveDatabaseViewHandler = createToolRenderer({
   },
 });
 
-/*
- * TODO(databases): these tools are not in the generated tool schemas yet.
- * Once `bun gen-tools` emits them, replace the local schemas below with
- * `NamedTool<...>` types, register `createToolRenderer` handlers in
- * `handler.tsx`, and delete `pendingDatabaseTool`.
- */
-const databaseReference = {
-  databaseId: z.string(),
-  tableId: z.string(),
-};
-const toolAcknowledgement = z.object({}).passthrough();
-const displayMode = z.enum(['scalar', 'table', 'bar', 'line', 'pie']);
-
-export type PendingDatabaseToolProps = {
-  json: unknown;
-  response?: { json: unknown };
-  isComplete: boolean;
-  renderContext: RenderContext['renderContext'];
-};
-
-function pendingTool<
-  Call extends z.ZodTypeAny,
-  Response extends z.ZodTypeAny,
->(config: {
-  call: Call;
-  response: Response;
-  render: Component<{
-    call: z.infer<Call>;
-    response?: z.infer<Response>;
-    renderContext: RenderContext['renderContext'];
-  }>;
-}): Component<PendingDatabaseToolProps> {
-  return (props) => {
-    const call = config.call.safeParse(props.json);
-    const response = createMemo(() => {
-      if (!props.response) return undefined;
-      const parsed = config.response.safeParse(props.response.json);
-      return parsed.success ? parsed.data : undefined;
-    });
-    if (!call.success) return null;
-    const Render = config.render;
-    return (
-      <ToolErrorContext.Provider
-        value={() => (props.isComplete && !response() ? 'failed' : undefined)}
-      >
-        <Render
-          call={call.data}
-          response={response()}
-          renderContext={props.renderContext}
-        />
-      </ToolErrorContext.Provider>
-    );
-  };
+function schemaTable(
+  schema: DatabaseSchema | null | undefined,
+  tableId: string
+) {
+  return schema?.tables.find((table) => table.id === tableId);
 }
 
-const pendingDatabaseTools: Record<
-  string,
-  Component<PendingDatabaseToolProps>
-> = {
-  RenameColumn: pendingTool({
-    call: z.object({
-      ...databaseReference,
-      columnId: z.string(),
-      name: z.string(),
-    }),
-    response: toolAcknowledgement,
-    render: (props) => (
-      <BaseTool
-        icon={TableIcon}
-        renderContext={props.renderContext}
-        type="call"
-      >
+function schemaColumn(
+  schema: DatabaseSchema | null | undefined,
+  tableId: string,
+  columnId: string
+) {
+  return schemaTable(schema, tableId)?.columns.find(
+    (column) => column.id === columnId
+  );
+}
+
+function Scope(props: { name: string | undefined; preposition: string }) {
+  return (
+    <Show when={props.name}>
+      {(name) => (
+        <>
+          {' '}
+          <span class="text-ink-extra-muted">
+            {props.preposition} {name()}
+          </span>
+        </>
+      )}
+    </Show>
+  );
+}
+
+export const renameDatabaseHandler = createToolRenderer({
+  name: 'RenameDatabase',
+  render: (ctx) => (
+    <BaseTool icon={DatabaseIcon} renderContext={ctx.renderContext} type="call">
+      <span class="min-w-0 truncate">
+        Rename database to{' '}
+        <span class="text-ink">
+          {ctx.response?.data.name ?? ctx.tool.data.name}
+        </span>
+      </span>
+    </BaseTool>
+  ),
+});
+
+export const deleteTableHandler = createToolRenderer({
+  name: 'DeleteTable',
+  render: (ctx) => (
+    <BaseTool icon={TableIcon} renderContext={ctx.renderContext} type="call">
+      <span class="min-w-0 truncate">
+        Delete table
+        <Scope name={ctx.response?.data.database?.name} preposition="from" />
+      </span>
+    </BaseTool>
+  ),
+});
+
+export const renameColumnHandler = createToolRenderer({
+  name: 'RenameColumn',
+  render: (ctx) => (
+    <BaseTool icon={TableIcon} renderContext={ctx.renderContext} type="call">
+      <span class="min-w-0 truncate">
+        Rename column to{' '}
+        <span class="text-ink">
+          {ctx.response?.data.name ?? ctx.tool.data.name}
+        </span>
+        <Scope
+          name={
+            schemaTable(ctx.response?.data.database, ctx.tool.data.tableId)
+              ?.name
+          }
+          preposition="in"
+        />
+      </span>
+    </BaseTool>
+  ),
+});
+
+export const changeColumnTypeHandler = createToolRenderer({
+  name: 'ChangeColumnType',
+  render: (ctx) => {
+    const options = () => ctx.tool.data.options ?? [];
+    const column = () =>
+      schemaColumn(
+        ctx.response?.data.database,
+        ctx.tool.data.tableId,
+        ctx.tool.data.columnId
+      );
+    return (
+      <BaseTool icon={TableIcon} renderContext={ctx.renderContext} type="call">
         <span class="min-w-0 truncate">
-          Rename column to <span class="text-ink">{props.call.name}</span>
+          <Show when={column()} fallback="Change column type to ">
+            {(changed) => (
+              <>
+                Change <span class="text-ink">{changed().name}</span> to{' '}
+              </>
+            )}
+          </Show>
+          <span class="text-ink">{ctx.tool.data.dataType}</span>
+          <span class="pl-1.5 text-ink-extra-muted">
+            <Show when={ctx.tool.data.isMultiSelect}>multiple</Show>
+            <Show when={options().length > 0}>
+              {' · '}
+              {options().join(', ')}
+            </Show>
+          </span>
         </span>
       </BaseTool>
-    ),
-  }),
-  ChangeColumnType: pendingTool({
-    call: z.object({
-      ...databaseReference,
-      columnId: z.string(),
-      dataType: z.string(),
-      isMultiSelect: z.boolean().nullish(),
-      options: z.array(z.string()).nullish(),
-      specificEntityType: z.string().nullish(),
-      linkToTableId: z.string().nullish(),
-    }),
-    response: toolAcknowledgement,
-    render: (props) => {
-      const options = () => props.call.options ?? [];
-      return (
-        <BaseTool
-          icon={TableIcon}
-          renderContext={props.renderContext}
-          type="call"
-        >
-          <span class="min-w-0 truncate">
-            Change column type to{' '}
-            <span class="text-ink">{props.call.dataType}</span>
-            <span class="pl-1.5 text-ink-extra-muted">
-              <Show when={props.call.isMultiSelect}>multiple</Show>
-              <Show when={options().length > 0}>
-                {' · '}
-                {options().join(', ')}
-              </Show>
-            </span>
-          </span>
-        </BaseTool>
-      );
-    },
-  }),
-  DeleteColumn: pendingTool({
-    call: z.object({ ...databaseReference, columnId: z.string() }),
-    response: toolAcknowledgement,
-    render: (props) => (
-      <BaseTool
-        icon={TableIcon}
-        renderContext={props.renderContext}
-        type="call"
-      >
-        <span class="min-w-0 truncate">Delete column</span>
-      </BaseTool>
-    ),
-  }),
-  ReorderColumns: pendingTool({
-    call: z.object({ ...databaseReference, columnIds: z.array(z.string()) }),
-    response: toolAcknowledgement,
-    render: (props) => (
-      <BaseTool
-        icon={TableIcon}
-        renderContext={props.renderContext}
-        type="call"
-      >
+    );
+  },
+});
+
+export const deleteColumnHandler = createToolRenderer({
+  name: 'DeleteColumn',
+  render: (ctx) => (
+    <BaseTool icon={TableIcon} renderContext={ctx.renderContext} type="call">
+      <span class="min-w-0 truncate">
+        Delete column
+        <Scope
+          name={
+            schemaTable(ctx.response?.data.database, ctx.tool.data.tableId)
+              ?.name
+          }
+          preposition="from"
+        />
+      </span>
+    </BaseTool>
+  ),
+});
+
+export const reorderColumnsHandler = createToolRenderer({
+  name: 'ReorderColumns',
+  render: (ctx) => {
+    const count = () => ctx.tool.data.columnIds.length;
+    return (
+      <BaseTool icon={TableIcon} renderContext={ctx.renderContext} type="call">
         <span class="min-w-0 truncate">
           Reorder{' '}
           <span class="text-ink">
-            {props.call.columnIds.length} column
-            {props.call.columnIds.length === 1 ? '' : 's'}
+            {count()} column{count() === 1 ? '' : 's'}
           </span>
+          <Scope
+            name={
+              schemaTable(ctx.response?.data.database, ctx.tool.data.tableId)
+                ?.name
+            }
+            preposition="in"
+          />
         </span>
       </BaseTool>
-    ),
-  }),
-  DeleteTable: pendingTool({
-    call: z.object(databaseReference),
-    response: toolAcknowledgement,
-    render: (props) => (
-      <BaseTool
-        icon={TableIcon}
-        renderContext={props.renderContext}
-        type="call"
-      >
-        <span class="min-w-0 truncate">Delete table</span>
-      </BaseTool>
-    ),
-  }),
-  RenameDatabase: pendingTool({
-    call: z.object({ databaseId: z.string(), name: z.string() }),
-    response: toolAcknowledgement,
-    render: (props) => (
+    );
+  },
+});
+
+export const saveDatabaseQueryHandler = createToolRenderer({
+  name: 'SaveDatabaseQuery',
+  render: (ctx) => {
+    const [expanded, setExpanded] = createSignal(true);
+    const markdown = () => ctx.response?.data.markdown;
+    return (
       <BaseTool
         icon={DatabaseIcon}
-        renderContext={props.renderContext}
+        renderContext={ctx.renderContext}
         type="call"
+        response={
+          expanded() && markdown() ? (
+            <div class="min-w-0 p-3">
+              <StaticMarkdownContext>
+                <StaticMarkdown
+                  markdown={markdown()!}
+                  target="internal"
+                  lazy={false}
+                />
+              </StaticMarkdownContext>
+            </div>
+          ) : undefined
+        }
       >
-        <span class="min-w-0 truncate">
-          Rename database to <span class="text-ink">{props.call.name}</span>
-        </span>
+        <div class="flex min-w-0 flex-1 items-center justify-between gap-3">
+          <span class="min-w-0 truncate">
+            {ctx.response ? 'Saved' : 'Save'} question{' '}
+            <span class="text-ink">{ctx.tool.data.title}</span>
+          </span>
+          <Tool.ResultToggle
+            expanded={expanded()}
+            onToggle={() => setExpanded((open) => !open)}
+            showToggle={!!ctx.response}
+          />
+        </div>
       </BaseTool>
-    ),
-  }),
-  SaveDatabaseQuery: pendingTool({
-    call: z.object({
-      databaseId: z.string().nullish(),
-      sql: z.string(),
-      title: z.string(),
-      displayMode,
-      chart: z
-        .object({
-          x: z.string(),
-          y: z.array(z.string()),
-          title: z.string().nullish(),
-        })
-        .nullish(),
-      prompt: z.string().nullish(),
-    }),
-    response: z.object({ queryId: z.string(), markdown: z.string() }),
-    render: (props) => {
-      const [expanded, setExpanded] = createSignal(true);
-      return (
-        <BaseTool
-          icon={DatabaseIcon}
-          renderContext={props.renderContext}
-          type="call"
-          response={
-            expanded() && props.response ? (
-              <div class="min-w-0 p-3">
-                <StaticMarkdownContext>
-                  <StaticMarkdown
-                    markdown={props.response.markdown}
-                    target="internal"
-                    lazy={false}
-                  />
-                </StaticMarkdownContext>
-              </div>
-            ) : undefined
-          }
-        >
-          <div class="flex min-w-0 flex-1 items-center justify-between gap-3">
-            <span class="min-w-0 truncate">
-              {props.response ? 'Saved' : 'Save'} question{' '}
-              <span class="text-ink">{props.call.title}</span>
-            </span>
-            <Tool.ResultToggle
-              expanded={expanded()}
-              onToggle={() => setExpanded((open) => !open)}
-              showToggle={!!props.response}
-            />
-          </div>
-        </BaseTool>
-      );
-    },
-  }),
-};
-
-export function pendingDatabaseTool(
-  name: string
-): Component<PendingDatabaseToolProps> | undefined {
-  return Object.hasOwn(pendingDatabaseTools, name)
-    ? pendingDatabaseTools[name]
-    : undefined;
-}
+    );
+  },
+});

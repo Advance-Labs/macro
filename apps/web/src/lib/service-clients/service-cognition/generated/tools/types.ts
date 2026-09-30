@@ -178,6 +178,23 @@ export type SpreadsheetValueKind =
   | 'boolean'
   | 'error';
 /**
+ * The kind of Macro entity an entity column references, as the model names
+ * it. A mirror of the property system's entity types, minus database rows:
+ * a relation to another table is made with `linkToTableId`.
+ */
+export type ToolEntityType =
+  | 'USER'
+  | 'DOCUMENT'
+  | 'TASK'
+  | 'COMPANY'
+  | 'CALL_RECORD'
+  | 'CHANNEL'
+  | 'CHAT'
+  | 'PROJECT'
+  | 'THREAD'
+  | 'CALENDAR_EVENT'
+  | 'INITIATIVE';
+/**
  * Ownership scope of a manageable bot.
  */
 export type BotOwnerSummary =
@@ -1148,7 +1165,7 @@ export type UserToolResponseForSendEmailResponse =
   | {
       UserAction: SendEmailResponse;
     };
-export type ToolEntityType =
+export type ToolEntityType2ToolEntityType =
   | 'document'
   | 'task'
   | 'initiative'
@@ -1943,6 +1960,73 @@ export interface SpreadsheetChange {
    * Affected range, when applicable.
    */
   range?: string | null;
+}
+/**
+ * Change a column's type, converting every existing value. The column keeps its id and name.
+ *
+ * Conversion is all or nothing: if any value cannot become the new type without losing information ("soon" as a number), nothing changes and the error says why. Converting to `select` or `tag` turns the distinct existing values into the column's options; pass `options` to add labels no row has yet.
+ *
+ * - `entity` needs `specificEntityType` (e.g. `USER` for people, `DOCUMENT`).
+ * - `linkToTableId` makes it a relation to rows of another table of this database; pass `dataType: entity` with it. Relations are always multi-valued, and the column must be empty.
+ * - `tag` columns are always multi-valued.
+ *
+ * Requires edit access. The response is the schema after the change.
+ */
+export interface ChangeColumnType {
+  /**
+   * Id of the database containing the column, from ListDatabases.
+   */
+  databaseId: string;
+  /**
+   * Id of the table containing the column, from DescribeDatabase.
+   */
+  tableId: string;
+  /**
+   * Id of the column to change, from DescribeDatabase.
+   */
+  columnId: string;
+  dataType: ColumnType;
+  /**
+   * True if a cell can hold several values (select, select_number, entity, link). Defaults to false.
+   */
+  isMultiSelect?: boolean;
+  /**
+   * For select, select_number, or tag: labels to accept beyond the values the rows already have. Omit for other types.
+   */
+  options?: string[] | null;
+  /**
+   * Required for dataType entity without linkToTableId: what the ids reference, e.g. USER or DOCUMENT.
+   */
+  specificEntityType?: ToolEntityType | null;
+  /**
+   * Id of a table of this database to relate to; makes the column a relation holding row ids. Requires dataType entity.
+   */
+  linkToTableId?: string | null;
+}
+/**
+ * Response from the ChangeColumnType tool.
+ */
+export interface ChangeColumnTypeResponse {
+  /**
+   * Database containing the column.
+   */
+  databaseId: string;
+  /**
+   * Table containing the column.
+   */
+  tableId: string;
+  /**
+   * The changed column's id, unchanged by the conversion.
+   */
+  columnId: string;
+  /**
+   * The database's schema after the change.
+   */
+  database?: ToolDatabaseSchema | null;
+  /**
+   * Follow-up guidance if part of the change or the schema refresh failed.
+   */
+  warning?: string | null;
 }
 /**
  * Start a new inline comment on a passage of a Macro markdown document, on behalf of the user: the passage is highlighted in the document and the comment floats beside it, as when a person selects text and comments. Only use this when explicitly asked to comment on part of a document. Quote the passage exactly as the document reads, within a single paragraph, heading, list item or table cell. If the passage appears more than once the tool refuses and lists each occurrence so you can choose one; if the text is not found, read the document again rather than guessing. Use ReplyToDocumentComment to reply in an existing thread or to comment on the document as a whole.
@@ -3579,6 +3663,50 @@ export interface DeleteCalendarEventResponse {
   summary: string;
 }
 /**
+ * Delete a column and every value in it. This cannot be undone, so only do it when the user asked for that column to go. Deleting a relation column also removes the relationships it held. A column that a lookup reads through cannot be deleted until the lookup is.
+ *
+ * Requires edit access. The response is the schema after the change.
+ */
+export interface DeleteColumn {
+  /**
+   * Id of the database containing the column, from ListDatabases.
+   */
+  databaseId: string;
+  /**
+   * Id of the table containing the column, from DescribeDatabase.
+   */
+  tableId: string;
+  /**
+   * Id of the column to delete, from DescribeDatabase.
+   */
+  columnId: string;
+}
+/**
+ * Response from the DeleteColumn tool.
+ */
+export interface DeleteColumnResponse {
+  /**
+   * Database the column was deleted from.
+   */
+  databaseId: string;
+  /**
+   * Table the column was deleted from.
+   */
+  tableId: string;
+  /**
+   * The deleted column's id.
+   */
+  columnId: string;
+  /**
+   * The database's schema after the change.
+   */
+  database?: ToolDatabaseSchema | null;
+  /**
+   * A failed follow-up read does not undo the committed delete.
+   */
+  warning?: string | null;
+}
+/**
  * Decline a staged import candidate on the user's behalf. The item is remembered as declined so it won't be proposed again; only the user's own staged items can be declined.
  */
 export interface DeleteImportEntity {
@@ -3643,6 +3771,44 @@ export interface DeleteReminderResponse {
   summary: string;
 }
 /**
+ * Delete a table — a tab of a database — with every row and column in it. This cannot be undone, so only do it when the user asked for that table to go.
+ *
+ * A database keeps at least one table, so its last table cannot be deleted. A table that a relation column of another table points at cannot be deleted until that column is.
+ *
+ * Requires edit access. The response is the schema after the change.
+ */
+export interface DeleteTable {
+  /**
+   * Id of the database containing the table, from ListDatabases.
+   */
+  databaseId: string;
+  /**
+   * Id of the table to delete, from DescribeDatabase.
+   */
+  tableId: string;
+}
+/**
+ * Response from the DeleteTable tool.
+ */
+export interface DeleteTableResponse {
+  /**
+   * Database the table was deleted from.
+   */
+  databaseId: string;
+  /**
+   * The deleted table's id.
+   */
+  tableId: string;
+  /**
+   * The database's schema after the change.
+   */
+  database?: ToolDatabaseSchema | null;
+  /**
+   * A failed follow-up read does not undo the committed delete.
+   */
+  warning?: string | null;
+}
+/**
  * Permanently delete a tag from the user's personal set or their team's shared set. This removes the tag from every item it is currently applied to, so it is destructive and cannot be undone — confirm with the user first. Both ids come from a ListTags result: `id` is the tag's option id, and `property_definition_id` is the propertyDefinitionId of the set that contains it. To simply remove a tag from a single item without deleting the tag itself, use SetEntityProperty with remove_option_ids instead.
  */
 export interface DeleteTag {
@@ -3677,15 +3843,18 @@ export interface DeleteTagResponse {
  *
  * A small SQL subset, compiled by Macro rather than run by a SQL engine. What is listed here is everything there is:
  *
- * - **Reads:** `SELECT [DISTINCT] items FROM [database.]table [alias] [JOIN [database.]table [alias] ON a.col = b.col ...] [WHERE cond] [GROUP BY col] [ORDER BY col|agg|position [ASC|DESC], ...] [LIMIT n [OFFSET m]]`. Items are `*`, column names, or `COUNT(*)`, `COUNT(col)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`. No expressions, no aliases on items, no HAVING, no subqueries, no functions beyond those five.
- * - **Conditions:** `col = | != | < | <= | > | >= literal`, `col [NOT] IN ('a', 'b')`, `col [NOT] LIKE 'pat%'` (case-insensitive), `col IS [NOT] NULL`, `col [NOT] HAS 'x'` (membership in a multi-valued column), combined with AND, OR and parentheses. Literals are `'text'`, numbers, TRUE/FALSE, NULL; dates are `'2026-08-13'` or an ISO date-time.
+ * - **Reads:** `SELECT [DISTINCT] items FROM [database.]table [alias] [JOIN [database.]table [alias] ON a.col = b.col ...] [WHERE cond] [GROUP BY col] [ORDER BY col|alias|position [ASC|DESC], ...] [LIMIT n [OFFSET m]]`. Items are `*`, columns, or `COUNT(*)`, `COUNT(col)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`, each optionally named with `AS name`; the alias names the result column and can be ordered by. No other expressions or functions, no HAVING.
+ * - **Count per related row:** `SELECT p."Name" AS party, COUNT(*) AS invites FROM "Party Invites"."Invites" i JOIN "Party Invites"."Parties" p ON i."Party" = p.row_id GROUP BY p."Name" ORDER BY invites DESC`.
+ * - **No subqueries** (`IN (SELECT ...)`) and no comma joins: SELECT the ids first, then use them as literals (`WHERE row_id IN ('<id>', '<id>')`), or JOIN.
+ * - **Conditions:** `col = | != | < | <= | > | >= literal`, `col [NOT] IN ('a', 'b')`, `col [NOT] LIKE 'pat%'` (case-insensitive), `col IS [NOT] NULL`, `col [NOT] HAS 'x'` (membership in a multi-valued column), combined with AND, OR and parentheses.
+ * - **Literals:** `'text'` (a quote inside is doubled: `'Wolf''s place'`), numbers, TRUE/FALSE, NULL; dates are `'2026-08-13'` or an ISO date-time.
  * - **Writes:** `INSERT INTO table (col, ...) VALUES (...), (...)` or `INSERT INTO table DEFAULT VALUES`; `UPDATE table SET col = value, ... WHERE row_id = '<id>'`; `DELETE FROM table WHERE row_id = '<id>'`. An UPDATE or DELETE names exactly one row by its id: read the ids first. A multi-valued cell is written as a list: `tags = ['Urgent', 'Backend']`; `NULL` clears a cell.
- * - **`row_id`** is every row's id. It comes back as the first column of a row-shaped SELECT and in `insertedRowIds` after an INSERT; never invent one.
+ * - **`row_id`** is every row's id. It comes back as the first column of a row-shaped SELECT and in `insertedRowIds` after an INSERT; never invent one. A row the app shows as "Unnamed" has a NULL name: find it with `WHERE "Name" IS NULL`.
  * - **Select columns take their option labels as text** (`status = 'Going'`), never option ids. Only the labels the column carries are accepted; add new ones with AddColumnOptions.
- * - **Relation columns hold the ids of rows in another table.** Write them as a list of row ids (`guests = ['<row id>']`), test them with `HAS '<row id>'`, and join through them: `FROM invites i JOIN guests g ON i.guest = g.row_id`. Never compare a relation to a name.
+ * - **Relation columns hold the ids of rows in another table.** Write them as a list of row ids (`guests = ['<row id>']`), test them with `HAS '<row id>'`, and join through them with `ON i.guest = g.row_id` (`ON i.guest HAS g.row_id` means the same). Never compare a relation to a name.
  * - **Entity columns hold Macro ids** such as `macro|sam@example.com` for a person. Respect each column's `specificEntityType`; never invent an id or replace it with a name.
  * - **Names are display names.** Quote a table or column name with double quotes when it has spaces or punctuation (`FROM "Guest List" WHERE "Due Date" < '2026-09-01'`); names match case-insensitively, and a miss suggests the closest name. A table may be qualified by its database's name (`FROM "Offsite"."Guests"`).
- * - **Schema uses tools, not SQL DDL.** CreateDatabase, CreateTable, RenameTable, AddColumn, AddColumnOptions and SaveDatabaseView change structure and presentation.
+ * - **Schema uses tools, not SQL DDL:** CreateDatabase, RenameDatabase, CreateTable, RenameTable, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.
  * - Tables you only hold view access on are read-only.
  */
 export interface DescribeDatabase {
@@ -5364,7 +5533,7 @@ export interface NameSearch {
 /**
  * Run SQL against the current user's Macro databases — the only way to read or change their rows. SELECT to answer a question, INSERT/UPDATE/DELETE to change data. One statement per call.
  *
- * **Every table the user can see is already in scope, across all of their databases.** There is no connecting or selecting a database first, and no `databaseId` argument: the statement runs as the user against exactly what they are allowed to read. A table they cannot see simply does not exist, so a query can never leak somebody else's data — and a table they only have view access to is read-only.
+ * **Every table the user can see is already in scope, across all of their databases.** The statement runs as the user against exactly what they are allowed to read: a table they cannot see simply does not exist, and a table they only have view access to is read-only. Always pass `databaseId` for the database the statement is about, so its tables win name ties.
  *
  * **Call DescribeDatabase first unless you already know the exact table and column names.** Names are the display names the user typed, so quote the ones with spaces. If a statement fails, the error names what was wrong and suggests the closest name — read it, fix it, retry.
  *
@@ -5372,21 +5541,26 @@ export interface NameSearch {
  *
  * A small SQL subset, compiled by Macro rather than run by a SQL engine. What is listed here is everything there is:
  *
- * - **Reads:** `SELECT [DISTINCT] items FROM [database.]table [alias] [JOIN [database.]table [alias] ON a.col = b.col ...] [WHERE cond] [GROUP BY col] [ORDER BY col|agg|position [ASC|DESC], ...] [LIMIT n [OFFSET m]]`. Items are `*`, column names, or `COUNT(*)`, `COUNT(col)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`. No expressions, no aliases on items, no HAVING, no subqueries, no functions beyond those five.
- * - **Conditions:** `col = | != | < | <= | > | >= literal`, `col [NOT] IN ('a', 'b')`, `col [NOT] LIKE 'pat%'` (case-insensitive), `col IS [NOT] NULL`, `col [NOT] HAS 'x'` (membership in a multi-valued column), combined with AND, OR and parentheses. Literals are `'text'`, numbers, TRUE/FALSE, NULL; dates are `'2026-08-13'` or an ISO date-time.
+ * - **Reads:** `SELECT [DISTINCT] items FROM [database.]table [alias] [JOIN [database.]table [alias] ON a.col = b.col ...] [WHERE cond] [GROUP BY col] [ORDER BY col|alias|position [ASC|DESC], ...] [LIMIT n [OFFSET m]]`. Items are `*`, columns, or `COUNT(*)`, `COUNT(col)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`, each optionally named with `AS name`; the alias names the result column and can be ordered by. No other expressions or functions, no HAVING.
+ * - **Count per related row:** `SELECT p."Name" AS party, COUNT(*) AS invites FROM "Party Invites"."Invites" i JOIN "Party Invites"."Parties" p ON i."Party" = p.row_id GROUP BY p."Name" ORDER BY invites DESC`.
+ * - **No subqueries** (`IN (SELECT ...)`) and no comma joins: SELECT the ids first, then use them as literals (`WHERE row_id IN ('<id>', '<id>')`), or JOIN.
+ * - **Conditions:** `col = | != | < | <= | > | >= literal`, `col [NOT] IN ('a', 'b')`, `col [NOT] LIKE 'pat%'` (case-insensitive), `col IS [NOT] NULL`, `col [NOT] HAS 'x'` (membership in a multi-valued column), combined with AND, OR and parentheses.
+ * - **Literals:** `'text'` (a quote inside is doubled: `'Wolf''s place'`), numbers, TRUE/FALSE, NULL; dates are `'2026-08-13'` or an ISO date-time.
  * - **Writes:** `INSERT INTO table (col, ...) VALUES (...), (...)` or `INSERT INTO table DEFAULT VALUES`; `UPDATE table SET col = value, ... WHERE row_id = '<id>'`; `DELETE FROM table WHERE row_id = '<id>'`. An UPDATE or DELETE names exactly one row by its id: read the ids first. A multi-valued cell is written as a list: `tags = ['Urgent', 'Backend']`; `NULL` clears a cell.
- * - **`row_id`** is every row's id. It comes back as the first column of a row-shaped SELECT and in `insertedRowIds` after an INSERT; never invent one.
+ * - **`row_id`** is every row's id. It comes back as the first column of a row-shaped SELECT and in `insertedRowIds` after an INSERT; never invent one. A row the app shows as "Unnamed" has a NULL name: find it with `WHERE "Name" IS NULL`.
  * - **Select columns take their option labels as text** (`status = 'Going'`), never option ids. Only the labels the column carries are accepted; add new ones with AddColumnOptions.
- * - **Relation columns hold the ids of rows in another table.** Write them as a list of row ids (`guests = ['<row id>']`), test them with `HAS '<row id>'`, and join through them: `FROM invites i JOIN guests g ON i.guest = g.row_id`. Never compare a relation to a name.
+ * - **Relation columns hold the ids of rows in another table.** Write them as a list of row ids (`guests = ['<row id>']`), test them with `HAS '<row id>'`, and join through them with `ON i.guest = g.row_id` (`ON i.guest HAS g.row_id` means the same). Never compare a relation to a name.
  * - **Entity columns hold Macro ids** such as `macro|sam@example.com` for a person. Respect each column's `specificEntityType`; never invent an id or replace it with a name.
  * - **Names are display names.** Quote a table or column name with double quotes when it has spaces or punctuation (`FROM "Guest List" WHERE "Due Date" < '2026-09-01'`); names match case-insensitively, and a miss suggests the closest name. A table may be qualified by its database's name (`FROM "Offsite"."Guests"`).
- * - **Schema uses tools, not SQL DDL.** CreateDatabase, CreateTable, RenameTable, AddColumn, AddColumnOptions and SaveDatabaseView change structure and presentation.
+ * - **Schema uses tools, not SQL DDL:** CreateDatabase, RenameDatabase, CreateTable, RenameTable, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.
  * - Tables you only hold view access on are read-only.
  *
  * To change records, first SELECT the rows you mean (the first column is `row_id`), then UPDATE or DELETE each one by its id. After changing rows, SELECT the affected records to verify the actual result. On a connection failure, inspect before retrying an INSERT.
  * To create a row and relate it in one go, INSERT it with the relation column set to the target row ids (`INSERT INTO invites (guest, status) VALUES (['<guest row id>'], 'Sent')`); the new row's id is in `insertedRowIds`.
  *
  * Results come back as columns and rows. A column whose values are entity ids carries an `entityType`, which is how the app renders it as a clickable chip rather than as raw text — prefer selecting an entity column over stringifying it. Writes report `changesApplied` and, for inserts, the `insertedRowIds` the server minted.
+ *
+ * To answer a question about the data or draw a chart for the user, check the SELECT here, then save it with SaveDatabaseQuery and paste the block it returns: it stays live, where a pasted result goes stale.
  */
 export interface QueryDatabase {
   /**
@@ -6556,6 +6730,94 @@ export interface RenameChannelResponse {
   summary: string;
 }
 /**
+ * Rename a column, keeping its id, type, and values. SQL refers to the column by its new name afterwards, so use the refreshed schema in the response for later statements.
+ *
+ * Requires edit access to the database. If `database` is null, the rename still succeeded; call DescribeDatabase using databaseId before continuing.
+ */
+export interface RenameColumn {
+  /**
+   * Id of the database containing the column, from ListDatabases.
+   */
+  databaseId: string;
+  /**
+   * Id of the table containing the column, from DescribeDatabase.
+   */
+  tableId: string;
+  /**
+   * Id of the column to rename, from DescribeDatabase.
+   */
+  columnId: string;
+  /**
+   * New display name of the column, e.g. "Dietary Needs".
+   */
+  name: string;
+}
+/**
+ * Response from the RenameColumn tool.
+ */
+export interface RenameColumnResponse {
+  /**
+   * Database containing the column.
+   */
+  databaseId: string;
+  /**
+   * Table containing the column.
+   */
+  tableId: string;
+  /**
+   * The renamed column's id, unchanged by the rename.
+   */
+  columnId: string;
+  /**
+   * The column's display name after the rename.
+   */
+  name: string;
+  /**
+   * The database's schema after the change.
+   */
+  database?: ToolDatabaseSchema | null;
+  /**
+   * A failed follow-up read does not undo the committed rename.
+   */
+  warning?: string | null;
+}
+/**
+ * Rename a database, keeping its id, tables, and rows. Its tables' qualified SQL names (`"Database"."Table"`) change with it, so use the refreshed schema in the response for later statements.
+ *
+ * Requires edit access.
+ */
+export interface RenameDatabase {
+  /**
+   * Id of the database to rename, from ListDatabases.
+   */
+  databaseId: string;
+  /**
+   * New display name, as the user would title it.
+   */
+  name: string;
+}
+/**
+ * Response from the RenameDatabase tool.
+ */
+export interface RenameDatabaseResponse {
+  /**
+   * The renamed database's id.
+   */
+  databaseId: string;
+  /**
+   * Its display name after the rename.
+   */
+  name: string;
+  /**
+   * The database's schema after the change.
+   */
+  database?: ToolDatabaseSchema | null;
+  /**
+   * A failed follow-up read does not undo the committed rename.
+   */
+  warning?: string | null;
+}
+/**
  * Rename a document. Requires edit access to the document.
  */
 export interface RenameDocument {
@@ -6632,6 +6894,46 @@ export interface RenameTableResponse {
   warning?: string | null;
 }
 /**
+ * Set the order columns appear in, left to right. Pass every column id of the table exactly once, in the new order; values and names are untouched.
+ *
+ * Requires edit access. The response is the schema after the change.
+ */
+export interface ReorderColumns {
+  /**
+   * Id of the database containing the table, from ListDatabases.
+   */
+  databaseId: string;
+  /**
+   * Id of the table, from DescribeDatabase.
+   */
+  tableId: string;
+  /**
+   * Every column id of the table, exactly once, in the new left-to-right order.
+   */
+  columnIds: string[];
+}
+/**
+ * Response from the ReorderColumns tool.
+ */
+export interface ReorderColumnsResponse {
+  /**
+   * Database containing the table.
+   */
+  databaseId: string;
+  /**
+   * The reordered table.
+   */
+  tableId: string;
+  /**
+   * The database's schema after the change.
+   */
+  database?: ToolDatabaseSchema | null;
+  /**
+   * A failed follow-up read does not undo the committed order.
+   */
+  warning?: string | null;
+}
+/**
  * Reply in a comment thread on a document, or post a new comment in the document's Discussion panel, on behalf of the user. Only use this when explicitly asked to reply to or comment on a document. Thread ids come from the comments ReadContent returns. To start a new inline comment on a passage of the document, use CommentOnDocumentText.
  */
 export interface ReplyToDocumentComment {
@@ -6698,6 +7000,88 @@ export interface ResolveDocumentCommentResponse {
    * Whether the thread is now resolved.
    */
   resolved: boolean;
+}
+/**
+ * Save a read-only SELECT as a live question and get back the block that shows its answer. Paste the returned `markdown` verbatim — into your reply, or into a document with CreateDocument/EditDocument — and it renders as a live number, table, or chart that re-runs for whoever views it, with their permissions, so it stays current as the data changes.
+ *
+ * Use it whenever the user asks a question about their data or asks for a chart. Run the SELECT with QueryDatabase first to check it returns what you expect, then save exactly that SQL.
+ *
+ * - `displayMode`: `scalar` for one number (a single COUNT/SUM/AVG), `table` for rows, `bar` to compare categories, `line` for a trend over an ordered column, `pie` for shares of a whole.
+ * - `chart` (bar/line/pie): `x` is the label column and `y` the numeric result columns, named exactly as the result columns are — alias aggregates (`COUNT(*) AS invites`) so they have stable names.
+ * - Pass `databaseId` so the question resolves against that database's tables.
+ *
+ * Saved questions never change. To change one, save a new one and use its new block.
+ *
+ * ## Dialect
+ *
+ * A small SQL subset, compiled by Macro rather than run by a SQL engine. What is listed here is everything there is:
+ *
+ * - **Reads:** `SELECT [DISTINCT] items FROM [database.]table [alias] [JOIN [database.]table [alias] ON a.col = b.col ...] [WHERE cond] [GROUP BY col] [ORDER BY col|alias|position [ASC|DESC], ...] [LIMIT n [OFFSET m]]`. Items are `*`, columns, or `COUNT(*)`, `COUNT(col)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`, each optionally named with `AS name`; the alias names the result column and can be ordered by. No other expressions or functions, no HAVING.
+ * - **Count per related row:** `SELECT p."Name" AS party, COUNT(*) AS invites FROM "Party Invites"."Invites" i JOIN "Party Invites"."Parties" p ON i."Party" = p.row_id GROUP BY p."Name" ORDER BY invites DESC`.
+ * - **No subqueries** (`IN (SELECT ...)`) and no comma joins: SELECT the ids first, then use them as literals (`WHERE row_id IN ('<id>', '<id>')`), or JOIN.
+ * - **Conditions:** `col = | != | < | <= | > | >= literal`, `col [NOT] IN ('a', 'b')`, `col [NOT] LIKE 'pat%'` (case-insensitive), `col IS [NOT] NULL`, `col [NOT] HAS 'x'` (membership in a multi-valued column), combined with AND, OR and parentheses.
+ * - **Literals:** `'text'` (a quote inside is doubled: `'Wolf''s place'`), numbers, TRUE/FALSE, NULL; dates are `'2026-08-13'` or an ISO date-time.
+ * - **Writes:** `INSERT INTO table (col, ...) VALUES (...), (...)` or `INSERT INTO table DEFAULT VALUES`; `UPDATE table SET col = value, ... WHERE row_id = '<id>'`; `DELETE FROM table WHERE row_id = '<id>'`. An UPDATE or DELETE names exactly one row by its id: read the ids first. A multi-valued cell is written as a list: `tags = ['Urgent', 'Backend']`; `NULL` clears a cell.
+ * - **`row_id`** is every row's id. It comes back as the first column of a row-shaped SELECT and in `insertedRowIds` after an INSERT; never invent one. A row the app shows as "Unnamed" has a NULL name: find it with `WHERE "Name" IS NULL`.
+ * - **Select columns take their option labels as text** (`status = 'Going'`), never option ids. Only the labels the column carries are accepted; add new ones with AddColumnOptions.
+ * - **Relation columns hold the ids of rows in another table.** Write them as a list of row ids (`guests = ['<row id>']`), test them with `HAS '<row id>'`, and join through them with `ON i.guest = g.row_id` (`ON i.guest HAS g.row_id` means the same). Never compare a relation to a name.
+ * - **Entity columns hold Macro ids** such as `macro|sam@example.com` for a person. Respect each column's `specificEntityType`; never invent an id or replace it with a name.
+ * - **Names are display names.** Quote a table or column name with double quotes when it has spaces or punctuation (`FROM "Guest List" WHERE "Due Date" < '2026-09-01'`); names match case-insensitively, and a miss suggests the closest name. A table may be qualified by its database's name (`FROM "Offsite"."Guests"`).
+ * - **Schema uses tools, not SQL DDL:** CreateDatabase, RenameDatabase, CreateTable, RenameTable, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.
+ * - Tables you only hold view access on are read-only.
+ */
+export interface SaveDatabaseQuery {
+  /**
+   * Id of the database the question is about, from ListDatabases. Its tables win when another database has a table of the same name.
+   */
+  databaseId?: string | null;
+  /**
+   * The SELECT to save, exactly as it ran with QueryDatabase.
+   */
+  sql: string;
+  /**
+   * Short heading shown with the answer, e.g. "Invites per party".
+   */
+  title: string;
+  displayMode: QueryDatabaseDisplay;
+  /**
+   * Chart configuration for bar, line, and pie.
+   */
+  chart?: ToolChart | null;
+  /**
+   * The question as the user asked it. Defaults to the title; shown when someone edits the question.
+   */
+  prompt?: string | null;
+}
+/**
+ * Which result columns a chart plots.
+ */
+export interface ToolChart {
+  /**
+   * Result column holding the labels (the x axis or pie slices).
+   */
+  x: string;
+  /**
+   * One to five numeric result columns to plot, none equal to x.
+   */
+  y: string[];
+  /**
+   * Chart heading.
+   */
+  title?: string | null;
+}
+/**
+ * Response from the SaveDatabaseQuery tool.
+ */
+export interface SaveDatabaseQueryResponse {
+  /**
+   * The saved question's id.
+   */
+  queryId: string;
+  /**
+   * The block to paste verbatim where the answer should appear.
+   */
+  markdown: string;
 }
 /**
  * Save a personal table or kanban board view in Macro. DescribeDatabase first and use stable column ids for filters, sorts, grouping, visibility, and order. A board requires groupBy pointing to a select, multi-select, or checkbox column. Filters are ANDed. This changes presentation only, never source records. A same-named view on this table is updated, so inspect the returned created flag. Requires view access to the source database. The result contains the saved viewId and exact persisted configuration. Supports table and board only: it cannot save charts or SQL views.
@@ -7074,8 +7458,13 @@ export interface SetEntityProperty {
   link_urls?: string[] | null;
 }
 export interface ToolEntityRef {
-  entityType: ToolEntityType;
+  entityType: ToolEntityType2ToolEntityType;
   entityId: string;
+}
+export interface MessageWithAttachments {
+  content: string;
+  date: string;
+  attachmentIds: string[];
 }
 /**
  * Response from the SetEntityProperty tool.
@@ -7590,9 +7979,4 @@ export interface ConversationRecord {
   chat_id: string;
   title: string;
   messages: MessageWithAttachments[];
-}
-export interface MessageWithAttachments {
-  content: string;
-  date: string;
-  attachmentIds: string[];
 }

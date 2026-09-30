@@ -36,13 +36,19 @@ import { getCompanyHandler, listCompaniesHandler } from './Crm';
 import {
   addColumnHandler,
   addColumnOptionsHandler,
+  changeColumnTypeHandler,
   createDatabaseHandler,
   createTableHandler,
+  deleteColumnHandler,
+  deleteTableHandler,
   describeDatabaseHandler,
   listDatabasesHandler,
-  pendingDatabaseTool,
   queryDatabaseHandler,
+  renameColumnHandler,
+  renameDatabaseHandler,
   renameTableHandler,
+  reorderColumnsHandler,
+  saveDatabaseQueryHandler,
   saveDatabaseViewHandler,
 } from './DatabaseTools';
 import { deleteTagHandler } from './DeleteTag';
@@ -159,6 +165,13 @@ const toolHandlers: ToolHandlerMap<RenderContext> = {
   AddColumn: addColumnHandler,
   AddColumnOptions: addColumnOptionsHandler,
   SaveDatabaseView: saveDatabaseViewHandler,
+  RenameDatabase: renameDatabaseHandler,
+  DeleteTable: deleteTableHandler,
+  RenameColumn: renameColumnHandler,
+  ChangeColumnType: changeColumnTypeHandler,
+  DeleteColumn: deleteColumnHandler,
+  ReorderColumns: reorderColumnsHandler,
+  SaveDatabaseQuery: saveDatabaseQueryHandler,
   ListEntities: listEntitiesHandler,
   ListInboxes: listInboxesHandler,
   ListLabels: listLabelsHandler,
@@ -242,29 +255,11 @@ type TriggerToolArgs = Omit<
 
 /** Schema support alone does not guarantee that this surface has a renderer. */
 export function hasToolRenderer(name: string): boolean {
-  return Object.hasOwn(toolHandlers, name) || !!pendingDatabaseTool(name);
+  return Object.hasOwn(toolHandlers, name);
 }
 
 export function RenderTool(props: ToolProps) {
   const databasesEnabled = useFeatureFlag(enableDatabases);
-  const PendingDatabaseTool = pendingDatabaseTool(props.name);
-  if (PendingDatabaseTool)
-    return (
-      <Show
-        when={databasesEnabled().enabled}
-        fallback={<span class="text-xs text-ink-muted">Database tool</span>}
-      >
-        <PendingDatabaseTool
-          json={props.json}
-          response={props.response}
-          isComplete={props.isComplete}
-          renderContext={{
-            isStreaming: props.renderContext.renderContext.isStreaming,
-            grouped: props.renderContext.renderContext.grouped,
-          }}
-        />
-      </Show>
-    );
   const maybeTool = deserializeToolCall({
     id: props.tool_id,
     json: props.json,
@@ -283,6 +278,13 @@ export function RenderTool(props: ToolProps) {
     'AddColumn',
     'AddColumnOptions',
     'SaveDatabaseView',
+    'RenameDatabase',
+    'DeleteTable',
+    'RenameColumn',
+    'ChangeColumnType',
+    'DeleteColumn',
+    'ReorderColumns',
+    'SaveDatabaseQuery',
   ].includes(tool.name);
   const handler = toolHandlers[tool.name] as ToolHandler<
     ToolName,

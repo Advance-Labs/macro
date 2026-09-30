@@ -25,6 +25,10 @@ type ToolParserMap = {
     call: types.CalculateSpreadsheet;
     response: types.SpreadsheetResponse;
   };
+  ChangeColumnType: {
+    call: types.ChangeColumnType;
+    response: types.ChangeColumnTypeResponse;
+  };
   CommentOnDocumentText: {
     call: types.CommentOnDocumentText;
     response: types.CommentOnDocumentTextResponse;
@@ -74,6 +78,10 @@ type ToolParserMap = {
     call: types.DeleteCalendarEvent;
     response: types.DeleteCalendarEventResponse;
   };
+  DeleteColumn: {
+    call: types.DeleteColumn;
+    response: types.DeleteColumnResponse;
+  };
   DeleteImportEntity: {
     call: types.DeleteImportEntity;
     response: types.DeleteImportEntityResponse;
@@ -86,6 +94,7 @@ type ToolParserMap = {
     call: types.DeleteReminder;
     response: types.DeleteReminderResponse;
   };
+  DeleteTable: { call: types.DeleteTable; response: types.DeleteTableResponse };
   DeleteTag: { call: types.DeleteTag; response: types.DeleteTagResponse };
   DescribeDatabase: {
     call: types.DescribeDatabase;
@@ -241,11 +250,23 @@ type ToolParserMap = {
     call: types.RenameChannel;
     response: types.RenameChannelResponse;
   };
+  RenameColumn: {
+    call: types.RenameColumn;
+    response: types.RenameColumnResponse;
+  };
+  RenameDatabase: {
+    call: types.RenameDatabase;
+    response: types.RenameDatabaseResponse;
+  };
   RenameDocument: {
     call: types.RenameDocument;
     response: types.RenameDocumentResponse;
   };
   RenameTable: { call: types.RenameTable; response: types.RenameTableResponse };
+  ReorderColumns: {
+    call: types.ReorderColumns;
+    response: types.ReorderColumnsResponse;
+  };
   ReplyToDocumentComment: {
     call: types.ReplyToDocumentComment;
     response: types.ReplyToDocumentCommentResponse;
@@ -253,6 +274,10 @@ type ToolParserMap = {
   ResolveDocumentComment: {
     call: types.ResolveDocumentComment;
     response: types.ResolveDocumentCommentResponse;
+  };
+  SaveDatabaseQuery: {
+    call: types.SaveDatabaseQuery;
+    response: types.SaveDatabaseQueryResponse;
   };
   SaveDatabaseView: {
     call: types.SaveDatabaseView;
@@ -336,6 +361,10 @@ const toolParserMap = {
     call: schemas.CalculateSpreadsheet,
     response: schemas.SpreadsheetResponse,
   },
+  ChangeColumnType: {
+    call: schemas.ChangeColumnType,
+    response: schemas.ChangeColumnTypeResponse,
+  },
   CommentOnDocumentText: {
     call: schemas.CommentOnDocumentText,
     response: schemas.CommentOnDocumentTextResponse,
@@ -391,6 +420,10 @@ const toolParserMap = {
     call: schemas.DeleteCalendarEvent,
     response: schemas.DeleteCalendarEventResponse,
   },
+  DeleteColumn: {
+    call: schemas.DeleteColumn,
+    response: schemas.DeleteColumnResponse,
+  },
   DeleteImportEntity: {
     call: schemas.DeleteImportEntity,
     response: schemas.DeleteImportEntityResponse,
@@ -402,6 +435,10 @@ const toolParserMap = {
   DeleteReminder: {
     call: schemas.DeleteReminder,
     response: schemas.DeleteReminderResponse,
+  },
+  DeleteTable: {
+    call: schemas.DeleteTable,
+    response: schemas.DeleteTableResponse,
   },
   DeleteTag: { call: schemas.DeleteTag, response: schemas.DeleteTagResponse },
   DescribeDatabase: {
@@ -579,6 +616,14 @@ const toolParserMap = {
     call: schemas.RenameChannel,
     response: schemas.RenameChannelResponse,
   },
+  RenameColumn: {
+    call: schemas.RenameColumn,
+    response: schemas.RenameColumnResponse,
+  },
+  RenameDatabase: {
+    call: schemas.RenameDatabase,
+    response: schemas.RenameDatabaseResponse,
+  },
   RenameDocument: {
     call: schemas.RenameDocument,
     response: schemas.RenameDocumentResponse,
@@ -587,6 +632,10 @@ const toolParserMap = {
     call: schemas.RenameTable,
     response: schemas.RenameTableResponse,
   },
+  ReorderColumns: {
+    call: schemas.ReorderColumns,
+    response: schemas.ReorderColumnsResponse,
+  },
   ReplyToDocumentComment: {
     call: schemas.ReplyToDocumentComment,
     response: schemas.ReplyToDocumentCommentResponse,
@@ -594,6 +643,10 @@ const toolParserMap = {
   ResolveDocumentComment: {
     call: schemas.ResolveDocumentComment,
     response: schemas.ResolveDocumentCommentResponse,
+  },
+  SaveDatabaseQuery: {
+    call: schemas.SaveDatabaseQuery,
+    response: schemas.SaveDatabaseQueryResponse,
   },
   SaveDatabaseView: {
     call: schemas.SaveDatabaseView,
@@ -694,6 +747,10 @@ type ToolDataMap = {
     call: types.CalculateSpreadsheet;
     response: types.SpreadsheetResponse;
   };
+  ChangeColumnType: {
+    call: types.ChangeColumnType;
+    response: types.ChangeColumnTypeResponse;
+  };
   CommentOnDocumentText: {
     call: types.CommentOnDocumentText;
     response: types.CommentOnDocumentTextResponse;
@@ -743,6 +800,10 @@ type ToolDataMap = {
     call: types.DeleteCalendarEvent;
     response: types.DeleteCalendarEventResponse;
   };
+  DeleteColumn: {
+    call: types.DeleteColumn;
+    response: types.DeleteColumnResponse;
+  };
   DeleteImportEntity: {
     call: types.DeleteImportEntity;
     response: types.DeleteImportEntityResponse;
@@ -755,6 +816,7 @@ type ToolDataMap = {
     call: types.DeleteReminder;
     response: types.DeleteReminderResponse;
   };
+  DeleteTable: { call: types.DeleteTable; response: types.DeleteTableResponse };
   DeleteTag: { call: types.DeleteTag; response: types.DeleteTagResponse };
   DescribeDatabase: {
     call: types.DescribeDatabase;
@@ -910,11 +972,23 @@ type ToolDataMap = {
     call: types.RenameChannel;
     response: types.RenameChannelResponse;
   };
+  RenameColumn: {
+    call: types.RenameColumn;
+    response: types.RenameColumnResponse;
+  };
+  RenameDatabase: {
+    call: types.RenameDatabase;
+    response: types.RenameDatabaseResponse;
+  };
   RenameDocument: {
     call: types.RenameDocument;
     response: types.RenameDocumentResponse;
   };
   RenameTable: { call: types.RenameTable; response: types.RenameTableResponse };
+  ReorderColumns: {
+    call: types.ReorderColumns;
+    response: types.ReorderColumnsResponse;
+  };
   ReplyToDocumentComment: {
     call: types.ReplyToDocumentComment;
     response: types.ReplyToDocumentCommentResponse;
@@ -922,6 +996,10 @@ type ToolDataMap = {
   ResolveDocumentComment: {
     call: types.ResolveDocumentComment;
     response: types.ResolveDocumentCommentResponse;
+  };
+  SaveDatabaseQuery: {
+    call: types.SaveDatabaseQuery;
+    response: types.SaveDatabaseQueryResponse;
   };
   SaveDatabaseView: {
     call: types.SaveDatabaseView;
