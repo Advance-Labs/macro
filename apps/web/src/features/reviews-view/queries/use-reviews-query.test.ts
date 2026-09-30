@@ -204,6 +204,7 @@ describe('Reviews notifications', () => {
     vi.mocked(useSoupAstItemsQuery).mockReturnValue({
       data: { entities: [review], groups: undefined },
       error: null,
+      isPending: false,
       isLoading: false,
       isFetching: false,
       isPlaceholderData: false,
