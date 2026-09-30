@@ -329,7 +329,7 @@ it('groups layout, board grouping, and column visibility in one view settings co
   expect(
     await screen.findByRole('button', { name: 'Add column' })
   ).toBeTruthy();
-  const visible = screen.getByRole('checkbox', { name: 'Status' });
+  const visible = screen.getByRole('switch', { name: 'Status' });
   fireEvent.click(visible);
   expect(view().hiddenColumns).toEqual(['status']);
   fireEvent.click(screen.getByRole('button', { name: 'Show all columns' }));
@@ -435,6 +435,41 @@ it('keeps an explicit board grouping when switching back to the board layout', a
   fireEvent.click(await screen.findByRole('button', { name: 'Board' }));
   expect(view().layout).toBe('board');
   expect(view().groupBy).toBe('status');
+});
+
+it('shows and hides columns with switches', async () => {
+  const [view, setView] = createSignal(defaultDatabaseView());
+  render(() => (
+    <DatabaseToolbar
+      columns={[
+        {
+          id: 'status',
+          name: 'Status',
+          dataType: 'SELECT_STRING',
+          isMultiSelect: false,
+          options: ['To do', 'Done'],
+          writable: true,
+        },
+      ]}
+      value={view()}
+      onChange={setView}
+      savedViews={[]}
+      onSelectView={vi.fn()}
+      onSaveView={vi.fn(async () => {})}
+      onRenameView={vi.fn(async () => {})}
+      onDeleteView={vi.fn(async () => {})}
+    />
+  ));
+  fireEvent.click(screen.getByRole('button', { name: 'View settings' }));
+  const status = (await screen.findByRole('switch', {
+    name: 'Status',
+  })) as HTMLInputElement;
+  expect(status.checked).toBe(true);
+  fireEvent.click(status);
+  expect(view().hiddenColumns).toEqual(['status']);
+  expect(status.checked).toBe(false);
+  fireEvent.click(status);
+  expect(view().hiddenColumns).toEqual([]);
 });
 
 it('expands search inline, keeps focus while clearing, and closes with Escape without changing filters', async () => {

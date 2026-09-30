@@ -15,6 +15,7 @@ import { createResizeObserver } from '@solid-primitives/resize-observer';
 import { Button } from '@ui/components/Button';
 import { Dropdown } from '@ui/components/Dropdown';
 import { InputGroup } from '@ui/components/InputGroup';
+import { ToggleSwitch } from '@ui/components/ToggleSwitch';
 import { Tooltip } from '@ui/components/Tooltip';
 import {
   createEffect,
@@ -736,25 +737,21 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
                   each={orderDatabaseColumns(props.columns, view().columnOrder)}
                 >
                   {(column) => (
-                    <label class="flex items-center gap-2.5 rounded-lg px-2 py-2 text-xs hover:bg-hover">
-                      <input
-                        type="checkbox"
-                        checked={!view().hiddenColumns.includes(column.id)}
-                        onChange={(event) =>
-                          change({
-                            hiddenColumns: event.currentTarget.checked
-                              ? view().hiddenColumns.filter(
-                                  (id) => id !== column.id
-                                )
-                              : [...view().hiddenColumns, column.id],
-                          })
-                        }
-                        class="size-3.5 accent-ink"
-                      />
-                      <span class="min-w-0 flex-1 truncate" title={column.name}>
-                        {column.name}
-                      </span>
-                    </label>
+                    <ToggleSwitch
+                      class="flex w-full flex-row-reverse justify-between gap-2.5 rounded-lg px-2 py-2 text-xs hover:bg-hover"
+                      labelClass="min-w-0 flex-1 truncate"
+                      label={<span title={column.name}>{column.name}</span>}
+                      checked={!view().hiddenColumns.includes(column.id)}
+                      onChange={(visible) =>
+                        change({
+                          hiddenColumns: visible
+                            ? view().hiddenColumns.filter(
+                                (id) => id !== column.id
+                              )
+                            : [...view().hiddenColumns, column.id],
+                        })
+                      }
+                    />
                   )}
                 </For>
                 <Show when={!props.columns.length}>

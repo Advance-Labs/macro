@@ -1972,7 +1972,7 @@ describe('database table view', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
     fireEvent.click(screen.getByRole('button', { name: 'View settings' }));
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'Name' }));
+    fireEvent.click(await screen.findByRole('switch', { name: 'Name' }));
     await waitFor(() =>
       expect(headers()).toEqual(['Notes column menu', 'Name column menu'])
     );
