@@ -26,11 +26,6 @@ import {
   type GroupMentionNode,
 } from '../nodes/GroupMentionNode';
 import {
-  $isInitiativeMentionNode,
-  type InitiativeMentionInfo,
-  type InitiativeMentionNode,
-} from '../nodes/InitiativeMentionNode';
-import {
   $isPullRequestMentionNode,
   type PullRequestMentionInfo,
   type PullRequestMentionNode,
@@ -59,7 +54,6 @@ export type MentionNode =
   | DateMentionNode
   | AgentSessionMentionNode
   | PullRequestMentionNode
-  | InitiativeMentionNode
   | GroupMentionNode;
 
 export function $isMentionNode(node: LexicalNode): node is MentionNode {
@@ -70,7 +64,6 @@ export function $isMentionNode(node: LexicalNode): node is MentionNode {
     $isDateMentionNode(node) ||
     $isAgentSessionMentionNode(node) ||
     $isPullRequestMentionNode(node) ||
-    $isInitiativeMentionNode(node) ||
     $isGroupMentionNode(node)
   );
 }
@@ -128,9 +121,9 @@ function documentMentionEntityType(blockName: string): string {
  * the way the web editor tracks them while composing a channel message.
  * Document mentions map by block name; user mentions are re-tagged `bot`
  * when they target a bot principal. Contact, date, and PR mentions
- * carry no referencable entity and are skipped. Project (initiative) mentions
- * are skipped too: channel references auto-share their target with members.
- * Authored group mentions are preserved. Duplicates are dropped.
+ * carry no referencable entity and are skipped. Project (`initiative`) document
+ * mentions are skipped too: channel references auto-share their target with
+ * members. Authored group mentions are preserved. Duplicates are dropped.
  */
 export function $extractChannelMentions(): ChannelMention[] {
   const out: ChannelMention[] = [];
@@ -146,6 +139,7 @@ export function $extractChannelMentions(): ChannelMention[] {
 
   for (const node of $extractAllMentions()) {
     if ($isDocumentMentionNode(node)) {
+      if (node.getBlockName() === 'initiative') continue;
       push({
         entityType: documentMentionEntityType(node.getBlockName()),
         entityId: node.getDocumentId(),
@@ -170,7 +164,6 @@ export type MentionInfo =
   | (DocumentMentionInfo & { type: 'document' })
   | (AgentSessionMentionInfo & { type: 'agent_session' })
   | (PullRequestMentionInfo & { type: 'pr' })
-  | (InitiativeMentionInfo & { type: 'initiative' })
   | (ContactMentionInfo & { type: 'contact' })
   | (DateMentionInfo & { type: 'date' })
   | (TagMentionInfo & { type: 'tag' });
@@ -185,8 +178,6 @@ export function buildMentionMarkdownString(info: MentionInfo): string {
       return buildAgentSessionMentionMarkdown(dropKey(info, 'type'));
     case 'pr':
       return wrapXml('m-pr-mention', dropKey(info, 'type'));
-    case 'initiative':
-      return wrapXml('m-initiative-mention', dropKey(info, 'type'));
     case 'contact':
       return wrapXml('m-contact-mention', dropKey(info, 'type'));
     case 'date':
@@ -203,7 +194,6 @@ export {
   parseDateMentions,
   parseDocumentMentions,
   parseGroupMentions,
-  parseInitiativeMentions,
   parseLinks,
   parsePullRequestMentions,
   parseReplyTargets,

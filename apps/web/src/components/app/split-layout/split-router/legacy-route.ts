@@ -104,6 +104,23 @@ function legacyEntry(type: string, id: string): SplitRouterEntry | undefined {
     };
   }
 
+  // Project mentions link as `/app/initiative/<id>`; projects live in Tasks.
+  if (type === 'initiative' && z.guid().safeParse(id).success) {
+    return {
+      location: {
+        route: {
+          matches: [
+            { id: 'view-tasks', params: {} },
+            {
+              id: 'tasks-project',
+              params: { projectId: id, section: 'overview' },
+            },
+          ],
+        },
+      },
+    };
+  }
+
   if (type === 'component' && id === 'settings') {
     return {
       location: {

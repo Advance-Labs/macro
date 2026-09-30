@@ -176,21 +176,6 @@ impl<'de> XmlTaggedParsed<'de> for ParsedPullRequestMention<'de> {
     const TAG_NAME: &'static str = "m-pr-mention";
 }
 
-/// A task project, which the backend models as an initiative.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[non_exhaustive]
-pub struct ParsedInitiativeMention<'a> {
-    #[serde(borrow)]
-    pub id: Cow<'a, str>,
-    #[serde(borrow, default)]
-    pub label: Option<Cow<'a, str>>,
-}
-
-impl<'de> XmlTaggedParsed<'de> for ParsedInitiativeMention<'de> {
-    const TAG_NAME: &'static str = "m-initiative-mention";
-}
-
 #[derive(Debug)]
 pub enum XmlTag<'de> {
     Link(ParsedLink<'de>),
@@ -201,7 +186,6 @@ pub enum XmlTag<'de> {
     Group(ParsedGroupMention<'de>),
     AgentSession(ParsedAgentSessionMention<'de>),
     PullRequest(ParsedPullRequestMention<'de>),
-    Initiative(ParsedInitiativeMention<'de>),
 }
 
 fn parse_xml_tag(s: &str) -> IResult<&str, XmlTag<'_>> {
@@ -214,7 +198,6 @@ fn parse_xml_tag(s: &str) -> IResult<&str, XmlTag<'_>> {
         ParsedGroupMention::parse.map(XmlTag::Group),
         ParsedAgentSessionMention::parse.map(XmlTag::AgentSession),
         ParsedPullRequestMention::parse.map(XmlTag::PullRequest),
-        ParsedInitiativeMention::parse.map(XmlTag::Initiative),
     ))
     .parse(s)
 }
@@ -229,7 +212,6 @@ fn is_recognized_tag_name(name: &str) -> bool {
         ParsedGroupMention::TAG_NAME,
         ParsedAgentSessionMention::TAG_NAME,
         ParsedPullRequestMention::TAG_NAME,
-        ParsedInitiativeMention::TAG_NAME,
     ]
     .iter()
     .any(|recognized| recognized.eq_ignore_ascii_case(name))
@@ -314,10 +296,6 @@ pub trait XmlFormatter: Sized {
         pr: &ParsedPullRequestMention<'_>,
         f: &mut Formatter<'_>,
     ) -> std::fmt::Result;
-    fn format_initiative(
-        initiative: &ParsedInitiativeMention<'_>,
-        f: &mut Formatter<'_>,
-    ) -> std::fmt::Result;
 
     fn format_xml_text(text: ParsedXmlText<'_>) -> ReformattedXmlText<Self> {
         use std::fmt::Display;
@@ -385,13 +363,6 @@ pub trait XmlFormatter: Sized {
                         acc,
                         "{}",
                         Adapter(|f: &mut Formatter<'_>| Self::format_pull_request(&p, f))
-                    )
-                }
-                TextSegment::Xml(XmlTag::Initiative(i)) => {
-                    write!(
-                        acc,
-                        "{}",
-                        Adapter(|f: &mut Formatter<'_>| Self::format_initiative(&i, f))
                     )
                 }
                 TextSegment::Plain(s) => {
@@ -474,21 +445,6 @@ impl XmlFormatter for PlainTextFormatter {
                 .unwrap_or("Pull request")
         )
     }
-
-    fn format_initiative(
-        initiative: &ParsedInitiativeMention<'_>,
-        f: &mut Formatter<'_>,
-    ) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            initiative
-                .label
-                .as_deref()
-                .filter(|label| !label.is_empty())
-                .unwrap_or("Project")
-        )
-    }
 }
 
 /// xml formatter which completely removes the inner text of all xml tags
@@ -535,13 +491,6 @@ impl XmlFormatter for NullXmlFormatter {
 
     fn format_pull_request(
         _pr: &ParsedPullRequestMention<'_>,
-        f: &mut Formatter<'_>,
-    ) -> std::fmt::Result {
-        write!(f, "")
-    }
-
-    fn format_initiative(
-        _initiative: &ParsedInitiativeMention<'_>,
         f: &mut Formatter<'_>,
     ) -> std::fmt::Result {
         write!(f, "")

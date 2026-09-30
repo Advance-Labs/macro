@@ -12,7 +12,6 @@ vi.mock('../../../../plugins/mentions', () => ({
   INSERT_DOCUMENT_MENTION_COMMAND: 'insert-document',
   INSERT_DATE_MENTION_COMMAND: 'insert-date',
   INSERT_GROUP_MENTION_COMMAND: 'insert-group',
-  INSERT_INITIATIVE_MENTION_COMMAND: 'insert-initiative',
 }));
 vi.mock('../../../../utils/mentionsUtils', () => ({
   handleUserMention: vi.fn(),
@@ -40,7 +39,7 @@ describe('project menu selection', () => {
     trackMention.mockReset();
   });
 
-  it('inserts an initiative chip without document attachment callbacks', async () => {
+  it('inserts an initiative document mention without attachment callbacks', async () => {
     const dispatchCommand = vi.fn();
     const onDocumentMention = vi.fn();
     const handler = createItemHandler({
@@ -53,9 +52,11 @@ describe('project menu selection', () => {
       'remove-search',
       undefined
     );
-    expect(dispatchCommand).toHaveBeenNthCalledWith(2, 'insert-initiative', {
-      id: 'project-1',
-      label: 'Launch',
+    expect(dispatchCommand).toHaveBeenNthCalledWith(2, 'insert-document', {
+      documentId: 'project-1',
+      documentName: 'Launch',
+      blockName: 'initiative',
+      mentionUuid: undefined,
     });
     expect(onDocumentMention).not.toHaveBeenCalled();
     expect(trackMention).not.toHaveBeenCalled();
@@ -75,9 +76,10 @@ describe('project menu selection', () => {
       'initiative',
       'project-1'
     );
-    expect(dispatchCommand).toHaveBeenNthCalledWith(2, 'insert-initiative', {
-      id: 'project-1',
-      label: 'Launch',
+    expect(dispatchCommand).toHaveBeenNthCalledWith(2, 'insert-document', {
+      documentId: 'project-1',
+      documentName: 'Launch',
+      blockName: 'initiative',
       mentionUuid: 'mention-uuid',
     });
   });

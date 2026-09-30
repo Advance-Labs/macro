@@ -9,7 +9,6 @@ import {
   $createDateMentionNode,
   $createDocumentMentionNode,
   $createGroupMentionNode,
-  $createInitiativeMentionNode,
   $createInlineSearchNode,
   $createPullRequestMentionNode,
   $createSnapshotNode,
@@ -22,7 +21,6 @@ import {
   $isDateMentionNode,
   $isDocumentMentionNode,
   $isGroupMentionNode,
-  $isInitiativeMentionNode,
   $isPullRequestMentionNode,
   $isUserMentionNode,
   $removeInlineSearch,
@@ -38,8 +36,6 @@ import {
   type GroupMentionInfo,
   GroupMentionNode,
   HISTORIC_TAG,
-  type InitiativeMentionInfo,
-  InitiativeMentionNode,
   InlineSearchNode,
   InlineSearchNodesType,
   type PullRequestMentionInfo,
@@ -131,9 +127,6 @@ export const INSERT_AGENT_SESSION_MENTION_COMMAND: LexicalCommand<AgentSessionMe
 export const INSERT_PR_MENTION_COMMAND: LexicalCommand<PullRequestMentionInfo> =
   createCommand('INSERT_PR_MENTION_COMMAND');
 
-export const INSERT_INITIATIVE_MENTION_COMMAND: LexicalCommand<InitiativeMentionInfo> =
-  createCommand('INSERT_INITIATIVE_MENTION_COMMAND');
-
 export const INSERT_THEME_MENTION_COMMAND: LexicalCommand<ThemeMentionInfo> =
   createCommand('INSERT_THEME_MENTION_COMMAND');
 
@@ -176,7 +169,6 @@ function $isMentionNode(
   | DateMentionNode
   | AgentSessionMentionNode
   | PullRequestMentionNode
-  | InitiativeMentionNode
   | GroupMentionNode {
   return (
     $isUserMentionNode(node) ||
@@ -185,7 +177,6 @@ function $isMentionNode(
     $isDateMentionNode(node) ||
     $isAgentSessionMentionNode(node) ||
     $isPullRequestMentionNode(node) ||
-    $isInitiativeMentionNode(node) ||
     $isGroupMentionNode(node)
   );
 }
@@ -220,6 +211,9 @@ function $mentionItemFromNode(node: MentionNode): ItemMention {
     } else if (blockName === 'project') {
       fileType = 'project';
       itemType = 'project';
+    } else if (blockName === 'initiative') {
+      // A task project, not a folder or a document.
+      itemType = 'initiative';
     } else if (blockName === 'chat') {
       fileType = 'chat';
       itemType = 'chat';
@@ -272,12 +266,6 @@ function $mentionItemFromNode(node: MentionNode): ItemMention {
       itemId: node.getId(),
       documentName: node.getLabel(),
     };
-  } else if ($isInitiativeMentionNode(node)) {
-    return {
-      itemType: 'initiative',
-      itemId: node.getId(),
-      documentName: node.getLabel(),
-    };
   } else if ($isPullRequestMentionNode(node)) {
     return {
       itemType: 'foreign',
@@ -327,6 +315,8 @@ const getDocumentMentionItemType = (
   node: DocumentMentionNode
 ): ItemMention['itemType'] => {
   const blockName = node.__blockName;
+  // Not a block, so it has no item type of its own.
+  if (blockName === 'initiative') return 'initiative';
   const itemType = blockNameToItemType(verifyBlockName(blockName));
   return match<ItemType, ItemMention['itemType']>(itemType)
     .with('email', () => 'thread')
@@ -376,7 +366,6 @@ function registerMentionsPlugin(
       ContactMentionNode,
       DateMentionNode,
       PullRequestMentionNode,
-      InitiativeMentionNode,
       AgentSessionMentionNode,
       InlineSearchNode,
     ])
@@ -628,47 +617,6 @@ function registerMentionsPlugin(
         return true;
       },
       COMMAND_PRIORITY_NORMAL
-    ),
-
-    editor.registerCommand(
-      INSERT_INITIATIVE_MENTION_COMMAND,
-      (payload) => {
-        editor.update(() => {
-          const mentionNode = $createInitiativeMentionNode(payload);
-          $insertNodes([mentionNode]);
-          if ($isRootOrShadowRoot(mentionNode.getParentOrThrow())) {
-            $wrapNodeInElement(mentionNode, $createParagraphNode);
-          }
-          mentionNode.selectEnd();
-        });
-        return true;
-      },
-      COMMAND_PRIORITY_NORMAL
-    ),
-
-    editor.registerMutationListener(
-      InitiativeMentionNode,
-      (mutations, { prevEditorState }) => {
-        for (const [key, mutation] of mutations) {
-          const node = nodeByKey(
-            mutation === 'destroyed'
-              ? prevEditorState
-              : editor.getEditorState(),
-            key
-          );
-          if (!$isInitiativeMentionNode(node)) continue;
-          if (mutation === 'created')
-            onCreateMention?.($mentionItemFromNode(node));
-          if (mutation === 'destroyed') {
-            const mentionUuid = node.getMentionUuid();
-            if (mentionUuid && sourceDocumentId) {
-              untrackMention(sourceDocumentId, mentionUuid);
-            }
-            onRemoveMention?.($mentionItemFromNode(node));
-          }
-        }
-        updateMentionsSignal();
-      }
     ),
 
     editor.registerCommand(

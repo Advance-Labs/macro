@@ -1,7 +1,10 @@
 import { parseLocalDate } from '@app/features/calendar/utils/calendar-date';
 import { calendarMentionOpen } from '@app/features/calendar-view/mention-open-target';
 import { openCalendarEventSplit } from '@app/features/calendar-view/open-calendar-event';
+import { openProject } from '@app/features/projects/open-project';
+import { useProjectIdentityQuery } from '@app/features/projects/queries/project-identity';
 import { URL_PARAMS as CHANNEL_PARAMS } from '@block-channel/constants';
+import { useSplitLayout } from '@components/app/split-layout/layout';
 import {
   type BlockAlias,
   type BlockName,
@@ -23,6 +26,7 @@ import {
   verifyBlockName,
 } from '@core/constant/allBlocks';
 import { ENABLE_BLOCK_IN_BLOCK } from '@core/constant/featureFlags';
+import { useUserId } from '@core/context/user';
 import { canNestBlock } from '@core/orchestrator';
 import { formatDate } from '@core/util/date';
 import { matches } from '@core/util/match';
@@ -379,6 +383,9 @@ export function DocumentMention(props: DocumentMentionDecoratorProps) {
   if (lexicalWrapper?.skipPreviewFetch) {
     return <DocumentMentionStatic {...props} />;
   }
+  if (props.blockName === 'initiative') {
+    return <ProjectDocumentMention {...props} />;
+  }
   // Only skill mentions need to distinguish built-ins from stored documents.
   // Ordinary mentions must not wait for a once-per-session skills request.
   return (
@@ -392,6 +399,93 @@ export function DocumentMention(props: DocumentMentionDecoratorProps) {
     >
       <SkillDocumentMention {...props} />
     </Show>
+  );
+}
+
+/**
+ * A task project (block name `initiative`). Projects are not blocks, so the
+ * name comes from the project read and opening goes to the project view.
+ */
+function ProjectDocumentMention(props: DocumentMentionDecoratorProps) {
+  const lexicalWrapper = useContext(LexicalWrapperContext);
+  const editor = lexicalWrapper?.editor;
+  const layout = useSplitLayout();
+  const userId = useUserId();
+  const query = useProjectIdentityQuery(() => props.documentId, userId);
+  // Guard resource reads: a pending chip must never suspend its editor.
+  const name = () => (query.isSuccess ? query.data.name : undefined);
+  const text = () =>
+    name() ??
+    (query.isError ? 'Unavailable project' : props.documentName || 'Project');
+
+  // The node stores the name for serialization, as other document mentions do.
+  createEffect(() => {
+    const current = name();
+    if (!current || current === props.documentName) return;
+    setTimeout(() => {
+      editor?.dispatchCommand(UPDATE_DOCUMENT_NAME_COMMAND, {
+        [props.documentId]: current,
+      });
+    });
+  });
+
+  const isSelectedAsNode = () => {
+    const sel = lexicalWrapper?.selection;
+    return sel?.type === 'node' && sel.nodeKeys.has(props.key);
+  };
+
+  // The project view reports missing access itself; only skip known failures.
+  const open = (e: MouseEvent | KeyboardEvent | null) => {
+    if (query.isError) return;
+    openProject(layout, props.documentId, {
+      newSplit: openInNewSplitForMention(e?.shiftKey, e != null),
+    });
+  };
+
+  if (editor) {
+    autoRegister(
+      editor.registerCommand(
+        KEY_ENTER_COMMAND,
+        (e) => {
+          if (!isSelectedAsNode()) return false;
+          open(e);
+          return true;
+        },
+        COMMAND_PRIORITY_NORMAL
+      )
+    );
+  }
+
+  const navHandlers = useNativeSplitNavigationHandler<HTMLSpanElement>((e) => {
+    e.stopPropagation();
+    open(e);
+  });
+
+  return (
+    <span class="relative">
+      <span
+        class="size-full py-0.5 cursor-default rounded-xs hover:bg-hover focus:bg-active"
+        classList={{ 'bg-active text-ink': isSelectedAsNode() }}
+        style={{ 'user-select': 'inherit' }}
+        {...navHandlers}
+      >
+        <MentionContainer
+          icon={<EntityIcon targetType="initiative" size="fill" />}
+          collapsed={props.collapsed}
+          text={
+            <span
+              data-document-mention="true"
+              data-document-id={props.documentId}
+              data-block-name={props.blockName}
+              data-document-name={text()}
+            >
+              {text()}
+            </span>
+          }
+        />
+      </span>
+      <MentionTooltip show={isSelectedAsNode()} text="Open" />
+    </span>
   );
 }
 

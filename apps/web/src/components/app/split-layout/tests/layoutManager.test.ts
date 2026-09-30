@@ -1290,6 +1290,10 @@ describe('layoutManager', () => {
       ['/channel/channel-1', '/channels/channel-1'],
       ['/task/task-1', '/tasks/task-1'],
       ['/md/document-1', '/drive/md/document-1'],
+      [
+        '/initiative/0194f6fa-1544-79f6-a664-f3afa1bbb635',
+        '/tasks/projects/0194f6fa-1544-79f6-a664-f3afa1bbb635/overview',
+      ],
     ])('upgrades the legacy block URL %s', async (incoming, expected) => {
       const { location, router, dispose } = ingressRouter(incoming);
       await router.settled();

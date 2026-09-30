@@ -284,7 +284,7 @@ mod tests {
         assert!(instructions.contains("<m-user-mention>"));
         assert!(instructions.contains("\"expanded\":true"));
         assert!(instructions.contains("\"blockName\":\"skill\""));
-        assert!(instructions.contains("<m-initiative-mention>"));
+        assert!(instructions.contains("\"blockName\":\"initiative\""));
     }
 
     #[test]

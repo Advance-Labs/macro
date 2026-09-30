@@ -1,10 +1,4 @@
-// @vitest-environment jsdom
-import { createHeadlessEditor } from '@lexical/headless';
-import { $generateHtmlFromNodes, $generateNodesFromDOM } from '@lexical/html';
-import { $getRoot, $isParagraphNode } from 'lexical';
 import { describe, expect, it } from 'vitest';
-import { NodeReplacements, SupportedNodeTypes } from '../node-list';
-import { $isInitiativeMentionNode } from '../nodes/InitiativeMentionNode';
 import { extractChannelMentionsFromMarkdown } from '../utils/markdown-mentions';
 import {
   markdownToSerializedEditorStateWithIds,
@@ -13,68 +7,47 @@ import {
 import { buildMentionMarkdownString } from '../utils/mentions';
 import { markdownToEmbeddingText, markdownToPlainText } from '../utils/parsers';
 
-const info = { id: 'project-1', label: 'Launch' };
-const markdown = buildMentionMarkdownString({ type: 'initiative', ...info });
+// A task project is a document mention with the `initiative` block name.
+const project = buildMentionMarkdownString({
+  type: 'document',
+  documentId: 'project-1',
+  documentName: 'Launch',
+  blockName: 'initiative',
+});
 
-describe('InitiativeMentionNode', () => {
-  it('round-trips Markdown and serialized state', () => {
-    expect(markdown).toBe(
-      '<m-initiative-mention>{"id":"project-1","label":"Launch"}</m-initiative-mention>'
-    );
-    const state = markdownToSerializedEditorStateWithIds(markdown);
+describe('project (initiative) document mentions', () => {
+  it('round-trips as a document mention', () => {
+    const state = markdownToSerializedEditorStateWithIds(project);
     expect(state.root.children[0]).toMatchObject({
-      children: [{ type: 'initiative-mention', ...info }],
+      children: [
+        {
+          type: 'document-mention',
+          documentId: 'project-1',
+          blockName: 'initiative',
+        },
+      ],
     });
-    expect(serializedEditorStateToMarkdown(state)).toBe(markdown);
+    const exported = serializedEditorStateToMarkdown(state);
+    expect(exported).toContain('"documentId":"project-1"');
+    expect(exported).toContain('"blockName":"initiative"');
   });
 
-  it('renders readable plain text and embedding references', () => {
-    expect(markdownToPlainText(markdown)).toBe('Launch');
-    expect(markdownToEmbeddingText(markdown)).toBe(
+  it('reads as the project name and embeds as an initiative reference', () => {
+    expect(markdownToPlainText(project)).toBe('Launch');
+    expect(markdownToEmbeddingText(project)).toBe(
       '[Launch](initiative:project-1)'
     );
-    expect(
-      markdownToPlainText(
-        buildMentionMarkdownString({ type: 'initiative', id: 'project-1' })
-      )
-    ).toBe('Project');
   });
 
   it('is not a channel reference, which would share the project', () => {
-    expect(extractChannelMentionsFromMarkdown(markdown)).toEqual([]);
-  });
-
-  it('preserves identity through HTML', () => {
-    const editor = createHeadlessEditor({
-      nodes: [...SupportedNodeTypes, ...NodeReplacements],
+    const doc = buildMentionMarkdownString({
+      type: 'document',
+      documentId: 'doc-1',
+      documentName: 'Spec',
+      blockName: 'md',
     });
-    editor.setEditorState(
-      editor.parseEditorState(markdownToSerializedEditorStateWithIds(markdown))
-    );
-    const html = editor
-      .getEditorState()
-      .read(() => $generateHtmlFromNodes(editor));
-    expect(html).toContain('data-initiative-id="project-1"');
-    editor.update(
-      () => {
-        const nodes = $generateNodesFromDOM(
-          editor,
-          new DOMParser().parseFromString(html, 'text/html')
-        );
-        $getRoot()
-          .clear()
-          .append(...nodes);
-        const paragraph = $getRoot().getFirstChild();
-        const node = $isParagraphNode(paragraph)
-          ? paragraph.getFirstChild()
-          : paragraph;
-        expect($isInitiativeMentionNode(node)).toBe(true);
-        if ($isInitiativeMentionNode(node)) {
-          expect(node.getId()).toBe(info.id);
-          expect(node.getLabel()).toBe(info.label);
-        }
-      },
-      { discrete: true }
-    );
+    expect(extractChannelMentionsFromMarkdown(`${project} ${doc}`)).toEqual([
+      { entityType: 'document', entityId: 'doc-1' },
+    ]);
   });
 });

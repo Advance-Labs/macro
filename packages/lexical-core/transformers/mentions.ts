@@ -20,7 +20,6 @@ import { DateMentionNode } from '../nodes/DateMentionNode';
 import { DocumentCardNode } from '../nodes/DocumentCardNode';
 import { DocumentMentionNode } from '../nodes/DocumentMentionNode';
 import { GroupMentionNode } from '../nodes/GroupMentionNode';
-import { InitiativeMentionNode } from '../nodes/InitiativeMentionNode';
 import { PullRequestMentionNode } from '../nodes/PullRequestMentionNode';
 import { TagMentionNode } from '../nodes/TagMentionNode';
 import { ThemeMentionNode } from '../nodes/ThemeMentionNode';
@@ -359,70 +358,6 @@ export const E_PR_MENTION: ElementTransformer = {
 
     const prUrl = `https://${hostname}/app/pr/${id}`;
     return `[${label}](${prUrl})`;
-  },
-  replace: (
-    _parentNode: ElementNode,
-    _children: Array<LexicalNode>,
-    _match: Array<string>,
-    _isImport: boolean
-  ) => {
-    return false;
-  },
-};
-
-// Internal Initiative (task project) Mentions
-
-export const I_INITIATIVE_MENTION: TextMatchTransformer = {
-  dependencies: [InitiativeMentionNode, UnknownMentionNode],
-  type: 'text-match',
-  regExp: /<m-initiative-mention>(.*?)<\/m-initiative-mention>/,
-  importRegExp: /<m-initiative-mention>(.*?)<\/m-initiative-mention>/,
-  export: (node) => {
-    if (!(node instanceof InitiativeMentionNode)) return null;
-    const data = JSON.stringify({
-      id: node.getId(),
-      label: node.getLabel(),
-      mentionUuid: node.getMentionUuid(),
-    });
-    return `<m-initiative-mention>${data}</m-initiative-mention>`;
-  },
-  replace: (node: TextNode, match: RegExpMatchArray) => {
-    try {
-      const data = JSON.parse(match[1]);
-      if (!('id' in data) || typeof data.id !== 'string') {
-        throw new Error('Missing field id');
-      }
-      node.replace(
-        new InitiativeMentionNode(
-          data.id,
-          typeof data.label === 'string' ? data.label : undefined,
-          typeof data.mentionUuid === 'string' ? data.mentionUuid : undefined
-        )
-      );
-    } catch (e) {
-      console.error('Error in I_INITIATIVE_MENTION replace:', e);
-      replaceTextWithUnknownMention(node, 'Unknown Project');
-    }
-  },
-};
-
-// External Initiative (task project) Mentions
-
-export const E_INITIATIVE_MENTION: ElementTransformer = {
-  dependencies: [InitiativeMentionNode],
-  type: 'element',
-  regExp: /$^/,
-  export: (node) => {
-    if (!(node instanceof InitiativeMentionNode)) return null;
-
-    const id = node.getId();
-    if (!id) return null;
-
-    const label = node.getLabel() || 'Project';
-    const hostname = currentBrowserHostname();
-    if (!hostname) return label;
-
-    return `[${label}](https://${hostname}/app/tasks/projects/${id}/overview)`;
   },
   replace: (
     _parentNode: ElementNode,

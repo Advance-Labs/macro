@@ -47,7 +47,6 @@ import {
   $createImageNode,
   ImageNode,
 } from '@macro-inc/lexical-core/nodes/ImageNode';
-import { $createInitiativeMentionNode } from '@macro-inc/lexical-core/nodes/InitiativeMentionNode';
 import { $createPullRequestMentionNode } from '@macro-inc/lexical-core/nodes/PullRequestMentionNode';
 import { $createTagMentionNode } from '@macro-inc/lexical-core/nodes/TagMentionNode';
 import { $createUserMentionNode } from '@macro-inc/lexical-core/nodes/UserMentionNode';
@@ -1050,9 +1049,6 @@ export function buildNode(spec: NodeSpec): LexicalNode {
         )
         .with({ kind: 'pr' }, (m) =>
           $createPullRequestMentionNode({ id: m.id, label: m.label })
-        )
-        .with({ kind: 'initiative' }, (m) =>
-          $createInitiativeMentionNode({ id: m.id, label: m.label })
         )
         .with({ kind: 'tag' }, (m) =>
           $createTagMentionNode({

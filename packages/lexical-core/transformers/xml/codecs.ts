@@ -89,7 +89,6 @@ const KNOWN_TYPES: Record<KnownNode['type'], 1> = {
   'contact-mention': 1,
   'group-mention': 1,
   'pr-mention': 1,
-  'initiative-mention': 1,
   'agent-session-mention': 1,
   'tag-mention': 1,
   'theme-mention': 1,
@@ -375,16 +374,6 @@ export function serializeNode(node: SerNode): FxpNode {
         [],
         nodeAttrs(n, {
           ...(n.id && { prId: n.id }),
-          ...(n.label && { label: n.label }),
-        })
-      )
-    )
-    .with({ type: 'initiative-mention' }, (n) =>
-      el(
-        'initiative-mention',
-        [],
-        nodeAttrs(n, {
-          initiativeId: n.id,
           ...(n.label && { label: n.label }),
         })
       )

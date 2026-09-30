@@ -25,7 +25,6 @@ import {
   type GroupMentionNode,
   type HorizontalRuleNode,
   type ImageNode,
-  type InitiativeMentionNode,
   isSupportedLanguage,
   type MagicChipNode,
   normalizedLanguage,
@@ -96,7 +95,6 @@ import { MagicChip as MagicChipDecorator } from '../decorator/MagicChip';
 import { MarkdownImage as ImageDecorator } from '../decorator/MarkdownImage';
 import { MarkdownVideo as VideoDecorator } from '../decorator/MarkdownVideo';
 import { PasteNode as PasteNodeDecorator } from '../decorator/PasteNode';
-import { ProjectMention as ProjectMentionDecorator } from '../decorator/ProjectMention';
 import { ReplyTarget as ReplyTargetDecorator } from '../decorator/ReplyTarget';
 import { Snapshot as SnapshotDecorator } from '../decorator/Snapshot';
 import { TagMention as TagMentionDecorator } from '../decorator/TagMention';
@@ -414,17 +412,6 @@ const AgentSessionMention: TypedRenderableEntity<AgentSessionMentionNode> = {
       })}
     </span>
   ),
-};
-
-const ProjectMention: TypedRenderableEntity<InitiativeMentionNode> = {
-  guard: (node: LexicalNode): node is InitiativeMentionNode =>
-    node.__type === 'initiative-mention',
-  render: (props) =>
-    ProjectMentionDecorator({
-      ...props.node.exportComponentProps(),
-      key: props.node.getKey(),
-      theme: props.theme,
-    }),
 };
 
 const ThemeMention: TypedRenderableEntity<ThemeMentionNode> = {
@@ -933,7 +920,6 @@ const InlineEntities: RenderableEntity[] = [
   eraseRenderableEntity(UserMention),
   eraseRenderableEntity(DocumentMention),
   eraseRenderableEntity(AgentSessionMention),
-  eraseRenderableEntity(ProjectMention),
   eraseRenderableEntity(DocumentCard),
   eraseRenderableEntity(ContactMention),
   eraseRenderableEntity(DateMention),

@@ -88,20 +88,6 @@ export function parsePullRequestMentions(text: string): string {
   });
 }
 
-export function parseInitiativeMentions(text: string): string {
-  return text.replace(
-    /<m-initiative-mention>(.*?)<\/m-initiative-mention>/g,
-    (_, json) => {
-      try {
-        const data = JSON.parse(json);
-        return data.label || 'Project';
-      } catch {
-        return '';
-      }
-    }
-  );
-}
-
 /** `<m-connect-app>` chips read as their call to action. */
 export function parseConnectApps(text: string): string {
   return text.replace(/<m-connect-app>(.*?)<\/m-connect-app>/g, (_, json) => {
@@ -239,7 +225,6 @@ export function markdownToPlainText(markdown: string): string {
     parseGroupMentions,
     parseDocumentMentions,
     parsePullRequestMentions,
-    parseInitiativeMentions,
     parseAgentSessionMentions,
     parseTagMentions,
     parseConnectApps,
@@ -397,11 +382,6 @@ export function markdownToEmbeddingText(markdown: string): string {
   text = replaceJsonTag(text, 'm-pr-mention', (data) =>
     data.id
       ? `[${data.label || 'Pull request'}](pr:${data.id})`
-      : data.label || ''
-  );
-  text = replaceJsonTag(text, 'm-initiative-mention', (data) =>
-    data.id
-      ? `[${data.label || 'Project'}](initiative:${data.id})`
       : data.label || ''
   );
   text = replaceJsonTag(text, 'm-link', (data) =>

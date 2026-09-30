@@ -34,7 +34,6 @@ import { GroupMentionNode } from './nodes/GroupMentionNode';
 import { HorizontalRuleNode } from './nodes/HorizontalRuleNode';
 import { HtmlRenderNode } from './nodes/HtmlRenderNode';
 import { ImageNode } from './nodes/ImageNode';
-import { InitiativeMentionNode } from './nodes/InitiativeMentionNode';
 import { InlineSearchNode } from './nodes/InlineSearchNode';
 import { MagicChipNode } from './nodes/MagicChipNode';
 import { PasteNode } from './nodes/PasteNode';
@@ -86,7 +85,6 @@ export const SupportedNodeTypes = [
   ContactMentionNode,
   DateMentionNode,
   PullRequestMentionNode,
-  InitiativeMentionNode,
   AgentSessionMentionNode,
   ReplyTargetNode,
   GroupMentionNode,

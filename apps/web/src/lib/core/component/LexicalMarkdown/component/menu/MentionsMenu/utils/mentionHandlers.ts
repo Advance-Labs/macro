@@ -8,7 +8,6 @@ import {
   INSERT_DATE_MENTION_COMMAND,
   INSERT_DOCUMENT_MENTION_COMMAND,
   INSERT_GROUP_MENTION_COMMAND,
-  INSERT_INITIATIVE_MENTION_COMMAND,
 } from '../../../../plugins/mentions';
 import type {
   HandlerDependencies,
@@ -65,7 +64,10 @@ async function handleAgentSessionMention(
   });
 }
 
-/** Insert a task project chip, tracked like other document references. */
+/**
+ * Insert a task project as a document mention with the `initiative` block
+ * name, tracked like other document references.
+ */
 async function handleProjectMention(
   project: { id: string; name: string },
   dependencies: HandlerDependencies
@@ -75,10 +77,11 @@ async function handleProjectMention(
     blockId && tracksMentions(dependencies)
       ? await trackMention(blockId, 'initiative', project.id)
       : undefined;
-  editor.dispatchCommand(INSERT_INITIATIVE_MENTION_COMMAND, {
-    id: project.id,
-    label: project.name,
-    ...(mentionUuid ? { mentionUuid } : {}),
+  editor.dispatchCommand(INSERT_DOCUMENT_MENTION_COMMAND, {
+    documentId: project.id,
+    documentName: project.name,
+    blockName: 'initiative',
+    mentionUuid,
   });
 }
 

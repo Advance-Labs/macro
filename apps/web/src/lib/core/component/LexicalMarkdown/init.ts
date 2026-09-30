@@ -13,7 +13,6 @@ import {
   HorizontalRuleNode,
   HtmlRenderNode,
   ImageNode,
-  InitiativeMentionNode,
   MagicChipNode,
   PasteNode as PasteNodeClass,
   PullRequestMentionNode,
@@ -47,7 +46,6 @@ import { MagicChip } from './component/decorator/MagicChip';
 import { MarkdownImage } from './component/decorator/MarkdownImage';
 import { MarkdownVideo } from './component/decorator/MarkdownVideo';
 import { PasteNode } from './component/decorator/PasteNode';
-import { ProjectMention } from './component/decorator/ProjectMention';
 import { PullRequestMention } from './component/decorator/PullRequestMention';
 import { ReplyTarget } from './component/decorator/ReplyTarget';
 import { Snapshot } from './component/decorator/Snapshot';
@@ -71,7 +69,6 @@ export function initializeLexical() {
   setDecorator(DocumentCardNode, DocumentCard);
   setDecorator(PasteNodeClass, PasteNode);
   setDecorator(PullRequestMentionNode, PullRequestMention);
-  setDecorator(InitiativeMentionNode, ProjectMention);
   setDecorator(AgentSessionMentionNode, AgentSessionMention);
   setDecorator(ReplyTargetNode, ReplyTarget);
   setDecorator(ContactMentionNode, ContactMention);
