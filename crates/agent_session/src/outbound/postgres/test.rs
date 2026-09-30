@@ -2289,7 +2289,7 @@ async fn pull_request_is_atomic_and_survives_history_selection(pool: PgPool) {
 async fn pull_request_links_keep_the_pull_request_the_agent_opened(pool: PgPool) {
     use crate::domain::pull_request::SessionPullRequestRepo;
     use crate::domain::pull_request_links::{PullRequestLinkSource, SessionPullRequestLinkRepo};
-    let repo = PgAgentSessionRepo::new(pool.clone());
+    let repo = test_repo(&pool);
     let bot = create_test_bot(&pool).await;
     let session = create_session(&repo, new_session(bot, None, None)).await;
     let owner = session.owner_user().unwrap();

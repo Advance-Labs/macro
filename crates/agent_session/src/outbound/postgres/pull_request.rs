@@ -64,7 +64,9 @@ impl<B: BotFacts + 'static> crate::domain::pull_request::SessionPullRequestRepo
     }
 }
 
-impl crate::domain::pull_request_links::SessionPullRequestLinkRepo for PgAgentSessionRepo {
+impl<B: BotFacts + 'static> crate::domain::pull_request_links::SessionPullRequestLinkRepo
+    for PgAgentSessionRepo<B>
+{
     async fn link_pull_request(
         &self,
         session: AgentSessionId,
