@@ -18,19 +18,8 @@ const mocks = vi.hoisted(() => ({
   download: vi.fn(),
   csv: vi.fn(),
 }));
-vi.mock('@core/component/LiveIndicators', () => ({
-  LiveIndicators: () => null,
-}));
-vi.mock('@core/context/user', () => ({ useUserId: () => () => 'owner' }));
-vi.mock('@core/state/liveIndicators', () => ({
-  useUserIndicators: () => () => [],
-}));
 vi.mock('@core/component/Toast/Toast', () => ({
   toast: { failure: vi.fn(), success: vi.fn() },
-}));
-vi.mock('@core/component/TopBar/ShareButton', () => ({
-  ShareTrigger: () => <button type="button">Share</button>,
-  ShareModal: () => null,
 }));
 vi.mock('@filesystem/download', () => ({ downloadFile: mocks.download }));
 vi.mock('../queries/transfer', () => ({
@@ -65,7 +54,7 @@ function setup(
       <DatabaseTitle
         name="Customers"
         canEdit={grant !== 'view'}
-        onRename={vi.fn(async () => {})}
+        onRename={vi.fn()}
         onEditReady={(edit) => (editTitle = edit)}
       />
       <DatabasePageActions
@@ -100,9 +89,8 @@ function selectItem(name: string) {
 }
 
 describe('database page actions', () => {
-  it('keeps Share visible and focuses the inline title from Rename', async () => {
+  it('focuses the inline title from Rename', async () => {
     setup();
-    expect(screen.getByRole('button', { name: 'Share' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Import CSV' })).toBeNull();
     expect(
       screen.queryByRole('button', { name: 'Download database' })

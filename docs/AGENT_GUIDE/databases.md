@@ -5,9 +5,10 @@ column. **C → B** opens a new database with its title selected and ready to ty
 Enter saves the title and focuses A1, ready to type without another click.
 Databases open at
 `/app/database/<uuid>`. A database contains tables; records belong to a table and
-its properties describe each record. Click the database title to rename it later.
-Enter or leaving the title saves; Escape cancels, and a failed rename keeps the
-draft for retry.
+its properties describe each record. The database name in the split header is an
+inline input for editors: click it to rename. Enter or leaving it saves; Escape
+cancels, and a failed rename shows a toast. Viewers without edit access see the
+split header's `viewer` badge instead.
 
 ## Properties and records
 
@@ -49,7 +50,7 @@ reference cell. Text supports markdown and inline native mentions such as
 inside a sentence preserves Text. Select values offer **Add option** for new choices.
 Multi-select menus toggle each option independently and keep the other selections.
 
-**New table**, beside the table tabs in the database header, creates another table
+**New table**, beside the table tabs in the toolbar under the split header, creates another table
 with a Name column. Enter a table name and press Enter. If the table is created
 but its column setup fails,
 **Retry setup** continues that same table; **Open table** lets you finish manually.
@@ -181,7 +182,7 @@ provisioning, and disabled users receive no starter database.
 
 ## AI questions and live answers
 
-Open **AI** in the database header to create a native chat in the adjacent split.
+Open **AI** (`Database AI`) at the right of the toolbar to create a native chat in the adjacent split.
 Its bottom composer contains a database mention and private context identifying
 this database, its current table, and all its tables. Nothing sends automatically.
 Type a question or requested change and send it using the normal chat controls.
@@ -231,12 +232,12 @@ its database results.
 
 **Share** opens Macro's standard sharing dialog. The owner can share with people
 or channels and change or remove their access. Databases do not offer a public
-link. Viewer avatars in the header show other people currently looking at the
-database.
+link. **Share** and viewer avatars (other people currently looking at the
+database) sit at the right of the split header, like other entities.
 
-The header's **Database actions** (`…`) menu contains **Rename**, **Import CSV**,
-**Download**, and owner-only **Delete**. Rename focuses the existing inline title;
-Delete opens the standard confirmation dialog. Share and AI stay in the header.
+The toolbar's **Database actions** (`…`) menu, beside **AI**, contains **Rename**,
+**Import CSV**, **Download**, and owner-only **Delete**. Rename focuses the inline
+title in the split header; Delete opens the standard confirmation dialog.
 **Download** offers **Current table as CSV**.
 Exports contain all records, regardless of the current filters. CSV uses column
 labels and preserves text, quoted commas, and line breaks. A table that changes

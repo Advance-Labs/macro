@@ -1,9 +1,4 @@
-import { LiveIndicators } from '@core/component/LiveIndicators';
-import { getPermissions } from '@core/component/SharePermissions';
 import { toast } from '@core/component/Toast/Toast';
-import { ShareModal, ShareTrigger } from '@core/component/TopBar/ShareButton';
-import { useUserId } from '@core/context/user';
-import { useUserIndicators } from '@core/state/liveIndicators';
 import { downloadFile } from '@filesystem/download';
 import CaretRightIcon from '@phosphor/caret-right.svg';
 import DotsThreeIcon from '@phosphor/dots-three.svg';
@@ -33,9 +28,6 @@ export function DatabasePageActions(props: {
   onRename: () => void;
   onDelete: () => Promise<void>;
 }) {
-  const userId = useUserId();
-  const viewers = useUserIndicators(() => props.detail.database.id);
-  const [sharing, setSharing] = createSignal(false);
   const [exporting, setExporting] = createSignal(false);
   const [reading, setReading] = createSignal(false);
   const [confirmDelete, setConfirmDelete] = createSignal(false);
@@ -118,7 +110,6 @@ export function DatabasePageActions(props: {
   }
   return (
     <>
-      <LiveIndicators userIds={viewers() ?? []} currentUserId={userId()} />
       <Show when={editable()}>
         <input
           ref={fileInput}
@@ -198,21 +189,6 @@ export function DatabasePageActions(props: {
           </Show>
         </Dropdown.Content>
       </Dropdown>
-      <ShareTrigger
-        id={props.detail.database.id}
-        blockType="database"
-        onClick={() => setSharing(true)}
-      />
-      <ShareModal
-        id={props.detail.database.id}
-        itemType="database"
-        blockAlias="database"
-        owner={props.detail.database.owner_id}
-        name={props.detail.database.name}
-        userPermissions={getPermissions(props.detail.grant)}
-        open={sharing()}
-        onOpenChange={setSharing}
-      />
       <Show when={draft()}>
         {(value) => (
           <CsvImportDialog

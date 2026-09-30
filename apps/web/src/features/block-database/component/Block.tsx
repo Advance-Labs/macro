@@ -23,9 +23,6 @@ import { createMethodRegistration } from '@core/orchestrator';
 import { blockHandleSignal } from '@core/signal/load';
 import { deepEqual } from '@core/util/compareUtils';
 import { createUserScopedStorage } from '@core/util/userScopedStorage';
-import DatabaseIcon from '@phosphor/database.svg';
-import LockIcon from '@phosphor/lock-simple.svg';
-import SparkleIcon from '@phosphor/sparkle.svg';
 import { useDatabaseDetailQuery } from '@queries/storage/databases';
 import { useDatabaseTableChangedSync } from '@queries/storage/databases-sync';
 import { getEntityGraphqlClient } from '@service-storage/graphql-soup';
@@ -39,7 +36,6 @@ import {
   Show,
   untrack,
 } from 'solid-js';
-import { DatabaseTitle } from '../components/database-title';
 import { DatabaseToolbar } from '../components/database-toolbar';
 import { databaseChatContext } from '../core/chat-context';
 import type { DatabaseRelatedDestination } from '../core/database-relations';
@@ -54,23 +50,20 @@ import {
   readViewSelection,
   type TableViewState,
 } from '../core/view-selection';
-import { renameDatabase } from '../queries/rename-database';
 import {
   type DatabaseBoardOrderPatch,
   useSavedDatabaseViews,
 } from '../queries/saved-database-views';
 import { toViewColumn } from '../queries/table-rows';
 import { trashDatabase } from '../queries/trash-database';
-import { DatabasePageActions } from '../views/database-page-actions';
 import { AddColumnMenu } from './AddColumnMenu';
 import { DatabaseGrid } from './DatabaseGrid';
 import { DatabaseSidePanelSections } from './sidepanel/DatabaseSidePanelSections';
-import { TableTabs } from './TableTabs';
+import { TopBar } from './TopBar';
 
 const Block: Component = () => {
   const databaseId = useBlockId();
   const panel = useSplitPanelOrThrow();
-  let editTitle: (() => void) | undefined;
   const { replaceOrInsertSplit } = useSplitLayout();
   const orchestrator = useGlobalBlockOrchestrator();
   let requestedRecord: DatabaseRelatedDestination | undefined;
@@ -381,88 +374,29 @@ const Block: Component = () => {
           databaseId={databaseId}
           database={detail()?.database}
         />
+        <TopBar
+          detail={detail()}
+          activeTable={activeTable()}
+          autoFocusTitle={
+            canAutofocus &&
+            !navigatedFromJK() &&
+            detail()?.database.name === 'Untitled database'
+          }
+          onTitleConfirm={enterFirstCell}
+          onSelectTable={(tableId) =>
+            setSelection((current) => ({ ...current, tableId }))
+          }
+          onDelete={async () => {
+            await trashDatabase(getEntityGraphqlClient(), databaseId);
+            returnSplitToRecentListView(panel.handle);
+          }}
+          openingChat={openingChat()}
+          onOpenChat={() => void openDatabaseChat()}
+        />
         <div
           class="@container/database flex size-full min-h-0 min-w-0 flex-col overflow-hidden bg-canvas-base text-ink"
           style={{ '--database-title-column-width': '18rem' }}
         >
-          <header class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-edge-muted px-4 py-3 @min-[900px]/database:flex-nowrap @min-[900px]/database:px-5">
-            {/* Align the table rail with the first grid column's trailing edge,
-              accounting for the row gutter, header padding, and header gap. */}
-            <div class="flex min-w-0 flex-1 items-center gap-2.5 @min-[900px]/database:w-[calc(var(--database-title-column-width)+2.75rem-2.25rem)] @min-[900px]/database:flex-none">
-              <div class="grid size-8 shrink-0 place-items-center rounded-lg bg-accent/10 text-accent">
-                <DatabaseIcon class="size-4" />
-              </div>
-              <div class="min-w-0 flex-1">
-                <Show
-                  when={detail()}
-                  fallback={<span class="text-lg font-semibold">Database</span>}
-                >
-                  <DatabaseTitle
-                    name={detail()?.database.name ?? 'Database'}
-                    canEdit={canEdit()}
-                    onConfirm={enterFirstCell}
-                    onEditReady={(edit) => (editTitle = edit)}
-                    autoFocus={
-                      canAutofocus &&
-                      !navigatedFromJK() &&
-                      detail()?.database.name === 'Untitled database'
-                    }
-                    onRename={(name) =>
-                      renameDatabase(getEntityGraphqlClient(), databaseId, name)
-                    }
-                  />
-                </Show>
-                <Show when={detail() && !canEdit()}>
-                  <span class="mt-0.5 inline-flex items-center gap-1 text-[11px] text-ink-muted">
-                    <LockIcon class="size-3" /> Read only
-                  </span>
-                </Show>
-              </div>
-            </div>
-            <Show when={detail()}>
-              <div class="order-3 w-full min-w-0 @min-[900px]/database:order-none @min-[900px]/database:w-auto @min-[900px]/database:flex-1 @min-[900px]/database:border-l @min-[900px]/database:border-edge-muted @min-[900px]/database:pl-4">
-                <TableTabs
-                  databaseId={databaseId}
-                  tables={tables()}
-                  activeTableId={activeTableId()}
-                  canEdit={canEdit()}
-                  onSelect={(tableId) =>
-                    setSelection((current) => ({ ...current, tableId }))
-                  }
-                />
-              </div>
-            </Show>
-            <div class="ml-auto flex shrink-0 items-center gap-1">
-              <Show when={detail()}>
-                {(database) => (
-                  <DatabasePageActions
-                    detail={database()}
-                    table={activeTable()}
-                    onRename={() => editTitle?.()}
-                    onDelete={async () => {
-                      await trashDatabase(getEntityGraphqlClient(), databaseId);
-                      returnSplitToRecentListView(panel.handle);
-                    }}
-                    onImported={(tableId) =>
-                      setSelection((current) => ({ ...current, tableId }))
-                    }
-                  />
-                )}
-              </Show>
-              <Button
-                variant="ghost"
-                size="sm"
-                class="h-8 gap-1.5 px-2 text-xs"
-                disabled={!detail() || openingChat()}
-                aria-label="Database AI"
-                aria-busy={openingChat()}
-                onClick={() => void openDatabaseChat()}
-              >
-                <SparkleIcon class="size-4" />
-                <span>AI</span>
-              </Button>
-            </div>
-          </header>
           <ErrorBoundary
             fallback={(error: unknown, reset) => (
               <div
