@@ -98,19 +98,23 @@ const mocks = vi.hoisted(() => {
   const host = {
     disabled: false,
     dispose: vi.fn(() => cleanupOrder.push('host')),
-    enqueueOptimisticMutation: vi.fn(async () => {
-      queuedMutationCount += 1;
-      return { transactionId: 'tx-1' };
-    }),
-    commitOptimisticWrite: vi.fn(async () => {
-      queuedMutationCount -= 1;
-      return {
-        changed: [],
-        affectedOps: [],
-        reset: false,
-        revalidations: [],
-      };
-    }),
+    enqueueOptimisticMutation: vi.fn(
+      async (_args: { query: string }, _claim: unknown) => {
+        queuedMutationCount += 1;
+        return { transactionId: 'tx-1' };
+      }
+    ),
+    commitOptimisticWrite: vi.fn(
+      async (_id: string, _claim: unknown, _args: { query: string }) => {
+        queuedMutationCount -= 1;
+        return {
+          changed: [],
+          affectedOps: [],
+          reset: false,
+          revalidations: [],
+        };
+      }
+    ),
   };
   const apiCall = vi.fn(async () => {
     markApiStarted?.();
@@ -269,9 +273,16 @@ vi.mock('@urql/core', () => ({
       kind: 'cached',
       mutation: () => ({
         toPromise: async () => {
-          await host.enqueueOptimisticMutation();
+          await host.enqueueOptimisticMutation(
+            { query: 'mutation { example }' },
+            {}
+          );
           const response = await mocks.apiCall();
-          await host.commitOptimisticWrite();
+          await host.commitOptimisticWrite(
+            'tx-1',
+            {},
+            { query: 'mutation { example }' }
+          );
           return response;
         },
       }),

@@ -1238,6 +1238,81 @@ describe('createGraphqlSoupAstItemsQuery', () => {
     }
   );
 
+  it.each(['unsupported', 'incomplete'] as const)(
+    'retains a cached Mail page through offline errors when native filtering is %s',
+    async (kind) => {
+      const fake = makeFakeClient();
+      getGraphqlSoupClientMock.mockReturnValue(fake.client);
+      getGraphqlSoupCacheHostMock.mockReturnValue({
+        currentRevision: async () => REVISION_0,
+        entityFilter: entityFilterMock,
+        onCacheChanged: () => () => {},
+        onCacheGenerationChanged: () => () => {},
+      });
+      makeGraphqlSoupInputMock.mockImplementation(({ body }) => ({
+        initial: {
+          emailView: body?.emailView ?? 'ALL',
+          sortMethod: 'UPDATED_AT',
+          limit: 10,
+        },
+      }));
+      entityFilterMock.mockResolvedValue({ kind });
+      const [view, setView] = createSignal('ALL');
+      let dispose!: () => void;
+      let query!: ReturnType<typeof createGraphqlSoupAstItemsQuery>;
+      createRoot((stop) => {
+        dispose = stop;
+        query = createGraphqlSoupAstItemsQuery(
+          () => ({ params: {}, body: { emailView: view() } }),
+          () => ({ enabled: true })
+        );
+      });
+      try {
+        fake.executions[0].next(
+          graphqlSoupPage({
+            items: [
+              { __typename: 'GraphqlSoupEmailThread', id: 'cached-email' },
+            ],
+            next_cursor: null,
+          }),
+          { source: 'normalized-cache-hit', revision: REVISION_0 }
+        );
+        const offlineError = new CombinedError({
+          networkError: new Error('offline'),
+        });
+        fake.executions[0].fail(offlineError);
+        await vi.waitFor(() => expect(entityFilterMock).toHaveBeenCalled());
+        expect(query.data()?.entities[0]?.id).toBe('cached-email');
+        expect(query.isLoading()).toBe(false);
+        expect(query.error()).toBeUndefined();
+        for (const error of [
+          new CombinedError({ graphQLErrors: ['Forbidden'] }),
+          new CombinedError({
+            networkError: new Error('HTTP 401'),
+            response: { status: 401 },
+          }),
+        ]) {
+          fake.executions[0].fail(error);
+          expect(query.error()).toBe(error);
+        }
+        // An empty cached page is still usable data.
+        fake.executions[0].next(
+          graphqlSoupPage({ items: [], next_cursor: null }),
+          { source: 'normalized-cache-hit', revision: REVISION_0 }
+        );
+        fake.executions[0].fail(offlineError);
+        expect(query.error()).toBeUndefined();
+        // Never borrow cached rows from the previous tab to hide a cache miss.
+        setView('INBOX');
+        fake.executions.at(-1)!.fail(offlineError);
+        expect(query.data()).toBeUndefined();
+        expect(query.error()).toBe(offlineError);
+      } finally {
+        dispose();
+      }
+    }
+  );
+
   it.each([
     { localNext: null, networkNext: 'server-next' },
     { localNext: 'local-next', networkNext: null },

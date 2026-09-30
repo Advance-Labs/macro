@@ -765,13 +765,16 @@ export function createGraphqlSoupAstItemsQuery(
     const error = query.error;
     // A background transport failure must not replace usable current-query
     // cache results (including an empty result) with the full-screen error state.
+    // Older native binaries cannot materialize local filter projections, but
+    // can still answer this exact query from the normalized cache. The query
+    // uses keepPreviousData: false, so these rows cannot belong to another tab.
     // Keep server responses (including HTTP auth failures), GraphQL errors,
     // and failures without current-query local proof visible.
     if (
       error?.networkError &&
       !error.response &&
       error.graphQLErrors.length === 0 &&
-      displayLocalProjection()
+      (displayLocalProjection() || query.data?.data !== undefined)
     ) {
       return undefined;
     }

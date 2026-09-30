@@ -84,6 +84,7 @@ export interface TauriHostOptions {
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const ENTITY_FILTER_COMMAND = 'graphql_cache_entity_filter';
+const STORAGE_GENERATION_COMMAND = 'graphql_cache_current_storage_generation';
 
 export function createTauriCacheHost(options: TauriHostOptions): CacheHost {
   const clientId = crypto.randomUUID();
@@ -104,6 +105,22 @@ export function createTauriCacheHost(options: TauriHostOptions): CacheHost {
   // no longer receive these OTA bundles. OTA updates cannot add Rust commands.
   // Keep this per host so a new native binary is probed again after restarting.
   let entityFilterUnavailable = false;
+  // OTA bundles also run on binaries without durable generation reporting.
+  // This session-only identity is saved with checkpoints, but a fresh host
+  // generates a new one so it cannot skip records using an unverified cursor.
+  let legacyStorageGeneration: string | undefined;
+
+  function storageReset(): void {
+    if (legacyStorageGeneration) legacyStorageGeneration = crypto.randomUUID();
+    for (const cb of generationChangeSubscribers) {
+      try {
+        cb({ storage: 'reset' });
+      } catch (error) {
+        // A listener cannot turn an acknowledged durable write into a timeout.
+        console.warn('graphql cache generation listener failed', error);
+      }
+    }
+  }
 
   // Revisions are monotonic for the native engine's lifetime. This also gates
   // repeated no-op hydrations on older binaries without revisionAdvanced.
@@ -129,6 +146,16 @@ export function createTauriCacheHost(options: TauriHostOptions): CacheHost {
       invoke<T>(command, args).then(
         (value) => {
           if (timer !== undefined) clearTimeout(timer);
+          // Older binaries omit reset from pushed events, but write results
+          // still report it. Rotate the legacy generation before returning.
+          if (
+            legacyStorageGeneration &&
+            typeof value === 'object' &&
+            value !== null &&
+            'reset' in value &&
+            value.reset === true
+          )
+            storageReset();
           resolve(value);
         },
         (error) => {
@@ -170,7 +197,7 @@ export function createTauriCacheHost(options: TauriHostOptions): CacheHost {
       const revision = parseCacheRevision(event.payload.revision);
       observeRevision(revision);
       if (event.payload.reset) {
-        for (const cb of generationChangeSubscribers) cb({ storage: 'reset' });
+        storageReset();
       }
       for (const cb of cacheChangeSubscribers) cb(revision);
     }).catch((error) => {
@@ -227,9 +254,21 @@ export function createTauriCacheHost(options: TauriHostOptions): CacheHost {
 
     async currentStorageGeneration(): Promise<string> {
       await ready;
-      return parseStorageGeneration(
-        await request<string>('graphql_cache_current_storage_generation', {})
-      );
+      if (legacyStorageGeneration) return legacyStorageGeneration;
+      try {
+        return parseStorageGeneration(
+          await request<string>(STORAGE_GENERATION_COMMAND, {})
+        );
+      } catch (error) {
+        if (
+          !(error instanceof Error) ||
+          error.message !== `Command ${STORAGE_GENERATION_COMMAND} not found`
+        ) {
+          throw error;
+        }
+        legacyStorageGeneration ??= crypto.randomUUID();
+        return legacyStorageGeneration;
+      }
     },
 
     async readQuery(args: CacheReadArgs): Promise<ReadResult> {

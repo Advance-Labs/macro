@@ -74,6 +74,7 @@ import {
   type SoupPropertyFieldsFragment,
   type SoupQuery,
 } from './graphql/generated/graphql';
+import { withEmailCacheCompatibility } from './graphql-email-cache';
 import { shouldRetryGraphqlMutation } from './graphql-mutation-retry';
 import {
   createGraphqlSoupSubscriptionsLifecycle,
@@ -458,13 +459,16 @@ export function getGraphqlSoupClient(): Client {
     };
     try {
       const scope = getOrCreateCacheScope();
-      host = native
-        ? createTauriCacheHost({ scope, onInitializationError })
-        : createWorkerCacheHost({
-            scope,
-            onInitializationError,
-            rolloutCohort: rollout.cohort,
-          });
+      host = withEmailCacheCompatibility(
+        native
+          ? createTauriCacheHost({ scope, onInitializationError })
+          : createWorkerCacheHost({
+              scope,
+              onInitializationError,
+              rolloutCohort: rollout.cohort,
+            }),
+        native
+      );
       const graphqlWsClient = createGraphqlSoupWebSocketClient(
         subscriptionsLifecycle.connected
       );

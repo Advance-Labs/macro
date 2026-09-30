@@ -77,6 +77,56 @@ describe('createTauriCacheHost', () => {
     host.dispose();
   });
 
+  it('restarts legacy checkpoints per host and after a storage reset', async () => {
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'graphql_cache_current_storage_generation') {
+        throw 'Command graphql_cache_current_storage_generation not found';
+      }
+      if (command === 'graphql_cache_write') return { reset: true };
+      return null;
+    });
+    const host = createTauriCacheHost({ scope: 'same-scope' });
+    const generation = await host.currentStorageGeneration();
+    expect(await host.currentStorageGeneration()).toBe(generation);
+    expect(
+      invokeMock.mock.calls.filter(
+        ([command]) => command === 'graphql_cache_current_storage_generation'
+      )
+    ).toHaveLength(1);
+    const changed = vi.fn();
+    host.onCacheGenerationChanged(changed);
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    host.onCacheGenerationChanged(() => {
+      throw new Error('listener failed');
+    });
+    await host.writeQuery({ query: '{ user { id } }', data: {} });
+    expect(await host.currentStorageGeneration()).not.toBe(generation);
+    expect(changed).toHaveBeenCalledExactlyOnceWith({ storage: 'reset' });
+    expect(warning).toHaveBeenCalled();
+    warning.mockRestore();
+    const restarted = createTauriCacheHost({ scope: 'same-scope' });
+    expect(await restarted.currentStorageGeneration()).not.toBe(
+      await host.currentStorageGeneration()
+    );
+    host.dispose();
+    restarted.dispose();
+  });
+
+  it.each([
+    'storage failed',
+    'permission denied',
+    'invalid cache storage generation',
+  ])('does not treat %s as a legacy binary', async (message) => {
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'graphql_cache_current_storage_generation')
+        throw new Error(message);
+      return null;
+    });
+    const host = createTauriCacheHost({ scope: 'scope-1' });
+    await expect(host.currentStorageGeneration()).rejects.toThrow(message);
+    host.dispose();
+  });
+
   it('initializes the native cache once and prefixes op ids', async () => {
     invokeMock.mockImplementation((command: string) =>
       Promise.resolve(

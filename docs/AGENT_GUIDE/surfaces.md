@@ -449,6 +449,20 @@ Checkpoint v14 restarts older scans to populate property-aware indexes without w
 queued work. A background network failure does not hide a usable current-query
 cached Mail page; server-reported GraphQL errors still surface.
 
+Offline regression checks should cover both an already-opened thread and a
+thread hydrated in the background but never opened. Cached current-query lists
+remain visible after a connection failure even on native builds without local
+filter evaluation; new filters still need either local support or a cached exact
+query. Authorization and GraphQL errors remain visible.
+
+Calendar invitation snapshots are optional when reading older cached messages.
+An installed native build whose compiled schema predates that field can still
+cache and open the message body after an OTA update; invitation cards require
+the snapshot to be available. Checkpoint v16 refreshes message snapshots on
+supported engines. Native builds without durable storage-generation reporting
+restart background scans each app session rather than trusting old checkpoints.
+Neither compatibility path clears cached mail or queued changes.
+
 Native filter evaluation requires a full native app update, not just an OTA
 frontend update. Older binaries retain their previous unsupported-filter fallback
 while Shared Mail network backfill continues. The temporary compatibility guard

@@ -51,6 +51,7 @@ export default defineConfig(({ command }) => ({
           'cache-recovery.html',
           'notification-projection.html',
           'mail-projection.html',
+          'email-offline.html',
         ].map((name) => [name.replace('.html', ''), resolve(directory, name)])
       ),
     },
