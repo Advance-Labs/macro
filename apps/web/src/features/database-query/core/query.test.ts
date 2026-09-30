@@ -183,6 +183,9 @@ describe('queryErrorMessage with SQL hidden', () => {
     expect(plain('"Name" must appear in GROUP BY or inside an aggregate')).toBe(
       "This answer couldn't be computed. Try asking again."
     );
+    expect(
+      queryErrorMessage(new TypeError('buildCatalog is not a function'))
+    ).toBe("This answer couldn't be computed. Try asking again.");
     expect(plain('Query budget exceeded')).toBe(
       'This question needs less data. Try a narrower question.'
     );

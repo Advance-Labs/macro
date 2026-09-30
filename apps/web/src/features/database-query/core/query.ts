@@ -280,7 +280,12 @@ export function queryErrorMessage(error: unknown): string {
       : 'This question needs less data. Try a narrower question.';
   if (/404|not found/i.test(message))
     return 'Live questions are not available on this server yet. Your question has been kept.';
-  if (!showSql && QUOTES_SQL.test(message))
+  // A crash (`buildCatalog is not a function`) is no more readable than SQL.
+  const crashed =
+    error instanceof TypeError ||
+    error instanceof ReferenceError ||
+    error instanceof SyntaxError;
+  if (!showSql && (crashed || QUOTES_SQL.test(message)))
     return `${UNCOMPUTED}. Try asking again.`;
   return message || 'We could not answer that question. Try again.';
 }
