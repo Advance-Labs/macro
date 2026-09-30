@@ -402,7 +402,7 @@ pub async fn test_api_context(pool: sqlx::Pool<sqlx::Postgres>) -> std::sync::Ar
             pool.clone(),
             entity_access_service.clone(),
             ai_tools::ToolTableEventPublisher::NoOp(Default::default()),
-            ai_tools::ToolDatabasesEventBroker::Real(macro_event_broker.clone()),
+            ai_tools::MaybeToolEventBroker::Real(macro_event_broker.clone()),
         ),
         import_tool_context: ai_tools::ToolImportToolContext::unwired(),
         chat_tool_context,
@@ -412,7 +412,7 @@ pub async fn test_api_context(pool: sqlx::Pool<sqlx::Postgres>) -> std::sync::Ar
         ),
         bot_tool_context: ai_tools::build_bot_tool_context(
             pool.clone(),
-            ai_tools::ToolBotEventBroker::Real(macro_event_broker.clone()),
+            ai_tools::MaybeToolEventBroker::Real(macro_event_broker.clone()),
             entity_access_service.clone(),
             "http://localhost:8086".to_string(),
         ),

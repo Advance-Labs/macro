@@ -61,7 +61,6 @@ entity_mutation = { path = "../entity_mutation", optional = true }
 filter_ast = { path = "../filter_ast" }
 item_filters = { path = "../item_filters", default-features = false }
 macro_authorization = { path = "../macro_authorization", optional = true, default-features = false, features = ["axum"] }
-macro_env_var = { path = "../macro_env_var" }
 macro_event_broker = { path = "../macro_event_broker", default-features = false }
 macro_event_topics = { path = "../macro_event_topics" }
 macro_user_id = { path = "../macro_user_id" }

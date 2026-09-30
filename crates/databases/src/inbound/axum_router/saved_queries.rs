@@ -38,6 +38,7 @@ pub struct QueryPath {
         (status = 500, body = ErrorResponse),
     )
 )]
+#[tracing::instrument(err, skip_all)]
 pub async fn save_query_handler<S, Eas, Auth>(
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
     user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
@@ -69,6 +70,7 @@ where
         (status = 500, body = ErrorResponse),
     )
 )]
+#[tracing::instrument(err, skip_all)]
 pub async fn get_query_handler<S, Eas, Auth>(
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
     user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
@@ -102,6 +104,7 @@ where
         (status = 500, body = ErrorResponse),
     )
 )]
+#[tracing::instrument(err, skip_all)]
 pub async fn run_query_handler<S, Eas, Auth>(
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
     user: MacroAuthorizationExtractor<Auth, UserOrInternal>,

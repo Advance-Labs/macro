@@ -46,6 +46,7 @@ pub struct ReorderColumnsRequest {
     responses((status = 200, body = ColumnSchemaOutcome), (status = 400, body = ErrorResponse),
         (status = 401, body = ErrorResponse), (status = 403, body = ErrorResponse),
         (status = 404, body = ErrorResponse), (status = 409, body = ErrorResponse), (status = 500, body = ErrorResponse)))]
+#[tracing::instrument(err, skip_all)]
 pub async fn change_column_type_handler<S, Eas, Auth>(
     access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
@@ -87,6 +88,7 @@ where
     responses((status = 200, body = ColumnSchemaOutcome), (status = 400, body = ErrorResponse),
         (status = 401, body = ErrorResponse), (status = 403, body = ErrorResponse),
         (status = 404, body = ErrorResponse), (status = 409, body = ErrorResponse), (status = 500, body = ErrorResponse)))]
+#[tracing::instrument(err, skip_all)]
 pub async fn delete_column_handler<S, Eas, Auth>(
     access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
@@ -117,6 +119,7 @@ where
     responses((status = 200, body = ColumnSchemaOutcome), (status = 400, body = ErrorResponse),
         (status = 401, body = ErrorResponse), (status = 403, body = ErrorResponse),
         (status = 404, body = ErrorResponse), (status = 409, body = ErrorResponse), (status = 500, body = ErrorResponse)))]
+#[tracing::instrument(err, skip_all)]
 pub async fn reorder_columns_handler<S, Eas, Auth>(
     access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,

@@ -26,6 +26,8 @@ pub mod saved_queries;
 pub mod sharing;
 /// Atomic table imports.
 pub mod transfer;
+#[cfg(test)]
+mod test;
 use crate::domain::sharing::DatabaseSharingService;
 use crate::domain::transfer::DatabaseTransferService;
 use column_mutations::{
@@ -58,6 +60,9 @@ use crate::domain::models::{
     Table, TableVersion, Viewer,
 };
 use crate::domain::ports::DatabasesService;
+
+/// Largest table import accepted, in bytes.
+const MAX_IMPORT_BODY_BYTES: usize = 16 * 1024 * 1024;
 
 /// Router state for databases endpoints.
 pub struct DatabasesRouterState<S, Eas, Auth> {
@@ -120,7 +125,7 @@ where
         .route(
             "/{id}/import",
             post(transfer::import_table_handler::<S, Eas, Auth>)
-                .layer(axum::extract::DefaultBodyLimit::max(16 * 1024 * 1024)),
+                .layer(axum::extract::DefaultBodyLimit::max(MAX_IMPORT_BODY_BYTES)),
         )
         .route("/", post(create_database_handler::<S, Eas, Auth>))
         .route("/exec", post(exec_handler::<S, Eas, Auth>))
@@ -252,8 +257,9 @@ pub enum ColumnBindingRequest {
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateColumnRequest {
-    /// Infer the first value type of a newly owned text column.
-    #[serde(default, rename = "infer_type")]
+    /// Infer the first value type of a newly owned text column. `infer_type`
+    /// is still accepted from clients that predate the camelCase name.
+    #[serde(default, alias = "infer_type")]
     pub infer_type: bool,
     /// Definition source.
     pub binding: ColumnBindingRequest,
@@ -337,6 +343,7 @@ pub struct AddColumnOptionsRequest {
         (status = 500, body = ErrorResponse),
     )
 )]
+#[tracing::instrument(err, skip_all)]
 pub async fn list_databases_handler<S, Eas, Auth>(
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
     user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
@@ -364,6 +371,7 @@ where
         (status = 500, body = ErrorResponse),
     )
 )]
+#[tracing::instrument(err, skip_all)]
 pub async fn create_database_handler<S, Eas, Auth>(
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
     user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
@@ -401,6 +409,7 @@ where
         (status = 500, body = ErrorResponse),
     )
 )]
+#[tracing::instrument(err, skip_all)]
 pub async fn get_database_handler<S, Eas, Auth>(
     access: DatabaseAccessLevelExtractor<ViewAccessLevel, Eas, Auth>,
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
@@ -433,6 +442,7 @@ where
         (status = 500, body = ErrorResponse),
     )
 )]
+#[tracing::instrument(err, skip_all)]
 pub async fn awareness_handler<S, Eas, Auth>(
     access: DatabaseAccessLevelExtractor<ViewAccessLevel, Eas, Auth>,
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
@@ -460,7 +470,7 @@ where
     request_body = ExecRequestBody,
     responses(
         (status = 200, body = ExecOutcome),
-        (status = 400, description = "SQL error (message verbatim from SQLite) or untranslatable change", body = ErrorResponse),
+        (status = 400, description = "SQL error (message verbatim from the SQL engine) or a refused write", body = ErrorResponse),
         (status = 401, description = "Missing or invalid credentials", body = ErrorResponse),
         (status = 403, description = "Write to a read-only table or column", body = ErrorResponse),
         (status = 409, description = "A written table moved past its base version", body = ErrorResponse),
@@ -468,6 +478,7 @@ where
         (status = 500, body = ErrorResponse),
     )
 )]
+#[tracing::instrument(err, skip_all)]
 pub async fn exec_handler<S, Eas, Auth>(
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
     user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
@@ -513,6 +524,7 @@ where
         (status = 500, body = ErrorResponse),
     )
 )]
+#[tracing::instrument(err, skip_all)]
 pub async fn query_handler<S, Eas, Auth>(
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
     user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
@@ -546,6 +558,7 @@ where
         (status = 500, body = ErrorResponse),
     )
 )]
+#[tracing::instrument(err, skip_all)]
 pub async fn create_table_handler<S, Eas, Auth>(
     access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
@@ -588,6 +601,7 @@ where
         (status = 500, body = ErrorResponse),
     )
 )]
+#[tracing::instrument(err, skip_all)]
 pub async fn rename_table_handler<S, Eas, Auth>(
     access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
@@ -628,6 +642,7 @@ where
         (status = 500, body = ErrorResponse),
     )
 )]
+#[tracing::instrument(err, skip_all)]
 pub async fn delete_table_handler<S, Eas, Auth>(
     access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
@@ -674,6 +689,7 @@ pub struct CreateColumnResponse {
         (status = 500, body = ErrorResponse),
     )
 )]
+#[tracing::instrument(err, skip_all)]
 pub async fn create_column_handler<S, Eas, Auth>(
     access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
@@ -744,6 +760,7 @@ where
         (status = 500, body = ErrorResponse),
     )
 )]
+#[tracing::instrument(err, skip_all)]
 pub async fn rename_column_handler<S, Eas, Auth>(
     access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
@@ -799,6 +816,7 @@ pub struct InferColumnTypeRequest {
               (status = 409, body = ErrorResponse),
               (status = 500, body = ErrorResponse))
 )]
+#[tracing::instrument(err, skip_all)]
 pub async fn infer_column_type_handler<S, Eas, Auth>(
     access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
@@ -853,6 +871,7 @@ where
         (status = 500, body = ErrorResponse),
     )
 )]
+#[tracing::instrument(err, skip_all)]
 pub async fn add_column_options_handler<S, Eas, Auth>(
     access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,

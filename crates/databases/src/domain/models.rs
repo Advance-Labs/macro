@@ -227,9 +227,8 @@ pub enum ColumnBinding {
         /// Display labels of the select options the column accepts, for the
         /// data types that take options ([`DataType::SelectString`],
         /// [`DataType::SelectNumber`], [`DataType::Tag`]). Options are
-        /// explicit schema: the compiled SQLite column carries a `CHECK`
-        /// listing exactly these labels, so a column created without any
-        /// accepts no value at all. Empty for every other data type.
+        /// explicit schema: the column's catalog entry accepts exactly these
+        /// labels, so a column created without any accepts no value at all. Empty for every other data type.
         options: Vec<String>,
     },
     /// Bind an existing user/team/system definition.
@@ -328,8 +327,8 @@ pub struct ExecRequest {
     pub base_versions: Option<HashMap<TableId, TableVersion>>,
 }
 
-/// A value in the SQLite materialization, kept engine-agnostic so the domain
-/// never depends on rusqlite types. Serializes as a plain JSON scalar.
+/// A value in a statement's result, kept engine-agnostic so the wire shape
+/// does not follow `database_sql`'s types. Serializes as a plain JSON scalar.
 #[derive(utoipa::ToSchema, Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum SqlValue {

@@ -65,7 +65,7 @@ where
     (status = 401, description = "Authentication required"),
     (status = 500, description = "Provisioning failed; safe to retry")
 ))]
-#[tracing::instrument(skip(state, user), err)]
+#[tracing::instrument(err, skip_all)]
 pub async fn ensure_starter_handler<S, Auth>(
     State(state): State<DatabaseStarterRouterState<S, Auth>>,
     user: MacroAuthorizationExtractor<Auth, UserOrInternal>,

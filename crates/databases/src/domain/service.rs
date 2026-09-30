@@ -189,8 +189,8 @@ fn validate_option_labels(
         }
         let value = option_value(data_type, trimmed)?;
         // Compare on the label SQL will see: `2.0` and `2` are one numeric
-        // option, and `Main` and `main` would compile to indistinguishable
-        // `CHECK` entries.
+        // option, and `Main` and `main` would be indistinguishable labels in
+        // the catalog.
         if taken.insert(option_key(&catalog::option_display(&value))) {
             values.push(value);
         }
@@ -1021,8 +1021,8 @@ where
                 .add_options(definition.definition.id, &values)
                 .await
                 .map_err(repo_err)?;
-            // Options compile into the column's CHECK constraint, so the
-            // table's shape moved and cached materializations are stale.
+            // Options are part of the column's catalog entry, so the table's
+            // shape moved and cached materializations are stale.
             let version = self
                 .repo
                 .bump_table_version(cmd.table_id)

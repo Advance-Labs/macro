@@ -673,7 +673,7 @@ async fn main() -> anyhow::Result<()> {
                     channels_connection_gateway.as_ref().clone(),
                 ),
             ),
-            ai_tools::ToolDatabasesEventBroker::Real(macro_event_broker.clone()),
+            ai_tools::MaybeToolEventBroker::Real(macro_event_broker.clone()),
         ),
         import_tool_context: import::inbound::toolset::ImportToolContext::wired(
             import_service.clone(),
@@ -682,7 +682,7 @@ async fn main() -> anyhow::Result<()> {
         channel_tool_context,
         bot_tool_context: ai_tools::build_bot_tool_context(
             db.clone(),
-            ai_tools::ToolBotEventBroker::Real(macro_event_broker.clone()),
+            ai_tools::MaybeToolEventBroker::Real(macro_event_broker.clone()),
             entity_access_service.clone(),
             DocumentStorageServiceUrl::new()?.to_string(),
         ),

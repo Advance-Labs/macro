@@ -1,34 +1,34 @@
 # Database backend
 
-Databases contain tables of typed rows. PostgreSQL stores the authoritative data;
-user SQL runs in a temporary, permission-scoped SQLite database. Column placements
-bind to the existing property definitions and value types.
+Databases contain tables of typed rows. A row is a `DATABASE_ROW` entity whose
+cells are its entity properties, and column placements bind to the existing
+property definitions and value types. There is no second store: user SQL is
+compiled by the `database_sql` crate and answered from the same rows.
 
 ## Query and mutation flow
 
-1. The domain service builds the caller's catalog from accessible databases and
-   sources. SQL names resolve through this catalog.
-2. SQLite analyzes the statement against the schema to identify its dependencies.
-   Only the referenced tables are materialized, with typed constraints and links.
-3. The executor runs within statement, time, result-size, and change-count limits.
-   Read-only queries reject writes.
-4. For writes, SQLite records a changeset. The domain translates it into typed
-   commands and validates the affected rows and relationships.
-5. The PostgreSQL repository applies the changes atomically with table-version
-   guards. Stale versions, changed bindings, and trashed parents reject the write.
-6. Successful commits publish their versions and change notifications. SQLite is
-   discarded after the request.
+1. The domain service builds the caller's catalog from the databases they can
+   reach, as `entity_access` answers it. An unreadable table does not exist to
+   the statement, and a table without edit access is read-only.
+2. `database_sql` parses the statement against that catalog: names resolve,
+   literals are typed, and the filter is split into what Soup evaluates and
+   what is folded afterwards.
+3. Reads load the referenced tables' rows and cells within row and time
+   budgets and fold the answer. Read-only entry points refuse writes.
+4. Writes go through the row and cell stores one row at a time, guarded by
+   table versions. Stale versions, changed bindings, and trashed parents
+   reject the write.
+5. Successful commits publish their versions and change notifications.
 
 ## Review map
 
 | Concern | Implementation |
 | --- | --- |
 | Domain contracts and orchestration | `src/domain/models.rs`, `ports.rs`, `service.rs` |
-| Catalog and typed materialization | `src/domain/catalog.rs`, `materialize.rs`, `sugar.rs` |
-| Bounded SQL execution | `src/outbound/rusqlite_executor.rs` |
-| Changeset validation and writeback | `src/domain/translate.rs`, `src/outbound/pg_databases_repo.rs` |
+| Catalog and the SQL pipeline | `src/domain/catalog.rs`, `src/domain/service/query.rs`, the `database_sql` crate |
+| Rows, cells, and column definitions | `src/outbound/pg_databases_repo.rs`, `pg_cell_store.rs`, `pg_definition_store.rs` |
 | Column casts and inference | `src/domain/service/columns.rs`, `column_types.rs`, `infer_column_type.rs` |
-| Saved views, sharing, imports, starter data | Corresponding modules under `src/domain/` |
+| Saved queries, views, sharing, imports, starter data | Corresponding modules under `src/domain/` |
 | HTTP transport | `src/inbound/axum_router.rs`, `starter_router.rs` |
 | Service construction and notifications | `src/outbound/build.rs`, `gateway_event_publisher.rs` |
 
@@ -46,10 +46,10 @@ Run from the repository root inside Nix, with a migrated local PostgreSQL databa
 and `SQLX_OFFLINE` unset:
 
 ```sh
-cargo test -p databases --all-features
+cargo test -p databases --features postgres,inbound,ai_tools,gateway,entity_mutation
 ```
 
-The suite covers permission scoping, read-only enforcement, executor limits,
+The suite covers permission scoping, read-only enforcement, query budgets,
 typed round trips, relations, safe casts, rollback, stale/concurrent writes,
 sharing, saved views, and retry-safe import/starter provisioning. SQLx tests
 create isolated databases using the repository migrator.

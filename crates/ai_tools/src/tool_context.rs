@@ -107,17 +107,17 @@ pub type ToolEmailService = EmailServiceImpl<
 /// graceful shutdown by the hosting process.
 pub type ToolEventBroker = MacroEventBrokerService<KafkaEventPublisher, TaskTracker>;
 
-/// Event broker used by bot tools across hosts that either do or do not have
-/// Kafka lifecycle publishing configured.
+/// Event broker for tool domains (bots, databases) across hosts that either
+/// do or do not have Kafka configured.
 #[derive(Clone)]
-pub enum ToolBotEventBroker {
-    /// Publish bot lifecycle events through the shared Kafka broker.
+pub enum MaybeToolEventBroker {
+    /// Publish through the shared Kafka broker.
     Real(ToolEventBroker),
-    /// Drop lifecycle events in hosts that do not configure Kafka.
+    /// Drop events in hosts that do not configure Kafka.
     NoOp(NoopMacroEventBroker),
 }
 
-impl MacroEventBroker for ToolBotEventBroker {
+impl MacroEventBroker for MaybeToolEventBroker {
     fn send_event<E: MacroEvent + ?Sized>(
         &self,
         event: &E,
@@ -130,7 +130,7 @@ impl MacroEventBroker for ToolBotEventBroker {
 }
 
 /// Concrete bot domain service used by AI tools.
-pub type ToolBotService = BotServiceImpl<PgBotsRepo, ToolBotEventBroker>;
+pub type ToolBotService = BotServiceImpl<PgBotsRepo, MaybeToolEventBroker>;
 
 /// Bot-management AI tool context.
 pub type ToolBotToolContext = BotToolContext<ToolBotService, ToolEntityAccessService>;
@@ -139,7 +139,7 @@ pub type ToolBotToolContext = BotToolContext<ToolBotService, ToolEntityAccessSer
 /// entity-access service.
 pub fn build_bot_tool_context(
     pool: sqlx::PgPool,
-    event_broker: ToolBotEventBroker,
+    event_broker: MaybeToolEventBroker,
     entity_access_service: Arc<ToolEntityAccessService>,
     document_storage_service_url: String,
 ) -> ToolBotToolContext {
@@ -901,7 +901,7 @@ pub type ToolPropertiesService = properties::PropertiesServiceImpl<
     properties::PropertiesPgRepo,
     properties::PermissionServiceImpl<ToolEntityAccessService>,
     NoOpNotificationService,
-    ToolBotEventBroker,
+    MaybeToolEventBroker,
 >;
 
 /// Imported-document property enrichment backed by the AI tool host's Properties service.
@@ -920,7 +920,7 @@ pub fn build_properties_service(
     properties_service_with_events(
         pool,
         entity_access_service,
-        ToolBotEventBroker::NoOp(Default::default()),
+        MaybeToolEventBroker::NoOp(Default::default()),
     )
 }
 
@@ -933,14 +933,14 @@ pub fn build_properties_service_with_broker(
     properties_service_with_events(
         pool,
         entity_access_service,
-        ToolBotEventBroker::Real(broker),
+        MaybeToolEventBroker::Real(broker),
     )
 }
 
 fn properties_service_with_events(
     pool: sqlx::PgPool,
     entity_access_service: Arc<ToolEntityAccessService>,
-    broker: ToolBotEventBroker,
+    broker: MaybeToolEventBroker,
 ) -> Arc<ToolPropertiesService> {
     Arc::new(
         properties::PropertiesServiceImpl::new(
@@ -1052,35 +1052,11 @@ pub use databases::outbound::gateway_event_publisher::MaybeGatewayTableEventPubl
 
 /// Type alias for the databases service implementation used by AI tools.
 ///
-/// The same port implementations the HTTP surface runs on: Postgres for
-/// storage and the embedded rusqlite sandbox for SQL, so an agent's SQL is
-/// scoped by the acting user's catalog exactly as the HTTP surface's is.
-pub type ToolDatabasesService = databases::outbound::build::PgDatabasesService<
-    ToolTableEventPublisher,
-    ToolDatabasesEventBroker,
->;
-
-/// Broker for `macro.databases` events across hosts that either do or do
-/// not have Kafka configured.
-#[derive(Clone)]
-pub enum ToolDatabasesEventBroker {
-    /// Publish database lifecycle and table-change events through Kafka.
-    Real(ToolEventBroker),
-    /// Drop database events in hosts that do not configure Kafka.
-    NoOp(NoopMacroEventBroker),
-}
-
-impl MacroEventBroker for ToolDatabasesEventBroker {
-    fn send_event<E: MacroEvent + ?Sized>(
-        &self,
-        event: &E,
-    ) -> Result<tokio::task::JoinHandle<Result<(), EventBrokerError>>, EventBrokerError> {
-        match self {
-            Self::Real(broker) => broker.send_event(event),
-            Self::NoOp(broker) => broker.send_event(event),
-        }
-    }
-}
+/// The same port implementations the HTTP surface runs on, so an agent's SQL
+/// is compiled by `database_sql` against the acting user's catalog exactly as
+/// the HTTP surface's is.
+pub type ToolDatabasesService =
+    databases::outbound::build::PgDatabasesService<ToolTableEventPublisher, MaybeToolEventBroker>;
 
 /// Type alias for the databases tool context.
 pub type ToolDatabasesToolContext =
@@ -1096,7 +1072,7 @@ pub fn build_databases_tool_context(
     pool: sqlx::PgPool,
     entity_access_service: Arc<ToolEntityAccessService>,
     events: ToolTableEventPublisher,
-    broker: ToolDatabasesEventBroker,
+    broker: MaybeToolEventBroker,
 ) -> ToolDatabasesToolContext {
     DatabasesToolContext::new(
         databases::outbound::build_service(pool.clone(), events, broker),
