@@ -1,7 +1,8 @@
 import { Button } from '@ui/components/Button';
 import { Dialog } from '@ui/components/Dialog';
 import { Panel } from '@ui/components/Panel';
-import { createSignal, createUniqueId, Show } from 'solid-js';
+import { TextField } from '@ui/components/TextField';
+import { createSignal } from 'solid-js';
 import { isDatabaseNameTaken } from '../core/property-creation';
 
 export function RenameTableDialog(props: {
@@ -19,8 +20,6 @@ export function RenameTableDialog(props: {
   const [name, setName] = createSignal(originalName);
   const [pending, setPending] = createSignal(false);
   const [error, setError] = createSignal('');
-  const inputId = createUniqueId();
-  const errorId = createUniqueId();
   const duplicate = () => isDatabaseNameTaken(name(), props.otherNames);
   const submit = async (event: SubmitEvent) => {
     event.preventDefault();
@@ -68,36 +67,27 @@ export function RenameTableDialog(props: {
                 Give this table a name that describes its records.
               </Dialog.Description>
             </div>
-            <div>
-              <label
-                for={inputId}
-                class="mb-2 block text-sm font-medium text-ink"
-              >
-                Table name
-              </label>
-              <input
-                id={inputId}
-                required
+            <TextField
+              value={name()}
+              onChange={(value) => {
+                setName(value);
+                setError('');
+              }}
+              readOnly={pending()}
+              required
+              validationState={duplicate() || error() ? 'invalid' : 'valid'}
+            >
+              <TextField.Label>Table name</TextField.Label>
+              <TextField.Input
                 maxlength={200}
-                value={name()}
-                readOnly={pending()}
                 onFocus={(event) => event.currentTarget.select()}
-                onInput={(event) => {
-                  setName(event.currentTarget.value);
-                  setError('');
-                }}
-                aria-invalid={duplicate()}
-                aria-describedby={duplicate() || error() ? errorId : undefined}
-                class="h-11 w-full rounded-lg border border-edge-muted bg-input px-3 text-base text-ink outline-none focus:border-ink/50 focus:ring-2 focus:ring-ink/15"
               />
-            </div>
-            <Show when={duplicate() || error()}>
-              <p id={errorId} role="alert" class="text-sm text-failure">
+              <TextField.ErrorMessage role="alert" class="text-sm">
                 {duplicate()
                   ? 'A table with this name already exists. Try another name.'
                   : error()}
-              </p>
-            </Show>
+              </TextField.ErrorMessage>
+            </TextField>
             <div class="flex justify-end gap-2">
               <Button
                 type="button"

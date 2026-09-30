@@ -6,7 +6,9 @@ import PlusIcon from '@phosphor/plus.svg';
 import XIcon from '@phosphor/x.svg';
 import { Button } from '@ui/components/Button';
 import { Dropdown } from '@ui/components/Dropdown';
-import { createSignal, createUniqueId, For, Show } from 'solid-js';
+import { Input } from '@ui/components/Input';
+import { TextField } from '@ui/components/TextField';
+import { createSignal, For, Show } from 'solid-js';
 import {
   DATABASE_PROPERTY_TYPES,
   type DatabasePropertyType,
@@ -64,7 +66,6 @@ function PropertyForm(props: {
   const pending = () => props.pending;
   const setPending = props.onPendingChange;
   const [error, setError] = createSignal('');
-  const nameErrorId = createUniqueId();
   let optionInput: HTMLInputElement | undefined;
   const duplicate = () =>
     name().trim() && isDatabaseNameTaken(name(), props.existingNames);
@@ -139,24 +140,19 @@ function PropertyForm(props: {
           disabled={pending()}
           class="flex min-w-0 flex-col gap-3 disabled:opacity-60"
         >
-          <label class="flex flex-col gap-1.5 text-xs font-medium text-ink-muted">
-            Column name
-            <input
-              maxlength={200}
-              value={name()}
-              onInput={(event) => setName(event.currentTarget.value)}
-              placeholder="Unnamed"
-              aria-label="Column name"
-              aria-invalid={!!duplicate()}
-              aria-describedby={duplicate() ? nameErrorId : undefined}
-              class="h-9 rounded-md border border-edge-muted bg-input px-2.5 text-sm text-ink outline-none placeholder:text-ink-placeholder focus:border-ink/50"
-            />
-            <Show when={duplicate()}>
-              <span id={nameErrorId} class="font-normal text-failure-ink">
-                A column with this name already exists.
-              </span>
-            </Show>
-          </label>
+          <TextField
+            value={name()}
+            onChange={setName}
+            validationState={duplicate() ? 'invalid' : 'valid'}
+          >
+            <TextField.Label class="text-xs text-ink-muted">
+              Column name
+            </TextField.Label>
+            <TextField.Input size="sm" maxlength={200} placeholder="Unnamed" />
+            <TextField.ErrorMessage>
+              A column with this name already exists.
+            </TextField.ErrorMessage>
+          </TextField>
           <div class="flex items-center justify-between gap-3 text-xs text-ink-muted">
             <span>Type</span>
             <Dropdown
@@ -271,13 +267,13 @@ function PropertyForm(props: {
                 {(source) => (
                   <p class="text-xs text-failure-ink" role="alert">
                     Tables could not be loaded.{' '}
-                    <button
-                      type="button"
-                      class="underline"
+                    <Button
+                      variant="plain"
+                      size="xs"
                       onClick={() => source().retry()}
                     >
                       Try again
-                    </button>
+                    </Button>
                   </p>
                 )}
               </Show>
@@ -300,10 +296,10 @@ function PropertyForm(props: {
                   {(option) => (
                     <span class="flex items-center gap-0.5 rounded-md bg-hover py-0.5 pl-0.5 pr-1">
                       <SelectPill label={option} />
-                      <button
-                        type="button"
-                        aria-label={`Remove ${option} option`}
-                        class="rounded p-0.5 text-ink-muted hover:bg-hover hover:text-ink"
+                      <Button
+                        size="icon-xs"
+                        label={`Remove ${option} option`}
+                        tooltipDisabled
                         onClick={() =>
                           setOptions((current) =>
                             current.filter((label) => label !== option)
@@ -311,14 +307,15 @@ function PropertyForm(props: {
                         }
                       >
                         <XIcon class="size-3" />
-                      </button>
+                      </Button>
                     </span>
                   )}
                 </For>
               </div>
               <div class="flex gap-2">
-                <input
+                <Input
                   ref={optionInput}
+                  size="sm"
                   aria-label="New option"
                   value={optionDraft()}
                   onInput={(event) => setOptionDraft(event.currentTarget.value)}
@@ -330,7 +327,7 @@ function PropertyForm(props: {
                       addOption();
                     }
                   }}
-                  class="h-9 min-w-0 flex-1 rounded-md border border-edge-muted bg-input px-2.5 text-sm text-ink outline-none placeholder:text-ink-placeholder focus:border-ink/50"
+                  class="min-w-0 flex-1"
                 />
                 <Button
                   type="button"

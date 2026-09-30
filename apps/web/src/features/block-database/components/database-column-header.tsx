@@ -14,8 +14,10 @@ import EyeSlashIcon from '@phosphor/eye-slash.svg';
 import PencilIcon from '@phosphor/pencil-simple.svg';
 import TrashIcon from '@phosphor/trash.svg';
 import XIcon from '@phosphor/x.svg';
+import { Button } from '@ui/components/Button';
 import { DeleteDialog } from '@ui/components/DeleteDialog';
 import { Dropdown } from '@ui/components/Dropdown';
+import { Input } from '@ui/components/Input';
 import type { JSX } from 'solid-js';
 import { createSignal, createUniqueId, For, onCleanup, Show } from 'solid-js';
 import type { DatabaseColumnTypeChange } from '../core/column-schema';
@@ -405,15 +407,16 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
                   type={props.column.dataType}
                   entityType={props.column.specificEntityType}
                 />
-                <input
+                <Input
                   ref={input}
+                  size="sm"
                   aria-label="Column name"
                   aria-invalid={!!error()}
                   aria-describedby={error() ? errorId : undefined}
                   maxlength={200}
                   value={current().name}
                   readOnly={pending()}
-                  class="h-8 min-w-0 flex-1 rounded border border-ink/40 bg-input px-0 text-xs text-ink outline-none focus:ring-2 focus:ring-ink/20"
+                  class="min-w-0 flex-1 text-xs"
                   onInput={(event) => {
                     setDraft({ ...current(), name: event.currentTarget.value });
                     setError('');
@@ -430,26 +433,26 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
                     }
                   }}
                 />
-                <button
-                  type="button"
-                  aria-label={
-                    error() ? 'Retry rename column' : 'Save column name'
-                  }
+                <Button
+                  size="icon-xs"
+                  label={error() ? 'Retry rename column' : 'Save column name'}
+                  tooltipDisabled
+                  class="shrink-0 text-accent"
                   disabled={pending()}
-                  class="shrink-0 rounded p-1 text-accent hover:bg-hover disabled:opacity-40"
                   onClick={() => void save()}
                 >
                   <CheckIcon class="size-3.5" />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Cancel rename column"
+                </Button>
+                <Button
+                  size="icon-xs"
+                  label="Cancel rename column"
+                  tooltipDisabled
+                  class="shrink-0"
                   disabled={pending()}
-                  class="shrink-0 rounded p-1 text-ink-muted hover:bg-hover disabled:opacity-40"
                   onClick={cancel}
                 >
                   <XIcon class="size-3.5" />
-                </button>
+                </Button>
               </div>
             )}
           </Show>

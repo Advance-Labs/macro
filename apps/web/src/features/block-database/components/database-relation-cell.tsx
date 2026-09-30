@@ -5,6 +5,8 @@ import CheckIcon from '@phosphor/check.svg';
 import LinkIcon from '@phosphor/link-simple.svg';
 import SearchIcon from '@phosphor/magnifying-glass.svg';
 import XIcon from '@phosphor/x.svg';
+import { Button } from '@ui/components/Button';
+import { InputGroup } from '@ui/components/InputGroup';
 import {
   createSignal,
   createUniqueId,
@@ -239,11 +241,10 @@ export function DatabaseRelationCell(props: DatabaseRelationCellProps) {
                   >
                     <LinkIcon class="size-3 shrink-0 text-ink-muted" />
                     <span class="truncate">{name(id)}</span>
-                    <button
-                      type="button"
-                      class="pointer-events-auto grid size-5 shrink-0 place-items-center rounded-r text-ink-muted outline-none hover:bg-hover hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/50 disabled:opacity-40"
-                      aria-label={`Open ${name(id)}`}
-                      title={`Open ${name(id)}`}
+                    <Button
+                      size="icon-xs"
+                      label={`Open ${name(id)}`}
+                      class="pointer-events-auto shrink-0"
                       disabled={!available(id)}
                       onClick={() => openRecord(id)}
                       onKeyDown={(event) => {
@@ -259,7 +260,7 @@ export function DatabaseRelationCell(props: DatabaseRelationCellProps) {
                       }}
                     >
                       <ArrowRightIcon class="size-3" />
-                    </button>
+                    </Button>
                   </span>
                 )}
               </For>
@@ -292,9 +293,14 @@ export function DatabaseRelationCell(props: DatabaseRelationCellProps) {
           <Popover.Title class="sr-only">
             {props.column.name} · {props.source.name()}
           </Popover.Title>
-          <div class="flex shrink-0 items-center gap-2 border-b border-edge-muted px-3 py-2">
-            <SearchIcon class="size-4 shrink-0 text-ink-muted" />
-            <input
+          <InputGroup
+            variant="bare"
+            class="shrink-0 rounded-none border-b border-b-edge-muted"
+          >
+            <InputGroup.Addon align="inline-start">
+              <SearchIcon class="size-4" />
+            </InputGroup.Addon>
+            <InputGroup.Input
               ref={input}
               role="combobox"
               aria-label={`Search ${props.source.name()}`}
@@ -306,7 +312,6 @@ export function DatabaseRelationCell(props: DatabaseRelationCellProps) {
               }
               placeholder={`Search ${props.source.name()}…`}
               value={search()}
-              class="h-7 min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-placeholder"
               onInput={(event) => {
                 setSearch(event.currentTarget.value);
                 setActiveIndex(0);
@@ -345,16 +350,17 @@ export function DatabaseRelationCell(props: DatabaseRelationCellProps) {
                 }
               }}
             />
-          </div>
+          </InputGroup>
           <div class="min-h-0 overflow-y-auto overscroll-contain">
             <Show when={selected().length}>
               <div class="flex flex-wrap gap-1.5 border-b border-edge-muted p-2">
                 <For each={selected()}>
                   {(id) => (
                     <span class="inline-flex min-w-0 max-w-full items-center rounded border border-edge-muted bg-hover/60">
-                      <button
-                        type="button"
-                        class="flex min-w-0 items-center gap-1 px-2 py-1 text-xs hover:bg-hover"
+                      <Button
+                        variant="plain"
+                        size="xs"
+                        class="min-w-0 gap-1"
                         disabled={
                           !props.source.rows().some((row) => row.id === id)
                         }
@@ -363,16 +369,16 @@ export function DatabaseRelationCell(props: DatabaseRelationCellProps) {
                       >
                         <span class="truncate">{name(id)}</span>
                         <ArrowUpRightIcon class="size-3 shrink-0 text-ink-muted" />
-                      </button>
+                      </Button>
                       <Show when={editable()}>
-                        <button
-                          type="button"
-                          aria-label={`Remove ${name(id)}`}
-                          class="rounded-r p-1 text-ink-muted hover:bg-hover"
+                        <Button
+                          size="icon-xs"
+                          label={`Remove ${name(id)}`}
+                          tooltipDisabled
                           onClick={() => toggle(id)}
                         >
                           <XIcon class="size-3" />
-                        </button>
+                        </Button>
                       </Show>
                     </span>
                   )}
@@ -432,13 +438,9 @@ export function DatabaseRelationCell(props: DatabaseRelationCellProps) {
                   {props.source.error() ||
                     'Related records could not be loaded.'}
                 </p>
-                <button
-                  type="button"
-                  class="mt-1 rounded px-2 py-1 text-ink hover:bg-hover"
-                  onClick={() => void refresh()}
-                >
+                <Button size="xs" class="mt-1" onClick={() => void refresh()}>
                   Retry
-                </button>
+                </Button>
               </div>
             </Show>
             <Show when={saveError()}>
@@ -451,13 +453,9 @@ export function DatabaseRelationCell(props: DatabaseRelationCellProps) {
             <span class="truncate">
               {saving() ? 'Saving…' : props.source.name()}
             </span>
-            <button
-              type="button"
-              class="rounded px-2 py-1 text-ink hover:bg-hover"
-              onClick={() => void finish()}
-            >
+            <Button size="xs" onClick={() => void finish()}>
               {saveError() ? 'Retry' : 'Done'}
-            </button>
+            </Button>
           </div>
         </Popover.Content>
       </Popover.Portal>

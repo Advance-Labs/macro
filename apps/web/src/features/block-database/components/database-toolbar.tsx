@@ -14,6 +14,7 @@ import { Key } from '@solid-primitives/keyed';
 import { createResizeObserver } from '@solid-primitives/resize-observer';
 import { Button } from '@ui/components/Button';
 import { Dropdown } from '@ui/components/Dropdown';
+import { InputGroup } from '@ui/components/InputGroup';
 import { Tooltip } from '@ui/components/Tooltip';
 import {
   createEffect,
@@ -387,16 +388,14 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
             </Key>
           </div>
           <Show when={!changed()}>
-            <Tooltip label="New view" class="shrink-0">
-              <button
-                type="button"
-                aria-label="New view"
-                onClick={(event) => openSaveDialog(event.currentTarget)}
-                class="flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs text-ink-muted outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50"
-              >
-                <PlusIcon class="size-3.5" />
-              </button>
-            </Tooltip>
+            <Button
+              size="icon-sm"
+              label="New view"
+              class="shrink-0"
+              onClick={(event) => openSaveDialog(event.currentTarget)}
+            >
+              <PlusIcon class="size-3.5" />
+            </Button>
           </Show>
           <Show when={changed() && !selected()}>
             <Button
@@ -546,18 +545,18 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
                             })
                           }
                         />
-                        <button
-                          type="button"
-                          aria-label="Remove sort"
+                        <Button
+                          size="icon-sm"
+                          label="Remove sort"
+                          tooltipDisabled
                           onClick={() =>
                             change({
                               sorts: view().sorts.filter((_, i) => i !== index),
                             })
                           }
-                          class="rounded-md p-1.5 text-ink-muted hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50"
                         >
                           <XIcon class="size-3.5" />
-                        </button>
+                        </Button>
                       </div>
                     )}
                   </Index>
@@ -600,8 +599,9 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
                 </button>
               }
             >
-              <div
-                class="flex h-8 w-32 items-center gap-1 rounded-md border border-edge-muted bg-input px-2 focus-within:border-ink/50 @min-[640px]/view-toolbar:w-44"
+              <InputGroup
+                size="sm"
+                class="w-32 @min-[640px]/view-toolbar:w-44"
                 onFocusOut={(event) => {
                   if (
                     !event.currentTarget.contains(
@@ -612,8 +612,10 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
                     setSearchOpen(false);
                 }}
               >
-                <MagnifyingGlassIcon class="size-3.5 shrink-0 text-ink-muted" />
-                <input
+                <InputGroup.Addon align="inline-start">
+                  <MagnifyingGlassIcon class="size-3.5" />
+                </InputGroup.Addon>
+                <InputGroup.Input
                   ref={(element) => {
                     searchInput = element;
                     if (searchOpen()) queueMicrotask(() => element.focus());
@@ -633,26 +635,28 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
                     setSearchOpen(false);
                     queueMicrotask(() => searchButton?.focus());
                   }}
-                  class="min-w-0 flex-1 bg-transparent text-xs text-ink outline-none placeholder:text-ink-placeholder [&::-webkit-search-cancel-button]:hidden"
+                  class="text-xs"
                 />
-                <button
-                  type="button"
-                  aria-label={view().search ? 'Clear search' : 'Close search'}
-                  onClick={() => {
-                    if (view().search) {
-                      setSearchOpen(true);
-                      change({ search: '' });
-                      searchInput?.focus();
-                    } else {
-                      setSearchOpen(false);
-                      queueMicrotask(() => searchButton?.focus());
-                    }
-                  }}
-                  class="flex size-5 shrink-0 items-center justify-center rounded text-ink-muted outline-none hover:bg-hover hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/50"
-                >
-                  <XIcon class="size-3" />
-                </button>
-              </div>
+                <InputGroup.Addon align="inline-end">
+                  <InputGroup.Button
+                    size="icon-xs"
+                    label={view().search ? 'Clear search' : 'Close search'}
+                    tooltipDisabled
+                    onClick={() => {
+                      if (view().search) {
+                        setSearchOpen(true);
+                        change({ search: '' });
+                        searchInput?.focus();
+                      } else {
+                        setSearchOpen(false);
+                        queueMicrotask(() => searchButton?.focus());
+                      }
+                    }}
+                  >
+                    <XIcon class="size-3" />
+                  </InputGroup.Button>
+                </InputGroup.Addon>
+              </InputGroup>
             </Show>
             <ToolbarPopover
               label="View settings"

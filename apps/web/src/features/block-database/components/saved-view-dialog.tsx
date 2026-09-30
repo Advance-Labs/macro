@@ -3,6 +3,7 @@ import TableIcon from '@phosphor/table.svg';
 import { Button } from '@ui/components/Button';
 import { Dialog } from '@ui/components/Dialog';
 import { Panel } from '@ui/components/Panel';
+import { TextField } from '@ui/components/TextField';
 import { createSignal, Show } from 'solid-js';
 import {
   type DatabaseViewColumn,
@@ -165,20 +166,20 @@ export function SaveViewDialog(props: {
               </Show>
             </Show>
             <Show when={props.mode !== 'delete'}>
-              <label class="flex flex-col gap-1.5 text-xs font-medium text-ink-muted">
-                View name
-                <input
+              <TextField
+                value={name()}
+                onChange={setName}
+                readOnly={pending()}
+                required
+              >
+                <TextField.Label>View name</TextField.Label>
+                <TextField.Input
                   ref={nameInput}
-                  required
                   maxlength={100}
-                  readOnly={pending()}
-                  value={name()}
                   onFocus={(event) => event.currentTarget.select()}
-                  onInput={(event) => setName(event.currentTarget.value)}
                   placeholder="e.g. In progress"
-                  class="h-10 rounded-lg border border-edge-muted bg-input px-3 text-sm text-ink outline-none placeholder:text-ink-placeholder focus:border-ink/50"
                 />
-              </label>
+              </TextField>
             </Show>
             <Show when={error()}>
               <p role="alert" class="text-xs text-failure">

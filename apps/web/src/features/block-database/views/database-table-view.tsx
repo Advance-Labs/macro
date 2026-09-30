@@ -3,6 +3,7 @@ import EyeSlashIcon from '@phosphor/eye-slash.svg';
 import WarningIcon from '@phosphor/warning-circle.svg';
 import XIcon from '@phosphor/x.svg';
 import { until } from '@solid-primitives/promise';
+import { Button } from '@ui/components/Button';
 import { DeleteDialog } from '@ui/components/DeleteDialog';
 import { Mutex } from 'async-mutex';
 import {
@@ -731,14 +732,14 @@ export function DatabaseTableView(props: {
                       : failure().message}
                 </p>
               </div>
-              <button
-                type="button"
+              <Button
+                size="xs"
+                class="shrink-0"
                 disabled={controller.pending()}
-                class="shrink-0 rounded px-2 py-1 font-medium text-ink hover:bg-hover disabled:opacity-40"
                 onClick={() => void retry()}
               >
                 {failure().outcomeUnknown ? 'Refresh' : 'Retry'}
-              </button>
+              </Button>
               <Show
                 when={
                   failure().outcomeUnknown &&
@@ -746,23 +747,23 @@ export function DatabaseTableView(props: {
                   draftRows.has(failure().createIntentId!)
                 }
               >
-                <button
-                  type="button"
+                <Button
+                  size="xs"
+                  class="shrink-0"
                   disabled={controller.pending()}
-                  class="shrink-0 rounded px-2 py-1 text-ink hover:bg-hover disabled:opacity-40"
                   onClick={dismissSaveFailure}
                 >
                   Discard draft
-                </button>
+                </Button>
               </Show>
-              <button
-                type="button"
-                aria-label="Dismiss save error"
-                class="rounded p-1 text-ink-muted hover:bg-hover"
+              <Button
+                size="icon-xs"
+                label="Dismiss save error"
+                tooltipDisabled
                 onClick={controller.dismissFailure}
               >
                 <XIcon class="size-3.5" />
-              </button>
+              </Button>
             </div>
           )}
         </Show>
@@ -777,13 +778,14 @@ export function DatabaseTableView(props: {
             class="flex shrink-0 items-center gap-2 border-b border-edge-muted px-5 py-2 text-xs text-ink-muted"
           >
             The latest data could not be refreshed.
-            <button
-              type="button"
-              class="font-medium text-accent"
+            <Button
+              variant="plain"
+              size="xs"
+              class="text-accent"
               onClick={() => void controller.refresh()}
             >
               Refresh
-            </button>
+            </Button>
           </div>
         </Show>
         <Show when={hiddenRecord()}>
@@ -807,21 +809,21 @@ export function DatabaseTableView(props: {
                     : `“${rowTitle(row(), columns())}” doesn’t match your ${constraints()}.`}
                 </p>
               </div>
-              <button
-                type="button"
-                class="shrink-0 rounded px-2 py-1 font-medium text-accent hover:bg-hover"
+              <Button
+                size="xs"
+                class="shrink-0 text-accent"
                 onClick={() => open(row().rowId)}
               >
                 Open record
-              </button>
-              <button
-                type="button"
-                aria-label="Dismiss record notice"
-                class="rounded p-1 text-ink-muted hover:bg-hover"
+              </Button>
+              <Button
+                size="icon-xs"
+                label="Dismiss record notice"
+                tooltipDisabled
                 onClick={() => setHiddenSavedRecord(undefined)}
               >
                 <XIcon class="size-3.5" />
-              </button>
+              </Button>
             </div>
           )}
         </Show>
@@ -836,27 +838,25 @@ export function DatabaseTableView(props: {
                   ? 'This row may already be saved. Check the latest rows, then discard this draft.'
                   : failure().error}
               </span>
-              <button
-                type="button"
+              <Button
+                size="xs"
                 disabled={controller.pending()}
                 onClick={() =>
                   void (draftRows.isUncertain(failure().id)
                     ? controller.refresh()
                     : retry())
                 }
-                class="rounded px-2 py-1 text-ink hover:bg-hover"
               >
                 {draftRows.isUncertain(failure().id) ? 'Refresh' : 'Retry'}
-              </button>
+              </Button>
               <Show when={draftRows.isUncertain(failure().id)}>
-                <button
-                  type="button"
+                <Button
+                  size="xs"
                   disabled={controller.pending()}
-                  class="rounded px-2 py-1 text-ink hover:bg-hover"
                   onClick={() => draftRows.discardUncertain(failure().id)}
                 >
                   Discard draft
-                </button>
+                </Button>
               </Show>
             </div>
           )}
@@ -873,14 +873,14 @@ export function DatabaseTableView(props: {
                 <p class="max-w-96 text-xs text-ink-muted">
                   {props.source.error()?.message ?? 'Try refreshing the table.'}
                 </p>
-                <button
-                  type="button"
-                  class="flex items-center gap-2 rounded-md border border-edge-muted px-3 py-2 text-xs hover:bg-hover"
+                <Button
+                  size="sm"
+                  class="gap-2"
                   onClick={() => void controller.refresh()}
                 >
                   <ArrowClockwiseIcon class="size-3.5" />
                   Try again
-                </button>
+                </Button>
               </div>
             }
           >
@@ -965,13 +965,14 @@ export function DatabaseTableView(props: {
                             : 'Add a column to get started.'}
                         </p>
                         <Show when={constrained()}>
-                          <button
-                            type="button"
-                            class="mt-2 rounded text-xs text-accent outline-none hover:underline focus-visible:ring-2 focus-visible:ring-accent"
+                          <Button
+                            variant="plain"
+                            size="xs"
+                            class="mt-2 text-accent"
                             onClick={clearFilters}
                           >
                             Clear filters
-                          </button>
+                          </Button>
                         </Show>
                       </div>
                     </Show>
@@ -986,15 +987,15 @@ export function DatabaseTableView(props: {
                     <p class="text-sm text-ink-muted">
                       Choose a Select or Checkbox column to group cards.
                     </p>
-                    <button
-                      type="button"
-                      class="mt-3 rounded-md border border-edge-muted px-3 py-2 text-xs hover:bg-hover"
+                    <Button
+                      size="sm"
+                      class="mt-3"
                       onClick={() =>
                         props.onViewChange?.({ ...props.view, layout: 'table' })
                       }
                     >
                       Open table
-                    </button>
+                    </Button>
                   </div>
                 }
               >

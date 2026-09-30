@@ -1,4 +1,3 @@
-import { Dialog } from '@kobalte/core/dialog';
 import ArrowDownIcon from '@phosphor/arrow-down.svg';
 import ArrowUpIcon from '@phosphor/arrow-up.svg';
 import EyeSlashIcon from '@phosphor/eye-slash.svg';
@@ -6,6 +5,8 @@ import RowsIcon from '@phosphor/rows.svg';
 import TrashIcon from '@phosphor/trash-simple.svg';
 import XIcon from '@phosphor/x.svg';
 import { Key } from '@solid-primitives/keyed';
+import { Button, buttonClasses } from '@ui/components/Button';
+import { Dialog } from '@ui/components/Dialog';
 import { type Accessor, type JSX, Show } from 'solid-js';
 import type {
   GridCellControl,
@@ -50,127 +51,116 @@ export function RecordPanel(props: RecordPanelProps) {
       onOpenChange={(open) => {
         if (!open) props.onClose();
       }}
+      position="center"
+      class="flex max-h-[min(42rem,85dvh)] w-[min(32rem,calc(100vw-2rem))] flex-col text-ink"
+      onOpenAutoFocus={(event) => {
+        // Keep keyboard editing in the record body, before the header controls.
+        event.preventDefault();
+        focusTitle?.();
+      }}
+      onEscapeKeyDown={(event) => {
+        if (
+          event.target instanceof HTMLElement &&
+          event.target.closest('input:not([type="checkbox"]), textarea')
+        )
+          event.preventDefault();
+      }}
+      onCloseAutoFocus={(event) => {
+        // Records open from one of many row buttons rather than a Dialog.Trigger.
+        if (props.returnFocus?.isConnected) {
+          event.preventDefault();
+          props.returnFocus.focus();
+        }
+      }}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay class="fixed inset-0 z-modal bg-modal-overlay/30 backdrop-blur-[1px]" />
-        <Dialog.Content
-          class="portal-scope fixed top-1/2 left-1/2 z-modal flex max-h-[min(42rem,85dvh)] w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border border-edge-muted bg-panel text-ink shadow-xl outline-none"
-          onOpenAutoFocus={(event) => {
-            // Keep keyboard editing in the record body, before the header controls.
-            event.preventDefault();
-            focusTitle?.();
-          }}
-          onEscapeKeyDown={(event) => {
-            if (
-              event.target instanceof HTMLElement &&
-              event.target.closest('input:not([type="checkbox"]), textarea')
-            )
-              event.preventDefault();
-          }}
-          onCloseAutoFocus={(event) => {
-            // Records open from one of many row buttons rather than a Dialog.Trigger.
-            if (props.returnFocus?.isConnected) {
-              event.preventDefault();
-              props.returnFocus.focus();
-            }
-          }}
+      <div class="flex h-11 shrink-0 items-center gap-2 border-b border-edge-muted px-4">
+        <RowsIcon class="size-4 text-ink-muted" />
+        <span class="min-w-0 flex-1 truncate text-xs text-ink-muted">
+          {props.tableName}
+        </span>
+        <span class="text-[11px] text-ink-placeholder" role="status">
+          {props.pending
+            ? 'Saving…'
+            : props.saveError
+              ? 'Change not saved'
+              : props.canEdit
+                ? 'Saved'
+                : 'View only'}
+        </span>
+        <Show when={props.position >= 0}>
+          <span class="mr-1 text-[11px] tabular-nums text-ink-placeholder">
+            {props.position + 1} of {props.total}
+          </span>
+        </Show>
+        <Button
+          size="icon-sm"
+          label="Previous record"
+          tooltipDisabled
+          disabled={props.position <= 0}
+          onClick={() => props.onNavigate(-1)}
         >
-          <div class="flex h-11 shrink-0 items-center gap-2 border-b border-edge-muted px-4">
-            <RowsIcon class="size-4 text-ink-muted" />
-            <span class="min-w-0 flex-1 truncate text-xs text-ink-muted">
-              {props.tableName}
-            </span>
-            <span class="text-[11px] text-ink-placeholder" role="status">
-              {props.pending
-                ? 'Saving…'
-                : props.saveError
-                  ? 'Change not saved'
-                  : props.canEdit
-                    ? 'Saved'
-                    : 'View only'}
-            </span>
-            <Show when={props.position >= 0}>
-              <span class="mr-1 text-[11px] tabular-nums text-ink-placeholder">
-                {props.position + 1} of {props.total}
-              </span>
-            </Show>
-            <button
-              type="button"
-              aria-label="Previous record"
-              disabled={props.position <= 0}
-              class="rounded p-1.5 text-ink-muted hover:bg-hover disabled:opacity-30"
-              onClick={() => props.onNavigate(-1)}
+          <ArrowUpIcon />
+        </Button>
+        <Button
+          size="icon-sm"
+          label="Next record"
+          tooltipDisabled
+          disabled={props.position < 0 || props.position >= props.total - 1}
+          onClick={() => props.onNavigate(1)}
+        >
+          <ArrowDownIcon />
+        </Button>
+        <Dialog.CloseButton
+          aria-label="Close record"
+          class={buttonClasses({ size: 'icon-sm' })}
+        >
+          <XIcon />
+        </Dialog.CloseButton>
+      </div>
+      <div class="min-h-0 overflow-auto px-5 py-4">
+        <Dialog.Title class="sr-only">
+          {rowTitle(props.row, props.columns)}
+        </Dialog.Title>
+        <Dialog.Description class="sr-only">Record details</Dialog.Description>
+        <Key each={[props.row]} by="rowId">
+          {(row) => (
+            <RecordFields
+              row={row()}
+              columns={props.columns}
+              canEdit={props.canEdit}
+              outsideViewReason={props.outsideViewReason}
+              renderCell={props.renderCell}
+              onFocusReady={(focus) => {
+                focusTitle = focus;
+              }}
+            />
+          )}
+        </Key>
+        <Show when={props.canEdit}>
+          <div class="mt-3 flex min-h-8 items-center border-t border-edge-muted/60 pt-2">
+            <Button
+              variant="plain"
+              size="xs"
+              disabled={props.pending}
+              class="hover:text-failure-ink"
+              onClick={props.onRequestDelete}
             >
-              <ArrowUpIcon class="size-3.5" />
-            </button>
-            <button
-              type="button"
-              aria-label="Next record"
-              disabled={props.position < 0 || props.position >= props.total - 1}
-              class="rounded p-1.5 text-ink-muted hover:bg-hover disabled:opacity-30"
-              onClick={() => props.onNavigate(1)}
-            >
-              <ArrowDownIcon class="size-3.5" />
-            </button>
-            <Dialog.CloseButton
-              aria-label="Close record"
-              class="ml-1 rounded p-1.5 text-ink-muted hover:bg-hover"
-            >
-              <XIcon class="size-4" />
-            </Dialog.CloseButton>
+              <TrashIcon /> Delete record
+            </Button>
           </div>
-          <div class="min-h-0 overflow-auto px-5 py-4">
-            <Dialog.Title class="sr-only">
-              {rowTitle(props.row, props.columns)}
-            </Dialog.Title>
-            <Dialog.Description class="sr-only">
-              Record details
-            </Dialog.Description>
-            <Key each={[props.row]} by="rowId">
-              {(row) => (
-                <RecordFields
-                  row={row()}
-                  columns={props.columns}
-                  canEdit={props.canEdit}
-                  outsideViewReason={props.outsideViewReason}
-                  renderCell={props.renderCell}
-                  onFocusReady={(focus) => {
-                    focusTitle = focus;
-                  }}
-                />
-              )}
-            </Key>
-            <Show when={props.canEdit}>
-              <div class="mt-3 flex min-h-8 items-center border-t border-edge-muted/60 pt-2">
-                <button
-                  type="button"
-                  disabled={props.pending}
-                  class="flex items-center gap-1.5 rounded px-1 py-1 text-xs text-ink-muted hover:text-failure-ink disabled:opacity-50"
-                  onClick={props.onRequestDelete}
-                >
-                  <TrashIcon class="size-3.5" /> Delete record
-                </button>
-              </div>
-            </Show>
-          </div>
-          <Show when={props.saveError}>
-            <div
-              role="alert"
-              class="flex items-center gap-3 border-t border-warning/20 bg-warning/5 px-5 py-3 text-xs text-ink-muted"
-            >
-              <span class="flex-1">{props.saveError}</span>
-              <button
-                type="button"
-                disabled={props.pending}
-                class="rounded px-2 py-1 font-medium text-ink hover:bg-hover disabled:opacity-40"
-                onClick={props.onRetry}
-              >
-                Retry
-              </button>
-            </div>
-          </Show>
-        </Dialog.Content>
-      </Dialog.Portal>
+        </Show>
+      </div>
+      <Show when={props.saveError}>
+        <div
+          role="alert"
+          class="flex items-center gap-3 border-t border-warning/20 bg-warning/5 px-5 py-3 text-xs text-ink-muted"
+        >
+          <span class="flex-1">{props.saveError}</span>
+          <Button size="xs" disabled={props.pending} onClick={props.onRetry}>
+            Retry
+          </Button>
+        </div>
+      </Show>
     </Dialog>
   );
 }

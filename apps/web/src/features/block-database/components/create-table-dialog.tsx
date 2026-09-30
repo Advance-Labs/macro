@@ -3,7 +3,8 @@ import TextTIcon from '@phosphor/text-t.svg';
 import { Button } from '@ui/components/Button';
 import { Dialog } from '@ui/components/Dialog';
 import { Panel } from '@ui/components/Panel';
-import { createSignal, createUniqueId, Show } from 'solid-js';
+import { TextField } from '@ui/components/TextField';
+import { createSignal, Show } from 'solid-js';
 import { isDatabaseNameTaken } from '../core/property-creation';
 import type { CreateTable } from '../core/table-creation';
 
@@ -18,8 +19,6 @@ export function CreateTableDialog(props: {
   const [pending, setPending] = createSignal(false);
   const [error, setError] = createSignal('');
   const [createdTableId, setCreatedTableId] = createSignal<string>();
-  const inputId = createUniqueId();
-  const errorId = createUniqueId();
   const duplicate = () =>
     !createdTableId() &&
     name().trim() &&
@@ -80,34 +79,25 @@ export function CreateTableDialog(props: {
                 What would you like to organize?
               </Dialog.Description>
             </div>
-            <div>
-              <label
-                for={inputId}
-                class="mb-2 block text-sm font-medium text-ink"
-              >
-                Table name
-              </label>
-              <input
-                id={inputId}
-                required
+            <TextField
+              value={name()}
+              onChange={(value) => {
+                setName(value);
+                setError('');
+              }}
+              readOnly={pending() || !!createdTableId()}
+              required
+              validationState={duplicate() ? 'invalid' : 'valid'}
+            >
+              <TextField.Label>Table name</TextField.Label>
+              <TextField.Input
                 maxlength={200}
-                value={name()}
-                readOnly={pending() || !!createdTableId()}
-                onInput={(event) => {
-                  setName(event.currentTarget.value);
-                  setError('');
-                }}
                 placeholder="Projects, People, Events…"
-                aria-invalid={!!duplicate()}
-                aria-describedby={duplicate() || error() ? errorId : undefined}
-                class="h-11 w-full rounded-lg border border-edge-muted bg-input px-3 text-base text-ink outline-none placeholder:text-ink-placeholder focus:border-ink/50 focus:ring-2 focus:ring-ink/15 disabled:opacity-60"
               />
-              <Show when={duplicate()}>
-                <p id={errorId} class="mt-2 text-xs text-failure">
-                  A table with this name already exists. Try another name.
-                </p>
-              </Show>
-            </div>
+              <TextField.ErrorMessage>
+                A table with this name already exists. Try another name.
+              </TextField.ErrorMessage>
+            </TextField>
             <div class="rounded-lg border border-edge-muted bg-canvas-base">
               <div class="flex items-center gap-2 border-b border-edge-muted px-3 py-2 text-xs font-medium text-ink">
                 <TextTIcon class="size-3.5 text-ink-muted" /> Name
@@ -117,7 +107,7 @@ export function CreateTableDialog(props: {
               </p>
             </div>
             <Show when={error()}>
-              <p id={errorId} role="alert" class="text-sm text-failure">
+              <p role="alert" class="text-sm text-failure">
                 {error()}
               </p>
             </Show>

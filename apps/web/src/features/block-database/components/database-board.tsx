@@ -4,6 +4,7 @@ import DotsIcon from '@phosphor/dots-three.svg';
 import PlusIcon from '@phosphor/plus.svg';
 import XIcon from '@phosphor/x.svg';
 import { Key } from '@solid-primitives/keyed';
+import { Button } from '@ui/components/Button';
 import { Dropdown } from '@ui/components/Dropdown';
 import type { JSX } from 'solid-js';
 import {
@@ -313,16 +314,17 @@ function BoardLane(
             visibleDrafts().filter((id) => props.createPending?.(id)).length}
         </span>
         <Show when={acceptsRecords()}>
-          <button
-            type="button"
-            class="ml-auto rounded p-1.5 text-ink-muted hover:bg-hover"
+          <Button
+            size="icon-sm"
+            label={`Add record to ${props.group.label}`}
+            tooltipDisabled
+            class="ml-auto"
             title={`Add record to ${props.group.label}`}
-            aria-label={`Add record to ${props.group.label}`}
             data-kanban-no-drag
             onClick={beginCreate}
           >
             <PlusIcon class="size-3.5" />
-          </button>
+          </Button>
         </Show>
       </KanbanHandle>
       <div class="flex min-h-10 flex-col gap-2">
@@ -366,14 +368,10 @@ function BoardLane(
           )}
         </For>
         <Show when={acceptsRecords() && !hasEditableDraft()}>
-          <button
-            type="button"
-            class="mt-1 flex min-h-9 items-center gap-2 rounded-lg px-3 text-xs text-ink-muted hover:bg-hover hover:text-ink"
-            onClick={beginCreate}
-          >
+          <Button size="xs" class="mt-1 gap-2" onClick={beginCreate}>
             <PlusIcon class="size-3.5" />
             New record
-          </button>
+          </Button>
         </Show>
       </div>
     </KanbanLane>
@@ -439,9 +437,9 @@ function NewBoardGroup(props: {
       <Show
         when={adding()}
         fallback={
-          <button
-            type="button"
-            class="flex min-h-9 items-center gap-2 rounded-lg px-3 text-xs text-ink-muted hover:bg-hover hover:text-ink"
+          <Button
+            size="xs"
+            class="gap-2"
             onClick={() => {
               setDraft('');
               setAdding(true);
@@ -450,7 +448,7 @@ function NewBoardGroup(props: {
           >
             <PlusIcon class="size-3.5" />
             New group
-          </button>
+          </Button>
         }
       >
         <form
@@ -489,21 +487,16 @@ function NewBoardGroup(props: {
             </p>
           </Show>
           <div class="mt-3 flex items-center gap-2">
-            <button
+            <Button
+              size="sm"
               type="submit"
               disabled={pending() || !draft().trim()}
-              class="rounded-md border border-edge bg-hover px-3 py-1.5 text-xs font-medium text-ink outline-none focus-visible:ring-2 focus-visible:ring-ink/50 disabled:opacity-50"
             >
               {pending() ? 'Adding…' : 'Add group'}
-            </button>
-            <button
-              type="button"
-              disabled={pending()}
-              class="rounded px-2 py-1.5 text-xs text-ink-muted hover:bg-hover disabled:opacity-50"
-              onClick={cancel}
-            >
+            </Button>
+            <Button size="xs" disabled={pending()} onClick={cancel}>
               Cancel
-            </button>
+            </Button>
           </div>
         </form>
       </Show>
@@ -606,15 +599,16 @@ function BoardCard(props: {
       <Show when={props.canEdit}>
         <div class="absolute top-3 right-2 flex items-start gap-0.5">
           <KanbanHandle label={`Drag ${title()}`}>
-            <button
-              type="button"
-              class="touch-none rounded p-0.5 text-ink-placeholder opacity-60 hover:bg-hover group-hover:opacity-100 focus-visible:opacity-100"
+            <Button
+              size="icon-xs"
+              label={`Drag ${title()}`}
+              tooltipDisabled
+              class="touch-none opacity-60 group-hover:opacity-100 focus-visible:opacity-100"
               title="Drag to another group, or use the Move menu"
-              aria-label={`Drag ${title()}`}
               tabindex={-1}
             >
               <GripIcon class="size-4" />
-            </button>
+            </Button>
           </KanbanHandle>
           <Dropdown>
             <Dropdown.Trigger
@@ -726,22 +720,18 @@ function NewBoardCard(props: {
           />
         </Show>
         <div class="flex items-center gap-2">
-          <button
-            type="submit"
-            disabled={pending()}
-            class="rounded-md border border-edge bg-hover px-2.5 py-1.5 text-xs font-medium text-ink outline-none focus-visible:ring-2 focus-visible:ring-ink/50 disabled:opacity-50"
-          >
+          <Button size="sm" type="submit" disabled={pending()}>
             {pending() ? 'Adding…' : 'Add record'}
-          </button>
-          <button
-            type="button"
-            aria-label="Cancel new record"
+          </Button>
+          <Button
+            size="icon-sm"
+            label="Cancel new record"
+            tooltipDisabled
             disabled={pending()}
-            class="rounded p-1.5 text-ink-muted hover:bg-hover"
             onClick={props.onCancel}
           >
             <XIcon class="size-3.5" />
-          </button>
+          </Button>
         </div>
       </Show>
     </form>
