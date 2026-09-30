@@ -169,6 +169,7 @@ fn in_lists_nested_ors_and_has_push_as_one_expression() {
             Some(Filter::Like {
                 column: NAME,
                 pattern: "A%".into(),
+                escape: None,
                 negated: false,
             }),
             Shape::Rows(vec![NAME]),
@@ -450,6 +451,7 @@ fn each_relation_gets_its_own_pushdown_and_needs() {
             Filter::Like {
                 column: people_name,
                 pattern: "A%".into(),
+                escape: None,
                 negated: false,
             },
         ]))

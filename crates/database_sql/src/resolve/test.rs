@@ -127,6 +127,7 @@ fn star_expands_and_every_column_kind_types_its_literal() {
             Filter::Like {
                 column: NAME,
                 pattern: "A%".into(),
+                escape: None,
                 negated: false,
             },
             Filter::Cmp {

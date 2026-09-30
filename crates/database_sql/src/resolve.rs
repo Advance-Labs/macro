@@ -185,6 +185,8 @@ pub enum Filter {
         column: Uuid,
         /// The pattern, with SQL `%` and `_` wildcards.
         pattern: String,
+        /// The character that makes the next pattern character literal.
+        escape: Option<char>,
         /// `NOT LIKE`.
         negated: bool,
     },

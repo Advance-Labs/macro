@@ -175,6 +175,9 @@ pub enum Cond {
         column: ColumnRef,
         /// The pattern, with SQL `%` and `_` wildcards.
         pattern: String,
+        /// `ESCAPE 'c'`: the character that makes the next pattern character
+        /// literal.
+        escape: Option<char>,
         /// `NOT LIKE`.
         negated: bool,
     },

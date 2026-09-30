@@ -553,13 +553,12 @@ fn atom(input: In<'_>) -> R<'_, Cond> {
                     negated,
                 }
             }),
-            preceded(kw(Tok::Like), cut(string("a quoted pattern after LIKE"))).map(
-                move |pattern| Cond::Like {
-                    column: column.clone(),
-                    pattern,
-                    negated,
-                },
-            ),
+            preceded(kw(Tok::Like), cut(like_pattern)).map(move |(pattern, escape)| Cond::Like {
+                column: column.clone(),
+                pattern,
+                escape,
+                negated,
+            }),
         ))
     };
 
@@ -598,6 +597,47 @@ fn atom(input: In<'_>) -> R<'_, Cond> {
         Err(nom::Err::Error(_)) => Err(nom::Err::Failure(at(input, &expected))),
         other => other,
     }
+}
+
+/// `'pattern' [ESCAPE 'c']`. `ESCAPE` is read as a word rather than a
+/// keyword so a column named `escape` stays usable unquoted.
+fn like_pattern(input: In<'_>) -> R<'_, (String, Option<char>)> {
+    let (rest, pattern) = string("a quoted pattern after LIKE")(input)?;
+    let Some(Tok::Ident(word)) = rest.first().map(|token| &token.kind) else {
+        return Ok((rest, (pattern, None)));
+    };
+    if !word.eq_ignore_ascii_case("escape") {
+        return Ok((rest, (pattern, None)));
+    }
+    let after = rest.take_from(1);
+    let (end, escape) =
+        string("a quoted escape character after ESCAPE")(after).map_err(|error| match error {
+            nom::Err::Error(error) => nom::Err::Failure(error),
+            other => other,
+        })?;
+    let mut characters = escape.chars();
+    let (Some(escape), None) = (characters.next(), characters.next()) else {
+        return Err(nom::Err::Failure(message_at(
+            after,
+            "the ESCAPE character must be exactly one character",
+        )));
+    };
+    if ends_with_escape(&pattern, escape) {
+        return Err(nom::Err::Failure(message_at(
+            input,
+            "a LIKE pattern cannot end with its ESCAPE character",
+        )));
+    }
+    Ok((end, (pattern, Some(escape))))
+}
+
+/// Whether the last character is an escape with nothing left to escape.
+fn ends_with_escape(pattern: &str, escape: char) -> bool {
+    let mut escaping = false;
+    for character in pattern.chars() {
+        escaping = !escaping && character == escape;
+    }
+    escaping
 }
 
 /// A non-negative whole number.

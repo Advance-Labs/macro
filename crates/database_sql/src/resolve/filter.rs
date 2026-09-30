@@ -98,6 +98,7 @@ pub fn resolve(scope: &mut Scope<'_>, cond: Cond) -> Result<Filter, ResolveError
         Cond::Like {
             column,
             pattern,
+            escape,
             negated,
         } => {
             let bound = scope.column(&column)?;
@@ -106,6 +107,7 @@ pub fn resolve(scope: &mut Scope<'_>, cond: Cond) -> Result<Filter, ResolveError
                 ColumnKind::Text | ColumnKind::Link => Ok(Filter::Like {
                     column: bound.key,
                     pattern,
+                    escape,
                     negated,
                 }),
                 _ => Err(ResolveError::OperatorNotSupported {

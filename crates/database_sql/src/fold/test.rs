@@ -253,6 +253,17 @@ fn residual_predicates_follow_sql_null_rules_and_macro_matching() {
         ("name LIKE '_cme'", &[ACME]),
         ("name NOT LIKE '%e%'", &[HOOLI]),
         ("name = 'Hooli'", &[]),
+        // ESCAPE makes the next pattern character literal
+        ("name LIKE 'acm_'", &[ACME]),
+        (r"name LIKE 'acm\_' ESCAPE '\'", &[]),
+        (r"name LIKE 'acm\e' ESCAPE '\'", &[ACME]),
+        (r"name LIKE '%\%%' ESCAPE '\'", &[]),
+        (
+            r"name NOT LIKE '%\%%' ESCAPE '\'",
+            &[ACME, GLOBEX, HOOLI, INITECH],
+        ),
+        ("name LIKE 'H%' ESCAPE '!'", &[HOOLI]),
+        ("name LIKE 'H!%' ESCAPE '!'", &[]),
         ("name < 'H'", &[ACME, GLOBEX]),
         // checkbox: an unset checkbox is not FALSE
         ("done = FALSE", &[INITECH]),

@@ -177,11 +177,13 @@ fn every_atom_form_and_literal_kind() {
             Cond::Like {
                 column: col("name"),
                 pattern: "A%".into(),
+                escape: None,
                 negated: false,
             },
             Cond::Like {
                 column: col("notes"),
                 pattern: "%draft%".into(),
+                escape: None,
                 negated: true,
             },
             Cond::Cmp {
@@ -384,6 +386,45 @@ fn item_aliases_and_membership_joins() {
             key: OrderKey::Column(col("deals")),
             dir: Dir::Desc,
         }],
+        limit: None,
+        offset: None,
+    });
+
+    assert_eq!(parse(sql).unwrap(), expected);
+}
+
+#[test]
+fn like_takes_an_escape_character() {
+    let sql = r"SELECT name FROM crm.deals WHERE name LIKE '50\%%' ESCAPE '\' OR notes NOT LIKE '%a!_b%' escape '!'";
+
+    let expected = Statement::Select(Select {
+        distinct: false,
+        aliases: vec![],
+        items: vec![Item::Column(col("name"))],
+        from: FromItem {
+            table: TableName {
+                database: Some(Ident("crm".into())),
+                table: Ident("deals".into()),
+            },
+            alias: None,
+        },
+        joins: vec![],
+        where_: Some(Cond::Or(vec![
+            Cond::Like {
+                column: col("name"),
+                pattern: r"50\%%".into(),
+                escape: Some('\\'),
+                negated: false,
+            },
+            Cond::Like {
+                column: col("notes"),
+                pattern: "%a!_b%".into(),
+                escape: Some('!'),
+                negated: true,
+            },
+        ])),
+        group_by: None,
+        order_by: vec![],
         limit: None,
         offset: None,
     });
@@ -643,6 +684,21 @@ fn rejections_point_at_the_offending_token() {
             "SELECT name FROM crm.deals WHERE stage NOT = 'Won'",
             43..44,
             "expected IN, HAS or LIKE after \"stage\" NOT, found =",
+        ),
+        (
+            "SELECT name FROM crm.deals WHERE name LIKE 'a%' ESCAPE '!!'",
+            55..59,
+            "the ESCAPE character must be exactly one character",
+        ),
+        (
+            "SELECT name FROM crm.deals WHERE name LIKE 'a!' ESCAPE '!'",
+            43..47,
+            "a LIKE pattern cannot end with its ESCAPE character",
+        ),
+        (
+            "SELECT name FROM crm.deals WHERE name LIKE 'a%' ESCAPE",
+            54..54,
+            "expected a quoted escape character after ESCAPE, found end of statement",
         ),
         (
             "SELECT name FROM crm.deals ORDER BY 0",

@@ -58,9 +58,10 @@ pub fn holds(filter: &Filter, row: &Row) -> bool {
         Filter::Like {
             column,
             pattern,
+            escape,
             negated,
         } => match row.cells.get(column) {
-            Some(Cell::Text(text)) => like(pattern, text) != *negated,
+            Some(Cell::Text(text)) => like(pattern, *escape, text) != *negated,
             _ => false,
         },
     }
@@ -90,18 +91,55 @@ fn single<T>(ids: &[T]) -> Option<&T> {
     }
 }
 
-/// SQL `LIKE` with `%` and `_`, ignoring case.
-fn like(pattern: &str, text: &str) -> bool {
-    let pattern: Vec<char> = pattern.to_lowercase().chars().collect();
+/// SQL `LIKE` with `%` and `_`, ignoring case. The escape character makes
+/// the character after it literal.
+fn like(pattern: &str, escape: Option<char>, text: &str) -> bool {
+    let escape = escape.map(lowercase);
+    let mut parts = Vec::new();
+    let lowered = pattern.to_lowercase();
+    let mut characters = lowered.chars();
+    while let Some(character) = characters.next() {
+        parts.push(match character {
+            _ if Some(character) == escape => {
+                // Parse rejects a pattern that ends with its escape.
+                Part::Literal(characters.next().unwrap_or(character))
+            }
+            '%' => Part::Any,
+            '_' => Part::One,
+            literal => Part::Literal(literal),
+        });
+    }
     let text: Vec<char> = text.to_lowercase().chars().collect();
-    matches(&pattern, &text)
+    matches(&parts, &text)
 }
 
-fn matches(pattern: &[char], text: &[char]) -> bool {
+/// A character's lower case when it is one character, as `to_lowercase` of the
+/// whole pattern would spell it.
+fn lowercase(character: char) -> char {
+    let mut lower = character.to_lowercase();
+    match (lower.next(), lower.next()) {
+        (Some(only), None) => only,
+        _ => character,
+    }
+}
+
+/// One element of a `LIKE` pattern.
+enum Part {
+    /// `%`: any run of characters.
+    Any,
+    /// `_`: exactly one character.
+    One,
+    /// This character.
+    Literal(char),
+}
+
+fn matches(pattern: &[Part], text: &[char]) -> bool {
     match pattern.split_first() {
         None => text.is_empty(),
-        Some(('%', rest)) => (0..=text.len()).any(|skip| matches(rest, &text[skip..])),
-        Some(('_', rest)) => !text.is_empty() && matches(rest, &text[1..]),
-        Some((literal, rest)) => text.first() == Some(literal) && matches(rest, &text[1..]),
+        Some((Part::Any, rest)) => (0..=text.len()).any(|skip| matches(rest, &text[skip..])),
+        Some((Part::One, rest)) => !text.is_empty() && matches(rest, &text[1..]),
+        Some((Part::Literal(literal), rest)) => {
+            text.first() == Some(literal) && matches(rest, &text[1..])
+        }
     }
 }
