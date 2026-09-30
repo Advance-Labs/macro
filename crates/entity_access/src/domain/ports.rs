@@ -95,6 +95,13 @@ pub trait AccessRepository: Clone + Send + Sync + 'static {
         user_id: Option<&MacroUserId<Lowercase<'_>>>,
     ) -> impl Future<Output = Result<Option<AccessLevel>, AccessError>> + Send;
 
+    /// The highest access level a user has on every database they can reach,
+    /// ordered by database id.
+    fn list_database_access(
+        &self,
+        user_id: &MacroUserId<Lowercase<'_>>,
+    ) -> impl Future<Output = Result<Vec<(Uuid, AccessLevel)>, AccessError>> + Send;
+
     /// Get the highest access level a user has for a database row, which is
     /// their access to the row's database.
     fn get_database_row_access(
@@ -475,6 +482,18 @@ pub trait EntityAccessService: Clone + Send + Sync + 'static {
         &self,
         user_id: &MacroUserId<Lowercase<'_>>,
     ) -> impl Future<Output = Result<Option<UserTeamInfo>, AccessError>> + Send;
+}
+
+/// Enumerates the databases a user can reach. Kept apart from
+/// [`EntityAccessService`], which answers for one entity at a time: only the
+/// databases catalog needs every grant at once.
+pub trait AccessibleDatabases: Clone + Send + Sync + 'static {
+    /// The highest access level the user has on every database they can
+    /// reach, ordered by database id. Trashed databases are still listed.
+    fn accessible_databases(
+        &self,
+        user_id: &MacroUserId<Lowercase<'_>>,
+    ) -> impl Future<Output = Result<Vec<(Uuid, AccessLevel)>, AccessError>> + Send;
 }
 
 /// No-op [`EntityAccessService`] for binaries that need to satisfy the

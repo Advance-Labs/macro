@@ -31,6 +31,7 @@ struct MockRepo {
     initiative_access: Arc<Mutex<Option<AccessLevel>>>,
     agent_session_document: Arc<Mutex<Option<String>>>,
     database_access: Arc<Mutex<Option<AccessLevel>>>,
+    database_access_list: Arc<Mutex<Vec<(Uuid, AccessLevel)>>>,
     database_row_access: Arc<Mutex<Option<AccessLevel>>>,
     reminder_access: Arc<Mutex<Option<AccessLevel>>>,
     team_entity_access: Arc<Mutex<Option<AccessLevel>>>,
@@ -73,6 +74,7 @@ impl MockRepo {
             initiative_access: Arc::new(Mutex::new(None)),
             agent_session_document: Arc::default(),
             database_access: Arc::new(Mutex::new(None)),
+            database_access_list: Arc::new(Mutex::new(Vec::new())),
             database_row_access: Arc::new(Mutex::new(None)),
             reminder_access: Arc::new(Mutex::new(None)),
             team_entity_access: Arc::new(Mutex::new(None)),
@@ -144,6 +146,11 @@ impl MockRepo {
 
     fn with_database_access(mut self, level: AccessLevel) -> Self {
         self.database_access = Arc::new(Mutex::new(Some(level)));
+        self
+    }
+
+    fn with_database_access_list(mut self, levels: Vec<(Uuid, AccessLevel)>) -> Self {
+        self.database_access_list = Arc::new(Mutex::new(levels));
         self
     }
 
@@ -355,6 +362,13 @@ impl AccessRepository for MockRepo {
         _user_id: Option<&MacroUserId<Lowercase<'_>>>,
     ) -> Result<Option<AccessLevel>, AccessError> {
         Ok(*self.database_access.lock().await)
+    }
+
+    async fn list_database_access(
+        &self,
+        _user_id: &MacroUserId<Lowercase<'_>>,
+    ) -> Result<Vec<(Uuid, AccessLevel)>, AccessError> {
+        Ok(self.database_access_list.lock().await.clone())
     }
 
     async fn get_database_row_access(
@@ -839,6 +853,22 @@ async fn test_get_entity_permission_database_returns_access_level() {
             access_level: AccessLevel::Owner
         }
     ));
+}
+
+#[tokio::test]
+async fn accessible_databases_are_the_repository_listing() {
+    let shared = Uuid::parse_str("0198a805-3e22-75b2-97eb-d9c6b91accb0").unwrap();
+    let owned = Uuid::parse_str("0198a805-3e22-75b2-97eb-d9c6b91accb1").unwrap();
+    let repo = MockRepo::new().with_database_access_list(vec![
+        (shared, AccessLevel::View),
+        (owned, AccessLevel::Owner),
+    ]);
+    let service = EntityAccessServiceImpl::new(repo);
+
+    assert_eq!(
+        service.accessible_databases(&test_user_id()).await.unwrap(),
+        vec![(shared, AccessLevel::View), (owned, AccessLevel::Owner)]
+    );
 }
 
 #[tokio::test]

@@ -2,7 +2,12 @@
 
 use crate::{domain::models::AccessLevel, outbound::pg_access_repo::queries::SourceIds};
 use sqlx::PgPool;
+use std::collections::BTreeMap;
 use std::str::FromStr;
+use uuid::Uuid;
+
+#[cfg(test)]
+mod test;
 
 /// Get the highest access level a user has for a database.
 ///
@@ -44,4 +49,38 @@ pub async fn get_database_access(
         .max();
 
     Ok(highest_level)
+}
+
+/// The highest access level a user has on every database their source ids
+/// reach, ordered by database id. Trash is the databases domain's concern:
+/// a trashed database's grants are still listed.
+#[tracing::instrument(err, skip(pool, source_ids))]
+pub async fn list_database_access(
+    pool: &PgPool,
+    source_ids: &SourceIds,
+) -> Result<Vec<(Uuid, AccessLevel)>, sqlx::Error> {
+    if source_ids.0.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let rows = sqlx::query!(
+        r#"
+        SELECT entity_id AS "entity_id!", access_level AS "access_level!: AccessLevel"
+        FROM entity_access
+        WHERE entity_type = 'database'
+        AND source_id = ANY($1)
+        "#,
+        &source_ids.0,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut highest: BTreeMap<Uuid, AccessLevel> = BTreeMap::new();
+    for row in rows {
+        highest
+            .entry(row.entity_id)
+            .and_modify(|level| *level = (*level).max(row.access_level))
+            .or_insert(row.access_level);
+    }
+    Ok(highest.into_iter().collect())
 }

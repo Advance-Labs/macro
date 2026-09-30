@@ -8,7 +8,7 @@ use crate::domain::{
         CrmEntityAccess, Entity, EntityAccessAuth, EntityAccessReceipt, EntityPermission,
         EntityType, RequiredPermission, TeamRole, UserTeamInfo, ViewAccessLevel,
     },
-    ports::{AccessRepository, EntityAccessService},
+    ports::{AccessRepository, AccessibleDatabases, EntityAccessService},
 };
 use futures::{StreamExt, stream};
 use macro_user_id::{
@@ -276,6 +276,19 @@ where
                 Err(AccessError::BadRequest("Unsupported bot entity type"))
             }
         }
+    }
+}
+
+impl<R> AccessibleDatabases for EntityAccessServiceImpl<R>
+where
+    R: AccessRepository,
+{
+    #[tracing::instrument(err, skip(self))]
+    async fn accessible_databases(
+        &self,
+        user_id: &MacroUserId<Lowercase<'_>>,
+    ) -> Result<Vec<(Uuid, AccessLevel)>, AccessError> {
+        self.repo.list_database_access(user_id).await
     }
 }
 
