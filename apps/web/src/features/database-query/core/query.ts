@@ -214,7 +214,9 @@ export function queryErrorMessage(error: unknown): string {
     return 'This table is no longer available. Choose a database and update the question.';
   if (/no such column|unknown column/i.test(message))
     return 'A property in this question has changed. Try asking again with its current name.';
-  if (/read.?only|not authorized|forbidden/i.test(message))
+  if (
+    /read.?only|not authorized|forbidden|runs SELECT statements/i.test(message)
+  )
     return 'Questions can only read data you have access to. Edit records in the table or board.';
   if (/budget|timed out|timeout|too many/i.test(message))
     return 'This question needs less data. Try a narrower question or add a LIMIT in SQL.';

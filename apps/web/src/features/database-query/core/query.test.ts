@@ -3,6 +3,7 @@ import {
   isScalarAnswer,
   parseQueryProposal,
   type QuerySchema,
+  queryErrorMessage,
   queryStarters,
   unquoteIdentifier,
 } from './query';
@@ -124,5 +125,17 @@ describe('database questions', () => {
         results: [...answer.results, ...answer.results],
       })
     ).toBe(false);
+  });
+});
+
+describe('queryErrorMessage', () => {
+  it('explains that questions only read when the browser engine refuses a write', () => {
+    expect(
+      queryErrorMessage(
+        new Error('the engine runs SELECT statements; writes go through run()')
+      )
+    ).toBe(
+      'Questions can only read data you have access to. Edit records in the table or board.'
+    );
   });
 });

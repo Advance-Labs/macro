@@ -1,21 +1,19 @@
-import { savedDatabaseQueryKeys } from '@queries/storage/database-queries';
+import type { Catalog, Outcome } from '@core/database-sql/protocol';
+import type { DatabaseSqlQueryCapabilities } from '@queries/database-sql/create-database-sql-query';
 import { databaseCompletionRequest } from '@service-cognition/database-query-prompt';
-import type { DatabaseDetail, ExecOutcome } from '@service-storage/databases';
-import { render, waitFor } from '@solidjs/testing-library';
-import { QueryClient, QueryClientProvider } from '@tanstack/solid-query';
+import type { DatabaseDetail } from '@service-storage/databases';
+import type { SoupQuery } from '@service-storage/graphql/generated/graphql';
+import { CombinedError, createClient, type Exchange } from '@urql/core';
+import { createRoot } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { empty, fromValue, mergeMap, pipe } from 'wonka';
 import { queryFocusTable, queryStarters } from '../core/query';
-import { createLiveQuerySource, toQuerySchema } from './query-source';
+import {
+  createLiveQuerySource,
+  type LiveQuerySource,
+  toQuerySchema,
+} from './query-source';
 
-const outcome: ExecOutcome = {
-  results: [],
-  changes_applied: 0,
-  inserted_row_ids: [],
-  new_versions: {},
-  read_tables: ['watched'],
-  read_versions: { watched: 4 },
-  truncated_tables: [],
-};
 afterEach(() => vi.useRealTimers());
 describe('query schema', () => {
   it('carries the pre-quoted SQL names and relation metadata into starters and the prompt', () => {
@@ -119,83 +117,245 @@ describe('query schema', () => {
   });
 });
 
-describe('live query source', () => {
-  it('recovers from a failed refresh when a newer dependency event arrives', async () => {
-    const run = vi
-      .fn<() => Promise<ExecOutcome>>()
-      .mockResolvedValueOnce(outcome)
-      .mockRejectedValueOnce(new Error('Temporary network failure'))
-      .mockResolvedValue({ ...outcome, read_versions: { watched: 6 } });
-    let emit!: (tableId: string, version: number) => void;
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    function Harness() {
-      const query = createLiveQuerySource({
-        queryId: () => 'project-count',
-        run,
-        subscribe: (callback) => {
-          emit = callback;
+/** The engine's answer to any statement, after one Soup page, noting each run. */
+function engine(count: () => number, offline: () => boolean = () => false) {
+  const runs: { sql: string; catalog: Catalog }[] = [];
+  const exchange: Exchange = () => (incoming) =>
+    pipe(
+      incoming,
+      mergeMap((operation) => {
+        if (operation.kind === 'teardown') return empty;
+        if (offline())
+          return fromValue({
+            operation,
+            error: new CombinedError({ networkError: new Error('Offline') }),
+            stale: false,
+            hasNext: false,
+          });
+        const data: SoupQuery = {
+          user: {
+            id: 'macro|viewer@databases.test',
+            emailLinks: [],
+            soup: { items: [], nextCursor: null },
+          },
+        };
+        return fromValue({ operation, data, stale: false, hasNext: false });
+      })
+    );
+  const client = createClient({
+    url: 'http://test.invalid/graphql',
+    exchanges: [exchange],
+  });
+  const read: DatabaseSqlQueryCapabilities = {
+    client: () => client,
+    cacheHost: () => undefined,
+    people: async () => [],
+    open: async (catalog, sql) => {
+      runs.push({ catalog, sql });
+      const answer: Outcome = {
+        columns: [{ name: 'COUNT(*)', kind: 'number' }],
+        rows: [[{ type: 'number', value: count() }]],
+        rowIds: [],
+        readTables: ['projects-table'],
+        truncated: false,
+        insertedRowIds: [],
+        changesApplied: 0,
+        failures: [],
+      };
+      return {
+        start: () => ({
+          step: 'fetch',
+          id: 0,
+          query: {
+            type: 'soup',
+            table: 'projects-table',
+            propf: null,
+            keyHint: null,
+          },
+          needs: [],
+          cursor: null,
+          limit: 500,
+        }),
+        feed_page: () => ({ step: 'done', ...answer }),
+        feed_bins: () => {
+          throw 'no bins';
         },
+        free: () => {},
+      };
+    },
+  };
+  return { read, runs };
+}
+
+const workspace: DatabaseDetail = {
+  database: {
+    id: 'db-work',
+    name: 'Work',
+    owner_id: 'owner',
+    created_at: '',
+    trashed_at: null,
+  },
+  grant: 'edit',
+  tables: [
+    {
+      table: {
+        id: 'projects-table',
+        database_id: 'db-work',
+        name: 'Projects',
+        position: 'a',
+        version: 3,
+      },
+      sql_name: '"Work"."Projects"',
+      columns: [],
+    },
+  ],
+};
+const personal: DatabaseDetail = {
+  ...workspace,
+  database: { ...workspace.database, id: 'db-personal', name: 'Personal' },
+  tables: [
+    {
+      ...workspace.tables[0],
+      table: {
+        ...workspace.tables[0].table,
+        id: 'projects-personal',
+        database_id: 'db-personal',
+      },
+      sql_name: '"Personal"."Projects"',
+    },
+  ],
+};
+
+describe('live query source', () => {
+  it('answers a saved query in the browser over every database the viewer can reach, as the exec API would', async () => {
+    const { read, runs } = engine(() => 2);
+    let source!: LiveQuerySource;
+    const dispose = createRoot((dispose) => {
+      source = createLiveQuerySource({
+        statement: () => ({
+          sql: 'SELECT COUNT(*) FROM Projects',
+          databaseId: 'db-work',
+        }),
+        databases: () => [workspace, personal],
+        loadError: () => undefined,
+        subscribe: () => {},
+        read,
       });
-      return <div>{query.status}</div>;
-    }
-    const result = render(() => (
-      <QueryClientProvider client={client}>
-        <Harness />
-      </QueryClientProvider>
-    ));
-    await result.findByText('success');
-    emit('watched', 5);
-    await result.findByText('error');
-    emit('watched', 6);
-    await result.findByText('success');
-    expect(run).toHaveBeenCalledTimes(3);
-    result.unmount();
-    client.clear();
+      return dispose;
+    });
+    await vi.waitFor(() =>
+      expect(source.answer()).toEqual({
+        results: [
+          {
+            columns: [{ name: 'COUNT(*)', entity_type: null, origin: null }],
+            rows: [[2]],
+          },
+        ],
+        read_tables: ['projects-table'],
+        read_database_ids: ['db-work'],
+        read_versions: { 'projects-table': 3 },
+        truncated_tables: [],
+      })
+    );
+    expect(runs).toEqual([
+      {
+        sql: 'SELECT COUNT(*) FROM Projects',
+        catalog: {
+          tables: [
+            {
+              id: 'projects-table',
+              database: 'Work',
+              name: 'Projects',
+              source: 'database',
+              columns: [],
+            },
+            {
+              id: 'projects-personal',
+              database: 'Personal',
+              name: 'Projects',
+              source: 'database',
+              columns: [],
+            },
+          ],
+        },
+      },
+    ]);
+    expect(source.loading()).toBe(false);
+    dispose();
   });
 
-  it('coalesces newer dependency events and releases pending refreshes on unmount', async () => {
-    const run = vi.fn(async () => outcome);
-    let emit!: (tableId: string, version: number) => void;
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    function Harness() {
-      createLiveQuerySource({
-        queryId: () => 'answer',
-        run,
-        subscribe: (callback) => {
-          emit = callback;
-        },
-      });
-      return null;
-    }
-    const result = render(() => (
-      <QueryClientProvider client={client}>
-        <Harness />
-      </QueryClientProvider>
-    ));
-    await waitFor(() =>
-      expect(
-        client.getQueryData(savedDatabaseQueryKeys.run('answer').queryKey)
-      ).toEqual(outcome)
+  it('reruns once changes to a table it read settle, recovers from a failed rerun, and stops on dispose', async () => {
+    let count = 2;
+    let offline = false;
+    const { read, runs } = engine(
+      () => count,
+      () => offline
     );
+    let emit!: (tableId: string) => void;
+    let source!: LiveQuerySource;
+    const dispose = createRoot((dispose) => {
+      source = createLiveQuerySource({
+        statement: () => ({ sql: 'SELECT COUNT(*) FROM Projects' }),
+        databases: () => [workspace],
+        loadError: () => undefined,
+        subscribe: (onChange) => {
+          emit = onChange;
+        },
+        read,
+      });
+      return dispose;
+    });
+    await vi.waitFor(() =>
+      expect(source.answer()?.results[0].rows).toEqual([[2]])
+    );
+
     vi.useFakeTimers();
-    emit('other', 9);
-    emit('watched', 4);
+    emit('another-table');
     await vi.advanceTimersByTimeAsync(350);
-    expect(run).toHaveBeenCalledTimes(1);
-    emit('watched', 5);
-    emit('watched', 6);
+    expect(runs).toHaveLength(1);
+
+    offline = true;
+    emit('projects-table');
+    emit('projects-table');
     await vi.advanceTimersByTimeAsync(299);
-    expect(run).toHaveBeenCalledTimes(1);
+    expect(runs).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1);
-    expect(run).toHaveBeenCalledTimes(2);
-    emit('watched', 7);
-    result.unmount();
+    await vi.waitFor(() =>
+      expect(source.error()).toBeInstanceOf(CombinedError)
+    );
+    expect(runs).toHaveLength(2);
+    expect(source.answer()?.results[0].rows).toEqual([[2]]);
+
+    offline = false;
+    count = 3;
+    emit('projects-table');
+    await vi.advanceTimersByTimeAsync(300);
+    await vi.waitFor(() =>
+      expect(source.answer()?.results[0].rows).toEqual([[3]])
+    );
+    expect(source.error()).toBeUndefined();
+
+    emit('projects-table');
+    dispose();
     await vi.advanceTimersByTimeAsync(500);
-    expect(run).toHaveBeenCalledTimes(2);
-    client.clear();
+    expect(runs).toHaveLength(3);
+  });
+
+  it('reports why the saved query or the databases could not load', () => {
+    const failure = new Error('This saved question no longer exists.');
+    const dispose = createRoot((dispose) => {
+      const source = createLiveQuerySource({
+        statement: () => undefined,
+        databases: () => undefined,
+        loadError: () => failure,
+        subscribe: () => {},
+        read: engine(() => 0).read,
+      });
+      expect(source.error()).toBe(failure);
+      expect(source.loading()).toBe(false);
+      expect(source.answer()).toBeUndefined();
+      return dispose;
+    });
+    dispose();
   });
 });

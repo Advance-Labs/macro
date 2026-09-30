@@ -1,7 +1,16 @@
-import { useDatabaseQueryRun } from '@queries/storage/database-queries';
-import type { DatabaseDetail, ExecOutcome } from '@service-storage/databases';
-import { onCleanup } from 'solid-js';
-import type { QuerySchema } from '../core/query';
+import { databaseSqlAnswer } from '@core/database-sql/answer';
+import { databaseSqlCatalog } from '@core/database-sql/catalog';
+import {
+  createDatabaseSqlQuery,
+  type DatabaseSqlQueryCapabilities,
+  type DatabaseSqlStatement,
+  refreshInBackground,
+  sameDatabaseSqlStatement,
+} from '@queries/database-sql/create-database-sql-query';
+import type { DatabaseDetail } from '@service-storage/databases';
+import { debounce } from '@solid-primitives/scheduled';
+import { type Accessor, createMemo } from 'solid-js';
+import type { QueryAnswer, QuerySchema } from '../core/query';
 
 export function toQuerySchema(
   detail: DatabaseDetail,
@@ -62,25 +71,69 @@ export function toQuerySchema(
   };
 }
 
-/** Runs a saved query and re-runs it when a table it read moves past that version. */
+/** A saved statement and the database it is scoped to. */
+export type SavedStatement = { sql: string; databaseId?: string };
+
+export type LiveQuerySource = {
+  /** The last answer; kept while a rerun is in flight or after one fails. */
+  answer: Accessor<QueryAnswer | undefined>;
+  error: Accessor<unknown>;
+  loading: Accessor<boolean>;
+  /** Read the answer's tables from the server again. */
+  refresh: () => Promise<void>;
+};
+
+/** Changes to a table an answer read rerun it once they settle. */
+const RERUN_DELAY_MS = 300;
+
+/**
+ * Runs a saved query in the browser over every database the viewer can
+ * reach, as the server would, and reruns it when a table it read changes.
+ */
 export function createLiveQuerySource(input: {
-  queryId: () => string;
-  run: (queryId: string) => Promise<ExecOutcome>;
-  subscribe: (onChange: (tableId: string, version: number) => void) => void;
-}) {
-  const query = useDatabaseQueryRun(input.queryId, input.run);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  input.subscribe((tableId, version) => {
-    // A failed refresh hides the answer, but its last successful dependency
-    // versions still let later table events recover the query automatically.
-    const result = !query.isPending ? query.data : undefined;
-    const readVersion = result?.read_versions[tableId];
-    if (readVersion === undefined || version <= readVersion) return;
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-      void query.refetch();
-    }, 300);
+  /** Undefined until the saved query loads. */
+  statement: Accessor<SavedStatement | undefined>;
+  /** Undefined until they load. */
+  databases: Accessor<DatabaseDetail[] | undefined>;
+  /** Why the statement or the databases could not load. */
+  loadError: Accessor<unknown>;
+  subscribe: (onChange: (tableId: string) => void) => void;
+  /** Where the engine reads rows from; the app's GraphQL client by default. */
+  read?: DatabaseSqlQueryCapabilities;
+}): LiveQuerySource {
+  const statement = createMemo(
+    (): DatabaseSqlStatement | undefined => {
+      const saved = input.statement();
+      const databases = input.databases();
+      return (
+        saved &&
+        databases && {
+          catalog: databaseSqlCatalog(databases, saved.databaseId),
+          sql: saved.sql,
+        }
+      );
+    },
+    undefined,
+    { equals: sameDatabaseSqlStatement }
+  );
+  const query = createDatabaseSqlQuery(statement, input.read);
+  const answer = createMemo(() => {
+    const outcome = query.outcome();
+    const current = statement();
+    const databases = input.databases();
+    return outcome && current && databases
+      ? databaseSqlAnswer(outcome, current.catalog, databases)
+      : undefined;
   });
-  onCleanup(() => clearTimeout(timer));
-  return query;
+  const error = () => input.loadError() ?? query.error();
+  const rerun = debounce(() => refreshInBackground(query), RERUN_DELAY_MS);
+  input.subscribe((tableId) => {
+    if (query.outcome()?.readTables.includes(tableId)) rerun();
+  });
+  return {
+    answer,
+    error,
+    loading: () => query.loading() || (!answer() && error() === undefined),
+    refresh: query.refresh,
+  };
 }

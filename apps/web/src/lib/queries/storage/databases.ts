@@ -124,19 +124,6 @@ export async function execSql(request: ExecRequest): Promise<ExecOutcome> {
   return result.value;
 }
 
-/** Run a read-only query as the viewer. Older servers fail closed with a 404. */
-export async function querySql(sql: string): Promise<ExecOutcome> {
-  const result = await storageServiceClient.databases.query({ sql });
-  if (result.isErr()) {
-    const failure = result.error[0];
-    throw new ExecError(
-      failure?.code ?? 'HTTP_ERROR',
-      failure?.message ?? 'The database could not answer that question.'
-    );
-  }
-  return result.value;
-}
-
 /**
  * Re-read one database's schema. Open reads rerun when the catalog they are
  * built from changes, so a version-only change reruns nothing.

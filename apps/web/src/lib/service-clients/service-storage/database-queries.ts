@@ -13,7 +13,7 @@ import {
 import type { ObjectLike, ResultError } from '@core/util/result';
 import type { Result } from 'neverthrow';
 import { match } from 'ts-pattern';
-import type { ExecErrorCode, ExecOutcome } from './databases';
+import type { ExecErrorCode } from './databases';
 
 export interface DatabaseQueryDefinition {
   version: 1;
@@ -88,13 +88,5 @@ export function saveDatabaseQuery(request: SaveDatabaseQueryRequest) {
 export function getDatabaseQuery(queryId: string) {
   return databaseQueriesFetch<SavedDatabaseQuery>(
     `/databases/queries/${encodeURIComponent(queryId)}`
-  );
-}
-
-/** Runs read-only as the viewer; the server re-checks access on every run. */
-export function runDatabaseQuery(queryId: string) {
-  return databaseQueriesFetch<ExecOutcome>(
-    `/databases/queries/${encodeURIComponent(queryId)}/run`,
-    { method: 'POST' }
   );
 }

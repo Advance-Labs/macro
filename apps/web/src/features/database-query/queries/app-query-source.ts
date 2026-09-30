@@ -1,15 +1,23 @@
+import { databaseSqlAnswer } from '@core/database-sql/answer';
+import { databaseSqlCatalog } from '@core/database-sql/catalog';
 import { throwOnErr } from '@core/util/result';
 import { queryClient } from '@queries/client';
+import { readDatabaseSql } from '@queries/database-sql/create-database-sql-query';
 import {
   createSavedDatabaseQuery,
-  fetchDatabaseQueryRun,
+  useDatabaseQueryDefinition,
 } from '@queries/storage/database-queries';
-import { querySql } from '@queries/storage/databases';
-import { databaseQueryKeys, databasesKeys } from '@queries/storage/keys';
+import {
+  fetchViewerDatabases,
+  useViewerDatabases,
+} from '@queries/storage/databases';
+import { useDatabaseTableChanges } from '@queries/storage/databases-sync';
+import { databasesKeys } from '@queries/storage/keys';
 import { useEntitySubscription } from '@service-connection/client';
-import { createConnectionWebsocketEffect } from '@service-connection/websocket';
 import { storageServiceClient } from '@service-storage/client';
+import type { Accessor } from 'solid-js';
 import type { QueryCapabilities } from '../context/query-context';
+import { createLiveQuerySource, type LiveQuerySource } from './query-source';
 import { createQuestionCapabilities } from './question-capabilities';
 
 /** Production transport adapters; the composer only receives these narrow capabilities. */
@@ -20,12 +28,16 @@ export const queryCapabilities: QueryCapabilities = createQuestionCapabilities({
     );
     return generateDatabaseQuery(input);
   },
-  read: (sql) =>
-    queryClient.fetchQuery({
-      queryKey: databaseQueryKeys.answer(sql).queryKey,
-      queryFn: () => querySql(sql),
-      staleTime: 0,
-    }),
+  // A draft question may read any database the viewer can reach.
+  read: async (sql) => {
+    const databases = await fetchViewerDatabases();
+    const catalog = databaseSqlCatalog(databases);
+    return databaseSqlAnswer(
+      await readDatabaseSql({ catalog, sql }),
+      catalog,
+      databases
+    );
+  },
   describe: (databaseId) =>
     queryClient.fetchQuery({
       queryKey: databasesKeys.detail(databaseId).queryKey,
@@ -36,7 +48,27 @@ export const queryCapabilities: QueryCapabilities = createQuestionCapabilities({
       staleTime: 0,
     }),
 });
-export const runSavedQuery = fetchDatabaseQueryRun;
+
+/** A saved question's live answer, run in the browser. */
+export function createSavedQuestionSource(
+  queryId: Accessor<string>
+): LiveQuerySource {
+  const definition = useDatabaseQueryDefinition(queryId);
+  const viewer = useViewerDatabases();
+  return createLiveQuerySource({
+    statement: () =>
+      definition.isSuccess
+        ? {
+            sql: definition.data.definition.query,
+            databaseId: definition.data.databaseId ?? undefined,
+          }
+        : undefined,
+    databases: viewer.databases,
+    loadError: () => (definition.isError ? definition.error : viewer.error()),
+    subscribe: (onChange) =>
+      useDatabaseTableChanges((change) => onChange(change.tableId)),
+  });
+}
 
 /** Saved queries are immutable: every new SQL text becomes a new row. */
 export async function saveQuestionSql(input: {
@@ -48,27 +80,6 @@ export async function saveQuestionSql(input: {
     ...(input.databaseId ? { databaseId: input.databaseId } : {}),
   });
   return saved.id;
-}
-
-export function subscribeToQueryChanges(
-  onChange: (tableId: string, version: number) => void
-) {
-  createConnectionWebsocketEffect((message) => {
-    if (message.type !== 'database_table_changed') return;
-    try {
-      const data =
-        typeof message.data === 'string'
-          ? JSON.parse(message.data)
-          : message.data;
-      if (
-        typeof data?.tableId === 'string' &&
-        typeof data?.version === 'number'
-      )
-        onChange(data.tableId, data.version);
-    } catch {
-      /* Invalid events do not change query state. */
-    }
-  });
 }
 
 export function trackQueryDatabase(id: string, onRefresh: () => void) {

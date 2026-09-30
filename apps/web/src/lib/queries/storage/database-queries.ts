@@ -10,12 +10,10 @@ import { createQueryKeys } from '@lukemorales/query-key-factory';
 import {
   type DatabaseQueryErrorCode,
   getDatabaseQuery,
-  runDatabaseQuery,
   type SaveDatabaseQueryRequest,
   type SavedDatabaseQuery,
   saveDatabaseQuery,
 } from '@service-storage/database-queries';
-import type { ExecOutcome } from '@service-storage/databases';
 import { useQuery } from '@tanstack/solid-query';
 import type { Result } from 'neverthrow';
 import type { Accessor } from 'solid-js';
@@ -24,7 +22,6 @@ import { ExecError } from './databases';
 
 export const savedDatabaseQueryKeys = createQueryKeys('saved-database-query', {
   definition: (queryId: string) => ({ queryKey: [queryId] }),
-  run: (queryId: string) => ({ queryKey: [queryId] }),
 });
 
 function throwOnFailure<Value>(
@@ -53,16 +50,6 @@ export async function fetchDatabaseQuery(
   );
 }
 
-/** Run a saved query as the viewer. Throws an [`ExecError`] on failure. */
-export async function fetchDatabaseQueryRun(
-  queryId: string
-): Promise<ExecOutcome> {
-  return throwOnFailure(
-    await runDatabaseQuery(queryId),
-    'The database could not answer that question.'
-  );
-}
-
 /** Save SQL as a new immutable query and seed its definition cache. */
 export async function createSavedDatabaseQuery(
   request: SaveDatabaseQueryRequest
@@ -86,21 +73,4 @@ export function useDatabaseQueryDefinition(queryId: Accessor<string>) {
     staleTime: Number.POSITIVE_INFINITY,
     retry: false,
   }));
-}
-
-export function useDatabaseQueryRun(
-  queryId: Accessor<string>,
-  run: (queryId: string) => Promise<ExecOutcome> = fetchDatabaseQueryRun
-) {
-  return useQuery(() => {
-    const id = queryId();
-    return {
-      queryKey: savedDatabaseQueryKeys.run(id).queryKey,
-      queryFn: () => run(id),
-      enabled: !!id,
-      staleTime: 30_000,
-      retry: false,
-      refetchOnWindowFocus: true,
-    };
-  });
 }

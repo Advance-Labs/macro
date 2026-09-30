@@ -1,3 +1,4 @@
+import { refreshInBackground } from '@queries/database-sql/create-database-sql-query';
 import { useDatabaseQueryDefinition } from '@queries/storage/database-queries';
 import {
   useDatabaseDetailQuery,
@@ -16,13 +17,12 @@ import {
   type SavedQuestion,
 } from './core/query';
 import {
+  createSavedQuestionSource,
   queryCapabilities,
-  runSavedQuery,
   saveQuestionSql,
-  subscribeToQueryChanges,
   trackQueryDatabase,
 } from './queries/app-query-source';
-import { createLiveQuerySource, toQuerySchema } from './queries/query-source';
+import { toQuerySchema } from './queries/query-source';
 import { saveQuestion } from './queries/saved-question';
 import { LiveQuestion } from './views/live-question';
 import { QueryEditor } from './views/query-editor';
@@ -190,34 +190,33 @@ export function DatabaseLiveQuestion(props: {
   onSave?: (source: SavedQuestion) => void;
   onDiscard?: () => void;
 }) {
-  const query = createLiveQuerySource({
-    queryId: () => props.source.queryId,
-    run: runSavedQuery,
-    subscribe: subscribeToQueryChanges,
-  });
+  const query = createSavedQuestionSource(() => props.source.queryId);
+  // A failed read keeps the last answer's tracking, so a later change can
+  // still recover it.
   const trackingIds = () =>
     Array.from(
       new Set([
         ...(props.source.databaseId ? [props.source.databaseId] : []),
-        ...(!query.isPending ? (query.data?.read_database_ids ?? []) : []),
+        ...(query.answer()?.read_database_ids ?? []),
       ])
     );
+  const refresh = () => refreshInBackground(query);
   return (
     <AppAnswerDisplay>
       <For each={trackingIds()}>
         {(id) => {
           trackQueryDatabase(id, () => {
-            if (props.source.queryId) void query.refetch();
+            if (props.source.queryId) refresh();
           });
           return null;
         }}
       </For>
       <LiveQuestion
         source={props.source}
-        answer={query.isSuccess ? query.data : undefined}
-        loading={query.isFetching}
-        error={query.isError ? query.error : undefined}
-        onRefresh={() => void query.refetch()}
+        answer={query.answer()}
+        loading={query.loading()}
+        error={query.error()}
+        onRefresh={refresh}
         onRename={
           props.onSave
             ? (title) => props.onSave?.({ ...props.source, title })

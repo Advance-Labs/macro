@@ -1,4 +1,4 @@
-import type { DatabaseDetail, ExecOutcome } from '@service-storage/databases';
+import type { DatabaseDetail } from '@service-storage/databases';
 import { fireEvent, render, waitFor } from '@solidjs/testing-library';
 import { QueryClient, QueryClientProvider } from '@tanstack/solid-query';
 import { type Accessor, createSignal, type JSX, onCleanup } from 'solid-js';
@@ -14,11 +14,13 @@ import {
   DatabaseLiveQuestion,
   DatabaseQuestionPanel,
 } from './database-query';
+import type { LiveQuerySource } from './queries/query-source';
 
 const adapters = vi.hoisted(() => ({
   useDatabasesQuery: vi.fn(),
   useDatabaseDetailQuery: vi.fn(),
-  runSavedQuery: vi.fn<(queryId: string) => Promise<ExecOutcome>>(),
+  createSavedQuestionSource:
+    vi.fn<(queryId: () => string) => LiveQuerySource>(),
   trackQueryDatabase: vi.fn<(id: string, refresh: () => void) => void>(),
   saveQuestionSql:
     vi.fn<(input: { sql: string; databaseId?: string }) => Promise<string>>(),
@@ -36,9 +38,8 @@ vi.mock('@queries/storage/databases', () => ({
 }));
 vi.mock('./queries/app-query-source', () => ({
   queryCapabilities: { generate: vi.fn(), read: vi.fn() },
-  runSavedQuery: adapters.runSavedQuery,
+  createSavedQuestionSource: adapters.createSavedQuestionSource,
   saveQuestionSql: adapters.saveQuestionSql,
-  subscribeToQueryChanges: () => {},
   trackQueryDatabase: adapters.trackQueryDatabase,
 }));
 vi.mock('./answer-display', () => ({
@@ -158,16 +159,26 @@ const detail: DatabaseDetail = {
   grant: 'owner',
   tables: [],
 };
-const outcome: ExecOutcome = {
+const answer: QueryAnswer = {
   results: [],
-  changes_applied: 0,
-  inserted_row_ids: [],
-  new_versions: {},
   read_tables: ['joined_table'],
   read_database_ids: ['joined_database'],
   read_versions: { joined_table: 4 },
   truncated_tables: [],
 };
+
+/** A saved question's source whose answer and error the test sets. */
+function fakeSource() {
+  const [current, setAnswer] = createSignal<QueryAnswer>();
+  const [error, setError] = createSignal<unknown>();
+  const source: LiveQuerySource = {
+    answer: current,
+    error,
+    loading: () => false,
+    refresh: vi.fn(async () => {}),
+  };
+  return { source, setAnswer, setError };
+}
 afterEach(() => vi.clearAllMocks());
 
 describe('database question production wiring', () => {
@@ -369,38 +380,33 @@ describe('database question production wiring', () => {
     result.unmount();
   });
 
-  it('retains joined database tracking after a failed refetch while hiding the failed answer', async () => {
-    const tracked = new Set<string>();
-    adapters.trackQueryDatabase.mockImplementation((id) => {
-      tracked.add(id);
+  it('retains joined database tracking after a failed read while hiding the failed answer', async () => {
+    const tracked = new Map<string, () => void>();
+    adapters.trackQueryDatabase.mockImplementation((id, refresh) => {
+      tracked.set(id, refresh);
       onCleanup(() => tracked.delete(id));
     });
-    adapters.runSavedQuery
-      .mockResolvedValueOnce(outcome)
-      .mockRejectedValueOnce(new Error('Temporary network failure'))
-      .mockResolvedValue(outcome);
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    const result = render(() => (
-      <QueryClientProvider client={client}>
-        <DatabaseLiveQuestion source={saved} />
-      </QueryClientProvider>
-    ));
-    await result.findByText('answer');
-    expect(adapters.runSavedQuery).toHaveBeenCalledWith('saved-count');
-    await waitFor(() =>
-      expect([...tracked]).toEqual(['source', 'joined_database'])
+    const fake = fakeSource();
+    adapters.createSavedQuestionSource.mockReturnValue(fake.source);
+    const result = render(() => <DatabaseLiveQuestion source={saved} />);
+    expect(adapters.createSavedQuestionSource.mock.calls[0]?.[0]()).toBe(
+      'saved-count'
     );
-    await client.refetchQueries();
+    fake.setAnswer(answer);
+    await result.findByText('answer');
+    await waitFor(() =>
+      expect([...tracked.keys()]).toEqual(['source', 'joined_database'])
+    );
+    fake.setError(new Error('Temporary network failure'));
     await result.findByText('failed');
     expect(result.queryByText('answer')).toBeNull();
-    expect([...tracked]).toEqual(['source', 'joined_database']);
-    await client.refetchQueries();
+    expect([...tracked.keys()]).toEqual(['source', 'joined_database']);
+    tracked.get('joined_database')?.();
+    expect(fake.source.refresh).toHaveBeenCalledOnce();
+    fake.setError(undefined);
     await result.findByText('answer');
     result.unmount();
     expect(tracked.size).toBe(0);
-    client.clear();
   });
 
   it('asks a new answer, saving its SQL as a query and pointing the node at it', async () => {
@@ -409,7 +415,7 @@ describe('database question production wiring', () => {
       isPending: false,
       data: detail,
     });
-    adapters.runSavedQuery.mockResolvedValue(outcome);
+    adapters.createSavedQuestionSource.mockReturnValue(fakeSource().source);
     adapters.saveQuestionSql.mockResolvedValue('new-count');
     const onSave = vi.fn();
     const client = new QueryClient({
