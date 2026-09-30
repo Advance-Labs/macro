@@ -1,6 +1,7 @@
 /**
  * Typed surface of the generated wasm package (`database_sql`), loaded
- * dynamically so the repo type-checks without the generated artifacts.
+ * dynamically so the repo type-checks without the generated artifacts and
+ * the engine never slows app startup.
  *
  * Build the package with:
  *   just build-database-sql-wasm
@@ -15,7 +16,7 @@ import type { Bin, Catalog, Page, Step } from './protocol';
  * first step once, then feed each request's answer back until `done`.
  * Every method throws a string the agent should read.
  */
-export interface Query {
+export interface DatabaseSqlQuery {
   start: () => Step;
   feed_page: (requestId: number, page: Page) => Step;
   feed_bins: (requestId: number, bins: Bin[]) => Step;
@@ -29,7 +30,7 @@ interface DatabaseSqlWasmModule {
   Query: new (
     catalog: Catalog,
     sql: string
-  ) => Query;
+  ) => DatabaseSqlQuery;
 }
 
 let modulePromise: Promise<DatabaseSqlWasmModule> | undefined;
@@ -52,4 +53,13 @@ export function loadDatabaseSqlWasm(): Promise<DatabaseSqlWasmModule> {
     })();
   }
   return modulePromise;
+}
+
+/** Compile `sql` against `catalog` in the wasm engine, loading it on first use. */
+export async function openDatabaseSqlQuery(
+  catalog: Catalog,
+  sql: string
+): Promise<DatabaseSqlQuery> {
+  const { Query } = await loadDatabaseSqlWasm();
+  return new Query(catalog, sql);
 }

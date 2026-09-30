@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+mod transcripts;
+
 use filter_ast::Expr;
 use item_filters::ast::properties::{PropertiesLiteral, PropertyMatchValue};
 
@@ -269,6 +271,39 @@ fn inner_join_drops_tasks_without_a_match_and_counts_joined_rows() {
         ]
     );
     assert_eq!(outcome.row_ids, Vec::<Uuid>::new());
+}
+
+#[test]
+fn a_joined_tables_rows_arrive_keyed_by_definition_and_the_engine_keys_them() {
+    // A source serves every table the same way, cells by property
+    // definition; the engine gives the joined relation its own keys, so the
+    // people row's `name` cannot overwrite the deal's.
+    let (outcome, requests) = drive(
+        &catalog(),
+        "SELECT d.name, p.name FROM crm.deals d JOIN crm.people p ON d.owner = p.row_id",
+        |query| match query {
+            GqlQuery::Soup { table, .. } if *table == DEALS => vec![Row {
+                id: ACME,
+                cells: HashMap::from([
+                    (NAME, Cell::Text("Acme".into())),
+                    (
+                        OWNER,
+                        Cell::Entities(vec![Uuid::from_u128(0x99).to_string()]),
+                    ),
+                ]),
+            }],
+            GqlQuery::Soup { table, .. } if *table == PEOPLE => vec![Row {
+                id: Uuid::from_u128(0x99),
+                cells: HashMap::from([(NAME, Cell::Text("Sam".into()))]),
+            }],
+            other => panic!("unexpected {other:?}"),
+        },
+    );
+    assert_eq!(outcome.rows, vec![vec![text("Acme"), text("Sam")]]);
+    assert_eq!(
+        requests[1].needs,
+        vec![column_key(1, NAME), crate::resolve::row_id_key(PEOPLE)]
+    );
 }
 
 #[test]

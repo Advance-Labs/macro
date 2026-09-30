@@ -8,9 +8,12 @@ pub struct Ident(pub String);
 
 /// One parsed statement.
 #[derive(Debug, Clone, PartialEq)]
-#[expect(
-    clippy::large_enum_variant,
-    reason = "a statement is parsed once and moved once; boxing the select would only add noise to every test literal"
+#[cfg_attr(
+    not(target_arch = "wasm32"),
+    expect(
+        clippy::large_enum_variant,
+        reason = "a statement is parsed once and moved once; boxing the select would only add noise to every test literal"
+    )
 )]
 pub enum Statement {
     /// A `SELECT`.

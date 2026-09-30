@@ -493,6 +493,25 @@ fn a_condition_spanning_relations_stays_residual_and_bins_need_one_relation() {
 }
 
 #[test]
+fn counting_per_member_of_a_multi_valued_column_folds_rows() {
+    // Soup bins a multi-select row once per option it holds; SQL groups by
+    // the whole cell, so the bins cannot answer it.
+    let plan = split(
+        &catalog(),
+        select("SELECT tags, COUNT(*) FROM crm.deals GROUP BY tags"),
+    );
+    assert_eq!(
+        plan.relations[0].gql,
+        GqlQuery::Soup {
+            table: DEALS,
+            propf: None,
+            key_hint: None,
+        }
+    );
+    assert_eq!(plan.relations[0].needs, vec![TAGS]);
+}
+
+#[test]
 fn a_row_id_condition_never_pushes_down() {
     let plan = split(
         &catalog(),

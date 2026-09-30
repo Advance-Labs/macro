@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use crate::catalog::Catalog;
 use crate::fold::{Bin, Cell, Row, fold_bins, fold_relations};
-use crate::resolve::{Query, SelectQuery, compile, row_id_key};
+use crate::resolve::{Query, SelectQuery, column_key, compile, row_id_key};
 use crate::run::{Outcome, OutcomeColumn, PAGE_LIMIT, Page, ROW_CAP, RunError, describe};
 use crate::split::{GqlQuery, KeyHint, Plan, Shape, split};
 
@@ -104,11 +104,14 @@ impl Engine {
         &self.plan
     }
 
-    /// Take one page of the outstanding request.
+    /// Take one page of the outstanding request. Cells may be keyed by
+    /// property definition, as a source reads them; the engine keys a
+    /// joined relation's cells itself (see [`column_key`]).
     pub fn feed_page(&mut self, request_id: u32, page: Page) -> Result<Step, RunError> {
         self.take(request_id)?;
+        let keyed = self.keyed(page.rows);
         let rows = &mut self.fetched[self.current];
-        rows.extend(page.rows);
+        rows.extend(keyed);
         if rows.len() >= ROW_CAP {
             if rows.len() > ROW_CAP {
                 rows.truncate(ROW_CAP);
@@ -127,6 +130,40 @@ impl Engine {
         self.take(request_id)?;
         let rows = fold_bins(&self.catalog, &self.plan, bins);
         Ok(Step::Done(self.outcome(rows, Vec::new())))
+    }
+
+    /// A joined relation's cells under the keys the plan uses for it: a
+    /// cell keyed by one of its table's definitions moves to that column's
+    /// key for this relation. The `FROM` relation's keys are its
+    /// definitions already, and a cell keyed some other way is kept as is.
+    fn keyed(&self, rows: Vec<Row>) -> Vec<Row> {
+        if self.current == 0 {
+            return rows;
+        }
+        let table = self.plan.relations[self.current].relation.table;
+        let definitions: Vec<Uuid> = self
+            .catalog
+            .tables
+            .iter()
+            .find(|candidate| candidate.id == table)
+            .map(|table| table.columns.iter().map(|column| column.id).collect())
+            .unwrap_or_default();
+        rows.into_iter()
+            .map(|row| Row {
+                id: row.id,
+                cells: row
+                    .cells
+                    .into_iter()
+                    .map(|(key, cell)| {
+                        if definitions.contains(&key) {
+                            (column_key(self.current, key), cell)
+                        } else {
+                            (key, cell)
+                        }
+                    })
+                    .collect(),
+            })
+            .collect()
     }
 
     fn take(&mut self, request_id: u32) -> Result<(), RunError> {

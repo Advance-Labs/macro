@@ -1,83 +1,111 @@
 import { describe, expect, it, vi } from 'vitest';
-import { runQuery } from './driver';
-import type { Catalog, Outcome, Page, Request, Step } from './protocol';
-import type { Query } from './wasm-module';
+import { DatabaseSqlError, runDatabaseSql } from './driver';
+import type { Bin, GqlQuery, Page } from './protocol';
+import { readTranscript, replay } from './tests/transcript';
 
-const catalog: Catalog = { tables: [] };
+describe('runDatabaseSql', () => {
+  it('asks the source for each page the engine wants, following the cursor', async () => {
+    const paging = readTranscript('paging');
+    const page = vi.fn(
+      async (
+        _query: GqlQuery,
+        _needs: string[],
+        cursor: string | null,
+        _limit: number
+      ): Promise<Page> => {
+        const exchange = paging.exchanges[cursor === null ? 0 : 1];
+        if (!('page' in exchange)) throw new Error('recorded bins');
+        return exchange.page;
+      }
+    );
 
-const outcome: Outcome = {
-  columns: [{ name: 'email', kind: 'text' }],
-  rows: [[{ type: 'text', value: 'sam@example.com' }]],
-  rowIds: [],
-  readTables: [],
-  truncated: false,
-  insertedRowIds: [],
-  changesApplied: 0,
-  failures: [],
-};
+    const outcome = await runDatabaseSql(paging.catalog, paging.sql, {
+      source: { page, bins: vi.fn() },
+      open: replay(paging),
+    });
 
-const request = (id: number, cursor: string | null): Request => ({
-  id,
-  query: { type: 'people', ids: null },
-  needs: [],
-  cursor,
-  limit: 500,
-});
-
-/** An engine that wants two pages of people, then answers. */
-function fakeQuery(): Query & { fed: [number, Page][]; freed: boolean } {
-  const query = {
-    fed: [] as [number, Page][],
-    freed: false,
-    start: (): Step => ({ step: 'fetch', ...request(0, null) }),
-    feed_page: (id: number, page: Page): Step => {
-      query.fed.push([id, page]);
-      return page.next
-        ? { step: 'fetch', ...request(id + 1, page.next) }
-        : { step: 'done', ...outcome };
-    },
-    feed_bins: (): Step => {
-      throw new Error('no bins');
-    },
-    free: () => {
-      query.freed = true;
-    },
-  };
-  return query;
-}
-
-describe('runQuery', () => {
-  it('feeds every requested page back by id until the engine is done', async () => {
-    const query = fakeQuery();
-    const pages: Page[] = [
-      { rows: [{ id: 'a', cells: {} }], next: 'more' },
-      { rows: [{ id: 'b', cells: {} }], next: null },
-    ];
-    const server = {
-      page: vi.fn(async (req: Request) => pages[req.cursor ? 1 : 0]),
-      bins: vi.fn(),
-    };
-
-    const result = await runQuery(() => query, catalog, 'SELECT …', server);
-
-    expect(result).toEqual(outcome);
-    expect(server.page).toHaveBeenCalledTimes(2);
-    expect(server.page.mock.calls[1][0].cursor).toBe('more');
-    expect(query.fed.map(([id]) => id)).toEqual([0, 1]);
-    expect(server.bins).not.toHaveBeenCalled();
-    expect(query.freed).toBe(true);
+    expect(outcome).toEqual(paging.outcome);
+    expect(page.mock.calls).toEqual([
+      [
+        {
+          type: 'soup',
+          table: '01990000-0000-7000-8000-00000000d001',
+          propf: null,
+          keyHint: null,
+        },
+        ['01990000-0000-7000-8000-00000000c001'],
+        null,
+        500,
+      ],
+      [
+        {
+          type: 'soup',
+          table: '01990000-0000-7000-8000-00000000d001',
+          propf: null,
+          keyHint: null,
+        },
+        ['01990000-0000-7000-8000-00000000c001'],
+        'second-page',
+        500,
+      ],
+    ]);
   });
 
-  it('frees the engine when the server fails', async () => {
-    const query = fakeQuery();
-    await expect(
-      runQuery(() => query, catalog, 'SELECT …', {
-        page: async () => {
-          throw new Error('gateway timed out');
+  it('answers a grouped count from the bins alone', async () => {
+    const counts = readTranscript('count-per-option');
+    const bins = vi.fn(async (): Promise<Bin[]> => {
+      const exchange = counts.exchanges[0];
+      if (!('bins' in exchange)) throw new Error('recorded a page');
+      return exchange.bins;
+    });
+    const page = vi.fn();
+
+    const outcome = await runDatabaseSql(counts.catalog, counts.sql, {
+      source: { page, bins },
+      open: replay(counts),
+    });
+
+    expect(outcome).toEqual(counts.outcome);
+    expect(bins.mock.calls).toEqual([
+      [
+        {
+          type: 'groupSoup',
+          table: '01990000-0000-7000-8000-00000000d001',
+          propf: null,
+          groupBy: '01990000-0000-7000-8000-00000000c003',
         },
-        bins: async () => [],
+      ],
+    ]);
+    expect(page).not.toHaveBeenCalled();
+  });
+
+  it('reports a statement the engine refuses as an error, freeing nothing it never opened', async () => {
+    await expect(
+      runDatabaseSql({ tables: [] }, 'SELECT name FROM crm.deals', {
+        source: { page: vi.fn(), bins: vi.fn() },
+        open: async () => {
+          throw 'no such table: crm.deals';
+        },
+      })
+    ).rejects.toEqual(new DatabaseSqlError('no such table: crm.deals'));
+  });
+
+  it('frees the engine when the source fails', async () => {
+    const paging = readTranscript('paging');
+    const free = vi.fn();
+    const open = replay(paging);
+
+    await expect(
+      runDatabaseSql(paging.catalog, paging.sql, {
+        source: {
+          page: async () => {
+            throw new Error('gateway timed out');
+          },
+          bins: vi.fn(),
+        },
+        open: async (catalog, sql) => ({ ...(await open(catalog, sql)), free }),
       })
     ).rejects.toThrow('gateway timed out');
-    expect(query.freed).toBe(true);
+    expect(free).toHaveBeenCalledTimes(1);
   });
 });

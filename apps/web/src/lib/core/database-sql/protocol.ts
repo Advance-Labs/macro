@@ -1,7 +1,9 @@
 /**
  * The shapes that cross the wasm boundary, mirroring the `serde` forms of
  * `database_sql`'s `Step`, `Request`, `GqlQuery`, `Page`, `Row`, `Cell`,
- * `Bin`, `Outcome`, and `Catalog`. Keys are UUID strings.
+ * `Bin`, `Outcome`, and `Catalog`. Keys are UUID strings. The engine's
+ * transcripts in `crates/database_sql/fixtures/transcripts` are real values
+ * of these shapes; the driver's tests replay them.
  */
 
 export type Cell =
@@ -35,7 +37,7 @@ export type Propf =
   | { '&': [Propf, Propf] }
   | { '|': [Propf, Propf] }
   | { '!': Propf }
-  | { l: { pd: string; v: { so: string } | { er: string } } };
+  | { l: { pd: string; et?: string; v: { so: string } | { er: string } } };
 
 /** The values a joined relation is matched on. */
 export interface KeyHint {

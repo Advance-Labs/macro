@@ -306,7 +306,9 @@ impl Plan {
 }
 
 /// Whether `groupSoup` can bin on the key: only select and entity values of
-/// a database table are indexed as facts.
+/// a database table are indexed as facts, and only a single-valued cell
+/// lands in exactly one bin (Soup bins a multi-valued cell once per member,
+/// where SQL groups by the whole cell).
 fn groups_server_side(
     catalog: &Catalog,
     bindings: &[Binding],
@@ -316,7 +318,7 @@ fn groups_server_side(
     column_of(catalog, bindings, relations, key).is_some_and(|column| {
         matches!(
             column.kind,
-            ColumnKind::Select { .. } | ColumnKind::Entity { .. }
+            ColumnKind::Select { multi: false, .. } | ColumnKind::Entity { multi: false }
         )
     })
 }
