@@ -15812,6 +15812,7 @@ dependencies = [
  "documents",
  "doppler-config",
  "entity_access",
+ "entity_access_db_utils",
  "entity_registry",
  "entity_registry_db_utils",
  "futures",
