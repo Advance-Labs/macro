@@ -270,11 +270,12 @@ async fn read(
 pub(crate) fn describe(
     catalog: &Catalog,
     items: &[SelectItem],
+    labels: &[(usize, String)],
     bindings: &[Binding],
     relations: &[Relation],
 ) -> Vec<OutcomeColumn> {
     let column = |key: Uuid| column_of(catalog, bindings, relations, key);
-    items
+    let mut columns: Vec<OutcomeColumn> = items
         .iter()
         .map(|item| match item {
             SelectItem::Column(key) => {
@@ -324,5 +325,11 @@ pub(crate) fn describe(
                 }
             }
         })
-        .collect()
+        .collect();
+    for (index, label) in labels {
+        if let Some(column) = columns.get_mut(*index) {
+            column.name = label.clone();
+        }
+    }
+    columns
 }

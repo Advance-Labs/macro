@@ -77,7 +77,13 @@ impl Engine {
 
     /// Plan a resolved `SELECT` and ask for its first fetch.
     pub fn from_select(catalog: &Catalog, select: SelectQuery) -> (Engine, Step) {
-        let columns = describe(catalog, &select.items, &select.bindings, &select.relations);
+        let columns = describe(
+            catalog,
+            &select.items,
+            &select.labels,
+            &select.bindings,
+            &select.relations,
+        );
         let plan = split(catalog, select);
         let mut engine = Engine {
             catalog: catalog.clone(),

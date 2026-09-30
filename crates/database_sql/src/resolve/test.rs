@@ -28,6 +28,7 @@ fn grouped_aggregate_with_mixed_where() {
         }],
         joins: vec![],
         bindings: vec![],
+        labels: vec![],
         items: vec![
             SelectItem::Column(OWNER),
             SelectItem::Agg {
@@ -111,6 +112,7 @@ fn star_expands_and_every_column_kind_types_its_literal() {
         }],
         joins: vec![],
         bindings: vec![],
+        labels: vec![],
         items: vec![
             SelectItem::Column(NAME),
             SelectItem::Column(AMOUNT),
@@ -198,6 +200,7 @@ fn order_by_aggregate_resolves_to_its_select_item() {
         }],
         joins: vec![],
         bindings: vec![],
+        labels: vec![],
         items: vec![
             SelectItem::Column(STAGE),
             SelectItem::Agg {
@@ -319,6 +322,7 @@ fn joins_key_each_relation_and_record_bindings() {
                 on: vec![(DEAL, row_id_key(DEALS))],
             },
         ],
+        labels: vec![],
         items: vec![
             SelectItem::Column(people_email),
             SelectItem::Column(row_id_key(TASKS)),

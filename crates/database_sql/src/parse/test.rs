@@ -21,6 +21,7 @@ fn grouped_aggregate_with_mixed_where() {
 
     let expected = Statement::Select(Select {
         distinct: false,
+        aliases: vec![],
         items: vec![
             Item::Column(col("owner")),
             Item::Agg(Agg {
@@ -80,6 +81,7 @@ fn or_binds_looser_than_and_and_parens_override() {
 
     let expected = Statement::Select(Select {
         distinct: false,
+        aliases: vec![],
         items: vec![Item::Star],
         from: FromItem {
             table: TableName {
@@ -142,6 +144,7 @@ fn every_atom_form_and_literal_kind() {
 
     let expected = Statement::Select(Select {
         distinct: false,
+        aliases: vec![],
         items: vec![Item::Column(col("name"))],
         from: FromItem {
             table: TableName {
@@ -217,6 +220,7 @@ fn order_by_column_aggregate_and_position() {
 
     let expected = Statement::Select(Select {
         distinct: false,
+        aliases: vec![],
         items: vec![
             Item::Column(col("stage")),
             Item::Agg(Agg {
@@ -276,6 +280,7 @@ fn distinct_aliases_and_joins() {
 
     let expected = Statement::Select(Select {
         distinct: true,
+        aliases: vec![],
         items: vec![
             Item::Column(qualified("p", "email")),
             Item::Column(qualified("t", "row_id")),
@@ -332,12 +337,68 @@ fn distinct_aliases_and_joins() {
 }
 
 #[test]
+fn item_aliases_and_membership_joins() {
+    let sql = "
+        SELECT p.email AS person, COUNT(*) deals
+        FROM crm.deals d
+        JOIN crm.people p ON d.owner HAS p.id
+        GROUP BY p.email
+        ORDER BY deals DESC
+    ";
+    let qualified = |table: &str, column: &str| ColumnRef {
+        table: Some(Ident(table.into())),
+        column: Ident(column.into()),
+    };
+
+    let expected = Statement::Select(Select {
+        distinct: false,
+        items: vec![
+            Item::Column(qualified("p", "email")),
+            Item::Agg(Agg {
+                func: AggFn::Count,
+                arg: None,
+            }),
+        ],
+        aliases: vec![(0, Ident("person".into())), (1, Ident("deals".into()))],
+        from: FromItem {
+            table: TableName {
+                database: Some(Ident("crm".into())),
+                table: Ident("deals".into()),
+            },
+            alias: Some(Ident("d".into())),
+        },
+        joins: vec![Join {
+            kind: JoinKind::Inner,
+            table: FromItem {
+                table: TableName {
+                    database: Some(Ident("crm".into())),
+                    table: Ident("people".into()),
+                },
+                alias: Some(Ident("p".into())),
+            },
+            on: vec![(qualified("d", "owner"), qualified("p", "id"))],
+        }],
+        where_: None,
+        group_by: Some(qualified("p", "email")),
+        order_by: vec![OrderBy {
+            key: OrderKey::Column(col("deals")),
+            dir: Dir::Desc,
+        }],
+        limit: None,
+        offset: None,
+    });
+
+    assert_eq!(parse(sql).unwrap(), expected);
+}
+
+#[test]
 fn keywords_are_usable_as_column_names_when_quoted() {
     // `count` unquoted is the aggregate keyword; quoted it is a column.
     let sql = "SELECT \"count\", COUNT(\"order\") FROM stats WHERE \"from\" = 'x'";
 
     let expected = Statement::Select(Select {
         distinct: false,
+        aliases: vec![],
         items: vec![
             Item::Column(col("count")),
             Item::Agg(Agg {
@@ -477,6 +538,7 @@ fn list_values_default_values_and_limit_offset() {
     let sql = "SELECT name FROM crm.deals ORDER BY name LIMIT 10 OFFSET 20";
     let expected = Statement::Select(Select {
         distinct: false,
+        aliases: vec![],
         items: vec![Item::Column(ColumnRef {
             table: None,
             column: Ident("name".into()),
@@ -530,9 +592,14 @@ fn rejections_point_at_the_offending_token() {
             "expected JOIN after LEFT, found \"crm\"",
         ),
         (
-            "SELECT name AS n FROM crm.deals",
-            12..14,
-            "expected FROM, found AS",
+            "SELECT name AS FROM crm.deals",
+            15..19,
+            "expected a name for the column after AS, found FROM",
+        ),
+        (
+            "SELECT d.name FROM crm.deals d, crm.people p",
+            30..31,
+            "tables are combined with JOIN … ON a.column = b.row_id, not a comma",
         ),
         (
             "SELECT stage, SUM(amount) FROM crm.deals GROUP BY stage HAVING SUM(amount) > 1",
@@ -542,7 +609,7 @@ fn rejections_point_at_the_offending_token() {
         (
             "SELECT name FROM crm.deals WHERE owner IN (SELECT id FROM crm.people)",
             43..49,
-            "expected a value: 'text', a number, TRUE, FALSE or NULL, found SELECT",
+            "subqueries are not supported: run the inner SELECT on its own first and use the values it returns",
         ),
         (
             "SELECT LOWER(name) FROM crm.deals",

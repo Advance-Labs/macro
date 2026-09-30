@@ -30,6 +30,8 @@ pub struct Select {
     pub distinct: bool,
     /// The select list.
     pub items: Vec<Item>,
+    /// `item AS name`: the select-list position and the name it goes by.
+    pub aliases: Vec<(usize, Ident)>,
     /// The table the `FROM` names.
     pub from: FromItem,
     /// The joined tables, in statement order.

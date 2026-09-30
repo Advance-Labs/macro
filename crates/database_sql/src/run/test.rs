@@ -268,6 +268,46 @@ fn aggregate_columns_are_named_after_the_statement() {
 }
 
 #[test]
+fn aliases_name_the_result_columns_and_order_it() {
+    let source = source(deals());
+    let outcome = pollster::block_on(run(
+        &catalog(),
+        "SELECT stage AS \"Stage\", SUM(amount) AS total FROM crm.deals GROUP BY stage ORDER BY total DESC",
+        &source,
+        &FakeWriter::default(),
+    ))
+    .unwrap();
+
+    assert_eq!(
+        outcome.columns,
+        vec![
+            OutcomeColumn {
+                name: "Stage".into(),
+                column: Some(STAGE),
+                kind: OutcomeKind::Select,
+            },
+            OutcomeColumn {
+                name: "total".into(),
+                column: None,
+                kind: OutcomeKind::Number,
+            },
+        ]
+    );
+    assert_eq!(
+        outcome
+            .rows
+            .iter()
+            .map(|row| row[1].clone())
+            .collect::<Vec<_>>(),
+        vec![
+            Some(Cell::Number(12000.0)),
+            Some(Cell::Number(7000.0)),
+            Some(Cell::Number(3000.0)),
+        ]
+    );
+}
+
+#[test]
 fn count_only_groups_ask_for_bins_not_rows() {
     let source = FakeSource {
         rows: deals(),

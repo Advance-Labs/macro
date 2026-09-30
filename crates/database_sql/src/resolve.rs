@@ -52,6 +52,8 @@ pub struct SelectQuery {
     pub joins: Vec<ResolvedJoin>,
     /// The select list; `*` has been expanded to every column.
     pub items: Vec<SelectItem>,
+    /// The names select-list items were given with `AS`, by position.
+    pub labels: Vec<(usize, String)>,
     /// The `WHERE` filter.
     pub where_: Option<Filter>,
     /// The `GROUP BY` column.

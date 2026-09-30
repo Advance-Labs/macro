@@ -67,6 +67,11 @@ pub fn resolve(catalog: &Catalog, select: Select) -> Result<SelectQuery, Resolve
         .map(|cond| filter::resolve(&mut scope, cond))
         .transpose()?;
 
+    let labels: Vec<(usize, String)> = select
+        .aliases
+        .iter()
+        .map(|(index, alias)| (*index, alias.0.clone()))
+        .collect();
     let order_by = select
         .order_by
         .iter()
@@ -74,6 +79,7 @@ pub fn resolve(catalog: &Catalog, select: Select) -> Result<SelectQuery, Resolve
             resolve_order(
                 &mut scope,
                 &items,
+                &labels,
                 group_by.as_ref().map(|bound| bound.key),
                 order,
             )
@@ -92,6 +98,7 @@ pub fn resolve(catalog: &Catalog, select: Select) -> Result<SelectQuery, Resolve
             .collect(),
         joins,
         items,
+        labels,
         where_,
         group_by: group_by.map(|bound| bound.key),
         order_by,
@@ -195,6 +202,7 @@ fn resolve_agg(scope: &mut Scope<'_>, agg: &Agg) -> Result<SelectItem, ResolveEr
 fn resolve_order(
     scope: &mut Scope<'_>,
     items: &[SelectItem],
+    labels: &[(usize, String)],
     group_by: Option<uuid::Uuid>,
     order: &OrderBy,
 ) -> Result<Order, ResolveError> {
@@ -218,6 +226,18 @@ fn resolve_order(
                 .ok_or_else(|| ResolveError::OrderAggregateNotSelected {
                     agg: agg.to_string(),
                 })?
+        }
+        ParsedOrderKey::Column(name)
+            if name.table.is_none()
+                && labels
+                    .iter()
+                    .any(|(_, label)| label.eq_ignore_ascii_case(&name.column.0)) =>
+        {
+            let (index, _) = labels
+                .iter()
+                .find(|(_, label)| label.eq_ignore_ascii_case(&name.column.0))
+                .expect("the guard found it");
+            OrderKey::Item(*index)
         }
         ParsedOrderKey::Column(name) => {
             let bound = scope.column(name)?;

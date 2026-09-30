@@ -100,6 +100,16 @@ fn at(input: In<'_>, expected: &str) -> ParseError {
     }
 }
 
+/// A message that stands on its own (not `expected …, found …`) at the next
+/// token.
+fn message_at(input: In<'_>, message: &str) -> ParseError {
+    let token = input.first().expect("the End token is always there");
+    ParseError {
+        span: token.span.clone(),
+        message: message.into(),
+    }
+}
+
 /// A parser that fails, recoverably, with `expected` at the next token.
 fn fail<'a, O>(input: In<'a>, expected: &str) -> R<'a, O> {
     Err(nom::Err::Error(at(input, expected)))
@@ -161,6 +171,16 @@ fn lit(input: In<'_>) -> R<'_, Lit> {
             Some(Tok::Num(n)) => Ok((rest.take_from(1), Lit::Num(-n))),
             _ => Err(nom::Err::Failure(at(rest, "a number after -"))),
         },
+        Some(Tok::Select) => Err(nom::Err::Failure(message_at(
+            input,
+            "subqueries are not supported: run the inner SELECT on its own first and use the values it returns",
+        ))),
+        Some(Tok::LParen) if rest.first().map(|token| &token.kind) == Some(&Tok::Select) => {
+            Err(nom::Err::Failure(message_at(
+                rest,
+                "subqueries are not supported: run the inner SELECT on its own first and use the values it returns",
+            )))
+        }
         _ => fail(input, "a value: 'text', a number, TRUE, FALSE or NULL"),
     }
 }
@@ -259,11 +279,17 @@ fn statement_rule(input: In<'_>) -> R<'_, Statement> {
 fn select(input: In<'_>) -> R<'_, Select> {
     let (input, _) = kw(Tok::Select)(input)?;
     let (input, distinct) = opt(kw(Tok::Distinct)).parse(input)?;
-    let (input, items) = cut(items).parse(input)?;
+    let (input, (items, aliases)) = cut(items).parse(input)?;
     let (input, _) = cut(tok(Tok::From, "FROM")).parse(input)?;
     let (input, from) =
         cut(table_item("a table name after FROM, like database.table")).parse(input)?;
     let (input, joins) = nom::multi::many0(join).parse(input)?;
+    if input.first().map(|token| &token.kind) == Some(&Tok::Comma) {
+        return Err(nom::Err::Failure(message_at(
+            input,
+            "tables are combined with JOIN … ON a.column = b.row_id, not a comma",
+        )));
+    }
     let (input, where_) = opt(preceded(kw(Tok::Where), cut(cond))).parse(input)?;
     let (input, group_by) = opt(preceded(
         kw(Tok::Group),
@@ -296,6 +322,7 @@ fn select(input: In<'_>) -> R<'_, Select> {
         Select {
             distinct: distinct.is_some(),
             items,
+            aliases,
             from,
             joins,
             where_,
@@ -343,20 +370,50 @@ fn join(input: In<'_>) -> R<'_, Join> {
     Ok((input, Join { kind, table, on }))
 }
 
-/// `column = column`, the only condition a join accepts.
+/// `column = column`, the only condition a join accepts. `column HAS column`
+/// says the same thing about a multi-valued column: a join already matches
+/// any one of a cell's values.
 fn join_equality(input: In<'_>) -> R<'_, (ColumnRef, ColumnRef)> {
     let (input, left) = column_ref("a column to join on, like alias.column")(input)?;
-    let (input, _) = cut(tok(Tok::Eq, "= between the two join columns")).parse(input)?;
+    let (input, _) = cut(expecting(
+        "= between the two join columns",
+        alt((kw(Tok::Eq), kw(Tok::Has))),
+    ))
+    .parse(input)?;
     let (input, right) = cut(column_ref("a column of the other table after =")).parse(input)?;
     Ok((input, (left, right)))
 }
 
-fn items(input: In<'_>) -> R<'_, Vec<Item>> {
+/// The select list and the aliases some of its items were given.
+type SelectList = (Vec<Item>, Vec<(usize, Ident)>);
+
+fn items(input: In<'_>) -> R<'_, SelectList> {
     alt((
-        kw(Tok::Star).map(|()| vec![Item::Star]),
-        separated_list1(comma, item),
+        kw(Tok::Star).map(|()| (vec![Item::Star], Vec::new())),
+        separated_list1(comma, aliased_item).map(|entries| {
+            let mut items = Vec::with_capacity(entries.len());
+            let mut aliases = Vec::new();
+            for (index, (item, alias)) in entries.into_iter().enumerate() {
+                items.push(item);
+                if let Some(alias) = alias {
+                    aliases.push((index, alias));
+                }
+            }
+            (items, aliases)
+        }),
     ))
     .parse(input)
+}
+
+/// `item [[AS] name]`.
+fn aliased_item(input: In<'_>) -> R<'_, (Item, Option<Ident>)> {
+    let (input, item) = item(input)?;
+    let (input, alias) = alt((
+        preceded(kw(Tok::As), cut(ident("a name for the column after AS"))).map(Some),
+        opt(ident("an alias")),
+    ))
+    .parse(input)?;
+    Ok((input, (item, alias)))
 }
 
 fn item(input: In<'_>) -> R<'_, Item> {
