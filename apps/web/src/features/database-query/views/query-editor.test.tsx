@@ -560,9 +560,7 @@ describe('question editor', () => {
     expect(save).not.toHaveBeenCalled();
     expect(initial.sql).toBe('SELECT 1');
     expect(result.queryByLabelText('Query SQL')).toBeNull();
-    expect(
-      result.getByText('How this was calculated').closest('details')?.open
-    ).toBe(false);
+    expect(result.queryByText('Counts every project in the table.')).toBeNull();
     fireEvent.click(result.getByRole('button', { name: 'Save live answer' }));
     expect(save).toHaveBeenCalledWith(
       {

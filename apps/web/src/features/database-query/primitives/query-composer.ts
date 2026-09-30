@@ -25,7 +25,6 @@ type AnswerPreview = {
   sql: string;
   prompt: string;
   answer: QueryAnswer;
-  explanation?: string;
   actionSummary?: string;
   presentation: Presentation;
   context: QuestionContext;
@@ -135,7 +134,6 @@ export function createQueryComposer(options: QueryComposerOptions) {
     question: string,
     execution: number,
     source: QuestionContext,
-    explanation?: string,
     display = presentation(),
     actionSummary?: string
   ) {
@@ -152,7 +150,6 @@ export function createQueryComposer(options: QueryComposerOptions) {
       sql: statement,
       prompt: question,
       answer,
-      explanation,
       actionSummary,
       presentation: display,
       context: source,
@@ -226,7 +223,6 @@ export function createQueryComposer(options: QueryComposerOptions) {
         question,
         generation,
         source,
-        next.explanation,
         {
           title: next.title,
           displayMode: next.displayMode ?? 'scalar',
@@ -278,7 +274,6 @@ export function createQueryComposer(options: QueryComposerOptions) {
         question,
         execution,
         source,
-        undefined,
         presentation(),
         actionSummary()
       );

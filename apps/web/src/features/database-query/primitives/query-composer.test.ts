@@ -423,7 +423,6 @@ describe('question composer', () => {
       'SELECT COUNT(*) FROM projects',
       expect.objectContaining({ databaseId: 'db' })
     );
-    expect(controller.preview()?.explanation).toBe('Counts projects.');
     expect(controller.isCurrentPreview()).toBe(true);
   });
   it('does not relabel an old answer when the prompt changes', async () => {

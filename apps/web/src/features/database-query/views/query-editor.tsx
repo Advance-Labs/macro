@@ -415,12 +415,6 @@ export function QueryEditor(props: {
                 displayMode={displayMode()}
                 chart={composer.presentation().chart}
               />
-              <Show when={preview().explanation}>
-                <details class="mt-3 text-xs leading-5 text-ink-muted">
-                  <summary>How this was calculated</summary>
-                  <p class="mt-1.5">{preview().explanation}</p>
-                </details>
-              </Show>
             </div>
             <Show when={canAccept()}>
               <div class="flex flex-wrap items-center justify-end gap-2 border-t border-edge-muted pt-3">
