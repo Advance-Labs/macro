@@ -39,8 +39,11 @@ export type TaskProjectReference =
 export const projectDisplayName = (project: Pick<Project, 'name'>) =>
   project.name || 'Untitled project';
 
-export const canEditProject = (project: ProjectDetail) =>
+export const canEditProject = (project: Pick<Project, 'access'>) =>
   project.access === 'edit' || project.access === 'owner';
+
+export const canDeleteProject = (project: Pick<Project, 'access'>) =>
+  project.access === 'owner';
 
 export const canDiscussProject = (project: ProjectDetail) =>
   project.access !== 'view';
