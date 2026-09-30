@@ -1,3 +1,4 @@
+import { isFeatureEnabled, showDatabaseSql } from '@core/constant/featureFlags';
 import { createSignal, onCleanup } from 'solid-js';
 import type { QueryComposerOptions } from '../context/query-context';
 import {
@@ -32,8 +33,10 @@ type AnswerPreview = {
 };
 type QuestionContext = { databaseId?: string; tableId?: string };
 type ResolvedSource = { schema: QuerySchema; context: QuestionContext };
-const READ_ONLY_MESSAGE =
-  'Questions only read your data. Start with SELECT, or ask a question above.';
+const readOnlyMessage = () =>
+  isFeatureEnabled(showDatabaseSql)
+    ? 'Questions only read your data. Start with SELECT, or ask a question above.'
+    : 'Questions only read your data. Ask a question about it above.';
 
 /** Asking previews through a read-only capability; saving a document remains the host's action. */
 export function createQueryComposer(options: QueryComposerOptions) {
@@ -201,7 +204,7 @@ export function createQueryComposer(options: QueryComposerOptions) {
       }
       setActionSummary(next.actionSummary);
       const statement = next.sql.trim();
-      if (!looksLikeReadQuery(statement)) throw new Error(READ_ONLY_MESSAGE);
+      if (!looksLikeReadQuery(statement)) throw new Error(readOnlyMessage());
       setUndo(
         next.actionSummary
           ? undefined
@@ -259,7 +262,7 @@ export function createQueryComposer(options: QueryComposerOptions) {
     const statement = sql().trim();
     if (!statement || generationPending() || phase() !== 'idle') return;
     if (!looksLikeReadQuery(statement)) {
-      setError(READ_ONLY_MESSAGE);
+      setError(readOnlyMessage());
       return;
     }
     const execution = ++revision;

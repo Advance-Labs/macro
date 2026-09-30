@@ -521,7 +521,9 @@ describe('question composer', () => {
     await controller.run();
     await controller.generate();
     expect(controller.preview()?.answer).toEqual(answer);
-    expect(controller.error()).toContain('property');
+    expect(controller.error()).toBe(
+      "This answer couldn't be computed: the column retired no longer exists."
+    );
     expect(controller.errorDetail()).toBe('no such column: retired');
   });
   it('ignores stale SQL responses', async () => {

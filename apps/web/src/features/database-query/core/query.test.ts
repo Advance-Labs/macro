@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { showDatabaseSql } from '@core/constant/featureFlags';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   isScalarAnswer,
   parseQueryProposal,
@@ -136,6 +137,64 @@ describe('queryErrorMessage', () => {
       )
     ).toBe(
       'Questions can only read data you have access to. Edit records in the table or board.'
+    );
+  });
+});
+
+describe('queryErrorMessage with SQL hidden', () => {
+  afterEach(() => {
+    showDatabaseSql.enabled = false;
+  });
+  const plain = (message: string) => queryErrorMessage(new Error(message));
+
+  it('names what changed instead of quoting the engine', () => {
+    expect(
+      plain('unknown column "Price" in "Shop"."Items" — did you mean "Prices"?')
+    ).toBe(
+      "This answer couldn't be computed: the column Price no longer exists."
+    );
+    expect(plain('unknown table "Shop"."Old Items"')).toBe(
+      "This answer couldn't be computed: the table Old Items no longer exists."
+    );
+    expect(
+      plain(
+        'table "Guests" exists in Party and Offsite — qualify it as Party.Guests or Offsite.Guests'
+      )
+    ).toBe(
+      "This answer couldn't be computed: more than one database has a table named Guests."
+    );
+    expect(
+      plain('"Maybe" is not an option of "Status" (Going, Declined)')
+    ).toBe(
+      "This answer couldn't be computed: Maybe is not an option of Status."
+    );
+    expect(plain('"Price" is a number column; compare it to a number')).toBe(
+      "This answer couldn't be computed: Price holds number values, which don't fit this question."
+    );
+    expect(plain('"Tags" holds several values; use HAS instead of =')).toBe(
+      "This answer couldn't be computed: Tags can't be used that way."
+    );
+  });
+
+  it('turns anything else that quotes a statement into a plain line', () => {
+    expect(plain('expected FROM, found end of input at 14..14')).toBe(
+      "This answer couldn't be computed. Try asking again."
+    );
+    expect(plain('"Name" must appear in GROUP BY or inside an aggregate')).toBe(
+      "This answer couldn't be computed. Try asking again."
+    );
+    expect(plain('Query budget exceeded')).toBe(
+      'This question needs less data. Try a narrower question.'
+    );
+  });
+
+  it('keeps authored messages and the raw engine text when SQL is shown', () => {
+    expect(
+      plain('Choose an available table before asking this question.')
+    ).toBe('Choose an available table before asking this question.');
+    showDatabaseSql.enabled = true;
+    expect(plain('expected FROM, found end of input at 14..14')).toBe(
+      'expected FROM, found end of input at 14..14'
     );
   });
 });

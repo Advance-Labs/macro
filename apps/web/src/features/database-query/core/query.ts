@@ -1,4 +1,5 @@
 import { ROW_ID_COLUMN } from '@app/features/block-database/sql';
+import { isFeatureEnabled, showDatabaseSql } from '@core/constant/featureFlags';
 import {
   isChartMode,
   parseQueryChart,
@@ -208,8 +209,63 @@ export function looksLikeReadQuery(sql: string): boolean {
   return /^SELECT\b/i.test(start);
 }
 
+const UNCOMPUTED = "This answer couldn't be computed";
+
+/** The last part of a table name as the engine quotes it: `"Db"."Guests"` → `Guests`. */
+function bareName(written: string): string {
+  const parts = written.trim().match(/"(?:[^"]|"")*"|[^.\s]+/g) ?? [written];
+  return (parts.at(-1) ?? written).replace(/^"|"$/g, '').replaceAll('""', '"');
+}
+
+/** The engine's refusals, worded in the reader's terms rather than the statement's. */
+function plainEngineError(message: string): string | undefined {
+  const found = (pattern: RegExp) => message.match(pattern)?.[1];
+  const column =
+    found(/unknown column "((?:[^"]|"")+)"/i) ??
+    found(/no such column:? "?([^"\s]+)"?/i);
+  if (column)
+    return `${UNCOMPUTED}: the column ${column.replaceAll('""', '"')} no longer exists.`;
+  if (/unknown table "[^"]+" in \S+\.\S+/i.test(message))
+    return `${UNCOMPUTED}. Try asking again.`;
+  const table =
+    found(/unknown table (.+?)(?: — |$)/i) ?? found(/no such table:? (\S+)/i);
+  if (table)
+    return `${UNCOMPUTED}: the table ${bareName(table)} no longer exists.`;
+  const ambiguous = found(/table "((?:[^"]|"")+)" exists in /i);
+  if (ambiguous)
+    return `${UNCOMPUTED}: more than one database has a table named ${ambiguous}.`;
+  const option = message.match(
+    /"((?:[^"]|"")+)" is not an option of "((?:[^"]|"")+)"/i
+  );
+  if (option)
+    return `${UNCOMPUTED}: ${option[1]} is not an option of ${option[2]}.`;
+  const kind = message.match(/"((?:[^"]|"")+)" is an? ([\w ]+?) column/i);
+  if (kind)
+    return `${UNCOMPUTED}: ${kind[1]} holds ${kind[2]} values, which don't fit this question.`;
+  const misuse =
+    found(/"((?:[^"]|"")+)" holds (?:one value|several values)/i) ??
+    found(/cannot (?:use \S+ on|apply to|ORDER BY) "((?:[^"]|"")+)"/i);
+  if (misuse) return `${UNCOMPUTED}: ${misuse} can't be used that way.`;
+  if (/matches more than \d+ rows/i.test(message))
+    return 'This request matches too many records. Try a narrower request.';
+  return undefined;
+}
+
+/** Marks a message that quotes or parses a statement: SQL keywords, a quoted name, a parser span. */
+const QUOTES_SQL =
+  /\b(?:SELECT|FROM|WHERE|GROUP BY|ORDER BY|HAVING|JOIN|INSERT|UPDATE|DELETE|LIMIT|HAS|IS NULL)\b|expected .+, found |at \d+\.\.\d+/;
+
+/**
+ * What to tell a person when a question fails. With SQL hidden
+ * ({@link showDatabaseSql}), engine refusals are reworded and anything still
+ * quoting a statement becomes a plain line. The raw message stays on the
+ * error for the agent and the SQL-visible UI.
+ */
 export function queryErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
+  const showSql = isFeatureEnabled(showDatabaseSql);
+  const plain = showSql ? undefined : plainEngineError(message);
+  if (plain) return plain;
   if (/no such table|unknown table/i.test(message))
     return 'This table is no longer available. Choose a database and update the question.';
   if (/no such column|unknown column/i.test(message))
@@ -219,9 +275,13 @@ export function queryErrorMessage(error: unknown): string {
   )
     return 'Questions can only read data you have access to. Edit records in the table or board.';
   if (/budget|timed out|timeout|too many/i.test(message))
-    return 'This question needs less data. Try a narrower question or add a LIMIT in SQL.';
+    return showSql
+      ? 'This question needs less data. Try a narrower question or add a LIMIT in SQL.'
+      : 'This question needs less data. Try a narrower question.';
   if (/404|not found/i.test(message))
     return 'Live questions are not available on this server yet. Your question has been kept.';
+  if (!showSql && QUOTES_SQL.test(message))
+    return `${UNCOMPUTED}. Try asking again.`;
   return message || 'We could not answer that question. Try again.';
 }
 

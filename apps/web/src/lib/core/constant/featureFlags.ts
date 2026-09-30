@@ -113,6 +113,16 @@ export const enableDatabases = defineFlag({
 });
 
 /**
+ * Shows the SQL behind database answers: the question editor's SQL toggle,
+ * "View SQL", and statements in database tool results. Off everywhere; SQL
+ * still runs underneath. Turn on locally with VITE_SHOW_DATABASE_SQL=true.
+ */
+export const showDatabaseSql = defineFlag({
+  env: 'SHOW_DATABASE_SQL',
+  default: false,
+});
+
+/**
  * Switches Inbox, Tasks, and Channels from the current SoupView implementations
  * to the new composable view implementations. On everywhere without waiting
  * for PostHog: a late PostHog answer swaps the app shell after first paint.
