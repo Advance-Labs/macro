@@ -662,6 +662,69 @@ fn row_position_breaks_ties_after_the_sorts() {
     assert_eq!(outcome.row_ids, vec![GLOBEX, IDLE, ACME, SHIP_IT]);
 }
 
+/// Rows as Soup hands them over: newest first, the reverse of their positions.
+fn deals_newest_first() -> Vec<Row> {
+    vec![
+        Row {
+            id: SHIP_IT,
+            position: Some("000000000003".into()),
+            cells: HashMap::from([
+                (NAME, Cell::Text("Initech".into())),
+                (STAGE, Cell::Options(vec![WON])),
+            ]),
+        },
+        Row {
+            id: GLOBEX,
+            position: Some("000000000002".into()),
+            cells: HashMap::from([
+                (NAME, Cell::Text("Globex".into())),
+                (STAGE, Cell::Options(vec![LEAD])),
+            ]),
+        },
+        Row {
+            id: ACME,
+            position: Some("000000000001".into()),
+            cells: HashMap::from([
+                (NAME, Cell::Text("Acme".into())),
+                (STAGE, Cell::Options(vec![WON])),
+            ]),
+        },
+    ]
+}
+
+#[test]
+fn without_order_by_rows_come_back_in_table_order_whatever_the_fetch_order() {
+    let (outcome, _) = drive(&catalog(), "SELECT name FROM crm.deals", |_| {
+        deals_newest_first()
+    });
+    assert_eq!(
+        outcome.rows,
+        vec![
+            vec![text("Acme")],
+            vec![text("Globex")],
+            vec![text("Initech")]
+        ]
+    );
+    assert_eq!(outcome.row_ids, vec![ACME, GLOBEX, SHIP_IT]);
+}
+
+#[test]
+fn groups_without_order_by_come_in_the_table_order_of_their_first_rows() {
+    let (outcome, _) = drive(
+        &catalog(),
+        "SELECT name, COUNT(*) FROM crm.deals GROUP BY name",
+        |_| deals_newest_first(),
+    );
+    assert_eq!(
+        outcome.rows,
+        vec![
+            vec![text("Acme"), Some(Cell::Number(1.0))],
+            vec![text("Globex"), Some(Cell::Number(1.0))],
+            vec![text("Initech"), Some(Cell::Number(1.0))],
+        ]
+    );
+}
+
 #[test]
 fn a_selected_row_position_is_a_text_column_named_row_position() {
     let (outcome, _) = drive(

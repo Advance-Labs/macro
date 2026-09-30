@@ -277,6 +277,10 @@ impl Engine {
         let bound = |key: Uuid| self.plan.bindings.iter().any(|binding| binding.key == key);
         let (id_key, position_key) = (row_id_key(table), row_position_key(table));
         let (ids, positions) = (bound(id_key), bound(position_key));
+        // Sources list rows in any order (Soup: newest first); the fold sees
+        // them in table order, as the server's row store keeps them, so an
+        // unordered result or its groups come out alike on both.
+        self.fetched[self.current].sort_by(table_order);
         for row in &mut self.fetched[self.current] {
             if ids {
                 row.cells
@@ -320,6 +324,18 @@ impl Engine {
         self.next_id += 1;
         self.outstanding = Some(id);
         id
+    }
+}
+
+/// Position, then id, as `database_rows` orders a table; rows without a
+/// position (`people`) keep the order they came in, after any that have one.
+fn table_order(a: &Row, b: &Row) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    match (&a.position, &b.position) {
+        (Some(left), Some(right)) => left.cmp(right).then(a.id.cmp(&b.id)),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
     }
 }
 
