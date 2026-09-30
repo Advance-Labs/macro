@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id,\n                team_id,\n                user_id,\n                database_id,\n                display_name,\n                data_type as \"data_type: DataType\",\n                is_multi_select,\n                specific_entity_type as \"specific_entity_type: Option<EntityType>\",\n                created_at,\n                updated_at,\n                is_system\n            FROM property_definitions\n            WHERE id = ANY($1)\n            ",
+  "query": "\n        SELECT\n            id, team_id, user_id, database_id, display_name,\n            data_type AS \"data_type: DataType\",\n            is_multi_select,\n            specific_entity_type AS \"specific_entity_type: EntityType\",\n            created_at, updated_at, is_system\n        FROM property_definitions\n        WHERE id = ANY($1)\n        ",
   "describe": {
     "columns": [
       {
@@ -57,7 +57,7 @@
       },
       {
         "ordinal": 7,
-        "name": "specific_entity_type: Option<EntityType>",
+        "name": "specific_entity_type: EntityType",
         "type_info": {
           "Custom": {
             "name": "property_entity_type",
@@ -115,5 +115,5 @@
       false
     ]
   },
-  "hash": "ee8bae0b7f2fbd3a068dd4267549ba8c6a5b4dd884d9d3c0b89f99e4f85a9c87"
+  "hash": "14790680130ce09d504c709df426b1e0dd97467d0b4d0dea2ebb028ea9345cd0"
 }
