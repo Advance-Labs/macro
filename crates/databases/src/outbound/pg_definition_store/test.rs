@@ -315,6 +315,56 @@ async fn add_options_appends_to_the_definition(pool: PgPool) {
     assert_eq!(labels, ["Draft", "Sent", "Signed"]);
 }
 
+/// Options take the palette by position, so neighbours differ and a later
+/// call continues the cycle instead of restarting it.
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn add_options_colours_each_new_option_after_the_ones_already_there(pool: PgPool) {
+    let database_id = insert_database(&pool).await;
+    let store = PgDefinitionStore::new(
+        properties::outbound::properties_pg_repo::PropertiesPgRepo::new(pool),
+    );
+    let definition_id = store
+        .resolve_binding(
+            database_id,
+            &viewer_for_tests(),
+            &new_definition("Stage", DataType::SelectString),
+        )
+        .await
+        .expect("definition should be created");
+
+    let created = store
+        .add_options(
+            definition_id,
+            &[
+                PropertyOptionValue::String("Draft".to_string()),
+                PropertyOptionValue::String("Sent".to_string()),
+            ],
+        )
+        .await
+        .expect("options should be created");
+    let later = store
+        .add_options(
+            definition_id,
+            &[PropertyOptionValue::String("Signed".to_string())],
+        )
+        .await
+        .expect("options should be created");
+
+    assert_eq!(created[0].color.as_deref(), Some("#0091FF"));
+    assert_eq!(created[1].color.as_deref(), Some("#46A758"));
+    assert_eq!(later[0].color.as_deref(), Some("#8E4EC6"));
+    let definitions = store
+        .definitions(&[definition_id])
+        .await
+        .expect("definitions should be readable");
+    let stored: Vec<Option<&str>> = definitions[0]
+        .property_options
+        .iter()
+        .map(|option| option.color.as_deref())
+        .collect();
+    assert_eq!(stored, [Some("#0091FF"), Some("#46A758"), Some("#8E4EC6")]);
+}
+
 /// A numeric select stores its options as numbers, which is what makes the
 /// catalog render `2` rather than `"2"` in the compiled CHECK.
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]

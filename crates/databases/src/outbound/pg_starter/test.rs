@@ -7,7 +7,7 @@ use super::*;
 use crate::{
     domain::{
         models::CreateDatabase,
-        ports::{CellStore, DatabasesRepo},
+        ports::{CellStore, ColumnDefinitionStore, DatabasesRepo},
     },
     outbound::pg_databases_repo::PgDatabasesRepo,
 };
@@ -112,6 +112,32 @@ async fn concurrent_starter_requests_create_one_complete_editable_example(pool: 
         "My ideas"
     );
     assert_eq!(data.row_refs(table).await.unwrap().len(), 3);
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn the_starter_stages_are_coloured_in_palette_order(pool: PgPool) {
+    insert_user(&pool).await;
+    let created = repo(&pool)
+        .ensure_starter(&viewer(), &StarterBlueprint::default())
+        .await
+        .unwrap();
+    let columns = PgDatabasesRepo::new(pool.clone())
+        .columns_for_tables(&[created.table_id.unwrap()])
+        .await
+        .unwrap();
+    let definitions = crate::outbound::pg_definition_store::PgDefinitionStore::new(
+        PropertiesPgRepo::new(pool.clone()),
+    )
+    .definitions(&[columns[1].property_definition_id])
+    .await
+    .unwrap();
+
+    let colors: Vec<Option<&str>> = definitions[0]
+        .property_options
+        .iter()
+        .map(|option| option.color.as_deref())
+        .collect();
+    assert_eq!(colors, [Some("#0091FF"), Some("#46A758"), Some("#8E4EC6")]);
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]

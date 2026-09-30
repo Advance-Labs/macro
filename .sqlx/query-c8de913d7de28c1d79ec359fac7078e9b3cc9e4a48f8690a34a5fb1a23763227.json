@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO property_options (id, property_definition_id, display_order, string_value)\n                   VALUES ($1, $2, $3, $4)\n                   RETURNING id, property_definition_id, display_order, number_value, string_value, color, created_at, updated_at",
+  "query": "INSERT INTO property_options (id, property_definition_id, display_order, string_value, color)\n                   VALUES ($1, $2, $3, $4, $5)\n                   RETURNING id, property_definition_id, display_order, number_value, string_value, color, created_at, updated_at",
   "describe": {
     "columns": [
       {
@@ -49,6 +49,7 @@
         "Uuid",
         "Uuid",
         "Int4",
+        "Text",
         "Text"
       ]
     },
@@ -63,5 +64,5 @@
       false
     ]
   },
-  "hash": "79af89fb41965bb835f38e77407d293e39039122033af1eb165ab8a5ec4e2b53"
+  "hash": "c8de913d7de28c1d79ec359fac7078e9b3cc9e4a48f8690a34a5fb1a23763227"
 }

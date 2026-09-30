@@ -1,6 +1,6 @@
 use models_properties::db;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
-use models_properties::{DataType, EntityType};
+use models_properties::{DataType, EntityType, option_color};
 use sqlx::{Postgres, Transaction};
 
 use super::properties_pg_repo::PropertiesPgRepo;
@@ -40,10 +40,10 @@ impl DatabaseDefinitionWriter for PropertiesPgRepo {
         for (index, label) in input.options.iter().enumerate() {
             let option_id = macro_uuid::generate_uuid_v7();
             let option = sqlx::query_as!(db::PropertyOption,
-                r#"INSERT INTO property_options (id, property_definition_id, display_order, string_value)
-                   VALUES ($1, $2, $3, $4)
+                r#"INSERT INTO property_options (id, property_definition_id, display_order, string_value, color)
+                   VALUES ($1, $2, $3, $4, $5)
                    RETURNING id, property_definition_id, display_order, number_value, string_value, color, created_at, updated_at"#,
-                option_id, id, index as i32, label,
+                option_id, id, index as i32, label, option_color(index),
             ).fetch_one(&mut **transaction).await?;
             property_options.push(option.try_into().map_err(
                 |error: models_properties::db::error::DbConversionError| {

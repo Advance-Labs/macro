@@ -13,7 +13,7 @@ mod test;
 
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
 use models_properties::service::property_option::{PropertyOption, PropertyOptionValue};
-use models_properties::{DataType, EntityType};
+use models_properties::{DataType, EntityType, option_color};
 use properties::domain::ports::PropertiesRepo;
 
 use crate::domain::models::{ColumnBinding, DatabaseId, PropertyDefinitionId, Viewer};
@@ -141,21 +141,28 @@ impl<P: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore for PgDefinit
         }
         // New options go after the ones already there, so the order the user
         // sees (and the labels the catalog derives from it) is stable.
-        let mut display_order = self
+        let existing = self
             .properties
             .get_property_options(definition_id)
             .await
-            .map_err(PgDefinitionStoreError::Properties)?
+            .map_err(PgDefinitionStoreError::Properties)?;
+        let mut display_order = existing
             .iter()
             .map(|option| option.display_order)
             .max()
             .map_or(0, |highest| highest + 1);
 
         let mut created = Vec::with_capacity(values.len());
-        for value in values {
+        for (index, value) in values.iter().enumerate() {
+            let color = option_color(existing.len() + index).to_string();
             created.push(
                 self.properties
-                    .create_property_option(definition_id, display_order, value.clone(), None)
+                    .create_property_option(
+                        definition_id,
+                        display_order,
+                        value.clone(),
+                        Some(color),
+                    )
                     .await
                     .map_err(PgDefinitionStoreError::Properties)?,
             );

@@ -13,7 +13,9 @@ pub mod service;
 pub mod shared;
 
 // Re-export commonly used shared types for convenience
-pub use shared::{DataType, EntityPropertyReference, EntityReference, EntityType, PropertyOwner};
+pub use shared::{
+    DataType, EntityPropertyReference, EntityReference, EntityType, PropertyOwner, option_color,
+};
 
 // Re-export conversion function
 pub use service::property_value::convert_set_property_value_to_property_value;
