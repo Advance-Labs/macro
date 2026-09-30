@@ -146,6 +146,7 @@ function MentionsMenuInner(props: MentionsMenuProps) {
           'document',
           'project',
           'chat',
+          'database',
         ],
         searchTerm,
       })
@@ -178,6 +179,7 @@ function MentionsMenuInner(props: MentionsMenuProps) {
         'document',
         'project',
         'chat',
+        'database',
       ],
       searchTerm: activeSearchTerm,
     });
