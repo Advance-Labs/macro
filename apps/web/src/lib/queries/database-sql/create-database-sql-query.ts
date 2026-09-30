@@ -2,7 +2,8 @@
  * A live SQL statement: the engine runs in the browser over the GraphQL row
  * source, and runs again whenever the normalized cache changes, reading the
  * cache the second time. Cell edits reach the result through the cached
- * rows; rows the cache learns about through the local filter index.
+ * rows; rows the cache learns about through the local filter index. A
+ * changed statement keeps the last answer until its own arrives.
  */
 
 import {
@@ -51,12 +52,12 @@ export interface DatabaseSqlQueryCapabilities {
 }
 
 export interface DatabaseSqlQuery {
-  /** The last answer; kept while a later run is in flight. */
+  /** The last answer; kept while a later run, of this statement or a changed one, is in flight. */
   outcome: Accessor<Outcome | undefined>;
   /** Why the last run failed, until one succeeds. */
   error: Accessor<unknown>;
   loading: Accessor<boolean>;
-  /** Read the statement's tables from the server again. */
+  /** Read the statement's tables from the server again; rejects when that read fails. */
   refresh: () => Promise<void>;
 }
 
@@ -87,6 +88,7 @@ export function createDatabaseSqlQuery(
   // First-page evidence for the local filter index, per statement.
   let baselines: LocalMembership['baselines'] = new Map();
 
+  /** Rejects with the failure of this run, unless a later run replaced it. */
   const run = async (
     current: DatabaseSqlStatement,
     requestPolicy: RequestPolicy,
@@ -114,20 +116,27 @@ export function createDatabaseSqlQuery(
       }
       setError(undefined);
     } catch (failure) {
-      if (run === latest) setError(failure);
+      if (run !== latest) return;
+      setError(failure);
+      throw failure;
     } finally {
       if (run === latest) setLoading(false);
     }
   };
+  // A failure is kept in `error`; only an explicit refresh rejects with it.
+  const quietly = (running: Promise<void>) => running.catch(() => {});
 
   createEffect(
     on(statement, (current) => {
       baselines = new Map();
       latest += 1;
-      setOutcome(undefined);
       setError(undefined);
       setLoading(false);
-      if (current) void run(current, 'cache-and-network', false);
+      if (!current) {
+        setOutcome(undefined);
+        return;
+      }
+      void quietly(run(current, 'cache-and-network', false));
     })
   );
 
@@ -139,7 +148,7 @@ export function createDatabaseSqlQuery(
     onCleanup(
       subscribeToVisibleCacheChanges(host, () => {
         const current = untrack(statement);
-        return current ? run(current, 'cache-first', true) : undefined;
+        return current ? quietly(run(current, 'cache-first', true)) : undefined;
       })
     );
   });
@@ -157,4 +166,20 @@ export function createDatabaseSqlQuery(
       if (current) await run(current, 'network-only', false);
     },
   };
+}
+
+/** One read of a statement from the network, for an answer nothing keeps live. */
+export function readDatabaseSql(
+  { catalog, sql }: DatabaseSqlStatement,
+  capabilities: DatabaseSqlQueryCapabilities = productionDatabaseSqlCapabilities()
+): Promise<Outcome> {
+  return runDatabaseSql(catalog, sql, {
+    source: createGraphqlRowSource({
+      client: capabilities.client(),
+      catalog,
+      requestPolicy: 'network-only',
+      people: capabilities.people,
+    }),
+    ...(capabilities.open ? { open: capabilities.open } : {}),
+  });
 }

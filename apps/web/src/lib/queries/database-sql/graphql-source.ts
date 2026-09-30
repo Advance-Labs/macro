@@ -5,8 +5,9 @@
  * from the contacts query.
  *
  * Rows are ordered by creation, newest first: Soup's cursor orders by a
- * timestamp, so a statement without `ORDER BY` lists rows in that order
- * rather than the grid's position order.
+ * timestamp, so a statement without `ORDER BY` lists rows in that order.
+ * Each row carries its position, so `ORDER BY row_position` gives the grid's
+ * order.
  */
 
 import { readRecordsByKeys, selectRecords } from '@app/lib/graphql-cache';
@@ -346,7 +347,7 @@ function tableRow(item: GraphqlSoupItem): Row {
   if (item.__typename !== 'GraphqlSoupDatabaseRow') {
     throw new Error(`a table query returned a ${item.__typename}`);
   }
-  return { id: item.id, cells: rowCells(item) };
+  return { id: item.id, position: item.position, cells: rowCells(item) };
 }
 
 /** A row's cells by property definition; an empty property is no cell. */

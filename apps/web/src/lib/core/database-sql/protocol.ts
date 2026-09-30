@@ -16,9 +16,11 @@ export type Cell =
   | { type: 'options'; value: string[] }
   | { type: 'entities'; value: string[] };
 
-/** One fetched row: the entity id and its cells by key. */
+/** One fetched row: the entity id, its place in its table, and its cells by key. */
 export interface Row {
   id: string;
+  /** The row's fractional position; `people` rows have none. */
+  position?: string;
   cells: Record<string, Cell>;
 }
 

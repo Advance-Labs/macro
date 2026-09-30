@@ -60,6 +60,7 @@ function property(
 function row(
   id: string,
   table: string,
+  position: string,
   properties: SoupPropertyFieldsFragment[]
 ): SoupItem {
   return {
@@ -67,7 +68,7 @@ function row(
     id,
     tableId: table,
     databaseId: 'db000000-0000-0000-0000-000000000001',
-    position: 'a',
+    position,
     ownerId: 'macro|owner@databases.test',
     creatorId: null,
     createdAt: '2026-01-01T00:00:00Z',
@@ -82,7 +83,7 @@ function row(
   };
 }
 
-const acme = row(ACME, DEALS, [
+const acme = row(ACME, DEALS, '000000000001', [
   property(NAME, {
     __typename: 'GraphqlStringPropertyValue',
     stringValue: 'Acme',
@@ -102,7 +103,7 @@ const acme = row(ACME, DEALS, [
     ],
   }),
 ]);
-const globex = row(GLOBEX, DEALS, [
+const globex = row(GLOBEX, DEALS, '000000000002', [
   property(NAME, {
     __typename: 'GraphqlStringPropertyValue',
     stringValue: 'Globex',
@@ -116,7 +117,7 @@ const globex = row(GLOBEX, DEALS, [
     optionIds: [WON],
   }),
 ]);
-const initech = row(INITECH, DEALS, [
+const initech = row(INITECH, DEALS, '000000000003', [
   property(NAME, {
     __typename: 'GraphqlStringPropertyValue',
     stringValue: 'Initech',
@@ -130,7 +131,7 @@ const initech = row(INITECH, DEALS, [
     optionIds: [LEAD],
   }),
 ]);
-const sam = row(SAM, PEOPLE, [
+const sam = row(SAM, PEOPLE, '000000000001', [
   property(NAME, {
     __typename: 'GraphqlStringPropertyValue',
     stringValue: 'Sam',
@@ -218,6 +219,24 @@ describe('the GraphQL row source', () => {
         },
       },
     ]);
+  });
+
+  it('orders rows by their table position, though Soup lists them newest first', async () => {
+    const transcript = readTranscript('row-position');
+    const server = fakeClient(() => soupPage([initech, globex, acme], null));
+
+    const outcome = await runDatabaseSql(transcript.catalog, transcript.sql, {
+      source: createGraphqlRowSource({
+        client: server.client,
+        catalog: transcript.catalog,
+        requestPolicy: 'network-only',
+        people: noPeople,
+      }),
+      open: replay(transcript),
+    });
+
+    expect(outcome).toEqual(transcript.outcome);
+    expect(outcome.rowIds).toEqual([INITECH, ACME, GLOBEX]);
   });
 
   it('counts per option with groupSoup bins', async () => {

@@ -6,8 +6,13 @@ import type {
   EntityFilterCacheResult,
 } from '@graphql-cache/protocol';
 import type { SoupQuery } from '@service-storage/graphql/generated/graphql';
-import { createClient, type Exchange, type Operation } from '@urql/core';
-import { createRoot } from 'solid-js';
+import {
+  CombinedError,
+  createClient,
+  type Exchange,
+  type Operation,
+} from '@urql/core';
+import { createRoot, createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { empty, fromValue, mergeMap, pipe } from 'wonka';
 import { createDatabaseSqlQuery } from './create-database-sql-query';
@@ -206,5 +211,119 @@ describe('createDatabaseSqlQuery', () => {
         },
       ],
     });
+  });
+
+  it('keeps the last answer on screen while a changed statement runs', async () => {
+    let release = () => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const answered = (sql: string): Step => ({
+      step: 'done',
+      columns: [{ name: 'name', column: NAME, kind: 'text' }],
+      rows: [[{ type: 'text', value: sql }]],
+      rowIds: [ACME],
+      readTables: [DEALS],
+      truncated: false,
+      insertedRowIds: [],
+      changesApplied: 0,
+      failures: [],
+    });
+    const open: OpenEngine = async (_catalog, sql) => {
+      if (sql.includes('WHERE')) await released;
+      return {
+        start: () => answered(sql),
+        feed_page: () => answered(sql),
+        feed_bins: () => answered(sql),
+        free: () => {},
+      };
+    };
+    const [sql, setSql] = createSignal('SELECT name FROM crm.deals');
+    const query = createRoot((cleanup) => {
+      dispose = cleanup;
+      return createDatabaseSqlQuery(() => ({ catalog, sql: sql() }), {
+        client: () => createClient({ url: 'http://test.invalid', exchanges: [] }),
+        cacheHost: () => undefined,
+        people: async () => [],
+        open,
+      });
+    });
+    await vi.waitFor(() =>
+      expect(query.outcome()?.rows).toEqual([
+        [{ type: 'text', value: 'SELECT name FROM crm.deals' }],
+      ])
+    );
+
+    setSql("SELECT name FROM crm.deals WHERE name = 'Acme'");
+
+    expect(query.loading()).toBe(true);
+    expect(query.outcome()?.rows).toEqual([
+      [{ type: 'text', value: 'SELECT name FROM crm.deals' }],
+    ]);
+    release();
+    await vi.waitFor(() =>
+      expect(query.outcome()?.rows).toEqual([
+        [{ type: 'text', value: "SELECT name FROM crm.deals WHERE name = 'Acme'" }],
+      ])
+    );
+  });
+
+  it('refreshes from the network, and a failed refresh rejects and keeps the answer', async () => {
+    const policies: string[] = [];
+    let failing = false;
+    const exchange: Exchange = () => (incoming) =>
+      pipe(
+        incoming,
+        mergeMap((operation) => {
+          if (operation.kind === 'teardown') return empty;
+          policies.push(operation.context.requestPolicy);
+          if (failing)
+            return fromValue({
+              operation,
+              error: new CombinedError({ networkError: new Error('offline') }),
+              stale: false,
+              hasNext: false,
+            });
+          const data: SoupQuery = {
+            user: {
+              id: 'macro|viewer@databases.test',
+              emailLinks: [],
+              soup: { items: [acme], nextCursor: null },
+            },
+          };
+          return fromValue({ operation, data, stale: false, hasNext: false });
+        })
+      );
+    const client = createClient({
+      url: 'http://test.invalid/graphql',
+      exchanges: [exchange],
+    });
+    const query = createRoot((cleanup) => {
+      dispose = cleanup;
+      return createDatabaseSqlQuery(
+        () => ({ catalog, sql: 'SELECT name FROM crm.deals' }),
+        {
+          client: () => client,
+          cacheHost: () => undefined,
+          people: async () => [],
+          open: names,
+        }
+      );
+    });
+    await vi.waitFor(() =>
+      expect(query.outcome()?.rows).toEqual([[{ type: 'text', value: 'Acme' }]])
+    );
+
+    await query.refresh();
+    failing = true;
+    await expect(query.refresh()).rejects.toThrow('offline');
+
+    expect(policies).toEqual([
+      'cache-and-network',
+      'network-only',
+      'network-only',
+    ]);
+    expect(query.error()).toBeInstanceOf(CombinedError);
+    expect(query.outcome()?.rows).toEqual([[{ type: 'text', value: 'Acme' }]]);
   });
 });
