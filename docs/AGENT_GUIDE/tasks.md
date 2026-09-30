@@ -80,6 +80,9 @@ context menu can remove the favorite. PR favorites also open in Reviews from the
 global Favorites sidebar or command menu.
 
 Select a PR to open `/app/reviews/pr/<foreignEntityId>` in the Reviews shell.
+Opening a PR refreshes it from GitHub in the background for viewers with a
+linked GitHub account, so labels, reviewers, and review state catch up without
+waiting for GitHub's next webhook.
 Its breadcrumb returns to the Reviews list. Old `/app/pr/<id>` links redirect
 to the Reviews detail. When the flag is off, the Reviews shortcut is hidden and
 opening `/app/reviews` redirects to `/app/tasks` after flags load. Copied PR

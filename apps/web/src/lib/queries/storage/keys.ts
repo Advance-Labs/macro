@@ -37,6 +37,15 @@ export const snippetRawKeys = createQueryKeys('snippetRaw', {
   }),
 });
 
+export const githubPullRequestRefreshKeys = createQueryKeys(
+  'githubPullRequestRefresh',
+  {
+    refresh: (githubKey: string) => ({
+      queryKey: [githubKey],
+    }),
+  }
+);
+
 export const documentGithubPullRequestsKeys = createQueryKeys(
   'documentGithubPullRequests',
   {

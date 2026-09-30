@@ -13,7 +13,11 @@ import {
 import { openExternalUrl } from '@core/util/url';
 import { GithubLabelPills } from '@entity/components/GithubLabelPill';
 import { DebouncedNotificationReadMarker } from '@notifications';
-import type { GithubPullRequestWithDetails } from '@queries/storage/github-pull-requests';
+import {
+  type GithubPullRequestWithDetails,
+  useRefreshGithubPullRequest,
+} from '@queries/storage/github-pull-requests';
+import { useQueryClient } from '@tanstack/solid-query';
 import { Button, cn, Layer, Scroll } from '@ui';
 import { type Accessor, createMemo, Show, Suspense } from 'solid-js';
 import { PrChangesProvider } from '../component/PrChanges';
@@ -33,6 +37,7 @@ import { PrSidePanelSections } from '../component/sidepanel/PrSidePanelSections'
 import { createPrDiscussionSource } from '../data/prDiscussionSource';
 import {
   type PrForeignEntityData,
+  prForeignEntityQueryKey,
   usePrForeignEntityQuery,
 } from '../data/queries';
 import {
@@ -45,11 +50,30 @@ import { prDisplayName, prHtmlUrl } from '../util/prKey';
 
 /** Share PR query state without coupling the host's header to the detail body. */
 export function usePrDetail(foreignEntityId: Accessor<string>) {
+  const queryClient = useQueryClient();
   const query = usePrForeignEntityQuery(foreignEntityId);
   // Detail-lifetime local Macro discussion (prototype-only, lost on reload).
   const discussionSource = createPrDiscussionSource();
   const data = (): PrForeignEntityData | undefined =>
     query.isPending ? undefined : query.data;
+  useRefreshGithubPullRequest(
+    () => {
+      const pullRequest = data()?.pullRequest;
+      if (!pullRequest) return undefined;
+      return {
+        displayName: pullRequest.displayName,
+        githubKey: pullRequest.githubKey,
+        number: pullRequest.number,
+        owner: pullRequest.owner,
+        repo: pullRequest.repo,
+        url: pullRequest.url,
+      };
+    },
+    () =>
+      void queryClient.invalidateQueries({
+        queryKey: prForeignEntityQueryKey(foreignEntityId()),
+      })
+  );
   return { query, data, discussionSource };
 }
 
