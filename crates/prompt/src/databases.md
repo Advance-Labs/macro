@@ -7,7 +7,7 @@ Macro databases contain table tabs. They are distinct from native spreadsheet do
 
 ## Schema tools
 
-Structure changes go through tools, never SQL DDL. Each returns the refreshed schema; tools that need a table's version or a column's current name read it themselves.
+Structure changes go through these tools; the only SQL schema statement is `ALTER TABLE … ALTER COLUMN … TYPE`, the same change as `ChangeColumnType`. Each tool returns the refreshed schema; tools that need a table's version or a column's current name read it themselves.
 
 - `CreateDatabase` makes a new container with a starter table called “Table 1”: rename it with `RenameTable` to the first table the user asked for instead of adding a redundant tab. `RenameDatabase` retitles a database.
 - `CreateTable`, `RenameTable`, `DeleteTable` add, retitle, and remove tabs. A database keeps at least one table. `ReorderTables` sets the left-to-right tab order and takes every table id once.
@@ -16,12 +16,12 @@ Structure changes go through tools, never SQL DDL. Each returns the refreshed sc
 
 ## SQL
 
-`QueryDatabase` reads and writes rows, one statement per call, in a small dialect (its full grammar is in the schema's `sqlGuide`). Always pass `databaseId` for the database the statement is about.
+`QueryDatabase` reads and writes rows, one statement per call, in a small dialect (its full grammar is in the tool's description). Always pass `databaseId` for the database the statement is about.
 
 - `SELECT` with joins, WHERE, GROUP BY, ORDER BY, LIMIT; name result columns with `AS`: `SELECT p."Name" AS party, COUNT(*) AS invites FROM "Party Invites"."Invites" i JOIN "Party Invites"."Parties" p ON i."Party" = p.row_id GROUP BY p."Name" ORDER BY invites DESC`.
 - No subqueries: SELECT the ids first, then use them as literals (`WHERE row_id IN ('<id>', '<id>')`).
 - A quote inside a string is doubled: `'Wolf''s place'`.
-- `UPDATE`/`DELETE` change exactly one row by its `row_id`. Multi-valued cells are lists (`['a', 'b']`), relation cells are lists of row ids, select cells are option labels.
+- `UPDATE`/`DELETE` require a `WHERE` and change every row it matches; name rows with `WHERE row_id IN ('<id>', …)` to change exactly those. Multi-valued cells are lists (`['a', 'b']`), relation cells are lists of row ids, select cells are option labels.
 - A row the app shows as “Unnamed” has a NULL name: find it with `WHERE "Name" IS NULL`.
 - If results report `truncatedTables`, say that affected aggregates are partial rather than exact totals.
 
@@ -30,7 +30,7 @@ Structure changes go through tools, never SQL DDL. Each returns the refreshed sc
 When the user asks a question about their data or asks for a chart, answer with a live block:
 
 1. Check the SELECT with `QueryDatabase` and read the numbers.
-2. Save exactly that SQL with `SaveDatabaseQuery`, passing `databaseId`, a short `title`, the user's question as `prompt`, and a `displayMode`: `scalar` for one number, `table` for rows, `bar`, `line`, or `pie` with `chart: {x, y}` naming result columns by their `AS` aliases.
+2. Save exactly that SQL with `SaveDatabaseQuery`, passing `databaseId`, a short `title`, the user's question as `prompt`, and a `displayMode`: `scalar` for one number, `table` for rows, or `bar`, `line`, `area`, `scatter` or `pie` with `chart: {x, y}` naming result columns by their `AS` aliases (`color` splits one `y` series by a third column; `stack` stacks bar or area series).
 3. Paste the returned `markdown` — the `<m-db-query>…</m-db-query>` block — verbatim into your reply, alongside a sentence stating the answer. It renders as a live number, table, or chart that re-runs for each viewer with their permissions.
 4. When the user asks to put it in a document, paste the same block into the document's content with `CreateDocument` or `EditDocument`, when those tools are available.
 
