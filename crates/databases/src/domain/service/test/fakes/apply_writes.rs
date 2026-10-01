@@ -18,10 +18,7 @@ pub(super) fn settle(w: &mut World, table_id: TableId, definitions: Vec<Property
 
 /// The fake cell store's batch, applied straight to the world; the caller
 /// rolls the world back unless everything applied.
-pub(super) fn apply_in_world(
-    w: &mut World,
-    writes: &Writes,
-) -> WritesOutcome {
+pub(super) fn apply_in_world(w: &mut World, writes: &Writes) -> WritesOutcome {
     for table_id in writes
         .writes
         .iter()
