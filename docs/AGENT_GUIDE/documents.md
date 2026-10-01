@@ -549,10 +549,6 @@ when the document has not loaded yet. Verify both comments arriving before the
 editor and comments arriving after it. Once loaded, click elsewhere in the
 document, then click the same notification again: it should revisit the comment,
 while background comment refreshes should leave the user's position alone.
-Verify the same link on a phone, where the document stays on its
-`/app/<type>/<id>` block route rather than a Drive detail route: the route keeps
-`comment_id`, and the thread opens in the `Comments` drawer. The same holds for
-a task, spreadsheet, or PDF (`pdf_ann_id`) link.
 
 When checking desktop margin placement, scroll a long document while an embed
 or image above the highlighted text changes height. Scroll anchoring may keep

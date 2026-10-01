@@ -1,3 +1,4 @@
+import { SPREADSHEET_COMMENT_PARAMS } from '@app/features/block-spreadsheet/core/spreadsheet-comments';
 import {
   createSearchParams,
   defineRoute,
@@ -7,14 +8,15 @@ import {
 } from '@app/lib/split-router';
 import { callDetailSearch } from '@block-call/call-route';
 import { URL_PARAMS as CALL_URL_PARAMS } from '@block-call/constants';
+import { URL_PARAMS as MARKDOWN_URL_PARAMS } from '@block-md/constants';
 import { markdownDetailSearch } from '@block-md/markdown-route';
+import { URL_PARAMS as PDF_URL_PARAMS } from '@block-pdf/constants';
 import { pdfDetailSearch } from '@block-pdf/pdf-route';
 import { useSplitPanelOrThrow } from '@components/app/split-layout/layoutUtils';
 import {
   AppView,
   withAuth,
 } from '@components/app/split-layout/split-router/app-route-shell';
-import { documentLinkParams } from '@components/app/split-layout/split-router/document-link-params';
 import { uuidRouteReference } from '@components/app/split-layout/split-router/mention-links';
 import { lazy } from 'solid-js';
 import { z } from 'zod';
@@ -159,7 +161,17 @@ export const driveSplitRoute = defineRoute({
     const type = routeParams<{ documentType?: string }>(
       entry.location.route
     ).documentType;
-    if (type) return documentLinkParams(driveDocumentBlockType(type));
+    if (
+      type === 'md' ||
+      type === 'task' ||
+      type === 'snippet' ||
+      type === 'skill'
+    ) {
+      return Object.values(MARKDOWN_URL_PARAMS);
+    }
+    if (type === 'pdf') return Object.values(PDF_URL_PARAMS);
+    if (type === 'spreadsheet')
+      return Object.values(SPREADSHEET_COMMENT_PARAMS);
     if (
       typeof routeParams<{ callId?: string }>(entry.location.route).callId ===
       'string'
