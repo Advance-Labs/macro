@@ -24,6 +24,21 @@ export type AddServerRequest = {
 };
 
 /**
+ * Public admission error payload. Handlers with additional fields can reuse the
+ * domain error's code and message and [`admission_status`].
+ */
+export type AiAdmissionErrorBody = {
+    /**
+     * Stable denial or unavailability code.
+     */
+    code: string;
+    /**
+     * Human-readable explanation, without internal billing diagnostics.
+     */
+    error: string;
+};
+
+/**
  * Everything we use AI for. The wire / DB form of each variant is its
  * `snake_case` name.
  */
@@ -294,7 +309,7 @@ export type ChatMessageContent = string | Array<AssistantMessagePart>;
  */
 export type ChatMessageError = {
     /**
-     * Stable machine-readable code for payment-required errors.
+     * Stable machine-readable code for admission errors (402 or 503).
      */
     code?: string | null;
     error: string;
@@ -1427,7 +1442,7 @@ export type StringIdResponse = {
 
 export type StructuredCompletionError = {
     /**
-     * Stable machine-readable code for payment-required errors.
+     * Stable machine-readable code for admission errors (402 or 503).
      */
     code?: string | null;
     error: string;
@@ -2333,10 +2348,20 @@ export type RetryGatherHandlerErrors = {
      */
     400: unknown;
     /**
+     * AI allowance exhausted
+     */
+    402: AiAdmissionErrorBody;
+    /**
      * Internal server error
      */
     500: unknown;
+    /**
+     * AI usage validation unavailable; retry later
+     */
+    503: AiAdmissionErrorBody;
 };
+
+export type RetryGatherHandlerError = RetryGatherHandlerErrors[keyof RetryGatherHandlerErrors];
 
 export type RetryGatherHandlerResponses = {
     /**
@@ -2793,6 +2818,10 @@ export type SendChatMessageErrors = {
      * Forbidden — user lacks access to the requested model
      */
     403: ChatMessageError;
+    /**
+     * AI usage validation unavailable — retry later
+     */
+    503: ChatMessageError;
 };
 
 export type SendChatMessageError = SendChatMessageErrors[keyof SendChatMessageErrors];
@@ -2850,7 +2879,7 @@ export type StructuredCompletionErrors = {
     /**
      * Payment required
      */
-    402: unknown;
+    402: StructuredCompletionError;
     /**
      * No access to the requested model
      */
@@ -2859,6 +2888,10 @@ export type StructuredCompletionErrors = {
      * Internal error
      */
     500: StructuredCompletionError;
+    /**
+     * AI usage validation unavailable — retry later
+     */
+    503: StructuredCompletionError;
 };
 
 export type StructuredCompletionError2 = StructuredCompletionErrors[keyof StructuredCompletionErrors];

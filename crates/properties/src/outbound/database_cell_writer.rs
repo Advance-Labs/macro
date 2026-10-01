@@ -109,8 +109,8 @@ impl DatabaseCellWriter for PropertiesPgRepo {
         property_definition_id: Uuid,
         value: Option<PropertyValue>,
     ) -> Result<(), Self::Err> {
-        entity_property_queries::upsert_entity_property(
-            &mut **transaction,
+        entity_property_queries::upsert_entity_property_in_transaction(
+            transaction,
             &entity.entity_id,
             entity.entity_type,
             property_definition_id,

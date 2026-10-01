@@ -6,6 +6,7 @@
  */
 import type {
   AddServerRequest,
+  AiAdmissionErrorBody,
   BrowsePipedreamMcpCatalogParams,
   CallToolRequest,
   CallToolResponse,
@@ -1336,9 +1337,19 @@ export type retryGatherHandlerResponse400 = {
   status: 400;
 };
 
+export type retryGatherHandlerResponse402 = {
+  data: AiAdmissionErrorBody;
+  status: 402;
+};
+
 export type retryGatherHandlerResponse500 = {
   data: void;
   status: 500;
+};
+
+export type retryGatherHandlerResponse503 = {
+  data: AiAdmissionErrorBody;
+  status: 503;
 };
 
 export type retryGatherHandlerResponseSuccess =
@@ -1347,7 +1358,9 @@ export type retryGatherHandlerResponseSuccess =
   };
 export type retryGatherHandlerResponseError = (
   | retryGatherHandlerResponse400
+  | retryGatherHandlerResponse402
   | retryGatherHandlerResponse500
+  | retryGatherHandlerResponse503
 ) & {
   headers: Headers;
 };
@@ -2437,6 +2450,11 @@ export type sendChatMessageResponse403 = {
   status: 403;
 };
 
+export type sendChatMessageResponse503 = {
+  data: ChatMessageError;
+  status: 503;
+};
+
 export type sendChatMessageResponseSuccess = sendChatMessageResponse200 & {
   headers: Headers;
 };
@@ -2445,6 +2463,7 @@ export type sendChatMessageResponseError = (
   | sendChatMessageResponse401
   | sendChatMessageResponse402
   | sendChatMessageResponse403
+  | sendChatMessageResponse503
 ) & {
   headers: Headers;
 };
@@ -2546,7 +2565,7 @@ export type structuredCompletionResponse401 = {
 };
 
 export type structuredCompletionResponse402 = {
-  data: void;
+  data: StructuredCompletionError;
   status: 402;
 };
 
@@ -2560,6 +2579,11 @@ export type structuredCompletionResponse500 = {
   status: 500;
 };
 
+export type structuredCompletionResponse503 = {
+  data: StructuredCompletionError;
+  status: 503;
+};
+
 export type structuredCompletionResponseSuccess =
   structuredCompletionResponse200 & {
     headers: Headers;
@@ -2570,6 +2594,7 @@ export type structuredCompletionResponseError = (
   | structuredCompletionResponse402
   | structuredCompletionResponse403
   | structuredCompletionResponse500
+  | structuredCompletionResponse503
 ) & {
   headers: Headers;
 };

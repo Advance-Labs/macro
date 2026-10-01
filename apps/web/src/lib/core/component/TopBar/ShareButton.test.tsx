@@ -6,6 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Permissions } from '../SharePermissions';
 import { ShareModal, ShareOptions, ShareTrigger } from './ShareButton';
 
+const ME = 'macro|me@example.com';
+const SOMEONE_ELSE = 'macro|someone-else@example.com';
+
 const mocks = vi.hoisted(() => ({
   sendToChannel: vi.fn(),
   sendToUsers: vi.fn(),
@@ -134,7 +137,7 @@ vi.mock('@core/component/VerticalScrollIndicators', () => ({
   ScrollIndicators: () => null,
 }));
 vi.mock('@core/context/user', () => ({
-  useUserId: () => () => 'owner',
+  useUserId: () => () => ME,
   useReferralCode: () => () => undefined,
 }));
 vi.mock('@channel/use-channel-participants', () => ({
@@ -173,7 +176,7 @@ vi.mock('@core/signal/permissions', () => ({
   useGetPermissions: () => () => 'owner',
   useIsDocumentOwner: () => () => true,
 }));
-vi.mock('@core/user', () => ({ idToEmail: (id: string) => id }));
+vi.mock('@core/user', () => ({ getDisplayName: (id: string) => id }));
 vi.mock('@core/util/currentBlockDocumentName', () => ({
   useBlockDocumentName: () => () => '',
 }));
@@ -211,7 +214,7 @@ vi.mock('@queries/call/call', () => ({
       return {
         callId: 'call-1',
         channelId: mocks.callRecordChannelId,
-        createdBy: 'owner',
+        createdBy: ME,
         shareWithTeam: mocks.callRecordShared,
       };
     },
@@ -335,13 +338,13 @@ beforeEach(() => {
   mocks.getAgentPermissions.mockResolvedValue(
     ok({
       id: 'session-permissions',
-      owner: 'owner',
+      owner: ME,
       channelSharePermissions: [],
     })
   );
   mocks.updateAgentPermissions.mockResolvedValue(ok({}));
   mocks.getInitiativePermissions.mockResolvedValue(
-    ok({ id: 'project-permissions', owner: 'owner' })
+    ok({ id: 'project-permissions', owner: ME })
   );
   mocks.updateInitiativePermissions.mockResolvedValue(ok({}));
   mocks.updateChatPermissions.mockResolvedValue({ isErr: () => false });
@@ -365,7 +368,7 @@ function mountShare(isOwner: boolean) {
     <ShareModal
       id="persisted-session"
       name="Fix the menu"
-      owner={isOwner ? 'owner' : 'someone-else'}
+      owner={isOwner ? ME : SOMEONE_ELSE}
       itemType="agent_session"
       blockAlias="agent"
       userPermissions={Permissions.OWNER}
@@ -389,7 +392,7 @@ describe('agent session sharing', () => {
       mocks.getAgentPermissions.mockResolvedValue(
         ok({
           id: 'session-permissions',
-          owner: 'owner',
+          owner: ME,
           linkShare: 'PUBLIC',
           linkShareAccessLevel: 'view',
           channelSharePermissions: [
@@ -567,7 +570,7 @@ describe('agent session sharing', () => {
       <ShareModal
         id="persisted-session"
         name="Fix the menu"
-        owner="someone-else"
+        owner={SOMEONE_ELSE}
         itemType="agent_session"
         blockAlias="agent"
         userPermissions={Permissions.CAN_VIEW}
@@ -716,7 +719,7 @@ function mountChatShare() {
     isErr: () => false,
     value: {
       id: 'perm-1',
-      owner: 'owner',
+      owner: ME,
       linkShare: null,
       linkShareAccessLevel: null,
       teamShareAccessLevel: 'view',
@@ -727,7 +730,7 @@ function mountChatShare() {
     <ShareModal
       id="chat-1"
       name="Planning chat"
-      owner="owner"
+      owner={ME}
       itemType="chat"
       blockAlias="chat"
       userPermissions={Permissions.OWNER}
@@ -742,7 +745,7 @@ function mountCallShare() {
     isErr: () => false,
     value: {
       id: 'perm-call',
-      owner: 'owner',
+      owner: ME,
       linkShare: null,
       linkShareAccessLevel: null,
       teamShareAccessLevel: 'view',
@@ -753,7 +756,7 @@ function mountCallShare() {
     <ShareModal
       id="call-1"
       name="Weekly sync"
-      owner="owner"
+      owner={ME}
       itemType="call"
       blockAlias="call"
       userPermissions={Permissions.OWNER}
@@ -932,7 +935,7 @@ function mountProjectShare() {
     isErr: () => false,
     value: {
       id: 'perm-project',
-      owner: 'owner',
+      owner: ME,
       linkShare: null,
       linkShareAccessLevel: null,
       teamShareAccessLevel: 'view',
@@ -943,7 +946,7 @@ function mountProjectShare() {
     <ShareModal
       id="project-1"
       name="Launch folder"
-      owner="owner"
+      owner={ME}
       itemType="project"
       blockAlias="project"
       userPermissions={Permissions.OWNER}
@@ -1045,7 +1048,7 @@ describe('native project sharing', () => {
     } = {}
   ) {
     mocks.inBlock = false;
-    const owner = options.owner ?? 'owner';
+    const owner = options.owner ?? ME;
     render(() => (
       <ShareModal
         id="initiative-1"
@@ -1054,7 +1057,7 @@ describe('native project sharing', () => {
         itemType="initiative"
         blockAlias="initiative"
         userPermissions={
-          owner === 'owner' ? Permissions.OWNER : Permissions.CAN_VIEW
+          owner === ME ? Permissions.OWNER : Permissions.CAN_VIEW
         }
         people={options.people}
         hasDirectShares={options.hasDirectShares}
@@ -1116,7 +1119,7 @@ describe('native project sharing', () => {
   });
 
   it('lets only the owner forward a project', () => {
-    mountProject({ owner: 'someone-else' });
+    mountProject({ owner: SOMEONE_ELSE });
     expect(
       screen.getByText(
         'Only the owner can share access to this project. You can copy a link for people who already have access.'
@@ -1130,7 +1133,7 @@ describe('native project sharing', () => {
     mocks.getInitiativePermissions.mockResolvedValue(
       ok({
         id: 'project-permissions',
-        owner: 'owner',
+        owner: ME,
         teamShareAccessLevel: 'view',
         channelSharePermissions: [
           { channel_id: 'channel-1', access_level: 'edit' },
