@@ -5,6 +5,7 @@ import {
   createDatabaseSqlQuery,
   type DatabaseSqlQuery,
   type DatabaseSqlQueryCapabilities,
+  type DatabaseSqlRun,
   type DatabaseSqlStatement,
   refreshInBackground,
   sameDatabaseSqlStatement,
@@ -291,13 +292,19 @@ export function createDatabaseRowsSource(props: {
     };
   };
 
-  /** Read from the network again; what comes back is at least `version`. */
+  /**
+   * Read from the network again; what comes back is at least `version`. A
+   * read a later one replaced shows nothing, so it leaves the version alone.
+   */
   function readAgain(version: number): ResultAsync<void, DatabaseReadFailure> {
     return ResultAsync.combine([
       rowsQuery.refresh(),
-      retainedRowIds().length ? retainedQuery.refresh() : okAsync(undefined),
-    ]).map(() => {
-      setReadVersion((previous) => Math.max(previous, version));
+      retainedRowIds().length
+        ? retainedQuery.refresh()
+        : okAsync<DatabaseSqlRun>({ landed: true }),
+    ]).map(([rows, retained]) => {
+      if (rows.landed && retained.landed)
+        setReadVersion((previous) => Math.max(previous, version));
     });
   }
   function refresh(): ResultAsync<void, DatabaseReadFailure> {

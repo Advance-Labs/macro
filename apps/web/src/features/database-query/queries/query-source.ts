@@ -138,6 +138,6 @@ export function createLiveQuerySource(input: {
     answer,
     error,
     loading: () => query.loading() || (!answer() && error() === undefined),
-    refresh: query.refresh,
+    refresh: () => query.refresh().map(() => undefined),
   };
 }

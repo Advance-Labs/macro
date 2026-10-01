@@ -18,6 +18,7 @@ import {
   type Exchange,
   type Operation,
 } from '@urql/core';
+import { ok } from 'neverthrow';
 import { createRoot, createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { empty, fromPromise, fromValue, mergeMap, pipe } from 'wonka';
@@ -342,7 +343,7 @@ describe('createDatabaseSqlQuery', () => {
       expect(query.outcome()?.rows).toEqual([[{ type: 'text', value: 'Acme' }]])
     );
 
-    expect((await query.refresh()).isOk()).toBe(true);
+    expect(await query.refresh()).toEqual(ok({ landed: true }));
     failing = true;
     expect((await query.refresh())._unsafeUnwrapErr()).toEqual({
       kind: 'fetch',
@@ -444,6 +445,63 @@ describe('createDatabaseSqlQuery', () => {
     expect(query.outcome()?.rows).toEqual([
       [{ type: 'text', value: 'Globex' }],
     ]);
+  });
+});
+
+describe('a refresh another run replaced', () => {
+  it('resolves as not landed when the statement changes while it is in flight', async () => {
+    let answerRefresh: (() => void) | undefined;
+    const exchange: Exchange = () => (incoming) =>
+      pipe(
+        incoming,
+        mergeMap((operation) => {
+          if (operation.kind === 'teardown') return empty;
+          const response = {
+            operation,
+            data: {
+              user: {
+                id: 'macro|viewer@databases.test',
+                emailLinks: [],
+                soup: { items: [acme], nextCursor: null },
+              },
+            } satisfies SoupQuery,
+            stale: false,
+            hasNext: false,
+          };
+          if (operation.context.requestPolicy !== 'network-only')
+            return fromValue(response);
+          return fromPromise(
+            new Promise<typeof response>((resolve) => {
+              answerRefresh = () => resolve(response);
+            })
+          );
+        })
+      );
+    const client = createClient({
+      url: 'http://test.invalid/graphql',
+      exchanges: [exchange],
+    });
+    const [sql, setSql] = createSignal('SELECT name FROM crm.deals');
+    const query = createRoot((cleanup) => {
+      dispose = cleanup;
+      return createDatabaseSqlQuery(() => ({ schema, sql: sql() }), {
+        client: () => client,
+        cacheHost: () => undefined,
+        people: async () => [],
+        catalog: async () => catalog,
+        open: names,
+      });
+    });
+    await vi.waitFor(() =>
+      expect(query.outcome()?.rows).toEqual([[{ type: 'text', value: 'Acme' }]])
+    );
+
+    const refreshed = query.refresh();
+    setSql("SELECT name FROM crm.deals WHERE name = 'Acme'");
+    await vi.waitFor(() => expect(answerRefresh).toBeDefined());
+    answerRefresh?.();
+
+    expect(await refreshed).toEqual(ok({ landed: false }));
   });
 });
 

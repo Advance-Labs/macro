@@ -148,9 +148,9 @@ export function createDatabaseRelations(props: {
           (await current.detail()?.refetch())?.isError
             ? err({ kind: 'table-unavailable' })
             : ok(undefined);
-        return new ResultAsync(refetch()).andThen(() =>
-          current.query.refresh()
-        );
+        return new ResultAsync(refetch())
+          .andThen(() => current.query.refresh())
+          .map(() => undefined);
       },
     };
   };

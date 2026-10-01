@@ -112,6 +112,9 @@ function runStatement(
   });
 }
 
+/** Whether a run's answer is the one shown; a later run, or a changed statement, replaces it. */
+export type DatabaseSqlRun = { landed: boolean };
+
 export interface DatabaseSqlQuery {
   /** The last answer; kept while a later run, of this statement or a changed one, is in flight. */
   outcome: Accessor<Outcome | undefined>;
@@ -121,7 +124,7 @@ export interface DatabaseSqlQuery {
   error: Accessor<DatabaseSqlFailure | undefined>;
   loading: Accessor<boolean>;
   /** Read the statement's tables from the server again. */
-  refresh: () => ResultAsync<void, DatabaseSqlFailure>;
+  refresh: () => ResultAsync<DatabaseSqlRun, DatabaseSqlFailure>;
 }
 
 /** The app's GraphQL client and cache, and the contacts query for people. */
@@ -151,7 +154,7 @@ export function createDatabaseSqlQuery(
   let latest = 0;
   // The cache may not hold what an in-flight network read will bring, so a
   // cache change waits for it instead of answering from older rows.
-  let networkRead: ResultAsync<void, DatabaseSqlFailure> | undefined;
+  let networkRead: ResultAsync<DatabaseSqlRun, DatabaseSqlFailure> | undefined;
   // First-page evidence for the local filter index, per statement.
   let baselines: LocalMembership['baselines'] = new Map();
 
@@ -160,7 +163,7 @@ export function createDatabaseSqlQuery(
     current: DatabaseSqlStatement,
     requestPolicy: RequestPolicy,
     reconcile: boolean
-  ): ResultAsync<void, DatabaseSqlFailure> => {
+  ): ResultAsync<DatabaseSqlRun, DatabaseSqlFailure> => {
     const generation = ++latest;
     const host = capabilities.cacheHost();
     setLoading(true);
@@ -177,8 +180,8 @@ export function createDatabaseSqlQuery(
             membership: host ? { host, baselines, reconcile } : undefined,
           }),
           capabilities
-        ).map((answer) => {
-          if (generation !== latest) return;
+        ).map((answer): DatabaseSqlRun => {
+          if (generation !== latest) return { landed: false };
           // A cache change that left the answer alone keeps the same outcome.
           batch(() => {
             if (JSON.stringify(untrack(catalog)) !== JSON.stringify(built))
@@ -187,10 +190,11 @@ export function createDatabaseSqlQuery(
               setOutcome(answer);
             setError(undefined);
           });
+          return { landed: true };
         })
       )
       .orElse((failure) => {
-        if (generation !== latest) return okAsync(undefined);
+        if (generation !== latest) return okAsync({ landed: false });
         setError(failure);
         return errAsync(failure);
       });
@@ -247,7 +251,7 @@ export function createDatabaseSqlQuery(
     loading,
     refresh: () => {
       const current = untrack(statement);
-      if (!current) return okAsync(undefined);
+      if (!current) return okAsync({ landed: false });
       const reading = run(current, 'network-only', false);
       networkRead = reading;
       const settle = async () => {
@@ -262,7 +266,7 @@ export function createDatabaseSqlQuery(
 
 /** Refresh without waiting; a failure shows through the reader's own error. */
 export function refreshInBackground(reader: {
-  refresh: () => ResultAsync<void, unknown>;
+  refresh: () => ResultAsync<unknown, unknown>;
 }): void {
   void reader.refresh();
 }

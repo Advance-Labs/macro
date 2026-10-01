@@ -940,6 +940,45 @@ describe('accepted writes after switching tables', () => {
   });
 });
 
+describe('a refresh another read replaced', () => {
+  it('leaves the read version where it was', async () => {
+    const [search, setSearch] = createSignal('');
+    let holding = false;
+    let answerHeld: ((outcome: Outcome) => void) | undefined;
+    const { read } = engine(() =>
+      holding
+        ? new Promise((resolve) => {
+            answerHeld = resolve;
+          })
+        : guests()
+    );
+    const { source, client } = setup(detail(), vi.fn<ApplyOps>(), {
+      read,
+      search,
+    });
+    await waitFor(() => expect(source.snapshot()?.version).toBe(5));
+    const newerSchema = detail();
+    newerSchema.tables[0].table.version = 6;
+    client.setQueryData(databasesKeys.detail('db').queryKey, newerSchema);
+    await waitFor(() => expect(source.loading()).toBe(false));
+
+    holding = true;
+    const refreshed = source.refresh();
+    await waitFor(() => expect(answerHeld).toBeDefined());
+    holding = false;
+    setSearch('Ada');
+    await waitFor(() => expect(source.loading()).toBe(false));
+    answerHeld?.(guests());
+
+    expect(await refreshed).toEqual(ok(undefined));
+    expect(source.snapshot()).toEqual({
+      version: 5,
+      rows: [{ rowId: 'record', cells: { name: 'Ada' } }],
+      retained: [],
+    });
+  });
+});
+
 describe('first-entry column types', () => {
   function inferredDetail(
     dataType: 'STRING' | 'NUMBER' | 'ENTITY',
