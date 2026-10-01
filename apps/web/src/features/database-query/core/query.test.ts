@@ -3,8 +3,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   isScalarAnswer,
   parseQueryProposal,
+  type QueryAnswer,
   type QuerySchema,
   queryErrorMessage,
+  queryFailureDetail,
   queryStarters,
   unquoteIdentifier,
 } from './query';
@@ -105,38 +107,71 @@ describe('database questions', () => {
     expect(() => parseQueryProposal({ sql: 'SELECT 1' })).toThrow('incomplete');
   });
   it('only calls exactly one cell a scalar, including null', () => {
-    const answer = {
-      results: [
-        { columns: [{ name: 'Answer', entity_type: null }], rows: [[null]] },
-      ],
-      read_tables: [],
-      read_versions: {},
-      truncated_tables: [],
+    const answer: QueryAnswer = {
+      columns: [{ name: 'Answer', kind: 'number' }],
+      rows: [[null]],
+      rowIds: [],
+      readTables: [],
+      readDatabaseIds: [],
+      truncatedTables: [],
     };
     expect(isScalarAnswer(answer)).toBe(true);
+    expect(isScalarAnswer({ ...answer, rows: [] })).toBe(false);
+    expect(isScalarAnswer({ ...answer, rows: [[null], [null]] })).toBe(false);
     expect(
       isScalarAnswer({
         ...answer,
-        results: [{ ...answer.results[0], rows: [] }],
-      })
-    ).toBe(false);
-    expect(
-      isScalarAnswer({
-        ...answer,
-        results: [...answer.results, ...answer.results],
+        columns: [
+          { name: 'Answer', kind: 'number' },
+          { name: 'Other', kind: 'number' },
+        ],
+        rows: [[null, null]],
       })
     ).toBe(false);
   });
 });
 
 describe('queryErrorMessage', () => {
-  it('explains that questions only read when the browser engine refuses a write', () => {
+  it('explains that questions only read when a write is refused', () => {
+    expect(queryErrorMessage({ kind: 'read-only' })).toBe(
+      'Questions only read your data. Ask a question about it above.'
+    );
     expect(
-      queryErrorMessage(
-        new Error('the engine runs SELECT statements; writes go through run()')
-      )
+      queryErrorMessage({
+        kind: 'question',
+        error: { code: 'READ_ONLY', message: 'writes are not allowed' },
+      })
     ).toBe(
       'Questions can only read data you have access to. Edit records in the table or board.'
+    );
+  });
+
+  it('words the service failures it knows by code', () => {
+    expect(
+      queryErrorMessage({
+        kind: 'question',
+        error: { code: 'NOT_FOUND', message: '' },
+      })
+    ).toBe('This saved question no longer exists.');
+    expect(
+      queryErrorMessage({
+        kind: 'question',
+        error: { code: 'BUDGET_EXCEEDED', message: 'Query budget exceeded' },
+      })
+    ).toBe('This question needs less data. Try a narrower question.');
+    expect(
+      queryErrorMessage({
+        kind: 'databases',
+        error: { code: 'GONE', message: '' },
+      })
+    ).toBe(
+      'This table is no longer available. Choose a database and update the question.'
+    );
+    expect(
+      queryErrorMessage({ kind: 'fetch', message: 'Failed to fetch' })
+    ).toBe('Your data could not be reached. Check your connection.');
+    expect(queryErrorMessage({ kind: 'table-unavailable' })).toBe(
+      'Choose an available table before asking this question.'
     );
   });
 });
@@ -145,59 +180,61 @@ describe('queryErrorMessage with SQL hidden', () => {
   afterEach(() => {
     showDatabaseSql.enabled = false;
   });
-  const plain = (message: string) => queryErrorMessage(new Error(message));
 
-  it('names what changed instead of quoting the engine', () => {
+  it('turns the engine’s words, which quote the statement, into a plain line', () => {
     expect(
-      plain('unknown column "Price" in "Shop"."Items" — did you mean "Prices"?')
-    ).toBe(
-      "This answer couldn't be computed: the column Price no longer exists."
-    );
-    expect(plain('unknown table "Shop"."Old Items"')).toBe(
-      "This answer couldn't be computed: the table Old Items no longer exists."
-    );
-    expect(
-      plain(
-        'table "Guests" exists in Party and Offsite — qualify it as Party.Guests or Offsite.Guests'
-      )
-    ).toBe(
-      "This answer couldn't be computed: more than one database has a table named Guests."
-    );
-    expect(
-      plain('"Maybe" is not an option of "Status" (Going, Declined)')
-    ).toBe(
-      "This answer couldn't be computed: Maybe is not an option of Status."
-    );
-    expect(plain('"Price" is a number column; compare it to a number')).toBe(
-      "This answer couldn't be computed: Price holds number values, which don't fit this question."
-    );
-    expect(plain('"Tags" holds several values; use HAS instead of =')).toBe(
-      "This answer couldn't be computed: Tags can't be used that way."
-    );
-  });
-
-  it('turns anything else that quotes a statement into a plain line', () => {
-    expect(plain('expected FROM, found end of input at 14..14')).toBe(
-      "This answer couldn't be computed. Try asking again."
-    );
-    expect(plain('"Name" must appear in GROUP BY or inside an aggregate')).toBe(
-      "This answer couldn't be computed. Try asking again."
-    );
-    expect(
-      queryErrorMessage(new TypeError('buildCatalog is not a function'))
+      queryErrorMessage({
+        kind: 'engine',
+        message: 'expected FROM, found end of input at 14..14',
+      })
     ).toBe("This answer couldn't be computed. Try asking again.");
-    expect(plain('Query budget exceeded')).toBe(
-      'This question needs less data. Try a narrower question.'
-    );
+    expect(
+      queryErrorMessage({
+        kind: 'question',
+        error: {
+          code: 'INVALID_QUERY',
+          message: '"Name" must appear in GROUP BY or inside an aggregate',
+        },
+      })
+    ).toBe("This answer couldn't be computed. Try asking again.");
   });
 
   it('keeps authored messages and the raw engine text when SQL is shown', () => {
     expect(
-      plain('Choose an available table before asking this question.')
-    ).toBe('Choose an available table before asking this question.');
+      queryErrorMessage({
+        kind: 'generation',
+        message: 'Try a question about the properties in this database.',
+      })
+    ).toBe('Try a question about the properties in this database.');
     showDatabaseSql.enabled = true;
-    expect(plain('expected FROM, found end of input at 14..14')).toBe(
-      'expected FROM, found end of input at 14..14'
+    expect(
+      queryErrorMessage({
+        kind: 'engine',
+        message: 'expected FROM, found end of input at 14..14',
+      })
+    ).toBe('expected FROM, found end of input at 14..14');
+    expect(
+      queryErrorMessage({
+        kind: 'question',
+        error: { code: 'BUDGET_EXCEEDED', message: 'Query budget exceeded' },
+      })
+    ).toBe(
+      'This question needs less data. Try a narrower question or add a LIMIT in SQL.'
     );
+  });
+});
+
+describe('queryFailureDetail', () => {
+  it('is the engine’s or the service’s own words', () => {
+    expect(
+      queryFailureDetail({ kind: 'engine', message: 'unknown table "Old"' })
+    ).toBe('unknown table "Old"');
+    expect(
+      queryFailureDetail({
+        kind: 'question',
+        error: { code: 'INVALID_QUERY', message: 'bad statement' },
+      })
+    ).toBe('bad statement');
+    expect(queryFailureDetail({ kind: 'read-only' })).toBeUndefined();
   });
 });

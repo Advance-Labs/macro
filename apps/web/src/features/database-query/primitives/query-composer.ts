@@ -1,13 +1,13 @@
-import { isFeatureEnabled, showDatabaseSql } from '@core/constant/featureFlags';
+import { err, ok, type Result } from 'neverthrow';
 import { createSignal, onCleanup } from 'solid-js';
 import type { QueryComposerOptions } from '../context/query-context';
 import {
   looksLikeReadQuery,
-  QueryActionError,
   type QueryAnswer,
-  QueryOutcomeUnknownError,
+  type QueryFailure,
   type QuerySchema,
   queryErrorMessage,
+  queryFailureDetail,
 } from '../core/query';
 import {
   isChartMode,
@@ -33,10 +33,6 @@ type AnswerPreview = {
 };
 type QuestionContext = { databaseId?: string; tableId?: string };
 type ResolvedSource = { schema: QuerySchema; context: QuestionContext };
-const readOnlyMessage = () =>
-  isFeatureEnabled(showDatabaseSql)
-    ? 'Questions only read your data. Start with SELECT, or ask a question above.'
-    : 'Questions only read your data. Ask a question about it above.';
 
 /** Asking previews through a read-only capability; saving a document remains the host's action. */
 export function createQueryComposer(options: QueryComposerOptions) {
@@ -127,9 +123,9 @@ export function createQueryComposer(options: QueryComposerOptions) {
   const questionChanged = () => sqlPrompt() !== prompt().trim();
   const sourceChanged = () => !isCurrentContext(sqlContext());
   const needsGeneration = () => questionChanged() || sourceChanged();
-  const reportError = (caught: unknown) => {
-    setError(queryErrorMessage(caught));
-    setErrorDetail(caught instanceof Error ? caught.message : String(caught));
+  const reportFailure = (failure: QueryFailure) => {
+    setError(queryErrorMessage(failure));
+    setErrorDetail(queryFailureDetail(failure));
   };
 
   async function readAnswer(
@@ -139,14 +135,17 @@ export function createQueryComposer(options: QueryComposerOptions) {
     source: QuestionContext,
     display = presentation(),
     actionSummary?: string
-  ) {
+  ): Promise<Result<void, QueryFailure>> {
     const databaseId = schema().databaseId;
     setPhase('running');
-    const answer = await options.read(statement, {
+    const read = await options.read(statement, {
       databaseId: options.generationCanWrite ? undefined : source.databaseId,
       source: schema(),
     });
-    if (execution !== revision || !isCurrentContext(source)) return;
+    if (read.isErr()) return err(read.error);
+    if (execution !== revision || !isCurrentContext(source))
+      return ok(undefined);
+    const answer = read.value;
     if (answer.source)
       setResolvedSource({ schema: answer.source, context: source });
     setPreview({
@@ -158,12 +157,72 @@ export function createQueryComposer(options: QueryComposerOptions) {
       context: source,
       databaseId: answer.source
         ? answer.source.databaseId
-        : answer.read_database_ids?.length === 1
-          ? answer.read_database_ids[0]
+        : answer.readDatabaseIds.length === 1
+          ? answer.readDatabaseIds[0]
           : databaseId,
     });
     setPresentation(display);
     accepted = { sql: statement, prompt: question, tableId: source.tableId };
+    return ok(undefined);
+  }
+
+  /** Ask the assistant for the question's SQL, then read its answer. */
+  async function ask(
+    question: string,
+    generation: number,
+    source: QuestionContext
+  ): Promise<Result<void, QueryFailure>> {
+    if (
+      source.tableId &&
+      !requestSchema().tables.some((table) => table.id === source.tableId)
+    )
+      return err({ kind: 'table-unavailable' });
+    const generated = await options.generate({
+      prompt: question,
+      sql: sql(),
+      schema: requestSchema(),
+    });
+    if (generated.isErr()) return err(generated.error);
+    const next = generated.value;
+    if (generation !== revision || !isCurrentContext(source)) {
+      if (options.generationCanWrite && next.actionSummary) {
+        setActionSummary(next.actionSummary);
+        setActionNeedsRevision(true);
+        setUndo(undefined);
+      }
+      return ok(undefined);
+    }
+    setActionSummary(next.actionSummary);
+    const statement = next.sql.trim();
+    if (!looksLikeReadQuery(statement)) return err({ kind: 'read-only' });
+    setUndo(
+      next.actionSummary
+        ? undefined
+        : {
+            ...accepted,
+            preview: preview(),
+            presentation: presentation(),
+            resolvedSource: resolvedSource(),
+          }
+    );
+    setResolvedSource(
+      next.source ? { schema: next.source, context: source } : undefined
+    );
+    setSqlSignal(statement);
+    setSqlPrompt(question);
+    setSqlContext(source);
+    return readAnswer(
+      statement,
+      question,
+      generation,
+      source,
+      {
+        title: next.title,
+        displayMode: next.displayMode ?? 'scalar',
+        chart: next.chart,
+      },
+      next.actionSummary
+    );
   }
 
   const generate = async () => {
@@ -181,88 +240,37 @@ export function createQueryComposer(options: QueryComposerOptions) {
     setPhase('generating');
     setGenerationPending(true);
     clearError();
-    try {
-      if (
-        source.tableId &&
-        !requestSchema().tables.some((table) => table.id === source.tableId)
-      )
-        throw new Error(
-          'Choose an available table before asking this question.'
-        );
-      const next = await options.generate({
-        prompt: question,
-        sql: sql(),
-        schema: requestSchema(),
-      });
-      if (generation !== revision || !isCurrentContext(source)) {
-        if (options.generationCanWrite && next.actionSummary) {
-          setActionSummary(next.actionSummary);
+    const asked = await ask(question, generation, source);
+    if (asked.isErr()) {
+      const failure = asked.error;
+      // The ledger outlives a stale request: data may have changed regardless.
+      const ledger =
+        options.generationCanWrite &&
+        (failure.kind === 'action-incomplete' ||
+          failure.kind === 'outcome-unknown');
+      if ((generation === revision && isCurrentContext(source)) || ledger) {
+        if (failure.kind === 'action-incomplete') {
+          setActionSummary(failure.actionSummary);
           setActionNeedsRevision(true);
           setUndo(undefined);
         }
-        return;
-      }
-      setActionSummary(next.actionSummary);
-      const statement = next.sql.trim();
-      if (!looksLikeReadQuery(statement)) throw new Error(readOnlyMessage());
-      setUndo(
-        next.actionSummary
-          ? undefined
-          : {
-              ...accepted,
-              preview: preview(),
-              presentation: presentation(),
-              resolvedSource: resolvedSource(),
-            }
-      );
-      setResolvedSource(
-        next.source ? { schema: next.source, context: source } : undefined
-      );
-      setSqlSignal(statement);
-      setSqlPrompt(question);
-      setSqlContext(source);
-      await readAnswer(
-        statement,
-        question,
-        generation,
-        source,
-        {
-          title: next.title,
-          displayMode: next.displayMode ?? 'scalar',
-          chart: next.chart,
-        },
-        next.actionSummary
-      );
-    } catch (caught) {
-      if (
-        (generation === revision && isCurrentContext(source)) ||
-        (options.generationCanWrite &&
-          (caught instanceof QueryActionError ||
-            caught instanceof QueryOutcomeUnknownError))
-      ) {
-        if (caught instanceof QueryActionError) {
-          setActionSummary(caught.actionSummary);
-          setActionNeedsRevision(true);
-          setUndo(undefined);
-        }
-        if (caught instanceof QueryOutcomeUnknownError) {
+        if (failure.kind === 'outcome-unknown') {
           setActionSummary(undefined);
           setOutcomeUnknown(true);
           setUndo(undefined);
         }
-        reportError(caught);
+        reportFailure(failure);
       }
-    } finally {
-      setGenerationPending(false);
-      setPhase('idle');
     }
+    setGenerationPending(false);
+    setPhase('idle');
   };
 
   const run = async () => {
     const statement = sql().trim();
     if (!statement || generationPending() || phase() !== 'idle') return;
     if (!looksLikeReadQuery(statement)) {
-      setError(readOnlyMessage());
+      reportFailure({ kind: 'read-only' });
       return;
     }
     const execution = ++revision;
@@ -271,21 +279,17 @@ export function createQueryComposer(options: QueryComposerOptions) {
     setSqlPrompt(question);
     setSqlContext(source);
     clearError();
-    try {
-      await readAnswer(
-        statement,
-        question,
-        execution,
-        source,
-        presentation(),
-        actionSummary()
-      );
-    } catch (caught) {
-      if (execution === revision && isCurrentContext(source))
-        reportError(caught);
-    } finally {
-      if (execution === revision) setPhase('idle');
-    }
+    const read = await readAnswer(
+      statement,
+      question,
+      execution,
+      source,
+      presentation(),
+      actionSummary()
+    );
+    if (read.isErr() && execution === revision && isCurrentContext(source))
+      reportFailure(read.error);
+    if (execution === revision) setPhase('idle');
   };
 
   return {

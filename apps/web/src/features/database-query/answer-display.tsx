@@ -7,11 +7,11 @@ import {
   type AnswerDisplay,
   AnswerDisplayProvider,
 } from './context/answer-display';
-import { answerResultColumns } from './queries/answer-columns';
+import { answerNames } from './queries/answer-names';
 
-/** Answers drawn with the database grid's schema, mentions and text. */
+/** Answers drawn with the database grid's names, mentions and text. */
 export const appAnswerDisplay: AnswerDisplay = {
-  columns: answerResultColumns,
+  names: answerNames,
   mention: (id, entityType) => (
     <DatabaseMentionValue id={id} entityType={entityType} />
   ),

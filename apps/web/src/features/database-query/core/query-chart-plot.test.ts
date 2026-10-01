@@ -10,39 +10,52 @@ import { CHART_TIP, plotChart } from './query-chart-plot';
 const palette = ['one', 'two', 'three'];
 
 const status: QueryAnswer = {
-  results: [
-    {
-      columns: [
-        { name: 'Status', entity_type: null },
-        { name: 'Count', entity_type: null },
-        { name: 'Hours', entity_type: null },
-      ],
-      rows: [
-        ['Todo', 3, 12],
-        ['Done', 2, 30],
-      ],
-    },
+  columns: [
+    { name: 'Status', kind: 'text' },
+    { name: 'Count', kind: 'number' },
+    { name: 'Hours', kind: 'number' },
   ],
-  read_tables: [],
-  read_versions: {},
-  truncated_tables: [],
+  rows: [
+    [
+      { type: 'text', value: 'Todo' },
+      { type: 'number', value: 3 },
+      { type: 'number', value: 12 },
+    ],
+    [
+      { type: 'text', value: 'Done' },
+      { type: 'number', value: 2 },
+      { type: 'number', value: 30 },
+    ],
+  ],
+  rowIds: [],
+  readTables: [],
+  readDatabaseIds: [],
+  truncatedTables: [],
 };
 
 const daily: QueryAnswer = {
   ...status,
-  results: [
-    {
-      columns: [
-        { name: 'Day', entity_type: null },
-        { name: 'Signups', entity_type: null },
-        { name: 'Churn', entity_type: null },
-      ],
-      rows: [
-        ['2026-01-01', 2, 1],
-        ['2026-01-04', 20, 3],
-        ['2026-02-10', 12, 2],
-      ],
-    },
+  columns: [
+    { name: 'Day', kind: 'date' },
+    { name: 'Signups', kind: 'number' },
+    { name: 'Churn', kind: 'number' },
+  ],
+  rows: [
+    [
+      { type: 'date', value: '2026-01-01T00:00:00Z' },
+      { type: 'number', value: 2 },
+      { type: 'number', value: 1 },
+    ],
+    [
+      { type: 'date', value: '2026-01-04T00:00:00Z' },
+      { type: 'number', value: 20 },
+      { type: 'number', value: 3 },
+    ],
+    [
+      { type: 'date', value: '2026-02-10T00:00:00Z' },
+      { type: 'number', value: 12 },
+      { type: 'number', value: 2 },
+    ],
   ],
 };
 
@@ -353,14 +366,17 @@ describe('chart spec to Plot options', () => {
   it('formats ticks the way the grid formats values', () => {
     const big: QueryAnswer = {
       ...status,
-      results: [
-        {
-          ...status.results[0],
-          rows: [
-            ['Todo', 1200, 12],
-            ['Done', 25000, 30],
-          ],
-        },
+      rows: [
+        [
+          { type: 'text', value: 'Todo' },
+          { type: 'number', value: 1200 },
+          { type: 'number', value: 12 },
+        ],
+        [
+          { type: 'text', value: 'Done' },
+          { type: 'number', value: 25000 },
+          { type: 'number', value: 30 },
+        ],
       ],
     };
     const small = plotChart(
@@ -377,14 +393,17 @@ describe('chart spec to Plot options', () => {
       chartData(
         {
           ...daily,
-          results: [
-            {
-              ...daily.results[0],
-              rows: [
-                ['2025-12-30', 2, 1],
-                ['2026-01-04', 20, 3],
-              ],
-            },
+          rows: [
+            [
+              { type: 'date', value: '2025-12-30T00:00:00Z' },
+              { type: 'number', value: 2 },
+              { type: 'number', value: 1 },
+            ],
+            [
+              { type: 'date', value: '2026-01-04T00:00:00Z' },
+              { type: 'number', value: 20 },
+              { type: 'number', value: 3 },
+            ],
           ],
         },
         'line',
@@ -400,14 +419,17 @@ describe('chart spec to Plot options', () => {
   it('truncates long category labels to the room beside the bars', () => {
     const long: QueryAnswer = {
       ...status,
-      results: [
-        {
-          ...status.results[0],
-          rows: [
-            ['A very long status name that keeps going', 3, 1],
-            ['Done', 2, 1],
-          ],
-        },
+      rows: [
+        [
+          { type: 'text', value: 'A very long status name that keeps going' },
+          { type: 'number', value: 3 },
+          { type: 'number', value: 1 },
+        ],
+        [
+          { type: 'text', value: 'Done' },
+          { type: 'number', value: 2 },
+          { type: 'number', value: 1 },
+        ],
       ],
     };
     const chart = plotChart(
@@ -423,20 +445,15 @@ describe('chart spec to Plot options', () => {
 
   it('rotates column labels that would collide', () => {
     const crowded: QueryAnswer = {
-      ...status,
-      results: [
-        {
-          ...status.results[0],
-          rows: Array.from({ length: 12 }, (_, day) => [
-            `2026-03-${String(day + 10)}`,
-            day,
-            1,
-          ]),
-        },
-      ],
+      ...daily,
+      rows: Array.from({ length: 12 }, (_, day) => [
+        { type: 'date', value: `2026-03-${String(day + 10)}T00:00:00Z` },
+        { type: 'number', value: day },
+        { type: 'number', value: 1 },
+      ]),
     };
     const chart = plotChart(
-      chartData(crowded, 'bar', { x: 'Status', y: ['Count'] }),
+      chartData(crowded, 'bar', { x: 'Day', y: ['Signups'] }),
       { width: 400, palette }
     );
     expect(chart.x).toMatchObject({ tickRotate: -35 });

@@ -1,4 +1,4 @@
-import type { DatabaseDetail } from '@service-storage/databases';
+import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import { describe, expect, it } from 'vitest';
 import { databaseSqlAnswer } from './answer';
 import type { Catalog } from './generated/types';
@@ -27,6 +27,7 @@ const party: DatabaseDetail = {
         version: 7,
       },
       sql_name: '"Party Planner"."Guests"',
+      read_sql_name: '"Party Planner"."Guests"',
       columns: [
         {
           column: {
@@ -81,6 +82,7 @@ const party: DatabaseDetail = {
                 property_definition_id: 'def-rsvp',
                 display_order: 0,
                 value: { type: 'string', value: 'Yes' },
+                color: '#2f9e44',
                 ...timestamps,
               },
             ],
@@ -302,8 +304,16 @@ const catalog: Catalog = {
   ],
 };
 
+const noSource = {
+  markdown: false,
+  options: [],
+  tag: false,
+  target: null,
+  relatedTable: null,
+};
+
 describe('databaseSqlAnswer', () => {
-  it('spells a row-shaped result the way the exec API does', () => {
+  it('keeps the typed cells and says what each column was read from', () => {
     const answer = databaseSqlAnswer(
       {
         columns: [
@@ -346,53 +356,76 @@ describe('databaseSqlAnswer', () => {
     );
 
     expect(answer).toEqual({
-      results: [
+      columns: [
         {
-          columns: [
-            { name: 'row_id', entity_type: null, origin: null },
-            { name: 'Name', entity_type: null, origin: ['Guests', 'Name'] },
-            { name: 'RSVP', entity_type: null, origin: ['Guests', 'RSVP'] },
-            { name: 'Diet', entity_type: null, origin: ['Guests', 'Diet'] },
-            {
-              name: 'Parties',
-              entity_type: 'database_row',
-              origin: ['Guests', 'Parties'],
-            },
-            { name: 'Host', entity_type: 'user', origin: ['Guests', 'Host'] },
-            {
-              name: 'Arrives',
-              entity_type: null,
-              origin: ['Guests', 'Arrives'],
-            },
-            {
-              name: 'Plus one',
-              entity_type: null,
-              origin: ['Guests', 'Plus one'],
-            },
-          ],
-          rows: [
-            [
-              'row-ada',
-              'Ada',
-              'Yes',
-              '["Vegan","No nuts"]',
-              '["row-party"]',
-              'macro|ada@databases.test',
-              '2026-06-01T18:30:00+00:00',
-              1,
-            ],
-            ['row-grace', 'Grace', null, null, null, null, null, 0],
-          ],
+          name: 'Name',
+          kind: 'text',
+          source: { ...noSource, markdown: true },
         },
+        {
+          name: 'RSVP',
+          kind: 'select',
+          source: {
+            ...noSource,
+            options: [{ id: 'option-yes', label: 'Yes', color: '#2f9e44' }],
+          },
+        },
+        {
+          name: 'Diet',
+          kind: 'select',
+          source: {
+            ...noSource,
+            options: [
+              { id: 'option-vegan', label: 'Vegan', color: null },
+              { id: 'option-nuts', label: 'No nuts', color: null },
+            ],
+          },
+        },
+        {
+          name: 'Parties',
+          kind: 'entity',
+          source: {
+            ...noSource,
+            target: 'DATABASE_ROW',
+            relatedTable: { databaseId: 'db-party', tableId: 'table-parties' },
+          },
+        },
+        {
+          name: 'Host',
+          kind: 'entity',
+          source: { ...noSource, target: 'USER' },
+        },
+        { name: 'Arrives', kind: 'date', source: noSource },
+        { name: 'Plus one', kind: 'boolean', source: noSource },
       ],
-      read_tables: ['table-guests'],
-      read_database_ids: ['db-party'],
-      read_versions: { 'table-guests': 7 },
-      truncated_tables: [],
+      rows: [
+        [
+          { type: 'text', value: 'Ada' },
+          { type: 'options', value: ['option-yes'] },
+          { type: 'options', value: ['option-vegan', 'option-nuts'] },
+          { type: 'entities', value: ['row-party'] },
+          { type: 'entities', value: ['macro|ada@databases.test'] },
+          { type: 'date', value: '2026-06-01T18:30:00Z' },
+          { type: 'bool', value: true },
+        ],
+        [
+          { type: 'text', value: 'Grace' },
+          null,
+          null,
+          null,
+          null,
+          null,
+          { type: 'bool', value: false },
+        ],
+      ],
+      rowIds: ['row-ada', 'row-grace'],
+      readTables: ['table-guests'],
+      readDatabaseIds: ['db-party'],
+      truncatedTables: [],
     });
   });
 
-  it('keeps an aggregate without row ids and names truncated tables', () => {
+  it('leaves an aggregate without a source and names truncated tables', () => {
     const answer = databaseSqlAnswer(
       {
         columns: [
@@ -416,49 +449,36 @@ describe('databaseSqlAnswer', () => {
       [party]
     );
 
-    expect(answer).toEqual({
-      results: [
-        {
-          columns: [
-            { name: 'RSVP', entity_type: null, origin: ['Guests', 'RSVP'] },
-            { name: 'COUNT(*)', entity_type: null, origin: null },
-          ],
-          rows: [
-            ['Yes', 2],
-            [null, 1],
-          ],
-        },
-      ],
-      read_tables: ['table-guests'],
-      read_database_ids: ['db-party'],
-      read_versions: { 'table-guests': 7 },
-      truncated_tables: ['Guests'],
-    });
+    expect(answer.columns[1]).toEqual({ name: 'COUNT(*)', kind: 'number' });
+    expect(answer.rowIds).toEqual([]);
+    expect(answer.truncatedTables).toEqual(['Guests']);
   });
 
-  it('answers an empty row read with its columns and row ids', () => {
+  it('labels options from the catalog when the database detail is not loaded', () => {
     const answer = databaseSqlAnswer(
       {
-        columns: [{ name: 'Name', column: 'def-name', kind: 'text' }],
-        rows: [],
-        rowIds: [],
+        columns: [{ name: 'RSVP', column: 'def-rsvp', kind: 'select' }],
+        rows: [[{ type: 'options', value: ['option-yes'] }]],
+        rowIds: ['row-ada'],
         readTables: ['table-guests'],
         truncated: false,
         insertedRowIds: [],
         changesApplied: 0,
       },
       catalog,
-      [party]
+      []
     );
 
-    expect(answer.results).toEqual([
+    expect(answer.columns).toEqual([
       {
-        columns: [
-          { name: 'row_id', entity_type: null, origin: null },
-          { name: 'Name', entity_type: null, origin: ['Guests', 'Name'] },
-        ],
-        rows: [],
+        name: 'RSVP',
+        kind: 'select',
+        source: {
+          ...noSource,
+          options: [{ id: 'option-yes', label: 'Yes', color: null }],
+        },
       },
     ]);
+    expect(answer.readDatabaseIds).toEqual([]);
   });
 });

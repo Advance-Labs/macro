@@ -6,11 +6,12 @@ import XIcon from '@phosphor/x.svg';
 import { Button } from '@ui';
 import { createSignal, type JSX, Show } from 'solid-js';
 import { QueryResults, ScalarValue } from '../components/query-results';
-import { useResultColumns } from '../context/answer-display';
+import { useAnswerNames } from '../context/answer-display';
 import { resultCell, resultCellText } from '../core/answer-cell';
 import {
   isScalarAnswer,
   type QueryAnswer,
+  type QueryFailure,
   queryErrorMessage,
   type SavedQuestion,
 } from '../core/query';
@@ -19,7 +20,7 @@ export function LiveQuestion(props: {
   source: SavedQuestion;
   answer?: QueryAnswer;
   loading: boolean;
-  error?: unknown;
+  error?: QueryFailure;
   onRefresh: () => void;
   onRename?: (title: string) => void;
   /** The saved SQL, rendered only once the details are opened. */
@@ -80,7 +81,7 @@ export function LiveQuestion(props: {
       }}
     />
   );
-  const databaseColumn = useResultColumns(() => props.answer);
+  const names = useAnswerNames(() => props.answer);
   const scalarAnswer = () =>
     props.source.queryId &&
     !props.error &&
@@ -92,17 +93,12 @@ export function LiveQuestion(props: {
     if (!props.source.queryId) return 'Database';
     if (props.error) return 'Answer unavailable';
     if (!props.answer) return 'Loading answer…';
-    if (isScalarAnswer(props.answer)) {
-      const column = props.answer.results[0].columns[0];
+    if (isScalarAnswer(props.answer))
       return resultCellText(
-        resultCell(
-          props.answer.results[0].rows[0][0] ?? null,
-          column,
-          databaseColumn()(column)
-        )
+        resultCell(props.answer.rows[0][0] ?? null, props.answer.columns[0]),
+        names()
       );
-    }
-    return `${props.answer.results[0]?.rows.length ?? 0} records`;
+    return `${props.answer.rows.length} records`;
   };
   return (
     <Popover
@@ -148,7 +144,9 @@ export function LiveQuestion(props: {
               </Show>
               <span class="truncate tabular-nums">
                 <Show when={scalarAnswer()} fallback={value()}>
-                  {(answer) => <ScalarValue answer={answer()} />}
+                  {(answer) => (
+                    <ScalarValue answer={answer()} names={names()} />
+                  )}
                 </Show>
               </span>
             </Popover.Trigger>
@@ -200,6 +198,7 @@ export function LiveQuestion(props: {
               {(answer) => (
                 <QueryResults
                   answer={answer()}
+                  names={names}
                   compact
                   displayMode={props.source.displayMode}
                   chart={props.source.chart}
@@ -247,14 +246,17 @@ export function LiveQuestion(props: {
                   {props.source.prompt || 'Database question'}
                 </p>
                 <Show when={props.error}>
-                  <p role="alert" class="text-sm text-failure-ink">
-                    {queryErrorMessage(props.error)}
-                  </p>
+                  {(error) => (
+                    <p role="alert" class="text-sm text-failure-ink">
+                      {queryErrorMessage(error())}
+                    </p>
+                  )}
                 </Show>
                 <Show when={!props.error && props.answer}>
                   {(answer) => (
                     <QueryResults
                       answer={answer()}
+                      names={names}
                       displayMode={props.source.displayMode}
                       chart={props.source.chart}
                     />

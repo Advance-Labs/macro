@@ -1,8 +1,14 @@
-import type { DatabaseDetail } from '@service-storage/databases';
+import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
+import { errAsync, okAsync, type ResultAsync } from 'neverthrow';
 import { describe, expect, it, vi } from 'vitest';
-import type { QueryAnswer } from '../core/query';
+import type { QueryCapabilities } from '../context/query-context';
+import type { QueryAnswer, QueryFailure, QueryProposal } from '../core/query';
 import { toQuerySchema } from './query-source';
 import { createQuestionCapabilities } from './question-capabilities';
+
+type Describe = (
+  databaseId: string
+) => ResultAsync<DatabaseDetail, QueryFailure>;
 
 const detail: DatabaseDetail = {
   database: {
@@ -22,6 +28,7 @@ const detail: DatabaseDetail = {
       version: 1,
     },
     sql_name: `"${name}"`,
+    read_sql_name: `"${name}"`,
     columns: [],
   })),
 };
@@ -30,7 +37,7 @@ const request = {
   sql: '',
   schema: { name: 'Automatic', tables: [] },
 };
-const proposal = {
+const proposal: QueryProposal = {
   databaseId: 'support',
   sql: 'SELECT COUNT(*) FROM "Tickets"',
   explanation: 'Counts tickets.',
@@ -38,54 +45,62 @@ const proposal = {
 
 describe('automatic question source verification', () => {
   const answer: QueryAnswer = {
-    results: [],
-    read_database_ids: ['support'],
-    read_tables: ['Tickets'],
-    read_versions: { Tickets: 1 },
-    truncated_tables: [],
+    columns: [{ name: 'Count', kind: 'number' }],
+    rows: [[{ type: 'number', value: 1 }]],
+    rowIds: [],
+    readTables: ['Tickets'],
+    readDatabaseIds: ['support'],
+    truncatedTables: [],
   };
 
   it('does not fetch the selected schema again before verifying the actual answer', async () => {
-    const describe = vi.fn(async () => detail);
-    const read = vi.fn(async () => answer);
+    const describe = vi.fn<Describe>(() => okAsync(detail));
+    const read = vi.fn<QueryCapabilities['read']>(() => okAsync(answer));
     const capabilities = createQuestionCapabilities({
-      generate: async () => proposal,
+      generate: () => okAsync(proposal),
       describe,
       read,
     });
     const schema = toQuerySchema(detail);
-    const generated = await capabilities.generate({ ...request, schema });
+    const generated = (
+      await capabilities.generate({ ...request, schema })
+    )._unsafeUnwrap();
     expect(generated.source).toBe(schema);
-    const verified = await capabilities.read(generated.sql, {
-      databaseId: schema.databaseId,
-      source: generated.source,
-    });
-    expect(verified.read_versions).toEqual({ Tickets: 1 });
+    const verified = (
+      await capabilities.read(generated.sql, {
+        databaseId: schema.databaseId,
+        source: generated.source,
+      })
+    )._unsafeUnwrap();
+    expect(verified).toEqual({ ...answer, source: schema });
     expect(read).toHaveBeenCalledExactlyOnceWith(generated.sql);
     expect(describe).not.toHaveBeenCalled();
   });
 
   it('rejects SQL that reads another database even when the model claims the chosen source', async () => {
     const capabilities = createQuestionCapabilities({
-      generate: async () => proposal,
-      describe: async () => detail,
-      read: async () => answer,
+      generate: () => okAsync(proposal),
+      describe: () => okAsync(detail),
+      read: () => okAsync(answer),
     });
-    await expect(
-      capabilities.read('SELECT * FROM tickets', { databaseId: 'sales' })
-    ).rejects.toThrow('reads another database');
+    const result = await capabilities.read('SELECT * FROM tickets', {
+      databaseId: 'sales',
+    });
+    expect(result._unsafeUnwrapErr()).toEqual({ kind: 'other-database' });
   });
 
   it('resolves an automatic label from actual SQL dependencies instead of the claimed model source', async () => {
-    const describe = vi.fn(async () => detail);
+    const describe = vi.fn<Describe>(() => okAsync(detail));
     const capabilities = createQuestionCapabilities({
-      generate: async () => proposal,
+      generate: () => okAsync(proposal),
       describe,
-      read: async () => answer,
+      read: () => okAsync(answer),
     });
-    const result = await capabilities.read('SELECT * FROM tickets', {
-      source: { databaseId: 'sales', name: 'Sales', tables: [] },
-    });
+    const result = (
+      await capabilities.read('SELECT * FROM tickets', {
+        source: { databaseId: 'sales', name: 'Sales', tables: [] },
+      })
+    )._unsafeUnwrap();
     expect(result.source?.databaseId).toBe('support');
     expect(result.source?.tables.map((table) => table.id)).toContain(
       'Customers'
@@ -94,17 +109,19 @@ describe('automatic question source verification', () => {
   });
 
   it('reuses a verified full schema, but refreshes it when the read contains a new table', async () => {
-    const describe = vi.fn(async () => detail);
+    const describe = vi.fn<Describe>(() => okAsync(detail));
     const capabilities = createQuestionCapabilities({
-      generate: async () => proposal,
+      generate: () => okAsync(proposal),
       describe,
-      read: async () => answer,
+      read: () => okAsync(answer),
     });
     const source = toQuerySchema(detail);
-    const result = await capabilities.read('SELECT * FROM tickets', {
-      databaseId: 'support',
-      source,
-    });
+    const result = (
+      await capabilities.read('SELECT * FROM tickets', {
+        databaseId: 'support',
+        source,
+      })
+    )._unsafeUnwrap();
     expect(result.source).toBe(source);
     expect(describe).not.toHaveBeenCalled();
     await capabilities.read('SELECT * FROM tickets', {
@@ -116,41 +133,47 @@ describe('automatic question source verification', () => {
 
   it('rejects read table IDs that do not belong to the verified source', async () => {
     const capabilities = createQuestionCapabilities({
-      generate: async () => proposal,
-      describe: async () => detail,
-      read: async () => ({ ...answer, read_tables: ['unknown'] }),
+      generate: () => okAsync(proposal),
+      describe: () => okAsync(detail),
+      read: () => okAsync({ ...answer, readTables: ['unknown'] }),
     });
-    await expect(
-      capabilities.read('SELECT * FROM unknown', { databaseId: 'support' })
-    ).rejects.toThrow('source tables could not be verified');
+    const result = await capabilities.read('SELECT * FROM unknown', {
+      databaseId: 'support',
+    });
+    expect(result._unsafeUnwrapErr()).toEqual({ kind: 'unverified-source' });
   });
 
   it('allows platform reads and clears an automatic source claim when no user database was read', async () => {
-    const describe = vi.fn();
+    const describe = vi.fn<Describe>(() => okAsync(detail));
     const capabilities = createQuestionCapabilities({
-      generate: async () => proposal,
+      generate: () => okAsync(proposal),
       describe,
-      read: async () => ({ ...answer, read_database_ids: [], read_tables: [] }),
+      read: () => okAsync({ ...answer, readDatabaseIds: [], readTables: [] }),
     });
-    const result = await capabilities.read('SELECT * FROM people', {
-      source: toQuerySchema(detail),
-    });
+    const result = (
+      await capabilities.read('SELECT * FROM people', {
+        source: toQuerySchema(detail),
+      })
+    )._unsafeUnwrap();
     expect(result.source?.databaseId).toBeUndefined();
-    await expect(
-      capabilities.read('SELECT * FROM people', { databaseId: 'support' })
-    ).resolves.toBeDefined();
+    const scoped = await capabilities.read('SELECT * FROM people', {
+      databaseId: 'support',
+    });
+    expect(scoped.isOk()).toBe(true);
     expect(describe).not.toHaveBeenCalled();
   });
 
   it('discovers without a chosen source and verifies access to the entire resolved database', async () => {
-    const describe = vi.fn(async () => detail);
-    const generate = vi.fn(async () => proposal);
+    const describe = vi.fn<Describe>(() => okAsync(detail));
+    const generate = vi.fn<QueryCapabilities['generate']>(() =>
+      okAsync(proposal)
+    );
     const capabilities = createQuestionCapabilities({
       generate,
       describe,
-      read: vi.fn(),
+      read: vi.fn<QueryCapabilities['read']>(),
     });
-    const result = await capabilities.generate(request);
+    const result = (await capabilities.generate(request))._unsafeUnwrap();
     expect(generate).toHaveBeenCalledWith(request);
     expect(describe).toHaveBeenCalledWith('support');
     expect(result.source).toMatchObject({
@@ -168,51 +191,56 @@ describe('automatic question source verification', () => {
   });
 
   it('rejects an inaccessible or unverified model-selected source', async () => {
-    const describe = vi.fn().mockRejectedValueOnce(new Error('Access denied'));
+    const denied: QueryFailure = {
+      kind: 'databases',
+      error: { code: 'FORBIDDEN', message: 'Access denied' },
+    };
+    const describe = vi
+      .fn<Describe>(() => okAsync(detail))
+      .mockReturnValueOnce(errAsync(denied));
     const capabilities = createQuestionCapabilities({
-      generate: async () => proposal,
+      generate: () => okAsync(proposal),
       describe,
-      read: vi.fn(),
+      read: vi.fn<QueryCapabilities['read']>(),
     });
-    await expect(capabilities.generate(request)).rejects.toThrow(
-      'Access denied'
+    expect((await capabilities.generate(request))._unsafeUnwrapErr()).toEqual(
+      denied
     );
-    describe.mockResolvedValueOnce({
-      ...detail,
-      database: { ...detail.database, id: 'another' },
+    describe.mockReturnValueOnce(
+      okAsync({ ...detail, database: { ...detail.database, id: 'another' } })
+    );
+    expect((await capabilities.generate(request))._unsafeUnwrapErr()).toEqual({
+      kind: 'unverified-source',
     });
-    await expect(capabilities.generate(request)).rejects.toThrow(
-      'could not be verified'
-    );
   });
 
   it('preserves explicit database scope instead of silently replacing it', async () => {
-    const describe = vi.fn();
+    const describe = vi.fn<Describe>(() => okAsync(detail));
     const capabilities = createQuestionCapabilities({
-      generate: async () => proposal,
+      generate: () => okAsync(proposal),
       describe,
-      read: vi.fn(),
+      read: vi.fn<QueryCapabilities['read']>(),
     });
-    await expect(
-      capabilities.generate({
-        ...request,
-        schema: { ...request.schema, databaseId: 'sales' },
-      })
-    ).rejects.toThrow('Choose Automatic');
+    const result = await capabilities.generate({
+      ...request,
+      schema: { ...request.schema, databaseId: 'sales' },
+    });
+    expect(result._unsafeUnwrapErr()).toEqual({ kind: 'other-database' });
     expect(describe).not.toHaveBeenCalled();
   });
 
   it('permits platform-only questions without inventing a source database', async () => {
-    const describe = vi.fn();
+    const describe = vi.fn<Describe>(() => okAsync(detail));
     const capabilities = createQuestionCapabilities({
-      generate: async () => ({
-        sql: 'SELECT name FROM people',
-        explanation: 'Team members.',
-      }),
+      generate: () =>
+        okAsync({
+          sql: 'SELECT name FROM people',
+          explanation: 'Team members.',
+        }),
       describe,
-      read: vi.fn(),
+      read: vi.fn<QueryCapabilities['read']>(),
     });
-    const result = await capabilities.generate(request);
+    const result = (await capabilities.generate(request))._unsafeUnwrap();
     expect(result.source).toBeUndefined();
     expect(describe).not.toHaveBeenCalled();
   });

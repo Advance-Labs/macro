@@ -13,23 +13,32 @@ vi.mock('@solid-primitives/resize-observer', () => ({
 }));
 
 const answer: QueryAnswer = {
-  results: [
-    {
-      columns: [
-        { name: 'Day', entity_type: null },
-        { name: 'Signups', entity_type: null },
-        { name: 'Churn', entity_type: null },
-      ],
-      rows: [
-        ['2026-01-01', 2, 1],
-        ['2026-01-04', 20, 3],
-        ['2026-02-10', 12, 2],
-      ],
-    },
+  columns: [
+    { name: 'Day', kind: 'date' },
+    { name: 'Signups', kind: 'number' },
+    { name: 'Churn', kind: 'number' },
   ],
-  read_tables: [],
-  read_versions: {},
-  truncated_tables: [],
+  rows: [
+    [
+      { type: 'date', value: '2026-01-01T00:00:00Z' },
+      { type: 'number', value: 2 },
+      { type: 'number', value: 1 },
+    ],
+    [
+      { type: 'date', value: '2026-01-04T00:00:00Z' },
+      { type: 'number', value: 20 },
+      { type: 'number', value: 3 },
+    ],
+    [
+      { type: 'date', value: '2026-02-10T00:00:00Z' },
+      { type: 'number', value: 12 },
+      { type: 'number', value: 2 },
+    ],
+  ],
+  rowIds: [],
+  readTables: [],
+  readDatabaseIds: [],
+  truncatedTables: [],
 };
 
 function chartData(mode: QueryChartMode, config: QueryChartConfig) {
@@ -91,18 +100,23 @@ describe('database chart', () => {
   it('still draws a pie, labelling the slices that have room', () => {
     const shares: QueryAnswer = {
       ...answer,
-      results: [
-        {
-          columns: [
-            { name: 'Status', entity_type: null },
-            { name: 'Count', entity_type: null },
-          ],
-          rows: [
-            ['Todo', 6],
-            ['Done', 3],
-            ['Blocked', 0.1],
-          ],
-        },
+      columns: [
+        { name: 'Status', kind: 'text' },
+        { name: 'Count', kind: 'number' },
+      ],
+      rows: [
+        [
+          { type: 'text', value: 'Todo' },
+          { type: 'number', value: 6 },
+        ],
+        [
+          { type: 'text', value: 'Done' },
+          { type: 'number', value: 3 },
+        ],
+        [
+          { type: 'text', value: 'Blocked' },
+          { type: 'number', value: 0.1 },
+        ],
       ],
     };
     const prepared = prepareQueryChart(shares, 'pie');

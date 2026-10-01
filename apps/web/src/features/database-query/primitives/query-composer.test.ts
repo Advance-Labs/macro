@@ -1,31 +1,42 @@
+import {
+  err,
+  errAsync,
+  ok,
+  okAsync,
+  type Result,
+  ResultAsync,
+} from 'neverthrow';
 import { createRoot, createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { QueryComposerOptions } from '../context/query-context';
-import {
-  QueryActionError,
-  type QueryAnswer,
-  QueryOutcomeUnknownError,
-  type QueryProposal,
-  type QuerySchema,
+import type {
+  QueryAnswer,
+  QueryFailure,
+  QueryProposal,
+  QuerySchema,
 } from '../core/query';
 import { createQueryComposer } from './query-composer';
 
 const answer: QueryAnswer = {
-  results: [{ columns: [{ name: 'Count', entity_type: null }], rows: [[7]] }],
-  read_tables: ['table'],
-  read_versions: { table: 1 },
-  truncated_tables: [],
+  columns: [{ name: 'Count', kind: 'number' }],
+  rows: [[{ type: 'number', value: 7 }]],
+  rowIds: [],
+  readTables: ['table'],
+  readDatabaseIds: [],
+  truncatedTables: [],
 };
 const disposers: (() => void)[] = [];
 afterEach(() => {
   disposers.splice(0).forEach((dispose) => dispose());
 });
 function setup(overrides: Partial<QueryComposerOptions> = {}) {
-  const generate = vi.fn(async () => ({
-    sql: 'SELECT COUNT(*) FROM projects',
-    explanation: 'Counts projects.',
-  }));
-  const read = vi.fn(async () => answer);
+  const generate = vi.fn<QueryComposerOptions['generate']>(() =>
+    okAsync({
+      sql: 'SELECT COUNT(*) FROM projects',
+      explanation: 'Counts projects.',
+    })
+  );
+  const read = vi.fn<QueryComposerOptions['read']>(() => okAsync(answer));
   const controller = createRoot((dispose) => {
     disposers.push(dispose);
     return createQueryComposer({
@@ -45,11 +56,12 @@ function setup(overrides: Partial<QueryComposerOptions> = {}) {
 describe('question composer', () => {
   it('keeps a generated title separate from the prompt through presentation changes and refresh', async () => {
     const { controller } = setup({
-      generate: async () => ({
-        sql: 'SELECT 7',
-        explanation: 'Counts tickets',
-        title: 'Open tickets',
-      }),
+      generate: () =>
+        okAsync({
+          sql: 'SELECT 7',
+          explanation: 'Counts tickets',
+          title: 'Open tickets',
+        }),
     });
     controller.setPrompt('Can you tell me how many open tickets there are?');
     await controller.generate();
@@ -66,16 +78,12 @@ describe('question composer', () => {
     const sales = { databaseId: 'sales', name: 'Sales', tables: [] };
     const generate = vi
       .fn<QueryComposerOptions['generate']>()
-      .mockResolvedValueOnce({
-        sql: 'SELECT 7',
-        explanation: '',
-        source: support,
-      })
-      .mockResolvedValueOnce({
-        sql: 'SELECT 8',
-        explanation: '',
-        source: sales,
-      });
+      .mockReturnValueOnce(
+        okAsync({ sql: 'SELECT 7', explanation: '', source: support })
+      )
+      .mockReturnValueOnce(
+        okAsync({ sql: 'SELECT 8', explanation: '', source: sales })
+      );
     const { controller } = setup({
       schema: () => ({ name: 'Automatic', tables: [] }),
       generate,
@@ -94,15 +102,19 @@ describe('question composer', () => {
 
   it('keeps automatic discovery independent of the resolved answer source and preserves that source on read retry', async () => {
     const source = { databaseId: 'support', name: 'Support', tables: [] };
-    const generate = vi.fn<QueryComposerOptions['generate']>(async () => ({
-      sql: 'SELECT COUNT(*) FROM tickets',
-      explanation: 'Counts tickets.',
-      source,
-    }));
+    const generate = vi.fn<QueryComposerOptions['generate']>(() =>
+      okAsync({
+        sql: 'SELECT COUNT(*) FROM tickets',
+        explanation: 'Counts tickets.',
+        source,
+      })
+    );
     const read = vi
-      .fn()
-      .mockRejectedValueOnce(new Error('Temporary failure'))
-      .mockResolvedValue(answer);
+      .fn<QueryComposerOptions['read']>()
+      .mockReturnValueOnce(
+        errAsync({ kind: 'fetch', message: 'Temporary failure' })
+      )
+      .mockReturnValue(okAsync(answer));
     const { controller } = setup({
       schema: () => ({ name: 'Automatic', tables: [] }),
       generate,
@@ -110,7 +122,10 @@ describe('question composer', () => {
     });
     controller.setPrompt('How many tickets?');
     await controller.generate();
-    expect(controller.error()).toBe('Temporary failure');
+    expect(controller.error()).toBe(
+      'Your data could not be reached. Check your connection.'
+    );
+    expect(controller.errorDetail()).toBe('Temporary failure');
     expect(controller.schema()).toEqual(source);
     await controller.refreshAnswer();
     expect(generate).toHaveBeenCalledTimes(1);
@@ -131,9 +146,11 @@ describe('question composer', () => {
     const { controller, read } = setup({
       schema,
       generate: () =>
-        new Promise((resolve) => {
-          finish = resolve;
-        }),
+        ResultAsync.fromSafePromise(
+          new Promise<QueryProposal>((resolve) => {
+            finish = resolve;
+          })
+        ),
     });
     controller.setPrompt('How many tickets?');
     const pending = controller.generate();
@@ -155,11 +172,12 @@ describe('question composer', () => {
   });
   it('keeps an in-flight generation exclusive even if its draft is edited', async () => {
     let finish!: (proposal: QueryProposal) => void;
-    const generate = vi.fn(
-      () =>
+    const generate = vi.fn<QueryComposerOptions['generate']>(() =>
+      ResultAsync.fromSafePromise(
         new Promise<QueryProposal>((resolve) => {
           finish = resolve;
         })
+      )
     );
     const { controller, read } = setup({ generate });
     const pending = controller.generate();
@@ -179,11 +197,13 @@ describe('question composer', () => {
   });
 
   it('keeps an unknown mutation outcome distinct from confirmed changes and prevents unchanged retry', async () => {
-    const generate = vi.fn(async () => {
-      throw new QueryOutcomeUnknownError(
-        'The connection was interrupted. Check the table before continuing.'
-      );
-    });
+    const generate = vi.fn<QueryComposerOptions['generate']>(() =>
+      errAsync({
+        kind: 'outcome-unknown',
+        message:
+          'The connection was interrupted. Check the table before continuing.',
+      })
+    );
     const { controller, read } = setup({ generationCanWrite: true, generate });
     controller.setPrompt('Add three sample records');
     await controller.generate();
@@ -202,14 +222,14 @@ describe('question composer', () => {
   it.each(['confirmed', 'unknown'] as const)(
     'retains a %s write outcome after the user switches tables',
     async (outcome) => {
-      let complete!: (proposal: QueryProposal) => void;
-      let fail!: (error: Error) => void;
-      const generate = vi.fn(
+      let settle!: (result: Result<QueryProposal, QueryFailure>) => void;
+      const generate = vi.fn<QueryComposerOptions['generate']>(
         () =>
-          new Promise<QueryProposal>((resolve, reject) => {
-            complete = resolve;
-            fail = reject;
-          })
+          new ResultAsync(
+            new Promise<Result<QueryProposal, QueryFailure>>((resolve) => {
+              settle = resolve;
+            })
+          )
       );
       const { controller, read } = setup({
         generationCanWrite: true,
@@ -219,16 +239,19 @@ describe('question composer', () => {
       const pending = controller.generate();
       controller.selectTable('contacts');
       if (outcome === 'confirmed')
-        complete({
-          sql: 'SELECT COUNT(*) FROM projects',
-          explanation: 'Records created.',
-          actionSummary: 'Created three projects.',
-        });
+        settle(
+          ok({
+            sql: 'SELECT COUNT(*) FROM projects',
+            explanation: 'Records created.',
+            actionSummary: 'Created three projects.',
+          })
+        );
       else
-        fail(
-          new QueryOutcomeUnknownError(
-            'The connection was interrupted. Check the table.'
-          )
+        settle(
+          err({
+            kind: 'outcome-unknown',
+            message: 'The connection was interrupted. Check the table.',
+          })
         );
       await pending;
       expect(read).not.toHaveBeenCalled();
@@ -246,14 +269,13 @@ describe('question composer', () => {
   );
 
   it('preserves a partial action ledger and prevents repeating unchanged writes after generation fails', async () => {
-    const generate = vi
-      .fn()
-      .mockRejectedValue(
-        new QueryActionError(
-          'Created a Projects table.',
-          'Could not finish adding the sample records.'
-        )
-      );
+    const generate = vi.fn<QueryComposerOptions['generate']>(() =>
+      errAsync({
+        kind: 'action-incomplete',
+        actionSummary: 'Created a Projects table.',
+        message: 'Could not finish adding the sample records.',
+      })
+    );
     const { controller, read } = setup({ generate });
     controller.setPrompt('Create projects and sample records');
     await controller.generate();
@@ -268,12 +290,14 @@ describe('question composer', () => {
   });
   it('keeps chart presentation with the accepted answer through refresh and undo', async () => {
     const chart = { x: 'Status', y: ['Count'] };
-    const generate = vi.fn(async () => ({
-      sql: 'SELECT status AS Status, COUNT(*) AS Count FROM projects GROUP BY status',
-      explanation: 'Counts each status.',
-      displayMode: 'bar' as const,
-      chart,
-    }));
+    const generate = vi.fn<QueryComposerOptions['generate']>(() =>
+      okAsync({
+        sql: 'SELECT status AS Status, COUNT(*) AS Count FROM projects GROUP BY status',
+        explanation: 'Counts each status.',
+        displayMode: 'bar',
+        chart,
+      })
+    );
     const { controller } = setup({ generate });
     await controller.run();
     controller.setDisplayMode('table');
@@ -292,11 +316,12 @@ describe('question composer', () => {
   });
   it('shows verified completed actions without offering a misleading data Undo', async () => {
     const { controller } = setup({
-      generate: async () => ({
-        sql: 'SELECT COUNT(*) FROM projects',
-        explanation: 'Shows the created records.',
-        actionSummary: 'Created three projects.',
-      }),
+      generate: () =>
+        okAsync({
+          sql: 'SELECT COUNT(*) FROM projects',
+          explanation: 'Shows the created records.',
+          actionSummary: 'Created three projects.',
+        }),
     });
     await controller.run();
     controller.setPrompt('Add three projects');
@@ -305,15 +330,19 @@ describe('question composer', () => {
     expect(controller.canUndo()).toBe(false);
   });
   it('keeps completed writes visible when their verification query fails, and retries only the read', async () => {
-    const generate = vi.fn(async () => ({
-      sql: 'SELECT COUNT(*) FROM projects',
-      explanation: 'Verifies the result.',
-      actionSummary: 'Created three projects.',
-    }));
+    const generate = vi.fn<QueryComposerOptions['generate']>(() =>
+      okAsync({
+        sql: 'SELECT COUNT(*) FROM projects',
+        explanation: 'Verifies the result.',
+        actionSummary: 'Created three projects.',
+      })
+    );
     const read = vi
-      .fn()
-      .mockRejectedValueOnce(new Error('Query timed out'))
-      .mockResolvedValueOnce(answer);
+      .fn<QueryComposerOptions['read']>()
+      .mockReturnValueOnce(
+        errAsync({ kind: 'fetch', message: 'Query timed out' })
+      )
+      .mockReturnValueOnce(okAsync(answer));
     const { controller } = setup({ generate, read });
     controller.setPrompt('Add three projects');
     await controller.generate();
@@ -335,10 +364,12 @@ describe('question composer', () => {
     ],
   };
   it('requires a fresh answer after changing tables and restores the previous table on undo', async () => {
-    const generate = vi.fn(async () => ({
-      sql: 'SELECT COUNT(*) FROM contacts',
-      explanation: 'Counts contacts.',
-    }));
+    const generate = vi.fn<QueryComposerOptions['generate']>(() =>
+      okAsync({
+        sql: 'SELECT COUNT(*) FROM contacts',
+        explanation: 'Counts contacts.',
+      })
+    );
     const { controller, read } = setup({ schema: () => schema, generate });
     await controller.run();
     controller.selectTable('contacts');
@@ -368,9 +399,11 @@ describe('question composer', () => {
     const { controller, read } = setup({
       schema: () => schema,
       generate: () =>
-        new Promise((done) => {
-          resolve = done;
-        }),
+        ResultAsync.fromSafePromise(
+          new Promise<QueryProposal>((done) => {
+            resolve = done;
+          })
+        ),
     });
     const pending = controller.generate();
     controller.selectTable('contacts');
@@ -386,15 +419,23 @@ describe('question composer', () => {
   });
   it('discards an in-flight read from the previous table after selection changes', async () => {
     let resolve!: (answer: QueryAnswer) => void;
+    let reading!: () => void;
+    const readStarted = new Promise<void>((done) => {
+      reading = done;
+    });
     const { controller } = setup({
       schema: () => schema,
-      read: () =>
-        new Promise((done) => {
-          resolve = done;
-        }),
+      read: () => {
+        reading();
+        return ResultAsync.fromSafePromise(
+          new Promise<QueryAnswer>((done) => {
+            resolve = done;
+          })
+        );
+      },
     });
     const pending = controller.generate();
-    await Promise.resolve();
+    await readStarted;
     expect(controller.phase()).toBe('running');
     controller.selectTable('contacts');
     resolve(answer);
@@ -464,12 +505,16 @@ describe('question composer', () => {
   });
   it('retries generation after failure instead of pairing the new question with old SQL', async () => {
     const generate = vi
-      .fn<() => Promise<QueryProposal>>()
-      .mockRejectedValueOnce(new Error('Temporary network failure'))
-      .mockResolvedValue({
-        sql: 'SELECT COUNT(*) FROM projects',
-        explanation: 'Counts projects.',
-      });
+      .fn<QueryComposerOptions['generate']>()
+      .mockReturnValueOnce(
+        errAsync({ kind: 'generation', message: 'Temporary network failure' })
+      )
+      .mockReturnValue(
+        okAsync({
+          sql: 'SELECT COUNT(*) FROM projects',
+          explanation: 'Counts projects.',
+        })
+      );
     const { controller, read } = setup({ generate });
     await controller.run();
     controller.setPrompt('How many projects?');
@@ -499,9 +544,11 @@ describe('question composer', () => {
     let resolve!: (proposal: QueryProposal) => void;
     const { controller, read } = setup({
       generate: () =>
-        new Promise((done) => {
-          resolve = done;
-        }),
+        ResultAsync.fromSafePromise(
+          new Promise<QueryProposal>((done) => {
+            resolve = done;
+          })
+        ),
     });
     const pending = controller.generate();
     controller.setPrompt('New question');
@@ -514,15 +561,14 @@ describe('question composer', () => {
   });
   it('retains previous answer on failure and exposes original error', async () => {
     const { controller } = setup({
-      generate: async () => {
-        throw new Error('no such column: retired');
-      },
+      generate: () =>
+        errAsync({ kind: 'engine', message: 'no such column: retired' }),
     });
     await controller.run();
     await controller.generate();
     expect(controller.preview()?.answer).toEqual(answer);
     expect(controller.error()).toBe(
-      "This answer couldn't be computed: the column retired no longer exists."
+      "This answer couldn't be computed. Try asking again."
     );
     expect(controller.errorDetail()).toBe('no such column: retired');
   });
@@ -530,9 +576,11 @@ describe('question composer', () => {
     let resolve!: (answer: QueryAnswer) => void;
     const { controller } = setup({
       read: () =>
-        new Promise((done) => {
-          resolve = done;
-        }),
+        ResultAsync.fromSafePromise(
+          new Promise<QueryAnswer>((done) => {
+            resolve = done;
+          })
+        ),
     });
     const pending = controller.run();
     controller.setSql('SELECT 2');
@@ -542,15 +590,23 @@ describe('question composer', () => {
   });
   it('does not overwrite edits made while an AI answer is being read', async () => {
     let resolve!: (answer: QueryAnswer) => void;
+    let reading!: () => void;
+    const readStarted = new Promise<void>((done) => {
+      reading = done;
+    });
     const { controller } = setup({
-      read: () =>
-        new Promise((done) => {
-          resolve = done;
-        }),
+      read: () => {
+        reading();
+        return ResultAsync.fromSafePromise(
+          new Promise<QueryAnswer>((done) => {
+            resolve = done;
+          })
+        );
+      },
     });
     controller.setPrompt('How many projects?');
     const pending = controller.generate();
-    await Promise.resolve();
+    await readStarted;
     expect(controller.phase()).toBe('running');
     controller.setSql('SELECT 2');
     controller.setPrompt('My edited question');
@@ -563,10 +619,12 @@ describe('question composer', () => {
   });
   it('keeps the previous answer after an AI preview read fails and allows a retry', async () => {
     const read = vi
-      .fn<() => Promise<QueryAnswer>>()
-      .mockResolvedValueOnce(answer)
-      .mockRejectedValueOnce(new Error('Temporary network failure'))
-      .mockResolvedValue(answer);
+      .fn<QueryComposerOptions['read']>()
+      .mockReturnValueOnce(okAsync(answer))
+      .mockReturnValueOnce(
+        errAsync({ kind: 'fetch', message: 'Temporary network failure' })
+      )
+      .mockReturnValue(okAsync(answer));
     const { controller, generate } = setup({ read });
     await controller.run();
     controller.setPrompt('How many projects?');

@@ -1,4 +1,10 @@
-import { resultCell, resultCellText, resultDate } from './answer-cell';
+import type { Cell } from '@core/database-sql/generated/types';
+import {
+  type ReferenceNames,
+  resultCell,
+  resultCellText,
+  unknownNames,
+} from './answer-cell';
 import { formatQueryValue, type QueryAnswer } from './query';
 
 export const QUERY_CHART_MODES = [
@@ -128,11 +134,10 @@ export function queryChartSpec(
 
 const columnLabel = (name: string) => name.replaceAll('_', ' ');
 
-function numeric(value: string | number | null | undefined) {
-  if (value === null || value === undefined || value === '') return null;
-  if (typeof value === 'string' && !value.trim()) return null;
-  const number = Number(value);
-  return Number.isFinite(number) ? number : undefined;
+/** A number cell's value; an empty cell is a gap; anything else is not a number. */
+function numeric(cell: Cell | null | undefined): number | null | undefined {
+  if (!cell) return null;
+  return cell.type === 'number' ? cell.value : undefined;
 }
 
 type ChartResult =
@@ -143,19 +148,18 @@ type ChartResult =
 export function prepareQueryChart(
   answer: QueryAnswer,
   mode: QueryChartMode,
-  requested?: QueryChartConfig
+  requested?: QueryChartConfig,
+  references: ReferenceNames = unknownNames
 ): ChartResult {
-  const result = answer.results[0];
-  if (answer.results.length !== 1 || !result || result.columns.length < 2)
+  if (answer.columns.length < 2)
     return {
-      error:
-        'A chart needs one result with a label column and a number column.',
+      error: 'A chart needs a label column and a number column.',
     };
-  if (!result.rows.length)
+  if (!answer.rows.length)
     return { error: 'There are no matching records to chart.' };
-  const names = result.columns.map((column) => column.name);
+  const names = answer.columns.map((column) => column.name);
   const inferred = names.slice(1).filter((_, index) => {
-    const values = result.rows.map((row) => numeric(row[index + 1]));
+    const values = answer.rows.map((row) => numeric(row[index + 1]));
     return (
       values.some((value) => typeof value === 'number') &&
       values.every((value) => value !== undefined)
@@ -176,7 +180,7 @@ export function prepareQueryChart(
       error:
         'This chart’s columns are unavailable. Update the question or view the result table.',
     };
-  if (result.rows.length > (mode === 'pie' ? MAX_PIE_CATEGORIES : MAX_POINTS))
+  if (answer.rows.length > (mode === 'pie' ? MAX_PIE_CATEGORIES : MAX_POINTS))
     return {
       error:
         mode === 'pie'
@@ -184,7 +188,7 @@ export function prepareQueryChart(
           : 'This result has more than 300 points. Ask for a summary or a smaller date range.',
     };
   const values = config.y.map((name) =>
-    result.rows.map((row) => numeric(row[columnIndex(name)]))
+    answer.rows.map((row) => numeric(row[columnIndex(name)]))
   );
   if (values.some((column) => column.some((value) => value === undefined)))
     return {
@@ -217,42 +221,39 @@ export function prepareQueryChart(
       };
   }
 
-  const text = (
-    row: QueryAnswer['results'][number]['rows'][number],
-    name: string
-  ) => {
-    const value = row[columnIndex(name)] ?? null;
-    return value === null
-      ? 'Empty'
-      : resultCellText(resultCell(value, result.columns[columnIndex(name)]));
+  const cellAt = (row: QueryAnswer['rows'][number], name: string) =>
+    resultCell(
+      row[columnIndex(name)] ?? null,
+      answer.columns[columnIndex(name)]
+    );
+  const text = (row: QueryAnswer['rows'][number], name: string) => {
+    const cell = cellAt(row, name);
+    return cell.kind === 'empty' ? 'Empty' : resultCellText(cell, references);
   };
-  const xValues = result.rows.map((row) => row[columnIndex(config.x)] ?? null);
-  const present = xValues.filter((value) => value !== null);
+  const xCells = answer.rows.map((row) => cellAt(row, config.x));
+  const present = xCells.filter((cell) => cell.kind !== 'empty');
   const scale: QueryChartData['scale'] =
     present.length === 0
       ? 'category'
-      : present.every(
-            (value) => typeof value === 'number' && Number.isFinite(value)
-          )
+      : present.every((cell) => cell.kind === 'number')
         ? 'number'
-        : present.every(
-              (value) => typeof value === 'string' && !!resultDate(value)
-            )
+        : present.every((cell) => cell.kind === 'date')
           ? 'date'
           : 'category';
   // Only a continuous axis has nowhere to put an empty x; bands label it.
   const continuous = scale !== 'category' && mode !== 'bar' && mode !== 'pie';
-  const xOf = (value: string | number | null, label: string) => {
-    if (!continuous || value === null) return label;
-    if (typeof value === 'number') return value;
-    return resultDate(value)?.date ?? label;
+  const xOf = (cell: (typeof xCells)[number], label: string) => {
+    if (!continuous) return label;
+    if (cell.kind === 'number') return cell.value;
+    if (cell.kind === 'date') return cell.date;
+    return label;
   };
 
   const points: QueryChartPoint[] = [];
   let omitted = 0;
-  result.rows.forEach((row, rowIndex) => {
-    const x = xValues[rowIndex];
-    if (continuous && x === null) {
+  answer.rows.forEach((row, rowIndex) => {
+    const x = xCells[rowIndex];
+    if (continuous && x.kind === 'empty') {
       omitted += 1;
       return;
     }

@@ -18,11 +18,7 @@ export function ToolQueryResults(props: {
   preferredDisplay?: QueryDisplayMode;
 }) {
   const [chosenDisplay, setDisplay] = createSignal<QueryDisplayMode>();
-  const rowCount = () =>
-    props.answer.results.reduce(
-      (total, result) => total + result.rows.length,
-      0
-    );
+  const rowCount = () => props.answer.rows.length;
   const modes = createMemo(() => [
     ...(isScalarAnswer(props.answer)
       ? [{ value: 'scalar' as const, label: 'Answer' }]

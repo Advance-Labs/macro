@@ -15,37 +15,55 @@ import { useDatabaseTableChanges } from '@queries/storage/databases-sync';
 import { databasesKeys } from '@queries/storage/keys';
 import { useEntitySubscription } from '@service-connection/client';
 import { storageServiceClient } from '@service-storage/client';
+import { ResultAsync } from 'neverthrow';
 import type { Accessor } from 'solid-js';
 import type { QueryCapabilities } from '../context/query-context';
+import {
+  generationFailure,
+  type QueryFailure,
+  serviceError,
+  thrownServiceError,
+} from '../core/query';
 import { createLiveQuerySource, type LiveQuerySource } from './query-source';
 import { createQuestionCapabilities } from './question-capabilities';
 
+const databasesFailure = (thrown: unknown): QueryFailure => ({
+  kind: 'databases',
+  error: thrownServiceError(thrown),
+});
+
+async function generateDatabaseQuery(
+  input: Parameters<QueryCapabilities['generate']>[0]
+) {
+  const cognition = await import('@service-cognition/database-query');
+  return cognition.generateDatabaseQuery(input);
+}
+
 /** Production transport adapters; the composer only receives these narrow capabilities. */
 export const queryCapabilities: QueryCapabilities = createQuestionCapabilities({
-  generate: async (input) => {
-    const { generateDatabaseQuery } = await import(
-      '@service-cognition/database-query'
-    );
-    return generateDatabaseQuery(input);
-  },
+  generate: (input) =>
+    ResultAsync.fromPromise(generateDatabaseQuery(input), generationFailure),
   // A draft question may read any database the viewer can reach.
-  read: async (sql) => {
-    const databases = await fetchViewerDatabases();
-    const { catalog, outcome } = await readDatabaseSql({
-      schema: databaseSqlSchema(databases),
-      sql,
-    });
-    return databaseSqlAnswer(outcome, catalog, databases);
-  },
+  read: (sql) =>
+    ResultAsync.fromPromise(fetchViewerDatabases(), databasesFailure).andThen(
+      (databases) =>
+        readDatabaseSql({ schema: databaseSqlSchema(databases), sql }).map(
+          ({ catalog, outcome }) =>
+            databaseSqlAnswer(outcome, catalog, databases)
+        )
+    ),
   describe: (databaseId) =>
-    queryClient.fetchQuery({
-      queryKey: databasesKeys.detail(databaseId).queryKey,
-      queryFn: () =>
-        throwOnErr(() =>
-          storageServiceClient.databases.get({ id: databaseId })
-        ),
-      staleTime: 0,
-    }),
+    ResultAsync.fromPromise(
+      queryClient.fetchQuery({
+        queryKey: databasesKeys.detail(databaseId).queryKey,
+        queryFn: () =>
+          throwOnErr(() =>
+            storageServiceClient.databases.get({ id: databaseId })
+          ),
+        staleTime: 0,
+      }),
+      databasesFailure
+    ),
 });
 
 /** A saved question's live answer, run in the browser. */
@@ -63,22 +81,33 @@ export function createSavedQuestionSource(
           }
         : undefined,
     databases: viewer.databases,
-    loadError: () => (definition.isError ? definition.error : viewer.error()),
+    loadError: () => {
+      if (definition.isError)
+        return {
+          kind: 'question',
+          error: thrownServiceError(definition.error),
+        };
+      const failed = viewer.error();
+      return failed === undefined || failed === null
+        ? undefined
+        : databasesFailure(failed);
+    },
     subscribe: (onChange) =>
       useDatabaseTableChanges((change) => onChange(change.tableId)),
   });
 }
 
 /** Saved queries are immutable: every new SQL text becomes a new row. */
-export async function saveQuestionSql(input: {
+export function saveQuestionSql(input: {
   sql: string;
   databaseId?: string;
-}): Promise<string> {
-  const saved = await createSavedDatabaseQuery({
+}): ResultAsync<string, QueryFailure> {
+  return createSavedDatabaseQuery({
     definition: { version: 1, query: input.sql },
     ...(input.databaseId ? { databaseId: input.databaseId } : {}),
-  });
-  return saved.id;
+  })
+    .map((saved) => saved.id)
+    .mapErr((errors) => ({ kind: 'question', error: serviceError(errors) }));
 }
 
 export function trackQueryDatabase(id: string, onRefresh: () => void) {

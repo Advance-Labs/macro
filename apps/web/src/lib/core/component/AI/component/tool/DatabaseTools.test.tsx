@@ -71,7 +71,6 @@ const database: NamedTool<'DescribeDatabase', 'response'>['data'] = {
   id: databaseId,
   name: 'Launch',
   grant: 'edit',
-  sqlGuide: '',
   tables: [
     {
       id: tableId,

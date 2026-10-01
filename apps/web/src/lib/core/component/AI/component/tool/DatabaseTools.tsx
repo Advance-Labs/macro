@@ -5,6 +5,7 @@
 
 import { databaseViewKeys } from '@app/features/block-database/queries/keys';
 import { ToolQueryResults } from '@app/features/database-query/components/tool-query-results';
+import { toolAnswers } from '@app/features/database-query/core/tool-answer';
 import { globalSplitManager } from '@app/signal/splitLayout';
 import { useGlobalBlockOrchestrator } from '@components/app/GlobalAppState';
 import {
@@ -203,33 +204,9 @@ export const queryDatabaseHandler = createToolRenderer({
         databaseName: detail()?.database.name,
       });
     };
-    const answer = () => {
+    const answers = () => {
       const data = ctx.response?.data;
-      if (!data?.results.length) return undefined;
-      return {
-        results: data.results.map((result) => ({
-          columns: result.columns.map((column) => ({
-            name: column.name,
-            entity_type: column.entityType ?? null,
-          })),
-          rows: result.rows.map((row) =>
-            row.map((value) =>
-              value == null
-                ? null
-                : typeof value === 'number' || typeof value === 'string'
-                  ? value
-                  : typeof value === 'boolean'
-                    ? String(value)
-                    : JSON.stringify(value)
-            )
-          ),
-        })),
-        read_tables: data.readVersions.map((table) => table.tableId),
-        read_versions: Object.fromEntries(
-          data.readVersions.map((table) => [table.tableId, table.version])
-        ),
-        truncated_tables: data.truncatedTables ?? [],
-      };
+      return data ? toolAnswers(data) : [];
     };
     return (
       <BaseTool
@@ -237,12 +214,16 @@ export const queryDatabaseHandler = createToolRenderer({
         renderContext={ctx.renderContext}
         type="call"
         response={
-          expanded() && answer() ? (
-            <ToolQueryResults
-              answer={answer()!}
-              sql={ctx.tool.data.sql}
-              preferredDisplay={ctx.tool.data.display ?? undefined}
-            />
+          expanded() && answers().length ? (
+            <For each={answers()}>
+              {(answer) => (
+                <ToolQueryResults
+                  answer={answer}
+                  sql={ctx.tool.data.sql}
+                  preferredDisplay={ctx.tool.data.display ?? undefined}
+                />
+              )}
+            </For>
           ) : undefined
         }
       >
@@ -251,7 +232,7 @@ export const queryDatabaseHandler = createToolRenderer({
           <Tool.ResultToggle
             expanded={expanded()}
             onToggle={() => setExpanded((open) => !open)}
-            showToggle={!!answer()}
+            showToggle={answers().length > 0}
           />
         </div>
       </BaseTool>

@@ -1,5 +1,6 @@
 import { databaseSqlAnswer } from '@core/database-sql/answer';
 import { databaseSqlSchema } from '@core/database-sql/catalog';
+import type { DatabaseSqlFailure } from '@core/database-sql/driver';
 import {
   createDatabaseSqlQuery,
   type DatabaseSqlQueryCapabilities,
@@ -7,10 +8,11 @@ import {
   refreshInBackground,
   sameDatabaseSqlStatement,
 } from '@queries/database-sql/create-database-sql-query';
-import type { DatabaseDetail } from '@service-storage/databases';
+import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import { debounce } from '@solid-primitives/scheduled';
+import type { ResultAsync } from 'neverthrow';
 import { type Accessor, createMemo } from 'solid-js';
-import type { QueryAnswer, QuerySchema } from '../core/query';
+import type { QueryAnswer, QueryFailure, QuerySchema } from '../core/query';
 
 export function toQuerySchema(
   detail: DatabaseDetail,
@@ -77,10 +79,10 @@ export type SavedStatement = { sql: string; databaseId?: string };
 export type LiveQuerySource = {
   /** The last answer; kept while a rerun is in flight or after one fails. */
   answer: Accessor<QueryAnswer | undefined>;
-  error: Accessor<unknown>;
+  error: Accessor<QueryFailure | undefined>;
   loading: Accessor<boolean>;
   /** Read the answer's tables from the server again. */
-  refresh: () => Promise<void>;
+  refresh: () => ResultAsync<void, DatabaseSqlFailure>;
 };
 
 /** Changes to a table an answer read rerun it once they settle. */
@@ -96,7 +98,7 @@ export function createLiveQuerySource(input: {
   /** Undefined until they load. */
   databases: Accessor<DatabaseDetail[] | undefined>;
   /** Why the statement or the databases could not load. */
-  loadError: Accessor<unknown>;
+  loadError: Accessor<QueryFailure | undefined>;
   subscribe: (onChange: (tableId: string) => void) => void;
   /** Where the engine reads rows from; the app's GraphQL client by default. */
   read?: DatabaseSqlQueryCapabilities;

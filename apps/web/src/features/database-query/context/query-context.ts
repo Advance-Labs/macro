@@ -1,6 +1,8 @@
+import type { ResultAsync } from 'neverthrow';
 import type {
   QueryAnswer,
   QueryDefinition,
+  QueryFailure,
   QueryProposal,
   QuerySchema,
 } from '../core/query';
@@ -12,7 +14,7 @@ export type QueryCapabilities = {
     prompt: string;
     sql: string;
     schema: QuerySchema;
-  }): Promise<QueryProposal>;
+  }): ResultAsync<QueryProposal, QueryFailure>;
   read(
     sql: string,
     context?: {
@@ -21,7 +23,7 @@ export type QueryCapabilities = {
       /** Last verified source, reused when the actual query reads this database. */
       source?: QuerySchema;
     }
-  ): Promise<QueryAnswer>;
+  ): ResultAsync<QueryAnswer, QueryFailure>;
 };
 
 export type QueryComposerOptions = QueryCapabilities & {

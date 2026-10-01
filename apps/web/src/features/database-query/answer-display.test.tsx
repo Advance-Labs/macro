@@ -31,25 +31,47 @@ vi.mock(
     ),
   })
 );
-vi.mock('./queries/answer-columns', () => ({
-  answerResultColumns: () => () => () => undefined,
+vi.mock('./queries/answer-names', () => ({
+  answerNames: () => () => () => undefined,
 }));
 
 describe('answers in the app', () => {
   it('draws people and documents with the database grid’s mentions', () => {
     const answer: QueryAnswer = {
-      results: [
+      columns: [
         {
-          columns: [
-            { name: 'Host', entity_type: 'user' },
-            { name: 'Plan', entity_type: 'document' },
-          ],
-          rows: [['macro|ada@macro.com', 'doc-1']],
+          name: 'Host',
+          kind: 'entity',
+          source: {
+            markdown: false,
+            options: [],
+            tag: false,
+            target: 'USER',
+            relatedTable: null,
+          },
+        },
+        {
+          name: 'Plan',
+          kind: 'entity',
+          source: {
+            markdown: false,
+            options: [],
+            tag: false,
+            target: 'DOCUMENT',
+            relatedTable: null,
+          },
         },
       ],
-      read_tables: [],
-      read_versions: {},
-      truncated_tables: [],
+      rows: [
+        [
+          { type: 'entities', value: ['macro|ada@macro.com'] },
+          { type: 'entities', value: ['doc-1'] },
+        ],
+      ],
+      rowIds: [],
+      readTables: [],
+      readDatabaseIds: [],
+      truncatedTables: [],
     };
     const result = render(() => (
       <AppAnswerDisplay>

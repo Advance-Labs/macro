@@ -5,13 +5,17 @@ import type {
 } from '@core/database-sql/generated/types';
 import type { DatabaseSqlQueryCapabilities } from '@queries/database-sql/create-database-sql-query';
 import { databaseCompletionRequest } from '@service-cognition/database-query-prompt';
-import type { DatabaseDetail } from '@service-storage/databases';
+import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import type { SoupQuery } from '@service-storage/graphql/generated/graphql';
 import { CombinedError, createClient, type Exchange } from '@urql/core';
 import { createRoot } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { empty, fromValue, mergeMap, pipe } from 'wonka';
-import { queryFocusTable, queryStarters } from '../core/query';
+import {
+  type QueryFailure,
+  queryFocusTable,
+  queryStarters,
+} from '../core/query';
 import {
   createLiveQuerySource,
   type LiveQuerySource,
@@ -40,6 +44,7 @@ describe('query schema', () => {
             version: 1,
           },
           sql_name: '"Projects"',
+          read_sql_name: '"Projects"',
           columns: [],
         },
         {
@@ -51,6 +56,7 @@ describe('query schema', () => {
             version: 1,
           },
           sql_name: '"Contacts"',
+          read_sql_name: '"Contacts"',
           columns: [],
         },
       ],
@@ -239,6 +245,7 @@ const workspace: DatabaseDetail = {
         version: 3,
       },
       sql_name: '"Work"."Projects"',
+      read_sql_name: '"Work"."Projects"',
       columns: [],
     },
   ],
@@ -255,6 +262,7 @@ const personal: DatabaseDetail = {
         database_id: 'db-personal',
       },
       sql_name: '"Personal"."Projects"',
+      read_sql_name: '"Personal"."Projects"',
     },
   ],
 };
@@ -278,16 +286,12 @@ describe('live query source', () => {
     });
     await vi.waitFor(() =>
       expect(source.answer()).toEqual({
-        results: [
-          {
-            columns: [{ name: 'COUNT(*)', entity_type: null, origin: null }],
-            rows: [[2]],
-          },
-        ],
-        read_tables: ['projects-table'],
-        read_database_ids: ['db-work'],
-        read_versions: { 'projects-table': 3 },
-        truncated_tables: [],
+        columns: [{ name: 'COUNT(*)', kind: 'number' }],
+        rows: [[{ type: 'number', value: 2 }]],
+        rowIds: [],
+        readTables: ['projects-table'],
+        readDatabaseIds: ['db-work'],
+        truncatedTables: [],
       })
     );
     expect(runs).toEqual(['SELECT COUNT(*) FROM Projects']);
@@ -339,7 +343,7 @@ describe('live query source', () => {
       return dispose;
     });
     await vi.waitFor(() =>
-      expect(source.answer()?.results[0].rows).toEqual([[2]])
+      expect(source.answer()?.rows).toEqual([[{ type: 'number', value: 2 }]])
     );
 
     vi.useFakeTimers();
@@ -354,17 +358,17 @@ describe('live query source', () => {
     expect(runs).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1);
     await vi.waitFor(() =>
-      expect(source.error()).toBeInstanceOf(CombinedError)
+      expect(source.error()).toMatchObject({ kind: 'fetch' })
     );
     expect(runs).toHaveLength(2);
-    expect(source.answer()?.results[0].rows).toEqual([[2]]);
+    expect(source.answer()?.rows).toEqual([[{ type: 'number', value: 2 }]]);
 
     offline = false;
     count = 3;
     emit('projects-table');
     await vi.advanceTimersByTimeAsync(300);
     await vi.waitFor(() =>
-      expect(source.answer()?.results[0].rows).toEqual([[3]])
+      expect(source.answer()?.rows).toEqual([[{ type: 'number', value: 3 }]])
     );
     expect(source.error()).toBeUndefined();
 
@@ -375,7 +379,13 @@ describe('live query source', () => {
   });
 
   it('reports why the saved query or the databases could not load', () => {
-    const failure = new Error('This saved question no longer exists.');
+    const failure: QueryFailure = {
+      kind: 'question',
+      error: {
+        code: 'NOT_FOUND',
+        message: 'This saved question no longer exists.',
+      },
+    };
     const dispose = createRoot((dispose) => {
       const source = createLiveQuerySource({
         statement: () => undefined,

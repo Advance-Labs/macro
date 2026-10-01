@@ -8,23 +8,28 @@ import {
 } from './query-chart';
 
 const answer: QueryAnswer = {
-  results: [
-    {
-      columns: [
-        { name: 'Month', entity_type: null },
-        { name: 'Revenue', entity_type: null },
-        { name: 'Cost', entity_type: null },
-      ],
-      rows: [
-        ['Jan', 20, 5],
-        ['Feb', null, 10],
-        ['Mar', -4, 2],
-      ],
-    },
+  columns: [
+    { name: 'Month', kind: 'text' },
+    { name: 'Revenue', kind: 'number' },
+    { name: 'Cost', kind: 'number' },
   ],
-  read_tables: [],
-  read_versions: {},
-  truncated_tables: [],
+  rows: [
+    [
+      { type: 'text', value: 'Jan' },
+      { type: 'number', value: 20 },
+      { type: 'number', value: 5 },
+    ],
+    [{ type: 'text', value: 'Feb' }, null, { type: 'number', value: 10 }],
+    [
+      { type: 'text', value: 'Mar' },
+      { type: 'number', value: -4 },
+      { type: 'number', value: 2 },
+    ],
+  ],
+  rowIds: [],
+  readTables: [],
+  readDatabaseIds: [],
+  truncatedTables: [],
 };
 
 describe('saved chart settings', () => {
@@ -240,17 +245,19 @@ describe('chart data', () => {
   it('puts numbers on a numeric axis and calendar days on a time axis', () => {
     const numeric: QueryAnswer = {
       ...answer,
-      results: [
-        {
-          columns: [
-            { name: 'Hours', entity_type: null },
-            { name: 'Cost', entity_type: null },
-          ],
-          rows: [
-            [1, 1200],
-            [10, 3],
-          ],
-        },
+      columns: [
+        { name: 'Hours', kind: 'number' },
+        { name: 'Cost', kind: 'number' },
+      ],
+      rows: [
+        [
+          { type: 'number', value: 1 },
+          { type: 'number', value: 1200 },
+        ],
+        [
+          { type: 'number', value: 10 },
+          { type: 'number', value: 3 },
+        ],
       ],
     };
     const numericChart = prepareQueryChart(numeric, 'scatter').data;
@@ -261,17 +268,19 @@ describe('chart data', () => {
     ]);
     const dates: QueryAnswer = {
       ...answer,
-      results: [
-        {
-          columns: [
-            { name: 'Day', entity_type: null },
-            { name: 'Signups', entity_type: null },
-          ],
-          rows: [
-            ['2026-01-01T00:00:00+00:00', 2],
-            ['2026-01-04', 20],
-          ],
-        },
+      columns: [
+        { name: 'Day', kind: 'date' },
+        { name: 'Signups', kind: 'number' },
+      ],
+      rows: [
+        [
+          { type: 'date', value: '2026-01-01T00:00:00+00:00' },
+          { type: 'number', value: 2 },
+        ],
+        [
+          { type: 'date', value: '2026-01-04T00:00:00Z' },
+          { type: 'number', value: 20 },
+        ],
       ],
     };
     const dateChart = prepareQueryChart(dates, 'line').data;
@@ -295,21 +304,42 @@ describe('chart data', () => {
     expect(prepareQueryChart(answer, 'line').data?.scale).toBe('category');
   });
 
+  it('keeps numeric text in categories and never reads it as a number', () => {
+    const text: QueryAnswer = {
+      ...answer,
+      columns: [
+        { name: 'Code', kind: 'text' },
+        { name: 'Total', kind: 'text' },
+      ],
+      rows: [
+        [
+          { type: 'text', value: '1' },
+          { type: 'text', value: '12' },
+        ],
+      ],
+    };
+    expect(
+      prepareQueryChart(text, 'bar', { x: 'Code', y: ['Total'] }).error
+    ).toContain('numeric');
+  });
+
   it('leaves rows without a date off a time axis and counts them', () => {
     const dates: QueryAnswer = {
       ...answer,
-      results: [
-        {
-          columns: [
-            { name: 'Date', entity_type: null },
-            { name: 'COUNT(*)', entity_type: null },
-          ],
-          rows: [
-            ['2025-07-19T00:00:00+00:00', 1],
-            ['2025-10-20T00:00:00+00:00', 1],
-            [null, 1],
-          ],
-        },
+      columns: [
+        { name: 'Date', kind: 'date' },
+        { name: 'COUNT(*)', kind: 'number' },
+      ],
+      rows: [
+        [
+          { type: 'date', value: '2025-07-19T00:00:00+00:00' },
+          { type: 'number', value: 1 },
+        ],
+        [
+          { type: 'date', value: '2025-10-20T00:00:00+00:00' },
+          { type: 'number', value: 1 },
+        ],
+        [null, { type: 'number', value: 1 }],
       ],
     };
     const chart = prepareQueryChart(dates, 'line').data;
@@ -324,19 +354,27 @@ describe('chart data', () => {
   it('splits one series by a color column', () => {
     const tickets: QueryAnswer = {
       ...answer,
-      results: [
-        {
-          columns: [
-            { name: 'Month', entity_type: null },
-            { name: 'Team', entity_type: null },
-            { name: 'Tickets', entity_type: null },
-          ],
-          rows: [
-            ['Jan', 'Support', 12],
-            ['Jan', 'Sales', 4],
-            ['Feb', 'Support', 9],
-          ],
-        },
+      columns: [
+        { name: 'Month', kind: 'text' },
+        { name: 'Team', kind: 'text' },
+        { name: 'Tickets', kind: 'number' },
+      ],
+      rows: [
+        [
+          { type: 'text', value: 'Jan' },
+          { type: 'text', value: 'Support' },
+          { type: 'number', value: 12 },
+        ],
+        [
+          { type: 'text', value: 'Jan' },
+          { type: 'text', value: 'Sales' },
+          { type: 'number', value: 4 },
+        ],
+        [
+          { type: 'text', value: 'Feb' },
+          { type: 'text', value: 'Support' },
+          { type: 'number', value: 9 },
+        ],
       ],
     };
     expect(
@@ -395,23 +433,53 @@ describe('chart data', () => {
     ).toContain('unavailable');
   });
 
+  it('labels linked records by name, and by count when no name is known', () => {
+    const owners: QueryAnswer = {
+      ...answer,
+      columns: [
+        {
+          name: 'Owner',
+          kind: 'entity',
+          source: {
+            markdown: false,
+            options: [],
+            tag: false,
+            target: 'DATABASE_ROW',
+            relatedTable: { databaseId: 'db', tableId: 'people' },
+          },
+        },
+        { name: 'Tickets', kind: 'number' },
+      ],
+      rows: [
+        [
+          { type: 'entities', value: ['ada', 'grace'] },
+          { type: 'number', value: 3 },
+        ],
+      ],
+    };
+    expect(
+      prepareQueryChart(owners, 'bar').data?.points.map((point) => point.label)
+    ).toEqual(['2 linked records']);
+    expect(
+      prepareQueryChart(owners, 'bar', undefined, ({ id, table }) =>
+        id === 'ada' && table === 'people' ? 'Ada' : undefined
+      ).data?.points.map((point) => point.label)
+    ).toEqual(['Ada +1']);
+  });
+
   it('refuses more series than the palette has colors', () => {
     const many: QueryAnswer = {
       ...answer,
-      results: [
-        {
-          columns: [
-            { name: 'Month', entity_type: null },
-            { name: 'Team', entity_type: null },
-            { name: 'Tickets', entity_type: null },
-          ],
-          rows: Array.from({ length: 10 }, (_, index) => [
-            'Jan',
-            `Team ${index}`,
-            index,
-          ]),
-        },
+      columns: [
+        { name: 'Month', kind: 'text' },
+        { name: 'Team', kind: 'text' },
+        { name: 'Tickets', kind: 'number' },
       ],
+      rows: Array.from({ length: 10 }, (_, index) => [
+        { type: 'text', value: 'Jan' },
+        { type: 'text', value: `Team ${index}` },
+        { type: 'number', value: index },
+      ]),
     };
     expect(
       prepareQueryChart(many, 'bar', {
@@ -428,15 +496,10 @@ describe('chart data', () => {
     ).toContain('unavailable');
     const ambiguous: QueryAnswer = {
       ...answer,
-      results: [
-        {
-          ...answer.results[0],
-          columns: [
-            { name: 'Month', entity_type: null },
-            { name: 'Revenue', entity_type: null },
-            { name: 'Revenue', entity_type: null },
-          ],
-        },
+      columns: [
+        { name: 'Month', kind: 'text' },
+        { name: 'Revenue', kind: 'number' },
+        { name: 'Revenue', kind: 'number' },
       ],
     };
     expect(
@@ -444,7 +507,13 @@ describe('chart data', () => {
     ).toContain('unavailable');
     const text: QueryAnswer = {
       ...answer,
-      results: [{ ...answer.results[0], rows: [['Jan', 'high', 1]] }],
+      rows: [
+        [
+          { type: 'text', value: 'Jan' },
+          { type: 'text', value: 'high' },
+          { type: 'number', value: 1 },
+        ],
+      ],
     };
     expect(
       prepareQueryChart(text, 'bar', { x: 'Month', y: ['Revenue'] }).error
@@ -452,16 +521,13 @@ describe('chart data', () => {
   });
 
   it('explains empty results instead of drawing an empty frame', () => {
-    const empty: QueryAnswer = {
-      ...answer,
-      results: [{ ...answer.results[0], rows: [] }],
-    };
+    const empty: QueryAnswer = { ...answer, rows: [] };
     expect(prepareQueryChart(empty, 'bar').error).toContain(
       'no matching records'
     );
     const blank: QueryAnswer = {
       ...answer,
-      results: [{ ...answer.results[0], rows: [['Jan', null, null]] }],
+      rows: [[{ type: 'text', value: 'Jan' }, null, null]],
     };
     expect(
       prepareQueryChart(blank, 'line', { x: 'Month', y: ['Revenue', 'Cost'] })
@@ -473,19 +539,24 @@ describe('chart data', () => {
     expect(prepareQueryChart(answer, 'pie').error).toContain('nonnegative');
     const zeroes: QueryAnswer = {
       ...answer,
-      results: [{ ...answer.results[0], rows: [['Jan', 0, 0]] }],
+      rows: [
+        [
+          { type: 'text', value: 'Jan' },
+          { type: 'number', value: 0 },
+          { type: 'number', value: 0 },
+        ],
+      ],
     };
     expect(prepareQueryChart(zeroes, 'pie').error).toContain(
       'greater than zero'
     );
     const many: QueryAnswer = {
       ...answer,
-      results: [
-        {
-          ...answer.results[0],
-          rows: Array.from({ length: 21 }, (_, index) => [String(index), 1, 2]),
-        },
-      ],
+      rows: Array.from({ length: 21 }, (_, index) => [
+        { type: 'text', value: String(index) },
+        { type: 'number', value: 1 },
+        { type: 'number', value: 2 },
+      ]),
     };
     expect(prepareQueryChart(many, 'pie').error).toContain('20 categories');
     expect(prepareQueryChart(many, 'bar').data?.categories).toHaveLength(21);
@@ -501,25 +572,51 @@ describe('chart data', () => {
   it('folds the smallest pie slices into Other past the palette', () => {
     const shares: QueryAnswer = {
       ...answer,
-      results: [
-        {
-          columns: [
-            { name: 'Party', entity_type: null },
-            { name: 'Guests', entity_type: null },
-          ],
-          rows: [
-            ['A', 10],
-            ['B', 1],
-            ['C', 9],
-            ['D', 8],
-            ['E', 7],
-            ['F', 6],
-            ['G', 5],
-            ['H', 4],
-            ['I', 3],
-            ['J', 2],
-          ],
-        },
+      columns: [
+        { name: 'Party', kind: 'text' },
+        { name: 'Guests', kind: 'number' },
+      ],
+      rows: [
+        [
+          { type: 'text', value: 'A' },
+          { type: 'number', value: 10 },
+        ],
+        [
+          { type: 'text', value: 'B' },
+          { type: 'number', value: 1 },
+        ],
+        [
+          { type: 'text', value: 'C' },
+          { type: 'number', value: 9 },
+        ],
+        [
+          { type: 'text', value: 'D' },
+          { type: 'number', value: 8 },
+        ],
+        [
+          { type: 'text', value: 'E' },
+          { type: 'number', value: 7 },
+        ],
+        [
+          { type: 'text', value: 'F' },
+          { type: 'number', value: 6 },
+        ],
+        [
+          { type: 'text', value: 'G' },
+          { type: 'number', value: 5 },
+        ],
+        [
+          { type: 'text', value: 'H' },
+          { type: 'number', value: 4 },
+        ],
+        [
+          { type: 'text', value: 'I' },
+          { type: 'number', value: 3 },
+        ],
+        [
+          { type: 'text', value: 'J' },
+          { type: 'number', value: 2 },
+        ],
       ],
     };
     const chart = prepareQueryChart(shares, 'pie').data;

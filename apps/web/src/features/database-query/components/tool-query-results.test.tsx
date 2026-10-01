@@ -14,21 +14,24 @@ vi.mock('../answer-display', () => ({
 }));
 
 const answer: QueryAnswer = {
-  results: [
-    {
-      columns: [
-        { name: 'Team', entity_type: null },
-        { name: 'Tickets', entity_type: null },
-      ],
-      rows: [
-        ['Support', 12],
-        ['Sales', 4],
-      ],
-    },
+  columns: [
+    { name: 'Team', kind: 'text' },
+    { name: 'Tickets', kind: 'number' },
   ],
-  read_tables: [],
-  read_versions: {},
-  truncated_tables: [],
+  rows: [
+    [
+      { type: 'text', value: 'Support' },
+      { type: 'number', value: 12 },
+    ],
+    [
+      { type: 'text', value: 'Sales' },
+      { type: 'number', value: 4 },
+    ],
+  ],
+  rowIds: [],
+  readTables: [],
+  readDatabaseIds: [],
+  truncatedTables: [],
 };
 
 afterEach(() => {
@@ -57,13 +60,12 @@ describe('native chat database answers', () => {
   });
 
   it('falls back to a table when the requested chart cannot represent the result', () => {
-    const textOnly = {
+    const textOnly: QueryAnswer = {
       ...answer,
-      results: [
-        {
-          columns: [{ name: 'Name', entity_type: null }],
-          rows: [['Ada'], ['Grace']],
-        },
+      columns: [{ name: 'Name', kind: 'text' }],
+      rows: [
+        [{ type: 'text', value: 'Ada' }],
+        [{ type: 'text', value: 'Grace' }],
       ],
     };
     const rendered = render(() => (
@@ -114,11 +116,10 @@ describe('native chat database answers', () => {
     );
     setValue({
       ...answer,
-      results: [
-        {
-          columns: [{ name: 'Customer', entity_type: null }],
-          rows: [['Acme'], ['Macro']],
-        },
+      columns: [{ name: 'Customer', kind: 'text' }],
+      rows: [
+        [{ type: 'text', value: 'Acme' }],
+        [{ type: 'text', value: 'Macro' }],
       ],
     });
     expect(rendered.queryByRole('img')).toBeNull();

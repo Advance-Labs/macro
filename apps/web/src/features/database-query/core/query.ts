@@ -1,5 +1,8 @@
-import { ROW_ID_COLUMN } from '@app/features/block-database/sql';
 import { isFeatureEnabled, showDatabaseSql } from '@core/constant/featureFlags';
+import type { DatabaseSqlAnswer } from '@core/database-sql/answer';
+import type { DatabaseSqlFailure } from '@core/database-sql/driver';
+import { type ResultError, ThrownResultError } from '@core/util/result';
+import { match, P } from 'ts-pattern';
 import {
   isChartMode,
   parseQueryChart,
@@ -62,35 +65,66 @@ export type QueryProposal = {
   /** A verified complete schema, attached by the production query adapter. */
   source?: QuerySchema;
 };
-export type QueryResult = {
-  columns: {
-    name: string;
-    entity_type: string | null;
-    /** The `[table, column]` a value was read from, when it traces to one. */
-    origin?: [string, string] | null;
-  }[];
-  rows: (string | number | null)[][];
-};
-/**
- * Indexes of the columns a result table shows. Row identity stays in the data
- * for linking but is not displayed, unless it is the only column.
- */
-export function displayedColumnIndexes(result: QueryResult): number[] {
-  const indexes = result.columns.flatMap((column, index) =>
-    column.name === ROW_ID_COLUMN ? [] : [index]
-  );
-  return indexes.length > 0 ? indexes : result.columns.map((_, index) => index);
-}
-
-export type QueryAnswer = {
-  results: QueryResult[];
-  read_tables: string[];
-  read_database_ids?: string[];
-  read_versions: Record<string, number>;
-  truncated_tables: string[];
+export type QueryAnswer = DatabaseSqlAnswer & {
   /** Source metadata checked against the query's actual read dependencies by its adapter. */
   source?: QuerySchema;
 };
+
+/** Why a question has no answer. */
+export type QueryFailure =
+  | DatabaseSqlFailure
+  /** Its saved query could not be loaded or saved. */
+  | { kind: 'question'; error: ResultError }
+  /** The databases it reads could not be loaded. */
+  | { kind: 'databases'; error: ResultError }
+  /** The assistant could not turn the question into a query, in its words. */
+  | { kind: 'generation'; message: string }
+  /** The assistant changed data, then could not finish its answer. */
+  | { kind: 'action-incomplete'; actionSummary: string; message: string }
+  /** The assistant may have changed data before its answer was lost. */
+  | { kind: 'outcome-unknown'; message: string }
+  /** The question names a table the source no longer has. */
+  | { kind: 'table-unavailable' }
+  /** The question needs a database other than the one chosen. */
+  | { kind: 'other-database' }
+  /** The answer's source could not be matched to a database the viewer reads. */
+  | { kind: 'unverified-source' };
+
+/** A service's failure: the first of the errors it reported. */
+export function serviceError(errors: readonly ResultError[]): ResultError {
+  return (
+    errors[0] ?? { code: 'UNKNOWN_ERROR', message: 'The service did not say.' }
+  );
+}
+
+/** A query read's failure, thrown at the TanStack boundary with its codes. */
+export function thrownServiceError(thrown: unknown): ResultError {
+  return thrown instanceof ThrownResultError
+    ? serviceError(thrown.errors)
+    : {
+        code: 'UNKNOWN_ERROR',
+        message: thrown instanceof Error ? thrown.message : String(thrown),
+      };
+}
+
+/** The assistant's failure, in the words its client threw. */
+export function generationFailure(thrown: unknown): QueryFailure {
+  if (thrown instanceof QueryActionError)
+    return {
+      kind: 'action-incomplete',
+      actionSummary: thrown.actionSummary,
+      message: thrown.message,
+    };
+  if (thrown instanceof QueryOutcomeUnknownError)
+    return { kind: 'outcome-unknown', message: thrown.message };
+  return {
+    kind: 'generation',
+    message:
+      thrown instanceof Error && thrown.message
+        ? thrown.message
+        : 'AI could not answer. Please try again.',
+  };
+}
 
 /** The write ledger succeeded, but the assistant could not finish its answer. */
 export class QueryActionError extends Error {
@@ -182,23 +216,14 @@ export function queryStarters(schema: QuerySchema) {
 }
 
 export function isScalarAnswer(answer: QueryAnswer | undefined): boolean {
-  return (
-    !!answer &&
-    answer.results.length === 1 &&
-    answer.results[0].columns.length === 1 &&
-    answer.results[0].rows.length === 1
-  );
+  return !!answer && answer.columns.length === 1 && answer.rows.length === 1;
 }
 
-export function formatQueryValue(
-  value: string | number | null | undefined
-): string {
+export function formatQueryValue(value: number | null | undefined): string {
   if (value === null || value === undefined) return '—';
-  return typeof value === 'number'
-    ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 6 }).format(
-        value
-      )
-    : value;
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 6 }).format(
+    value
+  );
 }
 
 /** An early affordance, not a security boundary: the query endpoint enforces read-only SQL. */
@@ -209,85 +234,86 @@ export function looksLikeReadQuery(sql: string): boolean {
   return /^SELECT\b/i.test(start);
 }
 
-const UNCOMPUTED = "This answer couldn't be computed";
-
-/** The last part of a table name as the engine quotes it: `"Db"."Guests"` → `Guests`. */
-function bareName(written: string): string {
-  const parts = written.trim().match(/"(?:[^"]|"")*"|[^.\s]+/g) ?? [written];
-  return (parts.at(-1) ?? written).replace(/^"|"$/g, '').replaceAll('""', '"');
-}
-
-/** The engine's refusals, worded in the reader's terms rather than the statement's. */
-function plainEngineError(message: string): string | undefined {
-  const found = (pattern: RegExp) => message.match(pattern)?.[1];
-  const column =
-    found(/unknown column "((?:[^"]|"")+)"/i) ??
-    found(/no such column:? "?([^"\s]+)"?/i);
-  if (column)
-    return `${UNCOMPUTED}: the column ${column.replaceAll('""', '"')} no longer exists.`;
-  if (/unknown table "[^"]+" in \S+\.\S+/i.test(message))
-    return `${UNCOMPUTED}. Try asking again.`;
-  const table =
-    found(/unknown table (.+?)(?: — |$)/i) ?? found(/no such table:? (\S+)/i);
-  if (table)
-    return `${UNCOMPUTED}: the table ${bareName(table)} no longer exists.`;
-  const ambiguous = found(/table "((?:[^"]|"")+)" exists in /i);
-  if (ambiguous)
-    return `${UNCOMPUTED}: more than one database has a table named ${ambiguous}.`;
-  const option = message.match(
-    /"((?:[^"]|"")+)" is not an option of "((?:[^"]|"")+)"/i
-  );
-  if (option)
-    return `${UNCOMPUTED}: ${option[1]} is not an option of ${option[2]}.`;
-  const kind = message.match(/"((?:[^"]|"")+)" is an? ([\w ]+?) column/i);
-  if (kind)
-    return `${UNCOMPUTED}: ${kind[1]} holds ${kind[2]} values, which don't fit this question.`;
-  const misuse =
-    found(/"((?:[^"]|"")+)" holds (?:one value|several values)/i) ??
-    found(/cannot (?:use \S+ on|apply to|ORDER BY) "((?:[^"]|"")+)"/i);
-  if (misuse) return `${UNCOMPUTED}: ${misuse} can't be used that way.`;
-  if (/matches more than \d+ rows/i.test(message))
-    return 'This request matches too many records. Try a narrower request.';
-  return undefined;
-}
-
-/** Marks a message that quotes or parses a statement: SQL keywords, a quoted name, a parser span. */
-const QUOTES_SQL =
-  /\b(?:SELECT|FROM|WHERE|GROUP BY|ORDER BY|HAVING|JOIN|INSERT|UPDATE|DELETE|LIMIT|HAS|IS NULL)\b|expected .+, found |at \d+\.\.\d+/;
+const UNCOMPUTED = "This answer couldn't be computed. Try asking again.";
+const TRY_AGAIN = 'Something went wrong reaching your data. Try again.';
+const OFFLINE = 'Your data could not be reached. Check your connection.';
 
 /**
  * What to tell a person when a question fails. With SQL hidden
- * ({@link showDatabaseSql}), engine refusals are reworded and anything still
- * quoting a statement becomes a plain line. The raw message stays on the
- * error for the agent and the SQL-visible UI.
+ * ({@link showDatabaseSql}) the engine's and compiler's own words, which
+ * quote the statement, become a plain line; {@link queryFailureDetail}
+ * keeps them for the agent and the SQL-visible UI.
  */
-export function queryErrorMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
+export function queryErrorMessage(failure: QueryFailure): string {
   const showSql = isFeatureEnabled(showDatabaseSql);
-  const plain = showSql ? undefined : plainEngineError(message);
-  if (plain) return plain;
-  if (/no such table|unknown table/i.test(message))
-    return 'This table is no longer available. Choose a database and update the question.';
-  if (/no such column|unknown column/i.test(message))
-    return 'A property in this question has changed. Try asking again with its current name.';
-  if (
-    /read.?only|not authorized|forbidden|runs SELECT statements/i.test(message)
-  )
-    return 'Questions can only read data you have access to. Edit records in the table or board.';
-  if (/budget|timed out|timeout|too many/i.test(message))
-    return showSql
-      ? 'This question needs less data. Try a narrower question or add a LIMIT in SQL.'
-      : 'This question needs less data. Try a narrower question.';
-  if (/404|not found/i.test(message))
-    return 'Live questions are not available on this server yet. Your question has been kept.';
-  // A crash (`buildCatalog is not a function`) is no more readable than SQL.
-  const crashed =
-    error instanceof TypeError ||
-    error instanceof ReferenceError ||
-    error instanceof SyntaxError;
-  if (!showSql && (crashed || QUOTES_SQL.test(message)))
-    return `${UNCOMPUTED}. Try asking again.`;
-  return message || 'We could not answer that question. Try again.';
+  return match(failure)
+    .returnType<string>()
+    .with({ kind: 'engine' }, ({ message }) => (showSql ? message : UNCOMPUTED))
+    .with({ kind: 'fetch' }, () => OFFLINE)
+    .with({ kind: 'ops' }, { kind: 'read-only' }, () =>
+      showSql
+        ? 'Questions only read your data. Start with SELECT, or ask a question above.'
+        : 'Questions only read your data. Ask a question about it above.'
+    )
+    .with({ kind: 'question' }, ({ error }) =>
+      match(error.code)
+        .with('NOT_FOUND', () => 'This saved question no longer exists.')
+        .with('INVALID_QUERY', () => (showSql ? error.message : UNCOMPUTED))
+        .with(
+          'READ_ONLY',
+          () =>
+            'Questions can only read data you have access to. Edit records in the table or board.'
+        )
+        .with('BUDGET_EXCEEDED', () =>
+          showSql
+            ? 'This question needs less data. Try a narrower question or add a LIMIT in SQL.'
+            : 'This question needs less data. Try a narrower question.'
+        )
+        .with('NETWORK_ERROR', () => OFFLINE)
+        .otherwise(() => TRY_AGAIN)
+    )
+    .with({ kind: 'databases' }, ({ error }) =>
+      match(error.code)
+        .with(
+          P.union('NOT_FOUND', 'FORBIDDEN', 'GONE'),
+          () =>
+            'This table is no longer available. Choose a database and update the question.'
+        )
+        .with('NETWORK_ERROR', () => OFFLINE)
+        .otherwise(() => TRY_AGAIN)
+    )
+    .with(
+      { kind: 'generation' },
+      { kind: 'action-incomplete' },
+      { kind: 'outcome-unknown' },
+      ({ message }) => message
+    )
+    .with(
+      { kind: 'table-unavailable' },
+      () => 'Choose an available table before asking this question.'
+    )
+    .with(
+      { kind: 'other-database' },
+      () =>
+        'This answer reads another database. Choose Automatic or change the source, then ask again.'
+    )
+    .with(
+      { kind: 'unverified-source' },
+      () => 'The answer’s source could not be verified. Try again.'
+    )
+    .exhaustive();
+}
+
+/** The failure in the engine's or the service's own words, when it has them. */
+export function queryFailureDetail(failure: QueryFailure): string | undefined {
+  return match(failure)
+    .with({ kind: P.union('engine', 'fetch') }, ({ message }) => message)
+    .with({ kind: 'ops' }, ({ error }) => error.message)
+    .with(
+      { kind: P.union('question', 'databases') },
+      ({ error }) => error.message
+    )
+    .otherwise(() => undefined);
 }
 
 export function parseQueryProposal(value: unknown): QueryProposal {

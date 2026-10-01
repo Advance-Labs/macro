@@ -1,180 +1,217 @@
 import { describe, expect, it } from 'vitest';
-import { resultCell, resultCellText } from './answer-cell';
+import { referenceList, resultCell, resultCellText } from './answer-cell';
 
-describe('result cells without a known column', () => {
-  it('shows a date-only value as the grid does, without time or ISO text', () => {
-    expect(
-      resultCell('2025-12-31T00:00:00+00:00', {
-        name: 'Date',
-        entity_type: null,
-      })
-    ).toEqual({ kind: 'text', text: 'Dec 31, 2025' });
-    expect(
-      resultCell('2025-07-19', { name: 'Day', entity_type: null })
-    ).toEqual({ kind: 'text', text: 'Jul 19, 2025' });
+describe('result cells from the engine’s typed cells', () => {
+  it('shows a calendar day as that local day, without a time', () => {
+    const cell = resultCell(
+      { type: 'date', value: '2025-12-31T00:00:00Z' },
+      { name: 'Due', kind: 'date' }
+    );
+
+    expect(cell).toEqual({
+      kind: 'date',
+      date: new Date(2025, 11, 31),
+      calendarDay: true,
+    });
+    expect(resultCellText(cell)).toBe('Dec 31, 2025');
   });
 
-  it('keeps the time of a value that has one', () => {
-    expect(
-      resultCell('2025-12-31T15:30:00Z', { name: 'At', entity_type: null })
-    ).toEqual({
-      kind: 'text',
-      text: `Dec 31, 2025, ${new Date('2025-12-31T15:30:00Z').toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`,
+  it('keeps the time of a moment', () => {
+    const cell = resultCell(
+      { type: 'date', value: '2025-12-31T15:30:00Z' },
+      { name: 'At', kind: 'date' }
+    );
+
+    expect(cell).toEqual({
+      kind: 'date',
+      date: new Date('2025-12-31T15:30:00Z'),
+      calendarDay: false,
     });
+    expect(resultCellText(cell)).toBe(
+      `Dec 31, 2025, ${new Date('2025-12-31T15:30:00Z').toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+    );
   });
 
-  it('formats numbers and leaves other text alone', () => {
-    expect(resultCell(1234.5, { name: 'Total', entity_type: null })).toEqual({
-      kind: 'text',
-      text: '1,234.5',
-    });
+  it('formats numbers and leaves text alone', () => {
+    const total = resultCell(
+      { type: 'number', value: 1234.5 },
+      { name: 'Total', kind: 'number' }
+    );
+
+    expect(total).toEqual({ kind: 'number', value: 1234.5 });
+    expect(resultCellText(total)).toBe('1,234.5');
     expect(
-      resultCell('Skyline Rooftop', { name: 'Location', entity_type: null })
-    ).toEqual({ kind: 'text', text: 'Skyline Rooftop' });
-    expect(resultCell('2025', { name: 'Year', entity_type: null })).toEqual({
-      kind: 'text',
-      text: '2025',
-    });
+      resultCell(
+        { type: 'text', value: '2025' },
+        { name: 'Year', kind: 'text' }
+      )
+    ).toEqual({ kind: 'text', text: '2025' });
   });
 
-  it('shows an empty value as empty', () => {
-    expect(resultCell(null, { name: 'Date', entity_type: null })).toEqual({
+  it('reads a table’s text property as markdown', () => {
+    expect(
+      resultCell(
+        { type: 'text', value: '**Skyline** Rooftop' },
+        {
+          name: 'Location',
+          kind: 'text',
+          source: {
+            markdown: true,
+            options: [],
+            tag: false,
+            target: null,
+            relatedTable: null,
+          },
+        }
+      )
+    ).toEqual({ kind: 'markdown', markdown: '**Skyline** Rooftop' });
+  });
+
+  it('shows a missing value and empty text as empty', () => {
+    expect(resultCell(null, { name: 'Due', kind: 'date' })).toEqual({
       kind: 'empty',
     });
-    expect(resultCell('', { name: 'Name', entity_type: null })).toEqual({
-      kind: 'empty',
-    });
+    expect(
+      resultCell({ type: 'text', value: '' }, { name: 'Name', kind: 'text' })
+    ).toEqual({ kind: 'empty' });
   });
 
-  it('turns entity ids into mentions of the engine’s entity type', () => {
-    expect(resultCell('usr_1', { name: 'Host', entity_type: 'user' })).toEqual({
-      kind: 'mentions',
-      entityType: 'USER',
-      ids: ['usr_1'],
+  it('labels option ids with the column’s options and their colours', () => {
+    const cell = resultCell(
+      { type: 'options', value: ['option-vegan', 'option-nuts'] },
+      {
+        name: 'Diet',
+        kind: 'select',
+        source: {
+          markdown: false,
+          options: [
+            { id: 'option-vegan', label: 'Vegan', color: '#2f9e44' },
+            { id: 'option-nuts', label: 'No nuts', color: null },
+          ],
+          tag: true,
+          target: null,
+          relatedTable: null,
+        },
+      }
+    );
+
+    expect(cell).toEqual({
+      kind: 'options',
+      options: [
+        { id: 'option-vegan', label: 'Vegan', color: '#2f9e44' },
+        { id: 'option-nuts', label: 'No nuts', color: null },
+      ],
+      tag: true,
     });
+    expect(resultCellText(cell)).toBe('Vegan, No nuts');
+  });
+
+  it('reads booleans as checkboxes', () => {
     expect(
-      resultCell('["doc_1","doc_2"]', {
-        name: 'Documents',
-        entity_type: 'document',
-      })
+      resultCell(
+        { type: 'bool', value: true },
+        { name: 'Plus one', kind: 'boolean' }
+      )
+    ).toEqual({ kind: 'boolean', checked: true });
+  });
+
+  it('turns entity ids into mentions of the column’s target', () => {
+    expect(
+      resultCell(
+        { type: 'entities', value: ['doc_1', 'doc_2'] },
+        {
+          name: 'Documents',
+          kind: 'entity',
+          source: {
+            markdown: false,
+            options: [],
+            tag: false,
+            target: 'DOCUMENT',
+            relatedTable: null,
+          },
+        }
+      )
     ).toEqual({
       kind: 'mentions',
       entityType: 'DOCUMENT',
       ids: ['doc_1', 'doc_2'],
     });
-    expect(
-      resultCell('thread_1', { name: 'Email', entity_type: 'email_thread' })
-    ).toEqual({ kind: 'mentions', entityType: 'THREAD', ids: ['thread_1'] });
   });
 
-  it('names linked rows instead of printing their ids', () => {
+  it('keeps a relation’s row ids with the table they belong to', () => {
     expect(
-      resultCell('01a0ef5c-0000-7000-8000-000000000000', {
-        name: 'Party',
-        entity_type: 'database_row',
+      resultCell(
+        { type: 'entities', value: ['row-party'] },
+        {
+          name: 'Parties',
+          kind: 'entity',
+          source: {
+            markdown: false,
+            options: [],
+            tag: false,
+            target: 'DATABASE_ROW',
+            relatedTable: { databaseId: 'db-party', tableId: 'table-parties' },
+          },
+        }
+      )
+    ).toEqual({ kind: 'rows', ids: ['row-party'], table: 'table-parties' });
+  });
+});
+
+describe('names instead of counts', () => {
+  it('names people, up to three, then says how many more', () => {
+    const names: Record<string, string> = {
+      'macro|ada@x.test': 'Ada Lovelace',
+      'macro|grace@x.test': 'Grace Hopper',
+      'macro|alan@x.test': 'Alan Turing',
+      'macro|edsger@x.test': 'Edsger Dijkstra',
+    };
+
+    expect(
+      resultCellText(
+        {
+          kind: 'mentions',
+          entityType: 'USER',
+          ids: [
+            'macro|ada@x.test',
+            'macro|grace@x.test',
+            'macro|alan@x.test',
+            'macro|edsger@x.test',
+          ],
+        },
+        ({ id }) => names[id]
+      )
+    ).toBe('Ada Lovelace, Grace Hopper, Alan Turing +1');
+  });
+
+  it('names linked rows from their table', () => {
+    expect(
+      resultCellText(
+        { kind: 'rows', ids: ['row-1', 'row-2'], table: 'table-parties' },
+        ({ kind, id, table }) =>
+          kind === 'DATABASE_ROW' && table === 'table-parties'
+            ? { 'row-1': 'Launch party', 'row-2': 'Offsite' }[id]
+            : undefined
+      )
+    ).toBe('Launch party, Offsite');
+  });
+
+  it('counts what it cannot name among names it knows', () => {
+    expect(referenceList('USER', ['Ada Lovelace', undefined, undefined])).toBe(
+      'Ada Lovelace +2'
+    );
+  });
+
+  it('falls back to the count only when no name is known', () => {
+    expect(
+      resultCellText({
+        kind: 'rows',
+        ids: ['row-1', 'row-2'],
+        table: null,
       })
-    ).toEqual({ kind: 'text', text: 'Linked record' });
-  });
-});
-
-describe('result cells from a known database column', () => {
-  const column = {
-    id: 'column',
-    name: 'Column',
-    isMultiSelect: false,
-    options: [],
-    writable: true,
-  };
-
-  it('formats a date column as the grid does', () => {
+    ).toBe('2 linked records');
     expect(
-      resultCell(
-        '2025-12-31T00:00:00+00:00',
-        { name: 'Date', entity_type: null },
-        { ...column, dataType: 'DATE' }
-      )
-    ).toEqual({ kind: 'text', text: 'Dec 31, 2025' });
-  });
-
-  it('shows a checkbox for a boolean column', () => {
-    const boolean = { ...column, dataType: 'BOOLEAN' };
-    expect(
-      resultCell(1, { name: 'Plus One', entity_type: null }, boolean)
-    ).toEqual({ kind: 'boolean', checked: true });
-    expect(
-      resultCell(0, { name: 'Plus One', entity_type: null }, boolean)
-    ).toEqual({ kind: 'boolean', checked: false });
-  });
-
-  it('shows select values as options, one per chosen label', () => {
-    expect(
-      resultCell(
-        'Maybe',
-        { name: 'RSVP', entity_type: null },
-        { ...column, dataType: 'SELECT_STRING' }
-      )
-    ).toEqual({ kind: 'options', labels: ['Maybe'] });
-    expect(
-      resultCell(
-        '["Vegan","Nut free"]',
-        { name: 'Dietary', entity_type: null },
-        { ...column, dataType: 'SELECT_STRING', isMultiSelect: true }
-      )
-    ).toEqual({ kind: 'options', labels: ['Vegan', 'Nut free'] });
-  });
-
-  it('renders text columns as their markdown, so mentions and links work', () => {
-    expect(
-      resultCell(
-        'See [the plan](https://macro.com)',
-        { name: 'Notes', entity_type: null },
-        { ...column, dataType: 'STRING' }
-      )
-    ).toEqual({
-      kind: 'markdown',
-      markdown: 'See [the plan](https://macro.com)',
-    });
-  });
-
-  it('uses the column’s own entity type, so tasks are tasks', () => {
-    expect(
-      resultCell(
-        'task_1',
-        { name: 'Task', entity_type: 'document' },
-        { ...column, dataType: 'ENTITY', specificEntityType: 'TASK' }
-      )
-    ).toEqual({ kind: 'mentions', entityType: 'TASK', ids: ['task_1'] });
-  });
-
-  it('formats numbers as the grid does', () => {
-    expect(
-      resultCell(
-        3,
-        { name: 'Extra Guests', entity_type: null },
-        { ...column, dataType: 'NUMBER' }
-      )
-    ).toEqual({ kind: 'text', text: '3' });
-  });
-});
-
-describe('result cell text', () => {
-  it('spells each kind for labels and titles', () => {
-    expect(resultCellText({ kind: 'empty' })).toBe('—');
-    expect(resultCellText({ kind: 'text', text: 'Dec 31, 2025' })).toBe(
-      'Dec 31, 2025'
-    );
-    expect(resultCellText({ kind: 'markdown', markdown: 'Plain notes' })).toBe(
-      'Plain notes'
-    );
-    expect(resultCellText({ kind: 'boolean', checked: true })).toBe('True');
-    expect(
-      resultCellText({ kind: 'options', labels: ['Vegan', 'Nut free'] })
-    ).toBe('Vegan, Nut free');
-    expect(
-      resultCellText({ kind: 'mentions', entityType: 'USER', ids: ['a', 'b'] })
-    ).toBe('2 people');
-    expect(
-      resultCellText({ kind: 'mentions', entityType: 'DOCUMENT', ids: ['a'] })
-    ).toBe('1 document');
+      resultCellText({ kind: 'mentions', entityType: 'USER', ids: ['u'] })
+    ).toBe('1 person');
   });
 });

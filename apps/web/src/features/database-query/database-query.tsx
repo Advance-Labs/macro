@@ -4,7 +4,7 @@ import {
   useDatabaseDetailQuery,
   useDatabasesQuery,
 } from '@queries/storage/databases';
-import type { DatabaseDetail } from '@service-storage/databases';
+import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import { createSignal, For, type JSX, Match, Show, Switch } from 'solid-js';
 import { AppAnswerDisplay } from './answer-display';
 import { QueryDatabasePicker } from './components/query-database-picker';
@@ -154,15 +154,14 @@ function AskQuestion(props: {
     if (saving()) return;
     setSaving(true);
     setError();
-    try {
-      props.onSave(
-        await saveQuestion({ definition: next, save: saveQuestionSql })
-      );
-    } catch (failure) {
-      setError(queryErrorMessage(failure));
-    } finally {
-      setSaving(false);
-    }
+    const saved = await saveQuestion({
+      definition: next,
+      save: saveQuestionSql,
+    });
+    setSaving(false);
+    saved.match(props.onSave, (failure) =>
+      setError(queryErrorMessage(failure))
+    );
   };
   return (
     <>
@@ -197,7 +196,7 @@ export function DatabaseLiveQuestion(props: {
     Array.from(
       new Set([
         ...(props.source.databaseId ? [props.source.databaseId] : []),
-        ...(query.answer()?.read_database_ids ?? []),
+        ...(query.answer()?.readDatabaseIds ?? []),
       ])
     );
   const refresh = () => refreshInBackground(query);

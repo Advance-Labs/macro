@@ -1,4 +1,4 @@
-import type { DatabaseDetail } from '@service-storage/databases';
+import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import { describe, expect, it } from 'vitest';
 import { databaseSqlSchema } from './catalog';
 import { readCatalogFixture } from './tests/catalog-fixture';
@@ -80,6 +80,7 @@ const crm: DatabaseDetail = {
         version: 3,
       },
       sql_name: '"Deals"',
+      read_sql_name: '"Deals"',
       columns: [
         {
           column: {
@@ -182,6 +183,7 @@ const crm: DatabaseDetail = {
         version: 1,
       },
       sql_name: '"Contacts"',
+      read_sql_name: '"Contacts"',
       columns: [
         {
           column: {

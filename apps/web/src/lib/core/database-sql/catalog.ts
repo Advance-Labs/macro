@@ -6,7 +6,7 @@
  * agents.
  */
 
-import type { DatabaseDetail } from '@service-storage/databases';
+import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import type { Schema } from './generated/types';
 
 export function databaseSqlSchema(

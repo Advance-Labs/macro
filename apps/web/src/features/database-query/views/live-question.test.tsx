@@ -2,7 +2,7 @@ import { showDatabaseSql } from '@core/constant/featureFlags';
 import { fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { QueryAnswer } from '../core/query';
+import type { QueryAnswer, QueryFailure } from '../core/query';
 import { LiveQuestion } from './live-question';
 
 vi.mock('@solid-primitives/resize-observer', () => ({
@@ -11,7 +11,7 @@ vi.mock('@solid-primitives/resize-observer', () => ({
 
 describe('live database charts', () => {
   it('hides cached chart data after a permission error and never labels an unavailable answer live', () => {
-    const [error, setError] = createSignal<Error>();
+    const [error, setError] = createSignal<QueryFailure>();
     const rendered = render(() => (
       <LiveQuestion
         source={{
@@ -21,18 +21,20 @@ describe('live database charts', () => {
           chart: { x: 'Status', y: ['Count'] },
         }}
         answer={{
-          results: [
-            {
-              columns: [
-                { name: 'Status', entity_type: null },
-                { name: 'Count', entity_type: null },
-              ],
-              rows: [['Private work', 5]],
-            },
+          columns: [
+            { name: 'Status', kind: 'text' },
+            { name: 'Count', kind: 'number' },
           ],
-          read_tables: [],
-          read_versions: {},
-          truncated_tables: [],
+          rows: [
+            [
+              { type: 'text', value: 'Private work' },
+              { type: 'number', value: 5 },
+            ],
+          ],
+          rowIds: [],
+          readTables: [],
+          readDatabaseIds: [],
+          truncatedTables: [],
         }}
         error={error()}
         loading={false}
@@ -40,7 +42,10 @@ describe('live database charts', () => {
       />
     ));
     expect(rendered.getByRole('img')).toBeTruthy();
-    setError(new Error('Forbidden'));
+    setError({
+      kind: 'question',
+      error: { code: 'FORBIDDEN', message: 'Forbidden' },
+    });
     expect(rendered.queryByRole('img')).toBeNull();
     expect(rendered.queryByText('Private work')).toBeNull();
     expect(rendered.queryByText('Live · visible to you')).toBeNull();
@@ -49,18 +54,20 @@ describe('live database charts', () => {
   });
   it('renders a saved chart as a block and updates when fresh permitted results arrive', async () => {
     const result = (value: number): QueryAnswer => ({
-      results: [
-        {
-          columns: [
-            { name: 'Status', entity_type: null },
-            { name: 'Count', entity_type: null },
-          ],
-          rows: [['Done', value]],
-        },
+      columns: [
+        { name: 'Status', kind: 'text' },
+        { name: 'Count', kind: 'number' },
       ],
-      read_tables: [],
-      read_versions: {},
-      truncated_tables: [],
+      rows: [
+        [
+          { type: 'text', value: 'Done' },
+          { type: 'number', value },
+        ],
+      ],
+      rowIds: [],
+      readTables: [],
+      readDatabaseIds: [],
+      truncatedTables: [],
     });
     const [answer, setAnswer] = createSignal(result(5));
     const rendered = render(() => (
@@ -241,12 +248,12 @@ describe('answer titles', () => {
           displayMode: 'scalar',
         }}
         answer={{
-          results: [
-            { columns: [{ name: 'count', entity_type: null }], rows: [[6]] },
-          ],
-          read_tables: [],
-          read_versions: {},
-          truncated_tables: [],
+          columns: [{ name: 'count', kind: 'number' }],
+          rows: [[{ type: 'number', value: 6 }]],
+          rowIds: [],
+          readTables: [],
+          readDatabaseIds: [],
+          truncatedTables: [],
         }}
         loading={false}
         onRefresh={vi.fn()}
@@ -273,12 +280,12 @@ describe('answer details', () => {
         displayMode: 'table',
       }}
       answer={{
-        results: [
-          { columns: [{ name: 'Count', entity_type: null }], rows: [[4]] },
-        ],
-        read_tables: [],
-        read_versions: {},
-        truncated_tables: [],
+        columns: [{ name: 'Count', kind: 'number' }],
+        rows: [[{ type: 'number', value: 4 }]],
+        rowIds: [],
+        readTables: [],
+        readDatabaseIds: [],
+        truncatedTables: [],
       }}
       loading={false}
       onRefresh={vi.fn()}
@@ -312,7 +319,10 @@ describe('answer details', () => {
           prompt: 'Total price',
           displayMode: 'table',
         }}
-        error={new Error('unknown column "Price" in "Shop"."Items"')}
+        error={{
+          kind: 'engine',
+          message: 'unknown column "Price" in "Shop"."Items"',
+        }}
         loading={false}
         onRefresh={vi.fn()}
       />
@@ -320,9 +330,7 @@ describe('answer details', () => {
     fireEvent.click(rendered.getByRole('button', { name: 'Details' }));
     expect(
       (await screen.findAllByRole('alert')).map((alert) => alert.textContent)
-    ).toContain(
-      "This answer couldn't be computed: the column Price no longer exists."
-    );
+    ).toContain("This answer couldn't be computed. Try asking again.");
     rendered.unmount();
   });
 });

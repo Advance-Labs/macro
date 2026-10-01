@@ -1,22 +1,23 @@
-import { SelectPill } from '@app/features/block-database/components/select-pill';
-import type { DatabaseViewColumn } from '@app/features/block-database/core/database-view';
+import { OptionPill } from '@app/features/block-database/components/select-pill';
 import { For, Match, Switch } from 'solid-js';
 import { useAnswerDisplay } from '../context/answer-display';
-import type { ResultCell } from '../core/answer-cell';
+import {
+  type ReferenceNames,
+  type ResultCell,
+  resultCellText,
+  unknownNames,
+} from '../core/answer-cell';
 
 /** One result value, drawn with the same pieces as the database grid's cells. */
 export function ResultValue(props: {
   cell: ResultCell;
-  column?: DatabaseViewColumn;
+  names?: ReferenceNames;
 }) {
   const display = useAnswerDisplay();
   return (
-    <Switch>
+    <Switch fallback={resultCellText(props.cell, props.names ?? unknownNames)}>
       <Match when={props.cell.kind === 'empty'}>
         <span class="opacity-40">—</span>
-      </Match>
-      <Match when={props.cell.kind === 'text' && props.cell}>
-        {(cell) => <>{cell().text}</>}
       </Match>
       <Match when={props.cell.kind === 'markdown' && props.cell}>
         {(cell) => <>{display.text(cell().markdown)}</>}
@@ -35,8 +36,14 @@ export function ResultValue(props: {
       <Match when={props.cell.kind === 'options' && props.cell}>
         {(cell) => (
           <span class="inline-flex min-w-0 max-w-full flex-wrap gap-1 align-middle">
-            <For each={cell().labels}>
-              {(label) => <SelectPill label={label} column={props.column} />}
+            <For each={cell().options}>
+              {(option) => (
+                <OptionPill
+                  label={option.label}
+                  color={option.color}
+                  tag={cell().tag}
+                />
+              )}
             </For>
           </span>
         )}
