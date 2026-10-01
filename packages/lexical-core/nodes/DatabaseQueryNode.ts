@@ -12,41 +12,16 @@ import {
 } from 'lexical';
 import { type DecoratorComponent, getDecorator } from '../decoratorRegistry';
 import { $applyIdFromSerialized } from '../plugins/nodeIdPlugin';
+import {
+  type DatabaseQueryChart,
+  type DatabaseQueryData,
+  type DatabaseQueryDisplayMode,
+  parseDatabaseQueryData,
+} from './databaseQueryData';
 import { $createUnknownMentionNode } from './UnknownMentionNode';
 
 const DATABASE_QUERY_TAG = 'm-db-query';
-const DISPLAY_MODES = [
-  'scalar',
-  'table',
-  'bar',
-  'line',
-  'area',
-  'scatter',
-  'pie',
-] as const;
-const MAX_Y_COLUMNS = 5;
-export type DatabaseQueryDisplayMode = (typeof DISPLAY_MODES)[number];
-/** Column aliases and plain choices; never renderer options. */
-export type DatabaseQueryChart = {
-  x: string;
-  y: string[];
-  title?: string;
-  /** A column whose values split the one `y` series into groups. */
-  color?: string;
-  /** Stack bar or area series. */
-  stack?: boolean;
-};
-/** Points at an immutable saved query; the SQL lives on the server. */
-export type DatabaseQueryData = {
-  /** Empty while the question is still a draft. */
-  queryId: string;
-  databaseId?: string;
-  tableId?: string;
-  prompt: string;
-  title?: string;
-  displayMode: DatabaseQueryDisplayMode;
-  chart?: DatabaseQueryChart;
-};
+
 export type DatabaseQueryDecoratorProps = DatabaseQueryData & {
   key: NodeKey;
   theme: EditorThemeClasses;
@@ -55,79 +30,6 @@ export type SerializedDatabaseQueryNode = Spread<
   DatabaseQueryData,
   SerializedLexicalNode
 >;
-
-const isOptionalString = (value: unknown): value is string | undefined =>
-  value === undefined || typeof value === 'string';
-
-const isNonEmptyName = (name: unknown): name is string =>
-  typeof name === 'string' && !!name.trim();
-
-const isDisplayMode = (value: unknown): value is DatabaseQueryDisplayMode =>
-  DISPLAY_MODES.some((mode) => mode === value);
-
-export function parseDatabaseQueryChart(
-  value: unknown
-): DatabaseQueryChart | undefined {
-  if (!value || typeof value !== 'object') return;
-  const { x, y, title, color, stack } = value as Record<string, unknown>;
-  if (
-    !isNonEmptyName(x) ||
-    !Array.isArray(y) ||
-    !y.length ||
-    y.length > MAX_Y_COLUMNS ||
-    !y.every(isNonEmptyName) ||
-    new Set(y).size !== y.length ||
-    y.includes(x) ||
-    !isOptionalString(title)
-  )
-    return;
-  if (
-    color !== undefined &&
-    (!isNonEmptyName(color) ||
-      color === x ||
-      y.length !== 1 ||
-      y.includes(color))
-  )
-    return;
-  if (stack !== undefined && typeof stack !== 'boolean') return;
-  return {
-    x,
-    y: [...y],
-    ...(title ? { title } : {}),
-    ...(color ? { color } : {}),
-    ...(stack ? { stack: true } : {}),
-  };
-}
-
-/** Only query source is serialized. Results belong to the current viewer. */
-export function parseDatabaseQueryData(
-  value: unknown
-): DatabaseQueryData | undefined {
-  if (!value || typeof value !== 'object') return;
-  const { queryId, databaseId, tableId, prompt, title, displayMode, chart } =
-    value as Record<string, unknown>;
-  if (
-    typeof queryId !== 'string' ||
-    typeof prompt !== 'string' ||
-    !isOptionalString(databaseId) ||
-    !isOptionalString(tableId) ||
-    !isOptionalString(title) ||
-    !isDisplayMode(displayMode)
-  )
-    return;
-  const parsedChart =
-    chart === undefined ? undefined : parseDatabaseQueryChart(chart);
-  if (chart !== undefined && !parsedChart) return;
-  return {
-    queryId,
-    ...(databaseId ? { databaseId } : {}),
-    ...(tableId ? { tableId } : {}),
-    ...(title ? { title } : {}),
-    prompt,
-    displayMode,
-    ...(parsedChart ? { chart: parsedChart } : {}),
-  };
-}
 
 /** An `<m-db-query>` tag's payload; `undefined` when malformed. */
 export function parseDatabaseQueryJson(

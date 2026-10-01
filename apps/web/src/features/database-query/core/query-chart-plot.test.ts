@@ -1,10 +1,11 @@
+import type {
+  DatabaseQueryChart,
+  DatabaseQueryChartMode,
+} from '@macro-inc/lexical-core/nodes/databaseQueryData';
 import { describe, expect, it } from 'vitest';
+import { unknownNames } from './answer-cell';
 import type { QueryAnswer } from './query';
-import {
-  prepareQueryChart,
-  type QueryChartConfig,
-  type QueryChartMode,
-} from './query-chart';
+import { prepareQueryChart } from './query-chart';
 import { CHART_TIP, plotChart } from './query-chart-plot';
 
 const palette = ['one', 'two', 'three'];
@@ -61,10 +62,10 @@ const daily: QueryAnswer = {
 
 function chartData(
   answer: QueryAnswer,
-  mode: QueryChartMode,
-  config: QueryChartConfig
+  mode: DatabaseQueryChartMode,
+  config: DatabaseQueryChart
 ) {
-  const prepared = prepareQueryChart(answer, mode, config);
+  const prepared = prepareQueryChart(answer, mode, config, unknownNames);
   if (!prepared.data) throw new Error(prepared.error);
   return prepared.data;
 }

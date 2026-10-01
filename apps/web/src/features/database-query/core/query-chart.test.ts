@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { unknownNames } from './answer-cell';
 import { parseQueryProposal, type QueryAnswer } from './query';
-import {
-  isChartMode,
-  parseQueryChart,
-  prepareQueryChart,
-  queryChartSpec,
-} from './query-chart';
+import { prepareQueryChart } from './query-chart';
 
 const answer: QueryAnswer = {
   columns: [
@@ -32,8 +28,8 @@ const answer: QueryAnswer = {
   truncatedTables: [],
 };
 
-describe('saved chart settings', () => {
-  it('accepts AI chart settings and rejects incomplete or executable specifications', () => {
+describe('chart settings in an AI proposal', () => {
+  it('accepts chart settings and refuses a chart display without them', () => {
     const chart = { x: 'Month', y: ['Revenue', 'Cost'], title: 'Cash flow' };
     expect(
       parseQueryProposal({
@@ -58,27 +54,15 @@ describe('saved chart settings', () => {
       kind: 'generation',
       message: 'AI returned incomplete chart settings. Try again.',
     });
-    expect(
-      parseQueryChart({ x: 'Month', y: ['Revenue', 'Revenue'] })
-    ).toBeUndefined();
-    expect(parseQueryChart({ x: 'Month', y: ['Month'] })).toBeUndefined();
-    expect(
-      parseQueryChart({ x: 'Month', y: ['Revenue'], script: 'alert(1)' })
-    ).toEqual({ x: 'Month', y: ['Revenue'] });
   });
 
-  it('knows every chart display mode, including area and scatter', () => {
-    expect(
-      ['bar', 'line', 'area', 'scatter', 'pie', 'table', 'scalar', 'chart'].map(
-        isChartMode
-      )
-    ).toEqual([true, true, true, true, true, false, false, false]);
+  it('reads the null color and stack the strict schema sends as absent', () => {
     expect(
       parseQueryProposal({
         sql: 'SELECT month AS Month, revenue AS Revenue FROM finances',
         explanation: 'Revenue.',
         displayMode: 'area',
-        chart: { x: 'Month', y: ['Revenue'] },
+        chart: { x: 'Month', y: ['Revenue'], color: null, stack: null },
       })._unsafeUnwrap()
     ).toEqual({
       sql: 'SELECT month AS Month, revenue AS Revenue FROM finances',
@@ -87,121 +71,52 @@ describe('saved chart settings', () => {
       chart: { x: 'Month', y: ['Revenue'] },
     });
   });
-
-  it('keeps the optional color split and stacking, and drops renderer options', () => {
-    expect(
-      parseQueryChart({
-        x: 'Month',
-        y: ['Tickets'],
-        color: 'Team',
-        stack: true,
-        marks: [{ type: 'barY' }],
-        marginLeft: 80,
-      })
-    ).toEqual({ x: 'Month', y: ['Tickets'], color: 'Team', stack: true });
-    // The AI's strict schema always sends both fields; absence is the stored form.
-    expect(
-      parseQueryChart({ x: 'Month', y: ['Tickets'], color: null, stack: false })
-    ).toEqual({ x: 'Month', y: ['Tickets'] });
-  });
-
-  it('rejects a color split that is not one extra column over one series', () => {
-    expect(
-      parseQueryChart({ x: 'Month', y: ['Tickets'], color: 'Month' })
-    ).toBeUndefined();
-    expect(
-      parseQueryChart({ x: 'Month', y: ['Tickets'], color: 'Tickets' })
-    ).toBeUndefined();
-    expect(
-      parseQueryChart({ x: 'Month', y: ['Tickets', 'Hours'], color: 'Team' })
-    ).toBeUndefined();
-    expect(
-      parseQueryChart({ x: 'Month', y: ['Tickets'], color: 7 })
-    ).toBeUndefined();
-    expect(
-      parseQueryChart({ x: 'Month', y: ['Tickets'], stack: 'yes' })
-    ).toBeUndefined();
-  });
-});
-
-describe('chart spec from saved settings', () => {
-  it('reads an old bar, line or pie answer as the same chart', () => {
-    expect(
-      queryChartSpec('bar', { x: 'Status', y: ['Count'], title: 'Tasks' })
-    ).toEqual({
-      mark: 'bar',
-      x: 'Status',
-      y: ['Count'],
-      title: 'Tasks',
-      stack: false,
-    });
-    expect(
-      queryChartSpec('line', { x: 'Month', y: ['Revenue', 'Cost'] })
-    ).toEqual({
-      mark: 'line',
-      x: 'Month',
-      y: ['Revenue', 'Cost'],
-      stack: false,
-    });
-    expect(queryChartSpec('pie', { x: 'Status', y: ['Count'] })).toEqual({
-      mark: 'pie',
-      x: 'Status',
-      y: ['Count'],
-      stack: false,
-    });
-  });
-
-  it('carries the new optional fields onto the new marks', () => {
-    expect(
-      queryChartSpec('area', {
-        x: 'Month',
-        y: ['Tickets'],
-        color: 'Team',
-        stack: true,
-      })
-    ).toEqual({
-      mark: 'area',
-      x: 'Month',
-      y: ['Tickets'],
-      color: 'Team',
-      stack: true,
-    });
-    expect(queryChartSpec('scatter', { x: 'Hours', y: ['Cost'] })).toEqual({
-      mark: 'scatter',
-      x: 'Hours',
-      y: ['Cost'],
-      stack: false,
-    });
-  });
-
-  it('only stacks the marks that can stack', () => {
-    expect(
-      queryChartSpec('line', { x: 'Month', y: ['A', 'B'], stack: true }).stack
-    ).toBe(false);
-    expect(
-      queryChartSpec('scatter', { x: 'Month', y: ['A', 'B'], stack: true })
-        .stack
-    ).toBe(false);
-    expect(
-      queryChartSpec('pie', { x: 'Month', y: ['A'], stack: true }).stack
-    ).toBe(false);
-    expect(
-      queryChartSpec('bar', { x: 'Month', y: ['A', 'B'], stack: true }).stack
-    ).toBe(true);
-  });
 });
 
 describe('chart data', () => {
+  it('stacks only bar and area series', () => {
+    const stackedAnswer: QueryAnswer = {
+      columns: [
+        { name: 'Month', kind: 'text' },
+        { name: 'Revenue', kind: 'number' },
+        { name: 'Cost', kind: 'number' },
+      ],
+      rows: [
+        [
+          { type: 'text', value: 'Jan' },
+          { type: 'number', value: 20 },
+          { type: 'number', value: 5 },
+        ],
+      ],
+      rowIds: [],
+      readTables: [],
+      readDatabaseIds: [],
+      truncatedTables: [],
+    };
+    const stacked = { x: 'Month', y: ['Revenue', 'Cost'], stack: true };
+    expect(
+      prepareQueryChart(stackedAnswer, 'bar', stacked, unknownNames).data?.stack
+    ).toBe(true);
+    expect(
+      prepareQueryChart(stackedAnswer, 'area', stacked, unknownNames).data
+        ?.stack
+    ).toBe(true);
+    expect(
+      prepareQueryChart(stackedAnswer, 'line', stacked, unknownNames).data
+        ?.stack
+    ).toBe(false);
+    expect(
+      prepareQueryChart(stackedAnswer, 'scatter', stacked, unknownNames).data
+        ?.stack
+    ).toBe(false);
+  });
+
   it('lays out one point per row and series, keeping missing values as gaps', () => {
-    expect(prepareQueryChart(answer, 'line')).toEqual({
+    expect(prepareQueryChart(answer, 'line', undefined, unknownNames)).toEqual({
       data: {
+        mark: 'line',
         config: { x: 'Month', y: ['Revenue', 'Cost'] },
-        spec: {
-          mark: 'line',
-          x: 'Month',
-          y: ['Revenue', 'Cost'],
-          stack: false,
-        },
+        stack: false,
         title: 'Revenue, Cost by Month',
         scale: 'category',
         categories: ['Jan', 'Feb', 'Mar'],
@@ -273,7 +188,12 @@ describe('chart data', () => {
         ],
       ],
     };
-    const numericChart = prepareQueryChart(numeric, 'scatter').data;
+    const numericChart = prepareQueryChart(
+      numeric,
+      'scatter',
+      undefined,
+      unknownNames
+    ).data;
     expect(numericChart?.scale).toBe('number');
     expect(numericChart?.points).toEqual([
       { x: 1, label: '1', series: 'Cost', value: 1200, tip: '1\nCost: 1,200' },
@@ -296,7 +216,12 @@ describe('chart data', () => {
         ],
       ],
     };
-    const dateChart = prepareQueryChart(dates, 'line').data;
+    const dateChart = prepareQueryChart(
+      dates,
+      'line',
+      undefined,
+      unknownNames
+    ).data;
     expect(dateChart?.scale).toBe('date');
     expect(dateChart?.points).toEqual([
       {
@@ -314,7 +239,9 @@ describe('chart data', () => {
         tip: 'Jan 4, 2026\nSignups: 20',
       },
     ]);
-    expect(prepareQueryChart(answer, 'line').data?.scale).toBe('category');
+    expect(
+      prepareQueryChart(answer, 'line', undefined, unknownNames).data?.scale
+    ).toBe('category');
   });
 
   it('keeps numeric text in categories and never reads it as a number', () => {
@@ -332,7 +259,8 @@ describe('chart data', () => {
       ],
     };
     expect(
-      prepareQueryChart(text, 'bar', { x: 'Code', y: ['Total'] }).error
+      prepareQueryChart(text, 'bar', { x: 'Code', y: ['Total'] }, unknownNames)
+        .error
     ).toContain('numeric');
   });
 
@@ -355,7 +283,12 @@ describe('chart data', () => {
         [null, { type: 'number', value: 1 }],
       ],
     };
-    const chart = prepareQueryChart(dates, 'line').data;
+    const chart = prepareQueryChart(
+      dates,
+      'line',
+      undefined,
+      unknownNames
+    ).data;
     expect(chart?.scale).toBe('date');
     expect(chart?.omitted).toBe(1);
     expect(chart?.points.map((point) => point.label)).toEqual([
@@ -391,22 +324,22 @@ describe('chart data', () => {
       ],
     };
     expect(
-      prepareQueryChart(tickets, 'bar', {
-        x: 'Month',
-        y: ['Tickets'],
-        color: 'Team',
-        stack: true,
-      })
-    ).toEqual({
-      data: {
-        config: { x: 'Month', y: ['Tickets'], color: 'Team', stack: true },
-        spec: {
-          mark: 'bar',
+      prepareQueryChart(
+        tickets,
+        'bar',
+        {
           x: 'Month',
           y: ['Tickets'],
           color: 'Team',
           stack: true,
         },
+        unknownNames
+      )
+    ).toEqual({
+      data: {
+        mark: 'bar',
+        config: { x: 'Month', y: ['Tickets'], color: 'Team', stack: true },
+        stack: true,
         title: 'Tickets by Month and Team',
         scale: 'category',
         categories: ['Jan', 'Feb'],
@@ -438,11 +371,16 @@ describe('chart data', () => {
       },
     });
     expect(
-      prepareQueryChart(tickets, 'bar', {
-        x: 'Month',
-        y: ['Tickets'],
-        color: 'Owner',
-      }).error
+      prepareQueryChart(
+        tickets,
+        'bar',
+        {
+          x: 'Month',
+          y: ['Tickets'],
+          color: 'Owner',
+        },
+        unknownNames
+      ).error
     ).toContain('unavailable');
   });
 
@@ -471,7 +409,12 @@ describe('chart data', () => {
       ],
     };
     expect(
-      prepareQueryChart(owners, 'bar').data?.points.map((point) => point.label)
+      prepareQueryChart(
+        owners,
+        'bar',
+        undefined,
+        unknownNames
+      ).data?.points.map((point) => point.label)
     ).toEqual(['2 linked records']);
     expect(
       prepareQueryChart(owners, 'bar', undefined, ({ id, table }) =>
@@ -495,17 +438,27 @@ describe('chart data', () => {
       ]),
     };
     expect(
-      prepareQueryChart(many, 'bar', {
-        x: 'Month',
-        y: ['Tickets'],
-        color: 'Team',
-      }).error
+      prepareQueryChart(
+        many,
+        'bar',
+        {
+          x: 'Month',
+          y: ['Tickets'],
+          color: 'Team',
+        },
+        unknownNames
+      ).error
     ).toContain('more than 9 groups');
   });
 
   it('refuses missing or ambiguous aliases and text values instead of drawing a misleading chart', () => {
     expect(
-      prepareQueryChart(answer, 'bar', { x: 'Month', y: ['Profit'] }).error
+      prepareQueryChart(
+        answer,
+        'bar',
+        { x: 'Month', y: ['Profit'] },
+        unknownNames
+      ).error
     ).toContain('unavailable');
     const ambiguous: QueryAnswer = {
       ...answer,
@@ -516,7 +469,12 @@ describe('chart data', () => {
       ],
     };
     expect(
-      prepareQueryChart(ambiguous, 'bar', { x: 'Month', y: ['Revenue'] }).error
+      prepareQueryChart(
+        ambiguous,
+        'bar',
+        { x: 'Month', y: ['Revenue'] },
+        unknownNames
+      ).error
     ).toContain('unavailable');
     const text: QueryAnswer = {
       ...answer,
@@ -529,27 +487,38 @@ describe('chart data', () => {
       ],
     };
     expect(
-      prepareQueryChart(text, 'bar', { x: 'Month', y: ['Revenue'] }).error
+      prepareQueryChart(
+        text,
+        'bar',
+        { x: 'Month', y: ['Revenue'] },
+        unknownNames
+      ).error
     ).toContain('numeric');
   });
 
   it('explains empty results instead of drawing an empty frame', () => {
     const empty: QueryAnswer = { ...answer, rows: [] };
-    expect(prepareQueryChart(empty, 'bar').error).toContain(
-      'no matching records'
-    );
+    expect(
+      prepareQueryChart(empty, 'bar', undefined, unknownNames).error
+    ).toContain('no matching records');
     const blank: QueryAnswer = {
       ...answer,
       rows: [[{ type: 'text', value: 'Jan' }, null, null]],
     };
     expect(
-      prepareQueryChart(blank, 'line', { x: 'Month', y: ['Revenue', 'Cost'] })
-        .error
+      prepareQueryChart(
+        blank,
+        'line',
+        { x: 'Month', y: ['Revenue', 'Cost'] },
+        unknownNames
+      ).error
     ).toContain('no numeric values');
   });
 
   it('rejects invalid pie distributions and never silently truncates chart data', () => {
-    expect(prepareQueryChart(answer, 'pie').error).toContain('nonnegative');
+    expect(
+      prepareQueryChart(answer, 'pie', undefined, unknownNames).error
+    ).toContain('nonnegative');
     const zeroes: QueryAnswer = {
       ...answer,
       rows: [
@@ -560,9 +529,9 @@ describe('chart data', () => {
         ],
       ],
     };
-    expect(prepareQueryChart(zeroes, 'pie').error).toContain(
-      'greater than zero'
-    );
+    expect(
+      prepareQueryChart(zeroes, 'pie', undefined, unknownNames).error
+    ).toContain('greater than zero');
     const many: QueryAnswer = {
       ...answer,
       rows: Array.from({ length: 21 }, (_, index) => [
@@ -571,14 +540,23 @@ describe('chart data', () => {
         { type: 'number', value: 2 },
       ]),
     };
-    expect(prepareQueryChart(many, 'pie').error).toContain('20 categories');
-    expect(prepareQueryChart(many, 'bar').data?.categories).toHaveLength(21);
     expect(
-      prepareQueryChart(answer, 'pie', {
-        x: 'Month',
-        y: ['Cost'],
-        color: 'Revenue',
-      }).error
+      prepareQueryChart(many, 'pie', undefined, unknownNames).error
+    ).toContain('20 categories');
+    expect(
+      prepareQueryChart(many, 'bar', undefined, unknownNames).data?.categories
+    ).toHaveLength(21);
+    expect(
+      prepareQueryChart(
+        answer,
+        'pie',
+        {
+          x: 'Month',
+          y: ['Cost'],
+          color: 'Revenue',
+        },
+        unknownNames
+      ).error
     ).toContain('pie');
   });
 
@@ -632,7 +610,12 @@ describe('chart data', () => {
         ],
       ],
     };
-    const chart = prepareQueryChart(shares, 'pie').data;
+    const chart = prepareQueryChart(
+      shares,
+      'pie',
+      undefined,
+      unknownNames
+    ).data;
     expect(chart?.categories).toEqual([
       'A',
       'C',

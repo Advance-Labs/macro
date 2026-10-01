@@ -20,6 +20,7 @@ export * from './nodes/DiffNode';
 export * from './nodes/DiffTextNode';
 export * from './nodes/DocumentCardNode';
 export * from './nodes/DocumentMentionNode';
+export * from './nodes/databaseQueryData';
 export * from './nodes/EquationNode';
 export * from './nodes/GroupMentionNode';
 export * from './nodes/HorizontalRuleNode';

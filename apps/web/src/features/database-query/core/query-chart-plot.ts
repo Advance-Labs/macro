@@ -115,9 +115,9 @@ export function plotChart(
     // Plot's legend styles are unlayered, so only inline styles win.
     style: LEGEND_STYLE,
   };
-  const grouped = data.series.length > 1 && !data.spec.stack;
+  const grouped = data.series.length > 1 && !data.stack;
   const base = { className: 'macro-chart', width: layout.width, style: STYLE };
-  if (data.spec.mark === 'bar' && data.scale === 'category') {
+  if (data.mark === 'bar' && data.scale === 'category') {
     // Categories read best as rows of bars with their labels beside them.
     const marginLeft = Math.round(
       Math.min(
@@ -199,7 +199,7 @@ export function plotChart(
     },
     color,
   };
-  if (data.spec.mark === 'bar') {
+  if (data.mark === 'bar') {
     // Dates and numbers keep reading left to right, as columns.
     const labelWidth = longest(data.categories) * CHARACTER_WIDTH + 8;
     const rotate = data.categories.length * labelWidth > plotWidth;
@@ -301,10 +301,10 @@ export function plotChart(
           },
         ]
       : [];
-  const marks: PlotMark[] = match(data.spec.mark)
+  const marks: PlotMark[] = match(data.mark)
     .with('line', () => [line, ...markers])
     .with('area', () =>
-      data.spec.stack
+      data.stack
         ? [
             {
               mark: 'areaY' as const,
@@ -365,7 +365,7 @@ export function plotChart(
 
 /** Stacked segments part with a hairline of the panel; lone bars round off. */
 function barEdges(data: QueryChartData) {
-  return data.spec.stack && data.series.length > 1
+  return data.stack && data.series.length > 1
     ? { stroke: 'var(--color-panel)', strokeWidth: 1 }
     : { rx: 2 };
 }

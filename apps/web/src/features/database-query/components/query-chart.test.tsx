@@ -1,11 +1,12 @@
+import type {
+  DatabaseQueryChart,
+  DatabaseQueryChartMode,
+} from '@macro-inc/lexical-core/nodes/databaseQueryData';
 import { render, waitFor } from '@solidjs/testing-library';
 import { describe, expect, it, vi } from 'vitest';
+import { unknownNames } from '../core/answer-cell';
 import type { QueryAnswer } from '../core/query';
-import {
-  prepareQueryChart,
-  type QueryChartConfig,
-  type QueryChartMode,
-} from '../core/query-chart';
+import { prepareQueryChart } from '../core/query-chart';
 import { QueryChart } from './query-chart';
 
 vi.mock('@solid-primitives/resize-observer', () => ({
@@ -41,8 +42,8 @@ const answer: QueryAnswer = {
   truncatedTables: [],
 };
 
-function chartData(mode: QueryChartMode, config: QueryChartConfig) {
-  const prepared = prepareQueryChart(answer, mode, config);
+function chartData(mode: DatabaseQueryChartMode, config: DatabaseQueryChart) {
+  const prepared = prepareQueryChart(answer, mode, config, unknownNames);
   if (!prepared.data) throw new Error(prepared.error);
   return prepared.data;
 }
@@ -119,7 +120,7 @@ describe('database chart', () => {
         ],
       ],
     };
-    const prepared = prepareQueryChart(shares, 'pie');
+    const prepared = prepareQueryChart(shares, 'pie', undefined, unknownNames);
     if (!prepared.data) throw new Error(prepared.error);
     const data = prepared.data;
     const rendered = render(() => <QueryChart data={data} />);

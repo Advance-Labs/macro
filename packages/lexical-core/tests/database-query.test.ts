@@ -7,10 +7,15 @@ import { describe, expect, it } from 'vitest';
 import { SupportedNodeTypes } from '../node-list';
 import {
   $isDatabaseQueryNode,
-  type DatabaseQueryData,
   databaseQueryMarkdown,
-  parseDatabaseQueryData,
 } from '../nodes/DatabaseQueryNode';
+import {
+  type DatabaseQueryData,
+  isDatabaseQueryChartMode,
+  isDatabaseQueryDisplayMode,
+  parseDatabaseQueryChart,
+  parseDatabaseQueryData,
+} from '../nodes/databaseQueryData';
 import { $isUnknownMentionNode } from '../nodes/UnknownMentionNode';
 import { ALL_TRANSFORMERS } from '../transformers';
 import { markdownToPlainText } from '../utils/parsers';
@@ -310,5 +315,148 @@ describe('database query node', () => {
           paragraph.getChildren().some($isUnknownMentionNode)
       ).toBe(true);
     });
+  });
+});
+
+describe('database query chart settings', () => {
+  it('keeps column aliases and drops renderer options and executable fields', () => {
+    expect(
+      parseDatabaseQueryChart({
+        x: 'Month',
+        y: ['Tickets'],
+        color: 'Team',
+        stack: true,
+        marks: [{ type: 'barY' }],
+        marginLeft: 80,
+        script: 'alert(1)',
+      })
+    ).toEqual({ x: 'Month', y: ['Tickets'], color: 'Team', stack: true });
+  });
+
+  it('reads null title, color and stack as absent, as the strict schema sends them', () => {
+    expect(
+      parseDatabaseQueryChart({
+        x: 'Month',
+        y: ['Tickets'],
+        title: null,
+        color: null,
+        stack: null,
+      })
+    ).toEqual({ x: 'Month', y: ['Tickets'] });
+    expect(
+      parseDatabaseQueryChart({
+        x: 'Month',
+        y: ['Tickets'],
+        title: 'Tickets',
+        color: null,
+        stack: false,
+      })
+    ).toEqual({ x: 'Month', y: ['Tickets'], title: 'Tickets' });
+  });
+
+  it('rejects duplicate, missing, or too many series', () => {
+    expect(
+      parseDatabaseQueryChart({ x: 'Month', y: ['Revenue', 'Revenue'] })
+    ).toBeUndefined();
+    expect(
+      parseDatabaseQueryChart({ x: 'Month', y: ['Month'] })
+    ).toBeUndefined();
+    expect(parseDatabaseQueryChart({ x: 'Month', y: [] })).toBeUndefined();
+    expect(parseDatabaseQueryChart({ x: '', y: ['Revenue'] })).toBeUndefined();
+    expect(
+      parseDatabaseQueryChart({
+        x: 'Month',
+        y: ['A', 'B', 'C', 'D', 'E', 'F'],
+      })
+    ).toBeUndefined();
+    expect(
+      parseDatabaseQueryChart({ x: 'Month', y: ['A', 'B', 'C', 'D', 'E'] })
+    ).toEqual({ x: 'Month', y: ['A', 'B', 'C', 'D', 'E'] });
+  });
+
+  it('rejects a color split that is not one extra column over one series', () => {
+    expect(
+      parseDatabaseQueryChart({ x: 'Month', y: ['Tickets'], color: 'Month' })
+    ).toBeUndefined();
+    expect(
+      parseDatabaseQueryChart({ x: 'Month', y: ['Tickets'], color: 'Tickets' })
+    ).toBeUndefined();
+    expect(
+      parseDatabaseQueryChart({
+        x: 'Month',
+        y: ['Tickets', 'Hours'],
+        color: 'Team',
+      })
+    ).toBeUndefined();
+    expect(
+      parseDatabaseQueryChart({ x: 'Month', y: ['Tickets'], color: 7 })
+    ).toBeUndefined();
+    expect(
+      parseDatabaseQueryChart({ x: 'Month', y: ['Tickets'], stack: 'yes' })
+    ).toBeUndefined();
+  });
+
+  it('knows every display mode and which of them are charts', () => {
+    expect(
+      ['bar', 'line', 'area', 'scatter', 'pie', 'table', 'scalar', 'chart'].map(
+        isDatabaseQueryChartMode
+      )
+    ).toEqual([true, true, true, true, true, false, false, false]);
+    expect(
+      ['bar', 'line', 'area', 'scatter', 'pie', 'table', 'scalar', 'chart'].map(
+        isDatabaseQueryDisplayMode
+      )
+    ).toEqual([true, true, true, true, true, true, true, false]);
+  });
+});
+
+describe('database query data', () => {
+  it('reads a null title and chart as absent', () => {
+    expect(
+      parseDatabaseQueryData({
+        queryId: 'q',
+        prompt: 'How many tickets?',
+        title: null,
+        displayMode: 'table',
+        chart: null,
+      })
+    ).toEqual({
+      queryId: 'q',
+      prompt: 'How many tickets?',
+      displayMode: 'table',
+    });
+  });
+
+  it('keeps a node whose chart carries the null color the prompt asks for', () => {
+    expect(
+      parseDatabaseQueryData({
+        queryId: 'q',
+        prompt: 'Tickets by month',
+        displayMode: 'bar',
+        chart: {
+          x: 'Month',
+          y: ['Tickets'],
+          title: 'Tickets',
+          color: null,
+          stack: false,
+        },
+      })
+    ).toEqual({
+      queryId: 'q',
+      prompt: 'Tickets by month',
+      displayMode: 'bar',
+      chart: { x: 'Month', y: ['Tickets'], title: 'Tickets' },
+    });
+  });
+
+  it('rejects a chart it cannot read rather than dropping it', () => {
+    expect(
+      parseDatabaseQueryData({
+        queryId: 'q',
+        prompt: 'Tickets',
+        displayMode: 'bar',
+        chart: { x: 'Month', y: 'Tickets' },
+      })
+    ).toBeUndefined();
   });
 });

@@ -1,53 +1,23 @@
 import type { Cell } from '@core/database-sql/generated/types';
 import {
+  DATABASE_QUERY_CHART_MODES,
+  DATABASE_QUERY_MAX_SERIES,
+  type DatabaseQueryChart,
+  type DatabaseQueryChartMode,
+  type DatabaseQueryDisplayMode,
+  parseDatabaseQueryChart,
+} from '@macro-inc/lexical-core/nodes/databaseQueryData';
+import {
   type ReferenceNames,
   resultCell,
   resultCellText,
   unknownNames,
 } from './answer-cell';
 import { CHART_PALETTE } from './chart-palette';
-import { formatQueryValue, type QueryAnswer } from './query';
-
-export const QUERY_CHART_MODES = [
-  'bar',
-  'line',
-  'area',
-  'scatter',
-  'pie',
-] as const;
-export type QueryChartMode = (typeof QUERY_CHART_MODES)[number];
-export type QueryDisplayMode = 'scalar' | 'table' | QueryChartMode;
-
-/**
- * Saved chart settings: column aliases and two plain choices, never
- * evaluated expressions, copied result data, or renderer options.
- */
-export type QueryChartConfig = {
-  x: string;
-  y: string[];
-  title?: string;
-  /** A column whose values split the one `y` series into groups. */
-  color?: string;
-  /** Stack bar or area series instead of grouping or overlapping them. */
-  stack?: boolean;
-};
-
-/**
- * The chart to draw, independent of any charting library. It is derived
- * from a saved answer's display mode and chart settings, never stored.
- */
-export type QueryChartSpec = {
-  mark: QueryChartMode;
-  x: string;
-  y: string[];
-  title?: string;
-  color?: string;
-  stack: boolean;
-};
+import { formatQueryValue, isScalarAnswer, type QueryAnswer } from './query';
 
 /** Most series one chart colors apart. */
 const MAX_CHART_SERIES = CHART_PALETTE.length;
-const MAX_Y_COLUMNS = 5;
 const MAX_POINTS = 300;
 const MAX_PIE_CATEGORIES = 20;
 
@@ -63,8 +33,10 @@ export type QueryChartPoint = {
 };
 
 export type QueryChartData = {
-  config: QueryChartConfig;
-  spec: QueryChartSpec;
+  mark: DatabaseQueryChartMode;
+  config: DatabaseQueryChart;
+  /** Only bar and area series stack. */
+  stack: boolean;
   title: string;
   /** Categories keep row order; numbers and dates keep true distances. */
   scale: 'category' | 'number' | 'date';
@@ -76,71 +48,8 @@ export type QueryChartData = {
   omitted: number;
 };
 
-export function isChartMode(mode: string | undefined): mode is QueryChartMode {
-  return QUERY_CHART_MODES.some((chartMode) => chartMode === mode);
-}
-
-export function isDisplayMode(mode: unknown): mode is QueryDisplayMode {
-  return (
-    mode === 'scalar' ||
-    mode === 'table' ||
-    (typeof mode === 'string' && isChartMode(mode))
-  );
-}
-
-export function chartModeLabel(mode: QueryChartMode): string {
+export function chartModeLabel(mode: DatabaseQueryChartMode): string {
   return `${mode[0].toUpperCase()}${mode.slice(1)} chart`;
-}
-
-const nonEmptyName = (name: unknown): name is string =>
-  typeof name === 'string' && !!name.trim();
-
-export function parseQueryChart(value: unknown): QueryChartConfig | undefined {
-  if (!value || typeof value !== 'object') return;
-  const chart = value as Record<string, unknown>;
-  const color = chart.color ?? undefined;
-  const stack = chart.stack ?? undefined;
-  if (
-    !nonEmptyName(chart.x) ||
-    !Array.isArray(chart.y) ||
-    !chart.y.length ||
-    chart.y.length > MAX_Y_COLUMNS ||
-    !chart.y.every(nonEmptyName) ||
-    new Set(chart.y).size !== chart.y.length ||
-    chart.y.includes(chart.x) ||
-    (chart.title !== undefined && typeof chart.title !== 'string') ||
-    (color !== undefined &&
-      (!nonEmptyName(color) ||
-        color === chart.x ||
-        chart.y.length !== 1 ||
-        chart.y.includes(color))) ||
-    (stack !== undefined && typeof stack !== 'boolean')
-  )
-    return;
-  return {
-    x: chart.x,
-    y: [...chart.y],
-    ...(typeof chart.title === 'string' && chart.title
-      ? { title: chart.title }
-      : {}),
-    ...(color ? { color } : {}),
-    ...(stack ? { stack: true } : {}),
-  };
-}
-
-/** What a saved chart draws; answers saved before `color` and `stack` read the same. */
-export function queryChartSpec(
-  mode: QueryChartMode,
-  config: QueryChartConfig
-): QueryChartSpec {
-  return {
-    mark: mode,
-    x: config.x,
-    y: [...config.y],
-    ...(config.title ? { title: config.title } : {}),
-    ...(config.color ? { color: config.color } : {}),
-    stack: (mode === 'bar' || mode === 'area') && !!config.stack,
-  };
 }
 
 const columnLabel = (name: string) => name.replaceAll('_', ' ');
@@ -155,12 +64,33 @@ type ChartResult =
   | { data: QueryChartData; error?: never }
   | { data?: never; error: string };
 
+/**
+ * The displays an answer can take: scalar for a single value, a table, the
+ * saved chart, and any chart its columns fit.
+ */
+export function availableDisplayModes(
+  answer: QueryAnswer,
+  saved?: { displayMode: DatabaseQueryDisplayMode; chart?: DatabaseQueryChart }
+): DatabaseQueryDisplayMode[] {
+  return [
+    ...(isScalarAnswer(answer) ? (['scalar'] as const) : []),
+    'table',
+    ...DATABASE_QUERY_CHART_MODES.filter(
+      (mode) =>
+        mode === saved?.displayMode ||
+        (!!saved?.chart &&
+          !!prepareQueryChart(answer, mode, saved.chart, unknownNames).data) ||
+        !!prepareQueryChart(answer, mode, undefined, unknownNames).data
+    ),
+  ];
+}
+
 /** Validate the actual answer before drawing: missing values are gaps, never zeroes. */
 export function prepareQueryChart(
   answer: QueryAnswer,
-  mode: QueryChartMode,
-  requested?: QueryChartConfig,
-  references: ReferenceNames = unknownNames
+  mode: DatabaseQueryChartMode,
+  requested: DatabaseQueryChart | undefined,
+  references: ReferenceNames
 ): ChartResult {
   if (answer.columns.length < 2)
     return {
@@ -178,11 +108,11 @@ export function prepareQueryChart(
   });
   const config = requested ?? {
     x: names[0],
-    y: inferred.slice(0, mode === 'pie' ? 1 : MAX_Y_COLUMNS),
+    y: inferred.slice(0, mode === 'pie' ? 1 : DATABASE_QUERY_MAX_SERIES),
   };
   const columnIndex = (name: string) => names.indexOf(name);
   if (
-    !parseQueryChart(config) ||
+    !parseDatabaseQueryChart(config) ||
     [config.x, ...config.y, ...(config.color ? [config.color] : [])].some(
       (name) => names.filter((candidate) => candidate === name).length !== 1
     )
@@ -210,7 +140,6 @@ export function prepareQueryChart(
     !values.some((column) => column.some((value) => typeof value === 'number'))
   )
     return { error: 'There are no numeric values to chart.' };
-  const spec = queryChartSpec(mode, config);
   if (mode === 'pie') {
     const shares = values[0];
     if (
@@ -289,8 +218,9 @@ export function prepareQueryChart(
   const drawn = mode === 'pie' ? foldPie(points) : points;
   return {
     data: {
+      mark: mode,
       config,
-      spec,
+      stack: (mode === 'bar' || mode === 'area') && !!config.stack,
       title:
         config.title ||
         `${config.y.map(columnLabel).join(', ')} by ${columnLabel(config.x)}${
