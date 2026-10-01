@@ -24,7 +24,7 @@ export type AnswerSource = {
   tag: boolean;
   /** What entity ids point at; rows of another table for a relation. */
   target: EntityKind | null;
-  /** The table a relation's rows belong to. */
+  /** The table a relation's rows belong to, or a `row_id`'s rows. */
   relatedTable: string | null;
 };
 
@@ -78,6 +78,17 @@ function answerSource(
   };
 }
 
+/** A `row_id` column reads rows of its own table. */
+function rowSource(table: string): AnswerSource {
+  return {
+    markdown: false,
+    options: [],
+    tag: false,
+    target: null,
+    relatedTable: table,
+  };
+}
+
 export function databaseSqlAnswer(
   outcome: Outcome,
   catalog: Catalog,
@@ -110,7 +121,11 @@ export function databaseSqlAnswer(
   });
   return {
     columns: outcome.columns.map((column) => {
-      const found = column.column ? source(column.column) : undefined;
+      const found = column.table
+        ? rowSource(column.table)
+        : column.column
+          ? source(column.column)
+          : undefined;
       return {
         name: column.name,
         kind: column.kind,

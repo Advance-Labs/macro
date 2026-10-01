@@ -117,7 +117,8 @@ pub struct ResultColumn {
     /// relation, whose ids are rows of another table.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target: Option<EntityKind>,
-    /// For a relation, the table its rows belong to.
+    /// For a relation, the table its rows belong to; for `row_id`, the
+    /// table read.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub related_table: Option<TableId>,
 }
@@ -268,6 +269,7 @@ fn result_set(catalog: &ViewerCatalog, query: &Query, outcome: &Outcome) -> Opti
                             Some(definition),
                         ) => table_of(index)
                             .and_then(|table| catalog.related_table(table, definition)),
+                        (OutcomeKind::Row, _, _) => column.table,
                         _ => None,
                     },
                 }

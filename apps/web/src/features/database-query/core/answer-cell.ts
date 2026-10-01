@@ -18,7 +18,9 @@ export type ResultCell =
   | { kind: 'options'; options: AnswerOption[]; tag: boolean }
   | { kind: 'mentions'; entityType: DatabaseEntityType; ids: string[] }
   /** Rows of another table, by id; `table` is theirs when it is known. */
-  | { kind: 'rows'; ids: string[]; table: string | null };
+  | { kind: 'rows'; ids: string[]; table: string | null }
+  /** A `row_id`: one row of `table`, the table read, when it is known. */
+  | { kind: 'row'; id: string; table: string | null };
 
 /** A referenced entity's or related row's name, when it is known. */
 export type ReferenceNames = (reference: {
@@ -83,6 +85,11 @@ export function resultCell(
         ? { kind: 'mentions', entityType: target, ids: value }
         : { kind: 'text', text: value.join(', ') };
     })
+    .with({ type: 'row' }, ({ value }) => ({
+      kind: 'row',
+      id: value,
+      table: source?.relatedTable ?? null,
+    }))
     .exhaustive();
 }
 
@@ -146,6 +153,10 @@ export function resultCellText(
         'DATABASE_ROW',
         ids.map((id) => names({ kind: 'DATABASE_ROW', id, table }))
       )
+    )
+    .with(
+      { kind: 'row' },
+      ({ id, table }) => names({ kind: 'DATABASE_ROW', id, table }) ?? id
     )
     .exhaustive();
 }

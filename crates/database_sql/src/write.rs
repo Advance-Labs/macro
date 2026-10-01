@@ -234,6 +234,7 @@ fn copied_value(target: &Column, source: &Column, cell: Option<&Cell>) -> CellVa
         Cell::Date(date) => CellValue::Date(*date),
         Cell::Options(ids) => options(source, ids),
         Cell::Entities(ids) => references(target, ids),
+        Cell::Row(id) => references(target, &[id.to_string()]),
     }
 }
 

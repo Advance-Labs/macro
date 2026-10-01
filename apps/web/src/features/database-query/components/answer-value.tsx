@@ -47,6 +47,15 @@ export function ResultValue(props: {
           </span>
         )}
       </Match>
+      <Match when={props.cell.kind === 'row' && props.cell}>
+        {(cell) =>
+          props.display.row({
+            id: cell().id,
+            table: cell().table,
+            label: resultCellText(cell(), props.names),
+          })
+        }
+      </Match>
       <Match when={props.cell.kind === 'mentions' && props.cell}>
         {(cell) => (
           <span class="inline-flex min-w-0 max-w-full flex-wrap gap-x-2 gap-y-1 align-middle">

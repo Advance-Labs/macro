@@ -37,6 +37,7 @@ pub fn show(catalog: &Catalog, value: Option<&Cell>) -> String {
         Some(Cell::Date(date)) => date.format("%Y-%m-%d").to_string(),
         Some(Cell::Options(ids)) => ids.iter().map(label).collect::<Vec<_>>().join(", "),
         Some(Cell::Entities(ids)) => ids.join(", "),
+        Some(Cell::Row(id)) => id.to_string(),
     }
 }
 
@@ -106,6 +107,7 @@ pub fn print_outcome(catalog: &Catalog, outcome: &Outcome) {
                     OutcomeKind::Date => "date",
                     OutcomeKind::Select => "select",
                     OutcomeKind::Entity => "entity",
+                    OutcomeKind::Row => "row",
                 }
                 .into())
                 .collect()

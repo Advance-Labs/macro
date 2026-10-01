@@ -243,8 +243,7 @@ impl Engine {
         read.fetched[read.current].sort_by(table_order);
         for row in &mut read.fetched[read.current] {
             if ids {
-                row.cells
-                    .insert(id_key, Cell::Entities(vec![row.id.to_string()]));
+                row.cells.insert(id_key, Cell::Row(row.id));
             }
             if positions && let Some(position) = &row.position {
                 row.cells

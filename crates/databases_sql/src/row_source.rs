@@ -405,12 +405,14 @@ enum Narrowing {
 fn narrowing(hint: &KeyHint) -> Option<Narrowing> {
     enum Member<'hint> {
         Entity(&'hint str),
+        Row(RowId),
         Option(OptionId),
     }
     let mut members = Vec::new();
     for value in &hint.values {
         match value {
             Cell::Entities(ids) => members.extend(ids.iter().map(|id| Member::Entity(id))),
+            Cell::Row(id) => members.push(Member::Row(*id)),
             Cell::Options(ids) => members.extend(ids.iter().copied().map(Member::Option)),
             _ => return None,
         }
@@ -424,6 +426,7 @@ fn narrowing(hint: &KeyHint) -> Option<Narrowing> {
                 .iter()
                 .map(|member| match member {
                     Member::Entity(id) => Uuid::parse_str(id).ok(),
+                    Member::Row(id) => Some(id.into_uuid()),
                     Member::Option(id) => Some(id.into_uuid()),
                 })
                 .collect::<Option<Vec<Uuid>>>()?;
@@ -441,6 +444,9 @@ fn narrowing(hint: &KeyHint) -> Option<Narrowing> {
                     let value = match member {
                         Member::Entity(id) => {
                             PropertyMatchValue::EntityRef(EntityRefId::new((*id).to_owned()).ok()?)
+                        }
+                        Member::Row(id) => {
+                            PropertyMatchValue::EntityRef(EntityRefId::new(id.to_string()).ok()?)
                         }
                         Member::Option(id) => PropertyMatchValue::SelectOption(id.into_uuid()),
                     };

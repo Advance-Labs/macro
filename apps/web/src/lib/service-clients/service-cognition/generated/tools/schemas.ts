@@ -5117,6 +5117,7 @@ export const QueryDatabaseResponse = z.object({
               z.literal('date'),
               z.literal('select'),
               z.literal('entity'),
+              z.literal('row'),
             ];
             const errors = schemas.reduce<z.ZodError[]>(
               (errors, schema) =>
@@ -5198,6 +5199,7 @@ export const QueryDatabaseResponse = z.object({
                   type: z.literal('entities'),
                   value: z.array(z.string()),
                 }),
+                z.object({ type: z.literal('row'), value: z.string().uuid() }),
               ];
               const errors = schemas.reduce<z.ZodError[]>(
                 (errors, schema) =>

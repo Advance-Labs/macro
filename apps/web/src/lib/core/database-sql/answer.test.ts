@@ -477,6 +477,37 @@ describe('databaseSqlAnswer', () => {
     expect(answer.truncatedTables).toEqual(['Guests']);
   });
 
+  it('reads a row_id column as rows of the table it names', () => {
+    const answer = databaseSqlAnswer(
+      {
+        columns: [{ name: 'row_id', kind: 'row', table: 'table-guests' }],
+        rows: [[{ type: 'row', value: 'row-ada' }]],
+        rowIds: ['row-ada'],
+        readTables: ['table-guests'],
+        truncated: false,
+        insertedRowIds: [],
+        changesApplied: 0,
+      },
+      catalog,
+      [party]
+    );
+
+    expect(answer.columns).toEqual([
+      {
+        name: 'row_id',
+        kind: 'row',
+        source: {
+          markdown: false,
+          options: [],
+          tag: false,
+          target: null,
+          relatedTable: 'table-guests',
+        },
+      },
+    ]);
+    expect(answer.rows).toEqual([[{ type: 'row', value: 'row-ada' }]]);
+  });
+
   it('labels options from the catalog when the database detail is not loaded', () => {
     const answer = databaseSqlAnswer(
       {

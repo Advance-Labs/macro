@@ -140,6 +140,7 @@ fn compare(ranks: &OptionRanks, left: Option<&Cell>, right: Option<&Cell>) -> Ra
                 option_rank(ranks, left).cmp(&option_rank(ranks, right))
             }
             (Cell::Entities(left), Cell::Entities(right)) => left.cmp(right),
+            (Cell::Row(left), Cell::Row(right)) => left.cmp(right),
             _ => Ordering::Equal,
         }),
     }

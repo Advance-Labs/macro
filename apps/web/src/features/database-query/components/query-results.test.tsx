@@ -220,6 +220,7 @@ describe('question result display', () => {
               data-testid={`${entityType}-mention`}
             >{`${entityType} ${id}`}</span>
           ),
+          row: (row) => row.label,
           text: (markdown) => <span data-testid="markdown">{markdown}</span>,
         }}
       />

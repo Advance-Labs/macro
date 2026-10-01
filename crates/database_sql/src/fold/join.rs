@@ -90,8 +90,8 @@ fn composite_keys(row: &Row, columns: &[Uuid]) -> Vec<Vec<String>> {
 }
 
 /// A cell's values in a form equal cells share: one string per member.
-/// Resolve only joins columns of one kind (or entity references to row ids,
-/// which are both entity id strings), so the kind needs no tag.
+/// Resolve only joins columns of one kind (or relations to row ids, whose
+/// members are both the row's UUID string), so the kind needs no tag.
 fn members(cell: &Cell) -> Vec<String> {
     match cell {
         Cell::Text(text) => vec![text.clone()],
@@ -100,5 +100,6 @@ fn members(cell: &Cell) -> Vec<String> {
         Cell::Date(date) => vec![date.timestamp_millis().to_string()],
         Cell::Options(ids) => ids.iter().map(OptionId::to_string).collect(),
         Cell::Entities(ids) => ids.clone(),
+        Cell::Row(id) => vec![id.to_string()],
     }
 }
