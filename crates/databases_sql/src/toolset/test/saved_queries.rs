@@ -5,41 +5,29 @@ use super::*;
 const PARTY_SQL: &str =
     "SELECT \"Status\" AS status, COUNT(*) AS guests FROM \"Guests\" GROUP BY \"Status\"";
 
-fn chart(x: &str, y: &[&str]) -> ToolChart {
-    ToolChart {
-        x: x.to_string(),
-        y: y.iter().map(|name| name.to_string()).collect(),
-        title: None,
-        color: None,
-        stack: None,
-    }
-}
-
-fn question(display_mode: QueryDatabaseDisplay, chart: Option<ToolChart>) -> SaveDatabaseQuery {
-    SaveDatabaseQuery {
-        database_id: Some(OFFSITE),
-        sql: PARTY_SQL.to_string(),
-        title: "Guests by status".to_string(),
-        display_mode,
-        chart,
-        prompt: None,
-    }
-}
-
 /// The block is the document node's payload, so its exact text is the
 /// contract with the frontend.
 #[tokio::test]
 async fn saving_a_chart_question_returns_its_live_block() {
     let world = world();
-    let response = question(
-        QueryDatabaseDisplay::Area,
-        Some(ToolChart {
+    let response = SaveDatabaseQuery {
+        database_id: Some(OFFSITE),
+        sql: PARTY_SQL.to_string(),
+        title: "Guests by status".to_string(),
+        display_mode: QueryDatabaseDisplay::Area,
+        chart: Some(ToolChart {
+            x: "party".to_string(),
+            y: vec!["guests".to_string()],
+            title: None,
             color: Some("status".to_string()),
             stack: Some(true),
-            ..chart("party", &["guests"])
         }),
+        prompt: None,
+    }
+    .call(
+        ServiceContext(DatabasesSqlToolContext::new(sql(&world))),
+        RequestContext::new(user(VIEWER)),
     )
-    .call(ServiceContext(context(&world)), as_user(VIEWER))
     .await
     .expect("view access may save a question");
 
@@ -61,14 +49,24 @@ async fn saving_a_chart_question_returns_its_live_block() {
 #[tokio::test]
 async fn an_unstacked_chart_writes_no_stack() {
     let world = world();
-    let response = question(
-        QueryDatabaseDisplay::Scatter,
-        Some(ToolChart {
+    let response = SaveDatabaseQuery {
+        database_id: Some(OFFSITE),
+        sql: PARTY_SQL.to_string(),
+        title: "Guests by status".to_string(),
+        display_mode: QueryDatabaseDisplay::Scatter,
+        chart: Some(ToolChart {
+            x: "status".to_string(),
+            y: vec!["guests".to_string()],
+            title: None,
+            color: None,
             stack: Some(false),
-            ..chart("status", &["guests"])
         }),
+        prompt: None,
+    }
+    .call(
+        ServiceContext(DatabasesSqlToolContext::new(sql(&world))),
+        RequestContext::new(user(VIEWER)),
     )
-    .call(ServiceContext(context(&world)), as_user(VIEWER))
     .await
     .unwrap();
 
@@ -92,7 +90,10 @@ async fn an_unscoped_scalar_question_omits_what_it_does_not_have() {
         chart: None,
         prompt: Some("How many guests are coming?".to_string()),
     }
-    .call(ServiceContext(context(&world)), as_user(VIEWER))
+    .call(
+        ServiceContext(DatabasesSqlToolContext::new(sql(&world))),
+        RequestContext::new(user(VIEWER)),
+    )
     .await
     .unwrap();
 
@@ -106,10 +107,17 @@ async fn an_unscoped_scalar_question_omits_what_it_does_not_have() {
 async fn a_title_cannot_close_the_block_early() {
     let world = world();
     let response = SaveDatabaseQuery {
+        database_id: Some(OFFSITE),
+        sql: PARTY_SQL.to_string(),
         title: "a</m-db-query>b".to_string(),
-        ..question(QueryDatabaseDisplay::Table, None)
+        display_mode: QueryDatabaseDisplay::Table,
+        chart: None,
+        prompt: None,
     }
-    .call(ServiceContext(context(&world)), as_user(VIEWER))
+    .call(
+        ServiceContext(DatabasesSqlToolContext::new(sql(&world))),
+        RequestContext::new(user(VIEWER)),
+    )
     .await
     .unwrap();
 
@@ -124,37 +132,73 @@ async fn a_title_cannot_close_the_block_early() {
 
 #[tokio::test]
 async fn a_chart_the_block_cannot_draw_is_refused_before_saving() {
-    let color = |color: &str, y: &[&str]| ToolChart {
-        color: Some(color.to_string()),
-        ..chart("status", y)
-    };
     for (chart, refusal) in [
         (
-            chart("status", &["status"]),
+            ToolChart {
+                x: "status".to_string(),
+                y: vec!["status".to_string()],
+                title: None,
+                color: None,
+                stack: None,
+            },
             "chart.y must not include the label column chart.x.",
         ),
         (
-            color("status", &["guests"]),
+            ToolChart {
+                x: "status".to_string(),
+                y: vec!["guests".to_string()],
+                title: None,
+                color: Some("status".to_string()),
+                stack: None,
+            },
             "chart.color must not be the label column chart.x.",
         ),
         (
-            color("guests", &["guests"]),
+            ToolChart {
+                x: "status".to_string(),
+                y: vec!["guests".to_string()],
+                title: None,
+                color: Some("guests".to_string()),
+                stack: None,
+            },
             "chart.color must not be one of the chart.y columns.",
         ),
         (
-            color("party", &["guests", "maybes"]),
+            ToolChart {
+                x: "status".to_string(),
+                y: vec!["guests".to_string(), "maybes".to_string()],
+                title: None,
+                color: Some("party".to_string()),
+                stack: None,
+            },
             "chart.color splits a single series; with chart.color, chart.y names one column.",
         ),
         (
-            color(" ", &["guests"]),
+            ToolChart {
+                x: "status".to_string(),
+                y: vec!["guests".to_string()],
+                title: None,
+                color: Some(" ".to_string()),
+                stack: None,
+            },
             "chart.color must name a result column.",
         ),
     ] {
         let world = world();
-        let error = question(QueryDatabaseDisplay::Bar, Some(chart))
-            .call(ServiceContext(context(&world)), as_user(VIEWER))
-            .await
-            .expect_err("the block cannot draw it");
+        let error = SaveDatabaseQuery {
+            database_id: Some(OFFSITE),
+            sql: PARTY_SQL.to_string(),
+            title: "Guests by status".to_string(),
+            display_mode: QueryDatabaseDisplay::Bar,
+            chart: Some(chart),
+            prompt: None,
+        }
+        .call(
+            ServiceContext(DatabasesSqlToolContext::new(sql(&world))),
+            RequestContext::new(user(VIEWER)),
+        )
+        .await
+        .expect_err("the block cannot draw it");
         assert_eq!(error.description, refusal);
         assert!(world.lock().unwrap().saved.is_empty());
     }
@@ -164,10 +208,17 @@ async fn a_chart_the_block_cannot_draw_is_refused_before_saving() {
 async fn a_question_that_does_not_compile_reaches_the_model_verbatim() {
     let world = world();
     let error = SaveDatabaseQuery {
+        database_id: Some(OFFSITE),
         sql: "SELECT statuz FROM \"Guests\"".to_string(),
-        ..question(QueryDatabaseDisplay::Table, None)
+        title: "Guests by status".to_string(),
+        display_mode: QueryDatabaseDisplay::Table,
+        chart: None,
+        prompt: None,
     }
-    .call(ServiceContext(context(&world)), as_user(VIEWER))
+    .call(
+        ServiceContext(DatabasesSqlToolContext::new(sql(&world))),
+        RequestContext::new(user(VIEWER)),
+    )
     .await
     .expect_err("a broken question is not saved");
 

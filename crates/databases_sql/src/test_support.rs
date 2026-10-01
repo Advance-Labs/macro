@@ -6,15 +6,15 @@
 use std::sync::{Arc, Mutex};
 
 use bot_id::BotId;
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use contacts::domain::models::messages::ContactsNodes;
 use contacts::domain::ports::ContactsService;
 use databases::domain::models::{
-    AddColumnOptions, Awareness, ChangeColumnType, Column, ColumnCast, ColumnConfig, ColumnDetail,
-    ColumnId, ColumnSchemaOutcome, ColumnTypeChangeOutcome, CreateColumn, CreateDatabase,
-    CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId, InferColumnType,
-    InferColumnTypeOutcome, ListedDatabase, QueryDefinition, QueryId, RenameColumnOutcome,
-    SavedQuery, SavedQueryError, Table, TableDetail, TableId, TableVersion, Viewer,
+    AddColumnOptions, Awareness, ChangeColumnType, ColumnCast, ColumnDetail, ColumnId,
+    ColumnSchemaOutcome, ColumnTypeChangeOutcome, CreateColumn, CreateDatabase, CreateTable,
+    Database, DatabaseDetail, DatabaseError, DatabaseId, InferColumnType, InferColumnTypeOutcome,
+    ListedDatabase, QueryDefinition, QueryId, RenameColumnOutcome, SavedQuery, SavedQueryError,
+    Table, TableId, TableVersion, Viewer,
 };
 use databases::domain::ports::DatabasesService;
 use entity_access::domain::models::{
@@ -35,7 +35,6 @@ use models_grouping::GroupByField;
 use models_pagination::Paginated;
 use models_properties::service::property_definition::PropertyDefinition;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
-use models_properties::service::property_option::{PropertyOption, PropertyOptionValue};
 use models_properties::service::property_value::PropertyValue;
 use models_properties::shared::{DataType, PropertyOwner};
 use models_soup::database_row::SoupDatabaseRow;
@@ -119,152 +118,6 @@ pub(crate) fn sql(
         Arc::new(FakeContacts(world.clone())),
     )
 }
-
-// ---- fixtures ---------------------------------------------------------------
-
-/// A database with these tables.
-pub(crate) fn database(id: DatabaseId, name: &str, tables: Vec<TableDetail>) -> DatabaseDetail {
-    DatabaseDetail {
-        database: Database {
-            id,
-            name: name.to_string(),
-            owner_id: OWNER.to_string(),
-            created_at: Utc::now(),
-            trashed_at: None,
-        },
-        grant: AccessLevel::Owner,
-        tables,
-    }
-}
-
-/// A table of `database` with these columns, at version 1.
-pub(crate) fn table(
-    id: TableId,
-    database: DatabaseId,
-    name: &str,
-    columns: Vec<ColumnDetail>,
-) -> TableDetail {
-    TableDetail {
-        table: Table {
-            id,
-            database_id: database,
-            name: name.to_string(),
-            position: "a0".to_string(),
-            version: TableVersion(1),
-        },
-        sql_name: format!("\"{name}\""),
-        read_sql_name: format!("\"{name}\""),
-        columns: columns
-            .into_iter()
-            .map(|mut column| {
-                column.column.table_id = id;
-                column
-            })
-            .collect(),
-        views: Vec::new(),
-    }
-}
-
-/// A column placement `placement` bound to definition `definition`.
-pub(crate) fn column(
-    placement: ColumnId,
-    definition: Uuid,
-    name: &str,
-    data_type: DataType,
-    is_multi_select: bool,
-) -> ColumnDetail {
-    ColumnDetail {
-        column: Column {
-            id: placement,
-            table_id: Uuid::nil(),
-            property_definition_id: definition,
-            position: "a0".to_string(),
-            config: None,
-            display_name: None,
-            infer_type: false,
-        },
-        sql_name: format!("\"{name}\""),
-        definition: PropertyDefinitionWithOptions {
-            definition: PropertyDefinition {
-                id: definition,
-                owner: PropertyOwner::System,
-                display_name: name.to_string(),
-                data_type,
-                is_multi_select,
-                specific_entity_type: (data_type == DataType::Entity)
-                    .then_some(models_properties::EntityType::User),
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-                is_system: false,
-                is_metadata: false,
-            },
-            property_options: Vec::new(),
-        },
-        writable: true,
-        shared_outside_database: true,
-    }
-}
-
-/// A select column with these options, `(id, label)` in display order.
-pub(crate) fn select_column(
-    placement: ColumnId,
-    definition: Uuid,
-    name: &str,
-    options: &[(Uuid, &str)],
-) -> ColumnDetail {
-    let mut column = column(placement, definition, name, DataType::SelectString, false);
-    column.definition.property_options = options
-        .iter()
-        .enumerate()
-        .map(|(order, (id, label))| PropertyOption {
-            id: *id,
-            property_definition_id: definition,
-            display_order: order as i32,
-            value: PropertyOptionValue::String(label.to_string()),
-            color: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        })
-        .collect();
-    column
-}
-
-/// A relation column pointing at `table` of `database`.
-pub(crate) fn relation_column(
-    placement: ColumnId,
-    definition: Uuid,
-    name: &str,
-    database: DatabaseId,
-    table: TableId,
-) -> ColumnDetail {
-    let mut column = column(placement, definition, name, DataType::Entity, true);
-    column.column.config = Some(ColumnConfig::Link {
-        database_id: database,
-        table_id: table,
-    });
-    column.definition.definition.specific_entity_type = None;
-    column
-}
-
-/// A row of `table`, created `minute` minutes into the day.
-pub(crate) fn row(
-    id: Uuid,
-    table: TableId,
-    database: DatabaseId,
-    minute: u32,
-    cells: Vec<(Uuid, PropertyValue)>,
-) -> StoredRow {
-    StoredRow {
-        id,
-        table_id: table,
-        database_id: database,
-        position: format!("a{minute:02}"),
-        created_at: Utc.with_ymd_and_hms(2026, 9, 1, 9, minute, 0).unwrap(),
-        cells,
-    }
-}
-
-// ---- the databases service ---------------------------------------------------
 
 #[derive(Clone)]
 pub(crate) struct FakeDatabases(pub(crate) Shared);
@@ -513,8 +366,6 @@ impl DatabasesService for FakeDatabases {
     }
 }
 
-// ---- entity access -----------------------------------------------------------
-
 /// Mints receipts from the world's grants.
 #[derive(Clone)]
 pub(crate) struct FakeAccess(pub(crate) Shared);
@@ -641,8 +492,6 @@ impl EntityAccessService for FakeAccess {
         unimplemented!("SQL never touches teams")
     }
 }
-
-// ---- Soup --------------------------------------------------------------------
 
 /// Answers the world's rows, newest first, in one page, filtered the way
 /// Soup filters: a property literal is membership, `NOT` its complement.
@@ -854,8 +703,6 @@ impl SoupService for FakeSoup {
     }
 }
 
-// ---- contacts ----------------------------------------------------------------
-
 #[derive(Clone)]
 pub(crate) struct FakeContacts(pub(crate) Shared);
 
@@ -883,11 +730,11 @@ impl ContactsService for FakeContacts {
 pub(crate) fn row_literals(filter: &EntityFilterAst) -> Vec<DatabaseRowLiteral> {
     fn walk(expr: &Expr<DatabaseRowLiteral>, out: &mut Vec<DatabaseRowLiteral>) {
         match expr {
-            Expr::And(a, b) | Expr::Or(a, b) => {
-                walk(a, out);
-                walk(b, out);
+            Expr::And(left, right) | Expr::Or(left, right) => {
+                walk(left, out);
+                walk(right, out);
             }
-            Expr::Not(a) => walk(a, out),
+            Expr::Not(inner) => walk(inner, out),
             Expr::Literal(literal) => out.push(literal.clone()),
         }
     }

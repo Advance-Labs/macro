@@ -1,6 +1,15 @@
 //! The SQL tools over the adapter, over fakes of the services it runs on.
 
 use std::collections::HashMap;
+
+use chrono::{TimeZone, Utc};
+use databases::domain::models::{
+    Column, ColumnDetail, Database, DatabaseDetail, Table, TableDetail, TableVersion,
+};
+use models_properties::service::property_definition::PropertyDefinition;
+use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
+use models_properties::service::property_option::{PropertyOption, PropertyOptionValue};
+use models_properties::shared::PropertyOwner;
 use std::sync::{Arc, Mutex};
 
 use ai_toolset::schema::generate_validated_input_schema;
@@ -13,8 +22,8 @@ use uuid::Uuid;
 
 use super::*;
 use crate::test_support::{
-    AppliedOps, FakeAccess, FakeContacts, FakeDatabases, FakeSoup, OWNER, Shared, VIEWER, World,
-    column, database, row, select_column, sql, table, user,
+    AppliedOps, FakeAccess, FakeContacts, FakeDatabases, FakeSoup, OWNER, Shared, StoredRow,
+    VIEWER, World, sql, user,
 };
 
 mod saved_queries;
@@ -28,59 +37,127 @@ const GOING: Uuid = Uuid::from_u128(0xa001);
 const MAYBE: Uuid = Uuid::from_u128(0xa002);
 const MARIA: Uuid = Uuid::from_u128(0xe001);
 
-type Context = DatabasesSqlToolContext<FakeDatabases, FakeAccess, FakeSoup, FakeContacts>;
-
 /// `Offsite.Guests` with one guest, the owner's; the viewer can read it.
 fn world() -> Shared {
     Arc::new(Mutex::new(World {
-        databases: vec![database(
-            OFFSITE,
-            "Offsite",
-            vec![table(
-                GUESTS,
-                OFFSITE,
-                "Guests",
-                vec![
-                    column(
-                        Uuid::from_u128(0xb001),
-                        NAME,
-                        "Name",
-                        DataType::String,
-                        false,
-                    ),
-                    select_column(
-                        STATUS_COLUMN,
-                        STATUS,
-                        "Status",
-                        &[(GOING, "Going"), (MAYBE, "Maybe")],
-                    ),
+        databases: vec![DatabaseDetail {
+            database: Database {
+                id: OFFSITE,
+                name: "Offsite".into(),
+                owner_id: OWNER.to_string(),
+                created_at: Utc::now(),
+                trashed_at: None,
+            },
+            grant: AccessLevel::Owner,
+            tables: vec![TableDetail {
+                table: Table {
+                    id: GUESTS,
+                    database_id: OFFSITE,
+                    name: "Guests".into(),
+                    position: "80".into(),
+                    version: TableVersion(1),
+                },
+                sql_name: "\"Guests\"".into(),
+                read_sql_name: "\"Guests\"".into(),
+                columns: vec![
+                    ColumnDetail {
+                        column: Column {
+                            id: Uuid::from_u128(0xb001),
+                            table_id: GUESTS,
+                            property_definition_id: NAME,
+                            position: "80".into(),
+                            config: None,
+                            display_name: None,
+                            infer_type: false,
+                        },
+                        sql_name: "\"Name\"".into(),
+                        definition: PropertyDefinitionWithOptions {
+                            definition: PropertyDefinition {
+                                id: NAME,
+                                owner: PropertyOwner::System,
+                                display_name: "Name".into(),
+                                data_type: DataType::String,
+                                is_multi_select: false,
+                                specific_entity_type: None,
+                                created_at: Utc::now(),
+                                updated_at: Utc::now(),
+                                is_system: false,
+                                is_metadata: false,
+                            },
+                            property_options: Vec::new(),
+                        },
+                        writable: true,
+                        shared_outside_database: true,
+                    },
+                    ColumnDetail {
+                        column: Column {
+                            id: STATUS_COLUMN,
+                            table_id: GUESTS,
+                            property_definition_id: STATUS,
+                            position: "8180".into(),
+                            config: None,
+                            display_name: None,
+                            infer_type: false,
+                        },
+                        sql_name: "\"Status\"".into(),
+                        definition: PropertyDefinitionWithOptions {
+                            definition: PropertyDefinition {
+                                id: STATUS,
+                                owner: PropertyOwner::System,
+                                display_name: "Status".into(),
+                                data_type: DataType::SelectString,
+                                is_multi_select: false,
+                                specific_entity_type: None,
+                                created_at: Utc::now(),
+                                updated_at: Utc::now(),
+                                is_system: false,
+                                is_metadata: false,
+                            },
+                            property_options: vec![
+                                PropertyOption {
+                                    id: GOING,
+                                    property_definition_id: STATUS,
+                                    display_order: 0,
+                                    value: PropertyOptionValue::String("Going".into()),
+                                    color: None,
+                                    created_at: Utc::now(),
+                                    updated_at: Utc::now(),
+                                },
+                                PropertyOption {
+                                    id: MAYBE,
+                                    property_definition_id: STATUS,
+                                    display_order: 1,
+                                    value: PropertyOptionValue::String("Maybe".into()),
+                                    color: None,
+                                    created_at: Utc::now(),
+                                    updated_at: Utc::now(),
+                                },
+                            ],
+                        },
+                        writable: true,
+                        shared_outside_database: true,
+                    },
                 ],
-            )],
-        )],
+                views: Vec::new(),
+            }],
+        }],
         grants: vec![
             (OWNER, OFFSITE, AccessLevel::Owner),
             (VIEWER, OFFSITE, AccessLevel::View),
         ],
-        rows: vec![row(
-            MARIA,
-            GUESTS,
-            OFFSITE,
-            1,
-            vec![
+        rows: vec![StoredRow {
+            id: MARIA,
+            table_id: GUESTS,
+            database_id: OFFSITE,
+            position: "80".into(),
+            created_at: Utc.with_ymd_and_hms(2026, 9, 1, 9, 1, 0).unwrap(),
+            cells: vec![
                 (NAME, PropertyValue::Str("Maria".into())),
                 (STATUS, PropertyValue::SelectOption(vec![MAYBE])),
             ],
-        )],
+        }],
         ..World::default()
     }))
-}
-
-fn context(world: &Shared) -> Context {
-    DatabasesSqlToolContext::new(sql(world))
-}
-
-fn as_user(id: &'static str) -> RequestContext {
-    RequestContext::new(user(id))
 }
 
 #[test]
@@ -144,7 +221,10 @@ async fn a_read_answers_typed_cells_row_ids_and_the_versions_it_read() {
         base_versions: None,
         display: None,
     }
-    .call(ServiceContext(context(&world)), as_user(VIEWER))
+    .call(
+        ServiceContext(DatabasesSqlToolContext::new(sql(&world))),
+        RequestContext::new(user(VIEWER)),
+    )
     .await
     .expect("the viewer reads");
 
@@ -187,8 +267,10 @@ async fn a_write_runs_as_the_agent_for_the_user_and_guards_its_base_versions() {
     .unwrap();
     let response = request
         .call(
-            ServiceContext(context(&world).with_actor(bot_id::MACRO_AI_BOT_ID)),
-            as_user(OWNER),
+            ServiceContext(
+                DatabasesSqlToolContext::new(sql(&world)).with_actor(bot_id::MACRO_AI_BOT_ID),
+            ),
+            RequestContext::new(user(OWNER)),
         )
         .await
         .expect("the owner writes");
@@ -222,7 +304,10 @@ async fn a_write_runs_as_the_agent_for_the_user_and_guards_its_base_versions() {
     }))
     .unwrap();
     let error = stale
-        .call(ServiceContext(context(&world)), as_user(OWNER))
+        .call(
+            ServiceContext(DatabasesSqlToolContext::new(sql(&world))),
+            RequestContext::new(user(OWNER)),
+        )
         .await
         .expect_err("version 0 is stale");
     assert!(
@@ -243,7 +328,10 @@ async fn a_sql_error_reaches_the_model_verbatim() {
         base_versions: None,
         display: None,
     }
-    .call(ServiceContext(context(&world)), as_user(OWNER))
+    .call(
+        ServiceContext(DatabasesSqlToolContext::new(sql(&world))),
+        RequestContext::new(user(OWNER)),
+    )
     .await
     .expect_err("a bad statement is an error");
 
@@ -268,7 +356,10 @@ async fn a_view_grant_reads_as_read_only() {
         base_versions: None,
         display: None,
     }
-    .call(ServiceContext(context(&world)), as_user(VIEWER))
+    .call(
+        ServiceContext(DatabasesSqlToolContext::new(sql(&world))),
+        RequestContext::new(user(VIEWER)),
+    )
     .await
     .expect_err("a view grant does not write");
 
@@ -286,7 +377,10 @@ async fn the_read_only_tool_never_writes_even_for_an_owner() {
     let error = ReadOnlyQueryDatabase {
         sql: "DELETE FROM \"Guests\" WHERE \"Name\" = 'Maria'".into(),
     }
-    .call(ServiceContext(context(&world)), as_user(OWNER))
+    .call(
+        ServiceContext(DatabasesSqlToolContext::new(sql(&world))),
+        RequestContext::new(user(OWNER)),
+    )
     .await
     .expect_err("document answers never write");
 
@@ -300,7 +394,10 @@ async fn the_read_only_tool_never_writes_even_for_an_owner() {
     let response = ReadOnlyQueryDatabase {
         sql: "SELECT COUNT(*) AS guests FROM \"Offsite\".\"Guests\"".into(),
     }
-    .call(ServiceContext(context(&world)), as_user(OWNER))
+    .call(
+        ServiceContext(DatabasesSqlToolContext::new(sql(&world))),
+        RequestContext::new(user(OWNER)),
+    )
     .await
     .expect("document answers read");
     assert_eq!(

@@ -355,15 +355,6 @@ const STAGE: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000c003);
 const WON: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000a002);
 const SAM: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000f001);
 
-fn rows_of(table: Uuid) -> Option<Arc<Expr<DatabaseRowLiteral>>> {
-    Some(Arc::new(Expr::val(DatabaseRowLiteral::TableId(table))))
-}
-
-/// A filter as it goes over the wire, for comparing whole filters.
-fn wire(filter: &EntityFilterAst) -> serde_json::Value {
-    serde_json::to_value(filter).expect("filters serialize")
-}
-
 #[tokio::test]
 async fn every_transcript_reaches_its_outcome_through_soup() {
     for name in [
@@ -387,12 +378,18 @@ async fn a_table_read_is_its_rows_and_nothing_else() {
     let reads = replay("paging").await;
     // The second page continues the first, from its cursor.
     assert_eq!(reads.len(), 2);
-    assert_eq!(wire(&reads[0]), wire(&reads[1]));
-    assert_eq!(reads[0].database_row_filter, rows_of(DEALS));
+    assert_eq!(
+        serde_json::to_value(&reads[0]).unwrap(),
+        serde_json::to_value(&reads[1]).unwrap()
+    );
+    assert_eq!(
+        reads[0].database_row_filter,
+        Some(Arc::new(Expr::val(DatabaseRowLiteral::TableId(DEALS))))
+    );
     assert_eq!(reads[0].properties_filter, None);
     // Every other kind is excluded the way the browser excludes it.
     assert_eq!(
-        wire(&reads[0]),
+        serde_json::to_value(&reads[0]).unwrap(),
         serde_json::json!({
             "calf": {"l": {"id": Uuid::nil()}},
             "df": {"l": {"id": Uuid::nil()}},
@@ -417,7 +414,10 @@ async fn a_table_read_is_its_rows_and_nothing_else() {
 async fn a_pushed_down_filter_is_the_soup_properties_filter() {
     let reads = replay("select-column-filter").await;
     assert_eq!(reads.len(), 1);
-    assert_eq!(reads[0].database_row_filter, rows_of(DEALS));
+    assert_eq!(
+        reads[0].database_row_filter,
+        Some(Arc::new(Expr::val(DatabaseRowLiteral::TableId(DEALS))))
+    );
     assert_eq!(
         reads[0].properties_filter,
         Some(Arc::new(Expr::val(PropertiesLiteral {
@@ -432,7 +432,10 @@ async fn a_pushed_down_filter_is_the_soup_properties_filter() {
 async fn a_join_reads_only_the_joined_rows_it_can_match() {
     let reads = replay("join").await;
     assert_eq!(reads.len(), 2);
-    assert_eq!(reads[0].database_row_filter, rows_of(DEALS));
+    assert_eq!(
+        reads[0].database_row_filter,
+        Some(Arc::new(Expr::val(DatabaseRowLiteral::TableId(DEALS))))
+    );
     assert_eq!(
         reads[1].database_row_filter,
         Some(Arc::new(Expr::and(
@@ -446,5 +449,8 @@ async fn a_join_reads_only_the_joined_rows_it_can_match() {
 async fn a_count_per_option_reads_one_bin_per_option() {
     let reads = replay("count-per-option").await;
     assert_eq!(reads.len(), 1);
-    assert_eq!(wire(&reads[0]), wire(&rows_filter(DEALS, None, None)));
+    assert_eq!(
+        serde_json::to_value(&reads[0]).unwrap(),
+        serde_json::to_value(rows_filter(DEALS, None, None)).unwrap()
+    );
 }

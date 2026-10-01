@@ -1,77 +1,220 @@
+use chrono::Utc;
 use database_sql::catalog::{
     ColumnSchema, DataType as SchemaDataType, DatabaseSchema, EntityKind, OptionSchema,
     OptionValue, PlatformTable, PropertyType, Schema, TableSchema,
 };
-use databases::domain::models::ColumnConfig;
+use databases::domain::models::{
+    Column, ColumnConfig, ColumnDetail, Database, DatabaseDetail, Table, TableDetail, TableVersion,
+};
+use entity_access::domain::models::AccessLevel;
+use models_properties::service::property_definition::PropertyDefinition;
+use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
+use models_properties::service::property_option::PropertyOption;
 use models_properties::service::property_option::PropertyOptionValue;
-use models_properties::shared::DataType;
+use models_properties::shared::{DataType, PropertyOwner};
 use uuid::Uuid;
 
 use super::schema;
-use crate::test_support::{column, database, relation_column, select_column, table};
 
 const CRM: Uuid = Uuid::from_u128(0xdb01);
 const DEALS: Uuid = Uuid::from_u128(0x7a01);
 
 #[test]
 fn details_become_the_schema_the_engine_builds_its_catalog_from() {
-    let mut name = column(
-        Uuid::from_u128(0xb001),
-        Uuid::from_u128(0xc001),
-        "Name",
-        DataType::String,
-        false,
-    );
-    name.column.display_name = Some("Deal name".into());
-    let mut tier = select_column(
-        Uuid::from_u128(0xb002),
-        Uuid::from_u128(0xc002),
-        "Tier",
-        &[
-            (Uuid::from_u128(0xa001), "2"),
-            (Uuid::from_u128(0xa002), "2.5"),
-        ],
-    );
-    tier.definition.definition.data_type = DataType::SelectNumber;
-    tier.definition.definition.is_multi_select = true;
-    tier.definition.property_options[0].value = PropertyOptionValue::Number(2.0);
-    tier.definition.property_options[1].value = PropertyOptionValue::Number(2.5);
-    let owner = column(
-        Uuid::from_u128(0xb003),
-        Uuid::from_u128(0xc003),
-        "Owner",
-        DataType::Entity,
-        false,
-    );
-    let related = relation_column(
-        Uuid::from_u128(0xb004),
-        Uuid::from_u128(0xc004),
-        "Related",
-        CRM,
-        DEALS,
-    );
-    let mut lookup = column(
-        Uuid::from_u128(0xb005),
-        Uuid::from_u128(0xc005),
-        "Related name",
-        DataType::String,
-        false,
-    );
-    lookup.column.config = Some(ColumnConfig::Lookup {
-        via_column_id: related.column.id,
-        target: "Name".into(),
-    });
-
-    let details = vec![database(
-        CRM,
-        "CRM",
-        vec![table(
-            DEALS,
-            CRM,
-            "Deals",
-            vec![name, tier, owner, related, lookup],
-        )],
-    )];
+    let details = vec![DatabaseDetail {
+        database: Database {
+            id: CRM,
+            name: "CRM".into(),
+            owner_id: "macro|owner@macro.com".into(),
+            created_at: Utc::now(),
+            trashed_at: None,
+        },
+        grant: AccessLevel::Owner,
+        tables: vec![TableDetail {
+            table: Table {
+                id: DEALS,
+                database_id: CRM,
+                name: "Deals".into(),
+                position: "80".into(),
+                version: TableVersion(1),
+            },
+            sql_name: "\"Deals\"".into(),
+            read_sql_name: "\"Deals\"".into(),
+            columns: vec![
+                ColumnDetail {
+                    column: Column {
+                        id: Uuid::from_u128(0xb001),
+                        table_id: DEALS,
+                        property_definition_id: Uuid::from_u128(0xc001),
+                        position: "80".into(),
+                        config: None,
+                        display_name: Some("Deal name".into()),
+                        infer_type: false,
+                    },
+                    sql_name: "\"Name\"".into(),
+                    definition: PropertyDefinitionWithOptions {
+                        definition: PropertyDefinition {
+                            id: Uuid::from_u128(0xc001),
+                            owner: PropertyOwner::System,
+                            display_name: "Name".into(),
+                            data_type: DataType::String,
+                            is_multi_select: false,
+                            specific_entity_type: None,
+                            created_at: Utc::now(),
+                            updated_at: Utc::now(),
+                            is_system: false,
+                            is_metadata: false,
+                        },
+                        property_options: Vec::new(),
+                    },
+                    writable: true,
+                    shared_outside_database: true,
+                },
+                ColumnDetail {
+                    column: Column {
+                        id: Uuid::from_u128(0xb002),
+                        table_id: DEALS,
+                        property_definition_id: Uuid::from_u128(0xc002),
+                        position: "8180".into(),
+                        config: None,
+                        display_name: None,
+                        infer_type: false,
+                    },
+                    sql_name: "\"Tier\"".into(),
+                    definition: PropertyDefinitionWithOptions {
+                        definition: PropertyDefinition {
+                            id: Uuid::from_u128(0xc002),
+                            owner: PropertyOwner::System,
+                            display_name: "Tier".into(),
+                            data_type: DataType::SelectNumber,
+                            is_multi_select: true,
+                            specific_entity_type: None,
+                            created_at: Utc::now(),
+                            updated_at: Utc::now(),
+                            is_system: false,
+                            is_metadata: false,
+                        },
+                        property_options: vec![
+                            PropertyOption {
+                                id: Uuid::from_u128(0xa001),
+                                property_definition_id: Uuid::from_u128(0xc002),
+                                display_order: 0,
+                                value: PropertyOptionValue::Number(2.0),
+                                color: None,
+                                created_at: Utc::now(),
+                                updated_at: Utc::now(),
+                            },
+                            PropertyOption {
+                                id: Uuid::from_u128(0xa002),
+                                property_definition_id: Uuid::from_u128(0xc002),
+                                display_order: 1,
+                                value: PropertyOptionValue::Number(2.5),
+                                color: None,
+                                created_at: Utc::now(),
+                                updated_at: Utc::now(),
+                            },
+                        ],
+                    },
+                    writable: true,
+                    shared_outside_database: true,
+                },
+                ColumnDetail {
+                    column: Column {
+                        id: Uuid::from_u128(0xb003),
+                        table_id: DEALS,
+                        property_definition_id: Uuid::from_u128(0xc003),
+                        position: "8280".into(),
+                        config: None,
+                        display_name: None,
+                        infer_type: false,
+                    },
+                    sql_name: "\"Owner\"".into(),
+                    definition: PropertyDefinitionWithOptions {
+                        definition: PropertyDefinition {
+                            id: Uuid::from_u128(0xc003),
+                            owner: PropertyOwner::System,
+                            display_name: "Owner".into(),
+                            data_type: DataType::Entity,
+                            is_multi_select: false,
+                            specific_entity_type: Some(models_properties::EntityType::User),
+                            created_at: Utc::now(),
+                            updated_at: Utc::now(),
+                            is_system: false,
+                            is_metadata: false,
+                        },
+                        property_options: Vec::new(),
+                    },
+                    writable: true,
+                    shared_outside_database: true,
+                },
+                ColumnDetail {
+                    column: Column {
+                        id: Uuid::from_u128(0xb004),
+                        table_id: DEALS,
+                        property_definition_id: Uuid::from_u128(0xc004),
+                        position: "8380".into(),
+                        config: Some(ColumnConfig::Link {
+                            database_id: CRM,
+                            table_id: DEALS,
+                        }),
+                        display_name: None,
+                        infer_type: false,
+                    },
+                    sql_name: "\"Related\"".into(),
+                    definition: PropertyDefinitionWithOptions {
+                        definition: PropertyDefinition {
+                            id: Uuid::from_u128(0xc004),
+                            owner: PropertyOwner::System,
+                            display_name: "Related".into(),
+                            data_type: DataType::Entity,
+                            is_multi_select: true,
+                            specific_entity_type: None,
+                            created_at: Utc::now(),
+                            updated_at: Utc::now(),
+                            is_system: false,
+                            is_metadata: false,
+                        },
+                        property_options: Vec::new(),
+                    },
+                    writable: true,
+                    shared_outside_database: true,
+                },
+                ColumnDetail {
+                    column: Column {
+                        id: Uuid::from_u128(0xb005),
+                        table_id: DEALS,
+                        property_definition_id: Uuid::from_u128(0xc005),
+                        position: "8480".into(),
+                        config: Some(ColumnConfig::Lookup {
+                            via_column_id: Uuid::from_u128(0xb004),
+                            target: "Name".into(),
+                        }),
+                        display_name: None,
+                        infer_type: false,
+                    },
+                    sql_name: "\"Related name\"".into(),
+                    definition: PropertyDefinitionWithOptions {
+                        definition: PropertyDefinition {
+                            id: Uuid::from_u128(0xc005),
+                            owner: PropertyOwner::System,
+                            display_name: "Related name".into(),
+                            data_type: DataType::String,
+                            is_multi_select: false,
+                            specific_entity_type: None,
+                            created_at: Utc::now(),
+                            updated_at: Utc::now(),
+                            is_system: false,
+                            is_metadata: false,
+                        },
+                        property_options: Vec::new(),
+                    },
+                    writable: true,
+                    shared_outside_database: true,
+                },
+            ],
+            views: Vec::new(),
+        }],
+    }];
 
     assert_eq!(
         schema(&details),
