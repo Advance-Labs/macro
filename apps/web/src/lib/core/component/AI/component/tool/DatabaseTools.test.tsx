@@ -369,6 +369,7 @@ describe('QueryDatabase results', () => {
             ],
             changesApplied: 0,
             readVersions: [{ tableId: invitesTableId, version: 4 }],
+            statement: { kind: 'select' },
             summary: 'Returned 1 row.',
           },
         }}
@@ -415,6 +416,7 @@ describe('QueryDatabase results', () => {
             ],
             changesApplied: 0,
             readVersions: [{ tableId: invitesTableId, version: 4 }],
+            statement: { kind: 'select' },
             summary: 'Returned 1 row.',
           },
         }}
@@ -435,30 +437,76 @@ describe('QueryDatabase results', () => {
 });
 
 describe('QueryDatabase with SQL hidden', () => {
-  const read = {
-    results: [
-      {
-        columns: [{ name: 'Count', kind: 'number' as const }],
-        rows: [[{ type: 'number' as const, value: 12 }]],
-        rowIds: [],
-      },
-    ],
-    changesApplied: 0,
-    readVersions: [{ tableId: invitesTableId, version: 4 }],
-    summary: 'Returned 1 row.',
-  };
-
   it('names the table a read used, never the statement', () => {
     const rendered = renderTool(
       databaseToolHandlers.QueryDatabase,
       'QueryDatabase',
       { databaseId, sql: 'SELECT COUNT(*) FROM "Invites"' },
-      read
+      {
+        results: [
+          {
+            columns: [{ name: 'Count', kind: 'number' }],
+            rows: [[{ type: 'number', value: 12 }]],
+            rowIds: [],
+          },
+        ],
+        changesApplied: 0,
+        readVersions: [{ tableId: invitesTableId, version: 4 }],
+        statement: { kind: 'select' },
+        summary: 'Returned 1 row.',
+      }
     );
     expect(line(rendered)).toBe('Read Invites');
   });
 
-  it('counts the rows a write changed in the table it wrote', () => {
+  it('falls back to the database when a read names no table', () => {
+    const rendered = renderTool(
+      databaseToolHandlers.QueryDatabase,
+      'QueryDatabase',
+      { databaseId, sql: 'SELECT 1' },
+      {
+        results: [
+          {
+            columns: [{ name: '?column?', kind: 'number' }],
+            rows: [[{ type: 'number', value: 1 }]],
+            rowIds: [],
+          },
+        ],
+        changesApplied: 0,
+        readVersions: [],
+        statement: { kind: 'select' },
+        summary: 'Returned 1 row.',
+      }
+    );
+    expect(line(rendered)).toBe('Queried Party Planner');
+  });
+
+  it('counts the rows an insert added to the table it wrote', () => {
+    const rendered = renderTool(
+      databaseToolHandlers.QueryDatabase,
+      'QueryDatabase',
+      {
+        databaseId,
+        sql: `INSERT INTO "Guests" ("Name") VALUES ('Ada')`,
+      },
+      {
+        results: [],
+        changesApplied: 1,
+        insertedRowIds: ['01992d2f-8444-7000-8000-000000000010'],
+        newVersions: { [guestsTableId]: 9 },
+        readVersions: [],
+        statement: {
+          kind: 'insert',
+          tableId: guestsTableId,
+          tableName: 'Guests',
+        },
+        summary: 'Applied 1 row change.',
+      }
+    );
+    expect(line(rendered)).toBe('Added 1 row to Guests');
+  });
+
+  it('counts the rows an update changed in the table it wrote', () => {
     const rendered = renderTool(
       databaseToolHandlers.QueryDatabase,
       'QueryDatabase',
@@ -471,13 +519,42 @@ describe('QueryDatabase with SQL hidden', () => {
         changesApplied: 3,
         newVersions: { [guestsTableId]: 9 },
         readVersions: [],
+        statement: {
+          kind: 'update',
+          tableId: guestsTableId,
+          tableName: 'Guests',
+        },
         summary: 'Applied 3 row changes.',
       }
     );
     expect(line(rendered)).toBe('Updated 3 rows in Guests');
   });
 
-  it('says which column an ALTER changed', () => {
+  it('says a delete that matched nothing removed no rows', () => {
+    const rendered = renderTool(
+      databaseToolHandlers.QueryDatabase,
+      'QueryDatabase',
+      {
+        databaseId,
+        sql: `DELETE FROM "Invites" WHERE "Status" = 'Declined'`,
+      },
+      {
+        results: [],
+        changesApplied: 0,
+        newVersions: {},
+        readVersions: [],
+        statement: {
+          kind: 'delete',
+          tableId: invitesTableId,
+          tableName: 'Invites',
+        },
+        summary: 'Applied 0 row changes.',
+      }
+    );
+    expect(line(rendered)).toBe('Deleted no rows from Invites');
+  });
+
+  it('says which column a type change altered and into what', () => {
     const rendered = renderTool(
       databaseToolHandlers.QueryDatabase,
       'QueryDatabase',
@@ -488,21 +565,53 @@ describe('QueryDatabase with SQL hidden', () => {
       {
         results: [],
         changesApplied: 0,
+        newVersions: { [tableId]: 4 },
         readVersions: [],
+        statement: {
+          kind: 'alterColumnType',
+          tableId,
+          tableName: 'Items',
+          columnId,
+          columnName: 'Price',
+          to: 'number',
+          clearedCells: 0,
+          trimmedCells: 0,
+        },
         summary: 'Changed "Price" to number.',
       }
     );
-    expect(line(rendered)).toBe('Changed Price to number');
+    expect(line(rendered)).toBe('Changed Price in Items to number');
   });
 
-  it('falls back to the database when nothing names a table', () => {
+  it('counts the cells a type change emptied or trimmed', () => {
     const rendered = renderTool(
       databaseToolHandlers.QueryDatabase,
       'QueryDatabase',
-      { databaseId, sql: 'SELECT 1' },
-      { ...read, readVersions: [] }
+      {
+        databaseId,
+        sql: 'ALTER TABLE "Items" ALTER COLUMN "Tags" TYPE select USING NULL',
+      },
+      {
+        results: [],
+        changesApplied: 0,
+        newVersions: { [tableId]: 5 },
+        readVersions: [],
+        statement: {
+          kind: 'alterColumnType',
+          tableId,
+          tableName: 'Items',
+          columnId,
+          columnName: 'Tags',
+          to: 'select',
+          clearedCells: 2,
+          trimmedCells: 1,
+        },
+        summary: 'Changed "Tags" to select.',
+      }
     );
-    expect(line(rendered)).toBe('Queried Party Planner');
+    expect(line(rendered)).toBe(
+      'Changed Tags in Items to select (cleared 2 cells, trimmed 1 cell)'
+    );
   });
 
   it('keeps the server summary when SQL is shown', () => {
@@ -511,7 +620,19 @@ describe('QueryDatabase with SQL hidden', () => {
       databaseToolHandlers.QueryDatabase,
       'QueryDatabase',
       { databaseId, sql: 'SELECT COUNT(*) FROM "Invites"' },
-      read
+      {
+        results: [
+          {
+            columns: [{ name: 'Count', kind: 'number' }],
+            rows: [[{ type: 'number', value: 12 }]],
+            rowIds: [],
+          },
+        ],
+        changesApplied: 0,
+        readVersions: [{ tableId: invitesTableId, version: 4 }],
+        statement: { kind: 'select' },
+        summary: 'Returned 1 row.',
+      }
     );
     expect(line(rendered)).toBe('Returned 1 row.');
   });

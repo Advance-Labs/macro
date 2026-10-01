@@ -31,52 +31,58 @@ import { createToolRenderer } from './ToolRenderer';
 type DatabaseSchema = NamedTool<'DescribeDatabase', 'response'>['data'];
 type QueryDatabaseResult = NamedTool<'QueryDatabase', 'response'>['data'];
 
-/**
- * What a QueryDatabase call did, in words, for when SQL is hidden. The
- * statement's first keyword only picks the verb and is never shown.
- */
+function count(amount: number, noun: string) {
+  return `${amount} ${noun}${amount === 1 ? '' : 's'}`;
+}
+
+function rowCount(amount: number) {
+  return amount === 0 ? 'no rows' : count(amount, 'row');
+}
+
+/** What a QueryDatabase call did, in words, for when SQL is hidden. */
 function describeDatabaseQuery(input: {
-  statement: string;
   result: QueryDatabaseResult;
   tableName: (tableId: string) => string | undefined;
   databaseName: string | undefined;
 }): string {
-  const names = (tableIds: string[]) =>
-    [
-      ...new Set(
-        tableIds.map(input.tableName).filter((name): name is string => !!name)
-      ),
-    ].join(', ');
-  const keyword = input.statement
-    .replace(/^(?:\s|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)+/, '')
-    .match(/^\w+/)?.[0]
-    .toUpperCase();
-  if (keyword === 'ALTER')
-    return input.result.summary.replace(/"([^"]+)"/g, '$1').replace(/\.$/, '');
-  const write = match(keyword)
-    .with('INSERT', () => ({ verb: 'Added', preposition: 'to' }))
-    .with('UPDATE', () => ({ verb: 'Updated', preposition: 'in' }))
-    .with('DELETE', () => ({ verb: 'Deleted', preposition: 'from' }))
-    .otherwise(() => undefined);
   const changed = input.result.changesApplied;
-  if (write || changed > 0) {
-    const { verb, preposition } = write ?? {
-      verb: 'Changed',
-      preposition: 'in',
-    };
-    const where =
-      names(Object.keys(input.result.newVersions ?? {})) || input.databaseName;
-    const rows =
-      changed === 0 ? 'no rows' : `${changed} row${changed === 1 ? '' : 's'}`;
-    return where
-      ? `${verb} ${rows} ${preposition} ${where}`
-      : `${verb} ${rows}`;
-  }
-  const read = names(input.result.readVersions.map((table) => table.tableId));
-  if (read) return `Read ${read}`;
-  return input.databaseName
-    ? `Queried ${input.databaseName}`
-    : 'Queried database';
+  return match(input.result.statement)
+    .with({ kind: 'select' }, () => {
+      const read = [
+        ...new Set(
+          input.result.readVersions
+            .map((table) => input.tableName(table.tableId))
+            .filter((name): name is string => !!name)
+        ),
+      ].join(', ');
+      if (read) return `Read ${read}`;
+      return input.databaseName
+        ? `Queried ${input.databaseName}`
+        : 'Queried database';
+    })
+    .with(
+      { kind: 'insert' },
+      ({ tableName }) => `Added ${rowCount(changed)} to ${tableName}`
+    )
+    .with(
+      { kind: 'update' },
+      ({ tableName }) => `Updated ${rowCount(changed)} in ${tableName}`
+    )
+    .with(
+      { kind: 'delete' },
+      ({ tableName }) => `Deleted ${rowCount(changed)} from ${tableName}`
+    )
+    .with({ kind: 'alterColumnType' }, (statement) => {
+      const lost = [
+        statement.clearedCells > 0 &&
+          `cleared ${count(statement.clearedCells, 'cell')}`,
+        statement.trimmedCells > 0 &&
+          `trimmed ${count(statement.trimmedCells, 'cell')}`,
+      ].filter((part): part is string => !!part);
+      const altered = `Changed ${statement.columnName} in ${statement.tableName} to ${statement.to}`;
+      return lost.length ? `${altered} (${lost.join(', ')})` : altered;
+    })
+    .exhaustive();
 }
 
 function SchemaTableList(props: { schema: DatabaseSchema }) {
@@ -196,9 +202,11 @@ const queryDatabaseHandler = createToolRenderer({
     const expanded = () =>
       chosen() ?? !ctx.renderContext.followedBy('SaveDatabaseQuery');
     const showSql = isFeatureEnabled(showDatabaseSql);
-    // The result carries table ids; the plain-words title names them from the schema.
+    // A read carries only table ids; its plain-words title names them from the schema.
     const detailQuery = useDatabaseDetailQuery(() =>
-      showSql ? undefined : (ctx.tool.data.databaseId ?? undefined)
+      !showSql && ctx.response?.data.statement.kind === 'select'
+        ? (ctx.tool.data.databaseId ?? undefined)
+        : undefined
     );
     const detail = () => (detailQuery.isSuccess ? detailQuery.data : undefined);
     const title = () => {
@@ -206,7 +214,6 @@ const queryDatabaseHandler = createToolRenderer({
       if (!result) return 'Query database';
       if (showSql) return result.summary || 'Query database';
       return describeDatabaseQuery({
-        statement: ctx.tool.data.sql,
         result,
         tableName: (tableId) =>
           detail()?.tables.find((table) => table.table.id === tableId)?.table

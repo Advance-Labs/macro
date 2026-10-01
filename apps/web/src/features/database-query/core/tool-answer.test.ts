@@ -38,6 +38,7 @@ describe('QueryDatabase tool results as answers', () => {
         ],
         changesApplied: 0,
         readVersions: [{ tableId: 'table-guests', version: 4 }],
+        statement: { kind: 'select' },
         summary: 'Read 2 rows.',
       })
     ).toEqual([

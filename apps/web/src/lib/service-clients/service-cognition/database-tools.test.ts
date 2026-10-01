@@ -56,6 +56,7 @@ describe('database tool output contracts', () => {
         ],
         changesApplied: 0,
         readVersions: [],
+        statement: { kind: 'select' },
         summary: 'Returned 1 row.',
       },
     },
