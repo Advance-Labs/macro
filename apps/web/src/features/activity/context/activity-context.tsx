@@ -11,7 +11,7 @@ import {
   firstPartyBotName,
   getBotDisplayName,
 } from '@queries/messages/message-sender';
-import { useDatabaseDetailQuery } from '@queries/storage/databases';
+import { useDatabasesQuery } from '@queries/storage/databases';
 import { getGraphqlSoupClient } from '@service-storage/graphql-soup';
 import type { Client } from '@urql/core';
 import {
@@ -104,6 +104,10 @@ function appActivityContext(): ActivityContext {
   const owner = getOwner();
   let bots: ReturnType<typeof useBotsQuery> | undefined;
   const botsQuery = () => (bots ??= runWithOwner(owner, useBotsQuery));
+  // Database names come from one list subscription, made the same way.
+  let databases: DatabasesQuery | undefined;
+  const databasesQuery = () =>
+    (databases ??= runWithOwner(owner, useDatabasesQuery));
   const databasesFlag = useFeatureFlag(enableDatabases);
   return {
     graphql: () => getGraphqlSoupClient(),
@@ -127,7 +131,7 @@ function appActivityContext(): ActivityContext {
     entityDisplay: (entityId, entityType) => {
       const type = entityType();
       if (type === 'DATABASE') {
-        return databaseEntityDisplay(entityId);
+        return databaseEntityDisplay(entityId, databasesQuery);
       }
       return usePropertyEntityDisplay(entityId, () => type);
     },
@@ -141,15 +145,25 @@ function appActivityContext(): ActivityContext {
   };
 }
 
-function databaseEntityDisplay(entityId: Accessor<string>): EntityDisplay {
-  const detail = useDatabaseDetailQuery(() => entityId());
+type DatabasesQuery = ReturnType<typeof useDatabasesQuery>;
+
+function databaseEntityDisplay(
+  entityId: Accessor<string>,
+  databasesQuery: () => DatabasesQuery | undefined
+): EntityDisplay {
+  const isLoading = () => databasesQuery()?.isPending ?? true;
   return {
     name: () => {
-      if (detail.isPending) return 'Loading...';
-      return detail.isSuccess ? detail.data.database.name : 'Database';
+      const list = databasesQuery();
+      if (!list || list.isPending) return 'Loading...';
+      const id = entityId();
+      const listed = list.isSuccess
+        ? list.data.find((entry) => entry.database.id === id)
+        : undefined;
+      return listed?.database.name ?? 'Database unavailable';
     },
     icon: () => <CoreEntityIcon targetType="database" size="xs" />,
-    isLoading: () => detail.isPending,
+    isLoading,
     blockOrFileType: () => 'database',
     linkParams: () => undefined,
   };

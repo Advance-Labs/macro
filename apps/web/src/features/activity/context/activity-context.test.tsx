@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const [databasesEnabled, setDatabasesEnabled] = createSignal(true);
 const useBotsQuery = vi.fn();
-const useDatabaseDetailQuery = vi.fn();
+const useDatabasesQuery = vi.fn();
 const usePropertyEntityDisplay = vi.fn(
   (_entityId: () => string, _entityType: () => string) => ({})
 );
@@ -30,8 +30,7 @@ vi.mock('@property/hooks', () => ({
   ) => usePropertyEntityDisplay(entityId, entityType),
 }));
 vi.mock('@queries/storage/databases', () => ({
-  useDatabaseDetailQuery: (databaseId: () => string | undefined) =>
-    useDatabaseDetailQuery(databaseId),
+  useDatabasesQuery: () => useDatabasesQuery(),
 }));
 vi.mock('@core/component/EntityIcon', () => ({
   EntityIcon: () => null,
@@ -125,34 +124,63 @@ describe('appActivityContext.botName', () => {
 
 describe('appActivityContext.entityDisplay', () => {
   beforeEach(() => {
-    useDatabaseDetailQuery.mockReset();
+    useDatabasesQuery.mockReset();
     usePropertyEntityDisplay.mockClear();
   });
 
-  it('names a database from its detail query and opens it as a database block', () => {
-    useDatabaseDetailQuery.mockReturnValue({
+  it('names databases from one list subscription and opens them as database blocks', () => {
+    useDatabasesQuery.mockReturnValue({
       isPending: false,
       isSuccess: true,
-      data: { database: { name: 'Roadmap' } },
+      data: [
+        {
+          database: {
+            id: 'database-1',
+            name: 'Roadmap',
+            owner_id: 'owner',
+            created_at: '2026-10-01T00:00:00Z',
+            trashed_at: null,
+          },
+          grant: 'owner',
+          tables: [],
+        },
+        {
+          database: {
+            id: 'database-2',
+            name: 'Hiring',
+            owner_id: 'owner',
+            created_at: '2026-10-01T00:00:00Z',
+            trashed_at: null,
+          },
+          grant: 'edit',
+          tables: [],
+        },
+      ],
     });
     createRoot((dispose) => {
       const context = useActivityContext();
-      const display = context.entityDisplay(
+      const roadmap = context.entityDisplay(
         () => 'database-1',
         () => 'DATABASE'
       );
+      const hiring = context.entityDisplay(
+        () => 'database-2',
+        () => 'DATABASE'
+      );
 
-      expect(display.name()).toBe('Roadmap');
-      expect(display.isLoading()).toBe(false);
-      expect(display.blockOrFileType()).toBe('database');
-      expect(display.linkParams()).toBeUndefined();
+      expect(roadmap.name()).toBe('Roadmap');
+      expect(hiring.name()).toBe('Hiring');
+      expect(roadmap.isLoading()).toBe(false);
+      expect(roadmap.blockOrFileType()).toBe('database');
+      expect(roadmap.linkParams()).toBeUndefined();
+      expect(useDatabasesQuery).toHaveBeenCalledTimes(1);
       expect(usePropertyEntityDisplay).not.toHaveBeenCalled();
       dispose();
     });
   });
 
-  it('reads `Loading...` while the database loads and `Database` once it has failed', () => {
-    useDatabaseDetailQuery.mockReturnValue({
+  it('reads `Loading...` while the list loads and `Database unavailable` once it has failed', () => {
+    useDatabasesQuery.mockReturnValue({
       isPending: true,
       isSuccess: false,
       data: undefined,
@@ -168,7 +196,7 @@ describe('appActivityContext.entityDisplay', () => {
       dispose();
     });
 
-    useDatabaseDetailQuery.mockReturnValue({
+    useDatabasesQuery.mockReturnValue({
       isPending: false,
       isSuccess: false,
       isError: true,
@@ -180,8 +208,25 @@ describe('appActivityContext.entityDisplay', () => {
         () => 'database-1',
         () => 'DATABASE'
       );
-      expect(display.name()).toBe('Database');
+      expect(display.name()).toBe('Database unavailable');
       expect(display.isLoading()).toBe(false);
+      dispose();
+    });
+  });
+
+  it('reads `Database unavailable` for a database the viewer cannot list', () => {
+    useDatabasesQuery.mockReturnValue({
+      isPending: false,
+      isSuccess: true,
+      data: [],
+    });
+    createRoot((dispose) => {
+      const context = useActivityContext();
+      const display = context.entityDisplay(
+        () => 'database-1',
+        () => 'DATABASE'
+      );
+      expect(display.name()).toBe('Database unavailable');
       dispose();
     });
   });
@@ -194,7 +239,7 @@ describe('appActivityContext.entityDisplay', () => {
         () => 'DOCUMENT'
       );
       expect(usePropertyEntityDisplay).toHaveBeenCalledTimes(1);
-      expect(useDatabaseDetailQuery).not.toHaveBeenCalled();
+      expect(useDatabasesQuery).not.toHaveBeenCalled();
       dispose();
     });
   });
