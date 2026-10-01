@@ -5219,9 +5219,10 @@ export type DatabaseOp = {
     kind: 'update_view';
     /**
      * Its new layout. A board grouped by another column forgets where
-     * its cards were.
+     * its cards were; a board left without a card title keeps the one
+     * it has, or takes the table's first column.
      */
-    layout?: ViewLayout;
+    layout?: RequestedLayout;
     /**
      * Its new name.
      */
@@ -8755,9 +8756,10 @@ export type NewThreadAnchor = {
  */
 export type NewView = {
     /**
-     * How it draws them.
+     * How it draws them; a board left without a card title gets the
+     * table's first column.
      */
-    layout: ViewLayout;
+    layout: RequestedLayout;
     /**
      * Its name.
      */
@@ -9988,6 +9990,41 @@ export type ReplaceCrmStagesRequest = {
  * arrives preselected to this. Approval is what actually sets ownership.
  */
 export type RequestedHarnessScope = 'private' | 'team';
+
+/**
+ * A layout as an op asks for it: a board may leave its card title out.
+ */
+export type RequestedLayout = {
+    /**
+     * How columns show, in display order. A column left out shows
+     * after the listed ones, in the table's order.
+     */
+    columns: Array<ViewColumn>;
+    kind: 'table';
+} | {
+    /**
+     * The columns a card shows under its title, in order.
+     */
+    cardFields: Array<string>;
+    /**
+     * The single-select column whose options are the lanes.
+     */
+    groupBy: string;
+    /**
+     * Whether a lane with no cards is hidden.
+     */
+    hideEmptyLanes: boolean;
+    kind: 'board';
+    /**
+     * How lanes show, in display order.
+     */
+    lanes: Array<Lane>;
+    /**
+     * The column a card is titled by. Left out, a board keeps the
+     * title it has, and a new board takes the table's first column.
+     */
+    title?: string;
+};
 
 /**
  * Per-user status of an incoming-call ring, as reported by the
@@ -12834,10 +12871,6 @@ export type ViewColumn = {
      */
     column: string;
     /**
-     * Whether it is hidden.
-     */
-    hidden?: boolean;
-    /**
      * Its width in pixels; the default when unset.
      */
     width: number | null;
@@ -12855,7 +12888,7 @@ export type ViewLayout = {
     kind: 'table';
 } | {
     /**
-     * The columns a card shows, in order.
+     * The columns a card shows under its title, in order.
      */
     cardFields: Array<string>;
     /**
@@ -12874,6 +12907,11 @@ export type ViewLayout = {
      * without an option first.
      */
     lanes: Array<Lane>;
+    /**
+     * The column a card is titled by, of any type. Removing it titles
+     * the cards by the table's first remaining column.
+     */
+    title: string;
 };
 
 export type ViewPatch = {

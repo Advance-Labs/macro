@@ -7738,13 +7738,13 @@ export const SaveDatabaseView = z.object({
           z.object({
             column: z.string().uuid(),
             width: z.union([z.number().int().gte(0), z.null()]).optional(),
-            hidden: z.boolean().optional(),
           })
         ),
         kind: z.literal('table'),
       }),
       z.object({
         groupBy: z.string().uuid(),
+        title: z.union([z.string().uuid(), z.null()]).optional(),
         lanes: z.array(
           z.object({
             option: z.union([z.string().uuid(), z.null()]).optional(),

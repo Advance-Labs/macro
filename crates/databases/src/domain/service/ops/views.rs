@@ -5,10 +5,10 @@ use std::collections::{HashMap, HashSet};
 
 use models_databases::position::{key_between, keys_between};
 use models_databases::views::{
-    CardPosition, DatabaseView, NewView, ViewId, ViewLayout, ViewPosition, ViewQuery, arrange_lane,
-    check, place_card,
+    CardPosition, DatabaseView, NewView, RequestedLayout, ViewId, ViewLayout, ViewPosition,
+    ViewQuery, arrange_lane, check, place_card,
 };
-use models_databases::{DatabaseOp, OptionId};
+use models_databases::{ColumnId, DatabaseOp, OptionId};
 use models_properties::service::property_value::PropertyValue;
 
 use super::{Planner, refuse};
@@ -94,7 +94,8 @@ impl Planner {
                     layout,
                 } = view;
                 let name = self.view_name(index, entry, None, name)?;
-                self.check_view(index, entry, query, layout)?;
+                let layout = stored_layout(index, entry, layout, None)?;
+                self.check_view(index, entry, query, &layout)?;
                 let now = self.now;
                 let views = self.views_of(entry);
                 let position = key_between(views.last().map(|view| &view.position), None)
@@ -106,7 +107,7 @@ impl Planner {
                     name,
                     position,
                     query: query.clone(),
-                    layout: layout.clone(),
+                    layout,
                     created_at: now,
                     updated_at: now,
                 };
@@ -126,7 +127,10 @@ impl Planner {
                     None => current.name.clone(),
                 };
                 let query = query.clone().unwrap_or_else(|| current.query.clone());
-                let layout = layout.clone().unwrap_or_else(|| current.layout.clone());
+                let layout = match layout {
+                    Some(layout) => stored_layout(index, entry, layout, current.layout.title())?,
+                    None => current.layout.clone(),
+                };
                 self.check_view(index, entry, &query, &layout)?;
                 let regrouped = current.layout.group_by() != layout.group_by();
                 let view = DatabaseView {
@@ -412,6 +416,28 @@ impl Planner {
         }
         rewritten
     }
+}
+
+/// The layout an op asks for, as stored: a board without a card title keeps
+/// `current_title`, or takes the table's first column.
+fn stored_layout(
+    index: usize,
+    entry: &TableEntry,
+    layout: &RequestedLayout,
+    current_title: Option<ColumnId>,
+) -> Result<ViewLayout, DatabaseError> {
+    let first_column = entry.columns.first().map(|column| column.column.id);
+    layout
+        .clone()
+        .with_default_title(current_title.or(first_column))
+        .ok_or_else(|| {
+            refuse(
+                index,
+                None,
+                None,
+                "the table has no column to title a board's cards by",
+            )
+        })
 }
 
 /// The column a board groups by.

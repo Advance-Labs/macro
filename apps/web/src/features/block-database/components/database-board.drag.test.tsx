@@ -88,6 +88,7 @@ describe('board card drag', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'name',
           groupBy: 'stage',
           lanes: [],
           cardFields: [],
@@ -163,6 +164,7 @@ describe('board card drag', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'name',
           groupBy: 'stage',
           lanes: [],
           cardFields: [],
@@ -227,6 +229,7 @@ describe('board card drag', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'name',
           groupBy: 'stage',
           lanes: [],
           cardFields: [],
@@ -284,6 +287,7 @@ describe('board card drag', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'name',
           groupBy: 'stage',
           lanes: [],
           cardFields: [],
@@ -353,6 +357,7 @@ describe('board card drag', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'name',
           groupBy: 'stage',
           lanes: [],
           cardFields: [],
@@ -416,6 +421,7 @@ describe('board card drag', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'name',
           groupBy: 'stage',
           lanes: [],
           cardFields: [],
@@ -481,6 +487,7 @@ describe('board card drag', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'name',
           groupBy: 'stage',
           lanes: [],
           cardFields: [],
@@ -545,6 +552,7 @@ describe('board lane drag', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'name',
           groupBy: 'stage',
           lanes: [],
           cardFields: [],
@@ -618,6 +626,7 @@ describe('board lane drag', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'name',
           groupBy: 'stage',
           lanes: [],
           cardFields: [],
@@ -682,6 +691,7 @@ describe('board lane drag', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'name',
           groupBy: 'stage',
           lanes: [],
           cardFields: [],

@@ -95,6 +95,7 @@ describe('database board view', () => {
       query: { filter: null, sort: [] },
       layout: {
         kind: 'board',
+        title: 'name',
         groupBy: 'stage',
         lanes: [],
         cardFields: [],
@@ -242,6 +243,7 @@ describe('database board view', () => {
       query: { filter: null, sort: [] },
       layout: {
         kind: 'board',
+        title: 'name',
         groupBy: 'stage',
         lanes: [],
         cardFields: [],
@@ -397,6 +399,7 @@ describe('database board view', () => {
       query: { filter: null, sort: [] },
       layout: {
         kind: 'board',
+        title: 'name',
         groupBy: 'stage',
         lanes: [],
         cardFields: [],
@@ -521,6 +524,7 @@ describe('database board view', () => {
       },
       layout: {
         kind: 'board',
+        title: 'name',
         groupBy: 'stage',
         lanes: [],
         cardFields: [],
@@ -655,6 +659,7 @@ describe('database board view', () => {
       },
       layout: {
         kind: 'board',
+        title: 'name',
         groupBy: 'stage',
         lanes: [],
         cardFields: [],
@@ -770,6 +775,7 @@ describe('database board view', () => {
       query: { filter: null, sort: [] },
       layout: {
         kind: 'board',
+        title: 'name',
         groupBy: 'stage',
         lanes: [],
         cardFields: [],
@@ -873,6 +879,7 @@ describe('database board view', () => {
       query: { filter: null, sort: [] },
       layout: {
         kind: 'board',
+        title: 'name',
         groupBy: 'stage',
         lanes: [],
         cardFields: [],

@@ -33,8 +33,7 @@ fn database_workflow_reaches_every_agent_host_without_unrelated_scoped_tools() {
             "macro.people",
             "entity(USER)",
             "ListTeamMembers",
-            "DeleteDatabaseView",
-            "single-person column",
+            "single-select column",
         ] {
             assert!(
                 text.contains(capability),

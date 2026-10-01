@@ -4,8 +4,8 @@
 
 use models_databases::views::{
     CardPosition, Conjunction, FilterCondition, FilterGroup, FilterNode, FilterTest, Lane, NewView,
-    NumberOperator, SetOperator, SortDirection, SortKey, ViewColumn, ViewLayout, ViewPosition,
-    ViewQuery,
+    NumberOperator, RequestedLayout, SetOperator, SortDirection, SortKey, ViewColumn, ViewLayout,
+    ViewPosition, ViewQuery,
 };
 
 use super::*;
@@ -20,6 +20,7 @@ fn refusal(error: DatabaseError) -> OpRefusal {
 fn board(seeded: &Seeded) -> ViewLayout {
     ViewLayout::Board {
         group_by: seeded.status_column.id,
+        title: seeded.name_column.id,
         lanes: vec![],
         card_fields: vec![seeded.name_column.id],
         hide_empty_lanes: false,
@@ -43,7 +44,7 @@ async fn create_view(
                 view: NewView {
                     name: name.into(),
                     query,
-                    layout,
+                    layout: layout.into(),
                 },
             }]),
         )
@@ -103,7 +104,6 @@ async fn a_new_view_goes_after_the_tables_others_and_comes_with_the_detail() {
             columns: vec![ViewColumn {
                 column: seeded.name_column.id,
                 width: Some(240),
-                hidden: false,
             }],
         },
     )
@@ -125,7 +125,6 @@ async fn a_new_view_goes_after_the_tables_others_and_comes_with_the_detail() {
             columns: vec![ViewColumn {
                 column: seeded.name_column.id,
                 width: Some(240),
-                hidden: false,
             }],
         }
     );
@@ -158,7 +157,7 @@ async fn a_view_is_refused_when_it_does_not_fit_its_table() {
         view: NewView {
             name: name.into(),
             query,
-            layout,
+            layout: layout.into(),
         },
     };
     let cases = [
@@ -196,6 +195,7 @@ async fn a_view_is_refused_when_it_does_not_fit_its_table() {
                 ViewQuery::default(),
                 ViewLayout::Board {
                     group_by: seeded.name_column.id,
+                    title: seeded.name_column.id,
                     lanes: vec![],
                     card_fields: vec![],
                     hide_empty_lanes: false,
@@ -286,7 +286,7 @@ async fn an_update_changes_what_it_names_and_a_regrouped_board_forgets_its_cards
                 view: stages.id,
                 name: None,
                 query: None,
-                layout: Some(ViewLayout::Table { columns: vec![] }),
+                layout: Some(RequestedLayout::Table { columns: vec![] }),
             }]),
         )
         .await
@@ -673,6 +673,7 @@ async fn removing_a_column_takes_it_out_of_views_unless_a_board_groups_by_it() {
         },
         ViewLayout::Board {
             group_by: seeded.status_column.id,
+            title: seeded.name_column.id,
             lanes: vec![],
             card_fields: vec![seeded.name_column.id, seeded.plus_ones_column.id],
             hide_empty_lanes: false,
@@ -707,6 +708,7 @@ async fn removing_a_column_takes_it_out_of_views_unless_a_board_groups_by_it() {
             stored.layout,
             ViewLayout::Board {
                 group_by: seeded.status_column.id,
+                title: seeded.name_column.id,
                 lanes: vec![],
                 card_fields: vec![seeded.name_column.id],
                 hide_empty_lanes: false,
@@ -742,6 +744,181 @@ async fn removing_a_column_takes_it_out_of_views_unless_a_board_groups_by_it() {
 }
 
 #[tokio::test]
+async fn a_board_created_without_a_title_is_titled_by_the_first_column() {
+    let seeded = seeded().await;
+    let results = seeded
+        .service
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::CreateView {
+                table: seeded.table_id,
+                view: NewView {
+                    name: "Stages".into(),
+                    query: ViewQuery::default(),
+                    layout: RequestedLayout::Board {
+                        group_by: seeded.status_column.id,
+                        title: None,
+                        lanes: vec![],
+                        card_fields: vec![seeded.plus_ones_column.id],
+                        hide_empty_lanes: false,
+                    },
+                },
+            }]),
+        )
+        .await
+        .unwrap();
+    let [OpResult::ViewWritten { view, .. }] = results.as_slice() else {
+        panic!("expected a written view, got {results:?}");
+    };
+
+    assert_eq!(
+        view.layout,
+        ViewLayout::Board {
+            group_by: seeded.status_column.id,
+            title: seeded.name_column.id,
+            lanes: vec![],
+            card_fields: vec![seeded.plus_ones_column.id],
+            hide_empty_lanes: false,
+        }
+    );
+    assert_eq!(seeded.world.lock().unwrap().views[0].layout, view.layout);
+}
+
+#[tokio::test]
+async fn an_update_without_a_title_keeps_the_boards_title() {
+    let seeded = seeded().await;
+    let stages = create_view(
+        &seeded,
+        "Stages",
+        ViewQuery::default(),
+        ViewLayout::Board {
+            group_by: seeded.status_column.id,
+            title: seeded.plus_ones_column.id,
+            lanes: vec![],
+            card_fields: vec![],
+            hide_empty_lanes: false,
+        },
+    )
+    .await;
+
+    seeded
+        .service
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::UpdateView {
+                table: seeded.table_id,
+                view: stages.id,
+                name: None,
+                query: None,
+                layout: Some(RequestedLayout::Board {
+                    group_by: seeded.status_column.id,
+                    title: None,
+                    lanes: vec![],
+                    card_fields: vec![],
+                    hide_empty_lanes: true,
+                }),
+            }]),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        seeded.world.lock().unwrap().views[0].layout,
+        ViewLayout::Board {
+            group_by: seeded.status_column.id,
+            title: seeded.plus_ones_column.id,
+            lanes: vec![],
+            card_fields: vec![],
+            hide_empty_lanes: true,
+        }
+    );
+}
+
+#[tokio::test]
+async fn a_board_titled_by_an_unknown_column_is_refused() {
+    let seeded = seeded().await;
+    let ghost = ColumnId::new();
+    let error = seeded
+        .service
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::CreateView {
+                table: seeded.table_id,
+                view: NewView {
+                    name: "Stages".into(),
+                    query: ViewQuery::default(),
+                    layout: RequestedLayout::Board {
+                        group_by: seeded.status_column.id,
+                        title: Some(ghost),
+                        lanes: vec![],
+                        card_fields: vec![],
+                        hide_empty_lanes: false,
+                    },
+                },
+            }]),
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        refusal(error).reason,
+        format!("no column {ghost} in this table")
+    );
+    assert!(seeded.world.lock().unwrap().views.is_empty());
+}
+
+#[tokio::test]
+async fn removing_a_boards_title_column_titles_it_by_the_next_first_column() {
+    let seeded = seeded().await;
+    let stages = create_view(
+        &seeded,
+        "Stages",
+        ViewQuery::default(),
+        ViewLayout::Board {
+            group_by: seeded.status_column.id,
+            title: seeded.name_column.id,
+            lanes: vec![],
+            card_fields: vec![seeded.name_column.id, seeded.plus_ones_column.id],
+            hide_empty_lanes: false,
+        },
+    )
+    .await;
+    let version = table_version(&seeded.world, seeded.table_id);
+
+    seeded
+        .service
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            OpBatch {
+                ops: vec![DatabaseOp::DeleteColumn {
+                    table: seeded.table_id,
+                    column: seeded.name_column.id,
+                }],
+                base_versions: HashMap::from([(seeded.table_id, version)]),
+            },
+        )
+        .await
+        .unwrap();
+
+    let w = seeded.world.lock().unwrap();
+    let stored = w.views.iter().find(|view| view.id == stages.id).unwrap();
+    assert_eq!(
+        stored.layout,
+        ViewLayout::Board {
+            group_by: seeded.status_column.id,
+            title: seeded.status_column.id,
+            lanes: vec![],
+            card_fields: vec![seeded.plus_ones_column.id],
+            hide_empty_lanes: false,
+        }
+    );
+}
+
+#[tokio::test]
 async fn removing_an_option_takes_it_out_of_views_lanes_and_card_places() {
     let seeded = seeded().await;
     let status = seeded.status_column.property_definition_id;
@@ -765,6 +942,7 @@ async fn removing_an_option_takes_it_out_of_views_lanes_and_card_places() {
         },
         ViewLayout::Board {
             group_by: seeded.status_column.id,
+            title: seeded.name_column.id,
             lanes: vec![
                 Lane {
                     option: Some(going),
@@ -825,6 +1003,7 @@ async fn removing_an_option_takes_it_out_of_views_lanes_and_card_places() {
         stored.layout,
         ViewLayout::Board {
             group_by: seeded.status_column.id,
+            title: seeded.name_column.id,
             lanes: vec![Lane {
                 option: Some(declined),
                 hidden: true,

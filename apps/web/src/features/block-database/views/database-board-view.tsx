@@ -34,6 +34,7 @@ import {
   withMovedCards,
   withPositions,
 } from '../core/board-moves';
+import type { DatabaseEntityType } from '../core/column-inference';
 import {
   type DatabaseViewColumn,
   isBoardGroupColumn,
@@ -83,6 +84,7 @@ type DatabaseBoardViewProps = {
     label: string
   ) => Promise<Result<void, DatabaseOpsError>>;
   renderTextValue?: (value: string) => JSX.Element;
+  renderMentionValue?: (id: string, type: DatabaseEntityType) => JSX.Element;
   controlsRef?: (controls: DatabaseBoardControls) => void;
 };
 
@@ -295,6 +297,7 @@ function GroupedBoard(
     return props.onCreate({
       values: label === undefined ? {} : { [props.groupColumn.id]: label },
       title,
+      titleColumn: props.layout.title,
       intentId,
       open: options?.open ?? false,
     });
@@ -329,6 +332,7 @@ function GroupedBoard(
               layout={props.layout}
               groupColumn={props.groupColumn}
               renderTextValue={props.renderTextValue}
+              renderMentionValue={props.renderMentionValue}
               canEdit={canEdit()}
               rowPending={props.rowPending}
               createPending={props.createPending}

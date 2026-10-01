@@ -4,7 +4,7 @@
  * document_storage_service
  * OpenAPI spec version: 0.1.0
  */
-import type { ViewLayout } from './viewLayout';
+import type { RequestedLayout } from './requestedLayout';
 import type { ViewQuery } from './viewQuery';
 
 /**
@@ -12,8 +12,9 @@ import type { ViewQuery } from './viewQuery';
 position and times.
  */
 export interface NewView {
-  /** How it draws them. */
-  layout: ViewLayout;
+  /** How it draws them; a board left without a card title gets the
+table's first column. */
+  layout: RequestedLayout;
   /** Its name. */
   name: string;
   /** Which rows it shows, in what order. */

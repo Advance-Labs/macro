@@ -11,6 +11,7 @@ import type {
 import {
   canEditCell,
   type DatabaseRowMutation,
+  isWritableText,
   rowTitle,
   rowValue,
   titleColumn,
@@ -33,6 +34,8 @@ type HiddenSavedRecord = {
 export type RecordCreation = {
   values?: Record<string, DatabaseCellValue>;
   title?: string;
+  /** The column `title` goes in; the table's title column when unset. */
+  titleColumn?: string;
   open: boolean;
   intentId?: string;
 };
@@ -252,9 +255,14 @@ export function createRecordActions(options: {
   }
   async function createRow(creation: RecordCreation) {
     if (!options.canEdit()) return false;
-    const titleField = titleColumn(options.columns());
+    const titleField =
+      creation.titleColumn === undefined
+        ? titleColumn(options.columns())
+        : options
+            .columns()
+            .find((column) => column.id === creation.titleColumn);
     const values = { ...creation.values };
-    if (creation.title && titleField?.writable)
+    if (creation.title && isWritableText(titleField))
       values[titleField.id] = creation.title;
     const saved = await controller.save(
       { kind: 'create', values },

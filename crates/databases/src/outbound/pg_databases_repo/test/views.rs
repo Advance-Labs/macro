@@ -2,7 +2,9 @@
 //! and views and card places through the ops.
 
 use models_databases::position::{Position, key_between, keys_between};
-use models_databases::views::{CardPosition, Lane, NewView, ViewLayout, ViewQuery};
+use models_databases::views::{
+    CardPosition, Lane, NewView, RequestedLayout, ViewLayout, ViewQuery,
+};
 use models_databases::{
     CellValue, CellWrite, DatabaseOp, NewOption, OpResult, OptionId, OptionRef, RowId,
 };
@@ -149,8 +151,9 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
                 view: NewView {
                     name: "Stages".into(),
                     query: ViewQuery::default(),
-                    layout: ViewLayout::Board {
+                    layout: RequestedLayout::Board {
                         group_by: guests.status,
+                        title: Some(guests.name),
                         lanes: vec![
                             Lane {
                                 option: Some(maybe),
@@ -256,6 +259,7 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
         repo.views_for_tables(&[guests.table_id]).await.unwrap()[0].layout,
         ViewLayout::Board {
             group_by: guests.status,
+            title: guests.name,
             lanes: vec![Lane {
                 option: Some(going),
                 hidden: false,
@@ -296,8 +300,9 @@ async fn removing_a_column_rewrites_the_views_that_named_it(pool: PgPool) {
                 view: NewView {
                     name: "Stages".into(),
                     query: ViewQuery::default(),
-                    layout: ViewLayout::Board {
+                    layout: RequestedLayout::Board {
                         group_by: guests.status,
+                        title: Some(guests.name),
                         lanes: vec![],
                         card_fields: vec![guests.name],
                         hide_empty_lanes: false,
@@ -336,10 +341,12 @@ async fn removing_a_column_rewrites_the_views_that_named_it(pool: PgPool) {
         .unwrap();
     assert_eq!(stored.len(), 1);
     assert_eq!(stored[0].id, board.id);
+    // The board was titled by the removed Name; Status is now first.
     assert_eq!(
         stored[0].layout,
         ViewLayout::Board {
             group_by: guests.status,
+            title: guests.status,
             lanes: vec![],
             card_fields: vec![],
             hide_empty_lanes: false,

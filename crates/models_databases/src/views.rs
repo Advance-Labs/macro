@@ -61,8 +61,9 @@ pub struct NewView {
     /// Which rows it shows, in what order.
     #[serde(default)]
     pub query: ViewQuery,
-    /// How it draws them.
-    pub layout: ViewLayout,
+    /// How it draws them; a board left without a card title gets the
+    /// table's first column.
+    pub layout: RequestedLayout,
 }
 
 /// Which rows of the table a view shows, and in what order: a filter and a
@@ -335,16 +336,98 @@ pub enum ViewLayout {
         /// card to another lane sets this column.
         #[schema(value_type = Uuid)]
         group_by: ColumnId,
+        /// The column a card is titled by, of any type. Removing it titles
+        /// the cards by the table's first remaining column.
+        #[schema(value_type = Uuid)]
+        title: ColumnId,
         /// How lanes show, in display order. A lane left out shows after the
         /// listed ones, options in the column's order; the lane of cards
         /// without an option first.
         lanes: Vec<Lane>,
-        /// The columns a card shows, in order.
+        /// The columns a card shows under its title, in order.
         #[schema(value_type = Vec<Uuid>)]
         card_fields: Vec<ColumnId>,
         /// Whether a lane with no cards is hidden.
         hide_empty_lanes: bool,
     },
+}
+
+/// A layout as an op asks for it: a board may leave its card title out.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum RequestedLayout {
+    /// A grid with a row per row.
+    Table {
+        /// How columns show, in display order. A column left out shows
+        /// after the listed ones, in the table's order.
+        columns: Vec<ViewColumn>,
+    },
+    /// Cards in lanes, one lane per option of a single-select column plus
+    /// one for cards without one.
+    #[serde(rename_all = "camelCase")]
+    Board {
+        /// The single-select column whose options are the lanes.
+        #[schema(value_type = Uuid)]
+        group_by: ColumnId,
+        /// The column a card is titled by. Left out, a board keeps the
+        /// title it has, and a new board takes the table's first column.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schema(value_type = Option<Uuid>, nullable = false)]
+        #[specta(optional)]
+        title: Option<ColumnId>,
+        /// How lanes show, in display order.
+        lanes: Vec<Lane>,
+        /// The columns a card shows under its title, in order.
+        #[schema(value_type = Vec<Uuid>)]
+        card_fields: Vec<ColumnId>,
+        /// Whether a lane with no cards is hidden.
+        hide_empty_lanes: bool,
+    },
+}
+
+impl RequestedLayout {
+    /// The layout to store: a board without a title takes `default_title`,
+    /// or answers `None` when there is none to take.
+    pub fn with_default_title(self, default_title: Option<ColumnId>) -> Option<ViewLayout> {
+        match self {
+            RequestedLayout::Table { columns } => Some(ViewLayout::Table { columns }),
+            RequestedLayout::Board {
+                group_by,
+                title,
+                lanes,
+                card_fields,
+                hide_empty_lanes,
+            } => Some(ViewLayout::Board {
+                group_by,
+                title: title.or(default_title)?,
+                lanes,
+                card_fields,
+                hide_empty_lanes,
+            }),
+        }
+    }
+}
+
+impl From<ViewLayout> for RequestedLayout {
+    fn from(layout: ViewLayout) -> Self {
+        match layout {
+            ViewLayout::Table { columns } => RequestedLayout::Table { columns },
+            ViewLayout::Board {
+                group_by,
+                title,
+                lanes,
+                card_fields,
+                hide_empty_lanes,
+            } => RequestedLayout::Board {
+                group_by,
+                title: Some(title),
+                lanes,
+                card_fields,
+                hide_empty_lanes,
+            },
+        }
+    }
 }
 
 /// How one column shows in a table layout.
@@ -359,9 +442,6 @@ pub struct ViewColumn {
     #[serde(default)]
     #[schema(required = true)]
     pub width: Option<u32>,
-    /// Whether it is hidden.
-    #[serde(default)]
-    pub hidden: bool,
 }
 
 /// How one lane shows in a board layout.
@@ -510,9 +590,15 @@ impl FilterGroup {
 
 impl ViewLayout {
     /// The layout without `column` among its columns or card fields. A
-    /// board grouped by it has nothing to fall back on, so it answers
-    /// `None`: the view goes before the column can.
-    pub fn without_column(&self, column: ColumnId) -> Option<ViewLayout> {
+    /// board titled by it is titled by `next_title` instead, the table's
+    /// first column once `column` is gone. A board grouped by it has
+    /// nothing to fall back on, so it answers `None`: the view goes before
+    /// the column can.
+    pub fn without_column(
+        &self,
+        column: ColumnId,
+        next_title: Option<ColumnId>,
+    ) -> Option<ViewLayout> {
         match self {
             ViewLayout::Table { columns } => Some(ViewLayout::Table {
                 columns: columns
@@ -524,11 +610,17 @@ impl ViewLayout {
             ViewLayout::Board { group_by, .. } if *group_by == column => None,
             ViewLayout::Board {
                 group_by,
+                title,
                 lanes,
                 card_fields,
                 hide_empty_lanes,
             } => Some(ViewLayout::Board {
                 group_by: *group_by,
+                title: if *title == column {
+                    next_title?
+                } else {
+                    *title
+                },
                 lanes: lanes.clone(),
                 card_fields: card_fields
                     .iter()
@@ -545,11 +637,13 @@ impl ViewLayout {
         match self {
             ViewLayout::Board {
                 group_by,
+                title,
                 lanes,
                 card_fields,
                 hide_empty_lanes,
             } if *group_by == column => ViewLayout::Board {
                 group_by: *group_by,
+                title: *title,
                 lanes: lanes
                     .iter()
                     .filter(|lane| lane.option != Some(option))
@@ -566,6 +660,14 @@ impl ViewLayout {
     pub fn group_by(&self) -> Option<ColumnId> {
         match self {
             ViewLayout::Board { group_by, .. } => Some(*group_by),
+            ViewLayout::Table { .. } => None,
+        }
+    }
+
+    /// The board's card title column, for a board.
+    pub fn title(&self) -> Option<ColumnId> {
+        match self {
+            ViewLayout::Board { title, .. } => Some(*title),
             ViewLayout::Table { .. } => None,
         }
     }

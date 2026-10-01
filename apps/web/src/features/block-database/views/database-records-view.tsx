@@ -455,6 +455,7 @@ export function DatabaseRecordsView(props: {
                 !props.stored || props.canEdit ? props.onViewChange : undefined
               }
               renderTextValue={props.renderTextValue}
+              renderMentionValue={props.renderMentionValue}
               rowPending={controller.rowPending}
               createPending={controller.createPending}
               createComplete={controller.createComplete}

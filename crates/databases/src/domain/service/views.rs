@@ -48,17 +48,20 @@ where
 }
 
 /// The views of a table that refer to `column`, rewritten without it, for
-/// the column's removal. A board grouped by it has nothing else to group
-/// by, so the removal waits for the board to go or regroup.
+/// the column's removal. A board titled by it is titled by `next_title`,
+/// the table's first column once `column` is gone. A board grouped by it
+/// has nothing else to group by, so the removal waits for the board to go
+/// or regroup.
 pub(super) fn views_without_column(
     views: &[DatabaseView],
     column: ColumnId,
+    next_title: Option<ColumnId>,
     now: DateTime<Utc>,
 ) -> Result<Vec<DatabaseView>, SchemaError> {
     views
         .iter()
         .filter_map(|view| {
-            let Some(layout) = view.layout.without_column(column) else {
+            let Some(layout) = view.layout.without_column(column, next_title) else {
                 return Some(Err(SchemaError::BoardGroupsByRemovedColumn {
                     board: view.name.clone(),
                 }));

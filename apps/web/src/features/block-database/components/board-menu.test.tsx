@@ -68,6 +68,7 @@ describe('board menu', () => {
       <BoardMenu
         layout={{
           kind: 'board',
+          title: 'name',
           groupBy: 'status',
           lanes: [{ option: 'option-done', hidden: true }],
           cardFields: ['priority'],
@@ -89,7 +90,44 @@ describe('board menu', () => {
     );
     expect(change).toHaveBeenCalledExactlyOnceWith({
       kind: 'board',
+      title: 'name',
       groupBy: 'priority',
+      lanes: [],
+      cardFields: ['priority'],
+      hideEmptyLanes: false,
+    });
+  });
+
+  it('titles the cards by another column', async () => {
+    const change = vi.fn();
+    render(() => (
+      <BoardMenu
+        layout={{
+          kind: 'board',
+          title: 'name',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: ['priority'],
+          hideEmptyLanes: false,
+        }}
+        columns={columns}
+        onChange={change}
+      />
+    ));
+    await openSubmenu('Card title');
+    expect(
+      screen
+        .getByRole('menuitemradio', { name: 'Name' })
+        .getAttribute('aria-checked')
+    ).toBe('true');
+    fireEvent.keyDown(
+      await screen.findByRole('menuitemradio', { name: 'Priority' }),
+      { key: 'Enter' }
+    );
+    expect(change).toHaveBeenCalledExactlyOnceWith({
+      kind: 'board',
+      title: 'priority',
+      groupBy: 'status',
       lanes: [],
       cardFields: ['priority'],
       hideEmptyLanes: false,
@@ -102,6 +140,7 @@ describe('board menu', () => {
       <BoardMenu
         layout={{
           kind: 'board',
+          title: 'name',
           groupBy: 'status',
           lanes: [],
           cardFields: ['priority'],
@@ -121,6 +160,7 @@ describe('board menu', () => {
     );
     expect(change).toHaveBeenLastCalledWith({
       kind: 'board',
+      title: 'name',
       groupBy: 'status',
       lanes: [],
       cardFields: ['priority', 'name'],
@@ -132,6 +172,7 @@ describe('board menu', () => {
     );
     expect(change).toHaveBeenLastCalledWith({
       kind: 'board',
+      title: 'name',
       groupBy: 'status',
       lanes: [],
       cardFields: [],
@@ -145,6 +186,7 @@ describe('board menu', () => {
       <BoardMenu
         layout={{
           kind: 'board',
+          title: 'name',
           groupBy: 'status',
           lanes: [
             { option: 'option-done', hidden: true },
@@ -166,6 +208,7 @@ describe('board menu', () => {
     );
     expect(change).toHaveBeenLastCalledWith({
       kind: 'board',
+      title: 'name',
       groupBy: 'status',
       lanes: [
         { option: 'option-done', hidden: true },
@@ -186,6 +229,7 @@ describe('board menu', () => {
     await waitFor(() =>
       expect(change).toHaveBeenLastCalledWith({
         kind: 'board',
+        title: 'name',
         groupBy: 'status',
         lanes: [
           { option: 'option-done', hidden: false },

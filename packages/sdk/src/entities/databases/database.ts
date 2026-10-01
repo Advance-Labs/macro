@@ -526,8 +526,8 @@ export class Database extends MacroEntity<DatabaseDetail> {
   }
 
   /**
-   * Persist a complete column order, including currently hidden columns, at
-   * the table version last read. Pass every column of the table exactly once.
+   * Persist a complete column order at the table version last read. Pass
+   * every column of the table exactly once.
    * Returns the table's new version.
    */
   async reorderColumns(

@@ -2,7 +2,7 @@
 //! a new name and replacing the view of a name the table has.
 
 use models_databases::DatabaseOp;
-use models_databases::views::{NewView, ViewLayout, ViewQuery};
+use models_databases::views::{NewView, RequestedLayout, ViewLayout, ViewQuery};
 
 use super::*;
 
@@ -13,8 +13,9 @@ fn board() -> SaveDatabaseView {
         name: "Stages".into(),
         filter: None,
         sort: vec![],
-        layout: ViewLayout::Board {
+        layout: RequestedLayout::Board {
             group_by: COLUMN_ID,
+            title: None,
             lanes: vec![],
             card_fields: vec![],
             hide_empty_lanes: true,
@@ -40,8 +41,9 @@ async fn a_new_name_creates_the_view_through_an_op() {
             view: NewView {
                 name: "Stages".into(),
                 query: ViewQuery::default(),
-                layout: ViewLayout::Board {
+                layout: RequestedLayout::Board {
                     group_by: COLUMN_ID,
+                    title: None,
                     lanes: vec![],
                     card_fields: vec![],
                     hide_empty_lanes: true,
@@ -84,8 +86,9 @@ async fn the_name_of_an_existing_view_replaces_it() {
             view: VIEW_ID,
             name: Some("Stages".into()),
             query: Some(ViewQuery::default()),
-            layout: Some(ViewLayout::Board {
+            layout: Some(RequestedLayout::Board {
                 group_by: COLUMN_ID,
+                title: None,
                 lanes: vec![],
                 card_fields: vec![],
                 hide_empty_lanes: true,

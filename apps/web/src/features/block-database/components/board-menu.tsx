@@ -6,6 +6,7 @@ import { Dropdown } from '@ui/components/Dropdown';
 import { For, type JSX, Show } from 'solid-js';
 import type { DatabaseViewColumn } from '../core/database-view';
 import { boardGroupColumns, laneLabel, withLaneHidden } from '../core/views';
+import { BoardCardTitlePicker } from './board-card-title-picker';
 
 type BoardLayout = Extract<ViewLayout, { kind: 'board' }>;
 
@@ -26,6 +27,7 @@ export function BoardMenu(props: BoardMenuItemProps) {
       <Dropdown.Content class="min-w-48">
         <Dropdown.Group>
           <GroupByItem {...props} />
+          <BoardCardTitlePicker {...props} />
           <CardFieldsItem {...props} />
           <HideEmptyLanesItem {...props} />
           <HiddenLanesItem {...props} />

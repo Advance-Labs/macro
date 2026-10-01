@@ -1415,9 +1415,9 @@ export type SetOperator =
  */
 export type SortDirection = 'ascending' | 'descending';
 /**
- * How a view draws its rows.
+ * A layout as an op asks for it: a board may leave its card title out.
  */
-export type ViewLayout =
+export type RequestedLayout =
   | {
       /**
        * How columns show, in display order. A column left out shows
@@ -1428,18 +1428,20 @@ export type ViewLayout =
     }
   | {
       /**
-       * The single-select column whose options are the lanes; moving a
-       * card to another lane sets this column.
+       * The single-select column whose options are the lanes.
        */
       groupBy: string;
       /**
-       * How lanes show, in display order. A lane left out shows after the
-       * listed ones, options in the column's order; the lane of cards
-       * without an option first.
+       * The column a card is titled by. Left out, a board keeps the
+       * title it has, and a new board takes the table's first column.
+       */
+      title?: string | null;
+      /**
+       * How lanes show, in display order.
        */
       lanes: Lane[];
       /**
-       * The columns a card shows, in order.
+       * The columns a card shows under its title, in order.
        */
       cardFields: string[];
       /**
@@ -6122,7 +6124,7 @@ export interface NameSearch {
  * - **Person and other entity columns hold Macro ids,** never names: `'macro|sam@example.com'` for a person, a list for a multi-valued column. Respect each column's `specificEntityType`.
  * - **People:** `macro.people` is everyone the user knows (contacts and teammates) with `id`, `name` and `email`, the viewer included: “me” is the row whose email is the signed-in user's. It is read-only. Find people there, then write their ids: `SELECT id, name, email FROM macro.people WHERE name LIKE '%julia%' OR email LIKE '%julia%'`, then `UPDATE "Parties" SET "Host" = 'macro|julia@example.com' WHERE row_id = '<id>'`. Join to read names or emails: `JOIN macro.people p ON t."Owner" = p.id`. Never invent a person or an id; when a name matches several people or none, ask.
  * - **Changing a column's type:** `ALTER TABLE table ALTER COLUMN col TYPE type`, the same change as ChangeColumnType, where type is text, number, boolean, date, link, select, select_number, tag, or entity(USER), entity(DOCUMENT), entity(TASK)…, with `[]` for several values (`select[]`). Pick from the column's `safeTypes` and `checkedTypes`. A value that does not fit, or a multi-valued cell a single-valued type would truncate, refuses the statement with counts and examples: fix those values with UPDATE, or add a new column.
- * - **Other schema changes use tools, not SQL:** CreateDatabase, RenameDatabase, CreateTable, RenameTable, ReorderTables, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns, SaveDatabaseView and DeleteDatabaseView.
+ * - **Other schema changes use tools, not SQL:** CreateDatabase, RenameDatabase, CreateTable, RenameTable, ReorderTables, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.
  * - Tables you only hold view access on are read-only.
  *
  * To change records, first SELECT the rows you mean (their ids are in `rowIds`), then UPDATE or DELETE exactly those with `WHERE row_id IN (...)`. After changing rows, SELECT the affected records to verify the actual result. On a connection failure, inspect before retrying an INSERT.
@@ -7705,7 +7707,7 @@ export interface SaveDatabaseQueryResponse {
   markdown: string;
 }
 /**
- * Save a table or kanban board view of one table of a Macro database. Views are shared with everyone who can open the database, so saving one needs edit access. Call DescribeDatabase first: a view names columns and select options by their ids, never by name. The filter's conditions combine with one `and` or `or`, each test fitting its column's type (text, number, date, checkbox, options, entities, or presence for any column); sort keys order the rows. A board groups its cards into lanes by a single-select or single-person column, one lane per value plus one for cards without; a multi-valued column cannot group a board. A card's title is a column, the first by default. Saving under a name the table already has replaces that view, so read `created` in the result; DeleteDatabaseView removes one. Views change presentation, never records, and cannot save charts or SQL.
+ * Save a table or kanban board view of one table of a Macro database. Views are shared with everyone who can open the database, so saving one needs edit access. Call DescribeDatabase first: a view names columns and select options by their ids, never by name. The filter's conditions combine with one `and` or `or`, each test fitting its column's type (text, number, date, checkbox, options, entities, or presence for any column); sort keys order the rows. A board groups its cards into lanes by a single-select column, one lane per option plus one for cards without; no other column type can group a board. A card's title is a column, the first by default. Saving under a name the table already has replaces that view, so read `created` in the result. Views change presentation, never records, and cannot save charts or SQL.
  */
 export interface SaveDatabaseView {
   /**
@@ -7728,7 +7730,7 @@ export interface SaveDatabaseView {
    * The sort keys, first key first; the table's own order when empty.
    */
   sort?: SortKey[];
-  layout: ViewLayout;
+  layout: RequestedLayout;
 }
 /**
  * Conditions joined by one conjunction. Views saved here filter on one
@@ -7773,10 +7775,6 @@ export interface ViewColumn {
    * Its width in pixels; the default when unset.
    */
   width?: number | null;
-  /**
-   * Whether it is hidden.
-   */
-  hidden?: boolean;
 }
 /**
  * How one lane shows in a board layout.

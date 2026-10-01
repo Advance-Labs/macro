@@ -68,8 +68,8 @@ impl Default for StarterBlueprint {
 
 impl StarterBlueprint {
     /// Two views of the same records: every column as a table, and a board
-    /// of the ideas by stage, one lane per stage in order, each card showing
-    /// its title.
+    /// of the ideas by stage, one lane per stage in order, each card titled
+    /// by the idea.
     pub fn views(
         &self,
         title_column: ColumnId,
@@ -104,6 +104,7 @@ impl StarterBlueprint {
                 board_position,
                 ViewLayout::Board {
                     group_by: stage_column,
+                    title: title_column,
                     lanes: stage_options
                         .iter()
                         .map(|option| Lane {
@@ -111,7 +112,7 @@ impl StarterBlueprint {
                             hidden: false,
                         })
                         .collect(),
-                    card_fields: vec![title_column],
+                    card_fields: Vec::new(),
                     hide_empty_lanes: false,
                 },
             ),

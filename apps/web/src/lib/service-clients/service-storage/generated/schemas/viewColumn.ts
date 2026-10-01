@@ -12,8 +12,6 @@ import type { ViewColumnWidth } from './viewColumnWidth';
 export interface ViewColumn {
   /** The column. */
   column: string;
-  /** Whether it is hidden. */
-  hidden?: boolean;
   /**
    * Its width in pixels; the default when unset.
    * @minimum 0

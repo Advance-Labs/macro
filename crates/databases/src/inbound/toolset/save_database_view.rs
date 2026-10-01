@@ -8,8 +8,8 @@ use ai_toolset::{
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
 use models_databases::views::{
-    Conjunction, DatabaseView, FilterCondition, FilterGroup, FilterNode, NewView, SortKey,
-    ViewLayout, ViewQuery,
+    Conjunction, DatabaseView, FilterCondition, FilterGroup, FilterNode, NewView, RequestedLayout,
+    SortKey, ViewQuery,
 };
 use models_databases::{DatabaseId, TableId};
 use models_databases::{DatabaseOp, OpResult};
@@ -31,11 +31,11 @@ everyone who can open the database, so saving one needs edit access. Call Descri
 first: a view names columns and select options by their ids, never by name. The filter's \
 conditions combine with one `and` or `or`, each test fitting its column's type (text, \
 number, date, checkbox, options, entities, or presence for any column); sort keys order the \
-rows. A board groups its cards into lanes by a single-select or single-person column, one \
-lane per value plus one for cards without; a multi-valued column cannot group a board. A \
-card's title is a column, the first by default. Saving under a name the table already has \
-replaces that view, so read `created` in the result; DeleteDatabaseView removes one. Views \
-change presentation, never records, and cannot save charts or SQL."
+rows. A board groups its cards into lanes by a single-select column, one lane per option \
+plus one for cards without; no other column type can group a board. A card's title is a \
+column, the first by default. Saving under a name the table already has replaces that view, \
+so read `created` in the result. Views change presentation, never records, and cannot save \
+charts or SQL."
 )]
 pub struct SaveDatabaseView {
     /// Database id from ListDatabases.
@@ -50,8 +50,10 @@ pub struct SaveDatabaseView {
     /// The sort keys, first key first; the table's own order when empty.
     #[serde(default)]
     pub sort: Vec<SortKey>,
-    /// How it draws them: a table, or a board.
-    pub layout: ViewLayout,
+    /// How it draws them: a table, or a board. A board's `title` is the
+    /// column its cards are titled by; left out, a board keeps its title,
+    /// and a new one is titled by the table's first column.
+    pub layout: RequestedLayout,
 }
 
 /// Conditions joined by one conjunction. Views saved here filter on one

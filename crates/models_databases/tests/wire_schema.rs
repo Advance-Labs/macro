@@ -6,8 +6,9 @@
 use chrono::{TimeZone, Utc};
 use models_databases::views::{
     CardPosition, Conjunction, DatabaseView, DateOperator, FilterCondition, FilterGroup,
-    FilterNode, FilterTest, Lane, NewView, NumberOperator, PresenceOperator, SetOperator,
-    SortDirection, SortKey, TextOperator, ViewColumn, ViewLayout, ViewPosition, ViewQuery,
+    FilterNode, FilterTest, Lane, NewView, NumberOperator, PresenceOperator, RequestedLayout,
+    SetOperator, SortDirection, SortKey, TextOperator, ViewColumn, ViewLayout, ViewPosition,
+    ViewQuery,
 };
 use models_databases::{
     CellValue, CellWrite, ColumnId, ColumnKind, DatabaseId, DatabaseOp, EntityKind, EntityRef,
@@ -74,6 +75,7 @@ fn every_filter_test() -> FilterGroup {
 fn board() -> ViewLayout {
     ViewLayout::Board {
         group_by: STATUS,
+        title: NAME,
         lanes: vec![
             Lane {
                 option: Some(DONE),
@@ -94,7 +96,6 @@ fn table() -> ViewLayout {
         columns: vec![ViewColumn {
             column: NAME,
             width: Some(120),
-            hidden: false,
         }],
     }
 }
@@ -251,7 +252,13 @@ fn ops() -> Vec<DatabaseOp> {
             view: NewView {
                 name: "Board".into(),
                 query: query(),
-                layout: board(),
+                layout: RequestedLayout::Board {
+                    group_by: STATUS,
+                    title: None,
+                    lanes: vec![],
+                    card_fields: vec![NAME],
+                    hide_empty_lanes: false,
+                },
             },
         },
         DatabaseOp::UpdateView {
@@ -259,14 +266,14 @@ fn ops() -> Vec<DatabaseOp> {
             view: VIEW,
             name: Some("Grid".into()),
             query: Some(query()),
-            layout: Some(table()),
+            layout: Some(table().into()),
         },
         DatabaseOp::UpdateView {
             table: TABLE,
             view: VIEW,
             name: None,
             query: None,
-            layout: Some(board()),
+            layout: Some(board().into()),
         },
         DatabaseOp::DeleteView {
             table: TABLE,

@@ -652,6 +652,7 @@ describe('database toolbar view controls', () => {
             query: { filter: null, sort: [] },
             layout: {
               kind: 'board',
+              title: 'name',
               groupBy: 'status',
               lanes: [],
               cardFields: [],
@@ -670,6 +671,7 @@ describe('database toolbar view controls', () => {
           query: { filter: null, sort: [] },
           layout: {
             kind: 'board',
+            title: 'name',
             groupBy: 'status',
             lanes: [],
             cardFields: [],

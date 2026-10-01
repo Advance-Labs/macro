@@ -182,10 +182,12 @@ pub fn check(
         }
         ViewLayout::Board {
             group_by,
+            title,
             lanes,
             card_fields,
             ..
         } => {
+            column(*title)?;
             let grouping = column(*group_by)?;
             if grouping.values != ValueKind::Options || grouping.multi {
                 return Err(ViewProblem::BoardNeedsSingleSelect {

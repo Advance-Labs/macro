@@ -24466,8 +24466,8 @@
                 "enum": ["update_view"]
               },
               "layout": {
-                "$ref": "#/components/schemas/ViewLayout",
-                "description": "Its new layout. A board grouped by another column forgets where\nits cards were."
+                "$ref": "#/components/schemas/RequestedLayout",
+                "description": "Its new layout. A board grouped by another column forgets where\nits cards were; a board left without a card title keeps the one\nit has, or takes the table's first column."
               },
               "name": {
                 "type": "string",
@@ -30492,8 +30492,8 @@
         "required": ["name", "layout"],
         "properties": {
           "layout": {
-            "$ref": "#/components/schemas/ViewLayout",
-            "description": "How it draws them."
+            "$ref": "#/components/schemas/RequestedLayout",
+            "description": "How it draws them; a board left without a card title gets the\ntable's first column."
           },
           "name": {
             "type": "string",
@@ -32887,6 +32887,75 @@
         "type": "string",
         "description": "The ownership scope a daemon's config asks for.\n\nAdvisory, not binding: the approving user confirms it in the dialog, which\narrives preselected to this. Approval is what actually sets ownership.",
         "enum": ["private", "team"]
+      },
+      "RequestedLayout": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "A grid with a row per row.",
+            "required": ["columns", "kind"],
+            "properties": {
+              "columns": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ViewColumn"
+                },
+                "description": "How columns show, in display order. A column left out shows\nafter the listed ones, in the table's order."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["table"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Cards in lanes, one lane per option of a single-select column plus\none for cards without one.",
+            "required": [
+              "groupBy",
+              "lanes",
+              "cardFields",
+              "hideEmptyLanes",
+              "kind"
+            ],
+            "properties": {
+              "cardFields": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "The columns a card shows under its title, in order."
+              },
+              "groupBy": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The single-select column whose options are the lanes."
+              },
+              "hideEmptyLanes": {
+                "type": "boolean",
+                "description": "Whether a lane with no cards is hidden."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["board"]
+              },
+              "lanes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Lane"
+                },
+                "description": "How lanes show, in display order."
+              },
+              "title": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The column a card is titled by. Left out, a board keeps the\ntitle it has, and a new board takes the table's first column."
+              }
+            }
+          }
+        ],
+        "description": "A layout as an op asks for it: a board may leave its card title out."
       },
       "RingStatus": {
         "type": "string",
@@ -37126,10 +37195,6 @@
             "format": "uuid",
             "description": "The column."
           },
-          "hidden": {
-            "type": "boolean",
-            "description": "Whether it is hidden."
-          },
           "width": {
             "type": ["integer", "null"],
             "format": "int32",
@@ -37163,6 +37228,7 @@
             "description": "Cards in lanes, one lane per option of a single-select column plus\none for cards without one. A multi-select column cannot group a\nboard: a card is in exactly one lane, so a card in several would need\na place in each.",
             "required": [
               "groupBy",
+              "title",
               "lanes",
               "cardFields",
               "hideEmptyLanes",
@@ -37175,7 +37241,7 @@
                   "type": "string",
                   "format": "uuid"
                 },
-                "description": "The columns a card shows, in order."
+                "description": "The columns a card shows under its title, in order."
               },
               "groupBy": {
                 "type": "string",
@@ -37196,6 +37262,11 @@
                   "$ref": "#/components/schemas/Lane"
                 },
                 "description": "How lanes show, in display order. A lane left out shows after the\nlisted ones, options in the column's order; the lane of cards\nwithout an option first."
+              },
+              "title": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The column a card is titled by, of any type. Removing it titles\nthe cards by the table's first remaining column."
               }
             }
           }

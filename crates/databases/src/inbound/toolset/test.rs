@@ -268,7 +268,10 @@ impl DatabasesService for FakeService {
                         name: view.name,
                         position: "80".parse::<Position>().unwrap(),
                         query: view.query,
-                        layout: view.layout,
+                        layout: view
+                            .layout
+                            .with_default_title(Some(COLUMN_ID))
+                            .expect("a title to default to"),
                         created_at: at,
                         updated_at: at,
                     }),
@@ -291,7 +294,9 @@ impl DatabasesService for FakeService {
                         view: Box::new(crate::domain::models::DatabaseView {
                             name: name.unwrap_or(current.name),
                             query: query.unwrap_or(current.query),
-                            layout: layout.unwrap_or(current.layout),
+                            layout: layout
+                                .and_then(|layout| layout.with_default_title(Some(COLUMN_ID)))
+                                .unwrap_or(current.layout),
                             ..current
                         }),
                     }

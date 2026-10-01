@@ -8,11 +8,10 @@ import { type DatabaseViewColumn, isBoardGroupColumn } from './database-view';
 import { moveBeside } from './move-beside';
 import { titleColumn } from './table';
 
-/** A table layout's column, with how it shows. */
+/** A table layout's column, with its width. */
 type LayoutColumn = {
   column: DatabaseViewColumn;
   width: number | null;
-  hidden: boolean;
 };
 
 /**
@@ -27,16 +26,14 @@ export function layoutColumns(
   const byId = new Map(columns.map((column) => [column.id, column]));
   const shown = listed.flatMap((entry) => {
     const column = byId.get(entry.column);
-    return column
-      ? [{ column, width: entry.width ?? null, hidden: !!entry.hidden }]
-      : [];
+    return column ? [{ column, width: entry.width ?? null }] : [];
   });
   const named = new Set(shown.map((entry) => entry.column.id));
   return [
     ...shown,
     ...columns
       .filter((column) => !named.has(column.id))
-      .map((column) => ({ column, width: null, hidden: false })),
+      .map((column) => ({ column, width: null })),
   ];
 }
 
@@ -47,18 +44,17 @@ function tableLayout(entries: readonly LayoutColumn[]): ViewLayout {
       (entry): ViewColumn => ({
         column: entry.column.id,
         width: entry.width,
-        hidden: entry.hidden,
       })
     ),
   };
 }
 
-/** The table layout with one column's width or visibility changed. */
+/** The table layout with one column's width changed. */
 export function withLayoutColumn(
   layout: ViewLayout,
   columns: readonly DatabaseViewColumn[],
   columnId: string,
-  change: Partial<Pick<LayoutColumn, 'width' | 'hidden'>>
+  change: Partial<Pick<LayoutColumn, 'width'>>
 ): ViewLayout {
   return tableLayout(
     layoutColumns(layout, columns).map((entry) =>
@@ -115,15 +111,20 @@ export function boardGroupColumns(
   return columns.filter(isBoardGroupColumn);
 }
 
-/** A new board grouped by `groupBy`, its cards showing the first few other fields. */
+/**
+ * A new board grouped by `groupBy`, its cards titled by the first column and
+ * showing the first few other fields.
+ */
 export function boardLayout(
   groupBy: string,
   columns: readonly DatabaseViewColumn[]
 ): ViewLayout {
-  const title = titleColumn(columns)?.id;
+  // `groupBy` is one of the columns, so there is a first one.
+  const title = titleColumn(columns)?.id ?? groupBy;
   return {
     kind: 'board',
     groupBy,
+    title,
     lanes: [],
     cardFields: columns
       .filter((column) => column.id !== groupBy && column.id !== title)
@@ -145,6 +146,14 @@ export function laneLabel(
 }
 
 type BoardLayout = Extract<ViewLayout, { kind: 'board' }>;
+
+/** The column a board titles its cards by. */
+export function cardTitleColumn(
+  layout: BoardLayout,
+  columns: readonly DatabaseViewColumn[]
+): DatabaseViewColumn | undefined {
+  return columns.find((column) => column.id === layout.title);
+}
 
 /** The board with its lanes in `order`, keeping each lane's hidden flag. */
 export function withLaneOrder(

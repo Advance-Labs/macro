@@ -115,8 +115,9 @@ fn a_view_reads_from_json_with_its_filter_tree_and_layout() {
                     direction: SortDirection::Descending,
                 }],
             },
-            layout: ViewLayout::Board {
+            layout: RequestedLayout::Board {
                 group_by: STATUS,
+                title: None,
                 lanes: vec![
                     Lane {
                         option: Some(DECLINED),
@@ -169,6 +170,7 @@ fn a_view_that_fits_its_table_passes() {
     };
     let board = ViewLayout::Board {
         group_by: STATUS,
+        title: NAME,
         lanes: vec![
             Lane {
                 option: Some(GOING),
@@ -356,6 +358,7 @@ fn a_view_that_does_not_fit_its_table_says_why() {
             ViewQuery::default(),
             ViewLayout::Board {
                 group_by: DIET,
+                title: NAME,
                 lanes: vec![],
                 card_fields: vec![],
                 hide_empty_lanes: false,
@@ -370,6 +373,7 @@ fn a_view_that_does_not_fit_its_table_says_why() {
             ViewQuery::default(),
             ViewLayout::Board {
                 group_by: STATUS,
+                title: NAME,
                 lanes: vec![
                     Lane {
                         option: None,
@@ -390,6 +394,19 @@ fn a_view_that_does_not_fit_its_table_says_why() {
             ViewQuery::default(),
             ViewLayout::Board {
                 group_by: STATUS,
+                title: ghost,
+                lanes: vec![],
+                card_fields: vec![],
+                hide_empty_lanes: false,
+            },
+            ViewProblem::UnknownColumn { column: ghost },
+            "no column 00000000-0000-0000-0000-000000006057 in this table",
+        ),
+        (
+            ViewQuery::default(),
+            ViewLayout::Board {
+                group_by: STATUS,
+                title: NAME,
                 lanes: vec![Lane {
                     option: Some(VEGAN),
                     hidden: false,
@@ -477,43 +494,148 @@ fn removing_a_column_drops_its_conditions_sort_and_fields() {
 
     let board = ViewLayout::Board {
         group_by: STATUS,
+        title: NAME,
         lanes: vec![],
         card_fields: vec![NAME, PLUS_ONES],
         hide_empty_lanes: false,
     };
     assert_eq!(
-        board.without_column(PLUS_ONES),
+        board.without_column(PLUS_ONES, Some(NAME)),
         Some(ViewLayout::Board {
             group_by: STATUS,
+            title: NAME,
             lanes: vec![],
             card_fields: vec![NAME],
             hide_empty_lanes: false,
         })
     );
-    assert_eq!(board.without_column(STATUS), None);
+    assert_eq!(board.without_column(STATUS, Some(NAME)), None);
     assert_eq!(
         ViewLayout::Table {
             columns: vec![
                 ViewColumn {
                     column: NAME,
                     width: Some(240),
-                    hidden: false,
                 },
                 ViewColumn {
                     column: PLUS_ONES,
                     width: None,
-                    hidden: true,
                 },
             ],
         }
-        .without_column(NAME),
+        .without_column(NAME, Some(PLUS_ONES)),
         Some(ViewLayout::Table {
             columns: vec![ViewColumn {
                 column: PLUS_ONES,
                 width: None,
-                hidden: true,
             }],
         })
+    );
+}
+
+#[test]
+fn removing_a_boards_title_column_titles_it_by_the_next_first_column() {
+    let board = ViewLayout::Board {
+        group_by: STATUS,
+        title: NAME,
+        lanes: vec![],
+        card_fields: vec![PLUS_ONES],
+        hide_empty_lanes: false,
+    };
+
+    assert_eq!(
+        board.without_column(NAME, Some(STATUS)),
+        Some(ViewLayout::Board {
+            group_by: STATUS,
+            title: STATUS,
+            lanes: vec![],
+            card_fields: vec![PLUS_ONES],
+            hide_empty_lanes: false,
+        })
+    );
+    assert_eq!(
+        board.without_column(PLUS_ONES, Some(NAME)),
+        Some(ViewLayout::Board {
+            group_by: STATUS,
+            title: NAME,
+            lanes: vec![],
+            card_fields: vec![],
+            hide_empty_lanes: false,
+        })
+    );
+}
+
+#[test]
+fn a_board_asked_for_without_a_title_takes_the_default() {
+    let asked = RequestedLayout::Board {
+        group_by: STATUS,
+        title: None,
+        lanes: vec![],
+        card_fields: vec![PLUS_ONES],
+        hide_empty_lanes: true,
+    };
+
+    assert_eq!(
+        asked.clone().with_default_title(Some(NAME)),
+        Some(ViewLayout::Board {
+            group_by: STATUS,
+            title: NAME,
+            lanes: vec![],
+            card_fields: vec![PLUS_ONES],
+            hide_empty_lanes: true,
+        })
+    );
+    assert_eq!(asked.with_default_title(None), None);
+    assert_eq!(
+        RequestedLayout::Board {
+            group_by: STATUS,
+            title: Some(PLUS_ONES),
+            lanes: vec![],
+            card_fields: vec![],
+            hide_empty_lanes: false,
+        }
+        .with_default_title(Some(NAME)),
+        Some(ViewLayout::Board {
+            group_by: STATUS,
+            title: PLUS_ONES,
+            lanes: vec![],
+            card_fields: vec![],
+            hide_empty_lanes: false,
+        })
+    );
+}
+
+#[test]
+fn a_stored_board_reads_its_title() {
+    let layout: ViewLayout = serde_json::from_value(json!({
+        "kind": "board",
+        "groupBy": STATUS,
+        "title": DIET,
+        "lanes": [],
+        "cardFields": [],
+        "hideEmptyLanes": false,
+    }))
+    .unwrap();
+
+    assert_eq!(
+        layout,
+        ViewLayout::Board {
+            group_by: STATUS,
+            title: DIET,
+            lanes: vec![],
+            card_fields: vec![],
+            hide_empty_lanes: false,
+        }
+    );
+    assert!(
+        serde_json::from_value::<ViewLayout>(json!({
+            "kind": "board",
+            "groupBy": STATUS,
+            "lanes": [],
+            "cardFields": [],
+            "hideEmptyLanes": false,
+        }))
+        .is_err()
     );
 }
 
@@ -562,6 +684,7 @@ fn removing_an_option_drops_it_from_tests_and_lanes() {
 
     let board = ViewLayout::Board {
         group_by: STATUS,
+        title: NAME,
         lanes: vec![
             Lane {
                 option: Some(GOING),
@@ -579,6 +702,7 @@ fn removing_an_option_drops_it_from_tests_and_lanes() {
         board.without_option(STATUS, GOING),
         ViewLayout::Board {
             group_by: STATUS,
+            title: NAME,
             lanes: vec![Lane {
                 option: Some(DECLINED),
                 hidden: true,

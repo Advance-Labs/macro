@@ -71,6 +71,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'status',
           lanes: [],
           cardFields: [],
@@ -177,6 +178,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'status',
           lanes: [],
           cardFields: ['notes', 'title', 'due', 'owner'],
@@ -198,6 +200,157 @@ describe('database board', () => {
         element.getAttribute('title')
       )
     ).toEqual(['Notes: Bring draft', 'Owner: Ada']);
+  });
+
+  it('heads each card with its title column, an entity as its chip, never repeated among the fields', () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [{ id: 'todo', label: 'To do', color: null }],
+      writable: true,
+    };
+    render(() => (
+      <DatabaseBoard
+        rows={[
+          {
+            rowId: 'launch',
+            cells: {
+              title: 'Launch project',
+              status: 'To do',
+              owner: 'macro|ada@example.com',
+            },
+          },
+          {
+            rowId: 'unowned',
+            cells: { title: 'Tidy backlog', status: 'To do', owner: null },
+          },
+        ]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+          {
+            id: 'owner',
+            name: 'Owner',
+            dataType: 'ENTITY',
+            specificEntityType: 'USER',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+        ]}
+        board={{
+          lanes: [
+            { option: 'todo', hidden: false, cards: ['launch', 'unowned'] },
+          ],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          title: 'owner',
+          lanes: [],
+          cardFields: ['owner', 'title'],
+          hideEmptyLanes: false,
+        }}
+        renderMentionValue={(id, type) => (
+          <span data-testid="mention">{`${type} ${id}`}</span>
+        )}
+        groupColumn={status}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={vi.fn()}
+        onCreate={vi.fn(async () => true)}
+      />
+    ));
+    const owned = screen.getByRole('button', { name: 'Open Linked record' });
+    expect(within(owned).getByRole('heading', { level: 3 }).textContent).toBe(
+      'USER macro|ada@example.com'
+    );
+    expect(within(owned).getByTestId('mention')).toBeTruthy();
+    expect(
+      Array.from(owned.querySelectorAll('[title]'), (element) =>
+        element.getAttribute('title')
+      )
+    ).toEqual(['Name: Launch project']);
+    const unowned = screen.getByRole('button', { name: 'Open Unnamed' });
+    expect(within(unowned).getByRole('heading', { level: 3 }).textContent).toBe(
+      'Unnamed'
+    );
+    expect(
+      Array.from(unowned.querySelectorAll('[title]'), (element) =>
+        element.getAttribute('title')
+      )
+    ).toEqual(['Name: Tidy backlog']);
+  });
+
+  it('creates and opens a record when the card title is not text it can type into', () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [{ id: 'todo', label: 'To do', color: null }],
+      writable: true,
+    };
+    const onCreate = vi.fn(async () => true);
+    render(() => (
+      <DatabaseBoard
+        rows={[]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+          {
+            id: 'due',
+            name: 'Due',
+            dataType: 'DATE',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+        ]}
+        board={{ lanes: [{ option: 'todo', hidden: false, cards: [] }] }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          title: 'due',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={vi.fn()}
+        onCreate={onCreate}
+      />
+    ));
+    const lane = screen.getByRole('region', { name: 'To do lane' });
+    fireEvent.click(within(lane).getByRole('button', { name: 'New record' }));
+    expect(within(lane).queryByRole('textbox')).toBeNull();
+    fireEvent.click(within(lane).getByRole('button', { name: 'Add record' }));
+    expect(onCreate).toHaveBeenCalledExactlyOnceWith(
+      'todo',
+      '',
+      expect.any(String),
+      { open: true }
+    );
   });
 
   it("moves a card from its Move menu into the chosen lane's option", async () => {
@@ -241,6 +394,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'status',
           lanes: [],
           cardFields: [],
@@ -311,6 +465,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'status',
           lanes: [],
           cardFields: [],
@@ -377,6 +532,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'status',
           lanes: [],
           cardFields: [],
@@ -431,6 +587,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'status',
           lanes: [],
           cardFields: [],
@@ -490,6 +647,7 @@ describe('database board', () => {
           }}
           layout={{
             kind: 'board',
+            title: 'title',
             groupBy: 'status',
             lanes: [],
             cardFields: [],
@@ -547,6 +705,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'status',
           lanes: [],
           cardFields: [],
@@ -600,6 +759,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'status',
           lanes: [],
           cardFields: [],
@@ -664,6 +824,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'status',
           lanes: [],
           cardFields: [],
@@ -727,6 +888,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'status',
           lanes: [],
           cardFields: [],
@@ -784,6 +946,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'status',
           lanes: [],
           cardFields: [],
@@ -844,6 +1007,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'amount',
           lanes: [],
           cardFields: [],
@@ -907,6 +1071,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'status',
           lanes: [],
           cardFields: [],
@@ -986,6 +1151,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'status',
           lanes: [],
           cardFields: [],
@@ -1043,6 +1209,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'status',
           lanes: [],
           cardFields: [],
@@ -1099,6 +1266,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'status',
           lanes: [],
           cardFields: [],
@@ -1155,6 +1323,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'status',
           lanes: [],
           cardFields: [],
@@ -1224,6 +1393,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'status',
           lanes: [],
           cardFields: [],
@@ -1287,6 +1457,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'status',
           lanes: [],
           cardFields: [],
@@ -1379,6 +1550,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'status',
           lanes: [],
           cardFields: [],
@@ -1454,6 +1626,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'status',
           lanes: [],
           cardFields: [],
@@ -1519,6 +1692,7 @@ describe('database board', () => {
         }}
         layout={{
           kind: 'board',
+          title: 'title',
           groupBy: 'status',
           lanes: [],
           cardFields: [],

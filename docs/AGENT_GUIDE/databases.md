@@ -236,7 +236,8 @@ sets its width, saved in the view. Header menus offer sorting, **Move left** and
 a stored view keeps its own column order.
 
 A board's **Board menu** (the **⋯** above its lanes, for anyone who can change the
-view) holds its settings: **Group by** another single select, the **Card fields**
+view) holds its settings: **Group by** another single select, **Card title** (the
+column each card is headed by, the table's first by default), the **Card fields**
 a card shows, **Hide empty lanes**, and **Hidden lanes**, whose **Show …** items
 bring a hidden lane back.
 

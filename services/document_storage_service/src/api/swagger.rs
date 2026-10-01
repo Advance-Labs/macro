@@ -148,10 +148,11 @@ use models_databases::views::{
     FilterGroup as DatabaseFilterGroup, FilterNode as DatabaseFilterNode,
     FilterTest as DatabaseFilterTest, Lane as DatabaseBoardLane, NewView as DatabaseNewView,
     NumberOperator as DatabaseNumberOperator, PresenceOperator as DatabasePresenceOperator,
-    SetOperator as DatabaseSetOperator, SortDirection as DatabaseSortDirection,
-    SortKey as DatabaseSortKey, TextOperator as DatabaseTextOperator,
-    ViewColumn as DatabaseViewColumn, ViewLayout as DatabaseViewLayout,
-    ViewPosition as DatabaseViewPosition, ViewQuery as DatabaseViewQuery,
+    RequestedLayout as DatabaseRequestedLayout, SetOperator as DatabaseSetOperator,
+    SortDirection as DatabaseSortDirection, SortKey as DatabaseSortKey,
+    TextOperator as DatabaseTextOperator, ViewColumn as DatabaseViewColumn,
+    ViewLayout as DatabaseViewLayout, ViewPosition as DatabaseViewPosition,
+    ViewQuery as DatabaseViewQuery,
 };
 use models_databases::{
     CellValue as DatabaseCellValue, CellWrite as DatabaseCellWrite,
@@ -665,6 +666,7 @@ use utoipa::OpenApi;
             DatabaseDateOperator,
             DatabaseSetOperator,
             DatabaseViewLayout,
+            DatabaseRequestedLayout,
             DatabaseViewColumn,
             DatabaseBoardLane,
             DatabaseCardPosition,

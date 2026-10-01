@@ -15,7 +15,7 @@ board: a card is in exactly one lane, so a card in several would need
 a place in each.
  */
 export type ViewLayoutOneOfThree = {
-  /** The columns a card shows, in order. */
+  /** The columns a card shows under its title, in order. */
   cardFields: string[];
   /** The single-select column whose options are the lanes; moving a
 card to another lane sets this column. */
@@ -27,4 +27,7 @@ card to another lane sets this column. */
 listed ones, options in the column's order; the lane of cards
 without an option first. */
   lanes: Lane[];
+  /** The column a card is titled by, of any type. Removing it titles
+the cards by the table's first remaining column. */
+  title: string;
 };

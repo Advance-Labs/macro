@@ -17,9 +17,9 @@ describe('column insertion edges', () => {
   ] as const)(
     'inserts %s %s at its %s edge',
     (columnId, targetId, edge, expected) => {
-      expect(
-        reorderDatabaseColumns(order, [], columnId, targetId, edge)
-      ).toEqual(expected);
+      expect(reorderDatabaseColumns(order, columnId, targetId, edge)).toEqual(
+        expected
+      );
       expect(order).toEqual(['name', 'status', 'owner', 'due']);
     }
   );
@@ -35,61 +35,10 @@ describe('column insertion edges', () => {
     'skips unchanged or invalid drops: %s / %s / %s',
     (columnId, targetId, edge) => {
       expect(
-        reorderDatabaseColumns(order, [], columnId, targetId, edge)
+        reorderDatabaseColumns(order, columnId, targetId, edge)
       ).toBeUndefined();
     }
   );
-
-  it('keeps hidden columns in their saved slots in either direction', () => {
-    const fullOrder = [
-      'hidden-first',
-      'name',
-      'status',
-      'hidden-middle',
-      'owner',
-      'due',
-      'hidden-last',
-    ];
-    const hidden = ['hidden-first', 'hidden-middle', 'hidden-last'];
-    expect(
-      reorderDatabaseColumns(fullOrder, hidden, 'name', 'owner', 'after')
-    ).toEqual([
-      'hidden-first',
-      'status',
-      'owner',
-      'hidden-middle',
-      'name',
-      'due',
-      'hidden-last',
-    ]);
-    expect(
-      reorderDatabaseColumns(fullOrder, hidden, 'due', 'status', 'before')
-    ).toEqual([
-      'hidden-first',
-      'name',
-      'due',
-      'hidden-middle',
-      'status',
-      'owner',
-      'hidden-last',
-    ]);
-    expect(fullOrder[3]).toBe('hidden-middle');
-  });
-
-  it('ignores hidden endpoints and a drop at the same visible slot', () => {
-    expect(
-      reorderDatabaseColumns(order, ['status'], 'status', 'due', 'after')
-    ).toBeUndefined();
-    expect(
-      reorderDatabaseColumns(order, ['status'], 'name', 'status', 'after')
-    ).toBeUndefined();
-    expect(
-      reorderDatabaseColumns(order, ['status'], 'name', 'owner', 'before')
-    ).toBeUndefined();
-    expect(
-      reorderDatabaseColumns([], [], 'name', 'owner', 'before')
-    ).toBeUndefined();
-  });
 });
 
 describe('complete schema column order', () => {

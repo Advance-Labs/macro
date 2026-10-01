@@ -28,7 +28,10 @@ import {
   KanbanLane,
 } from '../../../components/kanban/kanban';
 import { useOptionEditing } from '../context/option-editing';
-import { inferDatabaseNumber } from '../core/column-inference';
+import {
+  type DatabaseEntityType,
+  inferDatabaseNumber,
+} from '../core/column-inference';
 import { columnSchemaMessage } from '../core/column-schema';
 import {
   type DatabaseOption,
@@ -38,13 +41,13 @@ import {
 } from '../core/database-view';
 import { isDatabaseNameTaken } from '../core/property-creation';
 import {
+  cellTitle,
   type DatabaseRow,
   formatCellValue,
-  rowTitle,
+  isWritableText,
   rowValue,
-  titleColumn,
 } from '../core/table';
-import { laneLabel } from '../core/views';
+import { cardTitleColumn, laneLabel } from '../core/views';
 import { OptionEditor } from './option-editor';
 import { PropertyIcon } from './property-icon';
 import { SelectPill } from './select-pill';
@@ -75,6 +78,7 @@ type DatabaseBoardProps = {
   board: Board;
   layout: BoardLayout;
   renderTextValue?: (value: string) => JSX.Element;
+  renderMentionValue?: (id: string, type: DatabaseEntityType) => JSX.Element;
   groupColumn: DatabaseViewColumn;
   canEdit: boolean;
   rowPending: (rowId: string) => boolean;
@@ -144,8 +148,8 @@ export function DatabaseBoard(props: DatabaseBoardProps) {
   const [drafts, setDrafts] = createSignal<CardDraft[]>([]);
   const draftElements = new Map<string, HTMLElement>();
   const newButtons = new Map<string, HTMLElement>();
-  const titleField = () => titleColumn(props.columns);
-  const canSetTitle = () => Boolean(titleField()?.writable);
+  const titleField = () => cardTitleColumn(props.layout, props.columns);
+  const canSetTitle = () => isWritableText(titleField());
   const canMove = () => props.canEdit && props.groupColumn.writable;
   const isSaving = (draft: CardDraft) =>
     draft.saving || Boolean(props.createPending?.(draft.id));
@@ -214,7 +218,7 @@ export function DatabaseBoard(props: DatabaseBoardProps) {
     const row = props.rows.find((row) => row.rowId === rowId);
     if (!row || !canMove()) return;
     props.onMove(rowId, lane.option?.id ?? null, next);
-    setAnnouncement(`${rowTitle(row, props.columns)} moved to ${lane.label}.`);
+    setAnnouncement(`${cellTitle(row, titleField())} moved to ${lane.label}.`);
   }
   function reorder(from: string, to: string, edge?: 'before' | 'after') {
     if (from === to || !props.onLaneOrderChange) return;
@@ -458,8 +462,10 @@ function BoardLane(
                 row={row()}
                 laneId={props.group.key}
                 columns={props.columns}
+                titleColumn={cardTitleColumn(props.layout, props.columns)}
                 cardFields={props.layout.cardFields}
                 renderTextValue={props.renderTextValue}
+                renderMentionValue={props.renderMentionValue}
                 groupColumn={props.groupColumn}
                 groups={props.groups}
                 canEdit={props.canMove}
@@ -637,9 +643,12 @@ function BoardCard(props: {
   row: DatabaseRow;
   laneId: string;
   columns: DatabaseViewColumn[];
-  /** The columns the card shows, in order, when they hold something. */
+  /** The column the card is titled by. */
+  titleColumn: DatabaseViewColumn | undefined;
+  /** The columns the card shows under its title, in order, when they hold something. */
   cardFields: string[];
   renderTextValue?: (value: string) => JSX.Element;
+  renderMentionValue?: (id: string, type: DatabaseEntityType) => JSX.Element;
   groupColumn: DatabaseViewColumn;
   groups: BoardGroup[];
   canEdit: boolean;
@@ -647,19 +656,27 @@ function BoardCard(props: {
   onOpen: (rowId: string) => void;
   onMove: (rowId: string, lane: BoardGroup) => void;
 }) {
-  const title = () => rowTitle(props.row, props.columns);
-  const renderedTitle = () => {
-    const column = titleColumn(props.columns);
-    if (!props.renderTextValue || !column) return title();
-    return props.renderTextValue(
-      String(rowValue(props.row, column.id) || 'Unnamed')
-    );
+  const title = () => cellTitle(props.row, props.titleColumn);
+  const renderedTitle = (): JSX.Element => {
+    const column = props.titleColumn;
+    const value = column ? rowValue(props.row, column.id) : null;
+    if (!column || value === null || value === '') return 'Unnamed';
+    if (
+      column.dataType === 'ENTITY' &&
+      !column.isMultiSelect &&
+      column.specificEntityType &&
+      props.renderMentionValue
+    )
+      return props.renderMentionValue(String(value), column.specificEntityType);
+    if (isWritableText(column) && props.renderTextValue)
+      return props.renderTextValue(String(value));
+    return title();
   };
   const metadata = () =>
     props.cardFields.flatMap((id) => {
       const column = props.columns.find((entry) => entry.id === id);
       return column &&
-        column.id !== titleColumn(props.columns)?.id &&
+        column.id !== props.titleColumn?.id &&
         rowValue(props.row, column.id) !== null
         ? [column]
         : [];
@@ -681,7 +698,9 @@ function BoardCard(props: {
         aria-disabled={props.pending}
       >
         <span
-          class="block break-words text-[13px] font-medium leading-5 text-ink"
+          role="heading"
+          aria-level={3}
+          class="block break-words text-sm font-semibold leading-5 text-ink"
           classList={{ 'pr-10': props.canEdit }}
         >
           {renderedTitle()}
@@ -825,7 +844,7 @@ function NewBoardCard(props: {
               ref={props.ref}
               type="button"
               class="w-full text-left text-[13px] leading-5 text-ink-placeholder outline-none"
-              onClick={() => props.onSubmit('next')}
+              onClick={() => props.onSubmit('open')}
               onKeyDown={(event) => {
                 if (event.key === 'Escape') onKeyDown(event);
               }}
