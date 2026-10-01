@@ -29,6 +29,7 @@ import {
   KanbanLane,
 } from '../../../components/kanban/kanban';
 import { useOptionEditing } from '../context/option-editing';
+import { inferDatabaseNumber } from '../core/column-inference';
 import { columnSchemaMessage } from '../core/column-schema';
 import {
   type DatabaseOption,
@@ -531,17 +532,15 @@ function NewBoardGroup(props: {
     event.preventDefault();
     const entered = draft().trim();
     if (!entered || pending()) return;
-    if (
-      props.column.dataType === 'SELECT_NUMBER' &&
-      !Number.isFinite(Number(entered))
-    ) {
+    const number =
+      props.column.dataType === 'SELECT_NUMBER'
+        ? inferDatabaseNumber(entered)
+        : undefined;
+    if (props.column.dataType === 'SELECT_NUMBER' && number === undefined) {
       setError('Enter a valid number for this group.');
       return;
     }
-    const label =
-      props.column.dataType === 'SELECT_NUMBER'
-        ? String(Number(entered))
-        : entered;
+    const label = number === undefined ? entered : String(number);
     if (
       isDatabaseNameTaken(
         label,

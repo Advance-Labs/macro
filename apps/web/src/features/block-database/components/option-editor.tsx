@@ -7,6 +7,7 @@ import { Button } from '@ui/components/Button';
 import type { ResultAsync } from 'neverthrow';
 import { createSignal, Show } from 'solid-js';
 import type { OptionEditing } from '../context/option-editing';
+import { inferDatabaseNumber } from '../core/column-inference';
 import type { DatabaseOption, DatabaseViewColumn } from '../core/database-view';
 import {
   type DatabaseOpFailure,
@@ -50,7 +51,7 @@ export function OptionEditor(props: {
     }
     if (
       props.column.dataType === 'SELECT_NUMBER' &&
-      !Number.isFinite(Number(label))
+      inferDatabaseNumber(label) === undefined
     ) {
       setError('Enter a number.');
       return;

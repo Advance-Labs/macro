@@ -11,6 +11,7 @@ import {
 } from 'solid-js';
 import { match } from 'ts-pattern';
 import type { OptionEditing } from '../context/option-editing';
+import { inferDatabaseNumber } from '../core/column-inference';
 import type { DatabaseOption, DatabaseViewColumn } from '../core/database-view';
 import { OptionEditor } from './option-editor';
 import { OptionPill } from './select-pill';
@@ -36,8 +37,8 @@ function optionLabelFor(
   const text = typed.trim();
   if (!text) return undefined;
   if (column.dataType !== 'SELECT_NUMBER') return text;
-  const number = Number(text);
-  return Number.isFinite(number) ? String(number) : undefined;
+  const number = inferDatabaseNumber(text);
+  return number === undefined ? undefined : String(number);
 }
 
 /**

@@ -672,6 +672,8 @@ describe('database toolbar view controls', () => {
     expect(
       (screen.getByRole('switch', { name: 'Due' }) as HTMLInputElement).checked
     ).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Table' }));
+    expect(change).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('switch', { name: 'Status' }));
     expect(change).toHaveBeenLastCalledWith({
       layout: {

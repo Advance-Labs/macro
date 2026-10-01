@@ -321,11 +321,12 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
                       label="Table"
                       icon={<TableIcon class="size-4" />}
                       pressed={layout().kind === 'table'}
-                      onClick={() =>
-                        props.onChangeView({
-                          layout: { kind: 'table', columns: [] },
-                        })
-                      }
+                      onClick={() => {
+                        if (layout().kind !== 'table')
+                          props.onChangeView({
+                            layout: { kind: 'table', columns: [] },
+                          });
+                      }}
                     />
                     <LayoutButton
                       label="Board"
