@@ -58,6 +58,14 @@ impl PropertyOwner {
         database_id: Option<Uuid>,
         is_system: bool,
     ) -> Self {
+        debug_assert_eq!(
+            usize::from(is_system)
+                + usize::from(team_id.is_some())
+                + usize::from(user_id.is_some())
+                + usize::from(database_id.is_some()),
+            1,
+            "a property definition has exactly one owner"
+        );
         if is_system {
             return PropertyOwner::System;
         }

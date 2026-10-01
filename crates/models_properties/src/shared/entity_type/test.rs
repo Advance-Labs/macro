@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use super::*;
 use crate::api::PropertyTargetEntityType;
 
