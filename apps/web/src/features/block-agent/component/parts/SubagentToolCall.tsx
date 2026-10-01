@@ -46,9 +46,9 @@ function ChildPart(props: {
   index: number;
   /** The subagent's parts this one sits among. */
   siblings: readonly MessagePart[];
-  context?: ToolCallContext;
+  context: ToolCallContext;
 }) {
-  const inFlight = () => props.context?.inFlight ?? false;
+  const inFlight = () => props.context.inFlight;
   return (
     <Switch>
       <Match when={props.part.kind === 'text' && props.part}>
@@ -70,14 +70,12 @@ function ChildPart(props: {
         {(part) => (
           <ToolCallPart
             part={part()}
-            context={
-              props.context && {
-                ...props.context,
-                // A child's slot is its own; the parent's index is not it.
-                partIndex: props.index,
-                followedBy: toolUsedAfter(props.siblings, props.index),
-              }
-            }
+            context={{
+              ...props.context,
+              // A child's slot is its own; the parent's index is not it.
+              partIndex: props.index,
+              followedBy: toolUsedAfter(props.siblings, props.index),
+            }}
           />
         )}
       </Match>
@@ -88,16 +86,15 @@ function ChildPart(props: {
 export function SubagentToolCall(props: {
   detail: SubagentDetail;
   common: ToolCallCommon;
-  context?: ToolCallContext;
+  context: ToolCallContext;
 }): JSX.Element {
   const working = () =>
     props.common.status === 'pending' || props.common.status === 'running';
   // Children only shimmer while both the subagent and the turn are live.
-  const childContext = () =>
-    props.context && {
-      ...props.context,
-      inFlight: working() && props.context.inFlight,
-    };
+  const childContext = () => ({
+    ...props.context,
+    inFlight: working() && props.context.inFlight,
+  });
   const subtitle = () =>
     [
       props.detail.agentType ?? 'subagent',

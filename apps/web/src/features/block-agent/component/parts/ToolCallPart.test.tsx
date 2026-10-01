@@ -153,6 +153,7 @@ describe('ToolCallPart routing', () => {
           },
           { name: 'Bash' }
         )}
+        context={context(false)}
       />
     ));
     expect(rendered.getByTestId('title').textContent).toBe('Bash');
@@ -178,6 +179,7 @@ describe('ToolCallPart routing', () => {
           }),
           name: { kind: 'mcp', server: 'deepwiki', tool: 'ask' },
         }}
+        context={context(false)}
       />
     ));
     expect(rendered.getByTestId('title').textContent).toBe('ask');
@@ -198,6 +200,7 @@ describe('ToolCallPart routing', () => {
           }),
           name: { kind: 'mcp', server: 'macro', tool: 'ReadContent' },
         }}
+        context={context(false)}
       />
     ));
     expect(rendered.getByTestId('macro-tool').textContent).toBe('ReadContent');
@@ -221,6 +224,7 @@ describe('ToolCallPart routing', () => {
           ),
           name: { kind: 'mcp', server: 'ops', tool: 'deploy' },
         }}
+        context={context(false)}
       />
     ));
     expect(rendered.getByTestId('tool-card').dataset.muted).toBe('true');
@@ -244,6 +248,7 @@ describe('ToolCallPart routing', () => {
           }),
           name: { kind: 'mcp', server: 'external', tool: 'ReadContent' },
         }}
+        context={context(false)}
       />
     ));
     expect(rendered.queryByTestId('macro-tool')).toBeNull();
@@ -266,6 +271,7 @@ describe('ToolCallPart routing', () => {
           }),
           name: { kind: 'mcp', server: 'macro', tool: 'ReadContent' },
         }}
+        context={context(false)}
       />
     ));
     expect(rendered.queryByTestId('macro-tool')).toBeNull();
@@ -286,7 +292,9 @@ describe('ToolCallPart routing', () => {
       name: { kind: 'mcp', server: 'macro', tool: 'ReadContent' },
     });
     const [part, setPart] = createSignal(call('First result'));
-    const rendered = render(() => <ToolCallPart part={part()} />);
+    const rendered = render(() => (
+      <ToolCallPart part={part()} context={context(false)} />
+    ));
     const result = rendered.getByTestId('macro-tool');
     setPart(call('Updated result'));
     expect(rendered.getByTestId('macro-tool')).toBe(result);
@@ -310,6 +318,7 @@ describe('ToolCallPart routing', () => {
             },
           ],
         })}
+        context={context(false)}
       />
     ));
     expect(rendered.getByTestId('subtitle').textContent).toBe('src/a.rs');
@@ -319,7 +328,10 @@ describe('ToolCallPart routing', () => {
 
   it('summarizes multi-path reads and lists the paths in the body', () => {
     const rendered = render(() => (
-      <ToolCallPart part={toolUse({ kind: 'read', paths: ['a.rs', 'b.rs'] })} />
+      <ToolCallPart
+        part={toolUse({ kind: 'read', paths: ['a.rs', 'b.rs'] })}
+        context={context(false)}
+      />
     ));
     expect(rendered.getByTestId('subtitle').textContent).toBe('2 files');
     expect(rendered.getByTestId('path-list').textContent).toBe('a.rs,b.rs');
@@ -336,6 +348,7 @@ describe('ToolCallPart routing', () => {
           result: null,
           error: null,
         })}
+        context={context(false)}
       />
     ));
     expect(rendered.getByTestId('tool-card').dataset.expandable).toBe('false');
@@ -344,7 +357,10 @@ describe('ToolCallPart routing', () => {
 
   it('routes fetch and think to the plain output card', () => {
     const rendered = render(() => (
-      <ToolCallPart part={toolUse({ kind: 'fetch', output: 'page body' })} />
+      <ToolCallPart
+        part={toolUse({ kind: 'fetch', output: 'page body' })}
+        context={context(false)}
+      />
     ));
     expect(rendered.getByTestId('output').textContent).toBe('page body');
     expect(rendered.queryByTestId('exchange')).toBeNull();
@@ -412,6 +428,7 @@ describe('ToolCallPart Macro tools', () => {
             error: null,
           },
         })}
+        context={context(false)}
       />
     ));
     const richTool = rendered.getByTestId('macro-tool');
@@ -436,6 +453,7 @@ describe('ToolCallPart Macro tools', () => {
           },
           { name: 'BrandNewTool' }
         )}
+        context={context(false)}
       />
     ));
     expect(rendered.getByTestId('title').textContent).toBe('BrandNewTool');
@@ -455,6 +473,7 @@ describe('ToolCallPart Macro tools', () => {
             error: null,
           },
         })}
+        context={context(false)}
       />
     ));
     expect(rendered.getByTestId('tool-card').dataset.muted).toBe('false');
@@ -473,6 +492,7 @@ describe('ToolCallPart Macro tools', () => {
             error: null,
           },
         })}
+        context={context(false)}
       />
     ));
     expect(rendered.getByTestId('tool-card')).not.toBeNull();
@@ -490,6 +510,7 @@ describe('ToolCallPart Macro tools', () => {
           },
           { name: 'ListEntities', status: 'failed' }
         )}
+        context={context(false)}
       />
     ));
     expect(rendered.getByTestId('tool-card').dataset.muted).toBe('true');
@@ -517,7 +538,10 @@ describe('ToolCallPart user tools', () => {
 
   it('renders a pending email draft read-only on its own card, never through the chat', () => {
     const rendered = render(() => (
-      <ToolCallPart part={email({ kind: 'pending' })} />
+      <ToolCallPart
+        part={email({ kind: 'pending' })}
+        context={context(false)}
+      />
     ));
     expect(rendered.getByTestId('title').textContent).toBe('SendEmail');
     expect(rendered.getByTestId('subtitle').textContent).toBe('Q3 plan');
@@ -567,7 +591,9 @@ describe('ToolCallPart user tools', () => {
       [{ kind: 'completed', result: { id: 'evt' } }, 'Done', undefined],
     ];
     for (const [outcome, label, thread] of cases) {
-      const rendered = render(() => <ToolCallPart part={email(outcome)} />);
+      const rendered = render(() => (
+        <ToolCallPart part={email(outcome)} context={context(false)} />
+      ));
       const trailing = rendered.getByTestId('trailing');
       expect(trailing.textContent).toContain(label);
       const link = rendered.queryByTestId('item-preview');
@@ -594,6 +620,7 @@ describe('ToolCallPart user tools', () => {
           },
           { name: 'SendEmail' }
         )}
+        context={context(false)}
       />
     ));
     expect(rendered.queryByTestId('text-part')).toBeNull();
@@ -627,6 +654,7 @@ describe('ToolCallPart user tools', () => {
           },
           { name: 'CreateCalendarEvent' }
         )}
+        context={context(false)}
       />
     ));
     expect(rendered.getByTestId('title').textContent).toBe(
@@ -644,7 +672,10 @@ describe('ToolCallPart user tools', () => {
 
   it('keeps a failed user tool on a faded card with the error as body', () => {
     const rendered = render(() => (
-      <ToolCallPart part={email({ kind: 'failed', message: 'no inbox' })} />
+      <ToolCallPart
+        part={email({ kind: 'failed', message: 'no inbox' })}
+        context={context(false)}
+      />
     ));
     expect(rendered.getByTestId('tool-card').dataset.muted).toBe('true');
     expect(rendered.getByTestId('body').textContent).toBe('no inbox');
@@ -662,6 +693,7 @@ describe('ToolCallPart user tools', () => {
           },
           { name: 'SendEmail' }
         )}
+        context={context(false)}
       />
     ));
     expect(rendered.getByTestId('trailing').textContent).toBe('Answered');
@@ -680,6 +712,7 @@ describe('ToolCallPart user tools', () => {
           },
           { name: 'SendEmail' }
         )}
+        context={context(false)}
       />
     ));
     expect(rendered.getByTestId('trailing').textContent).toBe('Failed');
@@ -704,7 +737,9 @@ describe('ToolCallPart inline results', () => {
         kind === 'mcp'
           ? { kind, server: 'external', tool: 'DisplayResults' }
           : { kind, name: 'DisplayResults' };
-      const rendered = render(() => <ToolCallPart part={part} />);
+      const rendered = render(() => (
+        <ToolCallPart part={part} context={context(false)} />
+      ));
       expect(rendered.queryByTestId('dashboard-view')).toBeNull();
       expect(rendered.getByTestId('tool-card').dataset.expandable).toBe(
         'false'
@@ -780,6 +815,7 @@ describe('ToolCallPart inline results', () => {
           { kind: 'macro', input: null, output: null, error: null },
           { name: 'DisplayResults' }
         )}
+        context={context(false)}
       />
     ));
     expect(rendered.getByTestId('dashboard-view').dataset.pending).toBe(
@@ -828,7 +864,9 @@ describe('ToolCallPart subagents', () => {
     );
 
   it('titles the card with the description and nests the children', () => {
-    const rendered = render(() => <ToolCallPart part={subagent()} />);
+    const rendered = render(() => (
+      <ToolCallPart part={subagent()} context={context(false)} />
+    ));
     const titles = rendered.getAllByTestId('title').map((el) => el.textContent);
     expect(titles).toEqual(['Add 5+5 with Python', 'Bash']);
     expect(rendered.getAllByTestId('subtitle')[0]?.textContent).toBe(
@@ -839,7 +877,9 @@ describe('ToolCallPart subagents', () => {
   });
 
   it('summarizes the result in the trailing slot', () => {
-    const rendered = render(() => <ToolCallPart part={subagent()} />);
+    const rendered = render(() => (
+      <ToolCallPart part={subagent()} context={context(false)} />
+    ));
     expect(rendered.getAllByTestId('trailing')[0]?.textContent).toBe(
       '1 tool · 3.5s'
     );
@@ -847,7 +887,9 @@ describe('ToolCallPart subagents', () => {
 
   it('preserves a nested tool body while the subagent streams updated children', () => {
     const [part, setPart] = createSignal(subagent({ result: null }));
-    const rendered = render(() => <ToolCallPart part={part()} />);
+    const rendered = render(() => (
+      <ToolCallPart part={part()} context={context(false)} />
+    ));
     const terminal = rendered.getByTestId('terminal');
     setPart(
       subagent({
@@ -883,6 +925,7 @@ describe('ToolCallPart subagents', () => {
           children: [],
           result: null,
         })}
+        context={context(false)}
       />
     ));
     expect(rendered.getByTestId('title').textContent).toBe(
@@ -954,6 +997,7 @@ describe('ToolCallPart subagents', () => {
             stats: null,
           },
         })}
+        context={context(false)}
       />
     ));
     expect(rendered.getByTestId('tool-card').dataset.muted).toBe('true');
@@ -985,11 +1029,6 @@ describe('ToolCallPart settling', () => {
     expect(rendered.getByTestId('tool-card').dataset.status).toBe('completed');
     expect(rendered.getByTestId('tool-card').dataset.muted).toBe('false');
     expect(rendered.getByTestId('trailing').textContent).toBe('Stopped');
-  });
-
-  it('settles a call with no turn to place it in', () => {
-    const rendered = render(() => <ToolCallPart part={running()} />);
-    expect(rendered.getByTestId('tool-card').dataset.status).toBe('completed');
   });
 
   it('settles a subagent and its nested children with the turn', () => {
@@ -1037,6 +1076,7 @@ describe('ToolCallPart failed treatment', () => {
           { kind: 'terminal', command: 'x', output: null, exitCode: 1 },
           { status: 'failed' }
         )}
+        context={context(false)}
       />
     ));
     expect(rendered.getByTestId('tool-card').dataset.muted).toBe('true');
@@ -1053,6 +1093,7 @@ describe('ToolCallPart failed treatment', () => {
           },
           { status: 'failed' }
         )}
+        context={context(false)}
       />
     ));
     expect(rendered.getByTestId('trailing').textContent).toBe('Failed');
@@ -1098,6 +1139,7 @@ describe('ToolCallPart result summaries', () => {
             { kind: 'macro', input, output, error: null },
             { name }
           )}
+          context={context(false)}
         />
       ));
       expect(rendered.getByTestId('trailing').textContent).toBe('Failed');
@@ -1144,6 +1186,7 @@ describe('ToolCallPart result summaries', () => {
           output: '',
           exitCode: 1,
         })}
+        context={context(false)}
       />
     ));
     expect(rendered.getByTestId('trailing').textContent).toBe(
@@ -1157,6 +1200,7 @@ describe('ToolCallPart result summaries', () => {
     const rendered = render(() => (
       <ToolCallPart
         part={toolUse({ kind: 'read', paths: ['docs/launch.md'] })}
+        context={context(false)}
       />
     ));
     expect(rendered.getByTestId('trailing').textContent).toBe('1 file');
@@ -1200,6 +1244,7 @@ describe('ToolCallPart result summaries', () => {
             },
             { name: 'ListSkills' }
           )}
+          context={context(false)}
         />
       ));
       expect(rendered.queryByTestId('macro-tool')).toBeNull();
@@ -1221,6 +1266,7 @@ describe('ToolCallPart result summaries', () => {
           },
           { name: 'SearchSkills' }
         )}
+        context={context(false)}
       />
     ));
     expect(rendered.getByTestId('trailing').textContent).toBe('');
