@@ -307,6 +307,8 @@ export const storageExcluded = [
   'getActiveCalls',
   'getBatchProjectPreview',
   'getCollabSurface',
+  // Storage for the web app's saved questions, not a user-facing surface.
+  'getDatabaseQuery',
   'getDocumentListHandler',
   'getDocumentLocationV3',
   'getDocumentProcessingResult',
@@ -341,6 +343,10 @@ export const storageExcluded = [
   'postItemsSoupAstGrouped',
   'removeBotFromChannelByBot',
   'resolveChannelMessage',
+  // Storage for the web app's saved questions, not a user-facing surface.
+  'saveDatabaseQuery',
+  // Live presence between viewers of a database, internal to the web app.
+  'shareDatabaseAwareness',
   // Composer dictation is an app-internal, user-only upload flow.
   'transcribeDictation',
   'uploadExtractFolderHandler',
