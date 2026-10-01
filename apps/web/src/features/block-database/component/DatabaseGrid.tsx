@@ -26,6 +26,9 @@ import {
   type OptionEditing,
   OptionEditingContext,
 } from '../context/option-editing';
+import type { DatabaseRelationSource } from '../context/relation-source';
+import type { DatabaseRowsSource } from '../context/table-source';
+import type { DatabaseEntityType } from '../core/column-inference';
 import { mergeDatabaseColumnOrder } from '../core/column-order';
 import type { DatabaseRelatedDestination } from '../core/database-relations';
 import {
@@ -34,6 +37,7 @@ import {
   DatabaseTextEditor,
   DatabaseTextValue,
 } from '../database-mentions';
+import type { BoardPositionsState } from '../primitives/board-layout';
 import { createColumnCasts } from '../queries/column-casts';
 import { updateDatabaseColumns } from '../queries/column-schema';
 import { createDatabaseRelations } from '../queries/database-relations';
@@ -48,11 +52,16 @@ import {
   useCardPositions,
   type ViewChange,
 } from '../queries/views';
+import type { BoardPositions } from '../views/database-board-view';
 import {
-  type DatabaseTableActions,
-  DatabaseTableView,
-} from '../views/database-table-view';
+  type DatabaseRecordsActions,
+  DatabaseRecordsView,
+} from '../views/database-records-view';
 import { AddColumnMenu, createDefaultColumn } from './AddColumnMenu';
+import type {
+  DatabaseMentionPickerProps,
+  DatabaseTextEditorProps,
+} from './GridCell';
 
 export type DatabaseGridProps = {
   databaseId: string;
@@ -64,7 +73,8 @@ export type DatabaseGridProps = {
   search: string;
   onViewChange?: (change: ViewChange) => void;
   onClearConstraints?: () => void;
-  renderToolbar?: (actions: DatabaseTableActions) => JSX.Element;
+  actionsRef?: (actions: DatabaseRecordsActions) => void;
+  renderToolbar?: (actions: DatabaseRecordsActions) => JSX.Element;
   onOpenRelated?: (destination: DatabaseRelatedDestination) => void;
 };
 
@@ -81,6 +91,59 @@ export function DatabaseGrid(props: DatabaseGridProps) {
   );
 }
 
+const renderTextEditor = (editor: DatabaseTextEditorProps) => (
+  <DatabaseTextEditor {...editor} />
+);
+const renderTextValue = (value: string) => <DatabaseTextValue value={value} />;
+const renderMentionPicker = (picker: DatabaseMentionPickerProps) => (
+  <DatabaseMentionPicker {...picker} />
+);
+const renderMentionValue = (id: string, entityType: DatabaseEntityType) => (
+  <DatabaseMentionValue id={id} entityType={entityType} />
+);
+
+/** A link column's target: the database and table its rows live in. */
+type LinkTarget = { databaseId: string; tableId: string };
+
+/** The source with each relation column carrying the related rows' names. */
+function withRelationLabels(
+  source: DatabaseRowsSource,
+  relations: (tableId: string) => DatabaseRelationSource
+): DatabaseRowsSource {
+  const columns = createMemo(() =>
+    source.columns().map((column) =>
+      column.relation
+        ? {
+            ...column,
+            relation: {
+              ...column.relation,
+              labels: Object.fromEntries(
+                relations(column.relation.tableId)
+                  .rows()
+                  .map((row) => [row.id, row.name])
+              ),
+            },
+          }
+        : column
+    )
+  );
+  return { ...source, columns };
+}
+
+/** Refreshes the related tables of one other database when it changes. */
+function RelatedDatabaseSync(props: {
+  databaseId: string;
+  targets: LinkTarget[];
+  relations: (tableId: string) => DatabaseRelationSource;
+}) {
+  useRelatedDatabaseSync(props.databaseId, () => {
+    for (const target of props.targets)
+      if (target.databaseId === props.databaseId)
+        refreshInBackground(props.relations(target.tableId));
+  });
+  return null;
+}
+
 function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
   // Keep the final schema for this table available to already-queued writes
   // after its tab is closed; a new selected table must never redirect them.
@@ -91,59 +154,74 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
   };
   const databaseId = props.databaseId;
   const detail = useDatabaseDetailQuery(() => databaseId);
-  const relatedTargets = () =>
+  const linkTargets = (): LinkTarget[] =>
     table().columns.flatMap((column) =>
-      column.column.config?.kind === 'link' &&
-      column.column.config.database_id !== databaseId
-        ? [column.column.config]
+      column.column.config?.kind === 'link'
+        ? [
+            {
+              databaseId: column.column.config.database_id,
+              tableId: column.column.config.table_id,
+            },
+          ]
         : []
     );
   const relatedDatabases = () => [
-    ...new Set(relatedTargets().map((target) => target.database_id)),
+    ...new Set(
+      linkTargets()
+        .map((target) => target.databaseId)
+        .filter((id) => id !== databaseId)
+    ),
   ];
   const relations = createDatabaseRelations({
-    targets: () =>
-      table().columns.flatMap((column) =>
-        column.column.config?.kind === 'link'
-          ? [
-              {
-                databaseId: column.column.config.database_id,
-                tableId: column.column.config.table_id,
-              },
-            ]
-          : []
-      ),
+    targets: linkTargets,
     onTableChanged: (listener) =>
       useDatabaseTableChanges((change) => listener(change.tableId)),
   });
-  const source = createDatabaseRowsSource({
-    databaseId,
-    table,
-    view: () => props.view,
-    search: () => props.search,
-    applyOps: (ops) => applyDatabaseOps(databaseId, ops),
-    onTableChanged: (listener) =>
-      useDatabaseTableChanges((change) => {
-        if (change.tableId !== props.tableId) return;
-        listener(change.version);
-        if (props.stored && props.view.layout.kind === 'board')
-          void refreshCardPositions(databaseId, props.view.id);
-      }),
-    applyVersions: (versions) =>
-      applyDatabaseTableVersions(databaseId, versions),
-    addOption: (columnId, label) =>
-      addDatabaseColumnOptions({
-        databaseId,
-        tableId: props.tableId,
-        columnId,
-        labels: [label],
-      }).map(() => undefined),
-  });
+  const source = withRelationLabels(
+    createDatabaseRowsSource({
+      databaseId,
+      table,
+      view: () => props.view,
+      search: () => props.search,
+      applyOps: (ops) => applyDatabaseOps(databaseId, ops),
+      onTableChanged: (listener) =>
+        useDatabaseTableChanges((change) => {
+          if (change.tableId !== props.tableId) return;
+          listener(change.version);
+          if (props.stored && props.view.layout.kind === 'board')
+            void refreshCardPositions(databaseId, props.view.id);
+        }),
+      applyVersions: (versions) =>
+        applyDatabaseTableVersions(databaseId, versions),
+      addOption: (columnId, label) =>
+        addDatabaseColumnOptions({
+          databaseId,
+          tableId: props.tableId,
+          columnId,
+          labels: [label],
+        }).map(() => undefined),
+    }),
+    relations
+  );
   const boardViewId = () =>
     props.stored && props.view.layout.kind === 'board'
       ? props.view.id
       : undefined;
   const positions = useCardPositions(databaseId, boardViewId);
+  const boardPositions: BoardPositions = {
+    state: (): BoardPositionsState => {
+      if (positions.isSuccess)
+        return { kind: 'ready', positions: positions.data };
+      if (positions.isError)
+        return { kind: 'failed', retry: () => void positions.refetch() };
+      return { kind: 'loading' };
+    },
+    setPositions: (change) => {
+      const viewId = boardViewId();
+      if (viewId) setCardPositions(databaseId, viewId, change);
+    },
+    move: moveDatabaseCard,
+  };
   const optionEditing: OptionEditing = {
     update: (columnId, optionId, change) =>
       updateDatabaseOption(
@@ -165,41 +243,43 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
   );
   const remoteUsers = () =>
     awareness.remote().filter((user) => user.tableId === props.tableId);
-  const rawColumns = source.columns;
-  source.columns = createMemo(() =>
-    rawColumns().map((column) =>
-      column.relation
-        ? {
-            ...column,
-            relation: {
-              ...column.relation,
-              labels: Object.fromEntries(
-                relations(column.relation.tableId)
-                  .rows()
-                  .map((row) => [row.id, row.name])
-              ),
-            },
-          }
-        : column
-    )
-  );
+  const relationTables = () =>
+    detail.isSuccess
+      ? detail.data.tables.map(({ table }) => ({
+          id: table.id,
+          name: table.name,
+        }))
+      : [];
+  const columnCasts = createColumnCasts({
+    databaseId,
+    tableId: props.tableId,
+    version: () => table().table.version,
+  });
+  const changeColumns = (
+    mutation: Parameters<typeof updateDatabaseColumns>[0]['mutation']
+  ) =>
+    updateDatabaseColumns({
+      databaseId,
+      tableId: props.tableId,
+      baseVersion: table().table.version,
+      mutation,
+    });
   return (
     <>
       <For each={relatedDatabases()}>
-        {(id) => {
-          useRelatedDatabaseSync(id, () => {
-            for (const target of relatedTargets())
-              if (target.database_id === id)
-                refreshInBackground(relations(target.table_id));
-          });
-          return null;
-        }}
+        {(id) => (
+          <RelatedDatabaseSync
+            databaseId={id}
+            targets={linkTargets()}
+            relations={relations}
+          />
+        )}
       </For>
       <StaticMarkdownContext>
         <OptionEditingContext.Provider
           value={props.canEdit ? optionEditing : undefined}
         >
-          <DatabaseTableView
+          <DatabaseRecordsView
             name={table().table.name}
             source={source}
             canEdit={props.canEdit}
@@ -208,78 +288,39 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
             search={props.search}
             onViewChange={props.onViewChange}
             onClearConstraints={props.onClearConstraints}
-            boardPositions={{
-              positions: () =>
-                positions.isSuccess ? positions.data : undefined,
-              setPositions: (change) => {
-                const viewId = boardViewId();
-                if (viewId) setCardPositions(databaseId, viewId, change);
-              },
-              move: moveDatabaseCard,
-            }}
+            boardPositions={boardPositions}
             onCellFocus={setFocusedCell}
             remoteUsers={remoteUsers()}
-            renderTextEditor={(editor) => <DatabaseTextEditor {...editor} />}
-            renderTextValue={(value) => <DatabaseTextValue value={value} />}
-            renderMentionPicker={(picker) => (
-              <DatabaseMentionPicker {...picker} />
-            )}
-            renderMentionValue={(id, entityType) => (
-              <DatabaseMentionValue id={id} entityType={entityType} />
-            )}
+            renderTextEditor={renderTextEditor}
+            renderTextValue={renderTextValue}
+            renderMentionPicker={renderMentionPicker}
+            renderMentionValue={renderMentionValue}
             renderRelationCell={(cell) => (
               <DatabaseRelationCell
                 {...cell}
-                source={relations(cell.column.relation!.tableId)}
+                source={relations(cell.column.relation.tableId)}
                 onOpen={(rowId) =>
-                  props.onOpenRelated?.({ ...cell.column.relation!, rowId })
+                  props.onOpenRelated?.({ ...cell.column.relation, rowId })
                 }
               />
             )}
-            relationTables={
-              detail.isSuccess
-                ? detail.data.tables.map(({ table }) => ({
-                    id: table.id,
-                    name: table.name,
-                  }))
-                : []
-            }
-            columnCasts={createColumnCasts({
-              databaseId,
-              tableId: props.tableId,
-              version: () => table().table.version,
-            })}
+            relationTables={relationTables()}
+            columnCasts={columnCasts}
             onChangeColumnType={(columnId, change) =>
-              updateDatabaseColumns({
-                databaseId,
-                tableId: props.tableId,
-                baseVersion: table().table.version,
-                mutation: { kind: 'type', columnId, change },
-              })
+              changeColumns({ kind: 'type', columnId, change })
             }
             onDeleteColumn={(columnId) =>
-              updateDatabaseColumns({
-                databaseId,
-                tableId: props.tableId,
-                baseVersion: table().table.version,
-                mutation: { kind: 'delete', columnId },
+              changeColumns({ kind: 'delete', columnId })
+            }
+            onReorderColumns={(columnIds) =>
+              changeColumns({
+                kind: 'order',
+                columnIds: mergeDatabaseColumnOrder(
+                  table().columns.map(({ column }) => column.id),
+                  columnIds
+                ),
               })
             }
-            onReorderColumns={(columnIds) => {
-              const current = table();
-              return updateDatabaseColumns({
-                databaseId,
-                tableId: props.tableId,
-                baseVersion: current.table.version,
-                mutation: {
-                  kind: 'order',
-                  columnIds: mergeDatabaseColumnOrder(
-                    current.columns.map(({ column }) => column.id),
-                    columnIds
-                  ),
-                },
-              });
-            }}
             onRenameColumn={(columnId, name, previousName) =>
               renameDatabaseColumn({
                 databaseId,
@@ -289,6 +330,7 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
                 previousName,
               })
             }
+            actionsRef={props.actionsRef}
             renderToolbar={props.renderToolbar}
             createColumn={() =>
               createDefaultColumn({

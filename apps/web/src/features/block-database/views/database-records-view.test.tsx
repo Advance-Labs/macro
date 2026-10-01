@@ -23,24 +23,20 @@ import {
   type Result,
   ResultAsync,
 } from 'neverthrow';
-import { type Accessor, createSignal } from 'solid-js';
+import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DatabaseToolbar } from '../components/database-toolbar';
-import type {
-  DatabaseRowsSnapshot,
-  DatabaseRowsSource,
-  DatabaseWriteResult,
-} from '../context/table-source';
+import type { DatabaseWriteResult } from '../context/table-source';
 import type { DatabaseViewColumn } from '../core/database-view';
-import type { DatabaseRow } from '../core/table';
 import { allRecordsView } from '../core/views';
 import type { DatabaseWriteFailure } from '../core/write-failure';
 import type { ViewChange } from '../queries/views';
+import { createFakeRowsSource, titleContains } from '../tests/fake-rows-source';
 import type { BoardPositions } from './database-board-view';
 import {
-  type DatabaseTableActions,
-  DatabaseTableView,
-} from './database-table-view';
+  type DatabaseRecordsActions,
+  DatabaseRecordsView,
+} from './database-records-view';
 
 // The real date selector opens the app's websockets on import.
 vi.mock('@property/editors/selectors/PropertyDateSelector', () => ({
@@ -114,7 +110,7 @@ const statusBoard: DatabaseView = {
 
 /** Cards with no stored places: each lane keeps the rows' order. */
 const unplacedCards: BoardPositions = {
-  positions: () => [],
+  state: () => ({ kind: 'ready', positions: [] }),
   setPositions: () => {},
   move: () => okAsync([]),
 };
@@ -124,117 +120,17 @@ const lostConnection: DatabaseWriteFailure = {
   error: { code: 'NETWORK_ERROR', message: 'Connection lost', refusal: null },
 };
 
-/** What the fake table holds, before the view's statement narrows it. */
-type StoredTable = Omit<DatabaseRowsSnapshot, 'retained'>;
-
-function sourceFixture() {
-  const [viewColumns, setColumns] = createSignal(columns);
-  const [table, setSnapshot] = createSignal<StoredTable>({
-    version: 1,
-    rows: [{ rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } }],
-  });
-  // Stands in for the engine: the rows the view's statement returns, in order.
-  const [answerView, setAnswerView] = createSignal<
-    (rows: DatabaseRow[]) => DatabaseRow[]
-  >((rows) => rows);
-  const [retainedIds, setRetainedIds] = createSignal<
-    Accessor<readonly string[]>
-  >(() => []);
-  const source: DatabaseRowsSource = {
-    columns: viewColumns,
-    snapshot: () => ({
-      version: table().version,
-      rows: answerView()(table().rows),
-      retained: table().rows.filter((row) =>
-        retainedIds()().includes(row.rowId)
-      ),
-    }),
-    read: () => {
-      const answered = answerView()(table().rows);
-      return {
-        catalog: { tables: [] },
-        view: allRecords,
-        outcome: {
-          columns: viewColumns().map((column) => ({
-            name: column.name,
-            column: column.id,
-            kind: 'select' as const,
-          })),
-          rows: answered.map((row) =>
-            viewColumns().map((column) => ({
-              type: 'options' as const,
-              value: column.options
-                .filter((option) => option.label === row.cells[column.id])
-                .map((option) => option.id),
-            }))
-          ),
-          rowIds: answered.map((row) => row.rowId),
-          readTables: [],
-          truncated: false,
-          insertedRowIds: [],
-          changesApplied: 0,
-        },
-      };
-    },
-    loading: () => false,
-    refreshing: () => false,
-    error: () => undefined,
-    refresh: vi.fn<DatabaseRowsSource['refresh']>(() => okAsync(undefined)),
-    write: vi.fn<DatabaseRowsSource['write']>(() =>
-      okAsync({ version: 2, insertedRowIds: [] })
-    ),
-    addOption: vi.fn<DatabaseRowsSource['addOption']>(() => okAsync(undefined)),
-    retain: (rowIds) => setRetainedIds(() => rowIds),
-  };
-  return { source, table, setSnapshot, setColumns, setAnswerView };
-}
-
-/** A title search the way the engine answers it: case-insensitive contains. */
-function titleContains(term: string) {
-  return (rows: DatabaseRow[]) =>
-    rows.filter((row) =>
-      String(row.cells.title ?? '')
-        .toLowerCase()
-        .includes(term)
-    );
-}
-
-function persistWrites({
-  source,
-  table,
-  setSnapshot,
-}: ReturnType<typeof sourceFixture>) {
-  let createdCount = 0;
-  vi.mocked(source.write).mockImplementation((mutation) => {
-    const snapshot = table();
-    const version = (snapshot.version ?? 0) + 1;
-    const insertedRowIds =
-      mutation.kind === 'create'
-        ? [++createdCount === 1 ? 'created' : `created-${createdCount}`]
-        : [];
-    const rows =
-      mutation.kind === 'create'
-        ? [
-            ...snapshot.rows,
-            { rowId: insertedRowIds[0], cells: mutation.values },
-          ]
-        : snapshot.rows.flatMap((row) => {
-            if (row.rowId !== mutation.rowId) return [row];
-            if (mutation.kind === 'delete') return [];
-            return [
-              {
-                ...row,
-                cells: { ...row.cells, [mutation.columnId]: mutation.value },
-              },
-            ];
-          });
-    setSnapshot({ version, rows });
-    return okAsync({ version, insertedRowIds });
-  });
-}
-
 function columnOrderFixture() {
-  const { source, setColumns } = sourceFixture();
+  const { source, setColumns } = createFakeRowsSource({
+    columns,
+    table: {
+      version: 1,
+      rows: [
+        { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+      ],
+    },
+    view: allRecords,
+  });
   setColumns([
     ...columns,
     { ...columns[0], id: 'notes', name: 'Notes' },
@@ -272,7 +168,7 @@ function columnOrderFixture() {
       )
   );
   const mounted = render(() => (
-    <DatabaseTableView
+    <DatabaseRecordsView
       name="Projects"
       source={source}
       canEdit
@@ -282,6 +178,7 @@ function columnOrderFixture() {
       onViewChange={changeView}
       onReorderColumns={reorder}
       addColumn={() => null}
+      boardPositions={unplacedCards}
     />
   ));
   const moveName = async (direction: 'left' | 'right') => {
@@ -340,10 +237,19 @@ afterEach(() => {
 
 describe('database table view', () => {
   it('offers refresh and draft recovery after a lost create response without a duplicate Retry', async () => {
-    const fixture = sourceFixture();
+    const fixture = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
     fixture.setColumns([columns[0]]);
-    fixture.setSnapshot({ version: 1, rows: [] });
-    persistWrites(fixture);
+    fixture.setTable({ version: 1, rows: [] });
+    fixture.persistWrites();
     const commit = vi.mocked(fixture.source.write).getMockImplementation()!;
     vi.mocked(fixture.source.write).mockImplementationOnce(
       (mutation, version, createOptions) =>
@@ -354,7 +260,7 @@ describe('database table view', () => {
         )
     );
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={fixture.source}
         canEdit
@@ -362,6 +268,7 @@ describe('database table view', () => {
         stored={false}
         search=""
         addColumn={() => null}
+        boardPositions={unplacedCards}
       />
     ));
     fireEvent.click(screen.getByRole('button', { name: /Name: Unnamed/ }));
@@ -395,10 +302,19 @@ describe('database table view', () => {
   });
 
   it('opens a compact record editor with its title only once and tabs into the next field', async () => {
-    const fixture = sourceFixture();
-    persistWrites(fixture);
+    const fixture = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
+    fixture.persistWrites();
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={fixture.source}
         canEdit
@@ -406,6 +322,7 @@ describe('database table view', () => {
         stored={false}
         search=""
         addColumn={() => null}
+        boardPositions={unplacedCards}
       />
     ));
     fireEvent.click(screen.getByRole('button', { name: 'Open Plan launch' }));
@@ -437,9 +354,18 @@ describe('database table view', () => {
   });
 
   it('cancels the title draft with Escape before closing the record on a second Escape', async () => {
-    const { source } = sourceFixture();
+    const { source } = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={source}
         canEdit
@@ -447,6 +373,7 @@ describe('database table view', () => {
         stored={false}
         search=""
         addColumn={() => null}
+        boardPositions={unplacedCards}
       />
     ));
     fireEvent.click(screen.getByRole('button', { name: 'Open Plan launch' }));
@@ -461,9 +388,18 @@ describe('database table view', () => {
   });
 
   it('focuses the title when a read-only record opens', async () => {
-    const { source } = sourceFixture();
+    const { source } = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={source}
         canEdit={false}
@@ -471,6 +407,7 @@ describe('database table view', () => {
         stored={false}
         search=""
         addColumn={() => null}
+        boardPositions={unplacedCards}
       />
     ));
     fireEvent.click(screen.getByRole('button', { name: 'Open Plan launch' }));
@@ -486,12 +423,21 @@ describe('database table view', () => {
   it.each(['option', 'number'])(
     'discards an unsaved %s draft when navigating to another record',
     async (kind) => {
-      const fixture = sourceFixture();
+      const fixture = createFakeRowsSource({
+        columns,
+        table: {
+          version: 1,
+          rows: [
+            { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+          ],
+        },
+        view: allRecords,
+      });
       fixture.setColumns([
         ...columns,
         { ...columns[0], id: 'amount', name: 'Amount', dataType: 'NUMBER' },
       ]);
-      fixture.setSnapshot({
+      fixture.setTable({
         version: 1,
         rows: [
           {
@@ -505,7 +451,7 @@ describe('database table view', () => {
         ],
       });
       render(() => (
-        <DatabaseTableView
+        <DatabaseRecordsView
           name="Projects"
           source={fixture.source}
           canEdit
@@ -513,6 +459,7 @@ describe('database table view', () => {
           stored={false}
           search=""
           addColumn={() => null}
+          boardPositions={unplacedCards}
         />
       ));
       fireEvent.click(screen.getByRole('button', { name: 'Open Plan launch' }));
@@ -560,7 +507,16 @@ describe('database table view', () => {
   );
 
   it('tabs into the blank row while the previous edit saves without creating an empty record', async () => {
-    const fixture = sourceFixture();
+    const fixture = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
     fixture.setColumns([columns[0]]);
     let complete!: () => void;
     vi.mocked(fixture.source.write).mockImplementationOnce(() =>
@@ -571,7 +527,7 @@ describe('database table view', () => {
       ).map(() => ({ version: 2, insertedRowIds: [] }))
     );
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={fixture.source}
         canEdit
@@ -579,6 +535,7 @@ describe('database table view', () => {
         stored={false}
         search=""
         addColumn={() => null}
+        boardPositions={unplacedCards}
       />
     ));
     fireEvent.click(screen.getByRole('button', { name: /Name: Plan launch/ }));
@@ -609,14 +566,23 @@ describe('database table view', () => {
   it.each([true, false])(
     'focuses the first cell after initial loading; empty table=%s',
     async (empty) => {
-      const fixture = sourceFixture();
-      persistWrites(fixture);
+      const fixture = createFakeRowsSource({
+        columns,
+        table: {
+          version: 1,
+          rows: [
+            { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+          ],
+        },
+        view: allRecords,
+      });
+      fixture.persistWrites();
       const [loading, setLoading] = createSignal(true);
       fixture.source.loading = loading;
-      if (empty) fixture.setSnapshot({ version: 1, rows: [] });
-      let actions!: DatabaseTableActions;
+      if (empty) fixture.setTable({ version: 1, rows: [] });
+      let actions!: DatabaseRecordsActions;
       render(() => (
-        <DatabaseTableView
+        <DatabaseRecordsView
           name="Projects"
           source={fixture.source}
           canEdit
@@ -624,10 +590,10 @@ describe('database table view', () => {
           stored={false}
           search=""
           addColumn={() => null}
-          renderToolbar={(ready) => {
+          actionsRef={(ready) => {
             actions = ready;
-            return null;
           }}
+          boardPositions={unplacedCards}
         />
       ));
       const first = actions.focusFirstCell();
@@ -644,7 +610,16 @@ describe('database table view', () => {
   );
 
   it('inserts a new column beside the one whose menu asked, then opens its name for editing', async () => {
-    const fixture = sourceFixture();
+    const fixture = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
     fixture.setColumns([
       columns[0],
       { ...columns[0], id: 'notes', name: 'Notes' },
@@ -660,7 +635,7 @@ describe('database table view', () => {
       return okAsync('added');
     });
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={fixture.source}
         canEdit
@@ -674,6 +649,7 @@ describe('database table view', () => {
         onRenameColumn={vi.fn(() => okAsync(undefined))}
         createColumn={createColumn}
         addColumn={() => null}
+        boardPositions={unplacedCards}
       />
     ));
     fireEvent.keyDown(
@@ -701,8 +677,17 @@ describe('database table view', () => {
   });
 
   it('holds a row in place while it is being typed in, even after it stops matching the view', async () => {
-    const fixture = sourceFixture();
-    fixture.setSnapshot({
+    const fixture = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
+    fixture.setTable({
       version: 1,
       rows: [
         { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
@@ -710,7 +695,7 @@ describe('database table view', () => {
       ],
     });
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={fixture.source}
         canEdit
@@ -718,6 +703,7 @@ describe('database table view', () => {
         stored={false}
         search=""
         addColumn={() => null}
+        boardPositions={unplacedCards}
       />
     ));
     const cell = screen.getByRole('button', { name: /Name: Plan launch/ });
@@ -727,7 +713,7 @@ describe('database table view', () => {
     })) as HTMLInputElement;
     fireEvent.input(input, { target: { value: 'Plan the launch party' } });
     // Someone else's edit makes this row stop matching the view's filters.
-    fixture.setSnapshot({
+    fixture.setTable({
       version: 2,
       rows: [
         { rowId: 'other', cells: { title: 'Book venue', status: 'To do' } },
@@ -744,10 +730,19 @@ describe('database table view', () => {
   });
 
   it('takes a record visited from elsewhere to its highlighted row without opening it', async () => {
-    const fixture = sourceFixture();
-    let actions!: DatabaseTableActions;
+    const fixture = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
+    let actions!: DatabaseRecordsActions;
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={fixture.source}
         canEdit
@@ -755,10 +750,10 @@ describe('database table view', () => {
         stored={false}
         search=""
         addColumn={() => null}
-        renderToolbar={(ready) => {
+        actionsRef={(ready) => {
           actions = ready;
-          return null;
         }}
+        boardPositions={unplacedCards}
       />
     ));
     actions.openRecord('row');
@@ -773,10 +768,19 @@ describe('database table view', () => {
   });
 
   it('opens a record visited from elsewhere when the view has no row to show it in', async () => {
-    const fixture = sourceFixture();
-    let actions!: DatabaseTableActions;
+    const fixture = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
+    let actions!: DatabaseRecordsActions;
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={fixture.source}
         canEdit
@@ -784,10 +788,10 @@ describe('database table view', () => {
         stored
         search=""
         addColumn={() => null}
-        renderToolbar={(ready) => {
+        actionsRef={(ready) => {
           actions = ready;
-          return null;
         }}
+        boardPositions={unplacedCards}
       />
     ));
     actions.openRecord('row');
@@ -795,12 +799,21 @@ describe('database table view', () => {
   });
 
   it('cancels pending initial cell focus when the table is unmounted', async () => {
-    const fixture = sourceFixture();
+    const fixture = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
     const [loading, setLoading] = createSignal(true);
     fixture.source.loading = loading;
-    let actions!: DatabaseTableActions;
+    let actions!: DatabaseRecordsActions;
     const { unmount } = render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={fixture.source}
         canEdit
@@ -808,10 +821,10 @@ describe('database table view', () => {
         stored={false}
         search=""
         addColumn={() => null}
-        renderToolbar={(ready) => {
+        actionsRef={(ready) => {
           actions = ready;
-          return null;
         }}
+        boardPositions={unplacedCards}
       />
     ));
     const pending = actions.focusFirstCell();
@@ -822,13 +835,22 @@ describe('database table view', () => {
   });
 
   it('focuses a new column header and edits its cells in a row created from the blank draft', async () => {
-    const fixture = sourceFixture();
+    const fixture = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
     fixture.setColumns([columns[0]]);
-    fixture.setSnapshot({ version: 1, rows: [] });
-    persistWrites(fixture);
-    let actions!: DatabaseTableActions;
+    fixture.setTable({ version: 1, rows: [] });
+    fixture.persistWrites();
+    let actions!: DatabaseRecordsActions;
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={fixture.source}
         canEdit
@@ -837,10 +859,10 @@ describe('database table view', () => {
         stored={false}
         search=""
         addColumn={() => null}
-        renderToolbar={(value) => {
+        actionsRef={(value) => {
           actions = value;
-          return null;
         }}
+        boardPositions={unplacedCards}
       />
     ));
     fireEvent.click(screen.getByRole('button', { name: /Name: Unnamed/ }));
@@ -893,13 +915,22 @@ describe('database table view', () => {
   });
 
   it('retries a failed duplicate from its row menu once and focuses the new inline name', async () => {
-    const fixture = sourceFixture();
-    persistWrites(fixture);
+    const fixture = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
+    fixture.persistWrites();
     vi.mocked(fixture.source.write).mockReturnValueOnce(
       errAsync(lostConnection)
     );
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={fixture.source}
         canEdit
@@ -907,6 +938,7 @@ describe('database table view', () => {
         stored={false}
         search=""
         addColumn={() => null}
+        boardPositions={unplacedCards}
       />
     ));
     const duplicate = async () => {
@@ -936,9 +968,18 @@ describe('database table view', () => {
   });
 
   it('confirms a context-menu deletion and retries the same record without leaving a stale failure', async () => {
-    const fixture = sourceFixture();
-    persistWrites(fixture);
-    fixture.setSnapshot({
+    const fixture = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
+    fixture.persistWrites();
+    fixture.setTable({
       version: 1,
       rows: [
         { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
@@ -952,7 +993,7 @@ describe('database table view', () => {
       errAsync(lostConnection)
     );
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={fixture.source}
         canEdit
@@ -960,6 +1001,7 @@ describe('database table view', () => {
         stored={false}
         search=""
         addColumn={() => null}
+        boardPositions={unplacedCards}
       />
     ));
     fireEvent.contextMenu(
@@ -993,8 +1035,17 @@ describe('database table view', () => {
   it.each(['draft', 'error banner'])(
     'creates only one card when a failed draft is retried through the %s',
     async (surface) => {
-      const fixture = sourceFixture();
-      persistWrites(fixture);
+      const fixture = createFakeRowsSource({
+        columns,
+        table: {
+          version: 1,
+          rows: [
+            { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+          ],
+        },
+        view: allRecords,
+      });
+      fixture.persistWrites();
       const commit = vi.mocked(fixture.source.write).getMockImplementation()!;
       let complete!: () => void;
       const pending = new Promise<void>((resolve) => {
@@ -1008,7 +1059,7 @@ describe('database table view', () => {
           )
         );
       render(() => (
-        <DatabaseTableView
+        <DatabaseRecordsView
           name="Projects"
           source={fixture.source}
           canEdit
@@ -1089,12 +1140,21 @@ describe('database table view', () => {
   );
 
   it('reveals a card created outside search through its saved notice without creating it again', async () => {
-    const fixture = sourceFixture();
-    fixture.setAnswerView(() => titleContains('launch'));
-    persistWrites(fixture);
+    const fixture = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
+    fixture.setAnswer(() => titleContains('launch'));
+    fixture.persistWrites();
     const changeView = vi.fn();
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={fixture.source}
         canEdit
@@ -1143,11 +1203,20 @@ describe('database table view', () => {
   });
 
   it('keeps editing a record that stops matching search and removes the explanation when it matches again', async () => {
-    const fixture = sourceFixture();
-    fixture.setAnswerView(() => titleContains('launch'));
-    persistWrites(fixture);
+    const fixture = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
+    fixture.setAnswer(() => titleContains('launch'));
+    fixture.persistWrites();
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={fixture.source}
         canEdit
@@ -1155,6 +1224,7 @@ describe('database table view', () => {
         stored={false}
         search="launch"
         addColumn={() => <button type="button">Add column</button>}
+        boardPositions={unplacedCards}
       />
     ));
     fireEvent.click(screen.getByRole('button', { name: 'Open Plan launch' }));
@@ -1187,7 +1257,16 @@ describe('database table view', () => {
   });
 
   it('keeps an acknowledged new record in the view when its refresh fails, without offering a duplicate create retry', async () => {
-    const { source } = sourceFixture();
+    const { source } = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
     vi.mocked(source.write).mockReturnValue(
       okAsync({ version: 2, insertedRowIds: ['created'] })
     );
@@ -1195,7 +1274,7 @@ describe('database table view', () => {
       errAsync({ kind: 'fetch', message: 'Connection lost' })
     );
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={source}
         canEdit
@@ -1203,6 +1282,7 @@ describe('database table view', () => {
         stored={false}
         search="launch"
         addColumn={() => <button type="button">Add column</button>}
+        boardPositions={unplacedCards}
       />
     ));
     fireEvent.click(
@@ -1234,11 +1314,20 @@ describe('database table view', () => {
   ])(
     'focuses an editable draft cell with $kind and only creates after entering a value',
     async ({ schema, editsTitle }) => {
-      const fixture = sourceFixture();
+      const fixture = createFakeRowsSource({
+        columns,
+        table: {
+          version: 1,
+          rows: [
+            { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+          ],
+        },
+        view: allRecords,
+      });
       fixture.setColumns(schema);
-      persistWrites(fixture);
+      fixture.persistWrites();
       render(() => (
-        <DatabaseTableView
+        <DatabaseRecordsView
           name="Projects"
           source={fixture.source}
           canEdit
@@ -1251,6 +1340,7 @@ describe('database table view', () => {
               New record
             </button>
           )}
+          boardPositions={unplacedCards}
         />
       ));
       fireEvent.click(screen.getByRole('button', { name: 'New record' }));
@@ -1288,9 +1378,18 @@ describe('database table view', () => {
   it.each(['table', 'record panel'])(
     'keeps an active %s editor, draft and focus during row and cloned schema refreshes',
     (surface) => {
-      const { source, setSnapshot, setColumns } = sourceFixture();
+      const { source, setTable, setColumns } = createFakeRowsSource({
+        columns,
+        table: {
+          version: 1,
+          rows: [
+            { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+          ],
+        },
+        view: allRecords,
+      });
       render(() => (
-        <DatabaseTableView
+        <DatabaseRecordsView
           name="Projects"
           source={source}
           canEdit
@@ -1298,6 +1397,7 @@ describe('database table view', () => {
           stored={false}
           search=""
           addColumn={() => <button type="button">Add property</button>}
+          boardPositions={unplacedCards}
         />
       ));
       if (surface === 'record panel')
@@ -1312,7 +1412,7 @@ describe('database table view', () => {
         name: 'Edit Name',
       }) as HTMLInputElement;
       fireEvent.input(editor, { target: { value: 'My unsaved title' } });
-      setSnapshot({
+      setTable({
         version: 2,
         rows: [
           {
@@ -1331,9 +1431,18 @@ describe('database table view', () => {
   );
 
   it('keeps the title property for card titles and new writes when cards show no other fields', async () => {
-    const { source } = sourceFixture();
+    const { source } = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={source}
         canEdit
@@ -1374,7 +1483,16 @@ describe('database table view', () => {
   ])(
     'creates a $dataType-only card without writing a title into its grouping field',
     async ({ dataType, name, option }) => {
-      const { source, setColumns, setSnapshot } = sourceFixture();
+      const { source, setColumns, setTable } = createFakeRowsSource({
+        columns,
+        table: {
+          version: 1,
+          rows: [
+            { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+          ],
+        },
+        view: allRecords,
+      });
       setColumns([
         {
           id: 'group',
@@ -1385,9 +1503,9 @@ describe('database table view', () => {
           writable: true,
         },
       ]);
-      setSnapshot({ version: 1, rows: [] });
+      setTable({ version: 1, rows: [] });
       render(() => (
-        <DatabaseTableView
+        <DatabaseRecordsView
           name="Projects"
           source={source}
           canEdit
@@ -1427,9 +1545,18 @@ describe('database table view', () => {
   );
 
   it('starts an inline card in the first lane when the toolbar adds a record to a board', async () => {
-    const { source } = sourceFixture();
+    const { source } = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={source}
         canEdit
@@ -1471,10 +1598,19 @@ describe('database table view', () => {
   });
 
   it('creates a card without writing a read-only string title', async () => {
-    const { source, setColumns } = sourceFixture();
+    const { source, setColumns } = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
     setColumns([{ ...columns[0], writable: false }, columns[1]]);
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={source}
         canEdit
@@ -1502,10 +1638,19 @@ describe('database table view', () => {
   });
 
   it('shows save failures and a working retry inside the record panel', async () => {
-    const { source } = sourceFixture();
+    const { source } = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
     vi.mocked(source.write).mockReturnValueOnce(errAsync(lostConnection));
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={source}
         canEdit
@@ -1513,6 +1658,7 @@ describe('database table view', () => {
         stored={false}
         search=""
         addColumn={() => <button type="button">Add property</button>}
+        boardPositions={unplacedCards}
       />
     ));
     fireEvent.click(screen.getByRole('button', { name: 'Open Plan launch' }));
@@ -1535,12 +1681,65 @@ describe('database table view', () => {
     await waitFor(() => expect(source.write).toHaveBeenCalledTimes(2));
   });
 
-  it('uses an explicit first-property action when the table has no schema', () => {
-    const { source, setSnapshot } = sourceFixture();
-    source.columns = () => [];
-    setSnapshot({ version: 1, rows: [] });
+  it('says a change was not saved only in the panel of the record it was made to', async () => {
+    const { source } = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+          { rowId: 'other', cells: { title: 'Hire team', status: 'Done' } },
+        ],
+      },
+      view: allRecords,
+    });
+    vi.mocked(source.write).mockReturnValueOnce(errAsync(lostConnection));
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
+        name="Projects"
+        source={source}
+        canEdit
+        view={allRecords}
+        stored={false}
+        search=""
+        addColumn={() => null}
+        boardPositions={unplacedCards}
+      />
+    ));
+    fireEvent.click(screen.getByRole('button', { name: /Name: Hire team/ }));
+    const input = screen.getByRole('textbox', { name: 'Edit Name' });
+    fireEvent.input(input, { target: { value: 'Hire a team' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await screen.findByText('Could not save Name.');
+    fireEvent.click(screen.getByRole('button', { name: 'Open Plan launch' }));
+    const planLaunch = await screen.findByRole('dialog', {
+      name: 'Plan launch',
+    });
+    expect(planLaunch.textContent).not.toContain('was not saved');
+    fireEvent.keyDown(planLaunch, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: /^Open Hire/ }));
+    const hireTeam = await screen.findByRole('dialog');
+    expect(hireTeam.textContent).toContain(
+      'Your change to Name was not saved.'
+    );
+  });
+
+  it('uses an explicit first-property action when the table has no schema', () => {
+    const { source, setTable } = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
+    source.columns = () => [];
+    setTable({ version: 1, rows: [] });
+    render(() => (
+      <DatabaseRecordsView
         name="Projects"
         source={source}
         canEdit
@@ -1550,6 +1749,7 @@ describe('database table view', () => {
         addColumn={(label) => (
           <button type="button">{label ?? 'Add property'}</button>
         )}
+        boardPositions={unplacedCards}
       />
     ));
     expect(
@@ -1558,8 +1758,17 @@ describe('database table view', () => {
   });
 
   it('deletes the record open in the panel after confirmation', async () => {
-    const { source, setSnapshot } = sourceFixture();
-    setSnapshot({
+    const { source, setTable } = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
+    setTable({
       version: 1,
       rows: [
         { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
@@ -1570,7 +1779,7 @@ describe('database table view', () => {
       ],
     });
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={source}
         canEdit
@@ -1578,6 +1787,7 @@ describe('database table view', () => {
         stored={false}
         search=""
         addColumn={() => <button type="button">Add property</button>}
+        boardPositions={unplacedCards}
       />
     ));
     fireEvent.click(screen.getByRole('button', { name: 'Open Plan launch' }));
@@ -1599,10 +1809,19 @@ describe('database table view', () => {
   });
 
   it('makes column sorting explicit and supplies record creation to the toolbar', async () => {
-    const { source } = sourceFixture();
+    const { source } = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
     const changeView = vi.fn();
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={source}
         canEdit
@@ -1620,6 +1839,7 @@ describe('database table view', () => {
             Create from toolbar
           </button>
         )}
+        boardPositions={unplacedCards}
       />
     ));
     fireEvent.keyDown(
@@ -1655,7 +1875,16 @@ describe('database table view', () => {
   });
 
   it('persists menu moves at the neighboring visible edge in both directions', async () => {
-    const { source, setColumns } = sourceFixture();
+    const { source, setColumns } = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
     setColumns([...columns, { ...columns[0], id: 'notes', name: 'Notes' }]);
     const [view, setView] = createSignal<DatabaseView>({
       ...allRecords,
@@ -1670,7 +1899,7 @@ describe('database table view', () => {
     });
     const reorder = vi.fn((_order: string[]) => okAsync(undefined));
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={source}
         canEdit
@@ -1682,6 +1911,7 @@ describe('database table view', () => {
         }
         onReorderColumns={reorder}
         addColumn={() => null}
+        boardPositions={unplacedCards}
       />
     ));
     const moveName = async (direction: 'left' | 'right') => {
@@ -1730,12 +1960,21 @@ describe('database table view', () => {
   });
 
   it('moves the columns of a stored view in its own layout without reordering the table', async () => {
-    const { source, setColumns } = sourceFixture();
+    const { source, setColumns } = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
     setColumns([...columns, { ...columns[0], id: 'notes', name: 'Notes' }]);
     const changeView = vi.fn();
     const reorder = vi.fn((_order: string[]) => okAsync(undefined));
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={source}
         canEdit
@@ -1757,6 +1996,7 @@ describe('database table view', () => {
         onViewChange={changeView}
         onReorderColumns={reorder}
         addColumn={() => null}
+        boardPositions={unplacedCards}
       />
     ));
     fireEvent.keyDown(
@@ -1912,9 +2152,18 @@ describe('database table view', () => {
   });
 
   it('lets viewers move and hide columns while keeping every record accessible and restoring its layout', async () => {
-    const { source, setColumns, setSnapshot } = sourceFixture();
+    const { source, setColumns, setTable } = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
     setColumns([...columns, { ...columns[0], id: 'notes', name: 'Notes' }]);
-    setSnapshot({
+    setTable({
       version: 1,
       rows: [
         {
@@ -1941,7 +2190,7 @@ describe('database table view', () => {
     const changeView = (change: ViewChange) =>
       setView((current) => ({ ...current, ...change }));
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Projects"
         source={source}
         canEdit={false}
@@ -1950,6 +2199,7 @@ describe('database table view', () => {
         search=""
         onViewChange={changeView}
         addColumn={() => null}
+        boardPositions={unplacedCards}
         renderToolbar={() => (
           <DatabaseToolbar
             columns={source.columns()}
@@ -2032,12 +2282,21 @@ describe('database table view', () => {
   });
 
   it('lets an empty Name-only table create its first record directly below the headers', async () => {
-    const fixture = sourceFixture();
+    const fixture = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
     fixture.setColumns([columns[0]]);
-    fixture.setSnapshot({ version: 1, rows: [] });
-    persistWrites(fixture);
+    fixture.setTable({ version: 1, rows: [] });
+    fixture.persistWrites();
     render(() => (
-      <DatabaseTableView
+      <DatabaseRecordsView
         name="Playground"
         source={fixture.source}
         canEdit
@@ -2050,6 +2309,7 @@ describe('database table view', () => {
             New record
           </button>
         )}
+        boardPositions={unplacedCards}
       />
     ));
     expect(

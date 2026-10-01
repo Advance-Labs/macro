@@ -17,6 +17,7 @@ import { errAsync, ok, okAsync, ResultAsync } from 'neverthrow';
 import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DatabaseOpFailure } from '../core/write-failure';
+import type { BoardPositionsState } from '../primitives/board-layout';
 import { DatabaseBoardView } from './database-board-view';
 
 const engine = vi.hoisted(() => ({
@@ -32,12 +33,15 @@ const engine = vi.hoisted(() => ({
   keyBetween: vi.fn<(before: string | null, after: string | null) => string>(),
 }));
 const toastFailure = vi.hoisted(() => vi.fn());
-
-vi.mock('@core/database-sql/wasm-module', () => ({
-  loadDatabaseSqlWasm: async () => ({
+const loadEngine = vi.hoisted(() =>
+  vi.fn(async () => ({
     board: engine.board,
     keyBetween: engine.keyBetween,
-  }),
+  }))
+);
+
+vi.mock('@core/database-sql/wasm-module', () => ({
+  loadDatabaseSqlWasm: loadEngine,
 }));
 vi.mock('@core/component/Toast/Toast', () => ({
   toast: { failure: toastFailure },
@@ -131,13 +135,6 @@ describe('database board view', () => {
     render(() => (
       <DatabaseBoardView
         view={view}
-        layout={{
-          kind: 'board',
-          groupBy: 'stage',
-          lanes: [],
-          cardFields: [],
-          hideEmptyLanes: false,
-        }}
         source={{
           columns: () => [],
           snapshot: () => undefined,
@@ -176,18 +173,11 @@ describe('database board view', () => {
             writable: true,
           },
         ]}
-        groupColumn={{
-          id: 'stage',
-          name: 'Stage',
-          dataType: 'SELECT_STRING',
-          isMultiSelect: false,
-          options: [
-            { id: 'done', label: 'Done', color: null },
-            { id: 'todo', label: 'To do', color: null },
-          ],
-          writable: true,
+        positions={{
+          state: () => ({ kind: 'ready', positions: positions() }),
+          setPositions,
+          move,
         }}
-        positions={{ positions, setPositions, move }}
         canEdit
         onViewChange={vi.fn()}
         rowPending={() => false}
@@ -283,13 +273,6 @@ describe('database board view', () => {
     render(() => (
       <DatabaseBoardView
         view={view}
-        layout={{
-          kind: 'board',
-          groupBy: 'stage',
-          lanes: [],
-          cardFields: [],
-          hideEmptyLanes: false,
-        }}
         source={{
           columns: () => [],
           snapshot: () => undefined,
@@ -327,18 +310,11 @@ describe('database board view', () => {
             writable: true,
           },
         ]}
-        groupColumn={{
-          id: 'stage',
-          name: 'Stage',
-          dataType: 'SELECT_STRING',
-          isMultiSelect: false,
-          options: [
-            { id: 'done', label: 'Done', color: null },
-            { id: 'todo', label: 'To do', color: null },
-          ],
-          writable: true,
+        positions={{
+          state: () => ({ kind: 'ready', positions: positions() }),
+          setPositions,
+          move,
         }}
-        positions={{ positions, setPositions, move }}
         canEdit
         onViewChange={vi.fn()}
         rowPending={() => false}
@@ -422,13 +398,6 @@ describe('database board view', () => {
     render(() => (
       <DatabaseBoardView
         view={view}
-        layout={{
-          kind: 'board',
-          groupBy: 'stage',
-          lanes: [],
-          cardFields: [],
-          hideEmptyLanes: false,
-        }}
         source={{
           columns: () => [],
           snapshot: () => undefined,
@@ -466,18 +435,11 @@ describe('database board view', () => {
             writable: true,
           },
         ]}
-        groupColumn={{
-          id: 'stage',
-          name: 'Stage',
-          dataType: 'SELECT_STRING',
-          isMultiSelect: false,
-          options: [
-            { id: 'done', label: 'Done', color: null },
-            { id: 'todo', label: 'To do', color: null },
-          ],
-          writable: true,
+        positions={{
+          state: () => ({ kind: 'ready', positions: positions() }),
+          setPositions,
+          move,
         }}
-        positions={{ positions, setPositions, move }}
         canEdit
         onViewChange={onViewChange}
         rowPending={() => false}
@@ -569,13 +531,6 @@ describe('database board view', () => {
     render(() => (
       <DatabaseBoardView
         view={view}
-        layout={{
-          kind: 'board',
-          groupBy: 'stage',
-          lanes: [],
-          cardFields: [],
-          hideEmptyLanes: false,
-        }}
         source={{
           columns: () => [],
           snapshot: () => undefined,
@@ -613,18 +568,11 @@ describe('database board view', () => {
             writable: true,
           },
         ]}
-        groupColumn={{
-          id: 'stage',
-          name: 'Stage',
-          dataType: 'SELECT_STRING',
-          isMultiSelect: false,
-          options: [
-            { id: 'done', label: 'Done', color: null },
-            { id: 'todo', label: 'To do', color: null },
-          ],
-          writable: true,
+        positions={{
+          state: () => ({ kind: 'ready', positions: positions() }),
+          setPositions: setPositionsSpy,
+          move,
         }}
-        positions={{ positions, setPositions: setPositionsSpy, move }}
         canEdit
         onViewChange={onViewChange}
         rowPending={() => false}
@@ -650,5 +598,204 @@ describe('database board view', () => {
     expect(setPositionsSpy).not.toHaveBeenCalled();
     expect(cardsIn('To do')).toEqual(['moving']);
     expect(cardsIn('Done')).toEqual(['first']);
+  });
+  it('says the board could not load when the engine fails, and loads it on Try again', async () => {
+    const view: DatabaseView = {
+      id: 'view',
+      databaseId: 'database',
+      tableId: 'table',
+      name: 'Board',
+      position: 'a0',
+      query: { filter: null, sort: [] },
+      layout: {
+        kind: 'board',
+        groupBy: 'stage',
+        lanes: [],
+        cardFields: [],
+        hideEmptyLanes: false,
+      },
+      createdAt: '2026-09-01T00:00:00Z',
+      updatedAt: '2026-09-01T00:00:00Z',
+    };
+    const outcome: Outcome = {
+      columns: [],
+      rows: [],
+      rowIds: ['first'],
+      readTables: ['table'],
+      truncated: false,
+      insertedRowIds: [],
+      changesApplied: 0,
+    };
+    engine.board.mockReturnValue({
+      lanes: [{ option: 'done', hidden: false, cards: ['first'] }],
+    });
+    loadEngine.mockRejectedValueOnce(new Error('Failed to fetch wasm'));
+    render(() => (
+      <DatabaseBoardView
+        view={view}
+        source={{
+          columns: () => [],
+          snapshot: () => undefined,
+          read: () => ({ outcome, catalog: { tables: [] }, view }),
+          loading: () => false,
+          refreshing: () => false,
+          error: () => undefined,
+          refresh: () => okAsync(undefined),
+          write: () => okAsync({ insertedRowIds: [], version: undefined }),
+          addOption: () => okAsync(undefined),
+          retain: () => {},
+        }}
+        rows={[
+          { rowId: 'first', cells: { name: 'First card', stage: 'Done' } },
+        ]}
+        columns={[
+          {
+            id: 'name',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          {
+            id: 'stage',
+            name: 'Stage',
+            dataType: 'SELECT_STRING',
+            isMultiSelect: false,
+            options: [{ id: 'done', label: 'Done', color: null }],
+            writable: true,
+          },
+        ]}
+        positions={{
+          state: () => ({ kind: 'ready', positions: [] }),
+          setPositions: vi.fn(),
+          move: vi.fn(() => okAsync<CardPosition[], DatabaseOpFailure>([])),
+        }}
+        canEdit
+        rowPending={() => false}
+        createPending={() => false}
+        createComplete={() => false}
+        onOpen={vi.fn()}
+        onCreate={vi.fn(async () => true)}
+      />
+    ));
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByText('This board could not be loaded')
+    ).toBeTruthy();
+    expect(
+      within(alert).getByText('Check your connection, then try again.')
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole('button', { name: 'Open First card' })
+    ).toBeNull();
+    fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+    expect(
+      await screen.findByRole('button', { name: 'Open First card' })
+    ).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(loadEngine).toHaveBeenCalledTimes(2);
+  });
+
+  it('says the board could not load when its card places fail, and asks for them again', async () => {
+    const view: DatabaseView = {
+      id: 'view',
+      databaseId: 'database',
+      tableId: 'table',
+      name: 'Board',
+      position: 'a0',
+      query: { filter: null, sort: [] },
+      layout: {
+        kind: 'board',
+        groupBy: 'stage',
+        lanes: [],
+        cardFields: [],
+        hideEmptyLanes: false,
+      },
+      createdAt: '2026-09-01T00:00:00Z',
+      updatedAt: '2026-09-01T00:00:00Z',
+    };
+    const outcome: Outcome = {
+      columns: [],
+      rows: [],
+      rowIds: ['first'],
+      readTables: ['table'],
+      truncated: false,
+      insertedRowIds: [],
+      changesApplied: 0,
+    };
+    engine.board.mockReturnValue({
+      lanes: [{ option: 'done', hidden: false, cards: ['first'] }],
+    });
+    const [places, setPlaces] = createSignal<BoardPositionsState>({
+      kind: 'loading',
+    });
+    const retry = vi.fn(() => setPlaces({ kind: 'ready', positions: [] }));
+    render(() => (
+      <DatabaseBoardView
+        view={view}
+        source={{
+          columns: () => [],
+          snapshot: () => undefined,
+          read: () => ({ outcome, catalog: { tables: [] }, view }),
+          loading: () => false,
+          refreshing: () => false,
+          error: () => undefined,
+          refresh: () => okAsync(undefined),
+          write: () => okAsync({ insertedRowIds: [], version: undefined }),
+          addOption: () => okAsync(undefined),
+          retain: () => {},
+        }}
+        rows={[
+          { rowId: 'first', cells: { name: 'First card', stage: 'Done' } },
+        ]}
+        columns={[
+          {
+            id: 'name',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          {
+            id: 'stage',
+            name: 'Stage',
+            dataType: 'SELECT_STRING',
+            isMultiSelect: false,
+            options: [{ id: 'done', label: 'Done', color: null }],
+            writable: true,
+          },
+        ]}
+        positions={{
+          state: places,
+          setPositions: vi.fn(),
+          move: vi.fn(() => okAsync<CardPosition[], DatabaseOpFailure>([])),
+        }}
+        canEdit
+        rowPending={() => false}
+        createPending={() => false}
+        createComplete={() => false}
+        onOpen={vi.fn()}
+        onCreate={vi.fn(async () => true)}
+      />
+    ));
+    expect(
+      await screen.findByRole('status', { name: 'Loading board' })
+    ).toBeTruthy();
+    setPlaces({ kind: 'failed', retry });
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByText('This board could not be loaded')
+    ).toBeTruthy();
+    expect(
+      within(alert).getByText('The order of its cards could not be read.')
+    ).toBeTruthy();
+    fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+    expect(retry).toHaveBeenCalledOnce();
+    expect(
+      await screen.findByRole('button', { name: 'Open First card' })
+    ).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });
