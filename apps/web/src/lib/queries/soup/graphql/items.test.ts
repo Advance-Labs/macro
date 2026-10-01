@@ -610,7 +610,9 @@ describe('createGraphqlSoupAstItemsQuery', () => {
       expect(delegateChannelNotificationRefresh(fake.client, page)).toBe(true);
       await vi.advanceTimersByTimeAsync(100);
       expect(refresh).toHaveBeenCalledOnce();
-      expect(query.error()).toBe(error);
+      // Usable current-generation rows hide the transport error, but retries
+      // still follow the underlying page observer's failure.
+      expect(query.error()).toBeUndefined();
       await vi.advanceTimersByTimeAsync(1000);
       expect(refresh).toHaveBeenCalledTimes(2);
       expect(refresh).toHaveBeenLastCalledWith(page.document, page.variables, {
@@ -1511,6 +1513,60 @@ describe('createGraphqlSoupAstItemsQuery', () => {
         fake.executions.at(-1)!.fail(offlineError);
         expect(query.data()).toBeUndefined();
         expect(query.error()).toBe(offlineError);
+      } finally {
+        dispose();
+      }
+    }
+  );
+
+  it.each(['unsupported', 'incomplete'] as const)(
+    'rejects cached Mail rows after a generation reset when filtering is %s',
+    async (kind) => {
+      const fake = makeFakeClient();
+      getGraphqlSoupClientMock.mockReturnValue(fake.client);
+      let notifyGeneration: () => void = () => {};
+      getGraphqlSoupCacheHostMock.mockReturnValue({
+        currentRevision: async () => REVISION_0,
+        entityFilter: entityFilterMock,
+        onCacheChanged: () => () => {},
+        onCacheGenerationChanged: (callback: () => void) => {
+          notifyGeneration = callback;
+          return () => {};
+        },
+      });
+      makeGraphqlSoupInputMock.mockReturnValue({
+        initial: { emailView: 'ALL', sortMethod: 'UPDATED_AT', limit: 10 },
+      });
+      entityFilterMock.mockResolvedValue({ kind });
+      const { query, dispose } = createRoot((dispose) => ({
+        dispose,
+        query: createGraphqlSoupAstItemsQuery(
+          () => ({ params: {}, body: {} }),
+          () => ({ enabled: true })
+        ),
+      }));
+      try {
+        await vi.waitFor(() => expect(entityFilterMock).toHaveBeenCalled());
+        const offlineError = new CombinedError({
+          networkError: new Error('offline'),
+        });
+        for (const items of [
+          [{ __typename: 'GraphqlSoupEmailThread', id: 'cached-email' }],
+          [],
+        ]) {
+          fake.executions[0].next(
+            graphqlSoupPage({ items, next_cursor: null }),
+            { source: 'normalized-cache-hit', revision: REVISION_0 }
+          );
+          fake.executions[0].fail(offlineError);
+          expect(query.data()?.entities).toHaveLength(items.length);
+          expect(query.error()).toBeUndefined();
+
+          notifyGeneration();
+          fake.executions[0].fail(offlineError);
+          expect(query.error()).toBe(offlineError);
+          expect(query.data()).toBeUndefined();
+        }
       } finally {
         dispose();
       }

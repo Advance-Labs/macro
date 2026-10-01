@@ -112,6 +112,53 @@ describe('createTauriCacheHost', () => {
     restarted.dispose();
   });
 
+  it('reports a legacy write reset before the first generation probe', async () => {
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'graphql_cache_current_storage_generation') {
+        throw 'Command graphql_cache_current_storage_generation not found';
+      }
+      if (command === 'graphql_cache_write')
+        return { reset: true, revision: '1' };
+      return null;
+    });
+    const host = createTauriCacheHost({ scope: 'scope-1' });
+    const changed = vi.fn();
+    host.onCacheGenerationChanged(changed);
+    try {
+      await host.writeQuery({ query: '{ user { id } }', data: {} });
+      expect(changed).toHaveBeenCalledExactlyOnceWith({ storage: 'reset' });
+      const generation = await host.currentStorageGeneration();
+      expect(await host.currentStorageGeneration()).toBe(generation);
+    } finally {
+      host.dispose();
+    }
+  });
+
+  it.each(['event-first', 'result-first'] as const)(
+    'reports a native reset once when both an event and result arrive (%s)',
+    async (order) => {
+      const host = createTauriCacheHost({ scope: 'scope-1' });
+      const changed = vi.fn();
+      host.onCacheGenerationChanged(changed);
+      const notify = eventCallbacks.get('graphql-cache://cache-changed')!;
+      const reset = { reset: true, revision: '1' };
+      invokeMock.mockImplementation(async (command: string) => {
+        if (command !== 'graphql_cache_write') return null;
+        if (order === 'event-first') notify({ payload: reset });
+        return reset;
+      });
+      try {
+        await host.writeQuery({ query: '{ user { id } }', data: {} });
+        if (order === 'result-first') notify({ payload: reset });
+        expect(changed).toHaveBeenCalledExactlyOnceWith({ storage: 'reset' });
+        notify({ payload: { reset: true, revision: '2' } });
+        expect(changed).toHaveBeenCalledTimes(2);
+      } finally {
+        host.dispose();
+      }
+    }
+  );
+
   it.each([
     'storage failed',
     'permission denied',

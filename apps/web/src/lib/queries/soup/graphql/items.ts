@@ -726,10 +726,13 @@ export function createGraphqlSoupAstItemsQuery(
 
   // Capture membership/sort evidence for each published projection, so a later
   // cache revision cannot change the baseline of an in-flight reconciliation.
+  // Page observers retain data after transport errors, including across resets.
+  const currentServerProjection = () =>
+    baselineGeneration() === cacheGeneration ? query.data : undefined;
   const serverRecords = createMemo(() =>
-    baselineGeneration() === cacheGeneration
-      ? (query.data?.records() ?? []).map((record) => ({ ...record }))
-      : []
+    (currentServerProjection()?.records() ?? []).map((record) => ({
+      ...record,
+    }))
   );
 
   const serverRecordKeys = createMemo(
@@ -753,7 +756,7 @@ export function createGraphqlSoupAstItemsQuery(
     // loading/errors until the server establishes membership.
     if (
       local.withoutEmail &&
-      !query.data &&
+      !currentServerProjection() &&
       local.data.entities.every((entity) => pendingDeleteIds().has(entity.id))
     )
       return undefined;
@@ -776,9 +779,9 @@ export function createGraphqlSoupAstItemsQuery(
   // or fails. Preserve covered decisions and local additions, then append new
   // rows in server-page order until a successful reconciliation orders the union.
   const displayData = createMemo((): SoupAstItemsData | undefined => {
-    if (networkIsAuthoritative()) return query.data?.data;
+    if (networkIsAuthoritative()) return currentServerProjection()?.data;
     const local = displayLocalProjection();
-    if (!local) return query.data?.data;
+    if (!local) return currentServerProjection()?.data;
     if (local.mail) return local.data;
     const additions = unreconciledServerRecords(
       serverRecords(),
@@ -810,14 +813,15 @@ export function createGraphqlSoupAstItemsQuery(
     // cache results (including an empty result) with the full-screen error state.
     // Older native binaries cannot materialize local filter projections, but
     // can still answer this exact query from the normalized cache. The query
-    // uses keepPreviousData: false, so these rows cannot belong to another tab.
+    // must also have observed these rows in the current cache generation.
     // Keep server responses (including HTTP auth failures), GraphQL errors,
     // and failures without current-query local proof visible.
     if (
       error &&
       isTransientRequestError(error) &&
       !error.response &&
-      (displayLocalProjection() || query.data?.data !== undefined)
+      (displayLocalProjection() ||
+        currentServerProjection()?.data !== undefined)
     ) {
       return undefined;
     }
@@ -837,7 +841,8 @@ export function createGraphqlSoupAstItemsQuery(
       return withoutPendingGraphqlSoupDeletes(
         data && {
           ...data,
-          oldestFetchedTimestamp: query.data?.data.oldestFetchedTimestamp,
+          oldestFetchedTimestamp:
+            currentServerProjection()?.data.oldestFetchedTimestamp,
         },
         pendingDeleteIds()
       );

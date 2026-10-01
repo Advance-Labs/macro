@@ -114,8 +114,15 @@ export function createTauriCacheHost(options: TauriHostOptions): CacheHost {
   // This session-only identity is saved with checkpoints, but a fresh host
   // generates a new one so it cannot skip records using an unverified cursor.
   let legacyStorageGeneration: string | undefined;
+  let lastResetRevision: bigint | undefined;
 
-  function storageReset(): void {
+  function storageReset(revision?: string): void {
+    // Modern binaries report the same reset in both the push and write result.
+    if (revision !== undefined) {
+      const next = BigInt(revision);
+      if (lastResetRevision !== undefined && next <= lastResetRevision) return;
+      lastResetRevision = next;
+    }
     if (legacyStorageGeneration) legacyStorageGeneration = crypto.randomUUID();
     for (const cb of generationChangeSubscribers) {
       try {
@@ -152,15 +159,18 @@ export function createTauriCacheHost(options: TauriHostOptions): CacheHost {
         (value) => {
           if (timer !== undefined) clearTimeout(timer);
           // Older binaries omit reset from pushed events, but write results
-          // still report it. Rotate the legacy generation before returning.
+          // still report it. Notify even before the first generation probe.
           if (
-            legacyStorageGeneration &&
             typeof value === 'object' &&
             value !== null &&
             'reset' in value &&
             value.reset === true
           )
-            storageReset();
+            storageReset(
+              'revision' in value && typeof value.revision === 'string'
+                ? value.revision
+                : undefined
+            );
           resolve(value);
         },
         (error) => {
@@ -202,7 +212,7 @@ export function createTauriCacheHost(options: TauriHostOptions): CacheHost {
       const revision = parseCacheRevision(event.payload.revision);
       observeRevision(revision);
       if (event.payload.reset) {
-        storageReset();
+        storageReset(revision);
       }
       for (const cb of cacheChangeSubscribers) {
         if (
