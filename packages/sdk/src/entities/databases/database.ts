@@ -4,15 +4,13 @@ import type {
   ColumnSchemaOutcome,
   CreateColumnRequest,
   DatabaseDetail,
-  DatabaseSharePermissions,
   DataType,
-  ExecOutcome,
   ImportTable,
   InferColumnTypeOutcome,
   InferColumnTypeRequest,
-  QueryResult,
+  SharePermissionV2,
   TableVersion,
-  UpdateDatabasePermissionsRequest,
+  UpdateSharePermissionRequestV2,
 } from '../../../generated/storage/types.gen';
 import { MacroError, unwrap } from '../../utils';
 import type { MacroClient } from '../../utils/client';
@@ -61,22 +59,9 @@ export type InferColumnTypeOptions = {
   baseVersion: TableVersion;
 };
 
-/** Options for {@link Database.exec} and {@link DatabaseNamespace.exec}. */
-export interface ExecOptions {
-  /** The statements to run, executed in one transaction. */
-  sql: string;
-  /**
-   * Compare-and-swap by table id: the write is rejected with a 409 if
-   * a listed table being written has moved past the given version. Read-only
-   * dependencies are not guarded. Omit for cell-level last-write-wins. Versions
-   * come from {@link DatabaseTable.version} or an outcome's `read_versions`.
-   */
-  baseVersions?: Record<string, TableVersion>;
-}
-
 /**
  * A Macro database: a named collection of tables, owned and shared as one
- * entity, and queryable with SQL.
+ * entity.
  *
  * A free-to-construct `(client, id)` handle like any other entity — the schema
  * loads lazily on first field access and is dropped after any mutation.
@@ -108,32 +93,6 @@ export class Database extends MacroEntity<DatabaseDetail> {
   static async list(client: MacroClient): Promise<Database[]> {
     const listed = unwrap(await client.storage.listDatabases());
     return listed.map((entry) => new Database(client, entry.database.id));
-  }
-
-  /**
-   * Run SQL against every database the caller can reach, in one transaction.
-   * Tables are addressed by their SQL names ({@link DatabaseTable.sqlName}),
-   * so a statement may join across databases.
-   */
-  static async exec(
-    client: MacroClient,
-    opts: ExecOptions,
-  ): Promise<ExecOutcome> {
-    return unwrap(
-      await client.storage.execDatabaseSql({
-        body: {
-          sql: opts.sql,
-          ...(opts.baseVersions !== undefined
-            ? { baseVersions: opts.baseVersions }
-            : {}),
-        },
-      }),
-    );
-  }
-
-  /** Read SQL through the server-enforced read-only endpoint. */
-  static async query(client: MacroClient, sql: string): Promise<ExecOutcome> {
-    return unwrap(await client.storage.queryDatabaseSql({ body: { sql } }));
   }
 
   /**
@@ -202,7 +161,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
   }
 
   /** Read direct recipients. Only the database owner can manage sharing. */
-  async sharePermissions(): Promise<DatabaseSharePermissions> {
+  async sharePermissions(): Promise<SharePermissionV2> {
     return unwrap(
       await this.client.storage.getDatabasePermissions({
         path: { id: this.id },
@@ -212,8 +171,8 @@ export class Database extends MacroEntity<DatabaseDetail> {
 
   /** Add, replace, or remove recipient grants without transferring ownership. */
   updateSharePermissions(
-    request: UpdateDatabasePermissionsRequest,
-  ): Promise<DatabaseSharePermissions> {
+    request: UpdateSharePermissionRequestV2,
+  ): Promise<SharePermissionV2> {
     return this.mutate((client) =>
       client.storage.updateDatabasePermissions({
         path: { id: this.id },
@@ -361,7 +320,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
         body: {
           binding,
           ...(opts.inferType !== undefined
-            ? { infer_type: opts.inferType }
+            ? { inferType: opts.inferType }
             : {}),
           ...(opts.linkTo !== undefined
             ? {
@@ -396,27 +355,5 @@ export class Database extends MacroEntity<DatabaseDetail> {
         body: { labels },
       }),
     );
-  }
-
-  /**
-   * Run read-only SQL and return the result sets of its SELECTs, in order.
-   * A convenience over {@link DatabaseNamespace.query}, which also returns
-   * read versions for conditional follow-up writes. Both surfaces include every
-   * database the caller can reach, addressed by SQL name.
-   */
-  async query(sql: string): Promise<QueryResult[]> {
-    const { results } = await Database.query(this.client, sql);
-    return results;
-  }
-
-  /** The database as a SQLite file. */
-  async downloadSqlite(): Promise<Uint8Array> {
-    const bytes = unwrap(
-      await this.client.storage.downloadDatabaseSqlite({
-        path: { id: this.id },
-        parseAs: 'arrayBuffer',
-      }),
-    ) as unknown as ArrayBuffer;
-    return new Uint8Array(bytes);
   }
 }

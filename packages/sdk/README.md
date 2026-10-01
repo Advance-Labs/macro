@@ -144,9 +144,9 @@ const props = await doc.properties();
 
 ### Databases
 
-Databases are collections of tables you query with SQL. Tables and columns are
-parts of a database, not entities of their own, so they come back as handles
-that resolve through the database's schema.
+Databases are collections of tables. Tables and columns are parts of a
+database, not entities of their own, so they come back as handles that resolve
+through the database's schema.
 
 ```ts
 const db = await macro.databases.create({ name: 'Events' });
@@ -161,23 +161,8 @@ const rsvp = await guests.addColumn({
 });
 await rsvp.addOptions(['Maybe']);
 
-// Queries are enforced as read-only by the server. Stable read names survive
-// table renames, so use them for saved queries and joins.
-const quoteName = (name: string) => `"${name.replaceAll('"', '""')}"`;
-const [result] = await db.query(
-  `SELECT * FROM ${quoteName(await guests.readSqlName())}`,
-);
-
-// Writes go through exec, which reports what changed and hands back the
-// versions to pass as baseVersions for a compare-and-set follow-up.
-const outcome = await macro.databases.exec({
-  sql: `INSERT INTO ${quoteName(await guests.sqlName())} (email) VALUES ('ada@example.com')`,
-});
-
 await guests.rename('Attendees');
-await rsvp.rename('Response'); // SQL column names stay stable.
-
-const sqlite = await db.downloadSqlite(); // Uint8Array
+await rsvp.rename('Response');
 ```
 
 ### Rich message helper

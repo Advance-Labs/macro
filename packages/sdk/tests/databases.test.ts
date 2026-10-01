@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { ExecOutcome } from '../generated/storage/types.gen';
 import { Macro } from '../src/macro';
 
 const originalFetch = globalThis.fetch;
@@ -45,40 +44,6 @@ afterEach(() => {
 });
 
 describe('Database', () => {
-  test('routes both query helpers through the server-enforced read-only endpoint', async () => {
-    const requests: Request[] = [];
-    const outcome: ExecOutcome = {
-      results: [{ columns: [{ name: 'count' }], rows: [[12]] }],
-      read_versions: { [tableId]: 7 },
-      changes_applied: 0,
-      inserted_row_ids: [],
-      new_versions: {},
-      read_database_ids: [databaseId],
-      read_tables: [tableId],
-      truncated_tables: [],
-    };
-    intercept((request) => {
-      requests.push(request);
-      return Response.json(outcome);
-    });
-    const macro = client();
-    await expect(
-      macro.databases.query('SELECT COUNT(*) FROM tickets'),
-    ).resolves.toEqual(outcome);
-    await expect(
-      macro.databases.byId(databaseId).query('SELECT COUNT(*) FROM tickets'),
-    ).resolves.toEqual(outcome.results);
-    expect(requests).toHaveLength(2);
-    for (const request of requests) {
-      expect(request.method).toBe('POST');
-      expect(request.url).toBe(`${host}/databases/query`);
-      expect(request.headers.get('authorization')).toBe('Bearer user-token');
-      await expect(request.json()).resolves.toEqual({
-        sql: 'SELECT COUNT(*) FROM tickets',
-      });
-    }
-  });
-
   test('renames with the previously read table name, invalidates schema, and keeps stable read names', async () => {
     let currentName = 'Tickets';
     let reads = 0;

@@ -1431,6 +1431,16 @@ export type StructuredCompletionRequest = {
 
 export type StructuredCompletionResponse = {
     result: unknown;
+    /**
+     * Actual completed tools, independent of the model's claims.
+     */
+    toolActivity: Array<StructuredToolActivity>;
+};
+
+export type StructuredToolActivity = {
+    changesApplied?: number | null;
+    name: string;
+    success: boolean;
 };
 
 /**
@@ -1442,6 +1452,10 @@ export type ToolSet = {
     type: 'all';
 } | {
     type: 'none';
+} | {
+    type: 'databases';
+} | {
+    type: 'databases_read_only';
 };
 
 export type UpdateChannelSharePermission = {
