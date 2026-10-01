@@ -110,7 +110,7 @@ impl DatabasesRepo for FakeRepo {
             property_definition_id: title.definition.id,
             display_name: None,
             position: key_between(None, None).unwrap(),
-            infer_type: false,
+            infer_type: true,
             config: None,
         });
         world.definitions.insert(title.definition.id, title);

@@ -1633,7 +1633,7 @@ export interface AddColumn {
    */
   options?: string[] | null;
   /**
-   * Required for dataType entity without linkToTableId: what the ids reference, e.g. USER for people or DOCUMENT.
+   * Required for dataType entity without linkToTableId, and refused otherwise: what the ids reference, e.g. USER for a person column or DOCUMENT.
    */
   specificEntityType?: ToolEntityType | null;
   /**

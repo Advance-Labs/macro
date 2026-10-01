@@ -95,7 +95,7 @@ beforeEach(() => {
 afterEach(() => queryClient.clear());
 
 describe('table setup', () => {
-  it('creates the table and its Name column in one batch under minted ids, then loads it', async () => {
+  it('creates the table and its inferring Name column in one batch under minted ids, then loads it', async () => {
     const result = await createTableWithName({
       databaseId: 'db',
       name: 'Projects',
@@ -115,7 +115,12 @@ describe('table setup', () => {
         kind: 'create_column',
         table: table.id,
         id: expect.stringMatching(uuidv7),
-        definition: { source: 'new', name: 'Name', type: { type: 'text' } },
+        definition: {
+          source: 'new',
+          name: 'Name',
+          type: { type: 'text' },
+          inferType: true,
+        },
       },
     ]);
     expect(column.id).not.toBe(table.id);
