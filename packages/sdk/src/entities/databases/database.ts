@@ -1,13 +1,16 @@
 import type {
   ChangeColumnTypeRequest,
+  ColumnCast,
   ColumnDetail,
   ColumnSchemaOutcome,
   CreateColumnRequest,
   DatabaseDetail,
+  DatabaseOp,
   DataType,
   ImportTable,
   InferColumnTypeOutcome,
   InferColumnTypeRequest,
+  OpResult,
   SharePermissionV2,
   TableVersion,
   UpdateSharePermissionRequestV2,
@@ -147,6 +150,76 @@ export class Database extends MacroEntity<DatabaseDetail> {
       }),
     );
     return DatabaseTable.byId(this, table.id);
+  }
+
+  /**
+   * Apply ops to the database's tables in one transaction: insert, update,
+   * or delete rows; change a column's type; edit or delete select options;
+   * create, change, reorder, or delete views; move board cards. A refused op
+   * leaves the whole batch unwritten; a column type change goes in a batch
+   * of its own. Returns one result per op, in the order sent.
+   */
+  async applyOps(ops: DatabaseOp[]): Promise<OpResult[]> {
+    const { results } = await this.mutate((client) =>
+      client.storage.applyDatabaseOps({
+        path: { id: this.id },
+        body: { ops },
+      }),
+    );
+    return results;
+  }
+
+  /**
+   * Persist a new tab order. Pass every table of the database exactly once.
+   * Returns the tables in their new order.
+   */
+  async reorderTables(tables: DatabaseTable[]): Promise<DatabaseTable[]> {
+    for (const table of tables) {
+      if (table.database.id !== this.id)
+        throw new MacroError(
+          `table ${table.id} does not belong to database ${this.id}`,
+        );
+    }
+    const ordered = await this.mutate((client) =>
+      client.storage.reorderDatabaseTables({
+        path: { id: this.id },
+        body: { tableIds: tables.map((table) => table.id) },
+      }),
+    );
+    return ordered.map((table) => DatabaseTable.byId(this, table.id));
+  }
+
+  /**
+   * Delete one of the database's tables with its columns, rows, and views.
+   * A database keeps at least one table, and a table another table's
+   * relation column points at cannot be deleted.
+   */
+  async deleteTable(table: DatabaseTable): Promise<void> {
+    if (table.database.id !== this.id)
+      throw new MacroError(
+        `table ${table.id} does not belong to database ${this.id}`,
+      );
+    await this.mutate((client) =>
+      client.storage.deleteDatabaseTable({
+        path: { id: this.id, table_id: table.id },
+      }),
+    );
+  }
+
+  /**
+   * What changing a column to each type would do to its values. Changes
+   * nothing.
+   */
+  async columnCasts(column: DatabaseColumn): Promise<ColumnCast[]> {
+    if (column.table.database.id !== this.id)
+      throw new MacroError(
+        `column ${column.id} does not belong to database ${this.id}`,
+      );
+    return unwrap(
+      await this.client.storage.listDatabaseColumnCasts({
+        path: { id: this.id, table_id: column.table.id, column_id: column.id },
+      }),
+    );
   }
 
   /** Import text rows atomically. Keep requestId unchanged when retrying. */

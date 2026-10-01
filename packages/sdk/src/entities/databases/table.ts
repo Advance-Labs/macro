@@ -63,9 +63,9 @@ export class DatabaseTable {
   }
 
   /**
-   * The table's current version, bumped on every row, column, and link
-   * mutation. Pass it as a base version to {@link Database.exec} for a
-   * compare-and-set write.
+   * The table's current version, bumped by every committed change to its
+   * schema or rows. Schema edits such as {@link reorderColumns} take it as
+   * the version they were made against.
    */
   async version(): Promise<TableVersion> {
     return (await this.detail()).table.version;
@@ -94,6 +94,11 @@ export class DatabaseTable {
   ): Promise<DatabaseTable> {
     await this.database.reorderColumns(this, columnIds, baseVersion);
     return this;
+  }
+
+  /** Delete this table. See {@link Database.deleteTable}. */
+  async delete(): Promise<void> {
+    await this.database.deleteTable(this);
   }
 
   toJSON(): { id: string; databaseId: string } {

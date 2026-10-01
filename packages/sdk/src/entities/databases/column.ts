@@ -1,5 +1,6 @@
 import type {
   ChangeColumnTypeRequest,
+  ColumnCast,
   ColumnConfig,
   ColumnDetail,
   DataType,
@@ -70,6 +71,15 @@ export class DatabaseColumn {
   async changeType(request: ChangeColumnTypeRequest): Promise<DatabaseColumn> {
     await this.table.database.changeColumnType(this, request);
     return this;
+  }
+
+  /**
+   * What changing this column to each type would do to its values: `safe`,
+   * `checked` (with how many would not convert, and a few of them), or
+   * `never` (with why). Changes nothing.
+   */
+  casts(): Promise<ColumnCast[]> {
+    return this.table.database.columnCasts(this);
   }
 
   /** Delete this placement and its cells at the table version last read. */

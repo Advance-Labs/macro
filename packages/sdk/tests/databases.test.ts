@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import type { ColumnCast } from '../generated/storage/types.gen';
 import { Macro } from '../src/macro';
 
 const originalFetch = globalThis.fetch;
@@ -221,5 +222,160 @@ describe('Database', () => {
       url: `${host}/databases/${databaseId}/permissions`,
       body: grants,
     });
+  });
+
+  test('applies ops in one request and returns one result per op', async () => {
+    const rowId = '0198a4cc-e138-7670-a308-a6b766602704';
+    const writes: { url: string; method: string; body: unknown }[] = [];
+    intercept(async (request) => {
+      writes.push({
+        url: request.url,
+        method: request.method,
+        body: await request.json(),
+      });
+      return Response.json({
+        results: [
+          {
+            kind: 'rows_written',
+            affected: 1,
+            inserted: [rowId],
+            tableVersion: 8,
+          },
+          { kind: 'rows_written', affected: 1, inserted: [], tableVersion: 8 },
+        ],
+      });
+    });
+    const database = client().databases.byId(databaseId);
+    const results = await database.applyOps([
+      {
+        kind: 'insert_rows',
+        table: tableId,
+        rows: [
+          [{ column: columnId, value: { type: 'text', value: 'Printer jam' } }],
+        ],
+      },
+      { kind: 'delete_rows', table: tableId, rows: [rowId] },
+    ]);
+    expect(writes).toEqual([
+      {
+        method: 'POST',
+        url: `${host}/databases/${databaseId}/ops`,
+        body: {
+          ops: [
+            {
+              kind: 'insert_rows',
+              table: tableId,
+              rows: [
+                [
+                  {
+                    column: columnId,
+                    value: { type: 'text', value: 'Printer jam' },
+                  },
+                ],
+              ],
+            },
+            { kind: 'delete_rows', table: tableId, rows: [rowId] },
+          ],
+        },
+      },
+    ]);
+    expect(results).toEqual([
+      { kind: 'rows_written', affected: 1, inserted: [rowId], tableVersion: 8 },
+      { kind: 'rows_written', affected: 1, inserted: [], tableVersion: 8 },
+    ]);
+  });
+
+  test('reorders tables by handle, deletes one, and reloads the schema after each', async () => {
+    const otherTableId = '0198a4cc-e138-7670-a308-a6b766602705';
+    const writes: { url: string; method: string; body: unknown }[] = [];
+    let reads = 0;
+    intercept(async (request) => {
+      if (request.method === 'GET') {
+        reads++;
+        return Response.json({
+          database: { id: databaseId, name: 'Support' },
+          tables: [
+            { table: { id: tableId, name: 'Tickets' }, columns: [], views: [] },
+            {
+              table: { id: otherTableId, name: 'Customers' },
+              columns: [],
+              views: [],
+            },
+          ],
+        });
+      }
+      if (request.method === 'DELETE') {
+        writes.push({ url: request.url, method: 'DELETE', body: undefined });
+        return new Response(null, { status: 204 });
+      }
+      writes.push({
+        url: request.url,
+        method: request.method,
+        body: await request.json(),
+      });
+      return Response.json([
+        { id: otherTableId, name: 'Customers' },
+        { id: tableId, name: 'Tickets' },
+      ]);
+    });
+    const database = client().databases.byId(databaseId);
+    const [tickets, customers] = await database.tables();
+    if (!tickets || !customers) throw new Error('Missing fixture tables');
+    const reordered = await database.reorderTables([customers, tickets]);
+    expect(reordered.map((table) => table.id)).toEqual([otherTableId, tableId]);
+    expect(reordered[0]?.database).toBe(database);
+    await database.schema();
+    await customers.delete();
+    await database.schema();
+    expect(writes).toEqual([
+      {
+        method: 'PUT',
+        url: `${host}/databases/${databaseId}/tables/order`,
+        body: { tableIds: [otherTableId, tableId] },
+      },
+      {
+        method: 'DELETE',
+        url: `${host}/databases/${databaseId}/tables/${otherTableId}`,
+        body: undefined,
+      },
+    ]);
+    expect(reads).toBe(3);
+    await expect(
+      client().databases.byId('other').reorderTables([tickets]),
+    ).rejects.toThrow('does not belong');
+    await expect(
+      client().databases.byId('other').deleteTable(tickets),
+    ).rejects.toThrow('does not belong');
+    expect(writes).toHaveLength(2);
+  });
+
+  test('lists what a column can be cast to', async () => {
+    const casts: ColumnCast[] = [
+      {
+        data_type: 'NUMBER',
+        is_multi_select: false,
+        specific_entity_type: null,
+        relation: false,
+        cast: 'checked',
+        failures: 2,
+        examples: ['n/a', 'soon'],
+        summary: "2 values aren't numbers",
+        reason: null,
+      },
+    ];
+    const urls: string[] = [];
+    intercept((request) => {
+      urls.push(request.url);
+      return Response.json(
+        request.url.endsWith('/casts') ? casts : schema('Tickets', 'Summary'),
+      );
+    });
+    const table = await client().databases.byId(databaseId).table('Tickets');
+    const column = (await table?.columns())?.[0];
+    if (!column) throw new Error('Missing fixture column');
+    expect(await column.casts()).toEqual(casts);
+    expect(urls[1]).toBe(
+      `${host}/databases/${databaseId}/tables/${tableId}/columns/${columnId}/casts`,
+    );
   });
 });
