@@ -261,6 +261,38 @@ async fn a_read_answers_typed_cells_row_ids_and_the_versions_it_read() {
 }
 
 #[tokio::test]
+async fn a_row_id_answers_as_a_row_of_the_table_read_not_an_entity() {
+    let world = world();
+    let response = QueryDatabase {
+        sql: "SELECT row_id, \"Name\" FROM \"Guests\"".into(),
+        database_id: Some(OFFSITE),
+        base_versions: None,
+        display: None,
+    }
+    .call(
+        ServiceContext(DatabasesSqlToolContext::new(sql(&world))),
+        RequestContext::new(user(VIEWER)),
+    )
+    .await
+    .expect("the viewer reads");
+
+    assert_eq!(
+        serde_json::to_value(&response).unwrap()["results"],
+        serde_json::json!([{
+            "columns": [
+                {"name": "row_id", "kind": "row", "relatedTable": GUESTS},
+                {"name": "Name", "kind": "text"},
+            ],
+            "rows": [[
+                {"type": "row", "value": MARIA},
+                {"type": "text", "value": "Maria"},
+            ]],
+            "rowIds": [MARIA],
+        }])
+    );
+}
+
+#[tokio::test]
 async fn a_write_runs_as_the_agent_for_the_user_and_guards_its_base_versions() {
     let world = world();
     world

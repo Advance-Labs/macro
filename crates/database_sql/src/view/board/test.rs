@@ -25,11 +25,13 @@ fn outcome(rows: &[(RowId, Option<Cell>)]) -> Outcome {
                 name: "summary".into(),
                 column: Some(SUMMARY),
                 kind: OutcomeKind::Text,
+                table: None,
             },
             OutcomeColumn {
                 name: "status".into(),
                 column: Some(STATUS),
                 kind: OutcomeKind::Select,
+                table: None,
             },
         ],
         rows: rows
@@ -62,11 +64,13 @@ fn cards_sit_in_their_lanes_in_hand_arranged_order() {
                 name: "summary".into(),
                 column: Some(SUMMARY),
                 kind: OutcomeKind::Text,
+                table: None,
             },
             OutcomeColumn {
                 name: "status".into(),
                 column: Some(STATUS),
                 kind: OutcomeKind::Select,
+                table: None,
             },
         ],
         rows: vec![

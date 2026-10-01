@@ -25,7 +25,7 @@ use crate::fold::{Bin, Row, Table};
 use crate::parse::ParseError;
 use crate::resolve::{
     AggregateFunction, Binding, CompileError, Relation, ResolveError, SelectItem, SelectQuery,
-    binding,
+    binding, row_id_key,
 };
 use crate::split::{GqlQuery, column_of, virtual_column_of};
 
@@ -412,6 +412,9 @@ pub struct OutcomeColumn {
     pub column: Option<Uuid>,
     /// What the values are.
     pub kind: OutcomeKind,
+    /// For `row_id`, the table whose rows its cells are.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table: Option<TableId>,
 }
 
 /// The value kind of a result column.
@@ -431,6 +434,8 @@ pub enum OutcomeKind {
     Select,
     /// Entity ids; the caller hydrates them.
     Entity,
+    /// The `row_id` column: the ids of the table's own rows.
+    Row,
 }
 
 /// Compile and execute one statement.
@@ -502,9 +507,15 @@ pub(crate) fn describe(
         .map(|item| match item {
             SelectItem::Column(key) => {
                 let column = column(*key);
+                let bound = binding(bindings, *key);
+                let row_table = bound
+                    .map(|bound| relations[bound.relation].table)
+                    .filter(|table| *key == row_id_key(*table));
                 OutcomeColumn {
-                    column: binding(bindings, *key).and_then(|binding| binding.column),
+                    column: bound.and_then(|bound| bound.column),
+                    table: row_table,
                     kind: match column.kind {
+                        _ if row_table.is_some() => OutcomeKind::Row,
                         ColumnKind::Text | ColumnKind::Link => OutcomeKind::Text,
                         ColumnKind::Number => OutcomeKind::Number,
                         ColumnKind::Boolean => OutcomeKind::Boolean,
@@ -522,6 +533,7 @@ pub(crate) fn describe(
                 name: format!("{}(*)", function.name()),
                 column: None,
                 kind: OutcomeKind::Number,
+                table: None,
             },
             SelectItem::Aggregate {
                 function,
@@ -537,6 +549,7 @@ pub(crate) fn describe(
                         }
                         _ => OutcomeKind::Number,
                     },
+                    table: None,
                 }
             }
         })

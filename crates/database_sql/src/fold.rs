@@ -47,6 +47,8 @@ pub enum Cell {
     Options(Vec<OptionId>),
     /// The referenced entity ids; one for single-valued columns.
     Entities(Vec<String>),
+    /// A table row's own id, the `row_id` column.
+    Row(RowId),
 }
 
 impl Cell {
@@ -67,6 +69,7 @@ pub(crate) enum CellKey {
     Date(DateTime<Utc>),
     Options(Vec<OptionId>),
     Entities(Vec<String>),
+    Row(RowId),
 }
 
 impl From<&Cell> for CellKey {
@@ -79,6 +82,7 @@ impl From<&Cell> for CellKey {
             Cell::Date(date) => CellKey::Date(*date),
             Cell::Options(ids) => CellKey::Options(ids.clone()),
             Cell::Entities(ids) => CellKey::Entities(ids.clone()),
+            Cell::Row(id) => CellKey::Row(*id),
         }
     }
 }

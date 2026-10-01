@@ -50,6 +50,7 @@ function gridValue(
       )
     )
     .with({ type: 'entities' }, ({ value }) => listed(value, multi))
+    .with({ type: 'row' }, ({ value }) => value)
     .exhaustive();
 }
 

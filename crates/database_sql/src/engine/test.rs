@@ -216,6 +216,7 @@ fn emails_of_people_with_high_priority_tasks() {
             name: "email".into(),
             column: Some(PEOPLE_EMAIL),
             kind: OutcomeKind::Text,
+            table: None,
         }]
     );
     // Sam is on two high tasks; DISTINCT keeps one. Kim's task is low.
@@ -284,6 +285,53 @@ fn without_distinct_each_assignment_is_a_row() {
     assert_eq!(
         outcome.row_ids,
         vec![FIX_LOGIN, FIX_LOGIN, SHIP_IT, WRITE_DOCS]
+    );
+}
+
+#[test]
+fn row_ids_come_back_as_row_cells_not_entities() {
+    let (outcome, _) = drive(
+        &catalog(),
+        "SELECT row_id, name FROM crm.deals WHERE row_id = '00000000-0000-0000-0000-0000000000a1'",
+        |_| {
+            vec![
+                Row {
+                    id: ACME,
+                    position: None,
+                    cells: HashMap::from([(NAME, Cell::Text("Acme".into()))]),
+                },
+                Row {
+                    id: GLOBEX,
+                    position: None,
+                    cells: HashMap::from([(NAME, Cell::Text("Globex".into()))]),
+                },
+            ]
+        },
+    );
+    assert_eq!(
+        outcome.columns,
+        vec![
+            OutcomeColumn {
+                name: "row_id".into(),
+                column: None,
+                kind: OutcomeKind::Row,
+                table: Some(DEALS),
+            },
+            OutcomeColumn {
+                name: "name".into(),
+                column: Some(NAME),
+                kind: OutcomeKind::Text,
+                table: None,
+            },
+        ]
+    );
+    assert_eq!(
+        outcome.rows,
+        vec![vec![Some(Cell::Row(ACME)), Some(Cell::Text("Acme".into()))]]
+    );
+    assert_eq!(
+        serde_json::to_value(&outcome.rows[0][0]).unwrap(),
+        serde_json::json!({"type": "row", "value": "00000000-0000-0000-0000-0000000000a1"})
     );
 }
 
@@ -804,11 +852,13 @@ fn a_selected_row_position_is_a_text_column_named_row_position() {
                 name: "name".into(),
                 column: Some(NAME),
                 kind: OutcomeKind::Text,
+                table: None,
             },
             OutcomeColumn {
                 name: "row_position".into(),
                 column: None,
                 kind: OutcomeKind::Text,
+                table: None,
             },
         ]
     );
@@ -843,6 +893,7 @@ fn an_aggregate_of_row_position_is_named_after_it() {
             name: "COUNT(row_position)".into(),
             column: None,
             kind: OutcomeKind::Number,
+            table: None,
         }]
     );
     assert_eq!(outcome.rows, vec![vec![Some(Cell::Number(1.0))]]);
@@ -898,6 +949,7 @@ fn a_filter_on_people_is_applied_by_the_fold() {
                 name: "email".into(),
                 column: Some(PEOPLE_EMAIL),
                 kind: OutcomeKind::Text,
+                table: None,
             }],
             rows: vec![vec![Some(Cell::Text("ana@example.com".into()))]],
             row_ids: vec![ana],

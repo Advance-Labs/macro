@@ -2,6 +2,8 @@
 
 use std::cmp::Ordering;
 
+use models_databases::RowId;
+
 use crate::resolve::{ComparisonOperator, Filter, Value};
 
 use super::{Cell, Row};
@@ -78,6 +80,7 @@ fn compare(cell: &Cell, value: &Value) -> Option<Ordering> {
         (Cell::Entities(ids), Value::Entity(id)) => {
             single(ids).map(|only| only.as_str().cmp(id.as_str()))
         }
+        (Cell::Row(row), Value::Entity(id)) => id.parse::<RowId>().ok().map(|id| row.cmp(&id)),
         _ => None,
     }
 }

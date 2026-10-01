@@ -85,7 +85,9 @@ export type Cell =
   /**  The selected option ids; one for single-select columns. */
   | { type: 'options'; value: OptionId[] }
   /**  The referenced entity ids; one for single-valued columns. */
-  | { type: 'entities'; value: string[] };
+  | { type: 'entities'; value: string[] }
+  /**  A table row's own id, the `row_id` column. */
+  | { type: 'row'; value: RowId };
 
 /**
  *  A cell's value. It must fit the column's type: text for a text column,
@@ -1156,6 +1158,8 @@ export type OutcomeColumn = {
   column?: string | null;
   /**  What the values are. */
   kind: OutcomeKind;
+  /**  For `row_id`, the table whose rows its cells are. */
+  table?: TableId | null;
 };
 
 /**  The value kind of a result column. */
@@ -1171,7 +1175,9 @@ export type OutcomeKind =
   /**  Select option ids; the caller labels them from the catalog. */
   | 'select'
   /**  Entity ids; the caller hydrates them. */
-  | 'entity';
+  | 'entity'
+  /**  The `row_id` column: the ids of the table's own rows. */
+  | 'row';
 
 /**  One page of rows from the server. */
 export type Page = {

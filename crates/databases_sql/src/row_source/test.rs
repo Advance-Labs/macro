@@ -135,6 +135,7 @@ fn soup_row(row: &Row) -> SoupItem<SoupPropertiesField> {
                                 })
                                 .collect(),
                         ),
+                        Cell::Row(_) => unreachable!("a stored row holds no row_id cell"),
                     }),
                 })
                 .collect(),

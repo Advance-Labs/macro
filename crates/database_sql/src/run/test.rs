@@ -204,11 +204,13 @@ fn select_pages_to_completion_then_folds() {
                     name: "name".into(),
                     column: Some(NAME),
                     kind: OutcomeKind::Text,
+                    table: None,
                 },
                 OutcomeColumn {
                     name: "amount".into(),
                     column: Some(AMOUNT),
                     kind: OutcomeKind::Number,
+                    table: None,
                 },
             ],
             // The fake ignores property_filter, so Initech (no stage) comes back too;
@@ -260,21 +262,25 @@ fn aggregate_columns_are_named_after_the_statement() {
                 name: "stage".into(),
                 column: Some(STAGE),
                 kind: OutcomeKind::Select,
+                table: None,
             },
             OutcomeColumn {
                 name: "SUM(amount)".into(),
                 column: None,
                 kind: OutcomeKind::Number,
+                table: None,
             },
             OutcomeColumn {
                 name: "COUNT(*)".into(),
                 column: None,
                 kind: OutcomeKind::Number,
+                table: None,
             },
             OutcomeColumn {
                 name: "MAX(closed at)".into(),
                 column: None,
                 kind: OutcomeKind::Date,
+                table: None,
             },
         ]
     );
@@ -324,11 +330,13 @@ fn aliases_name_the_result_columns_and_order_it() {
                 name: "Stage".into(),
                 column: Some(STAGE),
                 kind: OutcomeKind::Select,
+                table: None,
             },
             OutcomeColumn {
                 name: "total".into(),
                 column: None,
                 kind: OutcomeKind::Number,
+                table: None,
             },
         ]
     );
@@ -710,6 +718,7 @@ fn outcome_serializes_camel_case_for_the_wire() {
             name: "stage".into(),
             column: Some(STAGE),
             kind: OutcomeKind::Select,
+            table: None,
         }],
         rows: vec![vec![Some(Cell::Options(vec![WON])), None]],
         row_ids: vec![ACME],

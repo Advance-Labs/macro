@@ -274,6 +274,7 @@ function narrowing(
       .with({ type: 'entities' }, ({ value }) =>
         value.map((id) => ({ kind: 'entity', id }))
       )
+      .with({ type: 'row' }, ({ value }) => [{ kind: 'entity', id: value }])
       .with({ type: 'options' }, ({ value }) =>
         value.map((id) => ({ kind: 'option', id }))
       )

@@ -1,4 +1,4 @@
-import { render } from '@solidjs/testing-library';
+import { fireEvent, render } from '@solidjs/testing-library';
 import { describe, expect, it, vi } from 'vitest';
 import { AppAnswerDisplay } from './answer-display';
 import type { QueryAnswer } from './core/query';
@@ -31,6 +31,24 @@ vi.mock(
     ),
   })
 );
+const opened = vi.hoisted(() => ({
+  split: vi.fn(),
+  location: vi.fn(),
+}));
+vi.mock('@app/signal/splitLayout', () => ({
+  globalSplitManager: () => ({ openWithSplit: opened.split }),
+}));
+vi.mock('@components/app/GlobalAppState', () => ({
+  useGlobalBlockOrchestrator: () => ({
+    getBlockHandle: async () => ({ goToLocationFromParams: opened.location }),
+  }),
+}));
+vi.mock('@queries/storage/databases', () => ({
+  useDatabasesQuery: () => ({
+    isSuccess: true,
+    data: [{ tables: [{ id: 'guests', database_id: 'offsite' }] }],
+  }),
+}));
 vi.mock('./queries/answer-names', () => ({
   answerNames: () => () => () => undefined,
 }));
@@ -96,6 +114,52 @@ describe('answers in the app', () => {
     expect(
       cells[1].querySelector('[data-testid="DOCUMENT-doc-1-icon"]')
     ).toBeTruthy();
+    result.unmount();
+  });
+
+  it('draws a row_id as a link that opens its row', async () => {
+    const answer: QueryAnswer = {
+      columns: [
+        {
+          name: 'row_id',
+          kind: 'row',
+          source: {
+            markdown: false,
+            options: [],
+            tag: false,
+            target: null,
+            relatedTable: 'guests',
+          },
+        },
+      ],
+      rows: [[{ type: 'row', value: 'row-maria' }]],
+      rowIds: ['row-maria'],
+      readTables: ['guests'],
+      readDatabaseIds: [],
+      truncatedTables: [],
+    };
+    const result = render(() => (
+      <AppAnswerDisplay>
+        <ToolQueryResults
+          answer={answer}
+          sql="SELECT row_id FROM guests"
+          preferredDisplay="table"
+          showSql={false}
+        />
+      </AppAnswerDisplay>
+    ));
+    const link = result.getByRole('button', { name: 'row-maria' });
+    fireEvent.click(link);
+    await vi.waitFor(() =>
+      expect(opened.location).toHaveBeenCalledWith({
+        tableId: 'guests',
+        rowId: 'row-maria',
+      })
+    );
+    expect(opened.split).toHaveBeenCalledWith(
+      { type: 'database', id: 'offsite' },
+      { activate: true }
+    );
     result.unmount();
   });
 });

@@ -9,7 +9,7 @@ function toolColumn(column: ResultColumn): AnswerColumn {
   const options = column.options ?? [];
   const target = column.target ?? null;
   const relatedTable = column.relatedTable ?? null;
-  if (!options.length && !target)
+  if (!options.length && !target && !relatedTable)
     return { name: column.name, kind: column.kind };
   return {
     name: column.name,
