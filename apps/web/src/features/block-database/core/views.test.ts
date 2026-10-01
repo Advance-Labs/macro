@@ -2,6 +2,7 @@ import { err, ok } from 'neverthrow';
 import { describe, expect, it } from 'vitest';
 import type { DatabaseViewColumn } from './database-view';
 import {
+  allRecordsView,
   layoutColumns,
   movedViewOrder,
   withLaneHidden,
@@ -242,5 +243,25 @@ describe('reordering view tabs', () => {
       'first',
       'second',
     ]);
+  });
+});
+
+describe('allRecordsView', () => {
+  it('is the whole table, unfiltered and unsorted, at the first key the engine reads', () => {
+    expect(
+      allRecordsView({ id: 'guests-table', database_id: 'party' })
+    ).toEqual({
+      id: 'guests-table',
+      databaseId: 'party',
+      tableId: 'guests-table',
+      name: 'All records',
+      // `key_between(None, None)`: the engine refuses a view whose position
+      // is not a minted key, and an empty string is not one.
+      position: '80',
+      query: { filter: null, sort: [] },
+      layout: { kind: 'table', columns: [] },
+      createdAt: '1970-01-01T00:00:00.000Z',
+      updatedAt: '1970-01-01T00:00:00.000Z',
+    });
   });
 });

@@ -211,7 +211,7 @@ describe('database search statements', () => {
             databaseId: 'planner',
             tableId: 'invites',
             name: 'All records',
-            position: '',
+            position: '80',
             query: {
               filter: {
                 conjunction: 'or',
