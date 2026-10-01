@@ -1536,10 +1536,9 @@ export type TableSource =
   | 'people';
 
 /**
- *  Monotonic per-table version, bumped on every row/column/link mutation.
- *
- *  The cache key for query materializations and the invalidation signal for
- *  live query chips.
+ *  Monotonic per-table version, bumped once by every committed change to a
+ *  table's schema or rows. Schema edits name the version they were made
+ *  against, and change events carry the new one.
  */
 export type TableVersion = number;
 

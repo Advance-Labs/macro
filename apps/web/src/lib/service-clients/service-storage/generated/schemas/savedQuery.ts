@@ -6,6 +6,7 @@
  */
 
 import type { QueryDefinition } from './queryDefinition';
+import type { SavedQueryCreatedBy } from './savedQueryCreatedBy';
 import type { SavedQueryDatabaseId } from './savedQueryDatabaseId';
 
 /**
@@ -14,8 +15,8 @@ import type { SavedQueryDatabaseId } from './savedQueryDatabaseId';
 export interface SavedQuery {
   /** When it was saved. */
   createdAt: string;
-  /** Who saved it. */
-  createdBy: string;
+  /** Who saved it; `null` once that user is deleted. */
+  createdBy: SavedQueryCreatedBy;
   /** The database whose tables win name resolution; `null` once that
 database is deleted, or when none was given. */
   databaseId: SavedQueryDatabaseId;

@@ -7,7 +7,7 @@
 import type { ColumnConfigOneOfKind } from './columnConfigOneOfKind';
 
 /**
- * A link column targeting another table; edges live in the junction.
+ * A relation column: its cells reference rows of another table.
  */
 export type ColumnConfigOneOf = {
   /** Target database. */

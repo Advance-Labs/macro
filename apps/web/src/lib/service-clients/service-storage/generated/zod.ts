@@ -6310,7 +6310,7 @@ export const listDatabasesResponseItem = zod
             version: zod
               .number()
               .describe(
-                'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+                "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
               ),
           })
           .describe('One table (tab) of a database.')
@@ -6363,7 +6363,10 @@ export const getDatabaseQueryParams = zod.object({
 export const getDatabaseQueryResponse = zod
   .object({
     createdAt: zod.iso.datetime({}).describe('When it was saved.'),
-    createdBy: zod.string().describe('Who saved it.'),
+    createdBy: zod
+      .string()
+      .nullable()
+      .describe('Who saved it; `null` once that user is deleted.'),
     databaseId: zod
       .uuid()
       .nullable()
@@ -6460,7 +6463,7 @@ export const getDatabaseResponse = zod
                                     .describe('Target table.'),
                                 })
                                 .describe(
-                                  'A link column targeting another table; edges live in the junction.'
+                                  'A relation column: its cells reference rows of another table.'
                                 ),
                               zod
                                 .object({
@@ -6693,7 +6696,7 @@ export const getDatabaseResponse = zod
                 version: zod
                   .number()
                   .describe(
-                    'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
                   ),
               })
               .describe('One table (tab) of a database.'),
@@ -7095,7 +7098,7 @@ export const importDatabaseTableResponse = zod
     version: zod
       .number()
       .describe(
-        'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
       ),
   })
   .describe('One table (tab) of a database.');
@@ -8504,7 +8507,7 @@ export const applyDatabaseOpsResponse = zod
                 tableVersion: zod
                   .number()
                   .describe(
-                    'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
                   ),
               })
               .describe('What an insert, update or delete did.'),
@@ -8520,7 +8523,7 @@ export const applyDatabaseOpsResponse = zod
                 tableVersion: zod
                   .number()
                   .describe(
-                    'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
                   ),
                 trimmedCells: zod
                   .number()
@@ -8536,7 +8539,7 @@ export const applyDatabaseOpsResponse = zod
                 tableVersion: zod
                   .number()
                   .describe(
-                    'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
                   ),
               })
               .describe('What an option change or removal did.'),
@@ -8546,7 +8549,7 @@ export const applyDatabaseOpsResponse = zod
                 tableVersion: zod
                   .number()
                   .describe(
-                    'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
                   ),
                 view: zod
                   .object({
@@ -8873,7 +8876,7 @@ export const applyDatabaseOpsResponse = zod
                 tableVersion: zod
                   .number()
                   .describe(
-                    'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
                   ),
               })
               .describe("A view's removal."),
@@ -8893,7 +8896,7 @@ export const applyDatabaseOpsResponse = zod
                 tableVersion: zod
                   .number()
                   .describe(
-                    'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
                   ),
               })
               .describe("The table's views' new places."),
@@ -8923,7 +8926,7 @@ export const applyDatabaseOpsResponse = zod
                 tableVersion: zod
                   .number()
                   .describe(
-                    'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
                   ),
               })
               .describe(
@@ -9121,7 +9124,7 @@ export const reorderDatabaseTablesResponseItem = zod
     version: zod
       .number()
       .describe(
-        'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
       ),
   })
   .describe('One table (tab) of a database.');
@@ -9167,7 +9170,7 @@ export const renameDatabaseTableResponse = zod
     version: zod
       .number()
       .describe(
-        'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
       ),
   })
   .describe('One table (tab) of a database.');
@@ -9255,7 +9258,7 @@ export const reorderDatabaseColumnsBody = zod
     baseVersion: zod
       .number()
       .describe(
-        'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
       ),
     columnIds: zod.array(zod.uuid()).describe('Every column, exactly once.'),
   })
@@ -9269,12 +9272,10 @@ export const reorderDatabaseColumnsResponse = zod
         zod
           .number()
           .describe(
-            'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+            "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
           )
       )
-      .describe(
-        'Includes both endpoint tables when deleting relationship edges.'
-      ),
+      .describe('Includes the related table when a relation column goes.'),
   })
   .describe('Table versions changed by a placement deletion or reorder.');
 
@@ -9292,7 +9293,7 @@ export const deleteDatabaseColumnBody = zod
     baseVersion: zod
       .number()
       .describe(
-        'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
       ),
   })
   .describe('Guard a column deletion against concurrent writes.');
@@ -9305,12 +9306,10 @@ export const deleteDatabaseColumnResponse = zod
         zod
           .number()
           .describe(
-            'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+            "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
           )
       )
-      .describe(
-        'Includes both endpoint tables when deleting relationship edges.'
-      ),
+      .describe('Includes the related table when a relation column goes.'),
   })
   .describe('Table versions changed by a placement deletion or reorder.');
 
@@ -9349,7 +9348,7 @@ export const renameDatabaseColumnResponse = zod
                   table_id: zod.uuid().describe('Target table.'),
                 })
                 .describe(
-                  'A link column targeting another table; edges live in the junction.'
+                  'A relation column: its cells reference rows of another table.'
                 ),
               zod
                 .object({
@@ -9399,7 +9398,7 @@ export const renameDatabaseColumnResponse = zod
     table_version: zod
       .number()
       .describe(
-        'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
       ),
   })
   .describe(
@@ -9505,7 +9504,7 @@ export const inferDatabaseColumnTypeBody = zod
     base_version: zod
       .number()
       .describe(
-        'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
       ),
     data_type: zod
       .enum([
@@ -9565,7 +9564,7 @@ export const inferDatabaseColumnTypeResponse = zod
                       table_id: zod.uuid().describe('Target table.'),
                     })
                     .describe(
-                      'A link column targeting another table; edges live in the junction.'
+                      'A relation column: its cells reference rows of another table.'
                     ),
                   zod
                     .object({
@@ -9762,7 +9761,7 @@ export const inferDatabaseColumnTypeResponse = zod
     table_version: zod
       .number()
       .describe(
-        'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
       ),
   })
   .describe(
@@ -9803,7 +9802,7 @@ export const addDatabaseColumnOptionsResponse = zod
                   table_id: zod.uuid().describe('Target table.'),
                 })
                 .describe(
-                  'A link column targeting another table; edges live in the junction.'
+                  'A relation column: its cells reference rows of another table.'
                 ),
               zod
                 .object({
@@ -10009,7 +10008,7 @@ export const changeDatabaseColumnTypeBody = zod
     baseVersion: zod
       .number()
       .describe(
-        'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
       ),
     clearInvalid: zod
       .boolean()
@@ -10090,7 +10089,7 @@ export const changeDatabaseColumnTypeResponse = zod
         zod
           .number()
           .describe(
-            'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+            "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
           )
       )
       .describe(

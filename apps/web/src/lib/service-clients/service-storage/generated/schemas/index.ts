@@ -1405,6 +1405,7 @@ export * from './saveDocumentResponse';
 export * from './saveDocumentResponseData';
 export * from './saveDocumentResponseDataPresignedUrl';
 export * from './savedQuery';
+export * from './savedQueryCreatedBy';
 export * from './savedQueryDatabaseId';
 export * from './saveQueryRequest';
 export * from './sessionDeletedMetadata';

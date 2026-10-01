@@ -7,6 +7,6 @@
 import type { TableVersion } from './tableVersion';
 
 /**
- * Includes both endpoint tables when deleting relationship edges.
+ * Includes the related table when a relation column goes.
  */
 export type ColumnSchemaOutcomeTableVersions = { [key: string]: TableVersion };

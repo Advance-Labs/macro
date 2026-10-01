@@ -10,6 +10,6 @@ import type { ColumnSchemaOutcomeTableVersions } from './columnSchemaOutcomeTabl
  * Table versions changed by a placement deletion or reorder.
  */
 export interface ColumnSchemaOutcome {
-  /** Includes both endpoint tables when deleting relationship edges. */
+  /** Includes the related table when a relation column goes. */
   table_versions: ColumnSchemaOutcomeTableVersions;
 }

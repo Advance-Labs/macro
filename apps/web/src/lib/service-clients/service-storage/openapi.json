@@ -22552,7 +22552,7 @@
         "oneOf": [
           {
             "type": "object",
-            "description": "A link column targeting another table; edges live in the junction.",
+            "description": "A relation column: its cells reference rows of another table.",
             "required": ["database_id", "table_id", "kind"],
             "properties": {
               "database_id": {
@@ -22775,7 +22775,7 @@
         "properties": {
           "table_versions": {
             "type": "object",
-            "description": "Includes both endpoint tables when deleting relationship edges.",
+            "description": "Includes the related table when a relation column goes.",
             "additionalProperties": {
               "$ref": "#/components/schemas/TableVersion"
             },
@@ -33165,8 +33165,8 @@
             "description": "When it was saved."
           },
           "createdBy": {
-            "type": "string",
-            "description": "Who saved it."
+            "type": ["string", "null"],
+            "description": "Who saved it; `null` once that user is deleted."
           },
           "databaseId": {
             "type": ["string", "null"],
@@ -35969,7 +35969,7 @@
       "TableVersion": {
         "type": "integer",
         "format": "int64",
-        "description": "Monotonic per-table version, bumped on every row/column/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips."
+        "description": "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
       },
       "TagFilterMode": {
         "type": "string",
