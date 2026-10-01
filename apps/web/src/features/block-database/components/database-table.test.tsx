@@ -7,12 +7,13 @@ import {
   within,
 } from '@solidjs/testing-library';
 import userEvent from '@testing-library/user-event';
+import { okAsync } from 'neverthrow';
 import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GridCell } from '../component/GridCell';
 import type { DatabaseViewColumn } from '../core/database-view';
 import type { DatabaseRow } from '../core/table';
-import { DatabaseTable } from './database-table';
+import { DatabaseTable, type DatabaseTableControls } from './database-table';
 
 // The property utils barrel pulls in live clients, which open sockets under jsdom.
 vi.mock('@property/utils', () => ({
@@ -54,16 +55,17 @@ function setup(canEdit = true) {
   const onDuplicate = vi.fn(async () => true);
   const onRequestDelete = vi.fn();
   const onReorderColumn = vi.fn(async () => {});
+  const onRenameColumn = vi.fn(
+    (_columnId: string, _name: string, _previousName: string) =>
+      okAsync(undefined)
+  );
   const onWrite = vi.fn(
     async (_rowId: string, _columnId: string, _value: unknown) => true
   );
   const [columns, setColumns] = createSignal([name, readonly, notes]);
   const [records, setRecords] = createSignal(rows);
   const [unsavedRow, setUnsavedRow] = createSignal<string>();
-  const [editCell, setEditCell] = createSignal<{
-    rowId: string;
-    columnId: string;
-  }>();
+  let controls!: DatabaseTableControls;
   render(() => (
     <DatabaseTable
       name="Tasks"
@@ -74,16 +76,17 @@ function setup(canEdit = true) {
       sort={[]}
       widths={{}}
       canEdit={canEdit}
-      canCreateRecord
       pending={false}
       addColumn={<button>Add column</button>}
-      editCell={editCell()}
+      controlsRef={(tableControls) => {
+        controls = tableControls;
+      }}
       getRowTitle={(row) => String(row.cells.name)}
       onOpen={onOpen}
       onDuplicate={onDuplicate}
       onRequestDelete={onRequestDelete}
       onReorderColumn={onReorderColumn}
-      onCreate={vi.fn()}
+      onRenameColumn={onRenameColumn}
       onSort={vi.fn()}
       renderCell={(row, column, options) => (
         <GridCell
@@ -102,9 +105,10 @@ function setup(canEdit = true) {
     onDuplicate,
     onRequestDelete,
     onReorderColumn,
+    onRenameColumn,
     onWrite,
     setColumns,
-    setEditCell,
+    controls,
     setRecords,
     setUnsavedRow,
   };
@@ -511,14 +515,63 @@ describe('spreadsheet interactions', () => {
   });
 
   it('keeps editors mounted through schema refresh and focuses requested new rows', async () => {
-    const { setColumns, setEditCell } = setup();
-    setEditCell({ rowId: 'two', columnId: 'name' });
+    const { setColumns, controls } = setup();
+    controls.editCell('two', 'name');
     const input = await screen.findByRole('textbox', { name: 'Edit Name' });
     fireEvent.input(input, { target: { value: 'Unsaved draft' } });
     setColumns([{ ...name }, { ...notes }, { ...readonly }]);
     expect(screen.getByRole('textbox', { name: 'Edit Name' })).toBe(input);
     expect((input as HTMLInputElement).value).toBe('Unsaved draft');
     expect(document.activeElement).toBe(input);
+  });
+
+  it('opens a requested cell editor once that row mounts', async () => {
+    const { setRecords, controls } = setup();
+    controls.editCell('three', 'notes');
+    expect(screen.queryByRole('textbox')).toBeNull();
+    setRecords([
+      { rowId: 'one', cells: { name: 'First', notes: 'First note' } },
+      { rowId: 'two', cells: { name: 'Second', notes: 'Second note' } },
+      { rowId: 'three', cells: { name: 'Third', notes: 'Third note' } },
+    ]);
+    const input = await screen.findByRole('textbox', { name: 'Edit Notes' });
+    expect((input as HTMLInputElement).value).toBe('Third note');
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('renames a requested column header once it mounts, and one already mounted at once', async () => {
+    const { setColumns, controls } = setup();
+    controls.renameColumn('status');
+    expect(screen.queryByRole('textbox', { name: 'Column name' })).toBeNull();
+    setColumns([
+      name,
+      readonly,
+      notes,
+      {
+        id: 'status',
+        name: 'Status',
+        dataType: 'STRING',
+        options: [],
+        isMultiSelect: false,
+        writable: true,
+      },
+    ]);
+    const statusInput = await screen.findByRole('textbox', {
+      name: 'Column name',
+    });
+    await waitFor(() => expect(document.activeElement).toBe(statusInput));
+    expect((statusInput as HTMLInputElement).value).toBe('Status');
+    fireEvent.keyDown(statusInput, { key: 'Escape' });
+    await waitFor(() =>
+      expect(screen.queryByRole('textbox', { name: 'Column name' })).toBeNull()
+    );
+
+    controls.renameColumn('notes');
+    const notesInput = await screen.findByRole('textbox', {
+      name: 'Column name',
+    });
+    await waitFor(() => expect(document.activeElement).toBe(notesInput));
+    expect((notesInput as HTMLInputElement).value).toBe('Notes');
   });
 
   it('moves through checkbox cells with arrow keys without changing their values', async () => {
@@ -653,12 +706,10 @@ describe('presence and reveal', () => {
         sort={[]}
         widths={{}}
         canEdit
-        canCreateRecord
         pending={false}
         addColumn={<button>Add column</button>}
         getRowTitle={(row) => String(row.cells.name)}
         onOpen={vi.fn()}
-        onCreate={vi.fn()}
         onSort={vi.fn()}
         onCellFocus={onCellFocus}
         remoteUsers={remoteUsers()}
@@ -732,12 +783,10 @@ describe('sort and column widths', () => {
         widths={{ name: null, notes: 300 }}
         onResizeColumn={onResizeColumn}
         canEdit
-        canCreateRecord
         pending={false}
         addColumn={<button>Add column</button>}
         getRowTitle={(row) => String(row.cells.name)}
         onOpen={vi.fn()}
-        onCreate={vi.fn()}
         onSort={vi.fn()}
         renderCell={(row, column, options) => (
           <GridCell
