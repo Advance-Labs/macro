@@ -5,6 +5,7 @@ import type {
   DatabaseRowsSource,
   DatabaseWriteResult,
 } from '../context/table-source';
+import { keepUnchangedRows } from '../core/grid-cells';
 import { createKeyedSerializer } from '../core/keyed-serializer';
 import {
   type DatabaseRow,
@@ -266,8 +267,11 @@ export function createTableController(
     }
   }
 
+  // What the grid shows reads the source once per change; writes read it
+  // directly, as they may finish after this owner is gone.
+  const snapshot = createMemo(() => source.snapshot());
   const unreadWrites = createMemo(() => {
-    const version = source.snapshot()?.version;
+    const version = snapshot()?.version;
     return committed().filter(
       (write) =>
         write.version === undefined ||
@@ -280,8 +284,10 @@ export function createTableController(
     ...pending().map((write) => write.mutation),
   ];
 
-  const rows = createMemo(() => {
-    const read = source.snapshot()?.rows ?? [];
+  // A row that reads as before stays the object the grid shows, so a read or
+  // a write redraws only the rows it changed.
+  const rows = createMemo<DatabaseRow[]>((shown) => {
+    const read = snapshot()?.rows ?? [];
     // Acknowledged inserts remain openable when only the follow-up read failed.
     // Whether they match the view is unknown until then, so they stay on screen.
     const created: DatabaseRow[] = unreadWrites().flatMap((write) => {
@@ -291,20 +297,28 @@ export function createTableController(
         .filter((rowId) => !read.some((row) => row.rowId === rowId))
         .map((rowId) => ({ rowId, cells }));
     });
-    return optimisticRows([...read, ...created], mutations());
-  });
+    return keepUnchangedRows(
+      shown,
+      optimisticRows([...read, ...created], mutations())
+    );
+  }, []);
 
   return {
+    /** The source's last read, as the grid shows it. */
+    snapshot,
     /** The rows the view's statement returned, with local writes applied until they are read back. */
     rows,
     /** The view's rows, then the rows it retains by id that it does not show. */
-    knownRows: createMemo(() => {
+    knownRows: createMemo<DatabaseRow[]>((known) => {
       const shown = rows();
-      const retained = (source.snapshot()?.retained ?? []).filter(
+      const retained = (snapshot()?.retained ?? []).filter(
         (row) => !shown.some((known) => known.rowId === row.rowId)
       );
-      return [...shown, ...optimisticRows(retained, mutations())];
-    }),
+      return keepUnchangedRows(known, [
+        ...shown,
+        ...optimisticRows(retained, mutations()),
+      ]);
+    }, []),
     pending: () => pending().length > 0 || schemaPending() > 0,
     createPending: (intentId: string) =>
       pending().some((write) => write.createIntentId === intentId),

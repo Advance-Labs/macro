@@ -96,7 +96,8 @@ export function allRecordsView(table: {
     databaseId: table.database_id,
     tableId: table.id,
     name: 'All records',
-    position: '',
+    // The first key of an empty list: the engine reads only minted keys.
+    position: '80',
     query: { filter: null, sort: [] },
     layout: { kind: 'table', columns: [] },
     createdAt: epoch,

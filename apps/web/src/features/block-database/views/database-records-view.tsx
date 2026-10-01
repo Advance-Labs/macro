@@ -203,12 +203,13 @@ export function DatabaseRecordsView(props: {
     knownRows: controller.knownRows,
   });
   // Records being looked at or typed into stay readable when they leave the view.
+  // Only saved rows: a draft's own id means nothing to the engine.
   props.source.retain(() =>
-    [
-      ...records.heldRowIds(),
-      gridRows.editingRowId(),
-      ...draftRows.serverIds(),
-    ].filter((rowId): rowId is string => rowId !== undefined)
+    [...records.heldRowIds(), gridRows.editingRowId(), ...draftRows.serverIds()]
+      .map((rowId) =>
+        rowId === undefined ? undefined : draftRows.savedRowId(rowId)
+      )
+      .filter((rowId): rowId is string => rowId !== undefined)
   );
   let boardControls: DatabaseBoardControls | undefined;
   const actions: DatabaseRecordsActions = {
@@ -382,7 +383,7 @@ export function DatabaseRecordsView(props: {
         <Show
           when={
             controller.refreshWarning() ||
-            (props.source.error() && props.source.snapshot())
+            (props.source.error() && controller.snapshot())
           }
         >
           <RefreshNotice onRefresh={() => void controller.refresh()} />
@@ -436,7 +437,7 @@ export function DatabaseRecordsView(props: {
           <Match when={props.source.loading()}>
             <TableSkeleton />
           </Match>
-          <Match when={!props.source.snapshot()}>
+          <Match when={!controller.snapshot()}>
             <DatabaseLoadFailure
               title="This table could not be loaded"
               message={loadFailureMessage()}
@@ -477,7 +478,11 @@ export function DatabaseRecordsView(props: {
                 gridRows.setEditingRowId(
                   cell?.editing ? cell.rowId : undefined
                 );
-                props.onCellFocus?.(cell);
+                // Others see a draft row's cell once it is saved.
+                const rowId = cell && draftRows.savedRowId(cell.rowId);
+                props.onCellFocus?.(
+                  cell && rowId ? { ...cell, rowId } : undefined
+                );
               }}
               remoteUsers={props.remoteUsers}
               highlightRowId={records.highlightedRowId()}

@@ -21,6 +21,7 @@ import { getHashedPaletteColor } from '@ui/utils/palette';
 import {
   type Accessor,
   createEffect,
+  createMemo,
   createSignal,
   For,
   type JSX,
@@ -255,16 +256,19 @@ export function DatabaseTable(props: {
     resizing()?.columnId === columnId
       ? resizing()?.width
       : (props.widths[columnId] ?? undefined);
-  const template = () =>
-    `2.75rem ${props.columns
-      .map((column, index) => {
-        const width = widthOf(column.id);
-        if (width !== undefined) return `${width}px`;
-        return index === 0
-          ? 'min(var(--database-title-column-width, 18rem), max(9rem, calc(100cqw - 11.5rem)))'
-          : '12rem';
-      })
-      .join(' ')} ${props.canEdit ? '8.75rem' : ''}`;
+  // Every row lays out on this one track list.
+  const template = createMemo(
+    () =>
+      `2.75rem ${props.columns
+        .map((column, index) => {
+          const width = widthOf(column.id);
+          if (width !== undefined) return `${width}px`;
+          return index === 0
+            ? 'min(var(--database-title-column-width, 18rem), max(9rem, calc(100cqw - 11.5rem)))'
+            : '12rem';
+        })
+        .join(' ')} ${props.canEdit ? '8.75rem' : ''}`
+  );
   function moveFocus(event: KeyboardEvent) {
     if (
       event.defaultPrevented ||

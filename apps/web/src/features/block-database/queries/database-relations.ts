@@ -16,7 +16,10 @@ import type {
   DatabaseRelationFailure,
   DatabaseRelationSource,
 } from '../context/relation-source';
-import type { DatabaseRelatedRow } from '../core/database-relations';
+import {
+  type DatabaseRelatedRow,
+  sameRelatedRows,
+} from '../core/database-relations';
 import { titleColumn } from '../core/table';
 import { tableRowsStatement } from '../sql';
 import { toViewColumn } from './table-rows';
@@ -104,11 +107,17 @@ export function createDatabaseRelations(props: {
           { equals: sameDatabaseSqlStatement }
         );
         const query = createDatabaseSqlQuery(statement, props.read);
-        const rows = createMemo(() => {
-          const outcome = query.outcome();
-          const target = table();
-          return outcome && target ? relatedRows(target, outcome) : [];
-        });
+        // A refetched schema re-reads the rows; equal ones keep every
+        // relation cell's label as it is.
+        const rows = createMemo(
+          () => {
+            const outcome = query.outcome();
+            const target = table();
+            return outcome && target ? relatedRows(target, outcome) : [];
+          },
+          [],
+          { equals: sameRelatedRows }
+        );
         return { tableId, detail, table, query, rows };
       }
     )

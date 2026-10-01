@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { relatedRowIds } from './database-relations';
+import { relatedRowIds, sameRelatedRows } from './database-relations';
 import type { DatabaseViewColumn } from './database-view';
 import { formatCellValue } from './table';
 
@@ -26,5 +26,34 @@ describe('relationship display semantics', () => {
     expect(formatCellValue(relation, '["missing-customer-uuid"]')).toBe(
       'Unavailable record'
     );
+  });
+});
+
+describe('related rows read again', () => {
+  it('are the same rows when every id and name reads the same, in order', () => {
+    const shown = [
+      { id: 'acme', name: 'Acme' },
+      { id: 'globex', name: 'Globex' },
+    ];
+
+    expect(
+      sameRelatedRows(shown, [
+        { id: 'acme', name: 'Acme' },
+        { id: 'globex', name: 'Globex' },
+      ])
+    ).toBe(true);
+    expect(
+      sameRelatedRows(shown, [
+        { id: 'acme', name: 'Acme Corp' },
+        { id: 'globex', name: 'Globex' },
+      ])
+    ).toBe(false);
+    expect(
+      sameRelatedRows(shown, [
+        { id: 'globex', name: 'Globex' },
+        { id: 'acme', name: 'Acme' },
+      ])
+    ).toBe(false);
+    expect(sameRelatedRows(shown, [{ id: 'acme', name: 'Acme' }])).toBe(false);
   });
 });

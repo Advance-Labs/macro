@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gridRows, UNAVAILABLE_OPTION } from './grid-cells';
+import { gridRows, keepUnchangedRows, UNAVAILABLE_OPTION } from './grid-cells';
 
 describe('engine cells as grid values', () => {
   it('shows an option the catalog lacks instead of dropping it', () => {
@@ -80,5 +80,34 @@ describe('engine cells as grid values', () => {
         cells: { column: JSON.stringify(['Urgent', UNAVAILABLE_OPTION]) },
       },
     ]);
+  });
+});
+
+describe('a new read of rows the grid already shows', () => {
+  it('hands back the shown row for each row whose cells read the same', () => {
+    const ada = { rowId: 'ada', cells: { name: 'Ada', guests: 2 } };
+    const grace = { rowId: 'grace', cells: { name: 'Grace', guests: 1 } };
+    const linus = { rowId: 'linus', cells: { name: 'Linus', guests: null } };
+
+    const kept = keepUnchangedRows(
+      [ada, grace, linus],
+      [
+        { rowId: 'grace', cells: { name: 'Grace', guests: 3 } },
+        { rowId: 'ada', cells: { name: 'Ada', guests: 2 } },
+        { rowId: 'linus', cells: { name: 'Linus', guests: null, rsvp: null } },
+        { rowId: 'margaret', cells: { name: 'Margaret', guests: 4 } },
+      ]
+    );
+
+    expect(kept).toEqual([
+      { rowId: 'grace', cells: { name: 'Grace', guests: 3 } },
+      { rowId: 'ada', cells: { name: 'Ada', guests: 2 } },
+      { rowId: 'linus', cells: { name: 'Linus', guests: null, rsvp: null } },
+      { rowId: 'margaret', cells: { name: 'Margaret', guests: 4 } },
+    ]);
+    // Only Ada reads exactly as shown; a changed value or a new column is new.
+    expect(kept[1]).toBe(ada);
+    expect(kept[0]).not.toBe(grace);
+    expect(kept[2]).not.toBe(linus);
   });
 });

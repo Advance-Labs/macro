@@ -98,9 +98,10 @@ pub enum GqlQuery {
         #[serde(rename = "propf")]
         #[specta(type = Option<Propf>)]
         property_filter: Option<Expr<PropertiesLiteral>>,
-        /// For a joined relation, the values the join needs; a driver may
-        /// narrow its fetch to rows carrying one of them. The fold applies
-        /// the join predicate regardless, so fetching more is safe.
+        /// For a joined relation, the values the join needs, and for a read
+        /// naming its rows by id, those rows; a driver may narrow its fetch
+        /// to rows carrying one of them. The fold applies the predicates
+        /// regardless, so fetching more is safe.
         key_hint: Option<KeyHint>,
     },
     /// `Query.groupSoup` scoped to one table, for `COUNT(*)` per group of a

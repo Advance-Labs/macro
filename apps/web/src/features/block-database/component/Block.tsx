@@ -187,8 +187,10 @@ const Block: Component = () => {
       tables()[0]
   );
   const activeTableId = () => activeTable()?.table.id;
-  const canEdit = () =>
-    detail()?.grant === 'edit' || detail()?.grant === 'owner';
+  // A memo, so a refetched schema with the same grant wakes no cell.
+  const canEdit = createMemo(
+    () => detail()?.grant === 'edit' || detail()?.grant === 'owner'
+  );
   const columns = () => activeTable()?.columns.map(toViewColumn) ?? [];
   const storedViews = () => activeTable()?.views ?? [];
   const selectedView = () => {
