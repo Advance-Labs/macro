@@ -19,7 +19,7 @@ use utoipa::ToSchema;
 mod activity;
 #[cfg(test)]
 mod test;
-pub use activity::{DatabaseChange, StructuredToolActivity, ToolOutcome};
+pub use activity::StructuredToolActivity;
 use activity::{has_database_changes, tool_activity};
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
