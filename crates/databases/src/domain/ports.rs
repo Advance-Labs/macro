@@ -313,7 +313,7 @@ pub trait ColumnDefinitionStore: Send + Sync + 'static {
 
     /// Add options to a select definition, answering every option it has.
     /// Each new option takes the palette colour of its position
-    /// ([`models_properties::option_color`]), so neighbouring options differ.
+    /// ([`option_palette::OptionColor::for_position`]), so neighbouring options differ.
     fn add_options(
         &self,
         definition_id: PropertyDefinitionId,

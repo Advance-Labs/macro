@@ -1,7 +1,7 @@
 use models_properties::EntityReference;
-use models_properties::option_color;
 use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::service::property_value::PropertyValue;
+use option_palette::OptionColor;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
@@ -10,7 +10,7 @@ use super::entity_property_queries;
 use super::properties_pg_repo::PropertiesPgRepo;
 use super::property_option_queries;
 use super::query_error::PropertyQueryError;
-use crate::domain::database_cell_writer::DatabaseCellWriter;
+use crate::domain::database_cell_writer::{ColorChange, DatabaseCellWriter};
 use crate::domain::model::UpdatePropertyOptionOutcome;
 
 impl DatabaseCellWriter for PropertiesPgRepo {
@@ -46,7 +46,11 @@ impl DatabaseCellWriter for PropertiesPgRepo {
                 property_definition_id,
                 display_order,
                 value.clone(),
-                Some(option_color(existing.len() + offset).to_string()),
+                Some(
+                    OptionColor::for_position(existing.len() + offset)
+                        .hex()
+                        .to_string(),
+                ),
             )
             .await?;
         }
@@ -59,7 +63,7 @@ impl DatabaseCellWriter for PropertiesPgRepo {
         property_definition_id: Uuid,
         option_id: Uuid,
         value: Option<PropertyOptionValue>,
-        color: Option<Option<String>>,
+        color: ColorChange,
     ) -> Result<UpdatePropertyOptionOutcome, Self::Err> {
         property_option_queries::patch_property_option(
             &mut **transaction,

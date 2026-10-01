@@ -13,7 +13,8 @@ mod test;
 
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
 use models_properties::service::property_option::{PropertyOption, PropertyOptionValue};
-use models_properties::{DataType, EntityType, option_color};
+use models_properties::{DataType, EntityType};
+use option_palette::OptionColor;
 use properties::domain::ports::PropertiesRepo;
 
 use crate::domain::models::{ColumnBinding, DatabaseId, PropertyDefinitionId, Viewer};
@@ -149,7 +150,9 @@ impl<P: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore for PgDefinit
 
         let mut created = Vec::with_capacity(values.len());
         for (index, value) in values.iter().enumerate() {
-            let color = option_color(existing.len() + index).to_string();
+            let color = OptionColor::for_position(existing.len() + index)
+                .hex()
+                .to_string();
             created.push(
                 self.properties
                     .create_property_option(

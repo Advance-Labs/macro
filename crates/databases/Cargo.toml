@@ -64,6 +64,7 @@ model-entity = { path = "../model-entity" }
 model-error-response = { path = "../model-error-response", optional = true }
 models_databases = { path = "../models_databases" }
 models_properties = { path = "../models_properties" }
+option_palette = { path = "../option_palette" }
 models_permissions = { path = "../models_permissions" }
 properties = { path = "../properties", optional = true, default-features = false, features = ["outbound"] }
 rootcause = { workspace = true }

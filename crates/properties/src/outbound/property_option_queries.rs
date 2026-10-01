@@ -8,6 +8,7 @@ use sqlx::{PgExecutor, Pool, Postgres};
 use uuid::Uuid;
 
 use super::query_error::PropertyQueryError;
+use crate::domain::database_cell_writer::ColorChange;
 
 use crate::domain::model::{
     GetOrCreatePropertyOptionResult, PropertyOptionReplaceOutcome, PropertyOptionReplacePlan,
@@ -315,11 +316,16 @@ pub async fn patch_property_option(
     property_definition_id: Uuid,
     option_id: Uuid,
     value: Option<PropertyOptionValue>,
-    color: Option<Option<String>>,
+    color: ColorChange,
 ) -> Result<UpdatePropertyOptionOutcome, PropertyQueryError> {
     let (number_value, string_value) = value
         .as_ref()
         .map_or((None, None), PropertyOptionValue::to_db_values);
+    let (color_changes, new_color) = match color {
+        ColorChange::Keep => (false, None),
+        ColorChange::Clear => (true, None),
+        ColorChange::Set(color) => (true, Some(color)),
+    };
     let result = sqlx::query_as!(
         db::PropertyOption,
         r#"
@@ -344,8 +350,8 @@ pub async fn patch_property_option(
         value.is_some(),
         number_value,
         string_value,
-        color.is_some(),
-        color.flatten(),
+        color_changes,
+        new_color,
     )
     .fetch_optional(executor)
     .await;

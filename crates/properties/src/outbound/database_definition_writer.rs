@@ -1,6 +1,6 @@
-use models_properties::option_color;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
 use models_properties::service::property_option::PropertyOptionValue;
+use option_palette::OptionColor;
 use sqlx::{Postgres, Transaction};
 
 use super::properties_pg_repo::PropertiesPgRepo;
@@ -36,7 +36,7 @@ impl DatabaseDefinitionWriter for PropertiesPgRepo {
                     definition.id,
                     display_order(position)?,
                     PropertyOptionValue::String((*label).to_owned()),
-                    Some(option_color(position).to_owned()),
+                    Some(OptionColor::for_position(position).hex().to_owned()),
                 )
                 .await?,
             );

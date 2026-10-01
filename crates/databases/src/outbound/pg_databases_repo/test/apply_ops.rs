@@ -15,7 +15,6 @@ use macro_user_id::{cowlike::CowLike, user_id::MacroUserIdStr};
 use models_databases::{
     CellValue, CellWrite, ColumnKind, DatabaseOp, OpResult, OptionRef, RowChange, RowChanges,
 };
-use models_properties::option_color;
 use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::service::property_value::PropertyValue;
 use models_properties::shared::{DataType, EntityReference, EntityType as PropertyEntityType};
@@ -393,7 +392,10 @@ async fn a_new_label_becomes_a_palette_coloured_option_and_an_unknown_one_is_ref
     let maybe = &options[1];
     assert_eq!(maybe.value, PropertyOptionValue::String("Maybe".into()));
     assert_eq!(maybe.display_order, 1);
-    assert_eq!(maybe.color.as_deref(), Some(option_color(1)));
+    assert_eq!(
+        maybe.color.as_deref(),
+        Some(option_palette::OptionColor::for_position(1).hex())
+    );
     let [OpResult::RowsWritten { inserted, .. }] = results.as_slice() else {
         panic!("expected one insert, got {results:?}");
     };

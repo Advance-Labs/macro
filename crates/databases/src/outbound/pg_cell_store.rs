@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use models_properties::service::property_value::PropertyValue;
 use models_properties::{EntityReference, EntityType};
-use properties::domain::database_cell_writer::DatabaseCellWriter;
+use properties::domain::database_cell_writer::{ColorChange, DatabaseCellWriter};
 use properties::domain::model::UpdatePropertyOptionOutcome;
 use properties::domain::ports::PropertiesRepo;
 use sqlx::{PgPool, Postgres, Transaction};
@@ -355,7 +355,11 @@ where
                             *definition_id,
                             *option_id,
                             value.clone(),
-                            color.clone(),
+                            match color {
+                                None => ColorChange::Keep,
+                                Some(None) => ColorChange::Clear,
+                                Some(Some(color)) => ColorChange::Set(color.clone()),
+                            },
                         )
                         .await
                         .map_err(cells_error)?
