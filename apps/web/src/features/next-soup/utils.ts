@@ -100,6 +100,7 @@ import {
 import { isTopLevelChannelNotification } from '@notifications/top-level-channel-notification';
 import { hydrateChannelNotificationSelection } from '@queries/channel/notification-selection';
 import { queryClient } from '@queries/client';
+import { updateEmailThreadLabel } from '@queries/email/cache-cleanup';
 import {
   archiveEmailThread,
   type EmailArchiveDisposition,
@@ -1217,7 +1218,7 @@ export function trashEmails(targets: TrashEmailTarget[]): TrashEmailsHandle {
       const outcomes = await Promise.allSettled(
         ids.map((id, i) =>
           throwOnErr(() =>
-            emailClient.updateThreadLabel({
+            updateEmailThreadLabel({
               thread_id: id,
               label_id: labelIds[i]!,
               value: true,
@@ -1235,7 +1236,7 @@ export function trashEmails(targets: TrashEmailTarget[]): TrashEmailsHandle {
             outcomes[i]?.status === 'fulfilled'
               ? [
                   throwOnErr(() =>
-                    emailClient.updateThreadLabel({
+                    updateEmailThreadLabel({
                       thread_id: id,
                       label_id: labelIds[i]!,
                       value: false,
@@ -1284,7 +1285,7 @@ export function trashEmails(targets: TrashEmailTarget[]): TrashEmailsHandle {
             const labelId = threadTrashLabelIds.get(id);
             if (!labelId) return Promise.resolve();
             return throwOnErr(() =>
-              emailClient.updateThreadLabel({
+              updateEmailThreadLabel({
                 thread_id: id,
                 label_id: labelId,
                 value: false,
