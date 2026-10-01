@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import android.telecom.*
 import androidx.core.content.ContextCompat
 import app.tauri.plugin.Channel
@@ -50,6 +51,8 @@ internal object Calls {
     private var held = false
     private var answering = false
     private var accepted = false
+    private var microphonePermissionStartedAt: Long? = null
+    private var microphonePermissionPausedMs = 0L
     private data class JoinLease(val id: String, val channelId: String, val recipient: String?, var callId: String? = null)
     private var joinLease: JoinLease? = null
     private var leaseTimeout: Job? = null
@@ -124,6 +127,22 @@ internal object Calls {
         joinLease?.takeIf { it.recipient == previous }?.let { abortJoin(ctx, it.id) }
         if (recipient == previous) end(ctx)
     }
+    // Pause local expiry only; remote ring status still resolves cancelled calls.
+    private fun ringTime(): Long {
+        val pending = microphonePermissionStartedAt?.let { SystemClock.elapsedRealtime() - it } ?: 0L
+        return System.currentTimeMillis() - microphonePermissionPausedMs - pending
+    }
+    fun beginMicrophonePermission(id: String): Boolean {
+        val next = offer ?: return false
+        if (next.callId != id || accepted || !CallOffer.fresh(next.sentTime, ringTime())) return false
+        if (microphonePermissionStartedAt == null) microphonePermissionStartedAt = SystemClock.elapsedRealtime()
+        return true
+    }
+    fun finishMicrophonePermission(id: String) {
+        if (offer?.callId != id) return
+        microphonePermissionStartedAt?.let { microphonePermissionPausedMs += SystemClock.elapsedRealtime() - it }
+        microphonePermissionStartedAt = null
+    }
     fun receive(ctx: Context, data: Map<String, String>, sentTime: Long) {
         if (android.os.Build.VERSION.SDK_INT < 26) return
         if (data["recipientId"] != ctx.getSharedPreferences("macro_push", Context.MODE_PRIVATE).getString("recipient", null)) return
@@ -143,10 +162,10 @@ internal object Calls {
             }
             poller = scope.launch {
                 while (offer === next && room == null) {
-                    if (!CallOffer.fresh(next.sentTime, System.currentTimeMillis())) { end(ctx, next.callId); break }
+                    if (!CallOffer.fresh(next.sentTime, ringTime())) { end(ctx, next.callId); break }
                     val status = ringStatus(next)
                     if (offer !== next || joinLease?.channelId == next.channelId) break
-                    if (RingPolicy.decide(next.sentTime, System.currentTimeMillis(), status) == RingPolicy.Decision.RESOLVE) { end(ctx, next.callId); break }
+                    if (RingPolicy.decide(next.sentTime, ringTime(), status) == RingPolicy.Decision.RESOLVE) { end(ctx, next.callId); break }
                     delay(1000)
                 }
             }
@@ -208,13 +227,16 @@ internal object Calls {
             answering = false
             if (joinLease?.channelId == next.channelId) return@launch
             if (room != null || accepted) return@launch
-            when (RingPolicy.decide(next.sentTime, System.currentTimeMillis(), status)) {
+            when (RingPolicy.decide(next.sentTime, ringTime(), status)) {
                 RingPolicy.Decision.RESOLVE -> { end(ctx, id); return@launch }
                 RingPolicy.Decision.RETRY -> { error = "Could not verify this call. Check your connection and try again."; publish(); return@launch }
                 RingPolicy.Decision.RING -> error = null
             }
             if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                ctx.startActivity(Intent(ctx, CallActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("answer", id))
+                if (!beginMicrophonePermission(id)) return@launch
+                runCatching {
+                    ctx.startActivity(Intent(ctx, CallActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("answer", id))
+                }.onFailure { finishMicrophonePermission(id) }
                 return@launch
             }
             poller?.cancel(); poller = null
@@ -352,6 +374,7 @@ internal object Calls {
             }.apply()
         }
         joinLease = null; leaseTimeout?.cancel(); leaseTimeout = null
+        microphonePermissionStartedAt = null; microphonePermissionPausedMs = 0L
         poller?.cancel(); poller = null
         session?.cancel(); session = null
         val media = room; room = null

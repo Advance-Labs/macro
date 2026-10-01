@@ -26,6 +26,7 @@ class CallActivity : Activity() {
     private lateinit var layout: LinearLayout
     private val renderers = mutableListOf<Pair<VideoTrack, SurfaceViewRenderer>>()
     private var permissionAction: (() -> Unit)? = null
+    private var permissionCallId: String? = null
     private var rendered: List<Any?>? = null
     private val callback: () -> Unit = { render() }
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -41,24 +42,44 @@ class CallActivity : Activity() {
         setContentView(layout)
         Calls.changed = callback
         intent.getStringExtra("answer")?.let { id ->
-            permission(Manifest.permission.RECORD_AUDIO) { Calls.answer(this, id) }
+            permission(Manifest.permission.RECORD_AUDIO, id) { Calls.answer(this, id) }
         }
         render()
     }
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        intent.getStringExtra("answer")?.let { id -> permission(Manifest.permission.RECORD_AUDIO) { Calls.answer(this, id) } }
+        intent.getStringExtra("answer")?.let { id -> permission(Manifest.permission.RECORD_AUDIO, id) { Calls.answer(this, id) } }
         render()
     }
-    private fun permission(name: String, action: () -> Unit) {
-        if (checkSelfPermission(name) == PackageManager.PERMISSION_GRANTED) action()
-        else { permissionAction = action; requestPermissions(arrayOf(name), 4) }
+    private fun permission(name: String, callId: String? = null, action: () -> Unit) {
+        if (permissionAction != null) {
+            if (callId != permissionCallId) callId?.let { Calls.finishMicrophonePermission(it) }
+            return
+        }
+        if (checkSelfPermission(name) == PackageManager.PERMISSION_GRANTED) {
+            callId?.let { Calls.finishMicrophonePermission(it) }
+            action()
+            return
+        }
+        if (callId != null && !Calls.beginMicrophonePermission(callId)) return
+        permissionCallId = callId
+        permissionAction = action
+        try { requestPermissions(arrayOf(name), 4) }
+        catch (_: Exception) {
+            permissionCallId?.let { Calls.finishMicrophonePermission(it) }
+            permissionCallId = null; permissionAction = null
+            Calls.error = "Could not request permission. Try again."; render()
+        }
     }
     override fun onRequestPermissionsResult(code: Int, permissions: Array<out String>, grants: IntArray) {
         super.onRequestPermissionsResult(code, permissions, grants)
-        val action = permissionAction; permissionAction = null
-        if (code == 4 && grants.firstOrNull() == PackageManager.PERMISSION_GRANTED) action?.invoke()
+        if (code != 4 || permissionAction == null) return
+        val action = permissionAction
+        val callId = permissionCallId
+        permissionAction = null; permissionCallId = null
+        callId?.let { Calls.finishMicrophonePermission(it) }
+        if (grants.firstOrNull() == PackageManager.PERMISSION_GRANTED) action?.invoke()
         else { Calls.error = "Permission denied. Enable it in Android settings to use this control."; render() }
     }
     private fun button(text: String, action: () -> Unit) { layout.addView(Button(this).apply { this.text = text; setOnClickListener { action() } }) }
@@ -81,7 +102,7 @@ class CallActivity : Activity() {
             layout.addView(renderer, LinearLayout.LayoutParams(-1, 0, 1f))
         }
         if (!isInPictureInPictureMode) {
-            if (media == null) button("Answer") { permission(Manifest.permission.RECORD_AUDIO) { Calls.answer(this, call.callId) } }
+            if (media == null) button("Answer") { permission(Manifest.permission.RECORD_AUDIO, call.callId) { Calls.answer(this, call.callId) } }
             else {
                 button(if (Calls.muted) "Unmute" else "Mute") { Calls.scope.launch { runCatching { Calls.microphone(Calls.muted) }.onFailure { Calls.error = "Could not change microphone"; render() } } }
                 button(if (Calls.video) "Camera off" else "Camera on") { permission(Manifest.permission.CAMERA) { Calls.scope.launch { runCatching { Calls.camera(this@CallActivity, !Calls.video) }.onFailure { Calls.error = "Could not change camera"; render() } } } }
@@ -112,6 +133,8 @@ class CallActivity : Activity() {
         }
     }
     override fun onDestroy() {
+        permissionCallId?.let { Calls.finishMicrophonePermission(it) }
+        permissionCallId = null; permissionAction = null
         stopCameraIfOwned()
         if (Calls.changed === callback) Calls.changed = null
         detach(); super.onDestroy()

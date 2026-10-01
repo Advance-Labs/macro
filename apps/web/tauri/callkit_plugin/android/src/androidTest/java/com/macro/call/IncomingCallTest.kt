@@ -110,6 +110,51 @@ class IncomingCallTest {
         awaitNotification(false)
     }
 
+    @Test fun microphonePermissionPausesExpiryThenRevalidatesCancellation() {
+        val id = UUID.randomUUID().toString()
+        instrumentation.runOnMainSync {
+            Calls.receive(context, data(id), System.currentTimeMillis() - 59_000)
+            assertTrue(Calls.beginMicrophonePermission(id))
+        }
+        Thread.sleep(2_000)
+        instrumentation.runOnMainSync {
+            assertEquals("Permission wait must not expire an otherwise valid ring", id, Calls.offer?.callId)
+            Calls.finishMicrophonePermission(id)
+            Calls.answer(context, id) { "ended" }
+            assertNull("Permission completion must still revalidate remote cancellation", Calls.offer)
+            assertNull(Calls.room)
+        }
+    }
+
+    @Test fun duplicateAnswerIntentsPreservePendingPermissionAction() {
+        val id = UUID.randomUUID().toString()
+        instrumentation.runOnMainSync { Calls.receive(context, data(id), System.currentTimeMillis()) }
+        val activity = instrumentation.startActivitySync(android.content.Intent(context, CallActivity::class.java)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) as CallActivity
+        var completions = 0
+        val originalAction: () -> Unit = { completions++ }
+        val field = CallActivity::class.java.getDeclaredField("permissionAction").apply { isAccessible = true }
+        val newIntent = CallActivity::class.java.getDeclaredMethod("onNewIntent", android.content.Intent::class.java).apply { isAccessible = true }
+        instrumentation.runOnMainSync {
+            // Model a platform permission request already in flight, without changing
+            // process-wide permissions or depending on the system dialog's layout.
+            field.set(activity, originalAction)
+            CallActivity::class.java.getDeclaredField("permissionCallId").apply { isAccessible = true }.set(activity, id)
+            assertTrue(Calls.beginMicrophonePermission(id))
+            repeat(2) {
+                newIntent.invoke(activity, android.content.Intent(context, CallActivity::class.java).putExtra("answer", id))
+                assertSame("A duplicate intent must retain the original permission completion", originalAction, field.get(activity))
+            }
+            activity.onRequestPermissionsResult(99, emptyArray(), intArrayOf())
+            assertSame("Unrelated permission results must not consume this request", originalAction, field.get(activity))
+            activity.onRequestPermissionsResult(4, arrayOf(android.Manifest.permission.RECORD_AUDIO),
+                intArrayOf(android.content.pm.PackageManager.PERMISSION_GRANTED))
+            assertEquals(1, completions)
+            assertNull(field.get(activity))
+            activity.finish()
+        }
+    }
+
     @Test fun ignoresStaleAndOtherAccountOffers() {
         instrumentation.runOnMainSync {
             Calls.receive(context, data(UUID.randomUUID().toString(), "another-account"), System.currentTimeMillis())
