@@ -1082,6 +1082,23 @@ where
                 "only select, select_number, and tag columns have options".into(),
             ));
         }
+        let entry = catalog::ColumnEntry {
+            column: column.clone(),
+            definition: definition.clone(),
+            writable: true,
+        };
+        if entry.shared_outside(database.id)
+            && !self
+                .definitions
+                .editable_definitions(&viewer, &[definition.definition.id])
+                .await
+                .map_err(repo_err)?
+                .contains(&definition.definition.id)
+        {
+            return Err(DatabaseError::InvalidSchemaOperation(
+                ops::shared_options_refusal(entry.name()),
+            ));
+        }
         let existing: Vec<String> = definition
             .property_options
             .iter()

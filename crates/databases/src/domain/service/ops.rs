@@ -327,17 +327,18 @@ where
     ) -> Result<Vec<PropertyDefinitionId>, DatabaseError> {
         let shared: Vec<PropertyDefinitionId> = ops
             .iter()
-            .filter_map(|op| match op {
-                DatabaseOp::UpdateOption { table, column, .. }
-                | DatabaseOp::DeleteOption { table, column, .. } => entries
-                    .iter()
-                    .find(|entry| entry.table.id == *table)?
-                    .columns
-                    .iter()
-                    .find(|entry| entry.column.id == *column)
-                    .filter(|entry| entry.shared_outside(database_id))
-                    .map(|entry| entry.definition.definition.id),
-                _ => None,
+            .filter_map(option_columns)
+            .flat_map(|(table, columns)| {
+                columns.into_iter().filter_map(move |column| {
+                    entries
+                        .iter()
+                        .find(|entry| entry.table.id == table)?
+                        .columns
+                        .iter()
+                        .find(|entry| entry.column.id == column)
+                        .filter(|entry| entry.shared_outside(database_id))
+                        .map(|entry| entry.definition.definition.id)
+                })
             })
             .collect();
         if shared.is_empty() {
@@ -348,6 +349,43 @@ where
             .await
             .map_err(repo_err)
     }
+}
+
+/// The table an op names and the columns whose options it may change: the
+/// option ops', and every column whose missing options a row op may create.
+fn option_columns(op: &DatabaseOp) -> Option<(TableId, Vec<ColumnId>)> {
+    let cells = |cells: &[CellWrite]| cells.iter().map(|cell| cell.column).collect::<Vec<_>>();
+    match op {
+        DatabaseOp::UpdateOption { table, column, .. }
+        | DatabaseOp::DeleteOption { table, column, .. } => Some((*table, vec![*column])),
+        DatabaseOp::InsertRows {
+            table,
+            rows,
+            create_missing_options: true,
+        } => Some((*table, rows.iter().flat_map(|row| cells(row)).collect())),
+        DatabaseOp::UpdateRows {
+            table,
+            changes,
+            create_missing_options: true,
+        } => Some((
+            *table,
+            match changes {
+                RowChanges::Uniform { cells: written, .. } => cells(written),
+                RowChanges::PerRow { rows } => {
+                    rows.iter().flat_map(|row| cells(&row.cells)).collect()
+                }
+            },
+        )),
+        _ => None,
+    }
+}
+
+/// Why options of a property shared beyond the database cannot change.
+pub(super) fn shared_options_refusal(column: &str) -> String {
+    format!(
+        "\"{column}\" is a property shared beyond this database, and you may not change its \
+         options"
+    )
 }
 
 fn refuse(
@@ -695,14 +733,19 @@ impl Planner<'_> {
                 column_kind_name(column)
             )));
         }
-        if column.shared_outside(self.database_id) && !self.editable.contains(&definition.id) {
-            return Err(place.refuse(format!(
-                "\"{}\" is a property shared beyond this database, and you may not change its \
-                 options",
-                column.name()
-            )));
-        }
+        self.may_change_options(place, column)?;
         Ok(column)
+    }
+
+    /// Refuse a change to the options of a property shared beyond the
+    /// database unless the viewer may edit that property.
+    fn may_change_options(&self, place: Place, column: &ColumnEntry) -> Result<(), DatabaseError> {
+        if column.shared_outside(self.database_id)
+            && !self.editable.contains(&column.definition.definition.id)
+        {
+            return Err(place.refuse(shared_options_refusal(column.name())));
+        }
+        Ok(())
     }
 
     /// Check the column has the option, as the ops so far leave it.
@@ -965,6 +1008,7 @@ impl Planner<'_> {
                 column.name()
             )));
         }
+        self.may_change_options(place, column)?;
         let value = validate_option_labels(data_type, std::slice::from_ref(label), &[])
             .map_err(|error| match error {
                 DatabaseError::InvalidSchemaOperation(reason) => place.refuse(reason),

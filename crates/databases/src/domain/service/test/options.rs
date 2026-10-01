@@ -773,3 +773,185 @@ async fn a_column_says_whether_its_property_is_shared_beyond_the_database() {
         ]
     );
 }
+
+const SHARED_REFUSAL: &str =
+    "\"Priority\" is a property shared beyond this database, and you may not change its options";
+
+/// Creating a missing option adds it to the shared property everywhere it
+/// is used, so an insert that creates one takes the same right as editing
+/// an option.
+#[tokio::test]
+async fn an_insert_creating_an_option_of_a_shared_property_takes_the_right_to_edit_it() {
+    let seeded = seeded().await;
+    let priority = shared_priority_column(&seeded).await;
+    let insert = DatabaseOp::InsertRows {
+        table: seeded.table_id,
+        rows: vec![vec![CellWrite {
+            column: priority.id,
+            value: CellValue::Options(vec![OptionRef::Label("Someday".into())]),
+        }]],
+        create_missing_options: true,
+    };
+
+    let error = seeded
+        .service
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            vec![insert.clone()],
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        refusal(error),
+        OpRefusal {
+            op: 0,
+            row: Some(0),
+            column: Some(priority.id),
+            reason: SHARED_REFUSAL.into(),
+        }
+    );
+    assert_eq!(seeded.world.lock().unwrap().write_batches, 0);
+
+    seeded
+        .world
+        .lock()
+        .unwrap()
+        .editable_definitions
+        .insert(OWNER.into(), vec![priority.property_definition_id]);
+    seeded
+        .service
+        .apply_ops(edit(seeded.database_id), viewer(OWNER), vec![insert])
+        .await
+        .unwrap();
+    let labels: Vec<PropertyOptionValue> = options(&seeded.world, priority.property_definition_id)
+        .into_iter()
+        .map(|(_, value, _)| value)
+        .collect();
+    assert_eq!(
+        labels,
+        vec![
+            PropertyOptionValue::String("High".into()),
+            PropertyOptionValue::String("Low".into()),
+            PropertyOptionValue::String("Someday".into()),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn an_update_creating_an_option_of_a_shared_property_takes_the_right_to_edit_it() {
+    let seeded = seeded().await;
+    let priority = shared_priority_column(&seeded).await;
+    let update = DatabaseOp::UpdateRows {
+        table: seeded.table_id,
+        changes: RowChanges::Uniform {
+            rows: vec![seeded.row_id],
+            cells: vec![CellWrite {
+                column: priority.id,
+                value: CellValue::Options(vec![OptionRef::Label("Someday".into())]),
+            }],
+        },
+        create_missing_options: true,
+    };
+
+    let error = seeded
+        .service
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            vec![update.clone()],
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        refusal(error),
+        OpRefusal {
+            op: 0,
+            row: None,
+            column: Some(priority.id),
+            reason: SHARED_REFUSAL.into(),
+        }
+    );
+    assert_eq!(seeded.world.lock().unwrap().write_batches, 0);
+
+    seeded
+        .world
+        .lock()
+        .unwrap()
+        .editable_definitions
+        .insert(OWNER.into(), vec![priority.property_definition_id]);
+    seeded
+        .service
+        .apply_ops(edit(seeded.database_id), viewer(OWNER), vec![update])
+        .await
+        .unwrap();
+    assert_eq!(
+        options(&seeded.world, priority.property_definition_id).len(),
+        3
+    );
+}
+
+/// Naming an option the shared property already has creates nothing, so it
+/// needs no right beyond the database's.
+#[tokio::test]
+async fn an_existing_option_of_a_shared_property_is_written_without_the_right_to_edit_it() {
+    let seeded = seeded().await;
+    let priority = shared_priority_column(&seeded).await;
+    seeded
+        .service
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            vec![DatabaseOp::UpdateRows {
+                table: seeded.table_id,
+                changes: RowChanges::Uniform {
+                    rows: vec![seeded.row_id],
+                    cells: vec![CellWrite {
+                        column: priority.id,
+                        value: CellValue::Options(vec![OptionRef::Label("High".into())]),
+                    }],
+                },
+                create_missing_options: true,
+            }],
+        )
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn adding_options_to_a_shared_property_takes_the_right_to_edit_it() {
+    let seeded = seeded().await;
+    let priority = shared_priority_column(&seeded).await;
+    let add = || AddColumnOptions {
+        table_id: seeded.table_id,
+        column_id: priority.id,
+        labels: vec!["Someday".into()],
+    };
+
+    let error = seeded
+        .service
+        .add_column_options(edit(seeded.database_id), viewer(OWNER), add())
+        .await
+        .unwrap_err();
+    let DatabaseError::InvalidSchemaOperation(reason) = error else {
+        panic!("expected a refused schema change, got {error:?}");
+    };
+    assert_eq!(reason, SHARED_REFUSAL);
+    assert_eq!(
+        options(&seeded.world, priority.property_definition_id).len(),
+        2
+    );
+
+    seeded
+        .world
+        .lock()
+        .unwrap()
+        .editable_definitions
+        .insert(OWNER.into(), vec![priority.property_definition_id]);
+    let column = seeded
+        .service
+        .add_column_options(edit(seeded.database_id), viewer(OWNER), add())
+        .await
+        .unwrap();
+    assert_eq!(column.definition.property_options.len(), 3);
+}
