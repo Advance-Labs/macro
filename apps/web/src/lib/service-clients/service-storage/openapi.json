@@ -7636,95 +7636,6 @@
         }
       }
     },
-    "/databases/exec": {
-      "post": {
-        "tags": ["databases"],
-        "summary": "Execute SQL as the caller. The whole read/write surface.",
-        "operationId": "exec_database_sql",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ExecRequestBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ExecOutcome"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "SQL error (message verbatim from the SQL engine) or a refused write",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid credentials",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Write to a read-only table or column",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A written table moved past its base version",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Query budget exceeded",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/databases/queries": {
       "post": {
         "tags": ["databases"],
@@ -7751,28 +7662,8 @@
               }
             }
           },
-          "400": {
-            "description": "The query does not compile",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
           "401": {
             "description": "Missing or invalid credentials",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The query is not a SELECT",
             "content": {
               "application/json": {
                 "schema": {
@@ -7792,7 +7683,7 @@
             }
           },
           "422": {
-            "description": "Query budget exceeded",
+            "description": "The query is too long",
             "content": {
               "application/json": {
                 "schema": {
@@ -7854,166 +7745,6 @@
           },
           "404": {
             "description": "Missing, or not readable by the caller",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/databases/queries/{query_id}/run": {
-      "post": {
-        "tags": ["databases"],
-        "summary": "Run a saved query as the caller; results are permission-filtered.",
-        "operationId": "run_database_query",
-        "parameters": [
-          {
-            "name": "query_id",
-            "in": "path",
-            "description": "Saved query id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ExecOutcome"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The query no longer compiles",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid credentials",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Missing, or not readable by the caller",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Query budget exceeded",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/databases/query": {
-      "post": {
-        "tags": ["databases"],
-        "summary": "Run read-only SQL with the caller's current visibility.",
-        "operationId": "query_database_sql",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/QueryRequestBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ExecOutcome"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid SQL",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid credentials",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Queries cannot write data",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Query budget exceeded",
             "content": {
               "application/json": {
                 "schema": {
@@ -18187,48 +17918,6 @@
         ],
         "description": "Events publishable to [`MacroAgentSessionLifecycleTopic`].\n\nThe serde tag and [`AgentSessionLifecycleEventName`] spell the same wire\nnames: subscribers filter on them, so they are API. The\n`event_names_match_the_wire` test holds the two in step. Exhaustive on\npurpose: a consumer's match should break when a variant is added."
       },
-      "AlteredColumn": {
-        "type": "object",
-        "description": "A column whose type an `ALTER COLUMN … TYPE` statement changed.",
-        "required": [
-          "table_id",
-          "column_id",
-          "name",
-          "to",
-          "cleared_cells",
-          "trimmed_cells"
-        ],
-        "properties": {
-          "cleared_cells": {
-            "type": "integer",
-            "description": "Cells `USING NULL` emptied because their value did not fit.",
-            "minimum": 0
-          },
-          "column_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "The column placement; its id survives the change."
-          },
-          "name": {
-            "type": "string",
-            "description": "The column's name."
-          },
-          "table_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "The table."
-          },
-          "to": {
-            "type": "string",
-            "description": "The type it became, as SQL spells it."
-          },
-          "trimmed_cells": {
-            "type": "integer",
-            "description": "Cells that held several values and kept only their first.",
-            "minimum": 0
-          }
-        }
-      },
       "Anchor": {
         "oneOf": [
           {
@@ -27067,124 +26756,6 @@
           }
         }
       },
-      "ExecOutcome": {
-        "type": "object",
-        "description": "Outcome of an [`ExecRequest`].",
-        "required": [
-          "results",
-          "changes_applied",
-          "inserted_row_ids",
-          "new_versions",
-          "read_tables",
-          "read_database_ids",
-          "read_versions",
-          "truncated_tables"
-        ],
-        "properties": {
-          "altered_column": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/AlteredColumn",
-                "description": "The column an `ALTER COLUMN … TYPE` changed."
-              }
-            ]
-          },
-          "changes_applied": {
-            "type": "integer",
-            "description": "How many row changes were applied to Postgres.",
-            "minimum": 0
-          },
-          "inserted_row_ids": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "description": "Server-minted ids for rows the statement inserted."
-          },
-          "new_versions": {
-            "type": "object",
-            "description": "New versions of every written table, for client-side liveness.",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/TableVersion"
-            },
-            "propertyNames": {
-              "type": "string"
-            }
-          },
-          "read_database_ids": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "description": "Databases containing the read dependencies, for live subscriptions."
-          },
-          "read_tables": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "description": "Dependency set of the statement, for liveness subscription."
-          },
-          "read_versions": {
-            "type": "object",
-            "description": "The version every user table in [`ExecOutcome::read_tables`] was at\nwhen this statement materialized it. Send these back as\n[`ExecRequest::base_versions`] to guard tables the follow-up statement\nwrites. Versions for tables it only reads are ignored.",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/TableVersion"
-            },
-            "propertyNames": {
-              "type": "string"
-            }
-          },
-          "results": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/QueryResult"
-            },
-            "description": "Result sets of the SELECT statements, in order."
-          },
-          "truncated_tables": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Tables whose read hit the engine's row cap; aggregates over them are\nincomplete."
-          }
-        }
-      },
-      "ExecRequestBody": {
-        "type": "object",
-        "description": "Request body for `POST /exec`.",
-        "required": ["sql"],
-        "properties": {
-          "baseVersions": {
-            "type": "object",
-            "description": "Optional compare-and-swap: reject writes if a listed table being written\nhas moved past the given version. Read-only dependencies are not guarded.\nOmitted → cell-level last-write-wins.",
-            "additionalProperties": {
-              "type": "integer",
-              "format": "int64"
-            },
-            "propertyNames": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          "scope": {
-            "type": "string",
-            "format": "uuid",
-            "description": "The database the statement is written from. A same-named table of\nanother database is left out of name resolution when this is set."
-          },
-          "sql": {
-            "type": "string",
-            "description": "The statements to run, executed in one transaction."
-          }
-        }
-      },
       "ExportDocumentResponse": {
         "type": "object",
         "required": ["presigned_url"],
@@ -32215,41 +31786,6 @@
           }
         }
       },
-      "QueryRequestBody": {
-        "type": "object",
-        "description": "Request body for read-only SQL queries.",
-        "required": ["sql"],
-        "properties": {
-          "sql": {
-            "type": "string",
-            "description": "SQL to read. Writes are refused by the domain service."
-          }
-        }
-      },
-      "QueryResult": {
-        "type": "object",
-        "description": "A SELECT's result set with provenance for hydration and write-through.",
-        "required": ["columns", "rows"],
-        "properties": {
-          "columns": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ResultColumn"
-            },
-            "description": "Result columns."
-          },
-          "rows": {
-            "type": "array",
-            "items": {
-              "type": "array",
-              "items": {
-                "$ref": "#/components/schemas/SqlValue"
-              }
-            },
-            "description": "Row values as JSON scalars."
-          }
-        }
-      },
       "ReactionAction": {
         "type": "string",
         "description": "Reaction mutation action.",
@@ -32634,65 +32170,6 @@
         "type": "string",
         "description": "The ownership scope a daemon's config asks for.\n\nAdvisory, not binding: the approving user confirms it in the dialog, which\narrives preselected to this. Approval is what actually sets ownership.",
         "enum": ["private", "team"]
-      },
-      "ResultColumn": {
-        "type": "object",
-        "description": "One result column with its origin.",
-        "required": ["name"],
-        "properties": {
-          "entity_type": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "type": "string",
-                "description": "The type of an entity in Macro",
-                "enum": [
-                  "user",
-                  "chat",
-                  "channel",
-                  "channel_message",
-                  "document",
-                  "project",
-                  "email_thread",
-                  "calendar_event",
-                  "team",
-                  "call",
-                  "foreign_entity",
-                  "static_file",
-                  "crm_company",
-                  "crm_contact",
-                  "reminder",
-                  "skill",
-                  "agent_session",
-                  "scheduled_action",
-                  "initiative",
-                  "database",
-                  "database_row"
-                ]
-              }
-            ],
-            "description": "Entity type of id values, when known — drives chip rendering."
-          },
-          "name": {
-            "type": "string",
-            "description": "Column name or alias."
-          },
-          "origin": {
-            "type": ["array", "null"],
-            "items": false,
-            "prefixItems": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "string"
-              }
-            ],
-            "description": "Origin `(table, column)` when the column traces to a single base\ncolumn — the precondition for write-through."
-          }
-        }
       },
       "RingStatus": {
         "type": "string",
@@ -35505,30 +34982,6 @@
             "description": "Update timestamp."
           }
         }
-      },
-      "SqlValue": {
-        "oneOf": [
-          {
-            "type": "null",
-            "description": "SQL NULL.",
-            "default": null
-          },
-          {
-            "type": "integer",
-            "format": "int64",
-            "description": "Integer (also booleans as 0/1)."
-          },
-          {
-            "type": "number",
-            "format": "double",
-            "description": "Float."
-          },
-          {
-            "type": "string",
-            "description": "Text (also ids, dates as ISO-8601, resolved option display values)."
-          }
-        ],
-        "description": "A value in a statement's result, kept engine-agnostic so the wire shape\ndoes not follow `database_sql`'s types. Serializes as a plain JSON scalar."
       },
       "StarterDatabase": {
         "type": "object",

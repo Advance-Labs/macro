@@ -132,7 +132,6 @@ export const AddColumnResponse = z.object({
             ),
           })
         ),
-        sqlGuide: z.string(),
       }),
       z.null(),
     ])
@@ -240,7 +239,6 @@ export const AddColumnOptionsResponse = z.object({
             ),
           })
         ),
-        sqlGuide: z.string(),
       }),
       z.null(),
     ])
@@ -1014,7 +1012,6 @@ export const ChangeColumnTypeResponse = z.object({
             ),
           })
         ),
-        sqlGuide: z.string(),
       }),
       z.null(),
     ])
@@ -2177,7 +2174,6 @@ export const CreateDatabaseResponse = z.object({
             ),
           })
         ),
-        sqlGuide: z.string(),
       }),
       z.null(),
     ])
@@ -2511,7 +2507,6 @@ export const CreateTableResponse = z.object({
             ),
           })
         ),
-        sqlGuide: z.string(),
       }),
       z.null(),
     ])
@@ -2745,7 +2740,6 @@ export const DeleteColumnResponse = z.object({
             ),
           })
         ),
-        sqlGuide: z.string(),
       }),
       z.null(),
     ])
@@ -2867,7 +2861,6 @@ export const DeleteTableResponse = z.object({
             ),
           })
         ),
-        sqlGuide: z.string(),
       }),
       z.null(),
     ])
@@ -2973,7 +2966,6 @@ export const ToolDatabaseSchema = z.object({
       ),
     })
   ),
-  sqlGuide: z.string(),
 });
 
 export const DisplayResults = z.object({ view: z.any() });
@@ -4934,6 +4926,8 @@ export const QueryDatabase = z.object({
           z.literal('scalar'),
           z.literal('bar'),
           z.literal('line'),
+          z.literal('area'),
+          z.literal('scatter'),
           z.literal('pie'),
         ];
         const errors = schemas.reduce<z.ZodError[]>(
@@ -6404,7 +6398,6 @@ export const RenameColumnResponse = z.object({
             ),
           })
         ),
-        sqlGuide: z.string(),
       }),
       z.null(),
     ])
@@ -6508,7 +6501,6 @@ export const RenameDatabaseResponse = z.object({
             ),
           })
         ),
-        sqlGuide: z.string(),
       }),
       z.null(),
     ])
@@ -6625,7 +6617,6 @@ export const RenameTableResponse = z.object({
             ),
           })
         ),
-        sqlGuide: z.string(),
       }),
       z.null(),
     ])
@@ -6730,7 +6721,6 @@ export const ReorderColumnsResponse = z.object({
             ),
           })
         ),
-        sqlGuide: z.string(),
       }),
       z.null(),
     ])
@@ -6834,7 +6824,6 @@ export const ReorderTablesResponse = z.object({
             ),
           })
         ),
-        sqlGuide: z.string(),
       }),
       z.null(),
     ])
@@ -6876,6 +6865,8 @@ export const SaveDatabaseQuery = z.object({
       z.literal('scalar'),
       z.literal('bar'),
       z.literal('line'),
+      z.literal('area'),
+      z.literal('scatter'),
       z.literal('pie'),
     ];
     const errors = schemas.reduce<z.ZodError[]>(
@@ -6900,6 +6891,8 @@ export const SaveDatabaseQuery = z.object({
         x: z.string(),
         y: z.array(z.string()),
         title: z.union([z.string(), z.null()]).optional(),
+        color: z.union([z.string(), z.null()]).optional(),
+        stack: z.union([z.boolean(), z.null()]).optional(),
       }),
       z.null(),
     ])

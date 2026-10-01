@@ -825,7 +825,14 @@ export type MoveableEntityType = 'document' | 'chat' | 'email' | 'project';
 /**
  * Presentation hint for a query result; it does not affect SQL execution.
  */
-export type QueryDatabaseDisplay = 'table' | 'scalar' | 'bar' | 'line' | 'pie';
+export type QueryDatabaseDisplay =
+  | 'table'
+  | 'scalar'
+  | 'bar'
+  | 'line'
+  | 'area'
+  | 'scatter'
+  | 'pie';
 /**
  * One activity action returned to the AI.
  */
@@ -1370,10 +1377,6 @@ export interface ToolDatabaseSchema {
    * Tables in tab order.
    */
   tables: ToolTable[];
-  /**
-   * The SQL subset, in full.
-   */
-  sqlGuide: string;
 }
 /**
  * One table of a database, as the model sees it.
@@ -3863,26 +3866,7 @@ export interface DeleteTagResponse {
 /**
  * Read one database's schema: its tables with their quoted `sqlName` and version, and each table's columns with their SQL names, value types, whether they hold multiple values, the exact labels a select column accepts, and the target table of a relation column.
  *
- * **Call this before writing SQL for a database you have not already described in this conversation.** Guessing table or column names is the single most common way a query fails, and the schema is small. Get the `databaseId` from ListDatabases.
- *
- * ## Writing SQL against it
- *
- * A small SQL subset, compiled by Macro rather than run by a SQL engine. What is listed here is everything there is:
- *
- * - **Reads:** `SELECT [DISTINCT] items FROM [database.]table [alias] [JOIN [database.]table [alias] ON a.col = b.col ...] [WHERE cond] [GROUP BY col] [ORDER BY col|alias|position [ASC|DESC], ...] [LIMIT n [OFFSET m]]`. Items are `*`, columns, or `COUNT(*)`, `COUNT(col)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`, each optionally named with `AS name`; the alias names the result column and can be ordered by. No other expressions or functions, no HAVING.
- * - **Count per related row:** `SELECT p."Name" AS party, COUNT(*) AS invites FROM "Party Invites"."Invites" i JOIN "Party Invites"."Parties" p ON i."Party" = p.row_id GROUP BY p."Name" ORDER BY invites DESC`.
- * - **No subqueries** (`IN (SELECT ...)`) and no comma joins: SELECT the ids first, then use them as literals (`WHERE row_id IN ('<id>', '<id>')`), or JOIN.
- * - **Conditions:** `col = | != | < | <= | > | >= literal`, `col [NOT] IN ('a', 'b')`, `col [NOT] LIKE 'pat%'` (case-insensitive), `col IS [NOT] NULL`, `col [NOT] HAS 'x'` (membership in a multi-valued column), combined with AND, OR and parentheses.
- * - **Literals:** `'text'` (a quote inside is doubled: `'Wolf''s place'`), numbers, TRUE/FALSE, NULL; dates are `'2026-08-13'` or an ISO date-time.
- * - **Writes:** `INSERT INTO table (col, ...) VALUES (...), (...)` or `INSERT INTO table DEFAULT VALUES`; `UPDATE table SET col = value, ... WHERE cond`; `DELETE FROM table WHERE cond`. The WHERE is required and takes any condition; `WHERE row_id = '<id>'` or `row_id IN ('<id>', ...)` names rows, and every id named must exist: read the ids first. `SET col = other_col` copies each row's own value of a column of the same kind. A multi-valued cell is written as a list: `tags = ['Urgent', 'Backend']`; `NULL` clears a cell.
- * - **`row_id`** is every row's id. It comes back as the first column of a row-shaped SELECT and in `insertedRowIds` after an INSERT; never invent one. A row the app shows as "Unnamed" has a NULL name: find it with `WHERE "Name" IS NULL`.
- * - **Select columns take their option labels as text** (`status = 'Going'`), never option ids. Only the labels the column carries are accepted; add new ones with AddColumnOptions.
- * - **Relation columns hold the ids of rows in another table.** Write them as a list of row ids (`guests = ['<row id>']`), test them with `HAS '<row id>'`, and join through them with `ON i.guest = g.row_id` (`ON i.guest HAS g.row_id` means the same). Never compare a relation to a name.
- * - **Entity columns hold Macro ids** such as `macro|sam@example.com` for a person. Respect each column's `specificEntityType`; never invent an id or replace it with a name.
- * - **Names are display names.** Quote a table or column name with double quotes when it has spaces or punctuation (`FROM "Guest List" WHERE "Due Date" < '2026-09-01'`); names match case-insensitively, and a miss suggests the closest name. A table may be qualified by its database's name (`FROM "Offsite"."Guests"`).
- * - **Changing a column's type:** `ALTER TABLE table ALTER COLUMN col TYPE type [USING NULL]`, where type is text, number, boolean, date, link, select, select_number, tag or entity(USER), entity(DOCUMENT), entity(TASK)…, with `[]` for several values (`select[]`). Pick from the column's `safeTypes` and `checkedTypes`: any other type is refused while the column holds values (add a new column instead). A value that does not fit refuses the statement, counting and quoting the misfits; fix them with UPDATE, or add `USING NULL` to empty them (a cell with several values keeps its first) only when the user accepts losing those values.
- * - **Other schema changes use tools, not SQL DDL:** CreateDatabase, RenameDatabase, CreateTable, RenameTable, ReorderTables, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.
- * - Tables you only hold view access on are read-only.
+ * **Call this before writing SQL for a database you have not already described in this conversation.** Guessing table or column names is the single most common way a query fails, and the schema is small. Get the `databaseId` from ListDatabases. QueryDatabase describes the SQL dialect.
  */
 export interface DescribeDatabase {
   /**
@@ -5578,6 +5562,7 @@ export interface NameSearch {
  * - **Select columns take their option labels as text** (`status = 'Going'`), never option ids. Only the labels the column carries are accepted; add new ones with AddColumnOptions.
  * - **Relation columns hold the ids of rows in another table.** Write them as a list of row ids (`guests = ['<row id>']`), test them with `HAS '<row id>'`, and join through them with `ON i.guest = g.row_id` (`ON i.guest HAS g.row_id` means the same). Never compare a relation to a name.
  * - **Entity columns hold Macro ids** such as `macro|sam@example.com` for a person. Respect each column's `specificEntityType`; never invent an id or replace it with a name.
+ * - **People:** `macro.people` lists everyone the user knows, with `id` (their Macro id), `name` and `email`. Join a person column to it to read emails: `JOIN macro.people p ON t."Owner" = p.id`.
  * - **Names are display names.** Quote a table or column name with double quotes when it has spaces or punctuation (`FROM "Guest List" WHERE "Due Date" < '2026-09-01'`); names match case-insensitively, and a miss suggests the closest name. A table may be qualified by its database's name (`FROM "Offsite"."Guests"`).
  * - **Changing a column's type:** `ALTER TABLE table ALTER COLUMN col TYPE type [USING NULL]`, where type is text, number, boolean, date, link, select, select_number, tag or entity(USER), entity(DOCUMENT), entity(TASK)…, with `[]` for several values (`select[]`). Pick from the column's `safeTypes` and `checkedTypes`: any other type is refused while the column holds values (add a new column instead). A value that does not fit refuses the statement, counting and quoting the misfits; fix them with UPDATE, or add `USING NULL` to empty them (a cell with several values keeps its first) only when the user accepts losing those values.
  * - **Other schema changes use tools, not SQL DDL:** CreateDatabase, RenameDatabase, CreateTable, RenameTable, ReorderTables, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.
@@ -5607,8 +5592,9 @@ export interface QueryDatabase {
   baseVersions?: ToolTableVersion[] | null;
   /**
    * Preferred native result presentation. For an explicit chart request,
-   * select bar, line, or pie and return a label column plus numeric values.
-   * The app falls back to a table if the data cannot support that display.
+   * select bar, line, area, scatter or pie and return a label column plus
+   * numeric values. The app falls back to a table if the data cannot
+   * support that display.
    */
   display?: QueryDatabaseDisplay | null;
 }
@@ -5630,7 +5616,7 @@ export interface ToolTableVersion {
  */
 export interface QueryDatabaseResponse {
   /**
-   * One result set per SELECT, in statement order.
+   * The SELECT's result set; empty for a write.
    */
   results: ToolResultSet[];
   /**
@@ -5654,9 +5640,9 @@ export interface QueryDatabaseResponse {
    */
   readVersions: ToolTableVersion[];
   /**
-   * Magic tables whose materialization hit its row cap. Any aggregate over
-   * one of these is computed on a partial table — say so rather than
-   * reporting the number as a total.
+   * Tables whose read hit the row cap. Any aggregate over one of these is
+   * computed on a partial table — say so rather than reporting the number
+   * as a total.
    */
   truncatedTables?: string[];
   /**
@@ -7072,8 +7058,8 @@ export interface ResolveDocumentCommentResponse {
  *
  * Use it whenever the user asks a question about their data or asks for a chart. Run the SELECT with QueryDatabase first to check it returns what you expect, then save exactly that SQL.
  *
- * - `displayMode`: `scalar` for one number (a single COUNT/SUM/AVG), `table` for rows, `bar` to compare categories, `line` for a trend over an ordered column, `pie` for shares of a whole.
- * - `chart` (bar/line/pie): `x` is the label column and `y` the numeric result columns, named exactly as the result columns are — alias aggregates (`COUNT(*) AS invites`) so they have stable names.
+ * - `displayMode`: `scalar` for one number (a single COUNT/SUM/AVG), `table` for rows, `bar` to compare categories, `line` for a trend over an ordered column, `area` for a trend whose series add up to a whole, `scatter` to plot one numeric column against another, `pie` for shares of a whole.
+ * - `chart` (bar/line/area/scatter/pie): `x` is the label column and `y` the numeric result columns, named exactly as the result columns are — alias aggregates (`COUNT(*) AS invites`) so they have stable names. `color` names a result column whose values split one `y` series into one series per value (e.g. invites per party colored by status); `stack` stacks bar or area series instead of setting them side by side.
  * - Pass `databaseId` so the question resolves against that database's tables.
  *
  * Saved questions never change. To change one, save a new one and use its new block.
@@ -7092,6 +7078,7 @@ export interface ResolveDocumentCommentResponse {
  * - **Select columns take their option labels as text** (`status = 'Going'`), never option ids. Only the labels the column carries are accepted; add new ones with AddColumnOptions.
  * - **Relation columns hold the ids of rows in another table.** Write them as a list of row ids (`guests = ['<row id>']`), test them with `HAS '<row id>'`, and join through them with `ON i.guest = g.row_id` (`ON i.guest HAS g.row_id` means the same). Never compare a relation to a name.
  * - **Entity columns hold Macro ids** such as `macro|sam@example.com` for a person. Respect each column's `specificEntityType`; never invent an id or replace it with a name.
+ * - **People:** `macro.people` lists everyone the user knows, with `id` (their Macro id), `name` and `email`. Join a person column to it to read emails: `JOIN macro.people p ON t."Owner" = p.id`.
  * - **Names are display names.** Quote a table or column name with double quotes when it has spaces or punctuation (`FROM "Guest List" WHERE "Due Date" < '2026-09-01'`); names match case-insensitively, and a miss suggests the closest name. A table may be qualified by its database's name (`FROM "Offsite"."Guests"`).
  * - **Changing a column's type:** `ALTER TABLE table ALTER COLUMN col TYPE type [USING NULL]`, where type is text, number, boolean, date, link, select, select_number, tag or entity(USER), entity(DOCUMENT), entity(TASK)…, with `[]` for several values (`select[]`). Pick from the column's `safeTypes` and `checkedTypes`: any other type is refused while the column holds values (add a new column instead). A value that does not fit refuses the statement, counting and quoting the misfits; fix them with UPDATE, or add `USING NULL` to empty them (a cell with several values keeps its first) only when the user accepts losing those values.
  * - **Other schema changes use tools, not SQL DDL:** CreateDatabase, RenameDatabase, CreateTable, RenameTable, ReorderTables, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.
@@ -7112,7 +7099,7 @@ export interface SaveDatabaseQuery {
   title: string;
   displayMode: QueryDatabaseDisplay;
   /**
-   * Chart configuration for bar, line, and pie.
+   * Chart configuration for bar, line, area, scatter and pie.
    */
   chart?: ToolChart | null;
   /**
@@ -7136,6 +7123,14 @@ export interface ToolChart {
    * Chart heading.
    */
   title?: string | null;
+  /**
+   * Result column whose values split the one y series into a series per value. Neither x nor in y.
+   */
+  color?: string | null;
+  /**
+   * Stack bar or area series instead of setting them side by side.
+   */
+  stack?: boolean | null;
 }
 /**
  * Response from the SaveDatabaseQuery tool.
