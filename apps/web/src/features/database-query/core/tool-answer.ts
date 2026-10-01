@@ -1,5 +1,3 @@
-/** A QueryDatabase tool result as answers: the engine's typed cells, as the tool sends them. */
-
 import type { AnswerColumn } from '@core/database-sql/answer';
 import type {
   QueryDatabaseResponse,
@@ -26,6 +24,7 @@ function toolColumn(column: ResultColumn): AnswerColumn {
   };
 }
 
+/** A QueryDatabase tool result as answers: the engine's typed cells, as the tool sends them. */
 export function toolAnswers(response: QueryDatabaseResponse): QueryAnswer[] {
   const readTables = response.readVersions.map((table) => table.tableId);
   return response.results.map((result) => ({

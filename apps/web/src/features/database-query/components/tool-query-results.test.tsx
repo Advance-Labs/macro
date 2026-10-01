@@ -9,9 +9,7 @@ import { ToolQueryResults } from './tool-query-results';
 vi.mock('@solid-primitives/resize-observer', () => ({
   createElementSize: () => ({ width: 346, height: 300 }),
 }));
-vi.mock('../answer-display', () => ({
-  AppAnswerDisplay: (props: { children: JSX.Element }) => props.children,
-}));
+const passThrough = (props: { children: JSX.Element }) => props.children;
 
 const answer: QueryAnswer = {
   columns: [
@@ -42,6 +40,7 @@ describe('native chat database answers', () => {
   it('opens the requested chart and lets the reader override it', async () => {
     const rendered = render(() => (
       <ToolQueryResults
+        answerDisplay={passThrough}
         answer={answer}
         sql="SELECT team, count FROM tickets"
         preferredDisplay="bar"
@@ -70,6 +69,7 @@ describe('native chat database answers', () => {
     };
     const rendered = render(() => (
       <ToolQueryResults
+        answerDisplay={passThrough}
         answer={textOnly}
         sql="SELECT name FROM customers"
         preferredDisplay="bar"
@@ -84,6 +84,7 @@ describe('native chat database answers', () => {
     showDatabaseSql.enabled = true;
     const rendered = render(() => (
       <ToolQueryResults
+        answerDisplay={passThrough}
         answer={answer}
         sql="SELECT team, count(*) AS Tickets FROM tickets GROUP BY team"
       />
@@ -105,7 +106,11 @@ describe('native chat database answers', () => {
   it('only offers a table for text-only results and recovers when streamed result shape changes', async () => {
     const [value, setValue] = createSignal(answer);
     const rendered = render(() => (
-      <ToolQueryResults answer={value()} sql="SELECT name FROM customers" />
+      <ToolQueryResults
+        answerDisplay={passThrough}
+        answer={value()}
+        sql="SELECT name FROM customers"
+      />
     ));
     await fireEvent.keyDown(
       rendered.getByRole('button', { name: /Display database results/ }),
@@ -136,7 +141,11 @@ describe('native chat database answers', () => {
 describe('native chat database answers with SQL hidden', () => {
   it('shows the result without the statement', () => {
     const rendered = render(() => (
-      <ToolQueryResults answer={answer} sql="SELECT team, count FROM tickets" />
+      <ToolQueryResults
+        answerDisplay={passThrough}
+        answer={answer}
+        sql="SELECT team, count FROM tickets"
+      />
     ));
     expect(rendered.getByRole('table').textContent).toContain('Support12');
     expect(rendered.queryByText('View SQL')).toBeNull();

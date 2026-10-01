@@ -1,20 +1,8 @@
-import {
-  err,
-  errAsync,
-  ok,
-  okAsync,
-  type Result,
-  ResultAsync,
-} from 'neverthrow';
+import { errAsync, okAsync, ResultAsync } from 'neverthrow';
 import { createRoot, createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { QueryComposerOptions } from '../context/query-context';
-import type {
-  QueryAnswer,
-  QueryFailure,
-  QueryProposal,
-  QuerySchema,
-} from '../core/query';
+import type { QueryAnswer, QueryProposal, QuerySchema } from '../core/query';
 import { createQueryComposer } from './query-composer';
 
 const answer: QueryAnswer = {
@@ -196,98 +184,6 @@ describe('question composer', () => {
     expect(controller.preview()).toBeUndefined();
   });
 
-  it('keeps an unknown mutation outcome distinct from confirmed changes and prevents unchanged retry', async () => {
-    const generate = vi.fn<QueryComposerOptions['generate']>(() =>
-      errAsync({
-        kind: 'outcome-unknown',
-        message:
-          'The connection was interrupted. Check the table before continuing.',
-      })
-    );
-    const { controller, read } = setup({ generationCanWrite: true, generate });
-    controller.setPrompt('Add three sample records');
-    await controller.generate();
-    expect(controller.outcomeUnknown()).toBe(true);
-    expect(controller.actionSummary()).toBeUndefined();
-    expect(controller.actionNeedsRevision()).toBe(false);
-    expect(controller.canUndo()).toBe(false);
-    await controller.generate();
-    await controller.refreshAnswer();
-    expect(generate).toHaveBeenCalledTimes(1);
-    expect(read).not.toHaveBeenCalled();
-    controller.setPrompt('Check whether the sample records were added');
-    expect(controller.outcomeUnknown()).toBe(false);
-  });
-
-  it.each(['confirmed', 'unknown'] as const)(
-    'retains a %s write outcome after the user switches tables',
-    async (outcome) => {
-      let settle!: (result: Result<QueryProposal, QueryFailure>) => void;
-      const generate = vi.fn<QueryComposerOptions['generate']>(
-        () =>
-          new ResultAsync(
-            new Promise<Result<QueryProposal, QueryFailure>>((resolve) => {
-              settle = resolve;
-            })
-          )
-      );
-      const { controller, read } = setup({
-        generationCanWrite: true,
-        schema: () => schema,
-        generate,
-      });
-      const pending = controller.generate();
-      controller.selectTable('contacts');
-      if (outcome === 'confirmed')
-        settle(
-          ok({
-            sql: 'SELECT COUNT(*) FROM projects',
-            explanation: 'Records created.',
-            actionSummary: 'Created three projects.',
-          })
-        );
-      else
-        settle(
-          err({
-            kind: 'outcome-unknown',
-            message: 'The connection was interrupted. Check the table.',
-          })
-        );
-      await pending;
-      expect(read).not.toHaveBeenCalled();
-      expect(controller.preview()).toBeUndefined();
-      expect(controller.tableId()).toBe('contacts');
-      expect(controller.phase()).toBe('idle');
-      if (outcome === 'confirmed') {
-        expect(controller.actionSummary()).toBe('Created three projects.');
-        expect(controller.actionNeedsRevision()).toBe(true);
-      } else {
-        expect(controller.outcomeUnknown()).toBe(true);
-        expect(controller.error()).toContain('interrupted');
-      }
-    }
-  );
-
-  it('preserves a partial action ledger and prevents repeating unchanged writes after generation fails', async () => {
-    const generate = vi.fn<QueryComposerOptions['generate']>(() =>
-      errAsync({
-        kind: 'action-incomplete',
-        actionSummary: 'Created a Projects table.',
-        message: 'Could not finish adding the sample records.',
-      })
-    );
-    const { controller, read } = setup({ generate });
-    controller.setPrompt('Create projects and sample records');
-    await controller.generate();
-    expect(controller.actionSummary()).toBe('Created a Projects table.');
-    expect(controller.actionNeedsRevision()).toBe(true);
-    expect(controller.canUndo()).toBe(false);
-    await controller.generate();
-    expect(generate).toHaveBeenCalledTimes(1);
-    expect(read).not.toHaveBeenCalled();
-    controller.setPrompt('Add sample records to the existing Projects table');
-    expect(controller.actionNeedsRevision()).toBe(false);
-  });
   it('keeps chart presentation with the accepted answer through refresh and undo', async () => {
     const chart = { x: 'Status', y: ['Count'] };
     const generate = vi.fn<QueryComposerOptions['generate']>(() =>
@@ -313,46 +209,6 @@ describe('question composer', () => {
     controller.undoChanges();
     expect(controller.presentation().displayMode).toBe('table');
     expect(controller.sql()).toBe('SELECT 1');
-  });
-  it('shows verified completed actions without offering a misleading data Undo', async () => {
-    const { controller } = setup({
-      generate: () =>
-        okAsync({
-          sql: 'SELECT COUNT(*) FROM projects',
-          explanation: 'Shows the created records.',
-          actionSummary: 'Created three projects.',
-        }),
-    });
-    await controller.run();
-    controller.setPrompt('Add three projects');
-    await controller.generate();
-    expect(controller.preview()?.actionSummary).toBe('Created three projects.');
-    expect(controller.canUndo()).toBe(false);
-  });
-  it('keeps completed writes visible when their verification query fails, and retries only the read', async () => {
-    const generate = vi.fn<QueryComposerOptions['generate']>(() =>
-      okAsync({
-        sql: 'SELECT COUNT(*) FROM projects',
-        explanation: 'Verifies the result.',
-        actionSummary: 'Created three projects.',
-      })
-    );
-    const read = vi
-      .fn<QueryComposerOptions['read']>()
-      .mockReturnValueOnce(
-        errAsync({ kind: 'fetch', message: 'Query timed out' })
-      )
-      .mockReturnValueOnce(okAsync(answer));
-    const { controller } = setup({ generate, read });
-    controller.setPrompt('Add three projects');
-    await controller.generate();
-    expect(controller.error()).toBeTruthy();
-    expect(controller.actionSummary()).toBe('Created three projects.');
-    expect(controller.preview()).toBeUndefined();
-    await controller.refreshAnswer();
-    expect(generate).toHaveBeenCalledTimes(1);
-    expect(read).toHaveBeenCalledTimes(2);
-    expect(controller.actionSummary()).toBe('Created three projects.');
   });
   const schema: QuerySchema = {
     databaseId: 'db',

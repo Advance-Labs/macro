@@ -11,11 +11,7 @@ import type {
   QuerySchema,
   SavedQuestion,
 } from './core/query';
-import {
-  ChooseQuestionSource,
-  DatabaseLiveQuestion,
-  DatabaseQuestionPanel,
-} from './database-query';
+import { ChooseQuestionSource, DatabaseLiveQuestion } from './database-query';
 import type { LiveQuerySource } from './queries/query-source';
 import type { SaveQuestionSql } from './queries/saved-question';
 
@@ -116,16 +112,6 @@ vi.mock('./views/query-editor', () => ({
           Save draft
         </button>
         <span aria-label="Source name">{props.schema.name}</span>
-        <span aria-label="Focused table">
-          {
-            props.schema.tables.find(
-              (table) => table.id === props.schema.focusTableId
-            )?.name
-          }
-        </span>
-        <span aria-label="Available tables">
-          {props.schema.tables.map((table) => table.name).join(', ')}
-        </span>
       </>
     );
   },
@@ -284,54 +270,6 @@ describe('database question production wiring', () => {
     expect(
       (result.getByLabelText('Question database') as HTMLSelectElement).value
     ).toBe('');
-    result.unmount();
-  });
-
-  it('passes the active table as AI context while keeping the entire database schema', () => {
-    const [activeTableId, setActiveTableId] = createSignal('second');
-    const result = render(() => (
-      <DatabaseQuestionPanel
-        activeTableId={activeTableId()}
-        detail={{
-          ...detail,
-          tables: [
-            {
-              views: [],
-              table: {
-                id: 'first',
-                database_id: 'source',
-                name: 'Projects',
-                position: 'a',
-                version: 1,
-              },
-              sql_name: 'projects',
-              read_sql_name: 'projects',
-              columns: [],
-            },
-            {
-              views: [],
-              table: {
-                id: 'second',
-                database_id: 'source',
-                name: 'Contacts',
-                position: 'b',
-                version: 1,
-              },
-              sql_name: 'contacts',
-              read_sql_name: 'contacts',
-              columns: [],
-            },
-          ],
-        }}
-      />
-    ));
-    expect(result.getByLabelText('Focused table').textContent).toBe('Contacts');
-    expect(result.getByLabelText('Available tables').textContent).toContain(
-      'Projects, Contacts'
-    );
-    expect(result.queryByLabelText('Question table')).toBeNull();
-    setActiveTableId('first');
-    expect(result.getByLabelText('Focused table').textContent).toBe('Projects');
     result.unmount();
   });
 

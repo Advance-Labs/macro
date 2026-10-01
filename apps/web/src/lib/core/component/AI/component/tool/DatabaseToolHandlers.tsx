@@ -1,7 +1,6 @@
 /**
- * The Macro Databases tool renderers, loaded on first use so the chat bundle
- * never carries the databases UI or its SQL engine, and inert while
- * databases are off.
+ * Database tool renderers, loaded on first use so the chat bundle never
+ * carries the databases UI or SQL engine; inert while databases are off.
  */
 import { enableDatabases, isFeatureEnabled } from '@core/constant/featureFlags';
 import type { ToolName } from '@service-cognition/generated/tools/tool';
@@ -12,7 +11,7 @@ import type {
   ToolHandlerMap,
 } from './ToolRenderer';
 
-export const DATABASE_TOOL_NAMES = [
+const DATABASE_TOOL_NAMES = [
   'ListDatabases',
   'DescribeDatabase',
   'QueryDatabase',
@@ -32,14 +31,14 @@ export const DATABASE_TOOL_NAMES = [
   'SaveDatabaseQuery',
 ] as const satisfies readonly ToolName[];
 
-export type DatabaseToolName = (typeof DATABASE_TOOL_NAMES)[number];
+type DatabaseToolName = (typeof DATABASE_TOOL_NAMES)[number];
 
 export type DatabaseToolHandlerMap = Pick<
   ToolHandlerMap<RenderContext>,
   DatabaseToolName
 >;
 
-export function isDatabaseToolName(name: string): name is DatabaseToolName {
+function isDatabaseToolName(name: string): name is DatabaseToolName {
   return (DATABASE_TOOL_NAMES as readonly string[]).includes(name);
 }
 

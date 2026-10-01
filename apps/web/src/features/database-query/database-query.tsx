@@ -4,13 +4,10 @@ import {
   useDatabaseDetailQuery,
   useDatabasesQuery,
 } from '@queries/storage/databases';
-import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
-import { createSignal, For, type JSX, Match, Show, Switch } from 'solid-js';
+import { createSignal, For, Match, Show, Switch } from 'solid-js';
 import { AppAnswerDisplay } from './answer-display';
 import { QueryDatabasePicker } from './components/query-database-picker';
-import type { QueryCapabilities } from './context/query-context';
 import {
-  type QueryAnswer,
   type QueryDefinition,
   type QuerySchema,
   queryErrorMessage,
@@ -26,42 +23,6 @@ import { toQuerySchema } from './queries/query-source';
 import { saveQuestion } from './queries/saved-question';
 import { LiveQuestion } from './views/live-question';
 import { QueryEditor } from './views/query-editor';
-
-export function DatabaseQuestionPanel(props: {
-  detail: DatabaseDetail;
-  activeTableId?: string;
-  initial?: QueryDefinition;
-  onSave?: (definition: QueryDefinition, answer: QueryAnswer) => void;
-  saveLabel?: string;
-  saveHint?: string;
-  sourcePicker?: JSX.Element;
-  autoFocus?: boolean;
-  capabilities?: QueryCapabilities;
-  promptPlaceholder?: string;
-}) {
-  return (
-    <AppAnswerDisplay>
-      <QueryEditor
-        autoFocus={props.autoFocus}
-        schema={toQuerySchema(props.detail, props.activeTableId)}
-        initial={
-          props.initial ?? {
-            databaseId: props.detail.database.id,
-            sql: '',
-            prompt: '',
-            displayMode: 'scalar',
-          }
-        }
-        capabilities={props.capabilities ?? queryCapabilities}
-        promptPlaceholder={props.promptPlaceholder}
-        onSave={props.onSave}
-        saveLabel={props.saveLabel}
-        saveHint={props.saveHint}
-        sourcePicker={props.sourcePicker}
-      />
-    </AppAnswerDisplay>
-  );
-}
 
 /** Source selection for a question inserted from the document slash menu. */
 export function ChooseQuestionSource(props: {

@@ -3,9 +3,11 @@ import type { DatabaseSqlAnswer } from '@core/database-sql/answer';
 import type { DatabaseSqlFailure } from '@core/database-sql/driver';
 import type { RunError } from '@core/database-sql/generated/types';
 import { type ResultError, ThrownResultError } from '@core/util/result';
+import { err, ok, type Result } from 'neverthrow';
 import { match, P } from 'ts-pattern';
 import {
   isChartMode,
+  isDisplayMode,
   parseQueryChart,
   type QueryChartConfig,
   type QueryDisplayMode,
@@ -60,7 +62,6 @@ export type QueryProposal = {
   explanation: string;
   displayMode?: QueryDisplayMode;
   chart?: QueryChartConfig;
-  actionSummary?: string;
   /** The model's chosen source; the query adapter verifies access before using it. */
   databaseId?: string;
   /** A verified complete schema, attached by the production query adapter. */
@@ -80,10 +81,6 @@ export type QueryFailure =
   | { kind: 'databases'; error: ResultError }
   /** The assistant could not turn the question into a query, in its words. */
   | { kind: 'generation'; message: string }
-  /** The assistant changed data, then could not finish its answer. */
-  | { kind: 'action-incomplete'; actionSummary: string; message: string }
-  /** The assistant may have changed data before its answer was lost. */
-  | { kind: 'outcome-unknown'; message: string }
   /** The question names a table the source no longer has. */
   | { kind: 'table-unavailable' }
   /** The question needs a database other than the one chosen. */
@@ -108,41 +105,8 @@ export function thrownServiceError(thrown: unknown): ResultError {
       };
 }
 
-/** The assistant's failure, in the words its client threw. */
-export function generationFailure(thrown: unknown): QueryFailure {
-  if (thrown instanceof QueryActionError)
-    return {
-      kind: 'action-incomplete',
-      actionSummary: thrown.actionSummary,
-      message: thrown.message,
-    };
-  if (thrown instanceof QueryOutcomeUnknownError)
-    return { kind: 'outcome-unknown', message: thrown.message };
-  return {
-    kind: 'generation',
-    message:
-      thrown instanceof Error && thrown.message
-        ? thrown.message
-        : 'AI could not answer. Please try again.',
-  };
-}
-
-/** The write ledger succeeded, but the assistant could not finish its answer. */
-export class QueryActionError extends Error {
-  readonly actionSummary: string;
-  constructor(actionSummary: string, message: string) {
-    super(message);
-    this.name = 'QueryActionError';
-    this.actionSummary = actionSummary;
-  }
-}
-
-/** The request may have committed tools before its final response was lost. */
-export class QueryOutcomeUnknownError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'QueryOutcomeUnknownError';
-  }
+export function generationFailure(message: string): QueryFailure {
+  return { kind: 'generation', message };
 }
 
 /**
@@ -179,41 +143,6 @@ export function queryFocusTable(schema: QuerySchema) {
   return schema.focusTableId
     ? schema.tables.find((table) => table.id === schema.focusTableId)
     : schema.tables[0];
-}
-
-/**
- * Ready-made questions in the Macro Databases dialect: names are used as the
- * schema spells them, select items carry no aliases, and a result column is
- * named by the column's display name or the aggregate text (`COUNT(*)`).
- */
-export function queryStarters(schema: QuerySchema) {
-  const table = queryFocusTable(schema);
-  if (!table) return [];
-  const name = table.sqlName;
-  const starters = [
-    {
-      label: 'Count records',
-      prompt: `How many records are in ${table.name}?`,
-      sql: `SELECT COUNT(*) FROM ${name}`,
-    },
-    {
-      label: 'Preview records',
-      prompt: `Show me the records in ${table.name}`,
-      sql: `SELECT * FROM ${name} LIMIT 50`,
-    },
-  ];
-  const group = table.columns.find(
-    (column) => column.options.length && !column.multiple
-  );
-  if (group) {
-    const column = group.sqlName;
-    starters.push({
-      label: `Count by ${group.name.toLowerCase()}`,
-      prompt: `How many records have each ${group.name.toLowerCase()}?`,
-      sql: `SELECT ${column}, COUNT(*) FROM ${name} GROUP BY ${column} ORDER BY COUNT(*) DESC`,
-    });
-  }
-  return starters;
 }
 
 export function isScalarAnswer(answer: QueryAnswer | undefined): boolean {
@@ -342,12 +271,7 @@ export function queryErrorMessage(failure: QueryFailure): string {
         .with('NETWORK_ERROR', () => OFFLINE)
         .otherwise(() => TRY_AGAIN)
     )
-    .with(
-      { kind: 'generation' },
-      { kind: 'action-incomplete' },
-      { kind: 'outcome-unknown' },
-      ({ message }) => message
-    )
+    .with({ kind: 'generation' }, ({ message }) => message)
     .with(
       { kind: 'table-unavailable' },
       () => 'Choose an available table before asking this question.'
@@ -379,15 +303,21 @@ export function queryFailureDetail(failure: QueryFailure): string | undefined {
     .otherwise(() => undefined);
 }
 
-export function parseQueryProposal(value: unknown): QueryProposal {
+export function parseQueryProposal(
+  value: unknown
+): Result<QueryProposal, QueryFailure> {
   if (typeof value !== 'object' || value === null)
-    throw new Error('AI returned an incomplete question. Try again.');
+    return err(
+      generationFailure('AI returned an incomplete question. Try again.')
+    );
   const record = value as Record<string, unknown>;
   if (record.answerable === false)
-    throw new Error(
-      typeof record.explanation === 'string'
-        ? record.explanation
-        : 'Try a question about the properties in this database.'
+    return err(
+      generationFailure(
+        typeof record.explanation === 'string'
+          ? record.explanation
+          : 'Try a question about the properties in this database.'
+      )
     );
   if (
     typeof record.sql !== 'string' ||
@@ -395,31 +325,31 @@ export function parseQueryProposal(value: unknown): QueryProposal {
     typeof record.explanation !== 'string' ||
     !record.explanation.trim()
   ) {
-    throw new Error('AI returned an incomplete question. Try again.');
+    return err(
+      generationFailure('AI returned an incomplete question. Try again.')
+    );
   }
   const sql = record.sql.trim().replace(/^```(?:sql)?\s*|\s*```$/g, '');
   if (!looksLikeReadQuery(sql))
-    throw new Error(
-      'Ask a question about your data. To make changes, use the table or board.'
+    return err(
+      generationFailure(
+        'Ask a question about your data. To make changes, use the table or board.'
+      )
     );
   const displayMode = record.displayMode;
-  if (
-    displayMode !== undefined &&
-    displayMode !== 'scalar' &&
-    displayMode !== 'table' &&
-    !isChartMode(typeof displayMode === 'string' ? displayMode : undefined)
-  )
-    throw new Error('AI returned an unsupported answer display. Try again.');
+  if (displayMode !== undefined && !isDisplayMode(displayMode))
+    return err(
+      generationFailure('AI returned an unsupported answer display. Try again.')
+    );
   const chart =
     record.chart === undefined || record.chart === null
       ? undefined
       : parseQueryChart(record.chart);
-  if (
-    (record.chart != null && !chart) ||
-    (isChartMode(displayMode as string | undefined) && !chart)
-  )
-    throw new Error('AI returned incomplete chart settings. Try again.');
-  return {
+  if ((record.chart != null && !chart) || (isChartMode(displayMode) && !chart))
+    return err(
+      generationFailure('AI returned incomplete chart settings. Try again.')
+    );
+  return ok({
     sql,
     explanation: record.explanation.trim(),
     ...(typeof record.title === 'string' && record.title.trim()
@@ -428,7 +358,7 @@ export function parseQueryProposal(value: unknown): QueryProposal {
     ...(typeof record.databaseId === 'string' && record.databaseId.trim()
       ? { databaseId: record.databaseId.trim() }
       : {}),
-    ...(displayMode ? { displayMode: displayMode as QueryDisplayMode } : {}),
+    ...(displayMode ? { displayMode } : {}),
     ...(chart ? { chart } : {}),
-  };
+  });
 }

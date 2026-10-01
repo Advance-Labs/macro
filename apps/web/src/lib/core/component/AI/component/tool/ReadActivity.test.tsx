@@ -48,10 +48,8 @@ vi.mock('@service-storage/websocket', () => ({
   createWebSocketJob: () => Promise.reject(new Error('no websocket in tests')),
 }));
 
-// Module-load quarantine: the real EntityIcon reaches the command launcher
-// through the `@ui` barrel, and the launcher reads `getIconConfig` back
-// before EntityIcon finishes initializing. The mock context supplies every
-// icon these tests render.
+// The real EntityIcon reaches the command launcher through `@ui`, which reads
+// `getIconConfig` back before EntityIcon finishes initializing.
 vi.mock('@core/component/EntityIcon', () => ({
   EntityIcon: () => null,
   getIconConfig: () => ({ icon: () => null }),

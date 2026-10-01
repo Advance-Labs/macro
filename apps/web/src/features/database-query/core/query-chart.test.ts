@@ -41,15 +41,23 @@ describe('saved chart settings', () => {
         explanation: 'Monthly totals.',
         displayMode: 'line',
         chart,
-      })
-    ).toMatchObject({ displayMode: 'line', chart });
-    expect(() =>
+      })._unsafeUnwrap()
+    ).toEqual({
+      sql: 'SELECT month AS Month, revenue AS Revenue, cost AS Cost FROM finances',
+      explanation: 'Monthly totals.',
+      displayMode: 'line',
+      chart,
+    });
+    expect(
       parseQueryProposal({
         sql: 'SELECT 1',
         explanation: 'One.',
         displayMode: 'pie',
-      })
-    ).toThrow('chart settings');
+      })._unsafeUnwrapErr()
+    ).toEqual({
+      kind: 'generation',
+      message: 'AI returned incomplete chart settings. Try again.',
+    });
     expect(
       parseQueryChart({ x: 'Month', y: ['Revenue', 'Revenue'] })
     ).toBeUndefined();
@@ -71,8 +79,13 @@ describe('saved chart settings', () => {
         explanation: 'Revenue.',
         displayMode: 'area',
         chart: { x: 'Month', y: ['Revenue'] },
-      })
-    ).toMatchObject({ displayMode: 'area' });
+      })._unsafeUnwrap()
+    ).toEqual({
+      sql: 'SELECT month AS Month, revenue AS Revenue FROM finances',
+      explanation: 'Revenue.',
+      displayMode: 'area',
+      chart: { x: 'Month', y: ['Revenue'] },
+    });
   });
 
   it('keeps the optional color split and stacking, and drops renderer options', () => {

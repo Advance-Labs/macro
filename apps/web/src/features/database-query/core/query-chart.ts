@@ -5,6 +5,7 @@ import {
   resultCellText,
   unknownNames,
 } from './answer-cell';
+import { CHART_PALETTE } from './chart-palette';
 import { formatQueryValue, type QueryAnswer } from './query';
 
 export const QUERY_CHART_MODES = [
@@ -44,8 +45,8 @@ export type QueryChartSpec = {
   stack: boolean;
 };
 
-/** Most series one chart colors apart, the size of the chart palette. */
-export const MAX_CHART_SERIES = 9;
+/** Most series one chart colors apart. */
+const MAX_CHART_SERIES = CHART_PALETTE.length;
 const MAX_Y_COLUMNS = 5;
 const MAX_POINTS = 300;
 const MAX_PIE_CATEGORIES = 20;
@@ -77,6 +78,14 @@ export type QueryChartData = {
 
 export function isChartMode(mode: string | undefined): mode is QueryChartMode {
   return QUERY_CHART_MODES.some((chartMode) => chartMode === mode);
+}
+
+export function isDisplayMode(mode: unknown): mode is QueryDisplayMode {
+  return (
+    mode === 'scalar' ||
+    mode === 'table' ||
+    (typeof mode === 'string' && isChartMode(mode))
+  );
 }
 
 export function chartModeLabel(mode: QueryChartMode): string {
@@ -111,7 +120,9 @@ export function parseQueryChart(value: unknown): QueryChartConfig | undefined {
   return {
     x: chart.x,
     y: [...chart.y],
-    ...(chart.title ? { title: chart.title as string } : {}),
+    ...(typeof chart.title === 'string' && chart.title
+      ? { title: chart.title }
+      : {}),
     ...(color ? { color } : {}),
     ...(stack ? { stack: true } : {}),
   };

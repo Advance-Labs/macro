@@ -1,9 +1,5 @@
-import { err, ok } from 'neverthrow';
+import { ok } from 'neverthrow';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  QueryActionError,
-  QueryOutcomeUnknownError,
-} from '../../../features/database-query/core/query';
 
 const { complete } = vi.hoisted(() => ({ complete: vi.fn() }));
 vi.mock('./client', () => ({
@@ -13,8 +9,7 @@ vi.mock('@core/component/AI/constant', () => ({
   DATABASE_MODEL: 'google/gemini-3.8-flash',
 }));
 
-import { generateDatabaseQuery, runDatabaseAssistant } from './database-query';
-import { summarizeDatabaseActivity } from './database-tool-activity';
+import { generateDatabaseQuery } from './database-query';
 
 const input = {
   prompt: 'Show tickets by status',
@@ -46,8 +41,7 @@ describe('database AI transport boundaries', () => {
     expect(JSON.parse(complete.mock.calls[0][0].prompt).schema).toEqual(
       input.schema
     );
-    expect(result.chart).toEqual(proposal.chart);
-    expect(result.displayMode).toBe('bar');
+    expect(result._unsafeUnwrap()).toEqual(proposal);
   });
 
   it('asks for every chart mark and keeps the strict schema’s color and stack', async () => {
@@ -86,91 +80,17 @@ describe('database AI transport boundaries', () => {
       'color',
       'stack',
     ]);
-    expect(result.displayMode).toBe('area');
-    expect(result.chart).toEqual({
-      x: 'month',
-      y: ['total'],
-      title: 'Tickets',
-      color: 'team',
-      stack: true,
+    expect(result._unsafeUnwrap()).toEqual({
+      ...proposal,
+      sql: 'SELECT month, team, COUNT(*) AS total FROM tickets GROUP BY month, team',
+      displayMode: 'area',
+      chart: {
+        x: 'month',
+        y: ['total'],
+        title: 'Tickets',
+        color: 'team',
+        stack: true,
+      },
     });
-  });
-
-  it('only attaches completed changes from server receipts to the scoped assistant', async () => {
-    complete.mockResolvedValue(
-      ok({
-        result: { ...proposal, actionSummary: 'Invented changes' },
-        toolActivity: [
-          { name: 'CreateTable', success: true },
-          { name: 'AddColumn', success: false },
-          { name: 'QueryDatabase', success: true, changesApplied: 2 },
-        ],
-      })
-    );
-    const result = await runDatabaseAssistant(input);
-    expect(complete.mock.calls[0][0].model).toBe('google/gemini-3.8-flash');
-    expect(complete.mock.calls[0][0].toolset).toEqual({ type: 'databases' });
-    expect(result.actionSummary).toBe(
-      'Created 1 table · Applied 2 row changes.'
-    );
-  });
-
-  it('reports committed changes even when the follow-up answer is incomplete', async () => {
-    complete.mockResolvedValue(
-      ok({
-        result: {
-          answerable: false,
-          sql: '',
-          explanation: 'The follow-up query failed.',
-        },
-        toolActivity: [{ name: 'SaveDatabaseView', success: true }],
-      })
-    );
-    const error = await runDatabaseAssistant(input).catch(
-      (error: unknown) => error
-    );
-    expect(error).toBeInstanceOf(QueryActionError);
-    expect(error).toMatchObject({
-      actionSummary: 'Saved 1 view.',
-      message: 'The follow-up query failed.',
-    });
-  });
-
-  it('summarizes schema edits from the executed tools', () => {
-    expect(
-      summarizeDatabaseActivity([
-        { name: 'RenameColumn', success: true },
-        { name: 'DeleteColumn', success: true },
-        { name: 'DeleteColumn', success: true },
-        { name: 'DeleteTable', success: false },
-        { name: 'RenameDatabase', success: true },
-      ])
-    ).toBe('Renamed 1 column · Deleted 2 columns · Renamed 1 database.');
-  });
-
-  it('does not claim changes for read-only calls, errors or unsupported tool names', () => {
-    expect(
-      summarizeDatabaseActivity([
-        { name: 'CreateTable', success: false },
-        { name: 'QueryDatabase', success: true, changesApplied: 0 },
-        { name: 'SendEmail', success: true },
-      ])
-    ).toBeUndefined();
-  });
-
-  it('keeps server errors visible without fabricating a proposal', async () => {
-    complete.mockResolvedValue(
-      err([{ message: 'Access denied', code: 'FORBIDDEN' }])
-    );
-    await expect(runDatabaseAssistant(input)).rejects.toThrow('Access denied');
-  });
-
-  it('marks lost responses as uncertain instead of allowing an unchanged write retry', async () => {
-    complete.mockResolvedValue(
-      err([{ message: 'Network error', code: 'NETWORK_ERROR' }])
-    );
-    await expect(runDatabaseAssistant(input)).rejects.toBeInstanceOf(
-      QueryOutcomeUnknownError
-    );
   });
 });

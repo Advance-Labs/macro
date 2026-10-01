@@ -151,7 +151,7 @@ function createTestEditor() {
             : null,
         nodeKeys: new Set(
           $isNodeSelection(current)
-            ? current.getNodes().map((n) => n.getKey())
+            ? current.getNodes().map((node) => node.getKey())
             : []
         ),
       });

@@ -11,11 +11,7 @@ import { CombinedError, createClient, type Exchange } from '@urql/core';
 import { createRoot } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { empty, fromValue, mergeMap, pipe } from 'wonka';
-import {
-  type QueryFailure,
-  queryFocusTable,
-  queryStarters,
-} from '../core/query';
+import { type QueryFailure, queryFocusTable } from '../core/query';
 import {
   createLiveQuerySource,
   type LiveQuerySource,
@@ -24,7 +20,7 @@ import {
 
 afterEach(() => vi.useRealTimers());
 describe('query schema', () => {
-  it('carries the pre-quoted SQL names and relation metadata into starters and the prompt', () => {
+  it('carries the pre-quoted SQL names and relation metadata into the prompt', () => {
     const detail: DatabaseDetail = {
       database: {
         id: 'db',
@@ -95,10 +91,6 @@ describe('query schema', () => {
     const schema = toQuerySchema(detail, 'contacts');
     expect(queryFocusTable(schema)?.name).toBe('Contacts');
     expect(queryFocusTable(schema)?.sqlName).toBe('"Contacts"');
-    expect(queryStarters(schema)[0]).toMatchObject({
-      prompt: 'How many records are in Contacts?',
-      sql: 'SELECT COUNT(*) FROM "Contacts"',
-    });
     expect(schema.tables[0].sqlName).toBe('"Projects"');
     expect(schema.tables.map((table) => table.sqlName)).toEqual([
       '"Projects"',
@@ -113,10 +105,11 @@ describe('query schema', () => {
         writable: false,
       },
     });
-    const request = databaseCompletionRequest(
-      { prompt: 'Show contacts and their projects', sql: '', schema },
-      'question'
-    );
+    const request = databaseCompletionRequest({
+      prompt: 'Show contacts and their projects',
+      sql: '',
+      schema,
+    });
     expect(
       JSON.parse(request.prompt).schema.tables[1].columns[0].relation
     ).toEqual(schema.tables[1].columns[0].relation);

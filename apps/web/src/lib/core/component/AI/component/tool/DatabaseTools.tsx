@@ -3,6 +3,7 @@
  * (`crates/databases/src/inbound/toolset`).
  */
 
+import { AppAnswerDisplay } from '@app/features/database-query/answer-display';
 import { ToolQueryResults } from '@app/features/database-query/components/tool-query-results';
 import { toolAnswers } from '@app/features/database-query/core/tool-answer';
 import { globalSplitManager } from '@app/signal/splitLayout';
@@ -30,11 +31,10 @@ type DatabaseSchema = NamedTool<'DescribeDatabase', 'response'>['data'];
 type QueryDatabaseResult = NamedTool<'QueryDatabase', 'response'>['data'];
 
 /**
- * What a QueryDatabase call did, in words, for when SQL is hidden. Tables and
- * row counts come from the result; the statement's first keyword only picks
- * the verb and is never shown.
+ * What a QueryDatabase call did, in words, for when SQL is hidden. The
+ * statement's first keyword only picks the verb and is never shown.
  */
-export function describeDatabaseQuery(input: {
+function describeDatabaseQuery(input: {
   statement: string;
   result: QueryDatabaseResult;
   tableName: (tableId: string) => string | undefined;
@@ -97,7 +97,7 @@ function SchemaTableList(props: { schema: DatabaseSchema }) {
   );
 }
 
-export const listDatabasesHandler = createToolRenderer({
+const listDatabasesHandler = createToolRenderer({
   name: 'ListDatabases',
   render: (ctx) => {
     const [expanded, setExpanded] = createSignal(false);
@@ -145,11 +145,15 @@ export const listDatabasesHandler = createToolRenderer({
   },
 });
 
-export const describeDatabaseHandler = createToolRenderer({
+const describeDatabaseHandler = createToolRenderer({
   name: 'DescribeDatabase',
   render: (ctx) => {
     const [expanded, setExpanded] = createSignal(false);
     const schema = () => ctx.response?.data;
+    const status = () => {
+      const current = schema();
+      return current ? `${current.tables.length} tabs` : undefined;
+    };
 
     return (
       <BaseTool
@@ -173,9 +177,7 @@ export const describeDatabaseHandler = createToolRenderer({
             expanded={expanded()}
             onToggle={() => setExpanded((open) => !open)}
             showToggle={!!schema()}
-            status={
-              schema() ? `${schema()?.tables.length ?? 0} tabs` : undefined
-            }
+            status={status()}
           />
         </div>
       </BaseTool>
@@ -183,7 +185,7 @@ export const describeDatabaseHandler = createToolRenderer({
   },
 });
 
-export const queryDatabaseHandler = createToolRenderer({
+const queryDatabaseHandler = createToolRenderer({
   name: 'QueryDatabase',
   render: (ctx) => {
     const [expanded, setExpanded] = createSignal(true);
@@ -223,6 +225,7 @@ export const queryDatabaseHandler = createToolRenderer({
                   answer={answer}
                   sql={ctx.tool.data.sql}
                   preferredDisplay={ctx.tool.data.display ?? undefined}
+                  answerDisplay={AppAnswerDisplay}
                 />
               )}
             </For>
@@ -242,7 +245,7 @@ export const queryDatabaseHandler = createToolRenderer({
   },
 });
 
-export const createDatabaseHandler = createToolRenderer({
+const createDatabaseHandler = createToolRenderer({
   name: 'CreateDatabase',
   render: (ctx) => (
     <BaseTool icon={DatabaseIcon} renderContext={ctx.renderContext} type="call">
@@ -253,7 +256,7 @@ export const createDatabaseHandler = createToolRenderer({
   ),
 });
 
-export const createTableHandler = createToolRenderer({
+const createTableHandler = createToolRenderer({
   name: 'CreateTable',
   render: (ctx) => (
     <BaseTool icon={TableIcon} renderContext={ctx.renderContext} type="call">
@@ -264,7 +267,7 @@ export const createTableHandler = createToolRenderer({
   ),
 });
 
-export const renameTableHandler = createToolRenderer({
+const renameTableHandler = createToolRenderer({
   name: 'RenameTable',
   render: (ctx) => (
     <BaseTool icon={TableIcon} renderContext={ctx.renderContext} type="call">
@@ -275,7 +278,7 @@ export const renameTableHandler = createToolRenderer({
   ),
 });
 
-export const reorderTablesHandler = createToolRenderer({
+const reorderTablesHandler = createToolRenderer({
   name: 'ReorderTables',
   render: (ctx) => {
     const count = () => ctx.tool.data.tableIds.length;
@@ -293,7 +296,7 @@ export const reorderTablesHandler = createToolRenderer({
   },
 });
 
-export const addColumnHandler = createToolRenderer({
+const addColumnHandler = createToolRenderer({
   name: 'AddColumn',
   render: (ctx) => {
     const options = () => ctx.tool.data.options ?? [];
@@ -315,7 +318,7 @@ export const addColumnHandler = createToolRenderer({
   },
 });
 
-export const addColumnOptionsHandler = createToolRenderer({
+const addColumnOptionsHandler = createToolRenderer({
   name: 'AddColumnOptions',
   render: (ctx) => (
     <BaseTool icon={TableIcon} renderContext={ctx.renderContext} type="call">
@@ -334,7 +337,7 @@ export const addColumnOptionsHandler = createToolRenderer({
   ),
 });
 
-export const saveDatabaseViewHandler = createToolRenderer({
+const saveDatabaseViewHandler = createToolRenderer({
   name: 'SaveDatabaseView',
   handleResponse: async (ctx) => {
     const databaseId = ctx.tool.data.view.databaseId;
@@ -413,7 +416,7 @@ function Scope(props: { name: string | undefined; preposition: string }) {
   );
 }
 
-export const renameDatabaseHandler = createToolRenderer({
+const renameDatabaseHandler = createToolRenderer({
   name: 'RenameDatabase',
   render: (ctx) => (
     <BaseTool icon={DatabaseIcon} renderContext={ctx.renderContext} type="call">
@@ -427,7 +430,7 @@ export const renameDatabaseHandler = createToolRenderer({
   ),
 });
 
-export const deleteTableHandler = createToolRenderer({
+const deleteTableHandler = createToolRenderer({
   name: 'DeleteTable',
   render: (ctx) => (
     <BaseTool icon={TableIcon} renderContext={ctx.renderContext} type="call">
@@ -439,7 +442,7 @@ export const deleteTableHandler = createToolRenderer({
   ),
 });
 
-export const renameColumnHandler = createToolRenderer({
+const renameColumnHandler = createToolRenderer({
   name: 'RenameColumn',
   render: (ctx) => (
     <BaseTool icon={TableIcon} renderContext={ctx.renderContext} type="call">
@@ -460,7 +463,7 @@ export const renameColumnHandler = createToolRenderer({
   ),
 });
 
-export const changeColumnTypeHandler = createToolRenderer({
+const changeColumnTypeHandler = createToolRenderer({
   name: 'ChangeColumnType',
   render: (ctx) => {
     const options = () => ctx.tool.data.options ?? [];
@@ -494,7 +497,7 @@ export const changeColumnTypeHandler = createToolRenderer({
   },
 });
 
-export const deleteColumnHandler = createToolRenderer({
+const deleteColumnHandler = createToolRenderer({
   name: 'DeleteColumn',
   render: (ctx) => (
     <BaseTool icon={TableIcon} renderContext={ctx.renderContext} type="call">
@@ -512,7 +515,7 @@ export const deleteColumnHandler = createToolRenderer({
   ),
 });
 
-export const reorderColumnsHandler = createToolRenderer({
+const reorderColumnsHandler = createToolRenderer({
   name: 'ReorderColumns',
   render: (ctx) => {
     const count = () => ctx.tool.data.columnIds.length;
@@ -536,7 +539,7 @@ export const reorderColumnsHandler = createToolRenderer({
   },
 });
 
-export const saveDatabaseQueryHandler = createToolRenderer({
+const saveDatabaseQueryHandler = createToolRenderer({
   name: 'SaveDatabaseQuery',
   render: (ctx) => {
     const [expanded, setExpanded] = createSignal(true);

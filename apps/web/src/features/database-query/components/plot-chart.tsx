@@ -8,9 +8,9 @@ import {
   Show,
 } from 'solid-js';
 import { match } from 'ts-pattern';
+import { CHART_PALETTE } from '../core/chart-palette';
 import type { QueryChartData } from '../core/query-chart';
 import { type PlotMark, plotChart } from '../core/query-chart-plot';
-import { CHART_PALETTE } from './chart-palette';
 
 type PlotModule = typeof import('@observablehq/plot');
 

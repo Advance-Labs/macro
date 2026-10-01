@@ -10,7 +10,7 @@ import {
 import { answerNames } from './queries/answer-names';
 
 /** Answers drawn with the database grid's names, mentions and text. */
-export const appAnswerDisplay: AnswerDisplay = {
+const appAnswerDisplay: AnswerDisplay = {
   names: answerNames,
   mention: (id, entityType) => (
     <DatabaseMentionValue id={id} entityType={entityType} />

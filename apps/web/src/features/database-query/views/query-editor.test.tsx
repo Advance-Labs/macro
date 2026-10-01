@@ -4,12 +4,7 @@ import { errAsync, okAsync, ResultAsync } from 'neverthrow';
 import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { QueryCapabilities } from '../context/query-context';
-import type {
-  QueryAnswer,
-  QueryDefinition,
-  QueryProposal,
-  QuerySchema,
-} from '../core/query';
+import type { QueryAnswer, QueryDefinition, QuerySchema } from '../core/query';
 import { QueryEditor } from './query-editor';
 
 vi.mock('@solid-primitives/resize-observer', () => ({
@@ -53,94 +48,6 @@ describe('question editor', () => {
     setSchema({ databaseId: 'support', name: 'Support', tables: [] });
     expect(result.getByRole('button', { name: 'Support' })).toBe(trigger);
     expect(document.activeElement).toBe(trigger);
-    result.unmount();
-  });
-
-  it('keeps the prompt and SQL read-only until a write-capable generation finishes', async () => {
-    let finish!: (proposal: QueryProposal) => void;
-    const generate = vi.fn<QueryCapabilities['generate']>(() =>
-      ResultAsync.fromSafePromise(
-        new Promise<QueryProposal>((resolve) => {
-          finish = resolve;
-        })
-      )
-    );
-    const result = render(() => (
-      <QueryEditor
-        initial={{
-          sql: '',
-          prompt: 'Create sample records',
-          displayMode: 'scalar',
-        }}
-        schema={{ databaseId: 'db', name: 'Planning', tables: [] }}
-        capabilities={{
-          generationCanWrite: true,
-          generate,
-          read: vi.fn<QueryCapabilities['read']>(() => okAsync(answer)),
-        }}
-      />
-    ));
-    fireEvent.click(result.getByRole('button', { name: 'SQL' }));
-    const prompt = result.getByLabelText(
-      'Ask your database'
-    ) as HTMLTextAreaElement;
-    const sql = result.getByLabelText('Query SQL');
-    fireEvent.click(result.getByRole('button', { name: 'Ask' }));
-    expect(prompt.readOnly).toBe(true);
-    expect(sql.getAttribute('contenteditable')).toBe('false');
-    fireEvent.keyDown(prompt, { key: 'Enter' });
-    expect(generate).toHaveBeenCalledTimes(1);
-    finish({
-      sql: 'SELECT 7',
-      explanation: 'Created records.',
-      actionSummary: 'Created three records.',
-    });
-    await result.findByText('Created three records.');
-    await waitFor(() => expect(prompt.readOnly).toBe(false));
-    expect(sql.getAttribute('contenteditable')).toBe('true');
-    result.unmount();
-  });
-
-  it('does not claim saved changes or repeat an unchanged request after a lost response', async () => {
-    const generate = vi.fn<QueryCapabilities['generate']>(() =>
-      errAsync({
-        kind: 'outcome-unknown',
-        message:
-          'The connection was interrupted. Some changes may have been saved.',
-      })
-    );
-    const result = render(() => (
-      <QueryEditor
-        initial={{
-          sql: '',
-          prompt: 'Add three records',
-          displayMode: 'scalar',
-        }}
-        schema={{ databaseId: 'db', name: 'Planning', tables: [] }}
-        capabilities={{
-          generationCanWrite: true,
-          generate,
-          read: vi.fn<QueryCapabilities['read']>(() => okAsync(answer)),
-        }}
-      />
-    ));
-    fireEvent.click(result.getByRole('button', { name: 'Ask' }));
-    await result.findByText(
-      'Check the table, then edit your request to continue.'
-    );
-    expect(
-      result.queryByText(
-        'These changes are saved. Edit your request before continuing.'
-      )
-    ).toBeNull();
-    expect(
-      (result.getByRole('button', { name: 'Ask' }) as HTMLButtonElement)
-        .disabled
-    ).toBe(true);
-    fireEvent.keyDown(result.getByLabelText('Ask your database'), {
-      key: 'Enter',
-    });
-    expect(generate).toHaveBeenCalledTimes(1);
     result.unmount();
   });
 
@@ -192,45 +99,6 @@ describe('question editor', () => {
       }),
       chartAnswer
     );
-    result.unmount();
-  });
-  it('shows completed partial actions and prevents repeating them until the request is edited', async () => {
-    const generate = vi.fn<QueryCapabilities['generate']>(() =>
-      errAsync({
-        kind: 'action-incomplete',
-        actionSummary: 'Created a Tasks table.',
-        message: 'Could not finish adding records.',
-      })
-    );
-    const result = render(() => (
-      <QueryEditor
-        initial={{ sql: '', prompt: '', displayMode: 'scalar' }}
-        schema={{ databaseId: 'db', name: 'Planning', tables: [] }}
-        capabilities={{
-          generate,
-          read: vi.fn<QueryCapabilities['read']>(() => okAsync(answer)),
-        }}
-      />
-    ));
-    const prompt = result.getByLabelText('Ask your database');
-    fireEvent.input(prompt, {
-      target: { value: 'Create Tasks and sample records' },
-    });
-    fireEvent.click(result.getByRole('button', { name: 'Ask' }));
-    await result.findByText('Created a Tasks table.');
-    expect(
-      (result.getByRole('button', { name: 'Ask' }) as HTMLButtonElement)
-        .disabled
-    ).toBe(true);
-    fireEvent.keyDown(prompt, { key: 'Enter' });
-    expect(generate).toHaveBeenCalledTimes(1);
-    fireEvent.input(prompt, {
-      target: { value: 'Add records to the existing Tasks table' },
-    });
-    expect(
-      (result.getByRole('button', { name: 'Ask' }) as HTMLButtonElement)
-        .disabled
-    ).toBe(false);
     result.unmount();
   });
   it('renders the suggested chart and saves its settings, including manual display changes', async () => {

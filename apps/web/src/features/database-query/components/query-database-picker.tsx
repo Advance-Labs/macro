@@ -129,24 +129,24 @@ function DatabaseChoices(props: {
         if (choice) props.onChange(choice.id || undefined);
       }}
       class="flex min-h-0 flex-col"
-      itemComponent={({ item }) => (
+      itemComponent={(itemProps) => (
         <Combobox.Item
-          item={item}
+          item={itemProps.item}
           class="flex min-w-0 items-center gap-2 rounded-md px-2 py-2 text-sm outline-none data-highlighted:bg-hover"
         >
           <Show
-            when={item.rawValue.id}
+            when={itemProps.item.rawValue.id}
             fallback={<SparkleIcon class="size-4 shrink-0 text-ink-muted" />}
           >
             <DatabaseIcon class="size-4 shrink-0 text-ink-muted" />
           </Show>
           <Combobox.ItemLabel
             class="min-w-0 flex-1 truncate"
-            title={item.rawValue.name}
+            title={itemProps.item.rawValue.name}
           >
-            {item.rawValue.name}
+            {itemProps.item.rawValue.name}
           </Combobox.ItemLabel>
-          <Show when={!item.rawValue.id}>
+          <Show when={!itemProps.item.rawValue.id}>
             <span class="shrink-0 text-xs text-ink-muted">AI chooses</span>
           </Show>
           <Combobox.ItemIndicator class="flex size-4 shrink-0 items-center">

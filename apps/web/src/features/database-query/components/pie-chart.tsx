@@ -1,10 +1,10 @@
 import { scaleOrdinal } from 'd3-scale';
 import { arc, type PieArcDatum, pie } from 'd3-shape';
 import { createMemo, createSignal, For, Show } from 'solid-js';
+import { CHART_PALETTE } from '../core/chart-palette';
 import { formatQueryValue } from '../core/query';
 import type { QueryChartData, QueryChartPoint } from '../core/query-chart';
 import { CHART_TIP } from '../core/query-chart-plot';
-import { CHART_PALETTE } from './chart-palette';
 
 const MAX_DIAMETER = 280;
 /** A slice label needs this much arc, in radians, to sit inside the slice. */

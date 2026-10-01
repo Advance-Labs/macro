@@ -101,7 +101,7 @@ function dateCell(value: string): ResultCell {
 }
 
 /** A calendar day reads as the grid's date; a moment keeps its time. */
-export function formatResultDate(date: Date, calendarDay: boolean): string {
+function formatResultDate(date: Date, calendarDay: boolean): string {
   return calendarDay
     ? formatDate(date)
     : `${formatDate(date)}, ${formatTime(date)}`;

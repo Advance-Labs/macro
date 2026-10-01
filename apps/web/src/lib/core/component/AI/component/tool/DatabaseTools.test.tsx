@@ -7,19 +7,11 @@ import { cleanup, render, screen } from '@solidjs/testing-library';
 import type { Component, ParentProps } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  changeColumnTypeHandler,
-  deleteColumnHandler,
-  deleteTableHandler,
-  queryDatabaseHandler,
-  renameColumnHandler,
-  renameDatabaseHandler,
-  reorderColumnsHandler,
-  reorderTablesHandler,
-  saveDatabaseQueryHandler,
-  saveDatabaseViewHandler,
-} from './DatabaseTools';
+import { databaseToolHandlers } from './DatabaseTools';
 
+vi.mock('@app/features/database-query/answer-display', () => ({
+  AppAnswerDisplay: () => null,
+}));
 vi.mock('@app/features/database-query/components/tool-query-results', () => ({
   ToolQueryResults: () => null,
 }));
@@ -123,7 +115,7 @@ function line(rendered: ReturnType<typeof render>) {
 describe('database schema tool activity', () => {
   it('renders RenameDatabase with the name the server kept', () => {
     const rendered = renderTool(
-      renameDatabaseHandler,
+      databaseToolHandlers.RenameDatabase,
       'RenameDatabase',
       { databaseId, name: 'launch ' },
       { databaseId, name: 'Launch', database }
@@ -133,7 +125,7 @@ describe('database schema tool activity', () => {
 
   it('renders DeleteTable with the database it left', () => {
     const rendered = renderTool(
-      deleteTableHandler,
+      databaseToolHandlers.DeleteTable,
       'DeleteTable',
       { databaseId, tableId },
       { databaseId, tableId, database }
@@ -143,7 +135,7 @@ describe('database schema tool activity', () => {
 
   it('renders RenameColumn with its table', () => {
     const rendered = renderTool(
-      renameColumnHandler,
+      databaseToolHandlers.RenameColumn,
       'RenameColumn',
       { databaseId, tableId, columnId, name: 'Status' },
       { databaseId, tableId, columnId, name: 'Status', database }
@@ -153,7 +145,7 @@ describe('database schema tool activity', () => {
 
   it('renders ChangeColumnType with the column name from the schema', () => {
     const rendered = renderTool(
-      changeColumnTypeHandler,
+      databaseToolHandlers.ChangeColumnType,
       'ChangeColumnType',
       {
         databaseId,
@@ -175,18 +167,22 @@ describe('database schema tool activity', () => {
   });
 
   it('renders ChangeColumnType before the schema arrives', () => {
-    const rendered = renderTool(changeColumnTypeHandler, 'ChangeColumnType', {
-      databaseId,
-      tableId,
-      columnId,
-      dataType: 'number',
-    });
+    const rendered = renderTool(
+      databaseToolHandlers.ChangeColumnType,
+      'ChangeColumnType',
+      {
+        databaseId,
+        tableId,
+        columnId,
+        dataType: 'number',
+      }
+    );
     expect(line(rendered)).toBe('Change column type to number');
   });
 
   it('renders DeleteColumn with the table it left', () => {
     const rendered = renderTool(
-      deleteColumnHandler,
+      databaseToolHandlers.DeleteColumn,
       'DeleteColumn',
       { databaseId, tableId, columnId: otherColumnId },
       { databaseId, tableId, columnId: otherColumnId, database }
@@ -196,7 +192,7 @@ describe('database schema tool activity', () => {
 
   it('renders ReorderColumns with its table', () => {
     const rendered = renderTool(
-      reorderColumnsHandler,
+      databaseToolHandlers.ReorderColumns,
       'ReorderColumns',
       { databaseId, tableId, columnIds: [columnId, otherColumnId] },
       { databaseId, tableId, database }
@@ -206,7 +202,7 @@ describe('database schema tool activity', () => {
 
   it('renders ReorderTables with its database', () => {
     const rendered = renderTool(
-      reorderTablesHandler,
+      databaseToolHandlers.ReorderTables,
       'ReorderTables',
       { databaseId, tableIds: [tableId, otherColumnId] },
       { databaseId, tableIds: [tableId, otherColumnId], database }
@@ -216,7 +212,7 @@ describe('database schema tool activity', () => {
 
   it('renders a delete without a refreshed schema', () => {
     const rendered = renderTool(
-      deleteColumnHandler,
+      databaseToolHandlers.DeleteColumn,
       'DeleteColumn',
       { databaseId, tableId, columnId },
       {
@@ -236,7 +232,7 @@ describe('SaveDatabaseQuery', () => {
     const markdown =
       '<m-db-query>{"queryId":"01992d2f-8444-7000-8000-000000000004","title":"Open tickets","prompt":"How many open tickets?","displayMode":"scalar"}</m-db-query>';
     renderTool(
-      saveDatabaseQueryHandler,
+      databaseToolHandlers.SaveDatabaseQuery,
       'SaveDatabaseQuery',
       {
         databaseId,
@@ -251,7 +247,7 @@ describe('SaveDatabaseQuery', () => {
   });
 
   it('shows the pending save before the output arrives', () => {
-    renderTool(saveDatabaseQueryHandler, 'SaveDatabaseQuery', {
+    renderTool(databaseToolHandlers.SaveDatabaseQuery, 'SaveDatabaseQuery', {
       sql: 'SELECT 1',
       title: 'One',
       displayMode: 'table',
@@ -263,14 +259,14 @@ describe('SaveDatabaseQuery', () => {
 
 describe('SaveDatabaseView', () => {
   it('rereads the database once the view is saved, not on each render', async () => {
-    renderTool(saveDatabaseViewHandler, 'SaveDatabaseView', {
+    renderTool(databaseToolHandlers.SaveDatabaseView, 'SaveDatabaseView', {
       databaseId,
       tableId,
       name: 'Open',
       layout: { kind: 'table', columns: [] },
     });
     expect(invalidateDatabase).not.toHaveBeenCalled();
-    await saveDatabaseViewHandler.handleResponse?.({
+    await databaseToolHandlers.SaveDatabaseView.handleResponse?.({
       tool: {
         id: 'tool-1',
         name: 'SaveDatabaseView',
@@ -301,7 +297,7 @@ describe('QueryDatabase with SQL hidden', () => {
 
   it('names the table a read used, never the statement', () => {
     const rendered = renderTool(
-      queryDatabaseHandler,
+      databaseToolHandlers.QueryDatabase,
       'QueryDatabase',
       { databaseId, sql: 'SELECT COUNT(*) FROM "Invites"' },
       read
@@ -311,7 +307,7 @@ describe('QueryDatabase with SQL hidden', () => {
 
   it('counts the rows a write changed in the table it wrote', () => {
     const rendered = renderTool(
-      queryDatabaseHandler,
+      databaseToolHandlers.QueryDatabase,
       'QueryDatabase',
       {
         databaseId,
@@ -330,7 +326,7 @@ describe('QueryDatabase with SQL hidden', () => {
 
   it('says which column an ALTER changed', () => {
     const rendered = renderTool(
-      queryDatabaseHandler,
+      databaseToolHandlers.QueryDatabase,
       'QueryDatabase',
       {
         databaseId,
@@ -348,7 +344,7 @@ describe('QueryDatabase with SQL hidden', () => {
 
   it('falls back to the database when nothing names a table', () => {
     const rendered = renderTool(
-      queryDatabaseHandler,
+      databaseToolHandlers.QueryDatabase,
       'QueryDatabase',
       { databaseId, sql: 'SELECT 1' },
       { ...read, readVersions: [] }
@@ -359,7 +355,7 @@ describe('QueryDatabase with SQL hidden', () => {
   it('keeps the server summary when SQL is shown', () => {
     showDatabaseSql.enabled = true;
     const rendered = renderTool(
-      queryDatabaseHandler,
+      databaseToolHandlers.QueryDatabase,
       'QueryDatabase',
       { databaseId, sql: 'SELECT COUNT(*) FROM "Invites"' },
       read

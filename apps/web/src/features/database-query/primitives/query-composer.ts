@@ -26,7 +26,6 @@ type AnswerPreview = {
   sql: string;
   prompt: string;
   answer: QueryAnswer;
-  actionSummary?: string;
   presentation: Presentation;
   context: QuestionContext;
   databaseId?: string;
@@ -73,9 +72,6 @@ export function createQueryComposer(options: QueryComposerOptions) {
       : requestSchema();
   };
   const [errorDetail, setErrorDetail] = createSignal<string>();
-  const [actionSummary, setActionSummary] = createSignal<string>();
-  const [actionNeedsRevision, setActionNeedsRevision] = createSignal(false);
-  const [outcomeUnknown, setOutcomeUnknown] = createSignal(false);
   const [generationPending, setGenerationPending] = createSignal(false);
   const [undo, setUndo] = createSignal<{
     sql: string;
@@ -101,9 +97,6 @@ export function createQueryComposer(options: QueryComposerOptions) {
     revision++;
     if (!generationPending()) setPhase('idle');
     clearError();
-    setActionSummary(undefined);
-    setActionNeedsRevision(false);
-    setOutcomeUnknown(false);
   };
   const setPrompt = (value: string) => {
     edit();
@@ -133,13 +126,12 @@ export function createQueryComposer(options: QueryComposerOptions) {
     question: string,
     execution: number,
     source: QuestionContext,
-    display = presentation(),
-    actionSummary?: string
+    display = presentation()
   ): Promise<Result<void, QueryFailure>> {
     const databaseId = schema().databaseId;
     setPhase('running');
     const read = await options.read(statement, {
-      databaseId: options.generationCanWrite ? undefined : source.databaseId,
+      databaseId: source.databaseId,
       source: schema(),
     });
     if (read.isErr()) return err(read.error);
@@ -152,7 +144,6 @@ export function createQueryComposer(options: QueryComposerOptions) {
       sql: statement,
       prompt: question,
       answer,
-      actionSummary,
       presentation: display,
       context: source,
       databaseId: answer.source
@@ -184,84 +175,40 @@ export function createQueryComposer(options: QueryComposerOptions) {
     });
     if (generated.isErr()) return err(generated.error);
     const next = generated.value;
-    if (generation !== revision || !isCurrentContext(source)) {
-      if (options.generationCanWrite && next.actionSummary) {
-        setActionSummary(next.actionSummary);
-        setActionNeedsRevision(true);
-        setUndo(undefined);
-      }
+    if (generation !== revision || !isCurrentContext(source))
       return ok(undefined);
-    }
-    setActionSummary(next.actionSummary);
     const statement = next.sql.trim();
     if (!looksLikeReadQuery(statement)) return err({ kind: 'read-only' });
-    setUndo(
-      next.actionSummary
-        ? undefined
-        : {
-            ...accepted,
-            preview: preview(),
-            presentation: presentation(),
-            resolvedSource: resolvedSource(),
-          }
-    );
+    setUndo({
+      ...accepted,
+      preview: preview(),
+      presentation: presentation(),
+      resolvedSource: resolvedSource(),
+    });
     setResolvedSource(
       next.source ? { schema: next.source, context: source } : undefined
     );
     setSqlSignal(statement);
     setSqlPrompt(question);
     setSqlContext(source);
-    return readAnswer(
-      statement,
-      question,
-      generation,
-      source,
-      {
-        title: next.title,
-        displayMode: next.displayMode ?? 'scalar',
-        chart: next.chart,
-      },
-      next.actionSummary
-    );
+    return readAnswer(statement, question, generation, source, {
+      title: next.title,
+      displayMode: next.displayMode ?? 'scalar',
+      chart: next.chart,
+    });
   }
 
   const generate = async () => {
     const question = prompt().trim();
-    if (
-      !question ||
-      generationPending() ||
-      phase() !== 'idle' ||
-      actionNeedsRevision() ||
-      outcomeUnknown()
-    )
-      return;
+    if (!question || generationPending() || phase() !== 'idle') return;
     const generation = ++revision;
     const source = context();
     setPhase('generating');
     setGenerationPending(true);
     clearError();
     const asked = await ask(question, generation, source);
-    if (asked.isErr()) {
-      const failure = asked.error;
-      // The ledger outlives a stale request: data may have changed regardless.
-      const ledger =
-        options.generationCanWrite &&
-        (failure.kind === 'action-incomplete' ||
-          failure.kind === 'outcome-unknown');
-      if ((generation === revision && isCurrentContext(source)) || ledger) {
-        if (failure.kind === 'action-incomplete') {
-          setActionSummary(failure.actionSummary);
-          setActionNeedsRevision(true);
-          setUndo(undefined);
-        }
-        if (failure.kind === 'outcome-unknown') {
-          setActionSummary(undefined);
-          setOutcomeUnknown(true);
-          setUndo(undefined);
-        }
-        reportFailure(failure);
-      }
-    }
+    if (asked.isErr() && generation === revision && isCurrentContext(source))
+      reportFailure(asked.error);
     setGenerationPending(false);
     setPhase('idle');
   };
@@ -279,14 +226,7 @@ export function createQueryComposer(options: QueryComposerOptions) {
     setSqlPrompt(question);
     setSqlContext(source);
     clearError();
-    const read = await readAnswer(
-      statement,
-      question,
-      execution,
-      source,
-      presentation(),
-      actionSummary()
-    );
+    const read = await readAnswer(statement, question, execution, source);
     if (read.isErr() && execution === revision && isCurrentContext(source))
       reportFailure(read.error);
     if (execution === revision) setPhase('idle');
@@ -298,9 +238,6 @@ export function createQueryComposer(options: QueryComposerOptions) {
     phase,
     error,
     errorDetail,
-    actionSummary,
-    actionNeedsRevision,
-    outcomeUnknown,
     generationPending,
     preview,
     presentation,
@@ -348,18 +285,12 @@ export function createQueryComposer(options: QueryComposerOptions) {
       setPreview(previous.preview);
       setResolvedSource(previous.resolvedSource);
       setPresentation(previous.presentation);
-      setActionSummary(previous.preview?.actionSummary);
       accepted = {
         sql: previous.sql,
         prompt: previous.prompt,
         tableId: previous.tableId,
       };
       setUndo(undefined);
-    },
-    useStarter: async (starter: { prompt: string; sql: string }) => {
-      setPrompt(starter.prompt);
-      setSql(starter.sql);
-      await run();
     },
   };
 }

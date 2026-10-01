@@ -8,8 +8,6 @@ import type {
 } from '../core/query';
 
 export type QueryCapabilities = {
-  /** Keep mutation requests stable until their execution outcome is known. */
-  generationCanWrite?: boolean;
   generate(input: {
     prompt: string;
     sql: string;

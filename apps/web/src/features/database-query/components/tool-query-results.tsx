@@ -1,7 +1,13 @@
 import { isFeatureEnabled, showDatabaseSql } from '@core/constant/featureFlags';
 import { Select } from '@ui/components/Select';
-import { createMemo, createSignal, Show } from 'solid-js';
-import { AppAnswerDisplay } from '../answer-display';
+import {
+  type Component,
+  createMemo,
+  createSignal,
+  type JSX,
+  Show,
+} from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import { isScalarAnswer, type QueryAnswer } from '../core/query';
 import {
   chartModeLabel,
@@ -16,6 +22,8 @@ export function ToolQueryResults(props: {
   answer: QueryAnswer;
   sql: string;
   preferredDisplay?: QueryDisplayMode;
+  /** Supplies how cells render: mentions, markdown and the like. */
+  answerDisplay: Component<{ children: JSX.Element }>;
 }) {
   const [chosenDisplay, setDisplay] = createSignal<QueryDisplayMode>();
   const rowCount = () => props.answer.rows.length;
@@ -59,13 +67,13 @@ export function ToolQueryResults(props: {
           {rowCount()} {rowCount() === 1 ? 'row' : 'rows'}
         </span>
       </div>
-      <AppAnswerDisplay>
+      <Dynamic component={props.answerDisplay}>
         <QueryResults
           answer={props.answer}
           displayMode={display().value}
           compact
         />
-      </AppAnswerDisplay>
+      </Dynamic>
       <Show when={isFeatureEnabled(showDatabaseSql)}>
         <details class="text-xs text-ink-muted">
           <summary>View SQL</summary>

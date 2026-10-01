@@ -26,11 +26,11 @@ export function createQuestionCapabilities(
             databaseIds.some((id) => id !== context.databaseId)
           )
             return errAsync({ kind: 'other-database' });
-          const databaseId = databaseIds.includes(
-            context?.source?.databaseId ?? ''
-          )
-            ? context?.source?.databaseId
-            : databaseIds.toSorted()[0];
+          const claimedId = context?.source?.databaseId;
+          const databaseId =
+            claimedId && databaseIds.includes(claimedId)
+              ? claimedId
+              : databaseIds.toSorted()[0];
           if (!databaseId)
             return okAsync({
               ...answer,

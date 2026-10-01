@@ -29,6 +29,7 @@ import {
 import {
   chartModeLabel,
   isChartMode,
+  isDisplayMode,
   prepareQueryChart,
   QUERY_CHART_MODES,
   type QueryDisplayMode,
@@ -44,9 +45,7 @@ export function QueryEditor(props: {
   sourcePicker?: JSX.Element | ((schema: Accessor<QuerySchema>) => JSX.Element);
   onSave?: (definition: QueryDefinition, answer: QueryAnswer) => void;
   saveLabel?: string;
-  saveHint?: string;
   autoFocus?: boolean;
-  promptPlaceholder?: string;
 }) {
   const composer = createQueryComposer({
     ...props.capabilities,
@@ -63,12 +62,14 @@ export function QueryEditor(props: {
   let promptInput: HTMLTextAreaElement | undefined;
   const showSql = isFeatureEnabled(showDatabaseSql);
   const [sqlOpen, setSqlOpen] = createSignal(false);
-  const displayMode = (): QueryDisplayMode =>
-    composer.presentation().displayMode === 'scalar' &&
-    composer.preview() &&
-    !isScalarAnswer(composer.preview()!.answer)
+  const displayMode = (): QueryDisplayMode => {
+    const preview = composer.preview();
+    return composer.presentation().displayMode === 'scalar' &&
+      preview &&
+      !isScalarAnswer(preview.answer)
       ? 'table'
       : composer.presentation().displayMode;
+  };
   const displayOptions = () => {
     const current = composer.preview()?.answer;
     if (!current) return [];
@@ -97,16 +98,12 @@ export function QueryEditor(props: {
   const answer = () =>
     composer.isCurrentPreview() ? composer.preview()?.answer : undefined;
   const busy = () => composer.phase() !== 'idle';
-  const requestReadOnly = () =>
-    !!props.capabilities.generationCanWrite && composer.generationPending();
   const focusTable = () => queryFocusTable(composer.schema());
   const sourceAvailable = () => props.sourceAvailable !== false;
   const needsGeneration = () =>
     !composer.sql().trim() || composer.needsGeneration();
   const canAsk = () =>
     !busy() &&
-    !composer.actionNeedsRevision() &&
-    !composer.outcomeUnknown() &&
     sourceAvailable() &&
     !!(needsGeneration() ? composer.prompt().trim() : composer.sql().trim());
   const ask = () => {
@@ -184,16 +181,9 @@ export function QueryEditor(props: {
               ref={promptInput}
               id={promptId}
               aria-label="Ask your database"
-              class="min-h-16 w-full resize-none bg-transparent text-sm text-ink outline-none"
-              classList={{
-                'placeholder:text-transparent': !props.promptPlaceholder,
-                'placeholder:text-ink-placeholder': !!props.promptPlaceholder,
-              }}
-              placeholder={
-                props.promptPlaceholder ?? 'Ask anything about your data…'
-              }
+              class="min-h-16 w-full resize-none bg-transparent text-sm text-ink outline-none placeholder:text-transparent"
+              placeholder="Ask anything about your data…"
               value={composer.prompt()}
-              readOnly={requestReadOnly()}
               onInput={(event) => composer.setPrompt(event.currentTarget.value)}
               onKeyDown={(event) => {
                 if (event.isComposing || event.keyCode === 229) return;
@@ -205,7 +195,7 @@ export function QueryEditor(props: {
                 }
               }}
             />
-            <Show when={!composer.prompt() && !props.promptPlaceholder}>
+            <Show when={!composer.prompt()}>
               <QuestionExamples
                 examples={questionExamples(composer.schema())}
               />
@@ -279,7 +269,6 @@ export function QueryEditor(props: {
           <SqlEditor
             value={composer.sql()}
             schema={composer.schema()}
-            readOnly={requestReadOnly()}
             onChange={composer.setSql}
             onRun={() => void composer.run()}
           />
@@ -335,24 +324,6 @@ export function QueryEditor(props: {
           Finding your answer…
         </p>
       </Show>
-      <Show when={composer.actionSummary()}>
-        <p
-          role="status"
-          class="rounded-md border border-edge-muted bg-hover/40 px-3 py-2 text-sm text-ink"
-        >
-          {composer.actionSummary()}
-        </p>
-      </Show>
-      <Show when={composer.actionNeedsRevision()}>
-        <p class="text-xs leading-5 text-ink-muted">
-          These changes are saved. Edit your request before continuing.
-        </p>
-      </Show>
-      <Show when={composer.outcomeUnknown()}>
-        <p class="text-xs leading-5 text-ink-muted">
-          Check the table, then edit your request to continue.
-        </p>
-      </Show>
       <Show when={composer.preview()}>
         {(preview) => (
           <div class="space-y-3">
@@ -365,11 +336,10 @@ export function QueryEditor(props: {
                   aria-label="Display answer as"
                   value={displayMode()}
                   disabled={busy()}
-                  onChange={(event) =>
-                    composer.setDisplayMode(
-                      event.currentTarget.value as QueryDisplayMode
-                    )
-                  }
+                  onChange={(event) => {
+                    const mode = event.currentTarget.value;
+                    if (isDisplayMode(mode)) composer.setDisplayMode(mode);
+                  }}
                   class="h-7 min-w-0 rounded-md border border-transparent bg-transparent px-1 text-xs font-medium text-ink outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/25"
                 >
                   <For each={displayOptions()}>
@@ -428,11 +398,6 @@ export function QueryEditor(props: {
                   {props.saveLabel ?? 'Insert'}
                   <Hotkey shortcut="enter" theme="current" aria-hidden="true" />
                 </Button>
-                <Show when={props.saveHint}>
-                  <p class="w-full text-[11px] leading-5 text-ink-muted">
-                    {props.saveHint}
-                  </p>
-                </Show>
               </div>
             </Show>
           </div>

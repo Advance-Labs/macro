@@ -12,8 +12,6 @@ const database = {
   id: databaseId,
   name: 'Support',
   grant: 'owner',
-  magicTables: '',
-  sqlGuide: '',
   tables: [
     {
       id: tableId,
@@ -21,6 +19,7 @@ const database = {
       sqlName: 'tickets',
       version: 1,
       writable: true,
+      views: [],
       columns: [
         {
           id: columnId,
@@ -29,6 +28,8 @@ const database = {
           dataType: 'text',
           writable: true,
           isMultiSelect: false,
+          safeTypes: [],
+          checkedTypes: [],
           // Actual text columns omit options, entity type, and relation metadata.
         },
       ],
@@ -46,7 +47,13 @@ describe('database tool output contracts', () => {
     {
       name: 'QueryDatabase',
       json: {
-        results: [{ columns: [{ name: 'Tickets' }], rows: [[12]] }],
+        results: [
+          {
+            columns: [{ name: 'Tickets', kind: 'number' }],
+            rows: [[{ type: 'number', value: 12 }]],
+            rowIds: [],
+          },
+        ],
         changesApplied: 0,
         readVersions: [],
         summary: 'Returned 1 row.',

@@ -23,7 +23,9 @@ import type { Accessor } from 'solid-js';
 import type { QueryCapabilities } from '../context/query-context';
 import {
   generationFailure,
+  parseQueryProposal,
   type QueryFailure,
+  type QueryProposal,
   serviceError,
   thrownServiceError,
 } from '../core/query';
@@ -35,17 +37,27 @@ const databasesFailure = (thrown: unknown): QueryFailure => ({
   error: thrownServiceError(thrown),
 });
 
-async function generateDatabaseQuery(
+function generateDatabaseQuery(
   input: Parameters<QueryCapabilities['generate']>[0]
-) {
-  const cognition = await import('@service-cognition/database-query');
-  return cognition.generateDatabaseQuery(input);
+): ResultAsync<QueryProposal, QueryFailure> {
+  return ResultAsync.fromPromise(
+    import('@service-cognition/database-query'),
+    (thrown) =>
+      generationFailure(
+        thrown instanceof Error ? thrown.message : String(thrown)
+      )
+  )
+    .andThen((cognition) =>
+      cognition
+        .generateDatabaseQuery(input)
+        .mapErr((errors) => generationFailure(serviceError(errors).message))
+    )
+    .andThen(parseQueryProposal);
 }
 
 /** Production transport adapters; the composer only receives these narrow capabilities. */
 export const queryCapabilities: QueryCapabilities = createQuestionCapabilities({
-  generate: (input) =>
-    ResultAsync.fromPromise(generateDatabaseQuery(input), generationFailure),
+  generate: generateDatabaseQuery,
   // A draft question may read any database the viewer can reach.
   read: (sql) =>
     ResultAsync.fromPromise(fetchViewerDatabases(), databasesFailure).andThen(

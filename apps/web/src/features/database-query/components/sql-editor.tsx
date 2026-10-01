@@ -3,7 +3,7 @@ import { SQLDialect, sql } from '@codemirror/lang-sql';
 import { Compartment, EditorState, Prec } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { basicSetup } from 'codemirror';
-import { createEffect, onCleanup, onMount } from 'solid-js';
+import { createEffect, on, onCleanup, onMount } from 'solid-js';
 import { type QuerySchema, unquoteIdentifier } from '../core/query';
 
 /** The Macro Databases subset (`crates/database_sql`): its keywords and nothing more. */
@@ -17,7 +17,6 @@ const macroDialect = SQLDialect.define({
 export function SqlEditor(props: {
   value: string;
   schema: QuerySchema;
-  readOnly?: boolean;
   onChange: (value: string) => void;
   onRun: () => void;
 }) {
@@ -25,11 +24,6 @@ export function SqlEditor(props: {
   let view: EditorView | undefined;
   let syncing = false;
   const language = new Compartment();
-  const editing = new Compartment();
-  const editability = () => [
-    EditorState.readOnly.of(Boolean(props.readOnly)),
-    EditorView.editable.of(!props.readOnly),
-  ];
   const completion = () =>
     sql({
       dialect: macroDialect,
@@ -52,7 +46,6 @@ export function SqlEditor(props: {
         extensions: [
           basicSetup,
           language.of(completion()),
-          editing.of(editability()),
           macroThemeExtension,
           EditorView.contentAttributes.of({
             'aria-label': 'Query SQL',
@@ -79,27 +72,27 @@ export function SqlEditor(props: {
       }),
     });
   });
-  createEffect(() => {
-    const value = props.value;
-    if (view && value !== view.state.doc.toString()) {
-      syncing = true;
-      try {
-        view.dispatch({
-          changes: { from: 0, to: view.state.doc.length, insert: value },
-        });
-      } finally {
-        syncing = false;
+  createEffect(
+    on(
+      () => props.value,
+      (value) => {
+        if (!view || value === view.state.doc.toString()) return;
+        syncing = true;
+        try {
+          view.dispatch({
+            changes: { from: 0, to: view.state.doc.length, insert: value },
+          });
+        } finally {
+          syncing = false;
+        }
       }
-    }
-  });
-  createEffect(() => {
-    const extension = completion();
-    view?.dispatch({ effects: language.reconfigure(extension) });
-  });
-  createEffect(() => {
-    const extension = editability();
-    view?.dispatch({ effects: editing.reconfigure(extension) });
-  });
+    )
+  );
+  createEffect(
+    on(completion, (extension) => {
+      view?.dispatch({ effects: language.reconfigure(extension) });
+    })
+  );
   onCleanup(() => view?.destroy());
   return (
     <div
