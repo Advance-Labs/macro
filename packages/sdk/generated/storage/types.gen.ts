@@ -2299,6 +2299,27 @@ export type CallTokenResponse = {
 };
 
 /**
+ * Where one card sits on a board: its lane, and its fractional key there.
+ * A card whose row has since moved to another lane has no place until it is
+ * moved again.
+ */
+export type CardPosition = {
+    /**
+     * The lane: an option of the board's column, `null` for the lane of
+     * cards without one.
+     */
+    lane: string | null;
+    /**
+     * The card's key in that lane.
+     */
+    position: string;
+    /**
+     * The card's row.
+     */
+    row: string;
+};
+
+/**
  * Whether a column's values convert to a type.
  */
 export type CastVerdict = 'safe' | 'checked' | 'never';
@@ -3463,6 +3484,12 @@ export type ColumnDetail = {
      */
     definition: PropertyDefinitionWithOptions;
     /**
+     * Whether the definition belongs to something beyond this database (a
+     * person's, a team's or a system property), so changing its options
+     * changes them everywhere that property is used.
+     */
+    shared_outside_database: boolean;
+    /**
      * The name SQL refers to the column by: its display name, quoted when it
      * needs it.
      */
@@ -3527,7 +3554,7 @@ export type ColumnKind = {
  */
 export type ColumnSchemaOutcome = {
     /**
-     * Includes both endpoint tables when deleting relationship edges.
+     * Includes the related table when a relation column goes.
      */
     table_versions: {
         [key: string]: TableVersion;
@@ -3588,6 +3615,11 @@ export type CommentThread = {
  * so an unrelated edit never disturbs it.
  */
 export type ConferenceProvider = 'google_meet' | 'other';
+
+/**
+ * How a group's conditions combine.
+ */
+export type Conjunction = 'and' | 'or';
 
 /**
  * Query parameters for the copy document endpoint.
@@ -5035,7 +5067,169 @@ export type DatabaseOp = {
      * The type it becomes.
      */
     to: ColumnKind;
+} | {
+    color?: null | OptionColor;
+    /**
+     * The select or tag column.
+     */
+    column: string;
+    kind: 'update_option';
+    /**
+     * Its new label; left out, it keeps its own. Labels are unique
+     * within a column, ignoring case.
+     */
+    label?: string;
+    /**
+     * The option.
+     */
+    option: string;
+    /**
+     * The table.
+     */
+    table: string;
+} | {
+    /**
+     * The select or tag column.
+     */
+    column: string;
+    kind: 'delete_option';
+    /**
+     * The option.
+     */
+    option: string;
+    /**
+     * The table.
+     */
+    table: string;
+} | {
+    kind: 'create_view';
+    /**
+     * The table.
+     */
+    table: string;
+    /**
+     * What it shows and how.
+     */
+    view: NewView;
+} | {
+    kind: 'update_view';
+    /**
+     * Its new layout. A board grouped by another column forgets where
+     * its cards were.
+     */
+    layout?: ViewLayout;
+    /**
+     * Its new name.
+     */
+    name?: string;
+    /**
+     * Its new query.
+     */
+    query?: ViewQuery;
+    /**
+     * The view's table.
+     */
+    table: string;
+    /**
+     * The view.
+     */
+    view: string;
+} | {
+    kind: 'delete_view';
+    /**
+     * The view's table.
+     */
+    table: string;
+    /**
+     * The view.
+     */
+    view: string;
+} | {
+    kind: 'reorder_views';
+    /**
+     * Its views, in their new order.
+     */
+    order: Array<string>;
+    /**
+     * The table.
+     */
+    table: string;
+} | {
+    /**
+     * The card it lands right before, when `before` is not given; with
+     * neither, the card goes to the end of the lane.
+     */
+    after?: string | null;
+    /**
+     * The card it lands right after, if any.
+     */
+    before?: string | null;
+    kind: 'move_card';
+    /**
+     * The lane it goes to: an option of the board's column, or `null`
+     * for the lane of cards without one.
+     */
+    lane: string | null;
+    /**
+     * The card's row.
+     */
+    row: string;
+    /**
+     * The view's table.
+     */
+    table: string;
+    /**
+     * The board.
+     */
+    view: string;
 };
+
+/**
+ * A view of one table, as stored.
+ */
+export type DatabaseView = {
+    /**
+     * When it was created.
+     */
+    createdAt: string;
+    /**
+     * The database the table belongs to.
+     */
+    databaseId: string;
+    /**
+     * The view.
+     */
+    id: string;
+    /**
+     * How it draws them.
+     */
+    layout: ViewLayout;
+    /**
+     * Its name, unique among the table's views ignoring case.
+     */
+    name: string;
+    /**
+     * Where it sorts among the table's views: a fractional key.
+     */
+    position: string;
+    /**
+     * Which rows it shows, in what order.
+     */
+    query: ViewQuery;
+    /**
+     * The table it shows.
+     */
+    tableId: string;
+    /**
+     * When it last changed.
+     */
+    updatedAt: string;
+};
+
+/**
+ * How a date cell compares to a date-time.
+ */
+export type DateOperator = 'before' | 'after' | 'onOrBefore' | 'onOrAfter';
 
 export type DeleteAnchorInfo = AnchorId & {
     deleted: boolean;
@@ -6402,6 +6596,113 @@ export type FileTypeUpdate = {
     set: FileType;
 } | 'clear';
 
+/**
+ * A test of one column's cells.
+ */
+export type FilterCondition = {
+    /**
+     * The column tested.
+     */
+    column: string;
+    /**
+     * What its cell must be. The test's kind must fit the column's type.
+     */
+    test: FilterTest;
+};
+
+/**
+ * Conditions joined by one conjunction.
+ */
+export type FilterGroup = {
+    /**
+     * The conditions and nested groups. A group without any keeps every
+     * row.
+     */
+    conditions: Array<FilterNode>;
+    /**
+     * Whether every condition must hold, or any one.
+     */
+    conjunction: Conjunction;
+};
+
+/**
+ * One entry of a group: a condition, or a group of its own.
+ */
+export type FilterNode = (FilterCondition & {
+    kind: 'condition';
+}) | (FilterGroup & {
+    kind: 'group';
+});
+
+/**
+ * What a column's cell must be, by the kind of value the column holds.
+ */
+export type FilterTest = {
+    kind: 'presence';
+    /**
+     * Empty, or not.
+     */
+    operator: PresenceOperator;
+} | {
+    kind: 'text';
+    /**
+     * How the cell compares.
+     */
+    operator: TextOperator;
+    /**
+     * The text compared against, ignoring case for the containment
+     * tests.
+     */
+    value: string;
+} | {
+    kind: 'number';
+    /**
+     * How the cell compares.
+     */
+    operator: NumberOperator;
+    /**
+     * The number compared against; finite.
+     */
+    value: number;
+} | {
+    kind: 'date';
+    /**
+     * How the cell compares.
+     */
+    operator: DateOperator;
+    /**
+     * The date-time compared against.
+     */
+    value: string;
+} | {
+    /**
+     * Whether the box is checked.
+     */
+    checked: boolean;
+    kind: 'checkbox';
+} | {
+    kind: 'options';
+    /**
+     * How the cell's options relate to these.
+     */
+    operator: SetOperator;
+    /**
+     * Options of the column; at least one.
+     */
+    options: Array<string>;
+} | {
+    /**
+     * Entity ids, or for a relation the related rows' ids; at least
+     * one.
+     */
+    entities: Array<string>;
+    kind: 'entities';
+    /**
+     * How the cell's references relate to these.
+     */
+    operator: SetOperator;
+};
+
 export type FolderItem = {
     fileType?: null | FileType;
     /**
@@ -7521,6 +7822,20 @@ export type ItemWithUserAccessLevel = {
 };
 
 /**
+ * How one lane shows in a board layout.
+ */
+export type Lane = {
+    /**
+     * Whether it is hidden.
+     */
+    hidden?: boolean;
+    /**
+     * The option the lane holds the cards of; `null` for cards without one.
+     */
+    option: string | null;
+};
+
+/**
  * Latest-message bundle for soup payloads.
  */
 export type LatestMessage = {
@@ -8143,6 +8458,25 @@ export type NewThreadAnchor = {
 };
 
 /**
+ * A view's contents as an op creates it; the server gives it its id,
+ * position and times.
+ */
+export type NewView = {
+    /**
+     * How it draws them.
+     */
+    layout: ViewLayout;
+    /**
+     * Its name.
+     */
+    name: string;
+    /**
+     * Which rows it shows, in what order.
+     */
+    query?: ViewQuery;
+};
+
+/**
  * Notification-level filters that apply to an entity type.
  */
 export type NotificationFilters = {
@@ -8157,6 +8491,11 @@ export type NotificationFilters = {
  * The mutually exclusive lifecycle states of a user's notification.
  */
 export type NotificationState = 'unseen' | 'seen' | 'done';
+
+/**
+ * How a number cell compares to a number.
+ */
+export type NumberOperator = 'is' | 'isNot' | 'greaterThan' | 'greaterThanOrEqual' | 'lessThan' | 'lessThanOrEqual';
 
 /**
  * Why an op of a batch was refused. Nothing in the batch was written.
@@ -8212,7 +8551,55 @@ export type OpResult = {
      * Cells that held several values and kept only their first.
      */
     trimmedCells: number;
+} | {
+    kind: 'option_changed';
+    /**
+     * The table's version after the change.
+     */
+    tableVersion: TableVersion;
+} | {
+    kind: 'view_written';
+    /**
+     * The table's version after the change.
+     */
+    tableVersion: TableVersion;
+    /**
+     * The view as stored.
+     */
+    view: DatabaseView;
+} | {
+    kind: 'view_deleted';
+    /**
+     * The table's version after the change.
+     */
+    tableVersion: TableVersion;
+} | {
+    kind: 'views_reordered';
+    /**
+     * Every view's key, in their new order.
+     */
+    positions: Array<ViewPosition>;
+    /**
+     * The table's version after the change.
+     */
+    tableVersion: TableVersion;
+} | {
+    kind: 'card_moved';
+    /**
+     * The positions written, the moved card's last.
+     */
+    positions: Array<CardPosition>;
+    /**
+     * The table's version after the change.
+     */
+    tableVersion: TableVersion;
 };
+
+/**
+ * A colour select and tag options take, from the palette the tag picker
+ * renders.
+ */
+export type OptionColor = 'red' | 'tomato' | 'orange' | 'amber' | 'yellow' | 'green' | 'teal' | 'blue' | 'indigo' | 'purple' | 'pink' | 'gray';
 
 /**
  * A select option, by its id or by its label.
@@ -8733,6 +9120,11 @@ export type PreSaveDocumentResponseData = {
      */
     presignedUrls: Array<PresignedUrl>;
 };
+
+/**
+ * Whether a cell is empty.
+ */
+export type PresenceOperator = 'isEmpty' | 'isNotEmpty';
 
 export type PresignedUrl = {
     /**
@@ -9449,9 +9841,9 @@ export type SavedQuery = {
      */
     createdAt: string;
     /**
-     * Who saved it.
+     * Who saved it; `null` once that user is deleted.
      */
-    createdBy: string;
+    createdBy: string | null;
     /**
      * The database whose tables win name resolution; `null` once that
      * database is deleted, or when none was given.
@@ -9693,6 +10085,12 @@ export type SetEmailSyncRequest = {
 };
 
 /**
+ * How a cell's options or references relate to a set of them. The first
+ * two fit a column holding one value, the last three one holding several.
+ */
+export type SetOperator = 'isAnyOf' | 'isNoneOf' | 'hasAny' | 'hasAll' | 'hasNone';
+
+/**
  * Type-safe enum for setting entity property values - provides compile-time validation.
  */
 export type SetPropertyValue = {
@@ -9800,6 +10198,25 @@ export type SmartTagPreview = {
      * Number of matching channels the caller participates in, including overflow.
      */
     totalCount: number;
+};
+
+/**
+ * A sort direction. Empty cells sort last either way.
+ */
+export type SortDirection = 'ascending' | 'descending';
+
+/**
+ * One sort key.
+ */
+export type SortKey = {
+    /**
+     * The column sorted on.
+     */
+    column: string;
+    /**
+     * Which way.
+     */
+    direction: SortDirection;
 };
 
 /**
@@ -11307,13 +11724,16 @@ export type TableDetail = {
      * The table.
      */
     table: Table;
+    /**
+     * The table's views, in their order.
+     */
+    views: Array<DatabaseView>;
 };
 
 /**
- * Monotonic per-table version, bumped on every row/column/link mutation.
- *
- * The cache key for query materializations and the invalidation signal for
- * live query chips.
+ * Monotonic per-table version, bumped once by every committed change to a
+ * table's schema or rows. Schema edits name the version they were made
+ * against, and change events carry the new one.
  */
 export type TableVersion = number;
 
@@ -11373,6 +11793,11 @@ export type TeamOutOfOfficeResponse = {
  * Ordered least to most privileged so comparisons reflect access strength.
  */
 export type TeamRole = 'member' | 'admin' | 'owner';
+
+/**
+ * How a text cell compares to a text.
+ */
+export type TextOperator = 'is' | 'isNot' | 'contains' | 'doesNotContain' | 'startsWith' | 'endsWith';
 
 export type Thread = {
     createdAt?: string | null;
@@ -12048,9 +12473,99 @@ export type View = {
     userId: string;
 };
 
+/**
+ * How one column shows in a table layout.
+ */
+export type ViewColumn = {
+    /**
+     * The column.
+     */
+    column: string;
+    /**
+     * Whether it is hidden.
+     */
+    hidden?: boolean;
+    /**
+     * Its width in pixels; the default when unset.
+     */
+    width: number | null;
+};
+
+/**
+ * How a view draws its rows.
+ */
+export type ViewLayout = {
+    /**
+     * How columns show, in display order. A column left out shows
+     * after the listed ones, in the table's order.
+     */
+    columns: Array<ViewColumn>;
+    kind: 'table';
+} | {
+    /**
+     * The columns a card shows, in order.
+     */
+    cardFields: Array<string>;
+    /**
+     * The single-select column whose options are the lanes; moving a
+     * card to another lane sets this column.
+     */
+    groupBy: string;
+    /**
+     * Whether a lane with no cards is hidden.
+     */
+    hideEmptyLanes: boolean;
+    kind: 'board';
+    /**
+     * How lanes show, in display order. A lane left out shows after the
+     * listed ones, options in the column's order; the lane of cards
+     * without an option first.
+     */
+    lanes: Array<Lane>;
+};
+
 export type ViewPatch = {
     config?: unknown;
     name?: string | null;
+};
+
+/**
+ * A view's place among its table's views.
+ */
+export type ViewPosition = {
+    /**
+     * Its key.
+     */
+    position: string;
+    /**
+     * The view.
+     */
+    view: string;
+};
+
+/**
+ * Where a board's cards sit.
+ */
+export type ViewPositionsResponse = {
+    /**
+     * The places of the cards that have one: each card's lane and its key
+     * there. Cards without a place show after the placed ones of their
+     * lane, oldest first.
+     */
+    positions: Array<CardPosition>;
+};
+
+/**
+ * Which rows of the table a view shows, and in what order: a filter and a
+ * sort, nothing that joins, groups or reshapes rows.
+ */
+export type ViewQuery = {
+    filter: null | FilterGroup;
+    /**
+     * The sort keys, first key first. Rows the keys leave tied keep the
+     * table's own order; with no keys, the table's order is the view's.
+     */
+    sort?: Array<SortKey>;
 };
 
 export type ViewsResponse = {
@@ -15912,6 +16427,43 @@ export type ChangeDatabaseColumnTypeResponses = {
 };
 
 export type ChangeDatabaseColumnTypeResponse = ChangeDatabaseColumnTypeResponses[keyof ChangeDatabaseColumnTypeResponses];
+
+export type GetDatabaseViewPositionsData = {
+    body?: never;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+        /**
+         * View id
+         */
+        view_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/views/{view_id}/positions';
+};
+
+export type GetDatabaseViewPositionsErrors = {
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * No access to the database
+     */
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetDatabaseViewPositionsError = GetDatabaseViewPositionsErrors[keyof GetDatabaseViewPositionsErrors];
+
+export type GetDatabaseViewPositionsResponses = {
+    200: ViewPositionsResponse;
+};
+
+export type GetDatabaseViewPositionsResponse = GetDatabaseViewPositionsResponses[keyof GetDatabaseViewPositionsResponses];
 
 export type TranscribeDictationData = {
     /**
