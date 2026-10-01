@@ -1,4 +1,4 @@
-import { ok } from 'neverthrow';
+import { err, ok } from 'neverthrow';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { complete } = vi.hoisted(() => ({ complete: vi.fn() }));
@@ -32,7 +32,12 @@ beforeEach(() => complete.mockReset());
 
 describe('database AI transport boundaries', () => {
   it('gives document questions only read-only discovery and preserves chart configuration', async () => {
-    complete.mockResolvedValue(ok({ result: proposal, toolActivity: [] }));
+    complete.mockResolvedValue(
+      ok({
+        outcome: { status: 'completed', result: proposal },
+        toolActivity: [],
+      })
+    );
     const result = await generateDatabaseQuery(input);
     expect(complete.mock.calls[0][0].model).toBe('google/gemini-3.8-flash');
     expect(complete.mock.calls[0][0].toolset).toEqual({
@@ -47,16 +52,19 @@ describe('database AI transport boundaries', () => {
   it('asks for every chart mark and keeps the strict schema’s color and stack', async () => {
     complete.mockResolvedValue(
       ok({
-        result: {
-          ...proposal,
-          sql: 'SELECT month, team, COUNT(*) AS total FROM tickets GROUP BY month, team',
-          displayMode: 'area',
-          chart: {
-            x: 'month',
-            y: ['total'],
-            title: 'Tickets',
-            color: 'team',
-            stack: true,
+        outcome: {
+          status: 'completed',
+          result: {
+            ...proposal,
+            sql: 'SELECT month, team, COUNT(*) AS total FROM tickets GROUP BY month, team',
+            displayMode: 'area',
+            chart: {
+              x: 'month',
+              y: ['total'],
+              title: 'Tickets',
+              color: 'team',
+              stack: true,
+            },
           },
         },
         toolActivity: [],
@@ -91,6 +99,38 @@ describe('database AI transport boundaries', () => {
         color: 'team',
         stack: true,
       },
+    });
+  });
+
+  it('reports an interrupted completion as a failure with its reason', async () => {
+    complete.mockResolvedValue(
+      ok({
+        outcome: {
+          status: 'interrupted',
+          reason: 'The model stopped after 12 tool calls.',
+        },
+        toolActivity: [],
+      })
+    );
+    const result = await generateDatabaseQuery(input);
+    expect(result._unsafeUnwrapErr()).toEqual({
+      kind: 'interrupted',
+      reason: 'The model stopped after 12 tool calls.',
+    });
+  });
+
+  it('keeps the service errors of a failed completion', async () => {
+    complete.mockResolvedValue(
+      err([
+        { code: 'SERVER_ERROR', message: 'The model provider is unavailable.' },
+      ])
+    );
+    const result = await generateDatabaseQuery(input);
+    expect(result._unsafeUnwrapErr()).toEqual({
+      kind: 'service',
+      errors: [
+        { code: 'SERVER_ERROR', message: 'The model provider is unavailable.' },
+      ],
     });
   });
 });

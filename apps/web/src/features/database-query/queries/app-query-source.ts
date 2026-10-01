@@ -21,6 +21,7 @@ import { storageServiceClient } from '@service-storage/client';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import { ResultAsync } from 'neverthrow';
 import type { Accessor } from 'solid-js';
+import { match } from 'ts-pattern';
 import type { QueryCapabilities } from '../context/query-context';
 import {
   generationFailure,
@@ -58,9 +59,17 @@ function generateDatabaseQuery(
       )
   )
     .andThen((cognition) =>
-      cognition
-        .generateDatabaseQuery(input)
-        .mapErr((errors) => generationFailure(serviceError(errors).message))
+      cognition.generateDatabaseQuery(input).mapErr((failure) =>
+        generationFailure(
+          match(failure)
+            .with(
+              { kind: 'service' },
+              ({ errors }) => serviceError(errors).message
+            )
+            .with({ kind: 'interrupted' }, ({ reason }) => reason)
+            .exhaustive()
+        )
+      )
     )
     .andThen(parseQueryProposal);
 }
