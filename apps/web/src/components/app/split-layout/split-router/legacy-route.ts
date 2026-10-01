@@ -47,6 +47,7 @@ import {
 import { COMMENT_LINK_PARAM } from '@core/messages/comment-link';
 import { z } from 'zod';
 import type { SplitContent } from '../layoutManager';
+import { documentLinkParams } from './document-link-params';
 
 export function decodeLegacyPair(
   type: string,
@@ -415,11 +416,18 @@ export const legacySplitRoute = defineRoute({
     .object({ type: z.string().min(1), id: z.string().min(1) })
     .refine(({ type, id }) => decodeLegacyPair(type, id) !== undefined),
   externalSearch: (entry) => {
-    const { type } = routeParams(entry.location.route);
+    const { type, id } = routeParams(entry.location.route);
     if (type === 'email') return Object.values(EMAIL_URL_PARAMS);
     if (type === 'channel') return Object.values(CHANNEL_URL_PARAMS);
     if (type === 'company' || type === 'contact') return [COMMENT_LINK_PARAM];
-    return [];
+    // Touch devices keep documents on this block route instead of Drive's
+    // detail route, so a comment link has to survive the navigation here too.
+    const content =
+      typeof type === 'string' && typeof id === 'string'
+        ? decodeLegacyPair(type, id)
+        : undefined;
+    if (!content || content.type === 'component') return [];
+    return documentLinkParams(content.aliasContext?.baseType ?? content.type);
   },
   claim: ({ type, id }) => {
     const content = decodeLegacyPair(type, id);

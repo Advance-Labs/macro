@@ -45,6 +45,17 @@ describe('application route search ownership', () => {
     );
   });
 
+  // Touch devices keep documents on the block route instead of Drive's
+  // detail route, so a comment link has to survive there too.
+  it.each([
+    ['/md/doc-1', 'comment_id=message-1'],
+    ['/task/task-1', 'comment_id=message-1'],
+    ['/spreadsheet/sheet-1', 'comment_id=message-1'],
+    ['/pdf/pdf-1', 'pdf_ann_id=annotation-1'],
+  ])('preserves document comment targets on %s', (pathname, search) => {
+    expect(roundTrip(pathname, search, false)).toContain(search);
+  });
+
   it.each([
     ['/agents/session-1', 'the agents workspace'],
     ['/coders/session-1', 'a coding session'],
