@@ -1,7 +1,5 @@
-//! The catalog a statement runs against: every database the viewer can
-//! reach, as the databases service details them, mapped onto the schema
-//! `database_sql::catalog::build` takes. The browser maps the same details
-//! onto the same schema, so a statement names the same tables there.
+//! The catalog a statement runs against: the viewer's databases mapped onto
+//! the schema `database_sql::catalog::build` takes, as the browser maps them.
 
 #[cfg(test)]
 mod test;
