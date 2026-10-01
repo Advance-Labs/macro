@@ -3448,12 +3448,10 @@
       "crates/entity_access",
       "crates/entity_access_db_utils",
       "crates/entity_mutation",
-      "crates/filter_ast",
       "crates/genai_telemetry",
       "crates/harness_id",
       "crates/harness_token",
       "crates/invite_email",
-      "crates/item_filters",
       "crates/kafka_util",
       "crates/last_online_tracker",
       "crates/macro_auth",
@@ -5143,7 +5141,6 @@
       "crates/models_properties",
       "crates/models_team",
       "crates/non_empty",
-      "crates/option_palette",
       "crates/prompt",
       "crates/remote_env_var",
       "crates/system_properties",
@@ -5617,7 +5614,6 @@
       "crates/models_properties",
       "crates/non_empty",
       "crates/notification_state",
-      "crates/option_palette",
       "crates/prompt",
       "crates/remote_env_var",
       "crates/workspace-hack"
@@ -5718,7 +5714,6 @@
       "crates/models_properties",
       "crates/non_empty",
       "crates/notification_state",
-      "crates/option_palette",
       "crates/remote_env_var",
       "crates/workspace-hack"
     ],
@@ -6239,7 +6234,6 @@
       "crates/non_empty",
       "crates/notification",
       "crates/notification_state",
-      "crates/option_palette",
       "crates/rate_limit",
       "crates/remote_env_var",
       "crates/workspace-hack"
@@ -6496,7 +6490,6 @@
       "crates/models_properties",
       "crates/non_empty",
       "crates/notification_state",
-      "crates/option_palette",
       "crates/remote_env_var",
       "crates/workspace-hack"
     ],
@@ -6598,7 +6591,6 @@
       "crates/models_properties",
       "crates/models_team",
       "crates/non_empty",
-      "crates/option_palette",
       "crates/prompt",
       "crates/remote_env_var",
       "crates/secretsmanager_client",
@@ -7166,7 +7158,6 @@
       "crates/models_properties",
       "crates/models_team",
       "crates/non_empty",
-      "crates/option_palette",
       "crates/prompt",
       "crates/remote_env_var",
       "crates/system_properties",
@@ -7249,7 +7240,6 @@
       "crates/models_properties",
       "crates/models_team",
       "crates/non_empty",
-      "crates/option_palette",
       "crates/prompt",
       "crates/remote_env_var",
       "crates/system_properties",
@@ -7923,7 +7913,6 @@
     "models_properties": [
       "crates/document_sub_type",
       "crates/models_properties",
-      "crates/option_palette",
       "crates/workspace-hack"
     ],
     "models_search": [
@@ -8371,7 +8360,6 @@
       "crates/notification",
       "crates/notification_db_client",
       "crates/notification_state",
-      "crates/option_palette",
       "crates/prompt",
       "crates/rate_limit",
       "crates/remote_env_var",
@@ -10593,7 +10581,6 @@
       "crates/macro_user_id",
       "crates/macro_uuid",
       "crates/models_properties",
-      "crates/option_palette",
       "crates/system_properties",
       "crates/workspace-hack"
     ],
@@ -11003,7 +10990,6 @@
       "crates/models_properties",
       "crates/models_team",
       "crates/non_empty",
-      "crates/option_palette",
       "crates/prompt",
       "crates/remote_env_var",
       "crates/system_properties",
