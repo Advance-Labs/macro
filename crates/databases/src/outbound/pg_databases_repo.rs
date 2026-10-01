@@ -1,9 +1,5 @@
-//! Postgres repository for databases, tables, columns and row identities.
-//!
-//! Mechanics only: sqlx queries and transactions. Policy lives in the domain
-//! service. Tables: `databases`, `database_tables`, `database_columns`,
-//! `database_rows`. Cells are not here: they are entity properties, written
-//! through the properties adapter.
+//! Postgres repository for databases, tables, columns and row identities;
+//! cells are entity properties, written through the properties adapter.
 
 /// Schema-change statements, shared with the cell store's column rebind.
 pub(crate) mod columns;

@@ -1,12 +1,5 @@
-//! The [`ColumnDefinitionStore`] port over the properties domain.
-//!
-//! A database column IS a `property_definitions` row. Definitions created for a
-//! column are owned by the database (`database_id` set, `user_id`/`team_id`
-//! NULL, `is_system` false), which keeps them out of the shared user/team
-//! property namespace — see
-//! `crates/macro_db_client/migrations/20261001064036_add_databases.up.sql`.
-//!
-//! Mechanics only: policy (who may bind what) lives in the domain service.
+//! The [`ColumnDefinitionStore`] port over the properties domain: a column's
+//! definition is a `property_definitions` row owned by its database.
 
 #[cfg(test)]
 mod test;
@@ -31,39 +24,20 @@ pub enum PgDefinitionStoreError {
 /// [`ColumnDefinitionStore`] over the properties domain's repository, which
 /// owns `property_definitions` and `property_options`.
 #[derive(Debug, Clone)]
-pub struct PgDefinitionStore<P> {
-    properties: P,
+pub struct PgDefinitionStore<Properties> {
+    properties: Properties,
 }
 
-impl<P: PropertiesRepo<Err = anyhow::Error>> PgDefinitionStore<P> {
+impl<Properties: PropertiesRepo<Err = anyhow::Error>> PgDefinitionStore<Properties> {
     /// Create a store over the owning properties domain port.
-    pub fn new(properties: P) -> Self {
+    pub fn new(properties: Properties) -> Self {
         Self { properties }
     }
-
-    /// Insert a definition owned by `database_id`, returning its id.
-    async fn create_database_definition(
-        &self,
-        database_id: DatabaseId,
-        name: &str,
-        data_type: DataType,
-        is_multi_select: bool,
-    ) -> Result<PropertyDefinitionId, PgDefinitionStoreError> {
-        self.properties
-            .create_database_property_definition(
-                database_id,
-                name,
-                data_type,
-                is_multi_select,
-                None,
-            )
-            .await
-            .map(|definition| definition.id)
-            .map_err(PgDefinitionStoreError::Properties)
-    }
 }
 
-impl<P: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore for PgDefinitionStore<P> {
+impl<Properties: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore
+    for PgDefinitionStore<Properties>
+{
     type Error = PgDefinitionStoreError;
 
     #[tracing::instrument(skip(self, viewer, binding), err)]
@@ -82,9 +56,9 @@ impl<P: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore for PgDefinit
                 is_multi_select,
                 options: _,
             } => self
-                .create_database_definition(database_id, name, *data_type, *is_multi_select)
+                .create_typed_definition(database_id, name, *data_type, *is_multi_select, None)
                 .await
-                .map(Some),
+                .map(|created| Some(created.definition.id)),
             ColumnBinding::ExistingDefinition(id) => Ok(self
                 .properties
                 .get_bindable_property_definition(*id, viewer.user_id.as_ref(), database_id)
@@ -94,6 +68,7 @@ impl<P: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore for PgDefinit
         }
     }
 
+    #[tracing::instrument(skip(self), err)]
     async fn create_typed_definition(
         &self,
         database_id: DatabaseId,
@@ -119,6 +94,7 @@ impl<P: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore for PgDefinit
         })
     }
 
+    #[tracing::instrument(skip(self), err)]
     async fn delete_unused_definition(&self, id: PropertyDefinitionId) -> Result<(), Self::Error> {
         self.properties
             .delete_property_definition(id)

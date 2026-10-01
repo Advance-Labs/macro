@@ -1,7 +1,5 @@
-//! Cells as entity properties, through the properties crate's own Postgres
-//! adapter: the `entity_properties` table stays that crate's to write. A
-//! batch of writes runs on one transaction that the row identities, the
-//! cells and the select options all share.
+//! Cells as entity properties through the properties crate's adapter; a batch
+//! shares one transaction across row identities, cells and options.
 
 mod transfer;
 
