@@ -74,14 +74,36 @@ async fn page(
 
 #[sqlx::test(fixtures("test/database_rows.sql"), migrator = "MACRO_DB_MIGRATIONS")]
 async fn a_viewer_reads_the_won_deals_of_one_table(pool: PgPool) {
-    let mut filter = rows_of(Some(Expr::val(DatabaseRowLiteral::TableId(DEALS))));
-    filter.properties_filter = Some(Arc::new(Expr::val(PropertiesLiteral {
-        property_definition_id: STAGE,
-        entity_type: None,
-        value: PropertyMatchValue::SelectOption(WON),
-    })));
-
-    let items = page(&pool, viewer(), filter).await;
+    let items = expanded_dynamic_cursor_soup(
+        &pool,
+        ExpandedDynamicCursorArgs {
+            user_id: MacroUserIdStr::parse_from_str("macro|viewer@databases.test").unwrap(),
+            limit: 20,
+            cursor: Query::Sort(
+                SimpleSortMethod::CreatedAt,
+                EntityFilterAst {
+                    database_row_filter: Some(Arc::new(Expr::val(DatabaseRowLiteral::TableId(
+                        DEALS,
+                    )))),
+                    document_filter: Some(Arc::new(Expr::val(DocumentLiteral::Id(Uuid::nil())))),
+                    chat_filter: Some(Arc::new(Expr::val(ChatLiteral::Importance(false)))),
+                    project_filter: Some(Arc::new(Expr::val(ProjectLiteral::Importance(false)))),
+                    calendar_event_filter: Some(Arc::new(Expr::val(CalendarEventLiteral::Id(
+                        Uuid::nil(),
+                    )))),
+                    properties_filter: Some(Arc::new(Expr::val(PropertiesLiteral {
+                        property_definition_id: STAGE,
+                        entity_type: None,
+                        value: PropertyMatchValue::SelectOption(WON),
+                    }))),
+                    ..EntityFilterAst::default()
+                },
+            ),
+            exclude_frecency: false,
+        },
+    )
+    .await
+    .unwrap();
 
     let rows: Vec<SoupDatabaseRow> = items
         .into_iter()
