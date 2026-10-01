@@ -9,16 +9,8 @@ use uuid::Uuid;
 #[cfg(test)]
 mod test;
 
-/// Get the highest access level a user has for a database.
-///
-/// A database's grants are written when it is created - the creator as owner
-/// - and extended when it is shared with other users or teams. Those grants
-/// reach a caller through `source_ids`, so gaining one of a grant's source
-/// ids (joining the granted team, say) gives the database on the next
-/// request.
-///
-/// Unlike documents there is no public-sharing arm: a database carries no
-/// `SharePermission`, so a caller with no source ids has no way to reach one.
+/// The highest access level `source_ids` hold on a database. A database has no
+/// `SharePermission`, so there is no public-sharing arm.
 #[tracing::instrument(err, skip(pool, source_ids))]
 pub async fn get_database_access(
     pool: &PgPool,
@@ -43,12 +35,22 @@ pub async fn get_database_access(
     .fetch_all(pool)
     .await?;
 
-    let highest_level = all_level_strings
-        .iter()
-        .filter_map(|opt| opt.as_ref().and_then(|s| AccessLevel::from_str(s).ok()))
-        .max();
+    highest_access_level(&all_level_strings)
+}
 
-    Ok(highest_level)
+/// The highest of a set of `access_level::text` values; an unknown level is a decode error.
+pub(super) fn highest_access_level(
+    levels: &[Option<String>],
+) -> Result<Option<AccessLevel>, sqlx::Error> {
+    levels
+        .iter()
+        .flatten()
+        .map(|level| {
+            AccessLevel::from_str(level).map_err(|error| sqlx::Error::Decode(error.into()))
+        })
+        .try_fold(None, |highest: Option<AccessLevel>, level| {
+            Ok(highest.max(Some(level?)))
+        })
 }
 
 /// The highest access level a user has on every database their source ids

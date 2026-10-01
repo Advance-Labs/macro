@@ -1,9 +1,5 @@
-//! Database access extractor.
-//!
-//! A database's permissions are entirely its own `entity_access` rows: the
-//! creator as owner, plus the users and teams it is later shared with. There
-//! is nothing to inherit from - a database is not filed into a project - so
-//! the rows are the whole answer.
+//! Database access extractor: a database's grants are its own `entity_access`
+//! rows, with nothing inherited from a project.
 
 #[cfg(test)]
 mod test;

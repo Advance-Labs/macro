@@ -8,17 +8,12 @@ use crate::{domain::models::AccessLevel, outbound::pg_access_repo::queries::Sour
 #[cfg(feature = "explain_binary")]
 use model_entity::EntityType;
 use sqlx::PgPool;
-use std::str::FromStr;
 
 #[cfg(test)]
 mod test;
 
-/// Get the highest access level a user has for a database row.
-///
-/// A row carries no `entity_access` rows of its own: its grants are those of
-/// the database that owns its table, so this is
-/// [`get_database_access`](super::database_access::get_database_access)
-/// reached through `database_rows -> database_tables`.
+/// The highest access level `source_ids` hold on a database row: a row has
+/// no grants of its own, so this is its database's access.
 #[tracing::instrument(err, skip(pool, source_ids))]
 pub async fn get_database_row_access(
     pool: &PgPool,
@@ -46,12 +41,7 @@ pub async fn get_database_row_access(
     .fetch_all(pool)
     .await?;
 
-    let highest_level = all_level_strings
-        .iter()
-        .filter_map(|opt| opt.as_ref().and_then(|s| AccessLevel::from_str(s).ok()))
-        .max();
-
-    Ok(highest_level)
+    super::database_access::highest_access_level(&all_level_strings)
 }
 
 /// The database a row's table belongs to.
@@ -81,19 +71,7 @@ pub async fn explain_database_row_access(
     row_id: &uuid::Uuid,
     source_ids: &SourceIds,
 ) -> Result<Vec<AccessGrant>, sqlx::Error> {
-    let database_id = sqlx::query_scalar!(
-        r#"
-        SELECT t.database_id
-        FROM database_rows r
-        JOIN database_tables t ON t.id = r.table_id
-        WHERE r.id = $1
-        "#,
-        row_id,
-    )
-    .fetch_optional(pool)
-    .await?;
-
-    let Some(database_id) = database_id else {
+    let Some(database_id) = get_database_row_database(pool, row_id).await? else {
         return Ok(vec![]);
     };
     list_entity_access_grants(pool, &database_id, EntityType::Database, source_ids).await
