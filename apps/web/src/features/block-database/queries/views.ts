@@ -9,41 +9,44 @@ import type { NewView } from '@service-storage/generated/schemas/newView';
 import type { ViewLayout } from '@service-storage/generated/schemas/viewLayout';
 import type { ViewQuery } from '@service-storage/generated/schemas/viewQuery';
 import { useQuery } from '@tanstack/solid-query';
-import { Mutex } from 'async-mutex';
 import { ResultAsync } from 'neverthrow';
 import type { Accessor } from 'solid-js';
 import type { CardMove } from '../core/board-moves';
+import { createKeyedSerializer } from '../core/keyed-serializer';
 import type { DatabaseOpFailure } from '../core/write-failure';
 import { applyOp, patchViews } from './detail-cache';
 import { databaseViewKeys } from './keys';
 
-const viewWrites = new Map<string, Mutex>();
+const writes = createKeyedSerializer();
 
-/** One view's writes reach the server in the order they were made. */
+/** A view's writes, or a table's view-list writes, reach the server in the order they were made. */
 function inOrder<Value>(
-  viewId: string,
+  key: string,
   write: () => ResultAsync<Value, DatabaseOpFailure>
 ): ResultAsync<Value, DatabaseOpFailure> {
-  let mutex = viewWrites.get(viewId);
-  if (!mutex) {
-    mutex = new Mutex();
-    viewWrites.set(viewId, mutex);
-  }
-  return new ResultAsync(mutex.runExclusive(async () => await write()));
+  return new ResultAsync(writes.run(key, async () => await write()));
 }
+
+const viewListKey = (tableId: string) => `table:${tableId}`;
+
+/** The latest change made to each view whose answer is outstanding. */
+const latestChanges = new Map<string, number>();
+let changeSequence = 0;
 
 export function createDatabaseView(
   databaseId: string,
   tableId: string,
   view: NewView
 ): ResultAsync<DatabaseView, DatabaseOpFailure> {
-  return applyOp(
-    databaseId,
-    tableId,
-    { kind: 'create_view', table: tableId, view },
-    'view_written'
-  ).map(({ view: created }) => {
-    patchViews(databaseId, tableId, (views) => [
+  return inOrder(viewListKey(tableId), () =>
+    applyOp(
+      databaseId,
+      tableId,
+      { kind: 'create_view', table: tableId, view },
+      'view_written'
+    )
+  ).map(async ({ view: created }) => {
+    await patchViews(databaseId, tableId, (views) => [
       ...views.filter((existing) => existing.id !== created.id),
       created,
     ]);
@@ -62,37 +65,69 @@ export function updateDatabaseView(
   view: DatabaseView,
   change: ViewChange
 ): ResultAsync<DatabaseView, DatabaseOpFailure> {
-  const shown = { ...view, ...change };
-  patchViews(view.databaseId, view.tableId, (views) =>
-    views.map((existing) => (existing.id === view.id ? shown : existing))
-  );
-  return inOrder(view.id, () =>
-    applyOp(
-      view.databaseId,
-      view.tableId,
-      { kind: 'update_view', table: view.tableId, view: view.id, ...change },
-      'view_written'
-    )
-  ).map(({ view: stored }) => {
+  const sequence = ++changeSequence;
+  latestChanges.set(view.id, sequence);
+  const isLatest = () => latestChanges.get(view.id) === sequence;
+  const settle = () => {
+    if (isLatest()) latestChanges.delete(view.id);
+  };
+  return ResultAsync.fromSafePromise(
     patchViews(view.databaseId, view.tableId, (views) =>
-      views.map((existing) => (existing === shown ? stored : existing))
-    );
-    return stored;
-  });
+      views.map((existing) =>
+        existing.id === view.id ? { ...existing, ...change } : existing
+      )
+    )
+  )
+    .andThen(() =>
+      inOrder(view.id, () =>
+        applyOp(
+          view.databaseId,
+          view.tableId,
+          {
+            kind: 'update_view',
+            table: view.tableId,
+            view: view.id,
+            ...change,
+          },
+          'view_written'
+        )
+      )
+    )
+    .map(async ({ view: stored }) => {
+      if (isLatest())
+        await patchViews(view.databaseId, view.tableId, (views) =>
+          views.map((existing) =>
+            existing.id === stored.id ? stored : existing
+          )
+        );
+      settle();
+      return stored;
+    })
+    .mapErr((failure) => {
+      settle();
+      return failure;
+    });
 }
 
 export function deleteDatabaseView(
   view: DatabaseView
 ): ResultAsync<void, DatabaseOpFailure> {
-  patchViews(view.databaseId, view.tableId, (views) =>
-    views.filter((existing) => existing.id !== view.id)
-  );
-  return applyOp(
-    view.databaseId,
-    view.tableId,
-    { kind: 'delete_view', table: view.tableId, view: view.id },
-    'view_deleted'
-  ).map(() => undefined);
+  return ResultAsync.fromSafePromise(
+    patchViews(view.databaseId, view.tableId, (views) =>
+      views.filter((existing) => existing.id !== view.id)
+    )
+  )
+    .andThen(() =>
+      inOrder(view.id, () =>
+        applyOp(
+          view.databaseId,
+          view.tableId,
+          { kind: 'delete_view', table: view.tableId, view: view.id },
+          'view_deleted'
+        )
+      )
+    )
+    .map(() => undefined);
 }
 
 /** Put a table's views in `order`, which names every one of them once. */
@@ -103,22 +138,27 @@ export function reorderDatabaseViews(
 ): ResultAsync<void, DatabaseOpFailure> {
   const ordered = (views: DatabaseView[]) =>
     order.flatMap((id) => views.filter((view) => view.id === id));
-  patchViews(databaseId, tableId, ordered);
-  return applyOp(
-    databaseId,
-    tableId,
-    { kind: 'reorder_views', table: tableId, order },
-    'views_reordered'
-  ).map(({ positions }) => {
-    patchViews(databaseId, tableId, (views) =>
-      ordered(views).map((view) => ({
-        ...view,
-        position:
-          positions.find((entry) => entry.view === view.id)?.position ??
-          view.position,
-      }))
-    );
-  });
+  return ResultAsync.fromSafePromise(patchViews(databaseId, tableId, ordered))
+    .andThen(() =>
+      inOrder(viewListKey(tableId), () =>
+        applyOp(
+          databaseId,
+          tableId,
+          { kind: 'reorder_views', table: tableId, order },
+          'views_reordered'
+        )
+      )
+    )
+    .map(async ({ positions }) => {
+      await patchViews(databaseId, tableId, (views) =>
+        ordered(views).map((view) => ({
+          ...view,
+          position:
+            positions.find((entry) => entry.view === view.id)?.position ??
+            view.position,
+        }))
+      );
+    });
 }
 
 /** Where a board's cards sit, read again when its table changes. */

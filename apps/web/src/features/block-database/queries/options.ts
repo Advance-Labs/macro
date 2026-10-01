@@ -2,8 +2,11 @@
 import { TAG_COLOR_OPTIONS } from '@property/tags/tagColors';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import type { PropertyOption } from '@service-storage/generated/schemas/propertyOption';
-import type { ResultAsync } from 'neverthrow';
+import { queryClient } from '@queries/client';
+import { databasesKeys } from '@queries/storage/keys';
+import { err, errAsync, ok, type Result, ResultAsync } from 'neverthrow';
 import type { OptionChange } from '../context/option-editing';
+import { inferDatabaseNumber } from '../core/column-inference';
 import type { DatabaseOpFailure } from '../core/write-failure';
 import { applyOp, patchDetail } from './detail-cache';
 
@@ -28,8 +31,8 @@ function definitionOf(
 function patchOptions(
   target: OptionTarget,
   change: (options: PropertyOption[]) => PropertyOption[]
-) {
-  patchDetail(target.databaseId, (detail) => {
+): Promise<void> {
+  return patchDetail(target.databaseId, (detail) => {
     const definition = definitionOf(detail, target);
     return {
       ...detail,
@@ -51,59 +54,99 @@ function patchOptions(
   });
 }
 
-function changed(option: PropertyOption, change: OptionChange): PropertyOption {
-  const color =
+/** The option as the change leaves it, or why the change cannot be made. */
+function changed(
+  option: PropertyOption,
+  change: OptionChange
+): Result<PropertyOption, DatabaseOpFailure> {
+  const swatch =
     change.color === undefined
-      ? option.color
-      : (TAG_COLOR_OPTIONS.find((entry) => entry.value === change.color)
-          ?.color ?? option.color);
-  if (change.label === undefined) return { ...option, color };
-  const value =
-    option.value.type === 'number'
-      ? { type: option.value.type, value: Number(change.label) }
-      : { type: option.value.type, value: change.label };
-  return { ...option, color, value };
+      ? undefined
+      : TAG_COLOR_OPTIONS.find((entry) => entry.value === change.color);
+  if (change.color !== undefined && !swatch)
+    return err({ kind: 'unknown-color' });
+  const color = swatch?.color ?? option.color;
+  if (change.label === undefined) return ok({ ...option, color });
+  if (option.value.type === 'number') {
+    const number = inferDatabaseNumber(change.label);
+    return number === undefined
+      ? err({ kind: 'not-a-number' })
+      : ok({ ...option, color, value: { type: 'number', value: number } });
+  }
+  return ok({
+    ...option,
+    color,
+    value: { type: option.value.type, value: change.label },
+  });
+}
+
+/** The cached option the target names. */
+function cachedOption(target: OptionTarget): PropertyOption | undefined {
+  return queryClient
+    .getQueryData<DatabaseDetail>(
+      databasesKeys.detail(target.databaseId).queryKey
+    )
+    ?.tables.find((table) => table.table.id === target.tableId)
+    ?.columns.find((column) => column.column.id === target.columnId)
+    ?.definition.property_options.find(
+      (option) => option.id === target.optionId
+    );
 }
 
 export function updateDatabaseOption(
   target: OptionTarget,
   change: OptionChange
 ): ResultAsync<void, DatabaseOpFailure> {
-  patchOptions(target, (options) =>
-    options.map((option) =>
-      option.id === target.optionId ? changed(option, change) : option
+  const option = cachedOption(target);
+  const shown = option ? changed(option, change) : undefined;
+  if (shown?.isErr()) return errAsync(shown.error);
+  return ResultAsync.fromSafePromise(
+    shown
+      ? patchOptions(target, (options) =>
+          options.map((existing) =>
+            existing.id === target.optionId ? shown.value : existing
+          )
+        )
+      : Promise.resolve()
+  )
+    .andThen(() =>
+      applyOp(
+        target.databaseId,
+        target.tableId,
+        {
+          kind: 'update_option',
+          table: target.tableId,
+          column: target.columnId,
+          option: target.optionId,
+          ...change,
+        },
+        'option_changed'
+      )
     )
-  );
-  return applyOp(
-    target.databaseId,
-    target.tableId,
-    {
-      kind: 'update_option',
-      table: target.tableId,
-      column: target.columnId,
-      option: target.optionId,
-      ...change,
-    },
-    'option_changed'
-  ).map(() => undefined);
+    .map(() => undefined);
 }
 
 /** Remove an option; the cells holding it are emptied of it on the server. */
 export function deleteDatabaseOption(
   target: OptionTarget
 ): ResultAsync<void, DatabaseOpFailure> {
-  patchOptions(target, (options) =>
-    options.filter((option) => option.id !== target.optionId)
-  );
-  return applyOp(
-    target.databaseId,
-    target.tableId,
-    {
-      kind: 'delete_option',
-      table: target.tableId,
-      column: target.columnId,
-      option: target.optionId,
-    },
-    'option_changed'
-  ).map(() => undefined);
+  return ResultAsync.fromSafePromise(
+    patchOptions(target, (options) =>
+      options.filter((option) => option.id !== target.optionId)
+    )
+  )
+    .andThen(() =>
+      applyOp(
+        target.databaseId,
+        target.tableId,
+        {
+          kind: 'delete_option',
+          table: target.tableId,
+          column: target.columnId,
+          option: target.optionId,
+        },
+        'option_changed'
+      )
+    )
+    .map(() => undefined);
 }

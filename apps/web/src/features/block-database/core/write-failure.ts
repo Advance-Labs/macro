@@ -41,7 +41,11 @@ export type DatabaseWriteFailure =
 /** Why an option or view op did not land. */
 export type DatabaseOpFailure =
   | { kind: 'ops'; error: DatabaseOpsError }
-  | { kind: 'unexpected-result' };
+  | { kind: 'unexpected-result' }
+  /** A number option relabelled with something that is not a number. */
+  | { kind: 'not-a-number' }
+  /** A colour the palette has no swatch for. */
+  | { kind: 'unknown-color' };
 
 /** What an option, view or card change that did not land says, for `subject` ("this option"). */
 export function databaseOpMessage(
@@ -68,6 +72,14 @@ export function databaseOpMessage(
     .with(
       { kind: 'unexpected-result' },
       () => 'The database answered the change with something else.'
+    )
+    .with(
+      { kind: 'not-a-number' },
+      () => `${capitalized(subject)} needs a number for its label.`
+    )
+    .with(
+      { kind: 'unknown-color' },
+      () => `${capitalized(subject)} cannot take that colour.`
     )
     .exhaustive();
 }

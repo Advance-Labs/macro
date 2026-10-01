@@ -6,6 +6,7 @@ import type { DatabaseDetail } from '@service-storage/generated/schemas/database
 import type { Table } from '@service-storage/generated/schemas/table';
 import { ResultAsync } from 'neverthrow';
 import type { DatabaseSchemaChange } from '../core/column-schema';
+import { createKeyedSerializer } from '../core/keyed-serializer';
 
 function withTableOrder(
   detail: DatabaseDetail,
@@ -22,16 +23,29 @@ function withTableOrder(
   };
 }
 
-const writes = new Map<string, PromiseLike<unknown>>();
+const writes = createKeyedSerializer();
 
 function tableOrderOf(detail: DatabaseDetail | undefined) {
-  return detail?.tables.map((entry) => entry.table.id).join(',');
+  return detail?.tables.map((entry) => entry.table.id);
+}
+
+function sameOrder(
+  left: readonly string[] | undefined,
+  right: readonly string[] | undefined
+) {
+  return (
+    left !== undefined &&
+    right !== undefined &&
+    left.length === right.length &&
+    left.every((id, index) => id === right[index])
+  );
 }
 
 /**
- * Show the new tab order at once and persist it. On failure the cached order
- * goes back to what it was, unless a newer move has replaced it since, and the
- * database is refetched so a stale list of tables corrects itself.
+ * Show the new tab order at once and persist it. On failure only the tab
+ * order goes back, and only when no newer move has replaced it; whatever
+ * else changed in the cached detail meanwhile stays. The database is then
+ * read again so a stale list of tables corrects itself.
  */
 export function reorderDatabaseTables(params: {
   databaseId: string;
@@ -40,32 +54,32 @@ export function reorderDatabaseTables(params: {
   const key = databasesKeys.detail(params.databaseId).queryKey;
   const reorder = async () => {
     // An in-flight read must not paint the old order over the optimistic one.
-    await queryClient.cancelQueries({ queryKey: key });
-    const previous = queryClient.getQueryData<DatabaseDetail>(key);
-    const optimistic = previous && withTableOrder(previous, params.tableIds);
-    if (optimistic) queryClient.setQueryData(key, optimistic);
-
+    await queryClient.cancelQueries({ queryKey: key, exact: true });
+    const previousOrder = tableOrderOf(
+      queryClient.getQueryData<DatabaseDetail>(key)
+    );
+    queryClient.setQueryData(
+      key,
+      (current: DatabaseDetail | undefined) =>
+        current && withTableOrder(current, params.tableIds)
+    );
     // Requests go out in move order, so the last move is the one that sticks.
-    const earlier = writes.get(params.databaseId);
-    const send = async () => {
-      await earlier;
-      return storageServiceClient.databases.reorderTables({
-        id: params.databaseId,
-        tableIds: params.tableIds,
-      });
-    };
-    const request = send();
-    writes.set(params.databaseId, request);
-    const result = await request;
-    if (writes.get(params.databaseId) === request)
-      writes.delete(params.databaseId);
+    const result = await writes.run(
+      params.databaseId,
+      async () =>
+        await storageServiceClient.databases.reorderTables({
+          id: params.databaseId,
+          tableIds: params.tableIds,
+        })
+    );
     if (result.isErr()) {
-      if (
-        previous &&
-        tableOrderOf(queryClient.getQueryData<DatabaseDetail>(key)) ===
-          tableOrderOf(optimistic)
-      )
-        queryClient.setQueryData(key, previous);
+      queryClient.setQueryData(key, (current: DatabaseDetail | undefined) =>
+        current &&
+        previousOrder &&
+        sameOrder(tableOrderOf(current), params.tableIds)
+          ? withTableOrder(current, previousOrder)
+          : current
+      );
       void invalidateDatabase(params.databaseId);
       return result.map(() => undefined);
     }
