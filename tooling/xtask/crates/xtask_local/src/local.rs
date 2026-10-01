@@ -40,7 +40,6 @@ pub mod resources;
 pub mod sandbox_image;
 pub mod sdk_webhook;
 pub mod seed_env;
-pub mod skip;
 pub mod snapshot;
 pub mod stack;
 pub mod stage;
@@ -398,7 +397,7 @@ pub fn run_stack(mode: Mode, args: &cli::RunArgs) -> Result<()> {
                 .map_err(|_| anyhow::anyhow!("frontend build panicked"))?
         })?;
     }
-    bring_up_app(&stage, mode, &instance, &env, &args.build.skip)?;
+    bring_up_app(&stage, mode, &instance, &env)?;
     let _sdk_webhook_tunnel = (mode == Mode::Local && !stage.is_dry_run())
         .then(|| sdk_webhook::start(&instance))
         .transpose()?;
@@ -459,7 +458,6 @@ pub fn run_stack(mode: Mode, args: &cli::RunArgs) -> Result<()> {
                 &env,
                 target,
                 args.build.build_aux_services,
-                &args.build.skip,
                 &mut fe,
             )?;
         }
@@ -500,13 +498,12 @@ fn rebuild_and_reload(
     env: &env_layer::ResolvedEnv,
     target: arch::Target,
     build_aux_services: bool,
-    skip: &[String],
 ) -> Result<()> {
     if stage.is_verbose() {
         // Run each step on the parent stage so the build (per group) and the
         // reload each show their own `Done <elapsed>` — the build-vs-reload
         // split — rather than folding into one line.
-        run_rebuild(stage, mode, instance, env, target, build_aux_services, skip)
+        run_rebuild(stage, mode, instance, env, target, build_aux_services)
     } else {
         stage.run_step("Rebuilding & reloading services", || {
             run_rebuild(
@@ -516,7 +513,6 @@ fn rebuild_and_reload(
                 env,
                 target,
                 build_aux_services,
-                skip,
             )
         })
     }
@@ -532,7 +528,6 @@ fn run_rebuild(
     env: &env_layer::ResolvedEnv,
     target: arch::Target,
     build_aux_services: bool,
-    skip: &[String],
 ) -> Result<()> {
     let before: Vec<Option<std::time::SystemTime>> = inventory::services_for_mode(mode)
         .map(|svc| binary_mtime(target, svc))
@@ -546,7 +541,6 @@ fn run_rebuild(
                     &build::BuildOptions {
                         no_build: false,
                         binaries_dir: None,
-                        skip: skip.to_vec(),
                     },
                 )
             });
@@ -567,7 +561,6 @@ fn run_rebuild(
             &build::BuildOptions {
                 no_build: false,
                 binaries_dir: None,
-                skip: skip.to_vec(),
             },
         )?;
     }
@@ -603,7 +596,6 @@ fn binary_mtime(
 /// the frontend and tears the whole stack down (so the next run starts clean and
 /// fast). An unexpected frontend exit just returns, leaving the stack up for
 /// inspection — the next run's start-of-run teardown will reclaim it.
-#[allow(clippy::too_many_arguments)]
 fn interact(
     stage: &Stage,
     mode: Mode,
@@ -611,7 +603,6 @@ fn interact(
     env: &env_layer::ResolvedEnv,
     target: arch::Target,
     build_aux_services: bool,
-    skip: &[String],
     fe: &mut frontend::Frontend,
 ) -> Result<()> {
     use console::Key;
@@ -639,15 +630,7 @@ fn interact(
                 let _ = term.clear_last_lines(1);
                 // run_step renders ✗ + the captured build error on failure; keep
                 // the loop alive so the user can fix and press `r` again.
-                let _ = rebuild_and_reload(
-                    stage,
-                    mode,
-                    instance,
-                    env,
-                    target,
-                    build_aux_services,
-                    skip,
-                );
+                let _ = rebuild_and_reload(stage, mode, instance, env, target, build_aux_services);
                 print_hotkeys(stage);
             }
             Ok(Key::Char('f' | 'F')) => {
@@ -697,7 +680,6 @@ fn prepare(
     infra_only: bool,
     tunnels: local_env::Tunnels<'_>,
 ) -> Result<(env_layer::ResolvedEnv, arch::Target)> {
-    skip::validate(&args.build.skip)?;
     let env = env_layer::resolve(
         mode,
         instance,
@@ -708,9 +690,7 @@ fn prepare(
         args.traces.enabled(),
     )?;
     stage.note(&format!("env: {}", env_layer::summarize(&env.merged)));
-    if !skip::is_skipped(&args.build.skip, inventory::AGENT_HARNESS) {
-        sandbox_image::ensure(stage, &env.merged, args.build.no_build)?;
-    }
+    sandbox_image::ensure(stage, &env.merged, args.build.no_build)?;
 
     // Build the runtime image (idempotent) and the service binaries.
     let target = arch::detect()?;
@@ -726,7 +706,6 @@ fn prepare(
             &build::BuildOptions {
                 no_build: args.build.no_build,
                 binaries_dir: args.build.binaries_dir.clone(),
-                skip: args.build.skip.clone(),
             },
         )?
     };
@@ -739,14 +718,7 @@ fn prepare(
         .merged
         .get("GMAIL_FORWARDER_SA_KEY")
         .is_some_and(|key| !key.trim().is_empty());
-    gen_compose::generate(
-        mode,
-        instance,
-        &binaries,
-        static_frontend,
-        gmail_forwarder,
-        &args.build.skip,
-    )?;
+    gen_compose::generate(mode, instance, &binaries, static_frontend, gmail_forwarder)?;
     proxy::write_caddyfile(instance, mode, static_frontend)?;
     if mode == Mode::Local {
         portmap::write(instance)?;
@@ -906,15 +878,11 @@ fn bring_up_app(
     mode: Mode,
     instance: &Instance,
     env: &env_layer::ResolvedEnv,
-    skip: &[String],
 ) -> Result<()> {
     let mut up = compose_cmd(instance, env);
     up.arg("up").arg("-d").arg("--remove-orphans");
     if !mode.spec().runs_local_infra {
-        // Naming a service starts it even under a disabled profile.
-        for svc in inventory::services_for_mode(mode)
-            .filter(|svc| !skip::is_skipped(skip, svc.compose_name))
-        {
+        for svc in inventory::services_for_mode(mode) {
             up.arg(svc.compose_name);
         }
         up.arg("proxy");
@@ -1282,7 +1250,6 @@ pub fn zigbuild_only() -> Result<()> {
         &build::BuildOptions {
             no_build: false,
             binaries_dir: None,
-            skip: Vec::new(),
         },
     )?;
     stage.note(&format!("binaries at {}", binaries.host_dir().display()));
@@ -1300,7 +1267,7 @@ pub fn gen_compose_only(args: &cli::InstanceArgs) -> Result<()> {
     let instance = Instance::derive(args.instance.as_deref(), args.port_base)?;
     let target = arch::detect()?;
     let binaries = build::BinariesDir::TargetDir(workspace_root().join(target.debug_dir()));
-    let path = gen_compose::generate(Mode::Local, &instance, &binaries, false, false, &[])?;
+    let path = gen_compose::generate(Mode::Local, &instance, &binaries, false, false)?;
     println!("{}", path.display());
     Ok(())
 }

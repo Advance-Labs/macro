@@ -254,7 +254,7 @@ pub fn up(mode: Mode, args: &UpArgs) -> Result<Instance> {
     let binaries = super::build::BinariesDir::classify(&configured_binaries)?;
     binaries.pin_gc_root(&instance.artifact_dir())?;
     let active_binaries = binaries.host_dir().to_path_buf();
-    super::bring_up_app(&stage, mode, &instance, &env, &args.run.build.skip)?;
+    super::bring_up_app(&stage, mode, &instance, &env)?;
     let _sdk_webhook_tunnel = (mode == Mode::Local && !stage.is_dry_run())
         .then(|| sdk_webhook::start(&instance))
         .transpose()?;
@@ -321,7 +321,6 @@ fn bootstrap_from_update(args: &UpdateArgs) -> Result<()> {
                 no_build: args.binaries_dir.is_some(),
                 build_aux_services: args.build_aux_services,
                 binaries_dir: args.binaries_dir.clone(),
-                skip: Vec::new(),
             },
             no_frontend: false,
             enable_onboarding: false,
@@ -361,7 +360,7 @@ fn update_running(args: &UpdateArgs) -> Result<()> {
     )?;
     let remounted = if let Some(source) = args.binaries_dir.as_deref() {
         let new = super::build::BinariesDir::classify(source)?;
-        new.validate(&super::inventory::local_binaries(&[]))?;
+        new.validate(&super::inventory::local_binaries())?;
         new.pin_gc_root(&instance.artifact_dir())?;
         match new.adoption_from_recorded(state.binaries_dir.as_deref()) {
             super::build::Adoption::Unchanged => {
@@ -382,7 +381,6 @@ fn update_running(args: &UpdateArgs) -> Result<()> {
             &env,
             target,
             args.build_aux_services,
-            &[],
         )?;
         false
     };
@@ -429,7 +427,6 @@ fn remount(
         new,
         state.frontend == "static",
         gmail_forwarder,
-        &[],
     )?;
     let mut up = super::compose_cmd(instance, env);
     up.args([
