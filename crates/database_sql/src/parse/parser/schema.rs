@@ -36,24 +36,7 @@ pub(super) fn alter(input: Tokens<'_>) -> ParseResult<'_, AlterColumnType> {
     .parse(input)?;
     let (input, ()) = cut(word("type", "TYPE and the new type after the column")).parse(input)?;
     let (input, to) = column_type(input)?;
-    let (input, clear_invalid) = opt(preceded(
-        word("using", "USING"),
-        cut(token(
-            TokenKind::Null,
-            "NULL after USING (USING NULL empties the values that do not fit)",
-        )),
-    ))
-    .map(|using| using.is_some())
-    .parse(input)?;
-    Ok((
-        input,
-        AlterColumnType {
-            table,
-            column,
-            to,
-            clear_invalid,
-        },
-    ))
+    Ok((input, AlterColumnType { table, column, to }))
 }
 
 /// `name` or `entity(KIND)`, either with `[]` for several values.

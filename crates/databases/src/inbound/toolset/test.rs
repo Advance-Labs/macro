@@ -193,6 +193,16 @@ impl DatabasesService for FakeService {
         unimplemented!("the toolset does not share awareness")
     }
 
+    async fn column_conversion(
+        &self,
+        _receipt: EntityAccessReceipt<ViewAccessLevel>,
+        _table_id: TableId,
+        _column_id: ColumnId,
+        _to: models_databases::ColumnKind,
+    ) -> Result<crate::domain::models::ColumnConversion, DatabaseError> {
+        unimplemented!("no tool converts a column into a new one")
+    }
+
     async fn view_positions(
         &self,
         _receipt: EntityAccessReceipt<ViewAccessLevel>,
@@ -203,7 +213,7 @@ impl DatabasesService for FakeService {
 
     /// Answers each op as the service would, every touched table moving to
     /// version 4; a view op answers the view it would leave, as of a fixed
-    /// time, and a type change that clears clears two cells.
+    /// time.
     async fn apply_ops(
         &self,
         _receipt: EntityAccessReceipt<EditAccessLevel>,
@@ -248,11 +258,7 @@ impl DatabasesService for FakeService {
                     table_version,
                     added: options.into_iter().map(|option| option.id).collect(),
                 },
-                DatabaseOp::ChangeColumnType { clear_invalid, .. } => OpResult::ColumnTyped {
-                    table_version,
-                    cleared_cells: if clear_invalid { 2 } else { 0 },
-                    trimmed_cells: 0,
-                },
+                DatabaseOp::ChangeColumnType { .. } => OpResult::ColumnTyped { table_version },
                 DatabaseOp::CreateView { table, view } => OpResult::ViewWritten {
                     table_version,
                     view: Box::new(crate::domain::models::DatabaseView {

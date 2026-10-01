@@ -12,9 +12,6 @@ import type { DatabaseOpOneOfOnenineKind } from './databaseOpOneOfOnenineKind';
  * Append rows to a table, in order, each with the cells it starts with.
  */
 export type DatabaseOpOneOfOnenine = {
-  /** Create a select option for a label the column does not have yet,
-instead of refusing the op. */
-  createMissingOptions?: boolean;
   kind: DatabaseOpOneOfOnenineKind;
   /** One entry per new row: the cells it starts with. Columns left out
 start empty. */

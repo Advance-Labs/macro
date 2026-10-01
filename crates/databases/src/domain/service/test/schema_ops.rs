@@ -51,7 +51,6 @@ async fn one_batch_creates_a_table_a_select_column_and_rows_filling_it_by_option
                             value: CellValue::Options(vec![OptionRef::Id(design)]),
                         }],
                     ],
-                    create_missing_options: false,
                 },
             ]),
         )
@@ -146,7 +145,6 @@ async fn a_refused_later_op_leaves_the_tables_and_columns_before_it_unwritten() 
                         column: track,
                         value: CellValue::Options(vec![OptionRef::Label("Marketing".into())]),
                     }]],
-                    create_missing_options: false,
                 },
             ]),
         )
@@ -322,7 +320,6 @@ async fn a_stale_base_version_is_a_conflict_and_writes_nothing() {
                             column: notes,
                             value: CellValue::Text("Vegetarian".into()),
                         }]],
-                        create_missing_options: false,
                     },
                 ],
                 base_versions: HashMap::from([(seeded.table_id, TableVersion(current.0 - 1))]),
@@ -359,13 +356,11 @@ async fn a_type_change_after_a_row_update_of_its_table_is_refused() {
                             value: CellValue::Number(3.0),
                         }],
                     },
-                    create_missing_options: false,
                 },
                 DatabaseOp::ChangeColumnType {
                     table: seeded.table_id,
                     column: seeded.name_column.id,
                     to: ColumnKind::Select { multi: false },
-                    clear_invalid: false,
                 },
             ]),
         )
@@ -412,7 +407,6 @@ async fn options_added_after_a_type_change_of_their_column_land_with_it() {
                     table: seeded.table_id,
                     column: seeded.name_column.id,
                     to: ColumnKind::Select { multi: false },
-                    clear_invalid: false,
                 },
                 DatabaseOp::AddOptions {
                     table: seeded.table_id,
@@ -433,8 +427,6 @@ async fn options_added_after_a_type_change_of_their_column_land_with_it() {
         vec![
             OpResult::ColumnTyped {
                 table_version: after,
-                cleared_cells: 0,
-                trimmed_cells: 0,
             },
             OpResult::OptionsAdded {
                 table_version: after,

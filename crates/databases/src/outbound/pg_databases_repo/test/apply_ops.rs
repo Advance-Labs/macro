@@ -196,7 +196,6 @@ async fn ops_insert_update_and_delete_rows_bumping_the_table_once_per_request(po
                         value: CellValue::Text("Robin".into()),
                     }],
                 ],
-                create_missing_options: false,
             }]
             .into(),
         )
@@ -245,7 +244,6 @@ async fn ops_insert_update_and_delete_rows_bumping_the_table_once_per_request(po
                             ))]),
                         }],
                     },
-                    create_missing_options: false,
                 },
                 DatabaseOp::UpdateRows {
                     table: guests.table_id,
@@ -267,7 +265,6 @@ async fn ops_insert_update_and_delete_rows_bumping_the_table_once_per_request(po
                             },
                         ],
                     },
-                    create_missing_options: false,
                 },
                 DatabaseOp::DeleteRows {
                     table: guests.table_id,
@@ -327,7 +324,7 @@ async fn ops_insert_update_and_delete_rows_bumping_the_table_once_per_request(po
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn a_new_label_becomes_a_palette_coloured_option_and_an_unknown_one_is_refused(pool: PgPool) {
+async fn an_unknown_label_is_refused_and_creates_no_option(pool: PgPool) {
     let guests = guests(&pool).await;
     let service = service(&pool);
     let definitions = PgDefinitionStore::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
@@ -342,12 +339,12 @@ async fn a_new_label_becomes_a_palette_coloured_option_and_an_unknown_one_is_ref
                     column: guests.status,
                     value: CellValue::Options(vec![OptionRef::Label("Maybe".into())]),
                 }]],
-                create_missing_options: false,
             }]
             .into(),
         )
         .await
         .unwrap_err();
+
     let DatabaseError::InvalidOp(refusal) = refused else {
         panic!("expected a refused op, got {refused:?}");
     };
@@ -361,45 +358,22 @@ async fn a_new_label_becomes_a_palette_coloured_option_and_an_unknown_one_is_ref
             reason: "`Maybe` is not an option of \"Status\"".into(),
         }
     );
-
-    let results = service
-        .apply_ops(
-            edit(guests.database_id),
-            viewer(),
-            vec![DatabaseOp::InsertRows {
-                table: guests.table_id,
-                rows: vec![vec![CellWrite {
-                    column: guests.status,
-                    value: CellValue::Options(vec![OptionRef::Label("Maybe".into())]),
-                }]],
-                create_missing_options: true,
-            }]
-            .into(),
-        )
-        .await
-        .unwrap();
-
-    let options = definitions
+    let options: Vec<PropertyOptionValue> = definitions
         .definitions(&[guests.status_definition])
         .await
         .unwrap()
         .remove(0)
-        .property_options;
-    assert_eq!(options.len(), 2);
-    let maybe = &options[1];
-    assert_eq!(maybe.value, PropertyOptionValue::String("Maybe".into()));
-    assert_eq!(maybe.display_order, 1);
-    assert_eq!(
-        maybe.color.as_deref(),
-        Some(properties::TagColor::for_position(1).hex())
-    );
-    let [OpResult::RowsWritten { inserted, .. }] = results.as_slice() else {
-        panic!("expected one insert, got {results:?}");
-    };
-    let stored = cells(&pool).cells(inserted).await.unwrap();
-    assert_eq!(
-        stored[&inserted[0]][&guests.status_definition],
-        PropertyValue::SelectOption(vec![maybe.id])
+        .property_options
+        .into_iter()
+        .map(|option| option.value)
+        .collect();
+    assert_eq!(options, vec![PropertyOptionValue::String("Going".into())]);
+    assert!(
+        PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
+            .row_refs(guests.table_id)
+            .await
+            .unwrap()
+            .is_empty()
     );
 }
 
@@ -419,9 +393,8 @@ async fn a_refused_op_leaves_nothing_of_its_batch_behind(pool: PgPool) {
                     table: guests.table_id,
                     rows: vec![vec![CellWrite {
                         column: guests.status,
-                        value: CellValue::Options(vec![OptionRef::Label("Maybe".into())]),
+                        value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
                     }]],
-                    create_missing_options: true,
                 },
                 DatabaseOp::DeleteRows {
                     table: guests.table_id,
@@ -493,12 +466,10 @@ async fn a_refused_op_leaves_nothing_of_its_batch_behind(pool: PgPool) {
                 DatabaseOp::InsertRows {
                     table: guests.table_id,
                     rows: vec![vec![]],
-                    create_missing_options: false,
                 },
                 DatabaseOp::InsertRows {
                     table: elsewhere_table,
                     rows: vec![vec![]],
-                    create_missing_options: false,
                 },
             ]
             .into(),
@@ -570,7 +541,6 @@ async fn a_relation_cell_holds_rows_of_its_target_table(pool: PgPool) {
             vec![DatabaseOp::InsertRows {
                 table: sessions,
                 rows: vec![vec![]],
-                create_missing_options: false,
             }]
             .into(),
         )
@@ -591,7 +561,6 @@ async fn a_relation_cell_holds_rows_of_its_target_table(pool: PgPool) {
                     column: relation,
                     value: CellValue::Rows(vec![keynote]),
                 }]],
-                create_missing_options: false,
             }]
             .into(),
         )
@@ -625,7 +594,6 @@ async fn a_relation_cell_holds_rows_of_its_target_table(pool: PgPool) {
                         }],
                     }],
                 },
-                create_missing_options: false,
             }]
             .into(),
         )
@@ -655,7 +623,7 @@ async fn a_relation_cell_holds_rows_of_its_target_table(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn a_type_change_refuses_misfits_unless_told_to_clear_them(pool: PgPool) {
+async fn a_type_change_refuses_misfits_and_keeps_the_cells(pool: PgPool) {
     let guests = guests(&pool).await;
     let service = service(&pool);
     let inserted = service
@@ -674,7 +642,6 @@ async fn a_type_change_refuses_misfits_unless_told_to_clear_them(pool: PgPool) {
                         value: CellValue::Text("TBD".into()),
                     }],
                 ],
-                create_missing_options: false,
             }]
             .into(),
         )
@@ -692,7 +659,6 @@ async fn a_type_change_refuses_misfits_unless_told_to_clear_them(pool: PgPool) {
                 table: guests.table_id,
                 column: guests.name,
                 to: ColumnKind::Number,
-                clear_invalid: false,
             }]
             .into(),
         )
@@ -708,46 +674,27 @@ async fn a_type_change_refuses_misfits_unless_told_to_clear_them(pool: PgPool) {
             row: None,
             column: Some(guests.name),
             taken: None,
-            reason: "1 value in \"Name\" isn't a number: 'TBD'. Fix it, or convert with clearing to empty it.".into(),
+            reason: "1 value in \"Name\" isn't a number: 'TBD'. Fix it, or add a column of the new type for the values that convert.".into(),
         }
     );
 
-    let results = service
-        .apply_ops(
-            edit(guests.database_id),
-            viewer(),
-            vec![DatabaseOp::ChangeColumnType {
-                table: guests.table_id,
-                column: guests.name,
-                to: ColumnKind::Number,
-                clear_invalid: true,
-            }]
-            .into(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        results,
-        vec![OpResult::ColumnTyped {
-            table_version: version(&pool, guests.table_id).await,
-            cleared_cells: 1,
-            trimmed_cells: 0,
-        }]
-    );
-    let number = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
+    let columns = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
         .columns_for_tables(&[guests.table_id])
         .await
-        .unwrap()
-        .into_iter()
+        .unwrap();
+    let name = columns
+        .iter()
         .find(|column| column.id == guests.name)
-        .unwrap()
-        .property_definition_id;
+        .unwrap();
+    assert_eq!(name.property_definition_id, guests.name_definition);
     let stored = cells(&pool).cells(inserted).await.unwrap();
-    assert_eq!(stored[&inserted[0]][&number], PropertyValue::Num(12.0));
-    assert!(
-        stored
-            .get(&inserted[1])
-            .is_none_or(|row| !row.contains_key(&number))
+    assert_eq!(
+        stored[&inserted[0]][&guests.name_definition],
+        PropertyValue::Str("12".into())
+    );
+    assert_eq!(
+        stored[&inserted[1]][&guests.name_definition],
+        PropertyValue::Str("TBD".into())
     );
 }
 
@@ -812,26 +759,39 @@ async fn a_removed_option_leaves_its_cells_empty_and_the_others_alone(pool: PgPo
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::InsertRows {
-                table: guests.table_id,
-                rows: vec![
-                    vec![CellWrite {
-                        column: guests.status,
-                        value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
+            vec![
+                DatabaseOp::AddOptions {
+                    table: guests.table_id,
+                    column: guests.status,
+                    options: vec![NewOption {
+                        id: OptionId::new(),
+                        label: "Maybe".into(),
                     }],
-                    vec![CellWrite {
-                        column: guests.status,
-                        value: CellValue::Options(vec![OptionRef::Label("Maybe".into())]),
-                    }],
-                ],
-                create_missing_options: true,
-            }]
+                },
+                DatabaseOp::InsertRows {
+                    table: guests.table_id,
+                    rows: vec![
+                        vec![CellWrite {
+                            column: guests.status,
+                            value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
+                        }],
+                        vec![CellWrite {
+                            column: guests.status,
+                            value: CellValue::Options(vec![OptionRef::Label("Maybe".into())]),
+                        }],
+                    ],
+                },
+            ]
             .into(),
         )
         .await
         .unwrap();
-    let [OpResult::RowsWritten { inserted, .. }] = inserted.as_slice() else {
-        panic!("expected one insert, got {inserted:?}");
+    let [
+        OpResult::OptionsAdded { .. },
+        OpResult::RowsWritten { inserted, .. },
+    ] = inserted.as_slice()
+    else {
+        panic!("expected the option then the insert, got {inserted:?}");
     };
     let definitions = PgDefinitionStore::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
     let options = definitions
@@ -1009,5 +969,166 @@ async fn appended_options_follow_the_existing_ones_in_place_and_colour(pool: PgP
                 Some("#8E4EC6")
             ),
         ]
+    );
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn a_text_column_converts_into_a_new_number_column_and_keeps_its_rows(pool: PgPool) {
+    use entity_access::domain::models::ViewAccessLevel;
+
+    use crate::domain::models::{ColumnConversion, ConvertedCell};
+
+    let guests = guests(&pool).await;
+    let service = service(&pool);
+    let inserted = service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::InsertRows {
+                table: guests.table_id,
+                rows: vec![
+                    vec![CellWrite {
+                        column: guests.name,
+                        value: CellValue::Text("1".into()),
+                    }],
+                    vec![CellWrite {
+                        column: guests.name,
+                        value: CellValue::Text("2".into()),
+                    }],
+                    vec![CellWrite {
+                        column: guests.name,
+                        value: CellValue::Text("soon".into()),
+                    }],
+                ],
+            }]
+            .into(),
+        )
+        .await
+        .unwrap();
+    let [OpResult::RowsWritten { inserted, .. }] = inserted.as_slice() else {
+        panic!("expected one insert, got {inserted:?}");
+    };
+    let stored_names = || async {
+        sqlx::query!(
+            r#"SELECT id, entity_id, values AS "values: serde_json::Value", updated_at
+               FROM entity_properties
+               WHERE property_definition_id = $1
+               ORDER BY entity_id"#,
+            guests.name_definition,
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| (row.id, row.entity_id, row.values, row.updated_at))
+        .collect::<Vec<_>>()
+    };
+    let before = stored_names().await;
+    assert_eq!(before.len(), 3);
+
+    let conversion = service
+        .column_conversion(
+            EntityAccessReceipt::<ViewAccessLevel>::try_new_authenticated_user(
+                MacroUserIdStr::parse_from_str(USER).unwrap().into_owned(),
+                Entity {
+                    entity_id: guests.database_id.to_string(),
+                    entity_type: EntityType::Database,
+                },
+                EntityPermission::AccessLevel {
+                    access_level: AccessLevel::View,
+                },
+            )
+            .unwrap(),
+            guests.table_id,
+            guests.name,
+            ColumnKind::Number,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        conversion,
+        ColumnConversion {
+            table_version: version(&pool, guests.table_id).await,
+            options: vec![],
+            cells: vec![
+                ConvertedCell {
+                    row: inserted[0],
+                    value: CellValue::Number(1.0),
+                },
+                ConvertedCell {
+                    row: inserted[1],
+                    value: CellValue::Number(2.0),
+                },
+            ],
+            misfits: 1,
+        }
+    );
+
+    let count = ColumnId::new();
+    service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            crate::domain::models::OpBatch {
+                ops: vec![
+                    DatabaseOp::CreateColumn {
+                        table: guests.table_id,
+                        id: count,
+                        definition: NewColumn::New {
+                            name: "Count".into(),
+                            kind: ColumnKind::Number,
+                            options: vec![],
+                            infer_type: false,
+                        },
+                        after: Some(guests.name),
+                    },
+                    DatabaseOp::UpdateRows {
+                        table: guests.table_id,
+                        changes: RowChanges::PerRow {
+                            rows: conversion
+                                .cells
+                                .into_iter()
+                                .map(|cell| RowChange {
+                                    row: cell.row,
+                                    cells: vec![CellWrite {
+                                        column: count,
+                                        value: cell.value,
+                                    }],
+                                })
+                                .collect(),
+                        },
+                    },
+                ],
+                base_versions: std::collections::HashMap::from([(
+                    guests.table_id,
+                    conversion.table_version,
+                )]),
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(stored_names().await, before);
+    let count_definition = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
+        .columns_for_tables(&[guests.table_id])
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|column| column.id == count)
+        .unwrap()
+        .property_definition_id;
+    let stored = cells(&pool).cells(inserted).await.unwrap();
+    assert_eq!(
+        stored[&inserted[0]][&count_definition],
+        PropertyValue::Num(1.0)
+    );
+    assert_eq!(
+        stored[&inserted[1]][&count_definition],
+        PropertyValue::Num(2.0)
+    );
+    assert!(!stored[&inserted[2]].contains_key(&count_definition));
+    assert_eq!(
+        stored[&inserted[2]][&guests.name_definition],
+        PropertyValue::Str("soon".into())
     );
 }

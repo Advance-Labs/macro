@@ -50,10 +50,13 @@ People, Documents, Tasks, and relations to tables in this database, showing
 "Checking values…" meanwhile, then lists only the types the column can become (a
 checkbox can only become text; only an empty column can become People or a
 relation). A type some values would not survive shows how many, such
-as "3 values aren't numbers"; choosing it opens a confirmation listing a few of
-them, and **Convert anyway, clearing 3 values** converts the rest and empties
-those (a cell with several values keeps its first). Every other type converts
-immediately. Plain number strings can become numbers; padding, leading zeros and
+as "3 values aren't numbers · Converts into a new column"; it never changes the
+column in place. Choosing it opens a confirmation listing a few of those values,
+and **Convert into a new column** adds a column of that type right after this
+one, named like "Amount (Number)", filled with the values that convert (one ops
+batch), leaving this column as it is. Every other type converts immediately. A
+type change never empties a value; only deleting a cell, row, column, table or
+option does. Plain number strings can become numbers; padding, leading zeros and
 ambiguous values count as values that don't fit. A date becomes its `YYYY-MM-DD`
 text. Changing a placement never changes another table that uses the same property.
 A relation can hold multiple records. **Delete column** opens a confirmation;

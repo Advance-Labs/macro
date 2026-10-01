@@ -100,7 +100,6 @@
         "id": 0,
         "ops": [
           {
-            "createMissingOptions": false,
             "kind": "insert_rows",
             "rows": [
               [

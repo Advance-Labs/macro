@@ -29,7 +29,7 @@
 //! update    := UPDATE table SET ident '=' set {, ident '=' set} WHERE cond
 //! set       := value | ident                     -- a column copies the row's own value
 //! delete    := DELETE FROM table WHERE cond
-//! alter     := ALTER TABLE table ALTER [COLUMN] ident TYPE type [USING NULL]
+//! alter     := ALTER TABLE table ALTER [COLUMN] ident TYPE type
 //! type      := (text | number | boolean | date | link | select | select_number | tag
 //!              | entity '(' kind ')') ['[' ']']      -- [] for a multi-valued column
 //! ```

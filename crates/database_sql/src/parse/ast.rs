@@ -308,8 +308,8 @@ pub struct Delete {
     pub where_: Condition,
 }
 
-/// `ALTER TABLE table ALTER [COLUMN] column TYPE type [USING NULL]`: change
-/// one column's type, converting its values.
+/// `ALTER TABLE table ALTER [COLUMN] column TYPE type`: change one column's
+/// type, converting its values; a value that does not fit refuses it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlterColumnType {
     /// The table whose column changes.
@@ -318,8 +318,6 @@ pub struct AlterColumnType {
     pub column: Identifier,
     /// The type it becomes.
     pub to: OpColumnKind,
-    /// `USING NULL`: empty the values that do not fit instead of refusing.
-    pub clear_invalid: bool,
 }
 
 impl AggregateFunction {

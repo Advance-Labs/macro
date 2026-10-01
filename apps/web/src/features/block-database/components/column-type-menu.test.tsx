@@ -9,6 +9,7 @@ import { okAsync } from 'neverthrow';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type {
   DatabaseColumnCasts,
+  DatabaseColumnConversion,
   DatabaseColumnTypeChange,
   DatabaseSchemaChange,
 } from '../core/column-schema';
@@ -96,6 +97,12 @@ function renderHeader() {
   const changeType = vi.fn<
     (columnId: string, change: DatabaseColumnTypeChange) => DatabaseSchemaChange
   >(() => okAsync(undefined));
+  const convert = vi.fn<
+    (
+      columnId: string,
+      conversion: DatabaseColumnConversion
+    ) => DatabaseSchemaChange<string>
+  >(() => okAsync('price-number'));
   const opened: string[] = [];
   render(() => (
     <DatabaseColumnHeader
@@ -104,13 +111,14 @@ function renderHeader() {
       onRename={vi.fn(() => okAsync(undefined))}
       onSort={vi.fn()}
       onChangeType={changeType}
+      onConvert={convert}
       columnCasts={(columnId, open) => () => {
         if (open()) opened.push(columnId);
         return casts;
       }}
     />
   ));
-  return { changeType, opened };
+  return { changeType, convert, opened };
 }
 
 async function openTypeMenu() {
@@ -135,29 +143,34 @@ it('lists only the types the column can become', async () => {
   expect(opened).toContain('price');
 });
 
-it('confirms a checked type with failures, then converts with clearing', async () => {
-  const { changeType } = renderHeader();
+it('offers a checked type with failures as a new column, never as a type change', async () => {
+  const { changeType, convert } = renderHeader();
   await openTypeMenu();
 
   const number = await screen.findByRole('menuitem', { name: 'Number' });
   expect(number.textContent).toContain("3 values aren't numbers");
+  expect(number.textContent).toContain('Converts into a new column');
   choose(number);
 
   const dialog = await screen.findByRole('dialog');
+  expect(dialog.textContent).toContain("3 values don't fit Number");
+  expect(dialog.textContent).toContain(
+    'A new Number column will be added next to this one with the values that convert'
+  );
   expect(dialog.textContent).toContain('TBD');
   expect(dialog.textContent).toContain('n/a');
   expect(dialog.textContent).toContain('12.5.0');
-  expect(changeType).not.toHaveBeenCalled();
   fireEvent.click(
-    screen.getByRole('button', { name: 'Convert anyway, clearing 3 values' })
+    screen.getByRole('button', { name: 'Convert into a new column' })
   );
   await waitFor(() =>
-    expect(changeType).toHaveBeenCalledExactlyOnceWith('price', {
+    expect(convert).toHaveBeenCalledExactlyOnceWith('price', {
       to: { type: 'number' },
-      baseVersion: 4,
-      clearInvalid: true,
+      label: 'Number',
+      columnName: 'Price',
     })
   );
+  expect(changeType).not.toHaveBeenCalled();
 });
 
 it('applies a type every value fits directly, against the version its dry run read', async () => {

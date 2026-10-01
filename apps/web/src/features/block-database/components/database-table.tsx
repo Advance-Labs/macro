@@ -36,6 +36,7 @@ import { DragSessionSensors } from '../../../components/drag-drop/drag-session-s
 import { InsertionLine } from '../../../components/drag-drop/insertion-line';
 import type {
   DatabaseColumnCastsSource,
+  DatabaseColumnConversion,
   DatabaseColumnTypeChange,
   DatabaseSchemaChange,
 } from '../core/column-schema';
@@ -110,6 +111,10 @@ export function DatabaseTable(props: {
     columnId: string,
     change: DatabaseColumnTypeChange
   ) => DatabaseSchemaChange;
+  onConvertColumn?: (
+    columnId: string,
+    conversion: DatabaseColumnConversion
+  ) => DatabaseSchemaChange<string>;
   onDeleteColumn?: (columnId: string) => DatabaseSchemaChange;
   onReorderColumn?: (
     columnId: string,
@@ -425,6 +430,7 @@ export function DatabaseTable(props: {
                   relationTables={props.relationTables}
                   columnCasts={props.columnCasts}
                   onChangeType={props.onChangeColumnType}
+                  onConvert={props.onConvertColumn}
                   onDelete={props.onDeleteColumn}
                   column={column()}
                   sortDirection={sortDirection(props.sort, column().id)}

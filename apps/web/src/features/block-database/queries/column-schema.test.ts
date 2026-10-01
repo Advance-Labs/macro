@@ -18,16 +18,9 @@ afterEach(() => {
 });
 
 describe('column schema changes', () => {
-  it('sends a type change with clearInvalid against the table version it was made at', async () => {
+  it('sends a type change, with nothing but its type, against the table version it was made at', async () => {
     storage.applyDatabaseOps.mockReturnValue(
-      okAsync([
-        {
-          kind: 'column_typed',
-          tableVersion: 5,
-          clearedCells: 3,
-          trimmedCells: 0,
-        },
-      ])
+      okAsync([{ kind: 'column_typed', tableVersion: 5 }])
     );
 
     const changed = await updateDatabaseColumns({
@@ -37,7 +30,7 @@ describe('column schema changes', () => {
       mutation: {
         kind: 'type',
         columnId: 'price',
-        change: { to: { type: 'number' }, clearInvalid: true, baseVersion: 4 },
+        change: { to: { type: 'number' }, baseVersion: 4 },
       },
     });
 
@@ -50,23 +43,17 @@ describe('column schema changes', () => {
           table: 'tasks',
           column: 'price',
           to: { type: 'number' },
-          clearInvalid: true,
         },
       ],
       { tasks: 4 }
     );
+    const [[, [op]]] = storage.applyDatabaseOps.mock.calls;
+    expect(op).not.toHaveProperty('clearInvalid');
   });
 
   it('names this database as a relation target', async () => {
     storage.applyDatabaseOps.mockReturnValue(
-      okAsync([
-        {
-          kind: 'column_typed',
-          tableVersion: 5,
-          clearedCells: 0,
-          trimmedCells: 0,
-        },
-      ])
+      okAsync([{ kind: 'column_typed', tableVersion: 5 }])
     );
 
     await updateDatabaseColumns({
@@ -88,7 +75,6 @@ describe('column schema changes', () => {
           table: 'tasks',
           column: 'owner',
           to: { type: 'relation', database: 'db', table: 'people' },
-          clearInvalid: false,
         },
       ],
       { tasks: 4 }

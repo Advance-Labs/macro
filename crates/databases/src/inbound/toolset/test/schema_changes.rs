@@ -66,7 +66,6 @@ async fn changing_a_column_type_uses_the_current_version_and_adds_extra_options(
         options: Some(vec!["Waitlisted".to_string()]),
         specific_entity_type: None,
         link_to_table_id: None,
-        clear_invalid: false,
     }
     .call(ServiceContext(context), request_context())
     .await
@@ -75,7 +74,6 @@ async fn changing_a_column_type_uses_the_current_version_and_adds_extra_options(
     assert_eq!(response.column_id, COLUMN_ID);
     assert!(response.database.is_some());
     assert!(response.warning.is_none());
-    assert_eq!(response.cleared_cells, 0);
     let calls = calls.lock().unwrap();
     let [batch] = calls.applied.as_slice() else {
         panic!("one batch, got {:?}", calls.applied);
@@ -91,7 +89,6 @@ async fn changing_a_column_type_uses_the_current_version_and_adds_extra_options(
                     table: TABLE_ID,
                     column: COLUMN_ID,
                     to: ColumnKind::Select { multi: false },
-                    clear_invalid: false,
                 },
                 DatabaseOp::AddOptions {
                     table: TABLE_ID,
@@ -120,7 +117,6 @@ async fn changing_a_column_to_a_relation_targets_this_database() {
         options: None,
         specific_entity_type: None,
         link_to_table_id: Some(parties),
-        clear_invalid: false,
     }
     .call(ServiceContext(context), request_context())
     .await
@@ -136,7 +132,6 @@ async fn changing_a_column_to_a_relation_targets_this_database() {
                     database: DATABASE_ID,
                     table: parties,
                 },
-                clear_invalid: false,
             }],
             base_versions: HashMap::from([(TABLE_ID, TableVersion(3))]),
         }]
@@ -155,7 +150,6 @@ async fn changing_a_column_to_people_names_the_entity_kind() {
         options: Some(vec![]),
         specific_entity_type: Some(ToolEntityType::User),
         link_to_table_id: None,
-        clear_invalid: false,
     }
     .call(ServiceContext(context), request_context())
     .await
@@ -171,7 +165,6 @@ async fn changing_a_column_to_people_names_the_entity_kind() {
                     target: models_databases::EntityKind::User,
                     multi: true,
                 },
-                clear_invalid: false,
             }],
             base_versions: HashMap::from([(TABLE_ID, TableVersion(3))]),
         }]
@@ -361,40 +354,6 @@ async fn renaming_a_database_returns_its_new_name() {
         calls.lock().unwrap().renamed_databases,
         vec!["Party Planning".to_string()]
     );
-}
-
-#[tokio::test]
-async fn clearing_passes_through_and_the_response_counts_the_emptied_cells() {
-    let (context, calls) = context(FakeAccess::granting(AccessLevel::Edit));
-    let response = ChangeColumnType {
-        database_id: DATABASE_ID,
-        table_id: TABLE_ID,
-        column_id: COLUMN_ID,
-        data_type: ColumnType::Number,
-        is_multi_select: false,
-        options: None,
-        specific_entity_type: None,
-        link_to_table_id: None,
-        clear_invalid: true,
-    }
-    .call(ServiceContext(context), request_context())
-    .await
-    .expect("clearing converts what fits");
-
-    assert_eq!(
-        calls.lock().unwrap().applied,
-        vec![OpBatch {
-            ops: vec![DatabaseOp::ChangeColumnType {
-                table: TABLE_ID,
-                column: COLUMN_ID,
-                to: ColumnKind::Number,
-                clear_invalid: true,
-            }],
-            base_versions: HashMap::from([(TABLE_ID, TableVersion(3))]),
-        }]
-    );
-    assert_eq!(response.cleared_cells, 2);
-    assert_eq!(response.trimmed_cells, 0);
 }
 
 #[tokio::test]

@@ -80,7 +80,6 @@ async fn three_guests(seeded: &Seeded) -> [RowId; 3] {
                         ]
                     })
                     .collect(),
-                create_missing_options: false,
             }]),
         )
         .await
@@ -483,7 +482,6 @@ async fn moving_a_card_within_its_lane_places_the_unplaced_cards_before_it() {
                         value: CellValue::Options(vec![OptionRef::Id(going)]),
                     }],
                 },
-                create_missing_options: false,
             }]),
         )
         .await
@@ -868,7 +866,6 @@ async fn a_new_type_drops_the_tests_of_the_old_one_but_not_under_a_board() {
             table: seeded.table_id,
             column,
             to,
-            clear_invalid: false,
         };
 
     seeded

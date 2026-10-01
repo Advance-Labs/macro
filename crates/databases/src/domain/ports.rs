@@ -13,13 +13,13 @@ use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::service::property_value::PropertyValue;
 
 use crate::domain::models::{
-    Awareness, CardPosition, Column, ColumnCast, ColumnId, CreateDatabase, Database,
-    DatabaseDetail, DatabaseError, DatabaseId, DatabaseView, FirstTable, InferColumnType,
+    Awareness, CardPosition, Column, ColumnCast, ColumnConversion, ColumnId, CreateDatabase,
+    Database, DatabaseDetail, DatabaseError, DatabaseId, DatabaseView, FirstTable, InferColumnType,
     InferColumnTypeOutcome, ListedDatabase, OpBatch, PropertyDefinitionId, QueryDefinition,
     QueryId, RowId, RowRef, SavedQuery, SavedQueryError, Table, TableId, TableVersion, ViewId,
     Viewer, Writes, WritesOutcome,
 };
-use models_databases::OpResult;
+use models_databases::{ColumnKind, OpResult};
 
 /// Persistence for databases, tables, column placements and row identities.
 pub trait DatabasesRepo: Send + Sync + 'static {
@@ -332,6 +332,17 @@ pub trait DatabasesService: Send + Sync + 'static {
         table_id: TableId,
         column_id: ColumnId,
     ) -> impl Future<Output = Result<Vec<ColumnCast>, DatabaseError>> + Send;
+
+    /// What one column's values become under `to`: the values that
+    /// convert, for a new column of that type beside it, which leaves the
+    /// column itself as it is. Changes nothing.
+    fn column_conversion(
+        &self,
+        receipt: EntityAccessReceipt<ViewAccessLevel>,
+        table_id: TableId,
+        column_id: ColumnId,
+        to: ColumnKind,
+    ) -> impl Future<Output = Result<ColumnConversion, DatabaseError>> + Send;
 
     /// Apply a batch of ops to the receipt's database, in order, in one
     /// transaction: all of them, or, when one is refused, none. Every write

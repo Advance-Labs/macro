@@ -28,7 +28,15 @@ property definitions and value types. There is no second store.
 4. The optional request-level `baseVersions` names tables and the version the
    caller read; a table at another version answers 409 and writes nothing. A
    column type change follows one cast rule for the type menu, the agent tool
-   and `ALTER COLUMN`.
+   and `ALTER COLUMN`: it converts every value or refuses with the count and a
+   few quoted misfits. Data is only destroyed by an explicit delete of a cell,
+   row, column, table or option; an unknown option label is refused, never
+   created. To keep the original, the conversion read
+   (`POST /databases/{id}/tables/{table_id}/columns/{column_id}/conversion`,
+   `DatabasesService::column_conversion`) answers the values that convert, the
+   option labels they need and how many do not; the client then sends one
+   batch: `create_column` after the original, then `update_rows` with those
+   values, at the conversion's table version.
 5. Successful commits publish their versions and change notifications.
 
 SQL lives outside this crate. The browser compiles statements with the

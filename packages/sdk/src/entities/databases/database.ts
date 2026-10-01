@@ -4,9 +4,11 @@ import type {
   ApplyOpsRequest,
   CardPosition,
   ColumnCast,
+  ColumnConversion,
   ColumnKind,
   DatabaseDetail,
   DatabaseOp,
+  EntityKind,
   ImportTable,
   InferColumnTypeOutcome,
   InferColumnTypeRequest,
@@ -70,11 +72,17 @@ export type AddColumnOptions = (
 export type ChangeColumnTypeOptions = {
   /** The type to change the column to. */
   to: ColumnType;
+};
+
+/** Options for {@link Database.convertColumnIntoNewColumn}. */
+export type ConvertIntoNewColumnOptions = {
+  /** The type of the new column. */
+  to: ColumnType;
   /**
-   * Empty the values that do not fit the new type instead of refusing the
-   * change; a cell with several values keeps its first.
+   * Display name of the new column; by default the original's name followed
+   * by the type, as in `Due (Date)`.
    */
-  clearInvalid?: boolean;
+  name?: string;
 };
 
 /** Options for {@link Database.applyOps}. */
@@ -128,6 +136,38 @@ function columnKind(type: ColumnType): ColumnKind {
       table: table.id,
     }))
     .with({ type: P.not('relation') }, (plain) => plain)
+    .exhaustive();
+}
+
+const entityLabels: Record<EntityKind, string> = {
+  USER: 'People',
+  DOCUMENT: 'Documents',
+  TASK: 'Tasks',
+  COMPANY: 'Companies',
+  CALL_RECORD: 'Calls',
+  CHANNEL: 'Channels',
+  CHAT: 'Chats',
+  PROJECT: 'Projects',
+  THREAD: 'Emails',
+  CALENDAR_EVENT: 'Events',
+  INITIATIVE: 'Initiatives',
+};
+
+/** The name a type goes by in the app's type menu. */
+function typeLabel(type: ColumnType): string {
+  return match(type)
+    .with({ type: 'text' }, () => 'Text')
+    .with({ type: 'number' }, () => 'Number')
+    .with({ type: 'boolean' }, () => 'Checkbox')
+    .with({ type: 'date' }, () => 'Date')
+    .with({ type: 'link' }, () => 'URL')
+    .with({ type: 'select', multi: true }, () => 'Multi-select')
+    .with({ type: 'select', multi: false }, () => 'Select')
+    .with({ type: 'select_number', multi: true }, () => 'Multi-number select')
+    .with({ type: 'select_number', multi: false }, () => 'Number select')
+    .with({ type: 'tag' }, () => 'Tag')
+    .with({ type: 'entity' }, ({ target }) => entityLabels[target])
+    .with({ type: 'relation' }, () => 'Relation')
     .exhaustive();
 }
 
@@ -373,9 +413,10 @@ export class Database extends MacroEntity<DatabaseDetail> {
   }
 
   /**
-   * Change a column's type at the table version last read. Values that do not
-   * convert refuse the change unless `clearInvalid` empties them; the result
-   * counts the cells it cleared and the multi-value cells it trimmed.
+   * Change a column's type at the table version last read. Every value must
+   * convert: one that does not refuses the change, naming how many and a few
+   * of them, and nothing is written. To keep the original column, see
+   * {@link Database.convertColumnIntoNewColumn}.
    */
   async changeColumnType(
     column: DatabaseColumn,
@@ -391,15 +432,80 @@ export class Database extends MacroEntity<DatabaseDetail> {
             table: column.table.id,
             column: column.id,
             to: columnKind(options.to),
-            ...(options.clearInvalid !== undefined
-              ? { clearInvalid: options.clearInvalid }
-              : {}),
           },
         ],
         { baseVersions: [{ table: column.table, version }] },
       ),
       'column_typed',
     );
+  }
+
+  /**
+   * What a column's values become under another type: the values that
+   * convert, the option labels a new select or tag column of that type needs,
+   * and how many values do not convert. Changes nothing.
+   */
+  async columnConversion(
+    column: DatabaseColumn,
+    to: ColumnType,
+  ): Promise<ColumnConversion> {
+    this.assertOwns(`column ${column.id}`, column.table.database);
+    return unwrap(
+      await this.client.storage.convertDatabaseColumn({
+        path: { id: this.id, table_id: column.table.id, column_id: column.id },
+        body: { to: columnKind(to) },
+      }),
+    );
+  }
+
+  /**
+   * Add a column of another type right after this one, filled with the
+   * values that convert, in one batch at the table version the conversion
+   * was read at. The original column is left as it is; values that do not
+   * convert stay only there.
+   */
+  async convertColumnIntoNewColumn(
+    column: DatabaseColumn,
+    options: ConvertIntoNewColumnOptions,
+  ): Promise<DatabaseColumn> {
+    const conversion = await this.columnConversion(column, options.to);
+    const name =
+      options.name ?? `${await column.name()} (${typeLabel(options.to)})`;
+    const id = uuidv7();
+    const ops: DatabaseOp[] = [
+      {
+        kind: 'create_column',
+        table: column.table.id,
+        id,
+        definition: {
+          source: 'new',
+          name,
+          type: columnKind(options.to),
+          options: newOptions(conversion.options),
+        },
+        after: column.id,
+      },
+    ];
+    if (conversion.cells.length > 0)
+      ops.push({
+        kind: 'update_rows',
+        table: column.table.id,
+        changes: {
+          kind: 'per_row',
+          rows: conversion.cells.map(({ row, value }) => ({
+            row,
+            cells: [{ column: id, value }],
+          })),
+        },
+      });
+    const [created] = await this.applyOps(ops, {
+      baseVersions: [{ table: column.table, version: conversion.tableVersion }],
+    });
+    if (!isResultOf(created, 'column_created'))
+      throw new MacroError(
+        `expected a column_created result, got ${created?.kind ?? 'none'}`,
+      );
+    return DatabaseColumn.byId(column.table, created.column);
   }
 
   /**

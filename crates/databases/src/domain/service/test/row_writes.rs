@@ -52,7 +52,6 @@ async fn a_write_to_a_row_of_another_table_is_refused() {
                         value: CellValue::Text("Hijacked".into()),
                     }],
                 },
-                create_missing_options: false,
             }]),
         )
         .await
@@ -176,7 +175,6 @@ async fn grants_scope_writes_per_database() {
                     column: room_name,
                     value: CellValue::Text("Main Hall".into()),
                 }]],
-                create_missing_options: false,
             }]),
         )
         .await
@@ -198,7 +196,6 @@ async fn grants_scope_writes_per_database() {
             OpBatch::from(vec![DatabaseOp::InsertRows {
                 table: seeded.table_id,
                 rows: vec![vec![]],
-                create_missing_options: false,
             }]),
         )
         .await

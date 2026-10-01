@@ -223,12 +223,8 @@ impl From<SqlOutcome> for QueryDatabaseResponse {
         let results: Vec<ResultSet> = outcome.result.into_iter().collect();
         let summary = match &outcome.statement {
             SqlStatement::AlterColumnType {
-                column_name,
-                to,
-                cleared_cells,
-                trimmed_cells,
-                ..
-            } => altered_summary(column_name, to, *cleared_cells, *trimmed_cells),
+                column_name, to, ..
+            } => format!("Changed \"{column_name}\" to {to}."),
             SqlStatement::Select
             | SqlStatement::Insert { .. }
             | SqlStatement::Update { .. }
@@ -261,29 +257,6 @@ impl From<SqlOutcome> for QueryDatabaseResponse {
             read_versions,
         }
     }
-}
-
-/// What an `ALTER COLUMN` did, including what `USING NULL` cost.
-fn altered_summary(
-    column_name: &str,
-    to: &str,
-    cleared_cells: usize,
-    trimmed_cells: usize,
-) -> String {
-    let mut summary = format!("Changed \"{column_name}\" to {to}.");
-    if cleared_cells > 0 {
-        let plural = if cleared_cells == 1 { "" } else { "s" };
-        summary.push_str(&format!(
-            " Emptied {cleared_cells} cell{plural} whose value did not fit."
-        ));
-    }
-    if trimmed_cells > 0 {
-        let plural = if trimmed_cells == 1 { "" } else { "s" };
-        summary.push_str(&format!(
-            " Kept only the first value of {trimmed_cells} cell{plural}."
-        ));
-    }
-    summary
 }
 
 /// Say what happened, so a model does not have to infer "it worked" from an

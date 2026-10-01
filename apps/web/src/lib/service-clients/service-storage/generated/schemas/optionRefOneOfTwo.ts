@@ -7,10 +7,10 @@
 
 /**
  * An option's label, matched without regard to case. An unknown label
-is refused unless the op creates missing options.
+is refused.
  */
 export type OptionRefOneOfTwo = {
   /** An option's label, matched without regard to case. An unknown label
-is refused unless the op creates missing options. */
+is refused. */
   label: string;
 };

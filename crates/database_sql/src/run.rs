@@ -392,12 +392,6 @@ pub struct AlteredColumn {
     pub column: Uuid,
     /// The type it became, as SQL spells it.
     pub to: String,
-    /// Cells `USING NULL` emptied.
-    #[specta(type = u32)]
-    pub cleared_cells: usize,
-    /// Cells that kept only their first of several values.
-    #[specta(type = u32)]
-    pub trimmed_cells: usize,
 }
 
 /// One result column.

@@ -181,6 +181,11 @@ await guests.addColumn({
 const casts = await rsvp.casts();
 await rsvp.changeType({ to: { type: 'select', multi: true } });
 
+// A type change converts every value or refuses, naming the misfits. To keep
+// the original, add a column of the new type after it, filled with the values
+// that convert ("Response (Text)" unless you pass a name).
+await rsvp.convertIntoNewColumn({ to: { type: 'text' } });
+
 // Tabs: a new database starts with a "Table 1". Reorder by naming every
 // table once, or delete one; a database keeps at least one.
 const tables = await database.tables();
@@ -191,6 +196,9 @@ await (await database.table('Table 1'))?.delete();
 Changing a column's type, reordering columns, and deleting a column send the
 table version last read as the batch's base version: if the table changed
 since, the server refuses with a 409 and nothing is written.
+`convertIntoNewColumn` is the exception to one op per call: it reads the
+conversion (`POST …/columns/{c}/conversion`, which changes nothing), then sends
+one batch that creates the column and fills it, at the version that read saw.
 
 To do several things at once, send the ops yourself. They apply in order in
 one transaction, later ops see what earlier ones did, and a refused op leaves

@@ -29,6 +29,7 @@ import type { DatabaseRelationSource } from '../context/relation-source';
 import type { DatabaseRowsSource } from '../context/table-source';
 import type { DatabaseEntityType } from '../core/column-inference';
 import { mergeDatabaseColumnOrder } from '../core/column-order';
+import { convertedColumnName } from '../core/column-schema';
 import type { DatabaseRelatedDestination } from '../core/database-relations';
 import {
   DatabaseMentionPicker,
@@ -39,12 +40,15 @@ import {
 import type { BoardPositionsState } from '../primitives/board-layout';
 import { createColumnCasts } from '../queries/column-casts';
 import { updateDatabaseColumns } from '../queries/column-schema';
-import { addDatabaseColumnOptions } from '../queries/columns';
+import {
+  addDatabaseColumnOptions,
+  convertDatabaseColumn,
+} from '../queries/columns';
 import { createDatabaseRelations } from '../queries/database-relations';
 import { useRelatedDatabaseSync } from '../queries/database-relations-sync';
 import { deleteDatabaseOption, updateDatabaseOption } from '../queries/options';
 import { renameDatabaseColumn } from '../queries/rename-column';
-import { createDatabaseRowsSource } from '../queries/table-rows';
+import { createDatabaseRowsSource, toViewColumn } from '../queries/table-rows';
 import {
   moveDatabaseCard,
   refreshCardPositions,
@@ -314,6 +318,19 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
                 { kind: 'type', columnId, change },
                 change.baseVersion
               )
+            }
+            onConvertColumn={(columnId, conversion) =>
+              convertDatabaseColumn({
+                databaseId,
+                tableId: props.tableId,
+                columnId,
+                to: conversion.to,
+                name: convertedColumnName(
+                  conversion.columnName,
+                  conversion.label,
+                  table().columns.map((column) => toViewColumn(column).name)
+                ),
+              })
             }
             onDeleteColumn={(columnId) =>
               changeColumns({ kind: 'delete', columnId })

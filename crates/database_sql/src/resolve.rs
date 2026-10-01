@@ -325,8 +325,6 @@ pub struct AlterColumnTypeQuery {
     pub column: Uuid,
     /// The type it becomes.
     pub to: OpColumnKind,
-    /// Empty the values that do not fit instead of refusing.
-    pub clear_invalid: bool,
 }
 
 /// Bind a parsed statement to the catalog.
@@ -361,7 +359,6 @@ pub fn resolve(catalog: &Catalog, statement: Statement) -> Result<Query, Resolve
                 table: table.id,
                 column: column.id,
                 to: alter.to,
-                clear_invalid: alter.clear_invalid,
             }))
         }
         Statement::Delete(delete) => {

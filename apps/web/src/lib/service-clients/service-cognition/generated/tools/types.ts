@@ -992,14 +992,6 @@ export type SqlStatement =
        * The type it became, as SQL spells it, e.g. `select[]`.
        */
       to: string;
-      /**
-       * Cells `USING NULL` emptied because their value did not fit.
-       */
-      clearedCells: number;
-      /**
-       * Cells that held several values and kept only their first.
-       */
-      trimmedCells: number;
       kind: 'alterColumnType';
     };
 /**
@@ -1766,9 +1758,9 @@ export interface ToolColumn {
    */
   safeTypes: SpelledColumnType[];
   /**
-   * Types whose conversion checks each value first and refuses, or with
-   * `clearInvalid` empties, the ones that do not fit. Any type in neither
-   * list is refused while the column holds values.
+   * Types whose conversion checks each value first and refuses if any
+   * does not fit. Any type in neither list is refused while the column
+   * holds values.
    */
   checkedTypes: SpelledColumnType[];
 }
@@ -2341,7 +2333,7 @@ export interface SpreadsheetChange {
  *
  * DescribeDatabase lists each column's `safeTypes` (every value converts) and `checkedTypes` (each value is checked first); any other type is refused while the column holds values, so add a new column instead. An empty column takes any type.
  *
- * Conversion is all or nothing by default: if any value cannot become the new type without losing information ("soon" as a number), nothing changes and the error counts the values and quotes a few. Fix them with UPDATE and retry, or pass `clearInvalid: true` to empty them instead; a cell with several values going to a single-valued type then keeps its first. Only clear when the user accepts losing those values. Converting to `select` or `tag` turns the distinct existing values into the column's options; pass `options` to add labels no row has yet.
+ * Conversion is all or nothing: if any value cannot become the new type without losing information ("soon" as a number, two values going to a single-valued type), nothing changes and the error counts the values and quotes a few. A type change never empties a cell. Fix the values with UPDATE and retry, or keep the column as it is and AddColumn one of the new type for the values that convert. Converting to `select` or `tag` turns the distinct existing values into the column's options; pass `options` to add labels no row has yet.
  *
  * - `entity` needs `specificEntityType` (e.g. `USER` for people, `DOCUMENT`).
  * - `linkToTableId` makes it a relation to rows of another table of this database; pass `dataType: entity` with it. Relations are always multi-valued, and the column must be empty.
@@ -2379,10 +2371,6 @@ export interface ChangeColumnType {
    * Id of a table of this database to relate to; makes the column a relation holding row ids. Requires dataType entity.
    */
   linkToTableId?: string | null;
-  /**
-   * Empty the values that cannot become the new type instead of refusing the change; a cell with several values keeps its first. Defaults to false. The response says how many cells were changed.
-   */
-  clearInvalid?: boolean;
 }
 /**
  * Response from the ChangeColumnType tool.
@@ -2400,15 +2388,6 @@ export interface ChangeColumnTypeResponse {
    * The changed column's id, unchanged by the conversion.
    */
   columnId: string;
-  /**
-   * Cells emptied because their value did not fit, with `clearInvalid`.
-   */
-  clearedCells: number;
-  /**
-   * Cells that held several values and kept only their first, with
-   * `clearInvalid`.
-   */
-  trimmedCells: number;
   /**
    * The database's schema after the change.
    */
@@ -5986,7 +5965,7 @@ export interface NameSearch {
  * - **Entity columns hold Macro ids** such as `macro|sam@example.com` for a person. Respect each column's `specificEntityType`; never invent an id or replace it with a name.
  * - **People:** `macro.people` lists everyone the user knows, with `id` (their Macro id), `name` and `email`. Join a person column to it to read emails: `JOIN macro.people p ON t."Owner" = p.id`.
  * - **Names are display names.** Quote a table or column name with double quotes when it has spaces or punctuation (`FROM "Guest List" WHERE "Due Date" < '2026-09-01'`); names match case-insensitively, and a miss suggests the closest name. A table may be qualified by its database's name (`FROM "Offsite"."Guests"`).
- * - **Changing a column's type:** `ALTER TABLE table ALTER COLUMN col TYPE type [USING NULL]`, where type is text, number, boolean, date, link, select, select_number, tag or entity(USER), entity(DOCUMENT), entity(TASK)…, with `[]` for several values (`select[]`). Pick from the column's `safeTypes` and `checkedTypes`: any other type is refused while the column holds values (add a new column instead). A value that does not fit refuses the statement, counting and quoting the misfits; fix them with UPDATE, or add `USING NULL` to empty them (a cell with several values keeps its first) only when the user accepts losing those values.
+ * - **Changing a column's type:** `ALTER TABLE table ALTER COLUMN col TYPE type`, where type is text, number, boolean, date, link, select, select_number, tag or entity(USER), entity(DOCUMENT), entity(TASK)…, with `[]` for several values (`select[]`). Pick from the column's `safeTypes` and `checkedTypes`: any other type is refused while the column holds values (add a new column instead). Every value must convert: one that does not (a cell with several values going to a single-valued type is one) refuses the statement, counting and quoting a few misfits. Fix them with UPDATE first, or keep the original: add a column of the new type and fill it with the values that convert. A type change never destroys data; only an explicit delete of a cell, row, column, table or option does.
  * - **Other schema changes use tools, not SQL DDL:** CreateDatabase, RenameDatabase, CreateTable, RenameTable, ReorderTables, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.
  * - Tables you only hold view access on are read-only.
  *
@@ -7523,7 +7502,7 @@ export interface ResolveDocumentCommentResponse {
  * - **Entity columns hold Macro ids** such as `macro|sam@example.com` for a person. Respect each column's `specificEntityType`; never invent an id or replace it with a name.
  * - **People:** `macro.people` lists everyone the user knows, with `id` (their Macro id), `name` and `email`. Join a person column to it to read emails: `JOIN macro.people p ON t."Owner" = p.id`.
  * - **Names are display names.** Quote a table or column name with double quotes when it has spaces or punctuation (`FROM "Guest List" WHERE "Due Date" < '2026-09-01'`); names match case-insensitively, and a miss suggests the closest name. A table may be qualified by its database's name (`FROM "Offsite"."Guests"`).
- * - **Changing a column's type:** `ALTER TABLE table ALTER COLUMN col TYPE type [USING NULL]`, where type is text, number, boolean, date, link, select, select_number, tag or entity(USER), entity(DOCUMENT), entity(TASK)…, with `[]` for several values (`select[]`). Pick from the column's `safeTypes` and `checkedTypes`: any other type is refused while the column holds values (add a new column instead). A value that does not fit refuses the statement, counting and quoting the misfits; fix them with UPDATE, or add `USING NULL` to empty them (a cell with several values keeps its first) only when the user accepts losing those values.
+ * - **Changing a column's type:** `ALTER TABLE table ALTER COLUMN col TYPE type`, where type is text, number, boolean, date, link, select, select_number, tag or entity(USER), entity(DOCUMENT), entity(TASK)…, with `[]` for several values (`select[]`). Pick from the column's `safeTypes` and `checkedTypes`: any other type is refused while the column holds values (add a new column instead). Every value must convert: one that does not (a cell with several values going to a single-valued type is one) refuses the statement, counting and quoting a few misfits. Fix them with UPDATE first, or keep the original: add a column of the new type and fill it with the values that convert. A type change never destroys data; only an explicit delete of a cell, row, column, table or option does.
  * - **Other schema changes use tools, not SQL DDL:** CreateDatabase, RenameDatabase, CreateTable, RenameTable, ReorderTables, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.
  * - Tables you only hold view access on are read-only.
  */

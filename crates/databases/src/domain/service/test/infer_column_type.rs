@@ -101,7 +101,6 @@ async fn number_inference_preserves_label_old_definition_and_accepts_first_write
                     column: column_id,
                     value: CellValue::Number(12.0),
                 }]],
-                create_missing_options: false,
             }]),
         )
         .await
@@ -431,7 +430,6 @@ async fn a_first_written_value_settles_text_type_and_later_inference_cannot_rety
                 column: column_id,
                 value: CellValue::Text("first text".into()),
             }]],
-            create_missing_options: false,
         }]),
     )
     .await

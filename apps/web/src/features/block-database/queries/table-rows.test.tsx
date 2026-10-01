@@ -134,7 +134,6 @@ function nameEdit(value: CellValue): DatabaseOp[] {
         kind: 'per_row',
         rows: [{ row: 'record', cells: [{ column: 'name', value }] }],
       },
-      createMissingOptions: false,
     },
   ];
 }
@@ -145,7 +144,6 @@ function nameInsert(value: CellValue): DatabaseOp[] {
       kind: 'insert_rows',
       table: 'guests-table',
       rows: [[{ column: 'name', value }]],
-      createMissingOptions: false,
     },
   ];
 }
@@ -454,6 +452,65 @@ describe('database view reads', () => {
     expect(reads).toHaveLength(afterOwnWrite + 1);
   });
 
+  it('creates a label the column lacks with add_options ahead of the write, in one batch', async () => {
+    const schema = detail();
+    const definition = schema.tables[0].columns[0].definition;
+    definition.definition.data_type = 'SELECT_STRING';
+    definition.property_options = [
+      {
+        id: 'vip',
+        property_definition_id: 'definition',
+        display_order: 0,
+        value: { type: 'string', value: 'VIP' },
+        color: '#889096',
+        created_at: '',
+        updated_at: '',
+      },
+    ];
+    const applyOps = vi.fn<ApplyOps>(() =>
+      okAsync([
+        { kind: 'options_added', tableVersion: 6, added: ['new-option'] },
+        rowsWritten,
+      ])
+    );
+    const { source } = setup(schema, applyOps);
+    await waitFor(() => expect(source.snapshot()?.version).toBe(5));
+
+    const result = await source.write(
+      { kind: 'cell', rowId: 'record', columnId: 'name', value: 'Plus one' },
+      5,
+      true
+    );
+
+    expect(result.isOk()).toBe(true);
+    expect(applyOps).toHaveBeenCalledExactlyOnceWith([
+      {
+        kind: 'add_options',
+        table: 'guests-table',
+        column: 'name',
+        options: [{ id: expect.any(String), label: 'Plus one' }],
+      },
+      {
+        kind: 'update_rows',
+        table: 'guests-table',
+        changes: {
+          kind: 'per_row',
+          rows: [
+            {
+              row: 'record',
+              cells: [
+                {
+                  column: 'name',
+                  value: { type: 'options', value: [{ label: 'Plus one' }] },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
   it('shows a failed read as the grid error and keeps the rows it had', async () => {
     let offline = false;
     const { read } = engine(
@@ -525,7 +582,6 @@ describe('database rows SQL names', () => {
             },
           ],
         },
-        createMissingOptions: false,
       },
     ]);
   });
@@ -897,7 +953,6 @@ describe('accepted writes after switching tables', () => {
               },
             ],
           },
-          createMissingOptions: true,
         },
       ],
     ]);

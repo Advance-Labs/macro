@@ -107,22 +107,6 @@ pub(super) fn apply_in_world(
             }
         }
     }
-    for option in &writes.options {
-        let definition = world
-            .definitions
-            .get_mut(&option.definition_id)
-            .ok_or(FakeError)?;
-        let display_order = definition.property_options.len() as i32;
-        definition.property_options.push(PropertyOption {
-            id: option.id.into_uuid(),
-            property_definition_id: option.definition_id,
-            display_order,
-            value: option.value.clone(),
-            color: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        });
-    }
     let mut inserted = Vec::new();
     let mut deleted: Vec<TableId> = Vec::new();
     for (index, write) in writes.writes.iter().enumerate() {

@@ -16,11 +16,10 @@ use properties::domain::database_option_writer::{ColorChange, DatabaseOptionWrit
 use properties::domain::model::UpdatePropertyOptionOutcome;
 use properties::domain::ports::PropertiesRepo;
 use sqlx::{PgPool, Postgres, Transaction};
-use uuid::Uuid;
 
 use crate::domain::models::{
-    NewDefinition, NewOption, OptionId, PropertyDefinitionId, RowId, TableId, TakenId, Write,
-    Writes, WritesOutcome,
+    NewDefinition, OptionId, PropertyDefinitionId, RowId, TableId, TakenId, Write, Writes,
+    WritesOutcome,
 };
 use crate::domain::ports::CellStore;
 use crate::outbound::pg_databases_repo::schema::{self, Inserted, Removed};
@@ -73,30 +72,6 @@ pub enum PgCellStoreError {
     /// written with it.
     #[error("imported table {0} has no import fingerprint")]
     MissingImportFingerprint(TableId),
-}
-
-/// Group new options by the definition they join, keeping their order.
-fn options_by_definition(
-    options: &[NewOption],
-) -> Vec<(
-    PropertyDefinitionId,
-    Vec<(
-        Uuid,
-        models_properties::service::property_option::PropertyOptionValue,
-    )>,
-)> {
-    let mut grouped: Vec<(PropertyDefinitionId, Vec<_>)> = Vec::new();
-    for option in options {
-        let value = (option.id.into_uuid(), option.value.clone());
-        match grouped
-            .iter_mut()
-            .find(|(definition, _)| *definition == option.definition_id)
-        {
-            Some((_, values)) => values.push(value),
-            None => grouped.push((option.definition_id, vec![value])),
-        }
-    }
-    grouped
 }
 
 /// The unique index on a table's view names.
@@ -307,14 +282,6 @@ where
                 write: *write,
                 id: TakenId::Option(*id),
             });
-        }
-
-        let options = options_by_definition(&writes.options);
-        for (definition, values) in &options {
-            self.properties
-                .add_options_in(&mut transaction, *definition, values)
-                .await
-                .map_err(cells_error)?;
         }
 
         let mut inserted = Vec::with_capacity(writes.writes.len());

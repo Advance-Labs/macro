@@ -10,13 +10,11 @@ import type { DatabaseOpOneOfTwofiveKind } from './databaseOpOneOfTwofiveKind';
 
 /**
  * Convert a column to another type, converting its cells. A value that
-does not fit refuses the change unless `clearInvalid` empties it.
+does not fit refuses the change, counting and quoting the misfits: a
+type change never empties a cell. To keep the original, create a
+column of the new type and write it the values that convert.
  */
 export type DatabaseOpOneOfTwofive = {
-  /** Empty the cells whose value does not fit, instead of refusing; a
-cell with several values going to a single-valued type keeps its
-first. */
-  clearInvalid?: boolean;
   /** The column placement; its id survives the change. */
   column: string;
   kind: DatabaseOpOneOfTwofiveKind;

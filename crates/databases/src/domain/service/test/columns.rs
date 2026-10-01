@@ -22,7 +22,6 @@ async fn number_text_conversion_writes_converted_cells_through_the_cell_store() 
                     table: table_id,
                     column: plus_ones.id,
                     to: ColumnKind::Text,
-                    clear_invalid: false,
                 }],
                 base_versions: HashMap::from([(table_id, seeded_version)]),
             },
@@ -34,8 +33,6 @@ async fn number_text_conversion_writes_converted_cells_through_the_cell_store() 
         results,
         vec![OpResult::ColumnTyped {
             table_version: as_text_version,
-            cleared_cells: 0,
-            trimmed_cells: 0,
         }]
     );
     let as_text = {
@@ -75,7 +72,6 @@ async fn number_text_conversion_writes_converted_cells_through_the_cell_store() 
                 table: table_id,
                 column: plus_ones.id,
                 to: ColumnKind::Number,
-                clear_invalid: false,
             }],
             base_versions: HashMap::from([(table_id, as_text_version)]),
         },
@@ -121,7 +117,6 @@ async fn invalid_or_lossy_conversions_do_not_modify_the_column() {
                     table: table_id,
                     column: name.id,
                     to: ColumnKind::Number,
-                    clear_invalid: false,
                 }]),
             )
             .await;
@@ -162,7 +157,6 @@ async fn selecting_text_preserves_option_labels_and_select_preserves_unused_opti
             table: table_id,
             column: status.id,
             to: ColumnKind::Select { multi: true },
-            clear_invalid: false,
         }]),
     )
     .await
@@ -192,7 +186,6 @@ async fn selecting_text_preserves_option_labels_and_select_preserves_unused_opti
             table: table_id,
             column: status.id,
             to: ColumnKind::Text,
-            clear_invalid: false,
         }]),
     )
     .await
@@ -343,7 +336,6 @@ async fn schema_mutations_reject_wrong_database_stale_and_trashed_database() {
             table: table_id,
             column: seeded.name_column.id,
             to: ColumnKind::Text,
-            clear_invalid: false,
         },
         DatabaseOp::DeleteColumn {
             table: table_id,

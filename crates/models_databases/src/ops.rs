@@ -149,10 +149,6 @@ pub enum DatabaseOp {
         /// One entry per new row: the cells it starts with. Columns left out
         /// start empty.
         rows: Vec<Vec<CellWrite>>,
-        /// Create a select option for a label the column does not have yet,
-        /// instead of refusing the op.
-        #[serde(default)]
-        create_missing_options: bool,
     },
     /// Write cells of existing rows. Last write wins: there is no version
     /// check.
@@ -163,10 +159,6 @@ pub enum DatabaseOp {
         table: TableId,
         /// Which rows get which cells.
         changes: RowChanges,
-        /// Create a select option for a label the column does not have yet,
-        /// instead of refusing the op.
-        #[serde(default)]
-        create_missing_options: bool,
     },
     /// Remove rows and their cells.
     DeleteRows {
@@ -178,7 +170,9 @@ pub enum DatabaseOp {
         rows: Vec<RowId>,
     },
     /// Convert a column to another type, converting its cells. A value that
-    /// does not fit refuses the change unless `clearInvalid` empties it.
+    /// does not fit refuses the change, counting and quoting the misfits: a
+    /// type change never empties a cell. To keep the original, create a
+    /// column of the new type and write it the values that convert.
     #[serde(rename_all = "camelCase")]
     ChangeColumnType {
         /// The table.
@@ -189,11 +183,6 @@ pub enum DatabaseOp {
         column: ColumnId,
         /// The type it becomes.
         to: ColumnKind,
-        /// Empty the cells whose value does not fit, instead of refusing; a
-        /// cell with several values going to a single-valued type keeps its
-        /// first.
-        #[serde(default)]
-        clear_invalid: bool,
     },
     /// Relabel or recolour one option of a select or tag column. Every cell
     /// holding it keeps it. A column bound to a property shared outside the
@@ -485,7 +474,7 @@ pub enum OptionRef {
     #[schema(value_type = Uuid)]
     Id(OptionId),
     /// An option's label, matched without regard to case. An unknown label
-    /// is refused unless the op creates missing options.
+    /// is refused.
     Label(String),
 }
 
@@ -679,10 +668,6 @@ pub enum OpResult {
     ColumnTyped {
         /// The table's version after the change.
         table_version: TableVersion,
-        /// Cells emptied because their value did not fit the new type.
-        cleared_cells: u32,
-        /// Cells that held several values and kept only their first.
-        trimmed_cells: u32,
     },
     /// What an option change or removal did.
     #[serde(rename_all = "camelCase")]
@@ -767,7 +752,7 @@ impl OpResult {
             | OpResult::ColumnsReordered { table_version }
             | OpResult::OptionsAdded { table_version, .. }
             | OpResult::RowsWritten { table_version, .. }
-            | OpResult::ColumnTyped { table_version, .. }
+            | OpResult::ColumnTyped { table_version }
             | OpResult::OptionChanged { table_version }
             | OpResult::ViewWritten { table_version, .. }
             | OpResult::ViewDeleted { table_version }

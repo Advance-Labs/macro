@@ -1,7 +1,7 @@
 import type { ColumnDetail } from '@service-storage/generated/schemas/columnDetail';
 import { err, ok } from 'neverthrow';
 import { describe, expect, it } from 'vitest';
-import { cellValue, mutationOp } from './cell-ops';
+import { cellValue, missingOptionLabels, mutationOp } from './cell-ops';
 import { UNAVAILABLE_OPTION } from './grid-cells';
 
 function column(
@@ -226,8 +226,7 @@ describe('grid values a column cannot take', () => {
         (columnId) =>
           columnId === 'name'
             ? ok(column('STRING'))
-            : err({ kind: 'read-only-column' }),
-        false
+            : err({ kind: 'read-only-column' })
       )
     ).toEqual(err({ kind: 'read-only-column' }));
   });
@@ -236,22 +235,18 @@ describe('grid values a column cannot take', () => {
 describe('grid edits as ops', () => {
   it('deletes a record as one delete_rows op', () => {
     expect(
-      mutationOp(
-        'table',
-        { kind: 'delete', rowId: 'row-1' },
-        () => ok(column('STRING')),
-        false
+      mutationOp('table', { kind: 'delete', rowId: 'row-1' }, () =>
+        ok(column('STRING'))
       )
     ).toEqual(ok({ kind: 'delete_rows', table: 'table', rows: ['row-1'] }));
   });
 
-  it('creates a record with every value it starts with, letting new labels become options', () => {
+  it('creates a record with every value it starts with, naming options by label', () => {
     expect(
       mutationOp(
         'table',
         { kind: 'create', values: { status: 'New lane' } },
-        () => ok(column('SELECT_STRING')),
-        true
+        () => ok(column('SELECT_STRING'))
       )
     ).toEqual(
       ok({
@@ -265,8 +260,42 @@ describe('grid edits as ops', () => {
             },
           ],
         ],
-        createMissingOptions: true,
       })
     );
+  });
+
+  it('lists the labels a write names that its columns lack, once each', () => {
+    expect(
+      missingOptionLabels(
+        {
+          kind: 'update_rows',
+          table: 'table',
+          changes: {
+            kind: 'per_row',
+            rows: [
+              {
+                row: 'row-1',
+                cells: [
+                  {
+                    column: 'tags',
+                    value: {
+                      type: 'options',
+                      value: [
+                        { label: 'urgent' },
+                        { label: 'Blocked' },
+                        { label: 'blocked' },
+                        { id: 'option-1' },
+                      ],
+                    },
+                  },
+                  { column: 'name', value: { type: 'text', value: 'Ada' } },
+                ],
+              },
+            ],
+          },
+        },
+        (columnId) => (columnId === 'tags' ? ['Urgent'] : [])
+      )
+    ).toEqual([{ column: 'tags', labels: ['Blocked'] }]);
   });
 });

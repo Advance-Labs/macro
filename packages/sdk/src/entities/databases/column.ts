@@ -8,6 +8,7 @@ import type {
 import { MacroNotFoundError } from '../../utils';
 import type {
   ChangeColumnTypeOptions,
+  ConvertIntoNewColumnOptions,
   InferColumnTypeOptions,
   OpResultOf,
 } from './database';
@@ -77,6 +78,17 @@ export class DatabaseColumn {
     options: ChangeColumnTypeOptions,
   ): Promise<OpResultOf<'column_typed'>> {
     return this.table.database.changeColumnType(this, options);
+  }
+
+  /**
+   * Add a column of another type right after this one, filled with the
+   * values that convert, leaving this one as it is. See
+   * {@link Database.convertColumnIntoNewColumn}.
+   */
+  convertIntoNewColumn(
+    options: ConvertIntoNewColumnOptions,
+  ): Promise<DatabaseColumn> {
+    return this.table.database.convertColumnIntoNewColumn(this, options);
   }
 
   /**

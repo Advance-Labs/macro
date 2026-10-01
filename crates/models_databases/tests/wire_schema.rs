@@ -206,7 +206,6 @@ fn ops() -> Vec<DatabaseOp> {
         DatabaseOp::InsertRows {
             table: TABLE,
             rows: vec![every_cell_value()],
-            create_missing_options: true,
         },
         DatabaseOp::UpdateRows {
             table: TABLE,
@@ -214,7 +213,6 @@ fn ops() -> Vec<DatabaseOp> {
                 rows: vec![ROW],
                 cells: every_cell_value(),
             },
-            create_missing_options: false,
         },
         DatabaseOp::UpdateRows {
             table: TABLE,
@@ -224,7 +222,6 @@ fn ops() -> Vec<DatabaseOp> {
                     cells: every_cell_value(),
                 }],
             },
-            create_missing_options: false,
         },
         DatabaseOp::DeleteRows {
             table: TABLE,
@@ -318,7 +315,6 @@ fn ops() -> Vec<DatabaseOp> {
         table: TABLE,
         column: NAME,
         to,
-        clear_invalid: true,
     }));
     ops
 }
@@ -365,8 +361,6 @@ fn results() -> Vec<OpResult> {
         },
         OpResult::ColumnTyped {
             table_version: version,
-            cleared_cells: 1,
-            trimmed_cells: 2,
         },
         OpResult::OptionChanged {
             table_version: version,

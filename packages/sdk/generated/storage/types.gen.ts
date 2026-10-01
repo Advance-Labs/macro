@@ -3456,6 +3456,42 @@ export type ColumnConfig = {
 };
 
 /**
+ * What a column's values become under another type, for a new column of
+ * that type beside it: the values that convert, the options they need,
+ * and how many do not convert. Nothing is changed by reading it.
+ */
+export type ColumnConversion = {
+    /**
+     * Each row whose value converts, with that value, options named by
+     * label.
+     */
+    cells: Array<ConvertedCell>;
+    /**
+     * How many values do not convert, and are left out.
+     */
+    misfits: number;
+    /**
+     * The option labels a new select or tag column needs, in order.
+     */
+    options: Array<string>;
+    /**
+     * The table's version the cells were read at; a batch writing the new
+     * column sends it as its base version.
+     */
+    tableVersion: TableVersion;
+};
+
+/**
+ * The type a column's values are converted to.
+ */
+export type ColumnConversionRequest = {
+    /**
+     * The type of the column the values would go to.
+     */
+    to: ColumnKind;
+};
+
+/**
  * One column placement with the definition behind it.
  */
 export type ColumnDetail = {
@@ -3611,6 +3647,20 @@ export type ConferenceProvider = 'google_meet' | 'other';
  * How a group's conditions combine.
  */
 export type Conjunction = 'and' | 'or';
+
+/**
+ * One row's converted value.
+ */
+export type ConvertedCell = {
+    /**
+     * The row.
+     */
+    row: string;
+    /**
+     * Its value under the new type.
+     */
+    value: CellValue;
+};
 
 /**
  * Query parameters for the copy document endpoint.
@@ -5073,11 +5123,6 @@ export type DatabaseOp = {
      */
     table: string;
 } | {
-    /**
-     * Create a select option for a label the column does not have yet,
-     * instead of refusing the op.
-     */
-    createMissingOptions?: boolean;
     kind: 'insert_rows';
     /**
      * One entry per new row: the cells it starts with. Columns left out
@@ -5093,11 +5138,6 @@ export type DatabaseOp = {
      * Which rows get which cells.
      */
     changes: RowChanges;
-    /**
-     * Create a select option for a label the column does not have yet,
-     * instead of refusing the op.
-     */
-    createMissingOptions?: boolean;
     kind: 'update_rows';
     /**
      * The table the rows belong to.
@@ -5114,12 +5154,6 @@ export type DatabaseOp = {
      */
     table: string;
 } | {
-    /**
-     * Empty the cells whose value does not fit, instead of refusing; a
-     * cell with several values going to a single-valued type keeps its
-     * first.
-     */
-    clearInvalid?: boolean;
     /**
      * The column placement; its id survives the change.
      */
@@ -8777,19 +8811,11 @@ export type OpResult = {
      */
     tableVersion: TableVersion;
 } | {
-    /**
-     * Cells emptied because their value did not fit the new type.
-     */
-    clearedCells: number;
     kind: 'column_typed';
     /**
      * The table's version after the change.
      */
     tableVersion: TableVersion;
-    /**
-     * Cells that held several values and kept only their first.
-     */
-    trimmedCells: number;
 } | {
     kind: 'option_changed';
     /**
@@ -8845,7 +8871,7 @@ export type OptionRef = {
 } | {
     /**
      * An option's label, matched without regard to case. An unknown label
-     * is refused unless the op creates missing options.
+     * is refused.
      */
     label: string;
 };
@@ -16394,6 +16420,36 @@ export type ListDatabaseColumnCastsResponses = {
 };
 
 export type ListDatabaseColumnCastsResponse = ListDatabaseColumnCastsResponses[keyof ListDatabaseColumnCastsResponses];
+
+export type ConvertDatabaseColumnData = {
+    body: ColumnConversionRequest;
+    path: {
+        id: string;
+        table_id: string;
+        column_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/{table_id}/columns/{column_id}/conversion';
+};
+
+export type ConvertDatabaseColumnErrors = {
+    /**
+     * No value of the column converts to the type
+     */
+    400: ErrorResponse;
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type ConvertDatabaseColumnError = ConvertDatabaseColumnErrors[keyof ConvertDatabaseColumnErrors];
+
+export type ConvertDatabaseColumnResponses = {
+    200: ColumnConversion;
+};
+
+export type ConvertDatabaseColumnResponse = ConvertDatabaseColumnResponses[keyof ConvertDatabaseColumnResponses];
 
 export type InferDatabaseColumnTypeData = {
     body: InferColumnTypeRequest;

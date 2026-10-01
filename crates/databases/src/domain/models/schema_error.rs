@@ -322,26 +322,10 @@ impl fmt::Display for ConversionRefusal {
             )?;
         }
         let one = self.groups.iter().map(|group| group.count).sum::<usize>() == 1;
-        let several = |group: &MisfitGroup| group.misfit == Misfit::SeveralValues;
-        formatter.write_str(
-            match (
-                self.groups.iter().any(several),
-                self.groups.iter().all(several),
-                one,
-            ) {
-                (false, _, true) => "Fix it, or convert with clearing to empty it.",
-                (false, _, false) => "Fix them, or convert with clearing to empty them.",
-                (true, true, true) => {
-                    "Fix it, or convert with clearing to keep only its first value."
-                }
-                (true, true, false) => {
-                    "Fix them, or convert with clearing to keep only their first values."
-                }
-                (true, false, _) => {
-                    "Fix them, or convert with clearing: values that don't fit are emptied, and \
-                     cells with several values keep their first."
-                }
-            },
-        )
+        formatter.write_str(if one {
+            "Fix it, or add a column of the new type for the values that convert."
+        } else {
+            "Fix them, or add a column of the new type for the values that convert."
+        })
     }
 }

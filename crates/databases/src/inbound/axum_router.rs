@@ -2,7 +2,8 @@
 //! the one write surface of a database's schema and data; SQL runs in the
 //! browser engine or the `databases_sql` tools.
 
-/// What a column's values would do under each type: `GET …/casts`.
+/// What a column's values would do under each type (`GET …/casts`), and
+/// what they become under one (`POST …/conversion`).
 pub mod casts;
 /// Typed, batched writes, schema and data: `POST /{id}/ops`.
 pub mod ops;
@@ -18,7 +19,7 @@ pub mod transfer;
 pub mod views;
 use crate::domain::sharing::DatabaseSharingService;
 use crate::domain::transfer::DatabaseTransferService;
-use casts::column_casts_handler;
+use casts::{column_casts_handler, column_conversion_handler};
 use models_databases::{DatabaseId, TableId};
 use std::sync::Arc;
 
@@ -162,6 +163,10 @@ where
         .route(
             "/{id}/tables/{table_id}/columns/{column_id}/casts",
             get(column_casts_handler::<Service, EntityAccess, Authorization>),
+        )
+        .route(
+            "/{id}/tables/{table_id}/columns/{column_id}/conversion",
+            post(column_conversion_handler::<Service, EntityAccess, Authorization>),
         )
         .route(
             "/{id}/tables/{table_id}/columns/{column_id}/infer-type",

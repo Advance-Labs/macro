@@ -8585,6 +8585,114 @@
         }
       }
     },
+    "/databases/{id}/tables/{table_id}/columns/{column_id}/conversion": {
+      "post": {
+        "tags": ["databases"],
+        "summary": "What one column's values become under another type: the values that\nconvert, with the options they need, for a new column of that type beside\nit. The column itself is left as it is: a client writes the conversion as\none ops batch, a `create_column` then an `update_rows`, with the answered\ntable version as its base version. Changes nothing.",
+        "operationId": "convert_database_column",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "table_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "column_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ColumnConversionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ColumnConversion"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No value of the column converts to the type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/databases/{id}/tables/{table_id}/columns/{column_id}/infer-type": {
       "post": {
         "tags": ["databases"],
@@ -21735,6 +21843,48 @@
         ],
         "description": "Column-kind specific configuration stored on the placement."
       },
+      "ColumnConversion": {
+        "type": "object",
+        "description": "What a column's values become under another type, for a new column of\nthat type beside it: the values that convert, the options they need,\nand how many do not convert. Nothing is changed by reading it.",
+        "required": ["tableVersion", "options", "cells", "misfits"],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConvertedCell"
+            },
+            "description": "Each row whose value converts, with that value, options named by\nlabel."
+          },
+          "misfits": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How many values do not convert, and are left out.",
+            "minimum": 0
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The option labels a new select or tag column needs, in order."
+          },
+          "tableVersion": {
+            "$ref": "#/components/schemas/TableVersion",
+            "description": "The table's version the cells were read at; a batch writing the new\ncolumn sends it as its base version."
+          }
+        }
+      },
+      "ColumnConversionRequest": {
+        "type": "object",
+        "description": "The type a column's values are converted to.",
+        "required": ["to"],
+        "properties": {
+          "to": {
+            "$ref": "#/components/schemas/ColumnKind",
+            "description": "The type of the column the values would go to."
+          }
+        }
+      },
       "ColumnDetail": {
         "type": "object",
         "description": "One column placement with the definition behind it.",
@@ -22027,6 +22177,22 @@
         "type": "string",
         "description": "How a group's conditions combine.",
         "enum": ["and", "or"]
+      },
+      "ConvertedCell": {
+        "type": "object",
+        "description": "One row's converted value.",
+        "required": ["row", "value"],
+        "properties": {
+          "row": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The row."
+          },
+          "value": {
+            "$ref": "#/components/schemas/CellValue",
+            "description": "Its value under the new type."
+          }
+        }
       },
       "CopyDocumentQueryParams": {
         "type": "object",
@@ -24002,10 +24168,6 @@
             "description": "Append rows to a table, in order, each with the cells it starts with.",
             "required": ["table", "rows", "kind"],
             "properties": {
-              "createMissingOptions": {
-                "type": "boolean",
-                "description": "Create a select option for a label the column does not have yet,\ninstead of refusing the op."
-              },
               "kind": {
                 "type": "string",
                 "enum": ["insert_rows"]
@@ -24035,10 +24197,6 @@
               "changes": {
                 "$ref": "#/components/schemas/RowChanges",
                 "description": "Which rows get which cells."
-              },
-              "createMissingOptions": {
-                "type": "boolean",
-                "description": "Create a select option for a label the column does not have yet,\ninstead of refusing the op."
               },
               "kind": {
                 "type": "string",
@@ -24077,13 +24235,9 @@
           },
           {
             "type": "object",
-            "description": "Convert a column to another type, converting its cells. A value that\ndoes not fit refuses the change unless `clearInvalid` empties it.",
+            "description": "Convert a column to another type, converting its cells. A value that\ndoes not fit refuses the change, counting and quoting the misfits: a\ntype change never empties a cell. To keep the original, create a\ncolumn of the new type and write it the values that convert.",
             "required": ["table", "column", "to", "kind"],
             "properties": {
-              "clearInvalid": {
-                "type": "boolean",
-                "description": "Empty the cells whose value does not fit, instead of refusing; a\ncell with several values going to a single-valued type keeps its\nfirst."
-              },
               "column": {
                 "type": "string",
                 "format": "uuid",
@@ -30350,19 +30504,8 @@
           {
             "type": "object",
             "description": "What a column type change did.",
-            "required": [
-              "tableVersion",
-              "clearedCells",
-              "trimmedCells",
-              "kind"
-            ],
+            "required": ["tableVersion", "kind"],
             "properties": {
-              "clearedCells": {
-                "type": "integer",
-                "format": "int32",
-                "description": "Cells emptied because their value did not fit the new type.",
-                "minimum": 0
-              },
               "kind": {
                 "type": "string",
                 "enum": ["column_typed"]
@@ -30370,12 +30513,6 @@
               "tableVersion": {
                 "$ref": "#/components/schemas/TableVersion",
                 "description": "The table's version after the change."
-              },
-              "trimmedCells": {
-                "type": "integer",
-                "format": "int32",
-                "description": "Cells that held several values and kept only their first.",
-                "minimum": 0
               }
             }
           },
@@ -30491,12 +30628,12 @@
           },
           {
             "type": "object",
-            "description": "An option's label, matched without regard to case. An unknown label\nis refused unless the op creates missing options.",
+            "description": "An option's label, matched without regard to case. An unknown label\nis refused.",
             "required": ["label"],
             "properties": {
               "label": {
                 "type": "string",
-                "description": "An option's label, matched without regard to case. An unknown label\nis refused unless the op creates missing options."
+                "description": "An option's label, matched without regard to case. An unknown label\nis refused."
               }
             }
           }

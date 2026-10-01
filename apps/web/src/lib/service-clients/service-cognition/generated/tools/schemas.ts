@@ -994,15 +994,12 @@ export const ChangeColumnType = z.object({
     ])
     .optional(),
   linkToTableId: z.union([z.string().uuid(), z.null()]).optional(),
-  clearInvalid: z.boolean().optional(),
 });
 
 export const ChangeColumnTypeResponse = z.object({
   databaseId: z.string().uuid(),
   tableId: z.string().uuid(),
   columnId: z.string().uuid(),
-  clearedCells: z.number().int().gte(0),
-  trimmedCells: z.number().int().gte(0),
   database: z
     .union([
       z.object({
@@ -5254,8 +5251,6 @@ export const QueryDatabaseResponse = z.object({
         columnId: z.string().uuid(),
         columnName: z.string(),
         to: z.string(),
-        clearedCells: z.number().int().gte(0),
-        trimmedCells: z.number().int().gte(0),
         kind: z.literal('alterColumnType'),
       }),
     ];

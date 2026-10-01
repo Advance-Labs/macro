@@ -11,17 +11,7 @@ import type { TableVersion } from './tableVersion';
  * What a column type change did.
  */
 export type OpResultOneOfTwoone = {
-  /**
-   * Cells emptied because their value did not fit the new type.
-   * @minimum 0
-   */
-  clearedCells: number;
   kind: OpResultOneOfTwooneKind;
   /** The table's version after the change. */
   tableVersion: TableVersion;
-  /**
-   * Cells that held several values and kept only their first.
-   * @minimum 0
-   */
-  trimmedCells: number;
 };

@@ -35,6 +35,7 @@ import type { DatabaseRowsSource } from '../context/table-source';
 import type { DatabaseColumnType } from '../core/column-inference';
 import type {
   DatabaseColumnCastsSource,
+  DatabaseColumnConversion,
   DatabaseColumnTypeChange,
   DatabaseSchemaChange,
 } from '../core/column-schema';
@@ -115,6 +116,10 @@ export function DatabaseRecordsView(props: {
     columnId: string,
     change: DatabaseColumnTypeChange
   ) => DatabaseSchemaChange;
+  onConvertColumn?: (
+    columnId: string,
+    conversion: DatabaseColumnConversion
+  ) => DatabaseSchemaChange<string>;
   onDeleteColumn?: (columnId: string) => DatabaseSchemaChange;
   onReorderColumns?: (columnIds: string[]) => DatabaseSchemaChange;
   onRenameColumn?: (
@@ -495,6 +500,7 @@ export function DatabaseRecordsView(props: {
               relationTables={props.relationTables}
               columnCasts={props.columnCasts}
               onChangeColumnType={props.onChangeColumnType}
+              onConvertColumn={props.onConvertColumn}
               onDeleteColumn={deleteColumn()}
               onReorderColumn={columnLayout.reorderColumn}
               onRenameColumn={props.onRenameColumn}

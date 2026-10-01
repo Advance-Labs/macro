@@ -111,10 +111,8 @@ fn query_database_alter_column_is_a_schema_change() {
                 column_id: STATUS,
                 column_name: "Status".into(),
                 to: "text".into(),
-                cleared_cells: 1,
-                trimmed_cells: 0,
             },
-            summary: "Changed \"Status\" to text. Emptied 1 cell whose value did not fit.".into(),
+            summary: "Changed \"Status\" to text.".into(),
         })
         .unwrap(),
         id: "1".into(),

@@ -3,7 +3,9 @@
 
 use models_databases::position::{Position, key_between, keys_between};
 use models_databases::views::{CardPosition, Lane, NewView, ViewLayout, ViewQuery};
-use models_databases::{CellValue, CellWrite, DatabaseOp, OpResult, OptionId, OptionRef, RowId};
+use models_databases::{
+    CellValue, CellWrite, DatabaseOp, NewOption, OpResult, OptionId, OptionRef, RowId,
+};
 use models_properties::service::property_value::PropertyValue;
 use properties::outbound::properties_pg_repo::PropertiesPgRepo;
 
@@ -30,7 +32,6 @@ async fn insert_statuses(pool: &PgPool, guests: &Guests, statuses: &[&str]) -> V
                         }]
                     })
                     .collect(),
-                create_missing_options: true,
             }]
             .into(),
         )
@@ -111,8 +112,24 @@ async fn positions_compare_as_bytes_as_the_keys_sort(pool: PgPool) {
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgPool) {
     let guests = guests(&pool).await;
-    let rows = insert_statuses(&pool, &guests, &["Going", "Maybe", "Going"]).await;
     let service = service(&pool);
+    service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::AddOptions {
+                table: guests.table_id,
+                column: guests.status,
+                options: vec![NewOption {
+                    id: OptionId::new(),
+                    label: "Maybe".into(),
+                }],
+            }]
+            .into(),
+        )
+        .await
+        .unwrap();
+    let rows = insert_statuses(&pool, &guests, &["Going", "Maybe", "Going"]).await;
     let options = PgDefinitionStore::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
         .definitions(&[guests.status_definition])
         .await

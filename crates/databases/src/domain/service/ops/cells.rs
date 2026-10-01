@@ -7,10 +7,10 @@ use models_properties::service::property_value::PropertyValue;
 use models_properties::shared::{DataType, EntityReference};
 
 use super::super::column_types::is_complete_url;
-use super::super::{option_label_key, takes_options, validate_option_labels};
+use super::super::{option_label_key, takes_options};
 use super::{Place, Planner, RelatedRow};
 use crate::domain::catalog::{self, ColumnEntry, TableEntry, entity_type};
-use crate::domain::models::{CellChanges, ColumnConfig, DatabaseError, NewOption};
+use crate::domain::models::{CellChanges, ColumnConfig, DatabaseError};
 
 impl Planner {
     /// One row's cells as stored values; `None` empties a cell.
@@ -20,7 +20,6 @@ impl Planner {
         op: usize,
         row: Option<usize>,
         cells: &[CellWrite],
-        create_missing_options: bool,
     ) -> Result<CellChanges, DatabaseError> {
         let mut stored = Vec::with_capacity(cells.len());
         for (index, cell) in cells.iter().enumerate() {
@@ -40,7 +39,7 @@ impl Planner {
                 .iter()
                 .find(|column| column.column.id == cell.column)
                 .ok_or_else(|| place.refuse("no such column in this table"))?;
-            let value = self.value(place, column, &cell.value, create_missing_options)?;
+            let value = self.value(place, column, &cell.value)?;
             stored.push((column.definition.definition.id, value));
         }
         Ok(stored)
@@ -53,7 +52,6 @@ impl Planner {
         place: Place,
         column: &ColumnEntry,
         value: &CellValue,
-        create_missing_options: bool,
     ) -> Result<Option<PropertyValue>, DatabaseError> {
         let data_type = column.definition.definition.data_type;
         let misfit = || {
@@ -104,7 +102,7 @@ impl Planner {
                 single(options.len())?;
                 let mut ids: Vec<OptionId> = Vec::with_capacity(options.len());
                 for option in options {
-                    let id = self.option(place, column, option, create_missing_options)?;
+                    let id = self.option(place, column, option)?;
                     if !ids.contains(&id) {
                         ids.push(id);
                     }
@@ -170,15 +168,14 @@ impl Planner {
         }
     }
 
-    /// The id of the option a reference names: one the column has, one this
-    /// batch already created, or, when the op creates missing options, a new
-    /// one.
+    /// The id of the option a reference names: one the column has, as the
+    /// ops so far leave it. An unknown label is refused; options are only
+    /// created by an op that adds them.
     fn option(
         &mut self,
         place: Place,
         column: &ColumnEntry,
         option: &OptionRef,
-        create_missing_options: bool,
     ) -> Result<OptionId, DatabaseError> {
         let definition = &column.definition;
         let data_type = definition.definition.data_type;
@@ -197,38 +194,16 @@ impl Planner {
             OptionRef::Label(label) => label,
         };
         let key = option_label_key(data_type, label);
-        if let Some((id, _)) = self
-            .labels_of(definition)
+        self.labels_of(definition)
             .iter()
             .find(|(_, existing)| option_label_key(data_type, existing) == key)
-        {
-            return Ok(*id);
-        }
-        if !create_missing_options {
-            return Err(place.refuse(format!(
-                "`{label}` is not an option of \"{}\"",
-                column.name()
-            )));
-        }
-        self.may_change_options(place, column)?;
-        let value = validate_option_labels(data_type, std::slice::from_ref(label), &[])
-            .map_err(|error| match error {
-                DatabaseError::InvalidSchemaOperation(reason) => place.refuse(reason.to_string()),
-                other => other,
-            })?
-            .into_iter()
-            .next()
-            .ok_or_else(|| place.refuse("an option label must not be empty"))?;
-        let id = OptionId::new();
-        self.changed_options.insert(definition.definition.id);
-        self.labels_of(definition)
-            .push((id, catalog::option_display(&value)));
-        self.options.push(NewOption {
-            definition_id: definition.definition.id,
-            id,
-            value,
-        });
-        Ok(id)
+            .map(|(id, _)| *id)
+            .ok_or_else(|| {
+                place.refuse(format!(
+                    "`{label}` is not an option of \"{}\"",
+                    column.name()
+                ))
+            })
     }
 }
 
