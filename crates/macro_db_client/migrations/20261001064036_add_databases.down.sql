@@ -10,9 +10,11 @@ DROP FUNCTION IF EXISTS check_database_row_cell();
 DROP FUNCTION IF EXISTS delete_database_row_cells();
 DROP FUNCTION IF EXISTS delete_database_column_cells();
 
--- Every row cell, then the database-owned definitions with their options.
+-- Every row cell, the database-owned definitions with their options, and
+-- every grant on a database, which no foreign key ties to `databases`.
 DELETE FROM entity_properties WHERE entity_type = 'DATABASE_ROW';
 DELETE FROM property_definitions WHERE database_id IS NOT NULL;
+DELETE FROM entity_access WHERE entity_type = 'database';
 
 CREATE OR REPLACE FUNCTION check_property_name_not_system()
 RETURNS TRIGGER AS $$
