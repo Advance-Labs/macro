@@ -46,6 +46,14 @@ pub enum Cell {
     Entities(Vec<String>),
 }
 
+impl Cell {
+    /// A multi-valued cell with nothing in it, which reads as `NULL`.
+    pub fn is_empty(&self) -> bool {
+        matches!(self, Cell::Options(ids) if ids.is_empty())
+            || matches!(self, Cell::Entities(ids) if ids.is_empty())
+    }
+}
+
 /// One fetched row: the entity id and the cells the plan asked for. After
 /// a join, the cells of every matched relation under their keys, with the
 /// `FROM` row's id.

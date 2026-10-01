@@ -13,12 +13,7 @@ pub fn holds(filter: &Filter, row: &Row) -> bool {
         Filter::And(parts) => parts.iter().all(|part| holds(part, row)),
         Filter::Or(parts) => parts.iter().any(|part| holds(part, row)),
         Filter::IsNull { column, negated } => {
-            let empty = match row.cells.get(column) {
-                None => true,
-                Some(Cell::Options(ids)) => ids.is_empty(),
-                Some(Cell::Entities(ids)) => ids.is_empty(),
-                Some(_) => false,
-            };
+            let empty = row.cells.get(column).is_none_or(Cell::is_empty);
             empty != *negated
         }
         Filter::Comparison {

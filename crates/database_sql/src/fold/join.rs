@@ -50,9 +50,12 @@ pub fn join(plan: &Plan, fetched: Vec<Vec<Row>>) -> Vec<Row> {
                     .into_iter()
                     .map(|position| {
                         let mut merged = left.clone();
-                        merged
-                            .cells
-                            .extend(right[position].cells.iter().map(|(k, v)| (*k, v.clone())));
+                        merged.cells.extend(
+                            right[position]
+                                .cells
+                                .iter()
+                                .map(|(key, cell)| (*key, cell.clone())),
+                        );
                         merged
                     })
                     .collect()

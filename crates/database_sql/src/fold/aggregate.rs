@@ -31,7 +31,7 @@ pub fn groups(rows: Vec<Row>, group_by: Option<Uuid>, items: &[SelectItem]) -> V
                     .cells
                     .get(&column)
                     .cloned()
-                    .filter(|cell| !is_empty(cell));
+                    .filter(|cell| !cell.is_empty());
                 match keys.iter().position(|seen| *seen == key) {
                     Some(index) => members[index].push(row),
                     None => {
@@ -60,12 +60,6 @@ pub fn groups(rows: Vec<Row>, group_by: Option<Uuid>, items: &[SelectItem]) -> V
         .collect()
 }
 
-/// A multi-valued cell with nothing in it groups with the empty cells.
-fn is_empty(cell: &Cell) -> bool {
-    matches!(cell, Cell::Options(ids) if ids.is_empty())
-        || matches!(cell, Cell::Entities(ids) if ids.is_empty())
-}
-
 /// SQL aggregate semantics: `COUNT(*)` counts rows, everything else skips
 /// empty cells, and a numeric aggregate over nothing is `NULL`.
 fn evaluate(function: AggregateFunction, column: Option<Uuid>, rows: &[Row]) -> Option<Cell> {
@@ -75,7 +69,7 @@ fn evaluate(function: AggregateFunction, column: Option<Uuid>, rows: &[Row]) -> 
     let present = rows
         .iter()
         .filter_map(|row| row.cells.get(&column))
-        .filter(|cell| !is_empty(cell));
+        .filter(|cell| !cell.is_empty());
     match function {
         AggregateFunction::Count => Some(Cell::Number(present.count() as f64)),
         AggregateFunction::Sum | AggregateFunction::Avg => {

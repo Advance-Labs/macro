@@ -14,7 +14,7 @@
 use filter_ast::Expr;
 use item_filters::ast::properties::{EntityRefId, PropertiesLiteral, PropertyMatchValue};
 
-use crate::resolve::{Binding, ComparisonOperator, Filter, Value};
+use crate::resolve::{Binding, ComparisonOperator, Filter, Value, binding};
 
 /// The expression pushed into each relation's query, indexed by relation,
 /// and the filter that remains.
@@ -62,10 +62,7 @@ fn pushable(filter: &Filter, bindings: &[Binding]) -> Option<(usize, Expr<Proper
     let mut relation = None;
     let mut spans = false;
     filter.for_each_column(&mut |key| {
-        let owner = bindings
-            .iter()
-            .find(|binding| binding.key == key)
-            .map(|binding| binding.relation);
+        let owner = binding(bindings, key).map(|binding| binding.relation);
         match (relation, owner) {
             (None, Some(owner)) => relation = Some(owner),
             (Some(current), Some(owner)) if current == owner => {}
@@ -125,7 +122,7 @@ fn literal(
     value: &Value,
     bindings: &[Binding],
 ) -> Option<Expr<PropertiesLiteral>> {
-    let definition = bindings.iter().find(|binding| binding.key == key)?.column?;
+    let definition = binding(bindings, key)?.column?;
     let value = match value {
         Value::Option(option) => PropertyMatchValue::SelectOption(*option),
         // Resolve accepted the id; the ref type rejects only quotes and

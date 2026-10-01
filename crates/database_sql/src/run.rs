@@ -24,7 +24,7 @@ use crate::engine::{Engine, Step};
 use crate::fold::{Bin, Row, Table};
 use crate::parse::ParseError;
 use crate::resolve::{
-    AggregateFunction, Binding, CompileError, Relation, ResolveError, SelectItem,
+    AggregateFunction, Binding, CompileError, Relation, ResolveError, SelectItem, binding,
 };
 use crate::split::{GqlQuery, column_of, virtual_column_of};
 
@@ -367,10 +367,7 @@ pub(crate) fn describe(
             SelectItem::Column(key) => {
                 let column = column(*key);
                 OutcomeColumn {
-                    column: bindings
-                        .iter()
-                        .find(|binding| binding.key == *key)
-                        .and_then(|binding| binding.column),
+                    column: binding(bindings, *key).and_then(|binding| binding.column),
                     kind: match column.kind {
                         ColumnKind::Text | ColumnKind::Link => OutcomeKind::Text,
                         ColumnKind::Number => OutcomeKind::Number,

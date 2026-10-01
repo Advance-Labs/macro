@@ -78,8 +78,8 @@ enum Ranked {
 
 fn compare(catalog: &Catalog, a: Option<&Cell>, b: Option<&Cell>) -> Ranked {
     match (
-        a.filter(|cell| !is_empty(cell)),
-        b.filter(|cell| !is_empty(cell)),
+        a.filter(|cell| !cell.is_empty()),
+        b.filter(|cell| !cell.is_empty()),
     ) {
         (None, None) => Ranked::BothEmpty,
         (None, Some(_)) => Ranked::EmptyLeft,
@@ -96,11 +96,6 @@ fn compare(catalog: &Catalog, a: Option<&Cell>, b: Option<&Cell>) -> Ranked {
             _ => Ordering::Equal,
         }),
     }
-}
-
-fn is_empty(cell: &Cell) -> bool {
-    matches!(cell, Cell::Options(ids) if ids.is_empty())
-        || matches!(cell, Cell::Entities(ids) if ids.is_empty())
 }
 
 /// Options in the order the column declares them; the rank of a cell is

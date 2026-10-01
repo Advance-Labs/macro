@@ -9,39 +9,6 @@ use crate::resolve::{
 };
 use crate::test_support::{catalog, *};
 
-/// A one-table plan with the bindings the query produced.
-fn single(
-    plan: &Plan,
-    table: Uuid,
-    gql: GqlQuery,
-    needs: Vec<Uuid>,
-    residual: Option<Filter>,
-    shape: Shape,
-    order_by: Vec<Order>,
-) -> Plan {
-    let name = catalog()
-        .tables
-        .iter()
-        .find(|candidate| candidate.id == table)
-        .map(|table| table.name.clone())
-        .unwrap();
-    Plan {
-        relations: vec![RelationPlan {
-            relation: Relation { table, alias: name },
-            gql,
-            needs,
-        }],
-        joins: vec![],
-        residual,
-        distinct: false,
-        shape,
-        order_by,
-        limit: None,
-        offset: None,
-        bindings: plan.bindings.clone(),
-    }
-}
-
 fn select(sql: &str) -> SelectQuery {
     match compile(&catalog(), sql).unwrap() {
         Query::Select(select) => select,
@@ -78,26 +45,36 @@ fn pushable_and_residual_conjuncts_are_divided() {
 
     assert_eq!(
         plan,
-        single(
-            &plan,
-            DEALS,
-            GqlQuery::Soup {
-                table: DEALS,
-                propf: Some(option(STAGE, WON)),
-                key_hint: None,
-            },
-            vec![NAME, AMOUNT],
-            Some(Filter::Comparison {
+        Plan {
+            relations: vec![RelationPlan {
+                relation: Relation {
+                    table: DEALS,
+                    alias: "deals".into(),
+                    source: TableSource::Database,
+                },
+                query: GqlQuery::Soup {
+                    table: DEALS,
+                    property_filter: Some(option(STAGE, WON)),
+                    key_hint: None,
+                },
+                needs: vec![NAME, AMOUNT],
+            }],
+            joins: vec![],
+            residual: Some(Filter::Comparison {
                 column: AMOUNT,
                 operator: ComparisonOperator::Greater,
                 value: Value::Number(5000.0),
             }),
-            Shape::Rows(vec![NAME, AMOUNT]),
-            vec![Order {
+            distinct: false,
+            shape: Shape::Rows(vec![NAME, AMOUNT]),
+            order_by: vec![Order {
                 key: OrderKey::Column(AMOUNT),
                 direction: Direction::Descending,
             }],
-        )
+            limit: None,
+            offset: None,
+            bindings: plan.bindings.clone(),
+        }
     );
 }
 
@@ -110,16 +87,22 @@ fn an_or_with_a_residual_side_pushes_nothing() {
 
     assert_eq!(
         plan,
-        single(
-            &plan,
-            DEALS,
-            GqlQuery::Soup {
-                table: DEALS,
-                propf: None,
-                key_hint: None,
-            },
-            vec![NAME, STAGE, AMOUNT],
-            Some(Filter::Or(vec![
+        Plan {
+            relations: vec![RelationPlan {
+                relation: Relation {
+                    table: DEALS,
+                    alias: "deals".into(),
+                    source: TableSource::Database,
+                },
+                query: GqlQuery::Soup {
+                    table: DEALS,
+                    property_filter: None,
+                    key_hint: None,
+                },
+                needs: vec![NAME, STAGE, AMOUNT],
+            }],
+            joins: vec![],
+            residual: Some(Filter::Or(vec![
                 Filter::Comparison {
                     column: STAGE,
                     operator: ComparisonOperator::Equal,
@@ -131,9 +114,13 @@ fn an_or_with_a_residual_side_pushes_nothing() {
                     value: Value::Number(5000.0),
                 },
             ])),
-            Shape::Rows(vec![NAME]),
-            vec![],
-        )
+            distinct: false,
+            shape: Shape::Rows(vec![NAME]),
+            order_by: vec![],
+            limit: None,
+            offset: None,
+            bindings: plan.bindings.clone(),
+        }
     );
 }
 
@@ -151,30 +138,40 @@ fn in_lists_nested_ors_and_has_push_as_one_expression() {
 
     assert_eq!(
         plan,
-        single(
-            &plan,
-            DEALS,
-            GqlQuery::Soup {
-                table: DEALS,
-                propf: Some(Expr::and(
-                    Expr::or(
-                        Expr::or(option(STAGE, WON), option(STAGE, LEAD)),
-                        entity(OWNER, "macro|sam@example.com"),
-                    ),
-                    option(TAGS, VIP),
-                )),
-                key_hint: None,
-            },
-            vec![NAME],
-            Some(Filter::Like {
+        Plan {
+            relations: vec![RelationPlan {
+                relation: Relation {
+                    table: DEALS,
+                    alias: "deals".into(),
+                    source: TableSource::Database,
+                },
+                query: GqlQuery::Soup {
+                    table: DEALS,
+                    property_filter: Some(Expr::and(
+                        Expr::or(
+                            Expr::or(option(STAGE, WON), option(STAGE, LEAD)),
+                            entity(OWNER, "macro|sam@example.com"),
+                        ),
+                        option(TAGS, VIP),
+                    )),
+                    key_hint: None,
+                },
+                needs: vec![NAME],
+            }],
+            joins: vec![],
+            residual: Some(Filter::Like {
                 column: NAME,
                 pattern: "A%".into(),
                 escape: None,
                 negated: false,
             }),
-            Shape::Rows(vec![NAME]),
-            vec![],
-        )
+            distinct: false,
+            shape: Shape::Rows(vec![NAME]),
+            order_by: vec![],
+            limit: None,
+            offset: None,
+            bindings: plan.bindings.clone(),
+        }
     );
 }
 
@@ -190,16 +187,22 @@ fn negations_stay_residual_because_soup_not_keeps_empty_cells() {
 
     assert_eq!(
         plan,
-        single(
-            &plan,
-            DEALS,
-            GqlQuery::Soup {
-                table: DEALS,
-                propf: None,
-                key_hint: None,
-            },
-            vec![NAME, STAGE, TAGS, OWNER, DONE],
-            Some(Filter::And(vec![
+        Plan {
+            relations: vec![RelationPlan {
+                relation: Relation {
+                    table: DEALS,
+                    alias: "deals".into(),
+                    source: TableSource::Database,
+                },
+                query: GqlQuery::Soup {
+                    table: DEALS,
+                    property_filter: None,
+                    key_hint: None,
+                },
+                needs: vec![NAME, STAGE, TAGS, OWNER, DONE],
+            }],
+            joins: vec![],
+            residual: Some(Filter::And(vec![
                 Filter::Comparison {
                     column: STAGE,
                     operator: ComparisonOperator::NotEqual,
@@ -221,9 +224,13 @@ fn negations_stay_residual_because_soup_not_keeps_empty_cells() {
                     value: Value::Bool(true),
                 },
             ])),
-            Shape::Rows(vec![NAME]),
-            vec![],
-        )
+            distinct: false,
+            shape: Shape::Rows(vec![NAME]),
+            order_by: vec![],
+            limit: None,
+            offset: None,
+            bindings: plan.bindings.clone(),
+        }
     );
 }
 
@@ -238,17 +245,24 @@ fn count_per_select_group_needs_no_rows() {
 
     assert_eq!(
         plan,
-        single(
-            &plan,
-            DEALS,
-            GqlQuery::GroupSoup {
-                table: DEALS,
-                propf: Some(entity(OWNER, "macro|sam@example.com")),
-                group_by: STAGE,
-            },
-            vec![],
-            None,
-            Shape::Aggregate {
+        Plan {
+            relations: vec![RelationPlan {
+                relation: Relation {
+                    table: DEALS,
+                    alias: "deals".into(),
+                    source: TableSource::Database,
+                },
+                query: GqlQuery::GroupSoup {
+                    table: DEALS,
+                    property_filter: Some(entity(OWNER, "macro|sam@example.com")),
+                    group_by: STAGE,
+                },
+                needs: vec![],
+            }],
+            joins: vec![],
+            residual: None,
+            distinct: false,
+            shape: Shape::Aggregate {
                 group_by: Some(STAGE),
                 items: vec![
                     SelectItem::Column(STAGE),
@@ -258,11 +272,14 @@ fn count_per_select_group_needs_no_rows() {
                     },
                 ],
             },
-            vec![Order {
+            order_by: vec![Order {
                 key: OrderKey::Item(1),
                 direction: Direction::Descending,
             }],
-        )
+            limit: None,
+            offset: None,
+            bindings: plan.bindings.clone(),
+        }
     );
 }
 
@@ -281,16 +298,22 @@ fn any_other_aggregate_or_a_residual_filter_fetches_rows_and_folds() {
 
     assert_eq!(
         plan,
-        single(
-            &plan,
-            DEALS,
-            GqlQuery::Soup {
-                table: DEALS,
-                propf: Some(Expr::or(option(STAGE, WON), option(STAGE, LEAD))),
-                key_hint: None,
-            },
-            vec![OWNER, AMOUNT, CLOSED_AT],
-            Some(Filter::And(vec![
+        Plan {
+            relations: vec![RelationPlan {
+                relation: Relation {
+                    table: DEALS,
+                    alias: "deals".into(),
+                    source: TableSource::Database,
+                },
+                query: GqlQuery::Soup {
+                    table: DEALS,
+                    property_filter: Some(Expr::or(option(STAGE, WON), option(STAGE, LEAD))),
+                    key_hint: None,
+                },
+                needs: vec![OWNER, AMOUNT, CLOSED_AT],
+            }],
+            joins: vec![],
+            residual: Some(Filter::And(vec![
                 Filter::Comparison {
                     column: AMOUNT,
                     operator: ComparisonOperator::Greater,
@@ -301,7 +324,8 @@ fn any_other_aggregate_or_a_residual_filter_fetches_rows_and_folds() {
                     negated: true,
                 },
             ])),
-            Shape::Aggregate {
+            distinct: false,
+            shape: Shape::Aggregate {
                 group_by: Some(OWNER),
                 items: vec![
                     SelectItem::Column(OWNER),
@@ -315,7 +339,7 @@ fn any_other_aggregate_or_a_residual_filter_fetches_rows_and_folds() {
                     },
                 ],
             },
-            vec![
+            order_by: vec![
                 Order {
                     key: OrderKey::Item(1),
                     direction: Direction::Descending,
@@ -325,7 +349,10 @@ fn any_other_aggregate_or_a_residual_filter_fetches_rows_and_folds() {
                     direction: Direction::Ascending,
                 },
             ],
-        )
+            limit: None,
+            offset: None,
+            bindings: plan.bindings.clone(),
+        }
     );
 
     // The same COUNT-only shape over a residual filter must fetch rows too:
@@ -335,10 +362,10 @@ fn any_other_aggregate_or_a_residual_filter_fetches_rows_and_folds() {
         select("SELECT stage, COUNT(*) FROM crm.deals WHERE amount > 5000 GROUP BY stage"),
     );
     assert_eq!(
-        plan.relations[0].gql,
+        plan.relations[0].query,
         GqlQuery::Soup {
             table: DEALS,
-            propf: None,
+            property_filter: None,
             key_hint: None,
         }
     );
@@ -351,19 +378,29 @@ fn a_whole_table_read_pushes_nothing_and_needs_every_column() {
 
     assert_eq!(
         plan,
-        single(
-            &plan,
-            PEOPLE,
-            GqlQuery::Soup {
-                table: PEOPLE,
-                propf: None,
-                key_hint: None,
-            },
-            vec![NAME],
-            None,
-            Shape::Rows(vec![NAME]),
-            vec![],
-        )
+        Plan {
+            relations: vec![RelationPlan {
+                relation: Relation {
+                    table: PEOPLE,
+                    alias: "people".into(),
+                    source: TableSource::Database,
+                },
+                query: GqlQuery::Soup {
+                    table: PEOPLE,
+                    property_filter: None,
+                    key_hint: None,
+                },
+                needs: vec![NAME],
+            }],
+            joins: vec![],
+            residual: None,
+            distinct: false,
+            shape: Shape::Rows(vec![NAME]),
+            order_by: vec![],
+            limit: None,
+            offset: None,
+            bindings: plan.bindings.clone(),
+        }
     );
 }
 
@@ -392,10 +429,11 @@ fn each_relation_gets_its_own_pushdown_and_needs() {
                 relation: Relation {
                     table: TASKS,
                     alias: "t".into(),
+                    source: TableSource::Database,
                 },
-                gql: GqlQuery::Soup {
+                query: GqlQuery::Soup {
                     table: TASKS,
-                    propf: Some(option(PRIORITY, HIGH)),
+                    property_filter: Some(option(PRIORITY, HIGH)),
                     key_hint: None,
                 },
                 needs: vec![ASSIGNEES, DEAL],
@@ -404,19 +442,21 @@ fn each_relation_gets_its_own_pushdown_and_needs() {
                 relation: Relation {
                     table: PEOPLE_TABLE,
                     alias: "p".into(),
+                    source: TableSource::People,
                 },
-                gql: GqlQuery::People { ids: None },
+                query: GqlQuery::People { ids: None },
                 needs: vec![people_email, people_name, people_id],
             },
             RelationPlan {
                 relation: Relation {
                     table: DEALS,
                     alias: "d".into(),
+                    source: TableSource::Database,
                 },
                 // The pushed literal names the property, not the key.
-                gql: GqlQuery::Soup {
+                query: GqlQuery::Soup {
                     table: DEALS,
-                    propf: Some(option(STAGE, WON)),
+                    property_filter: Some(option(STAGE, WON)),
                     key_hint: None,
                 },
                 needs: vec![deals_amount, row_id_key(DEALS)],
@@ -477,8 +517,11 @@ fn a_condition_spanning_relations_stays_residual_and_bins_need_one_relation() {
     // COUNT per select group would be bins over one table; over a join the
     // rows are needed.
     assert!(matches!(
-        plan.relations[0].gql,
-        GqlQuery::Soup { propf: None, .. }
+        plan.relations[0].query,
+        GqlQuery::Soup {
+            property_filter: None,
+            ..
+        }
     ));
     assert!(plan.residual.is_some());
     assert_eq!(plan.relations[0].needs, vec![PRIORITY, ASSIGNEES]);
@@ -487,7 +530,7 @@ fn a_condition_spanning_relations_stays_residual_and_bins_need_one_relation() {
         &catalog(),
         select("SELECT DISTINCT stage, COUNT(*) FROM crm.deals GROUP BY stage"),
     );
-    assert!(matches!(plan.relations[0].gql, GqlQuery::Soup { .. }));
+    assert!(matches!(plan.relations[0].query, GqlQuery::Soup { .. }));
 }
 
 #[test]
@@ -499,10 +542,10 @@ fn counting_per_member_of_a_multi_valued_column_folds_rows() {
         select("SELECT tags, COUNT(*) FROM crm.deals GROUP BY tags"),
     );
     assert_eq!(
-        plan.relations[0].gql,
+        plan.relations[0].query,
         GqlQuery::Soup {
             table: DEALS,
-            propf: None,
+            property_filter: None,
             key_hint: None,
         }
     );
@@ -516,8 +559,11 @@ fn a_row_id_condition_never_pushes_down() {
         select("SELECT name FROM crm.deals WHERE row_id = '00000000-0000-0000-0000-0000000000a1'"),
     );
     assert!(matches!(
-        plan.relations[0].gql,
-        GqlQuery::Soup { propf: None, .. }
+        plan.relations[0].query,
+        GqlQuery::Soup {
+            property_filter: None,
+            ..
+        }
     ));
     assert_eq!(plan.relations[0].needs, vec![NAME, row_id_key(DEALS)]);
 }
@@ -530,12 +576,15 @@ fn propf_serializes_to_the_soup_wire_form() {
             "SELECT name FROM crm.deals WHERE stage = 'Won' AND owner = 'macro|sam@example.com'",
         ),
     );
-    let GqlQuery::Soup { propf, .. } = plan.relations.into_iter().next().unwrap().gql else {
+    let GqlQuery::Soup {
+        property_filter, ..
+    } = plan.relations.into_iter().next().unwrap().query
+    else {
         panic!("expected a soup query");
     };
 
     assert_eq!(
-        serde_json::to_value(propf.unwrap()).unwrap(),
+        serde_json::to_value(property_filter.unwrap()).unwrap(),
         serde_json::json!({
             "&": [
                 { "l": { "pd": "00000000-0000-0000-0000-000000000003", "v": { "so": "00000000-0000-0000-0000-000000000030" } } },
@@ -552,8 +601,11 @@ fn a_row_position_condition_never_pushes_down() {
         select("SELECT name FROM crm.deals WHERE row_position = '000000000001'"),
     );
     assert!(matches!(
-        plan.relations[0].gql,
-        GqlQuery::Soup { propf: None, .. }
+        plan.relations[0].query,
+        GqlQuery::Soup {
+            property_filter: None,
+            ..
+        }
     ));
     assert_eq!(
         plan.relations[0].needs,

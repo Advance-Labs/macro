@@ -224,15 +224,24 @@ impl Memory {
     }
 
     fn select(&self, query: &GqlQuery) -> Vec<Row> {
-        let propf = match query {
-            GqlQuery::Soup { propf, .. } | GqlQuery::GroupSoup { propf, .. } => propf,
+        let property_filter = match query {
+            GqlQuery::Soup {
+                property_filter, ..
+            }
+            | GqlQuery::GroupSoup {
+                property_filter, ..
+            } => property_filter,
             GqlQuery::People { .. } => &None,
         };
         self.rows
             .lock()
             .unwrap()
             .iter()
-            .filter(|row| propf.as_ref().is_none_or(|expr| Self::matches(expr, row)))
+            .filter(|row| {
+                property_filter
+                    .as_ref()
+                    .is_none_or(|expr| Self::matches(expr, row))
+            })
             .cloned()
             .collect()
     }

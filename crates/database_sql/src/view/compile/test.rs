@@ -7,6 +7,7 @@ use models_databases::views::{
 use uuid::Uuid;
 
 use super::*;
+use crate::catalog::TableSource;
 use crate::resolve::{
     Binding, ComparisonOperator, Direction, Filter, Order, OrderKey, Relation, SelectItem, Value,
     row_position_key,
@@ -81,6 +82,7 @@ fn a_nested_view_is_the_select_its_sql_resolves_to() {
         relations: vec![Relation {
             table: ISSUES,
             alias: "issues".into(),
+            source: TableSource::Database,
         }],
         joins: vec![],
         items: vec![

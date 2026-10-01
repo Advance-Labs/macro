@@ -23,6 +23,7 @@ fn grouped_aggregate_with_mixed_where() {
         relations: vec![Relation {
             table: DEALS,
             alias: "deals".into(),
+            source: TableSource::Database,
         }],
         joins: vec![],
         bindings: vec![],
@@ -107,6 +108,7 @@ fn star_expands_and_every_column_kind_types_its_literal() {
         relations: vec![Relation {
             table: DEALS,
             alias: "deals".into(),
+            source: TableSource::Database,
         }],
         joins: vec![],
         bindings: vec![],
@@ -196,6 +198,7 @@ fn order_by_aggregate_resolves_to_its_select_item() {
         relations: vec![Relation {
             table: DEALS,
             alias: "deals".into(),
+            source: TableSource::Database,
         }],
         joins: vec![],
         bindings: vec![],
@@ -271,6 +274,7 @@ fn an_update_reads_the_rows_its_where_matches_and_types_its_cells() {
             relations: vec![Relation {
                 table: DEALS,
                 alias: "deals".into(),
+                source: TableSource::Database,
             }],
             joins: vec![],
             items: vec![SelectItem::Column(row_id_key(DEALS))],
@@ -314,6 +318,7 @@ fn a_delete_reads_the_rows_its_where_matches() {
             relations: vec![Relation {
                 table: DEALS,
                 alias: "deals".into(),
+                source: TableSource::Database,
             }],
             joins: vec![],
             items: vec![SelectItem::Column(row_id_key(DEALS))],
@@ -392,14 +397,17 @@ fn joins_key_each_relation_and_record_bindings() {
             Relation {
                 table: TASKS,
                 alias: "t".into(),
+                source: TableSource::Database,
             },
             Relation {
                 table: PEOPLE_TABLE,
                 alias: "p".into(),
+                source: TableSource::People,
             },
             Relation {
                 table: DEALS,
                 alias: "deals".into(),
+                source: TableSource::Database,
             },
         ],
         joins: vec![

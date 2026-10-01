@@ -28,7 +28,7 @@ pub use propf::{Propf, PropfLiteral, PropfValue};
 
 use crate::resolve::{
     AggregateFunction, Binding, Filter, JoinKind, Order, OrderKey, Relation, SelectItem,
-    SelectQuery,
+    SelectQuery, binding,
 };
 
 /// A resolved `SELECT`, divided.
@@ -61,7 +61,7 @@ pub struct RelationPlan {
     /// The table, with the alias its columns are qualified by.
     pub relation: Relation,
     /// What to ask the server.
-    pub gql: GqlQuery,
+    pub query: GqlQuery,
     /// The keys whose values the fetched rows must carry for the rest of the
     /// plan to run: selected, aggregated, grouped, sorted on, joined on, or
     /// tested by the residual filter. Pushed-down conditions need nothing
@@ -94,8 +94,9 @@ pub enum GqlQuery {
         /// The table whose rows are read.
         table: Uuid,
         /// The pushed-down part of `WHERE`, as the Soup `propf` expression.
+        #[serde(rename = "propf")]
         #[specta(type = Option<Propf>)]
-        propf: Option<Expr<PropertiesLiteral>>,
+        property_filter: Option<Expr<PropertiesLiteral>>,
         /// For a joined relation, the values the join needs; a driver may
         /// narrow its fetch to rows carrying one of them. The fold applies
         /// the join predicate regardless, so fetching more is safe.
@@ -108,8 +109,9 @@ pub enum GqlQuery {
         /// The table whose rows are counted.
         table: Uuid,
         /// The pushed-down part of `WHERE`.
+        #[serde(rename = "propf")]
         #[specta(type = Option<Propf>)]
-        propf: Option<Expr<PropertiesLiteral>>,
+        property_filter: Option<Expr<PropertiesLiteral>>,
         /// The column whose values form the bins.
         group_by: Uuid,
     },
@@ -155,35 +157,31 @@ pub fn split(catalog: &Catalog, mut query: SelectQuery) -> Plan {
         None => (vec![None; relations], None),
     };
 
-    let aggregates = query
+    let columns: Option<Vec<Uuid>> = query
         .items
         .iter()
-        .any(|item| matches!(item, SelectItem::Aggregate { .. }));
-    let shape = if aggregates || query.group_by.is_some() {
-        Shape::Aggregate {
+        .map(|item| match item {
+            SelectItem::Column(key) => Some(*key),
+            SelectItem::Aggregate { .. } => None,
+        })
+        .collect();
+    let shape = match (columns, query.group_by) {
+        (Some(columns), None) => Shape::Rows(columns),
+        _ => Shape::Aggregate {
             group_by: query.group_by,
             items: query.items.clone(),
-        }
-    } else {
-        Shape::Rows(
-            query
-                .items
-                .iter()
-                .map(|item| match item {
-                    SelectItem::Column(id) => *id,
-                    SelectItem::Aggregate { .. } => unreachable!("no aggregates in a row shape"),
-                })
-                .collect(),
-        )
+        },
     };
 
-    let counts_bins = relations == 1
-        && !query.distinct
-        && residual.is_none()
-        && query.group_by.is_some_and(|group| {
-            groups_server_side(catalog, &query.bindings, &query.relations, group)
+    // The property `groupSoup` bins on, when its counts answer the query.
+    let bins_on = query
+        .group_by
+        .filter(|group| {
+            relations == 1
+                && !query.distinct
+                && residual.is_none()
                 && query.items.iter().all(|item| {
-                    *item == SelectItem::Column(group)
+                    *item == SelectItem::Column(*group)
                         || matches!(
                             item,
                             SelectItem::Aggregate {
@@ -192,9 +190,10 @@ pub fn split(catalog: &Catalog, mut query: SelectQuery) -> Plan {
                             }
                         )
                 })
-        });
+        })
+        .and_then(|group| server_side_group(catalog, &query.bindings, &query.relations, group));
 
-    let needs = if counts_bins {
+    let needs = if bins_on.is_some() {
         Vec::new()
     } else {
         needed_keys(
@@ -211,36 +210,28 @@ pub fn split(catalog: &Catalog, mut query: SelectQuery) -> Plan {
         .iter()
         .zip(pushed)
         .enumerate()
-        .map(|(index, (relation, propf))| {
-            let source = catalog
-                .tables
-                .iter()
-                .find(|table| table.id == relation.table)
-                .map(|table| table.source)
-                .unwrap_or_default();
-            let gql = match (source, counts_bins, query.group_by) {
-                (TableSource::People, _, _) => GqlQuery::People { ids: None },
-                (TableSource::Database, true, Some(group_by)) => GqlQuery::GroupSoup {
+        .map(|(index, (relation, property_filter))| {
+            let query_for_relation = match (relation.source, bins_on) {
+                (TableSource::People, _) => GqlQuery::People { ids: None },
+                (TableSource::Database, Some(group_by)) => GqlQuery::GroupSoup {
                     table: relation.table,
-                    propf,
-                    group_by: definition_of(&query.bindings, group_by)
-                        .expect("bins group on a property"),
+                    property_filter,
+                    group_by,
                 },
-                (TableSource::Database, _, _) => GqlQuery::Soup {
+                (TableSource::Database, None) => GqlQuery::Soup {
                     table: relation.table,
-                    propf,
+                    property_filter,
                     key_hint: None,
                 },
             };
             RelationPlan {
                 relation: relation.clone(),
-                gql,
+                query: query_for_relation,
                 needs: needs
                     .iter()
                     .copied()
                     .filter(|key| {
-                        query
-                            .binding(*key)
+                        binding(&query.bindings, *key)
                             .is_some_and(|binding| binding.relation == index)
                     })
                     .collect(),
@@ -269,27 +260,19 @@ pub fn split(catalog: &Catalog, mut query: SelectQuery) -> Plan {
     }
 }
 
-/// The property definition behind a key, if it is not a row id.
-pub fn definition_of(bindings: &[Binding], key: Uuid) -> Option<Uuid> {
-    bindings
-        .iter()
-        .find(|binding| binding.key == key)
-        .and_then(|binding| binding.column)
-}
-
 /// The catalog column behind a key, if it is not a row id.
-pub fn column_of<'c>(
-    catalog: &'c Catalog,
+pub fn column_of<'catalog>(
+    catalog: &'catalog Catalog,
     bindings: &[Binding],
-    relations: &[Relation],
+    relations: &[impl AsRef<Relation>],
     key: Uuid,
-) -> Option<&'c Column> {
-    let binding = bindings.iter().find(|binding| binding.key == key)?;
+) -> Option<&'catalog Column> {
+    let binding = binding(bindings, key)?;
     let definition = binding.column?;
     catalog
         .tables
         .iter()
-        .find(|table| table.id == relations[binding.relation].table)?
+        .find(|table| table.id == relations[binding.relation].as_ref().table)?
         .columns
         .iter()
         .find(|column| column.id == definition)
@@ -302,22 +285,27 @@ pub fn virtual_column_of(
     relations: &[Relation],
     key: Uuid,
 ) -> Option<Column> {
-    let binding = bindings.iter().find(|binding| binding.key == key)?;
+    let binding = binding(bindings, key)?;
     if binding.column.is_some() {
         return None;
     }
     crate::resolve::virtual_column(relations[binding.relation].table, key)
 }
 
+impl AsRef<Relation> for RelationPlan {
+    fn as_ref(&self) -> &Relation {
+        &self.relation
+    }
+}
+
 impl Plan {
     /// The catalog column behind a key, if it is not a row id.
-    pub fn column<'c>(&self, catalog: &'c Catalog, key: Uuid) -> Option<&'c Column> {
-        let relations: Vec<Relation> = self
-            .relations
-            .iter()
-            .map(|relation| relation.relation.clone())
-            .collect();
-        column_of(catalog, &self.bindings, &relations, key)
+    pub fn column<'catalog>(
+        &self,
+        catalog: &'catalog Catalog,
+        key: Uuid,
+    ) -> Option<&'catalog Column> {
+        column_of(catalog, &self.bindings, &self.relations, key)
     }
 
     /// The `FROM` table.
@@ -326,22 +314,24 @@ impl Plan {
     }
 }
 
-/// Whether `groupSoup` can bin on the key: only select and entity values of
+/// The property `groupSoup` can bin on for the key: only select and entity values of
 /// a database table are indexed as facts, and only a single-valued cell
 /// lands in exactly one bin (Soup bins a multi-valued cell once per member,
 /// where SQL groups by the whole cell).
-fn groups_server_side(
+fn server_side_group(
     catalog: &Catalog,
     bindings: &[Binding],
     relations: &[Relation],
     key: Uuid,
-) -> bool {
-    column_of(catalog, bindings, relations, key).is_some_and(|column| {
-        matches!(
-            column.kind,
-            ColumnKind::Select { multi: false, .. } | ColumnKind::Entity { multi: false, .. }
-        )
-    })
+) -> Option<Uuid> {
+    column_of(catalog, bindings, relations, key)
+        .filter(|column| {
+            matches!(
+                column.kind,
+                ColumnKind::Select { multi: false, .. } | ColumnKind::Entity { multi: false, .. }
+            )
+        })
+        .map(|column| column.id)
 }
 
 /// Every key the fold reads, first use first, no repeats.

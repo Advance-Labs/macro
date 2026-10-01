@@ -79,6 +79,8 @@ pub struct Relation {
     pub table: Uuid,
     /// The alias its columns are qualified by.
     pub alias: String,
+    /// Where its rows come from.
+    pub source: TableSource,
 }
 
 /// A join, resolved: each `on` pair is (a key of an earlier relation, a key
@@ -140,7 +142,18 @@ impl SelectQuery {
 
     /// What a key refers to, if the query mentions it.
     pub fn binding(&self, key: Uuid) -> Option<&Binding> {
-        self.bindings.iter().find(|binding| binding.key == key)
+        binding(&self.bindings, key)
+    }
+}
+
+/// What `key` refers to among `bindings`.
+pub fn binding(bindings: &[Binding], key: Uuid) -> Option<&Binding> {
+    bindings.iter().find(|binding| binding.key == key)
+}
+
+impl AsRef<Relation> for Relation {
+    fn as_ref(&self) -> &Relation {
+        self
     }
 }
 

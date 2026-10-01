@@ -63,6 +63,7 @@ pub(super) fn compile_checked(view: &DatabaseView, table: &Table) -> SelectQuery
         relations: vec![Relation {
             table: table.id,
             alias: table.name.clone(),
+            source: table.source,
         }],
         joins: vec![],
         items: table

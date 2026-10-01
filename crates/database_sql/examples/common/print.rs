@@ -135,21 +135,28 @@ pub fn print_plan(catalog: &Catalog, sql: &str) {
         _ => return,
     };
     let plan = split(catalog, select);
-    let propf = |propf: &Option<_>| {
-        propf
+    let property_filter = |property_filter: &Option<_>| {
+        property_filter
             .as_ref()
             .map(|expr| serde_json::to_string(expr).unwrap())
             .unwrap_or_else(|| "none".into())
     };
     for relation in &plan.relations {
         let alias = &relation.relation.alias;
-        match &relation.gql {
-            GqlQuery::Soup { propf: p, .. } => {
-                println!("  gql [{alias}]: soup, propf = {}", propf(p))
+        match &relation.query {
+            GqlQuery::Soup {
+                property_filter: p, ..
+            } => {
+                println!(
+                    "  gql [{alias}]: soup, property_filter = {}",
+                    property_filter(p)
+                )
             }
-            GqlQuery::GroupSoup { propf: p, .. } => println!(
-                "  gql [{alias}]: groupSoup (bins only, no rows fetched), propf = {}",
-                propf(p)
+            GqlQuery::GroupSoup {
+                property_filter: p, ..
+            } => println!(
+                "  gql [{alias}]: groupSoup (bins only, no rows fetched), property_filter = {}",
+                property_filter(p)
             ),
             GqlQuery::People { .. } => println!("  gql [{alias}]: people"),
         }

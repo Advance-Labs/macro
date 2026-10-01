@@ -100,6 +100,7 @@ pub fn resolve(catalog: &Catalog, select: Select) -> Result<SelectQuery, Resolve
             .map(|relation| Relation {
                 table: relation.table.id,
                 alias: relation.alias.clone(),
+                source: relation.table.source,
             })
             .collect(),
         joins,

@@ -201,7 +201,7 @@ fn select_pages_to_completion_then_folds() {
                     kind: OutcomeKind::Number,
                 },
             ],
-            // The fake ignores propf, so Initech (no stage) comes back too;
+            // The fake ignores property_filter, so Initech (no stage) comes back too;
             // the residual `amount > 5000` keeps it and drops Globex.
             rows: vec![
                 vec![Some(Cell::Text("Acme".into())), Some(Cell::Number(12000.0))],

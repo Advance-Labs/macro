@@ -120,14 +120,26 @@ fn drive(
 
 /// Serve each table's rows, applying the pushed-down `propf` as Soup would.
 fn by_table(query: &GqlQuery) -> Vec<Row> {
-    let (rows, propf) = match query {
-        GqlQuery::Soup { table, propf, .. } if *table == TASKS => (tasks(), propf),
-        GqlQuery::Soup { table, propf, .. } if *table == DEALS => (deals(), propf),
+    let (rows, property_filter) = match query {
+        GqlQuery::Soup {
+            table,
+            property_filter,
+            ..
+        } if *table == TASKS => (tasks(), property_filter),
+        GqlQuery::Soup {
+            table,
+            property_filter,
+            ..
+        } if *table == DEALS => (deals(), property_filter),
         GqlQuery::People { .. } => return people(),
         other => panic!("unexpected {other:?}"),
     };
     rows.into_iter()
-        .filter(|row| propf.as_ref().is_none_or(|expr| soup_matches(expr, row)))
+        .filter(|row| {
+            property_filter
+                .as_ref()
+                .is_none_or(|expr| soup_matches(expr, row))
+        })
         .collect()
 }
 
@@ -185,7 +197,7 @@ fn emails_of_people_with_high_priority_tasks() {
     assert_eq!(requests[0].id, 0);
     assert!(matches!(
         &requests[0].query,
-        GqlQuery::Soup { table, propf: Some(_), key_hint: None } if *table == TASKS
+        GqlQuery::Soup { table, property_filter: Some(_), key_hint: None } if *table == TASKS
     ));
     assert_eq!(requests[0].needs, vec![ASSIGNEES]);
     assert_eq!(requests[1].id, 1);
@@ -245,7 +257,7 @@ fn left_join_on_row_id_keeps_tasks_without_a_deal() {
         requests[1].query,
         GqlQuery::Soup {
             table: DEALS,
-            propf: None,
+            property_filter: None,
             key_hint: Some(KeyHint {
                 column: None,
                 values: vec![

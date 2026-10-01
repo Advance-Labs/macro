@@ -196,7 +196,7 @@ fn propf_input(expr: &Expr<PropertiesLiteral>) -> Json {
 
 /// Tasks only: every other Soup entity type is excluded with an impossible
 /// id, the way the Tasks view does it.
-fn filters(propf: &Option<Expr<PropertiesLiteral>>) -> Json {
+fn filters(property_filter: &Option<Expr<PropertiesLiteral>>) -> Json {
     let mut filters = json!({
         "documentFilter": { "literal": { "subType": "TASK" } },
         "projectFilter": { "literal": { "projectId": NIL } },
@@ -209,7 +209,7 @@ fn filters(propf: &Option<Expr<PropertiesLiteral>>) -> Json {
         "foreignEntityFilter": { "literal": { "id": NIL } },
         "calendarEventFilter": { "literal": { "id": NIL } },
     });
-    if let Some(expr) = propf {
+    if let Some(expr) = property_filter {
         filters["propertiesFilter"] = propf_input(expr);
     }
     filters
@@ -290,7 +290,10 @@ impl RowSource for Api {
         cursor: Option<String>,
         limit: usize,
     ) -> Result<Page, SourceError> {
-        let GqlQuery::Soup { propf, .. } = query else {
+        let GqlQuery::Soup {
+            property_filter, ..
+        } = query
+        else {
             return Err(SourceError("page needs a soup query".into()));
         };
         let input = match cursor {
@@ -299,7 +302,7 @@ impl RowSource for Api {
             }
             None => json!({ "initial": {
                 "limit": limit.min(500), "expand": true, "sortMethod": "UPDATED_AT", "sortDirection": "DESC",
-                "filters": filters(propf),
+                "filters": filters(property_filter),
             } }),
         };
         let data = self
@@ -327,7 +330,9 @@ impl RowSource for Api {
 
     async fn bins(&self, query: &GqlQuery) -> Result<Vec<Bin>, SourceError> {
         let GqlQuery::GroupSoup {
-            propf, group_by, ..
+            property_filter,
+            group_by,
+            ..
         } = query
         else {
             return Err(SourceError("bins need a groupSoup query".into()));
@@ -338,7 +343,7 @@ impl RowSource for Api {
                      bins { key totalCount } } } }"#,
                 json!({ "input": { "initial": {
                     "groupBy": { "field": "PROPERTY", "propertyDefinitionId": group_by },
-                    "limit": 1, "sortMethod": "UPDATED_AT", "filters": filters(propf),
+                    "limit": 1, "sortMethod": "UPDATED_AT", "filters": filters(property_filter),
                 } } }),
             )
             .await
