@@ -5,9 +5,6 @@ const { complete } = vi.hoisted(() => ({ complete: vi.fn() }));
 vi.mock('./client', () => ({
   cognitionApiServiceClient: { structuredCompletion: complete },
 }));
-vi.mock('@core/component/AI/constant', () => ({
-  DATABASE_MODEL: 'google/gemini-3.8-flash',
-}));
 
 import { generateDatabaseQuery } from './database-query';
 
@@ -38,7 +35,10 @@ describe('database AI transport boundaries', () => {
         toolActivity: [],
       })
     );
-    const result = await generateDatabaseQuery(input);
+    const result = await generateDatabaseQuery(
+      input,
+      'google/gemini-3.8-flash'
+    );
     expect(complete.mock.calls[0][0].model).toBe('google/gemini-3.8-flash');
     expect(complete.mock.calls[0][0].toolset).toEqual({
       type: 'databases_read_only',
@@ -70,7 +70,10 @@ describe('database AI transport boundaries', () => {
         toolActivity: [],
       })
     );
-    const result = await generateDatabaseQuery(input);
+    const result = await generateDatabaseQuery(
+      input,
+      'google/gemini-3.8-flash'
+    );
     const schema = complete.mock.calls[0][0].output_schema.schema;
     expect(schema.properties.displayMode.enum).toEqual([
       'scalar',
@@ -112,7 +115,10 @@ describe('database AI transport boundaries', () => {
         toolActivity: [],
       })
     );
-    const result = await generateDatabaseQuery(input);
+    const result = await generateDatabaseQuery(
+      input,
+      'google/gemini-3.8-flash'
+    );
     expect(result._unsafeUnwrapErr()).toEqual({
       kind: 'interrupted',
       reason: 'The model stopped after 12 tool calls.',
@@ -125,7 +131,10 @@ describe('database AI transport boundaries', () => {
         { code: 'SERVER_ERROR', message: 'The model provider is unavailable.' },
       ])
     );
-    const result = await generateDatabaseQuery(input);
+    const result = await generateDatabaseQuery(
+      input,
+      'google/gemini-3.8-flash'
+    );
     expect(result._unsafeUnwrapErr()).toEqual({
       kind: 'service',
       errors: [

@@ -1,4 +1,4 @@
-import { DATABASE_MODEL } from '@core/component/AI/constant';
+import type { TModel } from '@core/component/AI/constant';
 import type { ResultError } from '@core/util/result';
 import { err, ok, type Result, ResultAsync } from 'neverthrow';
 import { match } from 'ts-pattern';
@@ -15,11 +15,12 @@ export type DatabaseGenerationFailure =
 
 /** A document question's structured answer, from read-only discovery tools. */
 export function generateDatabaseQuery(
-  input: DatabaseQuestionInput
+  input: DatabaseQuestionInput,
+  model: TModel
 ): ResultAsync<unknown, DatabaseGenerationFailure> {
   return new ResultAsync(
     cognitionApiServiceClient.structuredCompletion({
-      model: DATABASE_MODEL,
+      model,
       ...databaseCompletionRequest(input),
     })
   )

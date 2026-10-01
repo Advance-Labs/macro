@@ -1,3 +1,4 @@
+import type { TModel } from '@core/component/AI/constant';
 import { databaseSqlAnswer } from '@core/database-sql/answer';
 import { databaseSqlSchema } from '@core/database-sql/catalog';
 import { throwOnErr } from '@core/util/result';
@@ -49,7 +50,8 @@ function viewerDatabases(): ResultAsync<DatabaseDetail[], QueryFailure> {
 }
 
 function generateDatabaseQuery(
-  input: Parameters<QueryCapabilities['generate']>[0]
+  input: Parameters<QueryCapabilities['generate']>[0],
+  model: TModel
 ): ResultAsync<QueryProposal, QueryFailure> {
   return ResultAsync.fromPromise(
     import('@service-cognition/database-query'),
@@ -59,7 +61,7 @@ function generateDatabaseQuery(
       )
   )
     .andThen((cognition) =>
-      cognition.generateDatabaseQuery(input).mapErr((failure) =>
+      cognition.generateDatabaseQuery(input, model).mapErr((failure) =>
         generationFailure(
           match(failure)
             .with(
@@ -75,28 +77,33 @@ function generateDatabaseQuery(
 }
 
 /** Production transport adapters; the composer only receives these narrow capabilities. */
-export const queryCapabilities: QueryCapabilities = createQuestionCapabilities({
-  generate: generateDatabaseQuery,
-  // A draft question may read any database the viewer can reach.
-  read: (sql) =>
-    viewerDatabases().andThen((databases) =>
-      readDatabaseSql({ schema: databaseSqlSchema(databases), sql }).map(
-        ({ catalog, outcome }) => databaseSqlAnswer(outcome, catalog, databases)
-      )
-    ),
-  describe: (databaseId) =>
-    ResultAsync.fromPromise(
-      queryClient.fetchQuery({
-        queryKey: databasesKeys.detail(databaseId).queryKey,
-        queryFn: () =>
-          throwOnErr(() =>
-            storageServiceClient.databases.get({ id: databaseId })
-          ),
-        staleTime: 0,
-      }),
-      databasesFailure
-    ),
-});
+export function createQueryCapabilities(
+  model: Accessor<TModel>
+): QueryCapabilities {
+  return createQuestionCapabilities({
+    generate: (input) => generateDatabaseQuery(input, model()),
+    // A draft question may read any database the viewer can reach.
+    read: (sql) =>
+      viewerDatabases().andThen((databases) =>
+        readDatabaseSql({ schema: databaseSqlSchema(databases), sql }).map(
+          ({ catalog, outcome }) =>
+            databaseSqlAnswer(outcome, catalog, databases)
+        )
+      ),
+    describe: (databaseId) =>
+      ResultAsync.fromPromise(
+        queryClient.fetchQuery({
+          queryKey: databasesKeys.detail(databaseId).queryKey,
+          queryFn: () =>
+            throwOnErr(() =>
+              storageServiceClient.databases.get({ id: databaseId })
+            ),
+          staleTime: 0,
+        }),
+        databasesFailure
+      ),
+  });
+}
 
 /** A saved question's live answer, run in the browser. */
 export function createSavedQuestionSource(

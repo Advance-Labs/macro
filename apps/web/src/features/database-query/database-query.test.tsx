@@ -34,8 +34,12 @@ vi.mock('@queries/storage/databases', () => ({
   useDatabasesQuery: adapters.useDatabasesQuery,
   useDatabaseDetailQuery: adapters.useDatabaseDetailQuery,
 }));
+vi.mock('@core/auth', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@core/auth')>()),
+  useHasPaidAccess: () => () => true,
+}));
 vi.mock('./queries/app-query-source', () => ({
-  queryCapabilities: { generate: vi.fn(), read: vi.fn() },
+  createQueryCapabilities: () => ({ generate: vi.fn(), read: vi.fn() }),
   createSavedQuestionSource: adapters.createSavedQuestionSource,
   saveQuestionSql: adapters.saveQuestionSql,
   trackQueryDatabase: adapters.trackQueryDatabase,

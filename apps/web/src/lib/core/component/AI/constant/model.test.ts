@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { parseModel } from '../util/parse';
 import {
   alternateProviderModel,
+  DATABASE_MODEL,
   DEFAULT_MODEL,
+  databaseModelForPlan,
   defaultModelForPlan,
   FREE_DEFAULT_MODEL,
   MODEL_PROVIDER,
@@ -31,6 +33,16 @@ describe('modelsForPlan / defaultModelForPlan', () => {
     // The premium models are *not* in a free user's selectable set.
     expect(free).not.toContain(Model.opus5);
     expect(free).not.toContain(Model.gpt56);
+  });
+});
+
+describe('databaseModelForPlan', () => {
+  it('asks a paid plan for the database model', () => {
+    expect(databaseModelForPlan(true)).toBe(DATABASE_MODEL);
+  });
+
+  it('asks a free plan for its own model, which the service allows', () => {
+    expect(databaseModelForPlan(false)).toBe(FREE_DEFAULT_MODEL);
   });
 });
 

@@ -1,3 +1,5 @@
+import { useHasPaidAccess } from '@core/auth';
+import { databaseModelForPlan } from '@core/component/AI/constant';
 import { isFeatureEnabled, showDatabaseSql } from '@core/constant/featureFlags';
 import { refreshInBackground } from '@queries/database-sql/create-database-sql-query';
 import { useDatabaseQueryDefinition } from '@queries/storage/database-queries';
@@ -15,8 +17,8 @@ import {
   type SavedQuestion,
 } from './core/query';
 import {
+  createQueryCapabilities,
   createSavedQuestionSource,
-  queryCapabilities,
   saveQuestionSql,
   trackQueryDatabase,
 } from './queries/app-query-source';
@@ -31,6 +33,10 @@ export function ChooseQuestionSource(props: {
   onSave: (definition: QueryDefinition) => void;
 }) {
   const databases = useDatabasesQuery();
+  const hasPaidAccess = useHasPaidAccess();
+  const capabilities = createQueryCapabilities(() =>
+    databaseModelForPlan(hasPaidAccess())
+  );
   const [databaseId, setDatabaseId] = createSignal(props.initial.databaseId);
   const availableDatabases = () =>
     !databases.isPending ? (databases.data ?? []) : [];
@@ -60,7 +66,7 @@ export function ChooseQuestionSource(props: {
         autoFocus
         initial={{ ...props.initial, tableId: undefined }}
         schema={schema()}
-        capabilities={queryCapabilities}
+        capabilities={capabilities}
         sourceAvailable={!databaseId() || !!loadedDetail()}
         sourcePicker={(resolvedSchema) => (
           <QueryDatabasePicker

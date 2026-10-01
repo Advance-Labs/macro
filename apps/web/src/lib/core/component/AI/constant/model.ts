@@ -128,6 +128,13 @@ export function modelsForPlan(hasPaidAccess: boolean): readonly TModel[] {
   return hasPaidAccess ? PAID_MODELS : FREE_MODELS;
 }
 
+/** {@link DATABASE_MODEL} when the plan includes it, else the plan's default. */
+export function databaseModelForPlan(hasPaidAccess: boolean): TModel {
+  return modelsForPlan(hasPaidAccess).includes(DATABASE_MODEL)
+    ? DATABASE_MODEL
+    : defaultModelForPlan(hasPaidAccess);
+}
+
 /** Provider serving each model — mirrors the backend `provider` field. */
 export const MODEL_PROVIDER: ExhaustiveMap = {
   'anthropic/claude-sonnet-5': 'anthropic',
