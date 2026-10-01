@@ -20,6 +20,7 @@ import {
   reminderDetailDestination,
   reminderDetailUrl,
 } from '@app/features/reminders/reminder-navigation';
+import { reminderSourceContent } from '@app/features/reminders/reminder-source';
 import { reviewsHostedContent } from '@app/features/reviews-view/reviews-hosted-content';
 import { withListNavigationSource } from '@app/features/soup/collection/list-navigation-source';
 import {
@@ -274,7 +275,15 @@ export const openEntityInNewTab = ({
   location ??= getRowClickFallbackLocation(entity);
   if (entity.type === 'reminder') {
     if (!isFeatureEnabled(enableReminders)) return;
-    openExternalUrl(reminderDetailUrl(entity.id));
+    const source = reminderSourceContent(entity);
+    openExternalUrl(
+      source
+        ? new URL(
+            `/app/${source.type}/${encodeURIComponent(source.id)}`,
+            window.location.origin
+          ).toString()
+        : reminderDetailUrl(entity.id)
+    );
     return;
   }
 
@@ -711,6 +720,26 @@ export const openEntityInSplitFromUnifiedList = async (
       sourceContent?.type === 'component' && isListViewID(sourceContent.id)
         ? sourceContent.id
         : undefined;
+    const source = reminderSourceContent(entity);
+    if (source) {
+      const hostedContent = driveHostedContent(source, {
+        allowDocuments: !isTouchDevice(),
+      });
+      const referredFrom = options.referredFrom ?? sourceListView;
+      let content = hostedContent ?? source;
+      if (splitHandle && referredFrom && isListViewID(referredFrom)) {
+        content = withListNavigationSource(content, splitHandle);
+      }
+      splitManager.openWithSplit(content, {
+        allowDuplicate: allowDuplicate || hostedContent !== undefined,
+        activate: true,
+        handle: splitHandle,
+        preferNewSplit: openInNewSplit,
+        mergeHistory,
+        referredFrom: options.referredFrom ?? sourceListView,
+      });
+      return;
+    }
     openReminderDetail(entity.id, {
       manager: splitManager,
       handle: splitHandle,
@@ -994,7 +1023,10 @@ function getEntitySplitContent(entity: EntityData) {
         return { type: 'contact' as const, id: entity.id };
       })
       .with({ type: 'reminder' }, (entity) => {
-        return reminderDetailDestination(entity.id).content;
+        return (
+          reminderSourceContent(entity) ??
+          reminderDetailDestination(entity.id).content
+        );
       })
       // Calendar events open the singleton Calendar application view; the open
       // path branches before reaching here, so this only serves duplicate checks.
