@@ -1,39 +1,46 @@
-// The AI tools mirror this palette in
-// crates/properties/src/inbound/toolset/tag_color.rs (TagColor::hex), and new
-// select options cycle through it in
-// crates/models_properties/src/shared/option_color.rs. Keep them in sync when
-// adding, removing, or recoloring a tag color.
-export const TAG_COLORS = [
-  '#E5484D', // Red
-  '#E54D2E', // Tomato
-  '#F76B15', // Orange
-  '#FFB224', // Amber
-  '#F5D90A', // Yellow
-  '#46A758', // Green
-  '#12A594', // Teal
-  '#0091FF', // Blue
-  '#3E63DD', // Indigo
-  '#8E4EC6', // Purple
-  '#E93D82', // Pink
-  '#889096', // Gray
-] as const;
+import type { OptionColor } from '@service-storage/generated/schemas/optionColor';
 
-export const DEFAULT_TAG_COLOR: string = TAG_COLORS[11];
-
+/**
+ * The palette tags and select options are coloured from, in picker order:
+ * each colour by the name the server knows it by (`crates/option_palette`)
+ * and the hex value an option stores.
+ */
 export const TAG_COLOR_OPTIONS = [
-  { color: TAG_COLORS[0], name: 'Red' },
-  { color: TAG_COLORS[1], name: 'Tomato' },
-  { color: TAG_COLORS[2], name: 'Orange' },
-  { color: TAG_COLORS[3], name: 'Amber' },
-  { color: TAG_COLORS[4], name: 'Yellow' },
-  { color: TAG_COLORS[5], name: 'Green' },
-  { color: TAG_COLORS[6], name: 'Teal' },
-  { color: TAG_COLORS[7], name: 'Blue' },
-  { color: TAG_COLORS[8], name: 'Indigo' },
-  { color: TAG_COLORS[9], name: 'Purple' },
-  { color: TAG_COLORS[10], name: 'Pink' },
-  { color: TAG_COLORS[11], name: 'Gray' },
+  { value: 'red', name: 'Red', color: '#E5484D' },
+  { value: 'tomato', name: 'Tomato', color: '#E54D2E' },
+  { value: 'orange', name: 'Orange', color: '#F76B15' },
+  { value: 'amber', name: 'Amber', color: '#FFB224' },
+  { value: 'yellow', name: 'Yellow', color: '#F5D90A' },
+  { value: 'green', name: 'Green', color: '#46A758' },
+  { value: 'teal', name: 'Teal', color: '#12A594' },
+  { value: 'blue', name: 'Blue', color: '#0091FF' },
+  { value: 'indigo', name: 'Indigo', color: '#3E63DD' },
+  { value: 'purple', name: 'Purple', color: '#8E4EC6' },
+  { value: 'pink', name: 'Pink', color: '#E93D82' },
+  { value: 'gray', name: 'Gray', color: '#889096' },
 ] as const satisfies readonly {
-  color: (typeof TAG_COLORS)[number];
+  value: OptionColor;
   name: string;
+  color: string;
 }[];
+
+export type TagColorOption = (typeof TAG_COLOR_OPTIONS)[number];
+
+/** Every server colour has a swatch: a new one fails to type-check here. */
+const everyColorListed: Exclude<
+  OptionColor,
+  TagColorOption['value']
+> extends never
+  ? true
+  : never = true;
+void everyColorListed;
+
+export const TAG_COLORS = TAG_COLOR_OPTIONS.map((option) => option.color);
+
+export const DEFAULT_TAG_COLOR: string = TAG_COLOR_OPTIONS[11].color;
+
+/** The palette colour an option's stored hex value is, matched without regard to case. */
+export function optionColorOf(hex: string | null | undefined) {
+  const wanted = hex?.toUpperCase();
+  return TAG_COLOR_OPTIONS.find((option) => option.color === wanted);
+}
