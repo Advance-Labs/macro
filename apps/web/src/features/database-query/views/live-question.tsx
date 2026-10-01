@@ -1,11 +1,11 @@
 import { isFeatureEnabled, showDatabaseSql } from '@core/constant/featureFlags';
 import { Popover } from '@kobalte/core/popover';
-import ArrowClockwiseIcon from '@phosphor/arrow-clockwise.svg';
 import LightningIcon from '@phosphor/lightning.svg';
 import XIcon from '@phosphor/x.svg';
-import { Button } from '@ui';
 import { createSignal, type JSX, Show } from 'solid-js';
+import { AnswerTitleField } from '../components/answer-title-field';
 import { QueryResults, ScalarValue } from '../components/query-results';
+import { QuestionDetails } from '../components/question-details';
 import { useAnswerDisplay } from '../context/answer-display';
 import { resultCell, resultCellText } from '../core/answer-cell';
 import {
@@ -51,36 +51,6 @@ export function LiveQuestion(props: {
     setRenaming(false);
     if (next && next !== title()) props.onRename?.(next);
   };
-  /** The field takes the title's exact place: same font, box and baseline. */
-  const titleInput = (fieldClass: string) => (
-    <input
-      ref={(input) =>
-        queueMicrotask(() => {
-          input.focus();
-          input.select();
-        })
-      }
-      aria-label="Answer title"
-      class={fieldClass}
-      value={draftTitle()}
-      maxLength={100}
-      on:input={(event) => setDraftTitle(event.currentTarget.value)}
-      onBlur={finishRename}
-      onKeyDown={(event) => {
-        if (event.isComposing || event.keyCode === 229) return;
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          event.stopPropagation();
-          finishRename();
-        }
-        if (event.key === 'Escape') {
-          event.preventDefault();
-          event.stopPropagation();
-          setRenaming(false);
-        }
-      }}
-    />
-  );
   const display = useAnswerDisplay();
   const names = display.names(() => props.answer);
   const showSql = isFeatureEnabled(showDatabaseSql);
@@ -122,9 +92,15 @@ export function LiveQuestion(props: {
         fallback={
           <Show
             when={!renaming()}
-            fallback={titleInput(
-              'mx-0.5 min-w-0 rounded-md border border-edge bg-input px-1.5 py-0.5 align-baseline text-sm font-medium text-ink outline-none focus:border-ink/30'
-            )}
+            fallback={
+              <AnswerTitleField
+                placement="inline"
+                value={draftTitle()}
+                onInput={setDraftTitle}
+                onCommit={finishRename}
+                onCancel={() => setRenaming(false)}
+              />
+            }
           >
             <Popover.Trigger
               onDblClick={startRename}
@@ -170,9 +146,15 @@ export function LiveQuestion(props: {
               <LightningIcon class="size-3.5 shrink-0 text-ink-muted" />
               <Show
                 when={!renaming()}
-                fallback={titleInput(
-                  '-mx-[7px] h-5 min-w-0 flex-1 rounded border border-edge bg-input px-1.5 py-0 text-sm leading-5 font-medium text-ink outline-none focus:border-ink/30'
-                )}
+                fallback={
+                  <AnswerTitleField
+                    placement="header"
+                    value={draftTitle()}
+                    onInput={setDraftTitle}
+                    onCommit={finishRename}
+                    onCancel={() => setRenaming(false)}
+                  />
+                }
               >
                 <span
                   class="truncate rounded outline-none focus-visible:ring-2 focus-visible:ring-ink/20"
@@ -250,54 +232,31 @@ export function LiveQuestion(props: {
           <Show
             when={asking() && props.editor}
             fallback={
-              <div class="space-y-3 p-4">
-                <p class="text-sm font-medium">
-                  {props.source.prompt || 'Database question'}
-                </p>
-                <Show when={props.error}>
-                  {(error) => (
-                    <p role="alert" class="text-sm text-failure-ink">
-                      {queryErrorMessage(error(), showSql)}
-                    </p>
-                  )}
-                </Show>
-                {/* A block already shows its answer; only an inline chip needs it here. */}
-                <Show when={!block() && !props.error && props.answer}>
-                  {(answer) => (
-                    <QueryResults
-                      answer={answer()}
-                      names={names()}
-                      display={display}
-                      displayMode={props.source.displayMode}
-                      chart={props.source.chart}
-                    />
-                  )}
-                </Show>
-                <Show when={!props.answer && props.loading}>
-                  <p role="status" class="text-sm text-ink-muted">
-                    Finding your answer…
-                  </p>
-                </Show>
-                <Show when={showSql}>
-                  <details class="text-xs">
-                    <summary class="text-ink-muted">View SQL</summary>
-                    <pre class="mt-2 overflow-auto whitespace-pre-wrap rounded-md bg-input p-2">
-                      {props.sql?.()}
-                    </pre>
-                  </details>
-                </Show>
-                <div class="flex items-center justify-between">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={props.onRefresh}
-                    disabled={props.loading}
-                  >
-                    <ArrowClockwiseIcon class="size-3.5" />
-                    Refresh
-                  </Button>
-                </div>
-              </div>
+              <QuestionDetails
+                prompt={props.source.prompt}
+                error={
+                  props.error
+                    ? queryErrorMessage(props.error, showSql)
+                    : undefined
+                }
+                results={
+                  // A block already shows its answer; only an inline chip needs it here.
+                  <Show when={!block() && !props.error && props.answer}>
+                    {(answer) => (
+                      <QueryResults
+                        answer={answer()}
+                        names={names()}
+                        display={display}
+                        displayMode={props.source.displayMode}
+                        chart={props.source.chart}
+                      />
+                    )}
+                  </Show>
+                }
+                loading={!props.answer && props.loading}
+                sql={showSql ? props.sql : undefined}
+                onRefresh={props.onRefresh}
+              />
             }
           >
             {props.editor?.(() => setOpen(false))}
