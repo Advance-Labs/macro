@@ -7441,6 +7441,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "fractional_index"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce01fad85c73f947e62a39152c7b0f785af7f44859da36e421c42a3023bcbe3a"
+
+[[package]]
 name = "fragile"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11929,6 +11935,23 @@ dependencies = [
  "strum 0.27.2",
  "utoipa",
  "workspace-hack",
+]
+
+[[package]]
+name = "models_databases"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "fractional_index",
+ "option_palette",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "specta",
+ "strum 0.27.2",
+ "thiserror 2.0.18",
+ "utoipa",
+ "uuid",
 ]
 
 [[package]]
@@ -17250,9 +17273,11 @@ version = "2.0.0-rc.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38f9a30cbcbb7011f1da7d73483983bf838af123883e45f2b36ed76328df9c50"
 dependencies = [
+ "chrono",
  "rustc_version",
  "serde_json",
  "specta-macros",
+ "uuid",
 ]
 
 [[package]]

@@ -7936,6 +7936,10 @@
       "crates/models_bulk_upload",
       "crates/workspace-hack"
     ],
+    "models_databases": [
+      "crates/models_databases",
+      "crates/option_palette"
+    ],
     "models_dcs": [
       "crates/models_dcs",
       "crates/workspace-hack"
