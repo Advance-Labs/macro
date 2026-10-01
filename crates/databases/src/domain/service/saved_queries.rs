@@ -1,4 +1,5 @@
 use super::*;
+use models_databases::MAX_STATEMENT_LENGTH;
 
 impl<Repository, Definitions, Cells, Events, Access, Broker>
     DatabasesServiceImpl<Repository, Definitions, Cells, Events, Access, Broker>
@@ -16,7 +17,7 @@ where
         database_id: Option<DatabaseId>,
         definition: QueryDefinition,
     ) -> Result<SavedQuery, SavedQueryError> {
-        if definition.sql().len() > MAX_QUERY_LEN {
+        if definition.sql().len() > MAX_STATEMENT_LENGTH {
             return Err(SavedQueryError::TooLong);
         }
         if let Some(database_id) = database_id

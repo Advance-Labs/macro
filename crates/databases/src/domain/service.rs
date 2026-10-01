@@ -60,8 +60,6 @@ const STARTER_TABLE_NAME: &str = "Table 1";
 const MAX_NAME_LEN: usize = 200;
 /// Longest accepted select-option label.
 const MAX_OPTION_LABEL_LEN: usize = 200;
-/// Longest accepted saved query text.
-const MAX_QUERY_LEN: usize = 256 * 1024;
 /// Most rows a schema operation converts in one go.
 const MAX_CONVERTED_ROWS: usize = 200_000;
 

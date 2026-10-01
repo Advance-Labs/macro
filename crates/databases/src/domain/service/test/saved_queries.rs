@@ -1,4 +1,5 @@
 use super::*;
+use models_databases::MAX_STATEMENT_LENGTH;
 
 #[test]
 fn a_query_definition_is_stored_as_versioned_json() {
@@ -162,7 +163,7 @@ async fn a_query_longer_than_the_limit_is_refused() {
             viewer(OWNER),
             None,
             QueryDefinition::V1 {
-                query: "x".repeat(MAX_QUERY_LEN),
+                query: "x".repeat(MAX_STATEMENT_LENGTH),
             },
         )
         .await;
@@ -172,7 +173,7 @@ async fn a_query_longer_than_the_limit_is_refused() {
             viewer(OWNER),
             None,
             QueryDefinition::V1 {
-                query: "x".repeat(MAX_QUERY_LEN + 1),
+                query: "x".repeat(MAX_STATEMENT_LENGTH + 1),
             },
         )
         .await
