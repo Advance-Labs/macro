@@ -1,8 +1,8 @@
 //! Transcripts of the engine answering statements, checked in as JSON under
-//! `fixtures/transcripts/`. The browser driver's tests replay them against
-//! its GraphQL source and ops sink, so both sides agree on what crosses the
-//! wasm boundary: every step the engine takes and the page, bins or op
-//! results fed back.
+//! `fixtures/transcripts/`: every step the engine takes and the page, bins
+//! or op results fed back. The browser driver's tests replay the reads
+//! against its source, so both sides agree on what crosses the wasm
+//! boundary; writes are driven on the server.
 
 use std::collections::HashMap;
 

@@ -177,3 +177,13 @@ pub fn print_plan(catalog: &Catalog, sql: &str) {
             .unwrap_or_else(|| "none".into())
     );
 }
+
+/// A failed statement, with every cause beneath it.
+pub fn print_failure(error: &dyn std::error::Error) {
+    println!("  error: {error}");
+    let mut cause = error.source();
+    while let Some(error) = cause {
+        println!("    because: {error}");
+        cause = error.source();
+    }
+}

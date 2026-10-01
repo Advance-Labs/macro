@@ -29,13 +29,15 @@ struct FakeSource {
 }
 
 impl RowSource for FakeSource {
+    type Error = std::convert::Infallible;
+
     async fn page(
         &self,
         query: &GqlQuery,
         needs: &[Uuid],
         cursor: Option<String>,
         limit: usize,
-    ) -> Result<Page, SourceError> {
+    ) -> Result<Page, Self::Error> {
         self.asked
             .lock()
             .unwrap()
@@ -48,7 +50,7 @@ impl RowSource for FakeSource {
         })
     }
 
-    async fn bins(&self, query: &GqlQuery) -> Result<Vec<Bin>, SourceError> {
+    async fn bins(&self, query: &GqlQuery) -> Result<Vec<Bin>, Self::Error> {
         self.asked
             .lock()
             .unwrap()
@@ -57,9 +59,14 @@ impl RowSource for FakeSource {
     }
 }
 
+/// A sink's refusal, in the words a server would use.
+#[derive(Debug, PartialEq, thiserror::Error)]
+#[error("{0}")]
+struct Refused(&'static str);
+
 /// A sink that records every batch and answers each op as written, with
 /// the rows an insert created taken from `inserted`; it refuses any op the
-/// `refuse` test picks, in the words a server would use.
+/// `refuse` test picks.
 struct FakeSink {
     applied: Mutex<Vec<(Uuid, Vec<DatabaseOp>)>>,
     inserted: Vec<Uuid>,
@@ -77,14 +84,16 @@ impl FakeSink {
 }
 
 impl OpsSink for FakeSink {
+    type Error = Refused;
+
     async fn apply(
         &self,
         database: Uuid,
         ops: Vec<DatabaseOp>,
-    ) -> Result<Vec<OpResult>, WriteError> {
+    ) -> Result<Vec<OpResult>, Self::Error> {
         self.applied.lock().unwrap().push((database, ops.clone()));
         if let Some(reason) = ops.iter().find_map(self.refuse) {
-            return Err(WriteError(reason.into()));
+            return Err(Refused(reason));
         }
         Ok(ops
             .iter()
@@ -409,19 +418,24 @@ fn the_row_cap_marks_the_answer_truncated() {
 
 #[test]
 fn a_source_failure_is_the_outcome_error() {
+    #[derive(Debug, PartialEq, thiserror::Error)]
+    #[error("gateway timed out")]
+    struct GatewayTimedOut;
     struct Broken;
     impl RowSource for Broken {
+        type Error = GatewayTimedOut;
+
         async fn page(
             &self,
             _: &GqlQuery,
             _: &[Uuid],
             _: Option<String>,
             _: usize,
-        ) -> Result<Page, SourceError> {
-            Err(SourceError("gateway timed out".into()))
+        ) -> Result<Page, Self::Error> {
+            Err(GatewayTimedOut)
         }
-        async fn bins(&self, _: &GqlQuery) -> Result<Vec<Bin>, SourceError> {
-            unreachable!()
+        async fn bins(&self, _: &GqlQuery) -> Result<Vec<Bin>, Self::Error> {
+            Err(GatewayTimedOut)
         }
     }
     let error = pollster::block_on(run(
@@ -431,7 +445,8 @@ fn a_source_failure_is_the_outcome_error() {
         &FakeSink::new(),
     ))
     .unwrap_err();
-    assert_eq!(error.to_string(), "could not read rows: gateway timed out");
+    assert_eq!(error, RunFailure::Source(GatewayTimedOut));
+    assert_eq!(error.to_string(), "could not read rows");
 
     let error = pollster::block_on(run(
         &catalog(),
@@ -450,13 +465,15 @@ fn a_source_failure_is_the_outcome_error() {
 /// resolution, kind), with the words an agent reads beside it.
 #[test]
 fn an_error_crosses_as_a_typed_value_with_its_words() {
-    let unknown_column = pollster::block_on(run(
+    let RunFailure::Engine(unknown_column) = pollster::block_on(run(
         &catalog(),
         "SELECT nam FROM crm.deals",
         &source(deals()),
         &FakeSink::new(),
     ))
-    .unwrap_err();
+    .unwrap_err() else {
+        panic!("the engine refuses an unknown column");
+    };
     assert_eq!(
         serde_json::to_value(EngineError::from(unknown_column)).unwrap(),
         serde_json::json!({
@@ -471,13 +488,15 @@ fn an_error_crosses_as_a_typed_value_with_its_words() {
         })
     );
 
-    let unparsed = pollster::block_on(run(
+    let RunFailure::Engine(unparsed) = pollster::block_on(run(
         &catalog(),
         "SELEC name FROM crm.deals",
         &source(deals()),
         &FakeSink::new(),
     ))
-    .unwrap_err();
+    .unwrap_err() else {
+        panic!("the engine refuses a statement it cannot parse");
+    };
     let wire = serde_json::to_value(EngineError::from(unparsed)).unwrap();
     assert_eq!(wire["error"]["stage"], "parse");
     assert_eq!(
@@ -651,6 +670,13 @@ fn a_row_named_by_id_that_the_table_lacks_is_refused() {
     ))
     .unwrap_err();
     assert_eq!(
+        error,
+        RunFailure::Engine(RunError::NoSuchRow {
+            position: 2,
+            row: Uuid::from_u128(0xff),
+        })
+    );
+    assert_eq!(
         error.to_string(),
         "row 2: no row 00000000-0000-0000-0000-0000000000ff in this table"
     );
@@ -671,8 +697,8 @@ fn a_refused_op_is_the_statement_error() {
     ))
     .unwrap_err();
     assert_eq!(
-        error.to_string(),
-        "row 2: \"stage\" holds one value; 2 were given"
+        error,
+        RunFailure::Write(Refused("row 2: \"stage\" holds one value; 2 were given"))
     );
 }
 
@@ -767,8 +793,10 @@ fn a_type_change_the_sink_refuses_is_the_statement_error() {
     .unwrap_err();
 
     assert_eq!(
-        error.to_string(),
-        "2 values in \"name\" aren't numbers: 'Acme', 'Globex'. Fix them, or convert with \
-         clearing to empty them."
+        error,
+        RunFailure::Write(Refused(
+            "2 values in \"name\" aren't numbers: 'Acme', 'Globex'. Fix them, or convert with \
+             clearing to empty them."
+        ))
     );
 }

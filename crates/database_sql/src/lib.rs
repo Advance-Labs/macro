@@ -32,14 +32,15 @@ mod write;
 
 pub use catalog::Catalog;
 pub use engine::{Engine, Request, Step};
-pub use fold::{Bin, Cell, Row, Table, fold_bins, fold_relations, fold_rows};
+pub use fold::{Bin, Cell, Row, Table, fold_bins, fold_relations};
 pub use parse::{ParseError, parse};
 pub use resolve::{CompileError, Query, ResolveError, compile, resolve};
 pub use run::{
-    AlteredColumn, EngineError, Input, OpsSink, Outcome, OutcomeColumn, OutcomeKind, Page,
-    RowSource, RunError, SourceError, WriteError, run,
+    AlteredColumn, Answer, EngineError, Input, OpResultKind, OpsSink, Outcome, OutcomeColumn,
+    OutcomeKind, Page, RowSource, RunError, RunFailure, SentOp, result_columns, run,
 };
 pub use split::{
-    GqlQuery, JoinPlan, KeyHint, Plan, Propf, PropfLiteral, PropfValue, RelationPlan, Shape, split,
+    GqlQuery, JoinPlan, KeyHint, MAX_KEY_HINT_VALUES, Plan, Propf, PropfLiteral, PropfValue,
+    RelationPlan, Shape, split,
 };
-pub use view::{Board, BoardLane, board, compile_view, view_as_sql};
+pub use view::{Board, BoardLane, board, compile_view};

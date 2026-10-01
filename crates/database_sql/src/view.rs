@@ -1,10 +1,9 @@
 //! Typed views on the engine: a view compiles straight to the
 //! [`SelectQuery`](crate::resolve::SelectQuery) its SQL would resolve to,
-//! reads back as that SQL, and lays its rows out as a board.
+//! and lays its rows out as a board.
 
 mod board;
 mod compile;
-mod sql;
 
 use models_databases::views::{DatabaseView, SchemaColumn, ViewProblem, check};
 
@@ -12,7 +11,6 @@ use crate::catalog::{Catalog, Column, ColumnKind, Table};
 
 pub use board::{Board, BoardLane, board};
 pub use compile::compile_view;
-pub use sql::view_as_sql;
 
 /// The view's table, once the view checks out against it.
 fn checked_table<'catalog>(

@@ -15,7 +15,7 @@ mod sort;
 #[cfg(test)]
 mod test;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -24,6 +24,7 @@ use uuid::Uuid;
 
 use crate::catalog::Catalog;
 use crate::resolve::{AggregateFunction, OrderKey, SelectItem};
+use crate::run::RunError;
 use crate::split::{Plan, Shape};
 
 /// A cell as fetched. An absent cell is `NULL`; an absent multi-valued cell
@@ -51,6 +52,32 @@ impl Cell {
     pub fn is_empty(&self) -> bool {
         matches!(self, Cell::Options(ids) if ids.is_empty())
             || matches!(self, Cell::Entities(ids) if ids.is_empty())
+    }
+}
+
+/// A cell in a form that hashes, so equal cells share one key. A number is
+/// keyed by its bits, with `-0` read as `0`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) enum CellKey {
+    Text(String),
+    Number(u64),
+    Bool(bool),
+    Date(DateTime<Utc>),
+    Options(Vec<Uuid>),
+    Entities(Vec<String>),
+}
+
+impl From<&Cell> for CellKey {
+    fn from(cell: &Cell) -> Self {
+        match cell {
+            Cell::Text(text) => CellKey::Text(text.clone()),
+            Cell::Number(number) if *number == 0.0 => CellKey::Number(0.0_f64.to_bits()),
+            Cell::Number(number) => CellKey::Number(number.to_bits()),
+            Cell::Bool(checked) => CellKey::Bool(*checked),
+            Cell::Date(date) => CellKey::Date(*date),
+            Cell::Options(ids) => CellKey::Options(ids.clone()),
+            Cell::Entities(ids) => CellKey::Entities(ids.clone()),
+        }
     }
 }
 
@@ -96,7 +123,8 @@ pub fn fold_relations(
 
 /// Finish a plan over rows that are already joined (or come from one
 /// relation).
-pub fn fold_rows(catalog: &Catalog, plan: &Plan, rows: Vec<Row>) -> Table {
+#[cfg(test)]
+pub(crate) fn fold_rows(catalog: &Catalog, plan: &Plan, rows: Vec<Row>) -> Table {
     fold_joined(catalog, plan, rows).0
 }
 
@@ -112,7 +140,7 @@ fn fold_joined(catalog: &Catalog, plan: &Plan, rows: Vec<Row>) -> (Table, Vec<Uu
     match &plan.shape {
         Shape::Rows(columns) => {
             let mut rows = rows;
-            sort::rows(catalog, &mut rows, &plan.order_by);
+            sort::rows(catalog, plan, &mut rows);
             let projected = rows.into_iter().map(|mut row| {
                 let cells: Vec<Option<Cell>> = columns
                     .iter()
@@ -129,7 +157,7 @@ fn fold_joined(catalog: &Catalog, plan: &Plan, rows: Vec<Row>) -> (Table, Vec<Uu
         }
         Shape::Aggregate { group_by, items } => {
             let mut groups = aggregate::groups(rows, *group_by, items);
-            sort::groups(catalog, &mut groups, &plan.order_by, *group_by, items);
+            sort::groups(catalog, plan, &mut groups, *group_by, items);
             (
                 window(plan, groups.into_iter().map(|group| group.cells)).collect(),
                 Vec::new(),
@@ -139,44 +167,54 @@ fn fold_joined(catalog: &Catalog, plan: &Plan, rows: Vec<Row>) -> (Table, Vec<Uu
 }
 
 /// `OFFSET` then `LIMIT`, after ordering.
-fn window<T>(plan: &Plan, rows: impl Iterator<Item = T>) -> impl Iterator<Item = T> {
+fn window<Item>(plan: &Plan, rows: impl Iterator<Item = Item>) -> impl Iterator<Item = Item> {
     rows.skip(plan.offset.unwrap_or(0) as usize)
         .take(plan.limit.map_or(usize::MAX, |limit| limit as usize))
 }
 
-/// Keep the first of every set of equal result rows, in order. Cells are
-/// compared by their printed form, which is total where `f64` is not.
+/// Keep the first of every set of equal result rows, in order.
 fn distinct(
     rows: impl Iterator<Item = (Uuid, Vec<Option<Cell>>)>,
 ) -> impl Iterator<Item = (Uuid, Vec<Option<Cell>>)> {
-    let mut seen = std::collections::HashSet::new();
-    rows.filter(move |(_, cells)| seen.insert(format!("{cells:?}")))
+    let mut seen: HashSet<Vec<Option<CellKey>>> = HashSet::new();
+    rows.filter(move |(_, cells)| {
+        seen.insert(
+            cells
+                .iter()
+                .map(|cell| cell.as_ref().map(CellKey::from))
+                .collect(),
+        )
+    })
 }
 
-/// Finish a `GroupSoup` plan from its bins.
-pub fn fold_bins(catalog: &Catalog, plan: &Plan, bins: Vec<Bin>) -> Table {
+/// Finish a `GroupSoup` plan from its bins, which answer only a group
+/// column and `COUNT(*)`.
+pub fn fold_bins(catalog: &Catalog, plan: &Plan, bins: Vec<Bin>) -> Result<Table, RunError> {
     let Shape::Aggregate { group_by, items } = &plan.shape else {
-        unreachable!("only aggregate plans count bins");
+        return Err(RunError::NotAnsweredByBins);
     };
     let mut groups: Vec<aggregate::Group> = bins
         .into_iter()
-        .map(|bin| aggregate::Group {
-            key: bin.key.clone(),
-            cells: items
+        .map(|bin| {
+            let cells = items
                 .iter()
                 .map(|item| match item {
-                    SelectItem::Column(_) => bin.key.clone(),
+                    SelectItem::Column(_) => Ok(bin.key.clone()),
                     SelectItem::Aggregate {
                         function: AggregateFunction::Count,
                         column: None,
-                    } => Some(Cell::Number(bin.count as f64)),
-                    SelectItem::Aggregate { .. } => unreachable!("bins only answer COUNT(*)"),
+                    } => Ok(Some(Cell::Number(bin.count as f64))),
+                    SelectItem::Aggregate { .. } => Err(RunError::NotAnsweredByBins),
                 })
-                .collect(),
+                .collect::<Result<_, _>>()?;
+            Ok(aggregate::Group {
+                key: bin.key,
+                cells,
+            })
         })
-        .collect();
-    sort::groups(catalog, &mut groups, &plan.order_by, *group_by, items);
-    groups.into_iter().map(|group| group.cells).collect()
+        .collect::<Result<_, RunError>>()?;
+    sort::groups(catalog, plan, &mut groups, *group_by, items);
+    Ok(groups.into_iter().map(|group| group.cells).collect())
 }
 
 /// Where an `ORDER BY` key lives in a group's output.

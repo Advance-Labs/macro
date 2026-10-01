@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use contacts::domain::ports::ContactsService;
 use database_sql::resolve::{CompileError, Query};
-use database_sql::run::RunError;
+use database_sql::run::{OutcomeKind, RunError, RunFailure};
 use databases::domain::models::{
     DatabaseError, DatabaseId, QueryDefinition, SavedQuery, SavedQueryError, TableId, TableVersion,
     Viewer,
@@ -22,9 +22,9 @@ use models_databases::MAX_STATEMENT_LENGTH;
 use soup::domain::ports::SoupService;
 
 use crate::catalog::ViewerCatalog;
-use crate::ops_sink::ReceiptOpsSink;
+use crate::ops_sink::{ReceiptOpsSink, ReceiptWriteError};
 use crate::outcome::{SqlOutcome, shape};
-use crate::row_source::SoupRowSource;
+use crate::row_source::{SoupRowSource, SoupSourceError};
 
 /// SQL over the databases a viewer can reach. Reads go through Soup and the
 /// viewer's contacts; writes go through the databases service's ops.
@@ -60,21 +60,56 @@ pub struct SqlRequest {
     pub base_versions: HashMap<TableId, TableVersion>,
 }
 
+/// The result columns a saved question's chart plots, which its `SELECT`
+/// must return.
+#[derive(Debug, Clone, Copy)]
+pub struct ChartColumns<'chart> {
+    /// The label column.
+    pub x: &'chart str,
+    /// The value columns, each a number.
+    pub y: &'chart [String],
+    /// The column whose values split the series.
+    pub color: Option<&'chart str>,
+}
+
 /// Why a statement did not run.
 #[derive(Debug, thiserror::Error)]
 pub enum SqlError {
     /// The statement did not compile.
     #[error(transparent)]
     Compile(#[from] CompileError),
-    /// A step of the statement failed.
+    /// The engine refused the statement.
     #[error(transparent)]
     Run(#[from] RunError),
+    /// The databases service refused the statement's write.
+    #[error("{}", refusal(.row, .reason))]
+    WriteRefused {
+        /// The refused row's place in the statement, from 1, when one row
+        /// is at fault.
+        row: Option<usize>,
+        /// Why, in the service's words.
+        reason: String,
+    },
     /// A read-only query was asked to write.
     #[error("queries cannot change data")]
     ReadOnlyQuery,
     /// A saved query must be a read.
     #[error("a saved query must be a SELECT; it cannot change data")]
     SavedQueryNotSelect,
+    /// A chart names a column the saved `SELECT` does not return.
+    #[error("the chart names \"{name}\", but the query returns {}", quoted(.returned))]
+    ChartColumnNotReturned {
+        /// The column named.
+        name: String,
+        /// The columns the query returns.
+        returned: Vec<String>,
+    },
+    /// A chart plots a column that does not hold numbers.
+    #[error("the chart plots \"{name}\", which is not a number")]
+    ChartValueNotNumeric {
+        /// The column.
+        name: String,
+    },
     /// The viewer may read the table but not write it.
     #[error("table {table} is read-only")]
     TableReadOnly {
@@ -101,9 +136,38 @@ pub enum SqlError {
         /// The table.
         table_id: TableId,
     },
+    /// The column an `ALTER COLUMN` changed is missing from the catalog it
+    /// was compiled against.
+    #[error(
+        "column {definition} of table {table_id} is not in the catalog the statement compiled against"
+    )]
+    AlteredColumnNotInCatalog {
+        /// The table.
+        table_id: TableId,
+        /// The column's property definition.
+        definition: uuid::Uuid,
+    },
+    /// The engine answered an `ALTER COLUMN` without the column it changed.
+    #[error("the type change answered without the column it changed")]
+    AlterWithoutAlteredColumn,
     /// A service the statement needed failed.
     #[error("the databases service failed")]
     Infrastructure(rootcause::Report),
+}
+
+fn quoted(names: &[String]) -> String {
+    names
+        .iter()
+        .map(|name| format!("\"{name}\""))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn refusal(row: &Option<usize>, reason: &str) -> String {
+    match row {
+        Some(row) => format!("row {row}: {reason}"),
+        None => reason.to_owned(),
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -160,13 +224,15 @@ where
     }
 
     /// Save a read as a question, scoped to `database_id`, once it compiles
-    /// as a `SELECT` against the viewer's catalog.
+    /// as a `SELECT` against the viewer's catalog that returns every column
+    /// `chart` plots.
     #[tracing::instrument(skip_all, err)]
     pub async fn save_query(
         &self,
         viewer: Viewer,
         database_id: Option<DatabaseId>,
         definition: QueryDefinition,
+        chart: Option<ChartColumns<'_>>,
     ) -> Result<SavedQuery, SqlError> {
         let sql = definition.sql();
         let catalog = self.catalog(&viewer, database_id).await?;
@@ -175,9 +241,14 @@ where
         {
             return Err(SqlError::NotFound);
         }
-        let compiled = database_sql::compile(catalog.catalog(), sql)?;
-        if !matches!(compiled, Query::Select(_)) {
+        let Query::Select(select) = database_sql::compile(catalog.catalog(), sql)? else {
             return Err(SqlError::SavedQueryNotSelect);
+        };
+        if let Some(chart) = chart {
+            check_chart(
+                &database_sql::result_columns(catalog.catalog(), &select),
+                chart,
+            )?;
         }
         self.databases
             .save_query(viewer, database_id, definition)
@@ -201,6 +272,7 @@ where
         let catalog = self.catalog(&viewer, request.scope).await?;
         let query = database_sql::compile(catalog.catalog(), &request.sql)?;
         let mut write_receipt = None;
+        let mut written = None;
         if let Some(table) = written_table(&query) {
             if mode == Mode::ReadOnly {
                 return Err(SqlError::ReadOnlyQuery);
@@ -224,6 +296,7 @@ where
                 other => SqlError::Infrastructure(rootcause::Report::new(other).into_dynamic()),
             })?;
             write_receipt = Some((database.database.id, receipt));
+            written = Some((table, detail.table.name.clone()));
             if request
                 .base_versions
                 .get(&table)
@@ -245,13 +318,15 @@ where
             viewer: &viewer,
             versions: Mutex::new(HashMap::new()),
         };
-        let outcome = database_sql::run(catalog.catalog(), &request.sql, &source, &sink).await?;
+        let outcome = database_sql::run(catalog.catalog(), &request.sql, &source, &sink)
+            .await
+            .map_err(|failure| run_failure(failure, written))?;
         // The lock only guards single inserts, so a poisoned map is still whole.
         let new_versions = sink
             .versions
             .into_inner()
             .unwrap_or_else(PoisonError::into_inner);
-        Ok(shape(&catalog, &outcome, new_versions))
+        shape(&catalog, &query, &outcome, new_versions)
     }
 
     async fn catalog(
@@ -275,6 +350,63 @@ where
                 }
             })?;
         Ok(ViewerCatalog::new(databases, scope))
+    }
+}
+
+/// Every column `chart` names is one the query returns, and every value
+/// column holds numbers.
+fn check_chart(
+    returned: &[database_sql::OutcomeColumn],
+    chart: ChartColumns<'_>,
+) -> Result<(), SqlError> {
+    let named = std::iter::once(chart.x)
+        .chain(chart.y.iter().map(String::as_str))
+        .chain(chart.color);
+    for name in named {
+        if !returned.iter().any(|column| column.name == name) {
+            return Err(SqlError::ChartColumnNotReturned {
+                name: name.to_owned(),
+                returned: returned.iter().map(|column| column.name.clone()).collect(),
+            });
+        }
+    }
+    for name in chart.y {
+        if returned
+            .iter()
+            .any(|column| column.name == *name && column.kind != OutcomeKind::Number)
+        {
+            return Err(SqlError::ChartValueNotNumeric { name: name.clone() });
+        }
+    }
+    Ok(())
+}
+
+/// A failed run in the viewer's terms; `written` is the table the statement
+/// writes, with its name.
+fn run_failure(
+    failure: RunFailure<SoupSourceError, ReceiptWriteError>,
+    written: Option<(TableId, String)>,
+) -> SqlError {
+    match failure {
+        RunFailure::Engine(error) => SqlError::Run(error),
+        RunFailure::Source(error) => SqlError::Infrastructure(error.into_report()),
+        RunFailure::Write(ReceiptWriteError::Database(error)) => match (error, written) {
+            (DatabaseError::InvalidOp(refusal), _) => SqlError::WriteRefused {
+                row: refusal.row.map(|row| row + 1),
+                reason: refusal.reason,
+            },
+            (DatabaseError::VersionConflict, Some((table_id, _))) => {
+                SqlError::VersionConflict { table_id }
+            }
+            (DatabaseError::Unauthorized, Some((_, table))) => SqlError::TableReadOnly { table },
+            (DatabaseError::NotFound, _) => SqlError::NotFound,
+            (DatabaseError::Repo(report), _) => SqlError::Infrastructure(report),
+            (other, _) => SqlError::Infrastructure(rootcause::Report::new(other).into_dynamic()),
+        },
+        RunFailure::Write(error @ ReceiptWriteError::UnauthorizedDatabase { .. }) => {
+            tracing::error!(error = %error, "a statement wrote a database it was not authorized for");
+            SqlError::Infrastructure(rootcause::Report::new(error).into_dynamic())
+        }
     }
 }
 

@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use ai_toolset::schema::generate_validated_input_schema;
 use ai_toolset::{AsyncTool, RequestContext, ServiceContext};
 use entity_access::domain::models::AccessLevel;
-use models_databases::{CellValue, CellWrite, DatabaseOp, OptionRef, RowChanges};
+use models_databases::{CellValue, CellWrite, DatabaseOp, OpResult, OptionRef, RowChanges};
 use models_properties::service::property_value::PropertyValue;
 use models_properties::shared::DataType;
 use uuid::Uuid;
@@ -250,6 +250,7 @@ async fn a_read_answers_typed_cells_row_ids_and_the_versions_it_read() {
             }],
             "changesApplied": 0,
             "readVersions": [{"tableId": GUESTS, "version": 1}],
+            "statement": {"kind": "select"},
             "summary": "Returned 1 row.",
         })
     );
@@ -258,6 +259,15 @@ async fn a_read_answers_typed_cells_row_ids_and_the_versions_it_read() {
 #[tokio::test]
 async fn a_write_runs_as_the_agent_for_the_user_and_guards_its_base_versions() {
     let world = world();
+    world
+        .lock()
+        .unwrap()
+        .op_answers
+        .push_back(Ok(vec![OpResult::RowsWritten {
+            table_version: TableVersion(2),
+            inserted: vec![],
+            affected: 1,
+        }]));
     let request: QueryDatabase = serde_json::from_value(serde_json::json!({
         "sql": "UPDATE \"Guests\" SET \"Status\" = 'Going' WHERE \"Name\" = 'Maria'",
         "databaseId": OFFSITE,
@@ -438,5 +448,146 @@ fn query_display_is_optional_and_only_accepts_supported_views() {
             serde_json::json!({"sql": "SELECT 1", "display": "unsupported"})
         )
         .is_err()
+    );
+}
+
+/// A refused write and a table that moved mid-write are not naming
+/// mistakes, so the model is not sent to look names up again.
+#[tokio::test]
+async fn a_refused_write_says_what_was_refused_without_name_advice() {
+    let world = world();
+    world.lock().unwrap().op_answers.extend([
+        Err(databases::domain::models::DatabaseError::InvalidOp(
+            databases::domain::models::OpRefusal {
+                op: 0,
+                row: None,
+                column: Some(STATUS_COLUMN),
+                reason: "\"Status\" holds one value; 2 were given".into(),
+            },
+        )),
+        Err(databases::domain::models::DatabaseError::VersionConflict),
+    ]);
+    let update = || QueryDatabase {
+        sql: "UPDATE \"Guests\" SET \"Status\" = 'Going' WHERE \"Name\" = 'Maria'".into(),
+        database_id: Some(OFFSITE),
+        base_versions: None,
+        display: None,
+    };
+
+    let refused = update()
+        .call(
+            ServiceContext(DatabasesSqlToolContext::new(sql(&world))),
+            RequestContext::new(user(OWNER)),
+        )
+        .await
+        .expect_err("the service refuses the write");
+    assert_eq!(
+        refused.description,
+        "The write was refused, so nothing changed: \"Status\" holds one value; 2 were given. \
+         Fix the statement and retry."
+    );
+
+    let conflicted = update()
+        .call(
+            ServiceContext(DatabasesSqlToolContext::new(sql(&world))),
+            RequestContext::new(user(OWNER)),
+        )
+        .await
+        .expect_err("the table moved");
+    assert_eq!(
+        conflicted.description,
+        format!("Table {GUESTS} changed underneath this statement. Re-read it and retry.")
+    );
+}
+
+/// Each kind of statement names what it wrote, so the chat need not read
+/// the SQL to know.
+#[tokio::test]
+async fn every_statement_kind_names_what_it_wrote() {
+    let world = world();
+    world.lock().unwrap().op_answers.extend([
+        Ok(vec![OpResult::RowsWritten {
+            table_version: TableVersion(2),
+            inserted: vec![Uuid::from_u128(0xe002)],
+            affected: 1,
+        }]),
+        Ok(vec![OpResult::RowsWritten {
+            table_version: TableVersion(3),
+            inserted: vec![],
+            affected: 1,
+        }]),
+        Ok(vec![OpResult::RowsWritten {
+            table_version: TableVersion(4),
+            inserted: vec![],
+            affected: 1,
+        }]),
+        Ok(vec![OpResult::ColumnTyped {
+            table_version: TableVersion(5),
+            cleared_cells: 0,
+            trimmed_cells: 2,
+        }]),
+    ]);
+    let statement = async |statement: &str| {
+        let response = QueryDatabase {
+            sql: statement.into(),
+            database_id: Some(OFFSITE),
+            base_versions: None,
+            display: None,
+        }
+        .call(
+            ServiceContext(DatabasesSqlToolContext::new(sql(&world))),
+            RequestContext::new(user(OWNER)),
+        )
+        .await
+        .expect("the owner runs it");
+        (
+            serde_json::to_value(&response.statement).unwrap(),
+            response.summary,
+        )
+    };
+
+    assert_eq!(
+        statement("SELECT \"Name\" FROM \"Guests\"").await,
+        (
+            serde_json::json!({"kind": "select"}),
+            "Returned 1 row.".into()
+        )
+    );
+    assert_eq!(
+        statement("INSERT INTO \"Guests\" (\"Name\") VALUES ('Sam')").await,
+        (
+            serde_json::json!({"kind": "insert", "tableId": GUESTS, "tableName": "Guests"}),
+            "Applied 1 row change.".into()
+        )
+    );
+    assert_eq!(
+        statement("UPDATE \"Guests\" SET \"Status\" = 'Going' WHERE \"Name\" = 'Maria'").await,
+        (
+            serde_json::json!({"kind": "update", "tableId": GUESTS, "tableName": "Guests"}),
+            "Applied 1 row change.".into()
+        )
+    );
+    assert_eq!(
+        statement("DELETE FROM \"Guests\" WHERE \"Name\" = 'Maria'").await,
+        (
+            serde_json::json!({"kind": "delete", "tableId": GUESTS, "tableName": "Guests"}),
+            "Applied 1 row change.".into()
+        )
+    );
+    assert_eq!(
+        statement("ALTER TABLE \"Guests\" ALTER COLUMN \"Status\" TYPE select[]").await,
+        (
+            serde_json::json!({
+                "kind": "alterColumnType",
+                "tableId": GUESTS,
+                "tableName": "Guests",
+                "columnId": STATUS_COLUMN,
+                "columnName": "Status",
+                "to": "select[]",
+                "clearedCells": 0,
+                "trimmedCells": 2,
+            }),
+            "Changed \"Status\" to select[]. Kept only the first value of 2 cells.".into()
+        )
     );
 }

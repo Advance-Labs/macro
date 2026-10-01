@@ -10,7 +10,7 @@ use std::sync::Arc;
 use contacts::domain::ports::ContactsService;
 use database_sql::catalog::{Catalog, ColumnKind, PEOPLE_EMAIL, PEOPLE_ID, PEOPLE_NAME};
 use database_sql::fold::{Bin, Cell, Row};
-use database_sql::run::{Page, RowSource, SourceError};
+use database_sql::run::{Page, RowSource};
 use database_sql::split::{GqlQuery, KeyHint};
 use email::domain::models::PreviewView;
 use filter_ast::Expr;
@@ -31,26 +31,103 @@ use item_filters::ast::{EmailFilterAst, EntityFilterAst};
 use macro_user_id::user_id::MacroUserIdStr;
 use models_grouping::{GroupByField, GroupingConfig};
 use models_pagination::{
-    Base64Str, CursorWithValAndFilter, Query, SimpleSortMethod, TypeEraseCursor,
+    Base64SerdeErr, Base64Str, CursorWithValAndFilter, Query, SimpleSortMethod, TypeEraseCursor,
 };
 use models_properties::service::property_value::PropertyValue;
 use models_soup::item::SoupItem;
 use soup::domain::models::{
-    GroupedSortRequest, SoupPropertiesField, SoupQuery, SoupRequest, SoupSortDirection, SoupType,
+    GroupedSortRequest, SoupErr, SoupPropertiesField, SoupQuery, SoupRequest, SoupSortDirection,
+    SoupType,
 };
 use soup::domain::ports::SoupService;
 use uuid::Uuid;
 
-/// Past this many join values a narrowed filter costs more than it saves.
-const MAX_KEY_HINT_VALUES: usize = 100;
-
 /// The rows of a statement's tables as `viewer` may read them.
-pub(crate) struct SoupRowSource<'a, Soup, Contacts> {
-    pub(crate) soup: &'a Soup,
-    pub(crate) contacts: &'a Contacts,
-    pub(crate) viewer: &'a MacroUserIdStr<'static>,
+pub(crate) struct SoupRowSource<'statement, Soup, Contacts> {
+    pub(crate) soup: &'statement Soup,
+    pub(crate) contacts: &'statement Contacts,
+    pub(crate) viewer: &'statement MacroUserIdStr<'static>,
     /// The statement's catalog, for the value kinds of grouped columns.
-    pub(crate) catalog: &'a Catalog,
+    pub(crate) catalog: &'statement Catalog,
+}
+
+/// Why the server's row source could not answer a read.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum SoupSourceError {
+    /// Soup failed to read a table.
+    #[error("Soup could not read table {table}")]
+    Soup {
+        /// The table.
+        table: Uuid,
+        /// Soup's failure.
+        #[source]
+        source: SoupErr,
+    },
+    /// The viewer's contacts, the rows of `people`, could not be listed.
+    #[error("the viewer's contacts could not be listed")]
+    Contacts(rootcause::Report),
+    /// A page cursor is not one Soup minted.
+    #[error("the page cursor is not one Soup minted")]
+    BadCursor(#[source] Base64SerdeErr<serde_json::Error>),
+    /// A page asked for more rows than Soup pages hold.
+    #[error("a page of {limit} rows is more than Soup returns at once")]
+    PageTooLarge {
+        /// The rows asked for.
+        limit: usize,
+    },
+    /// A table query returned something other than one of its rows.
+    #[error("a table query returned {entity}")]
+    NotATableRow {
+        /// What came back.
+        entity: String,
+    },
+    /// A select column's bin is keyed by something other than an option id.
+    #[error("bin key {key} is not an option id")]
+    BinKeyNotAnOption {
+        /// The key.
+        key: String,
+        /// Why it is not an id.
+        #[source]
+        source: uuid::Error,
+    },
+    /// Soup returned one group twice.
+    #[error("Soup returned the group {key} twice")]
+    RepeatedGroup {
+        /// The group's key.
+        key: String,
+    },
+    /// A grouped read named a column Soup cannot bin on.
+    #[error("column {column} cannot be grouped by Soup")]
+    UngroupableColumn {
+        /// The column.
+        column: Uuid,
+    },
+    /// A grouped read named a column its table does not have.
+    #[error("no column {column} in table {table}")]
+    UnknownGroupColumn {
+        /// The table.
+        table: Uuid,
+        /// The column.
+        column: Uuid,
+    },
+    /// A page was asked of a grouped query, which is read as bins.
+    #[error("a grouped query is read as bins, not pages")]
+    PageOfGroupedQuery,
+    /// Bins were asked of a query that does not group.
+    #[error("only a grouped query has bins")]
+    BinsOfUngroupedQuery,
+}
+
+impl SoupSourceError {
+    /// The failure as a report, keeping the chain beneath it.
+    pub(crate) fn into_report(self) -> rootcause::Report {
+        match self {
+            SoupSourceError::Contacts(report) => report
+                .context("the viewer's contacts could not be listed")
+                .into_dynamic(),
+            other => rootcause::Report::new(other).into_dynamic(),
+        }
+    }
 }
 
 impl<Soup, Contacts> RowSource for SoupRowSource<'_, Soup, Contacts>
@@ -58,13 +135,15 @@ where
     Soup: SoupService,
     Contacts: ContactsService,
 {
+    type Error = SoupSourceError;
+
     async fn page(
         &self,
         query: &GqlQuery,
         _needs: &[Uuid],
         cursor: Option<String>,
         limit: usize,
-    ) -> Result<Page, SourceError> {
+    ) -> Result<Page, Self::Error> {
         match query {
             GqlQuery::Soup {
                 table,
@@ -81,20 +160,18 @@ where
                 .await
             }
             GqlQuery::People { ids } => self.people_page(ids.as_deref()).await,
-            GqlQuery::GroupSoup { .. } => Err(SourceError(
-                "a grouped query is read as bins, not pages".into(),
-            )),
+            GqlQuery::GroupSoup { .. } => Err(SoupSourceError::PageOfGroupedQuery),
         }
     }
 
-    async fn bins(&self, query: &GqlQuery) -> Result<Vec<Bin>, SourceError> {
+    async fn bins(&self, query: &GqlQuery) -> Result<Vec<Bin>, Self::Error> {
         let GqlQuery::GroupSoup {
             table,
             property_filter,
             group_by,
         } = query
         else {
-            return Err(SourceError("only a grouped query has bins".into()));
+            return Err(SoupSourceError::BinsOfUngroupedQuery);
         };
         let kind = self
             .catalog
@@ -103,7 +180,10 @@ where
             .find(|candidate| candidate.id == *table)
             .and_then(|table| table.columns.iter().find(|column| column.id == *group_by))
             .map(|column| &column.kind)
-            .ok_or_else(|| SourceError(format!("no column {group_by} in table {table}")))?;
+            .ok_or(SoupSourceError::UnknownGroupColumn {
+                table: *table,
+                column: *group_by,
+            })?;
         let request = GroupedSortRequest {
             // The bins' totals answer the count; one item each is enough.
             limit: 1,
@@ -125,16 +205,16 @@ where
             .soup
             .get_user_soup_grouped(request)
             .await
-            .map_err(|error| SourceError(error.to_string()))?;
+            .map_err(|source| SoupSourceError::Soup {
+                table: *table,
+                source,
+            })?;
         let mut bins: Vec<Bin> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
         // A group lists its items in order; only its first carries the bin.
         for item in items.filter(|item| item.index_in_group == 0) {
             if !seen.insert(item.key.clone()) {
-                return Err(SourceError(format!(
-                    "Soup returned the group {} twice",
-                    item.key
-                )));
+                return Err(SoupSourceError::RepeatedGroup { key: item.key });
             }
             bins.push(Bin {
                 key: bin_key(kind, &item.key, *group_by)?,
@@ -157,7 +237,7 @@ where
         key_hint: Option<&KeyHint>,
         cursor: Option<String>,
         limit: usize,
-    ) -> Result<Page, SourceError> {
+    ) -> Result<Page, SoupSourceError> {
         let cursor = match cursor {
             None => SoupQuery::new_sort_simple(
                 SimpleSortMethod::CreatedAt,
@@ -166,12 +246,12 @@ where
             Some(cursor) => SoupQuery::new_cursor_simple(
                 Base64Str::<CursorWithValAndFilter<Uuid, SimpleSortMethod, EntityFilterAst>>::new_from_string(cursor)
                     .decode_json()
-                    .map_err(|error| SourceError(format!("bad cursor: {error}")))?,
+                    .map_err(SoupSourceError::BadCursor)?,
             ),
         };
         let request = SoupRequest {
             soup_type: SoupType::Expanded,
-            limit: u16::try_from(limit).unwrap_or(u16::MAX),
+            limit: u16::try_from(limit).map_err(|_| SoupSourceError::PageTooLarge { limit })?,
             cursor,
             sort_direction: SoupSortDirection::Desc,
             user: self.viewer.clone(),
@@ -183,7 +263,7 @@ where
             .soup
             .get_user_soup_with_properties(request, None)
             .await
-            .map_err(|error| SourceError(error.to_string()))?
+            .map_err(|source| SoupSourceError::Soup { table, source })?
             .type_erase();
         Ok(Page {
             rows: page
@@ -195,16 +275,21 @@ where
         })
     }
 
-    async fn people_page(&self, ids: Option<&[String]>) -> Result<Page, SourceError> {
+    async fn people_page(&self, ids: Option<&[String]>) -> Result<Page, SoupSourceError> {
         let people = self
             .contacts
             .query_contacts(self.viewer.clone())
             .await
-            .map_err(|error| SourceError(error.to_string()))?;
+            .map_err(SoupSourceError::Contacts)?;
+        let wanted: Option<HashSet<&str>> = ids.map(|ids| ids.iter().map(String::as_str).collect());
         Ok(Page {
             rows: people
                 .into_iter()
-                .filter(|person| ids.is_none_or(|ids| ids.iter().any(|id| id == person.as_ref())))
+                .filter(|person| {
+                    wanted
+                        .as_ref()
+                        .is_none_or(|wanted| wanted.contains(person.as_ref()))
+                })
                 .map(|person| person_row(&person))
                 .collect(),
             next: None,
@@ -232,18 +317,19 @@ fn person_row(person: &MacroUserIdStr<'_>) -> Row {
 
 /// A grouped key as the engine reads it. Soup files rows with an empty cell
 /// under the empty key.
-fn bin_key(kind: &ColumnKind, key: &str, column: Uuid) -> Result<Option<Cell>, SourceError> {
+fn bin_key(kind: &ColumnKind, key: &str, column: Uuid) -> Result<Option<Cell>, SoupSourceError> {
     if key.is_empty() {
         return Ok(None);
     }
     match kind {
         ColumnKind::Select { .. } => Uuid::parse_str(key)
             .map(|option| Some(Cell::Options(vec![option])))
-            .map_err(|_| SourceError(format!("bin key {key} is not an option id"))),
+            .map_err(|source| SoupSourceError::BinKeyNotAnOption {
+                key: key.to_owned(),
+                source,
+            }),
         ColumnKind::Entity { .. } => Ok(Some(Cell::Entities(vec![key.to_owned()]))),
-        _ => Err(SourceError(format!(
-            "column {column} cannot be grouped by Soup"
-        ))),
+        _ => Err(SoupSourceError::UngroupableColumn { column }),
     }
 }
 
@@ -302,10 +388,11 @@ enum Narrowing {
 
 /// A filter fetching only the joined rows the join can match. The fold
 /// applies the join regardless, so a hint that cannot be expressed fetches
-/// the whole table instead.
+/// the whole table instead. The engine leaves out a hint too long to be
+/// worth narrowing by.
 fn narrowing(hint: &KeyHint) -> Option<Narrowing> {
-    enum Member<'a> {
-        Entity(&'a str),
+    enum Member<'hint> {
+        Entity(&'hint str),
         Option(Uuid),
     }
     let mut members = Vec::new();
@@ -316,7 +403,7 @@ fn narrowing(hint: &KeyHint) -> Option<Narrowing> {
             _ => return None,
         }
     }
-    if members.is_empty() || members.len() > MAX_KEY_HINT_VALUES {
+    if members.is_empty() {
         return None;
     }
     match hint.column {
@@ -366,12 +453,11 @@ fn balanced_or<Literal>(mut items: Vec<Expr<Literal>>) -> Option<Expr<Literal>> 
     Some(Expr::or(balanced_or(items)?, balanced_or(right)?))
 }
 
-fn table_row(item: SoupItem<SoupPropertiesField>) -> Result<Row, SourceError> {
+fn table_row(item: SoupItem<SoupPropertiesField>) -> Result<Row, SoupSourceError> {
     let SoupItem::DatabaseRow(row) = item else {
-        return Err(SourceError(format!(
-            "a table query returned {:?}",
-            item.entity()
-        )));
+        return Err(SoupSourceError::NotATableRow {
+            entity: format!("{:?}", item.entity()),
+        });
     };
     Ok(Row {
         id: row.id,

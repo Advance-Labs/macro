@@ -2,10 +2,10 @@
 //!
 //! Entry points: [`build_catalog`], the catalog a statement names tables in;
 //! [`Query`], a statement held open between steps, made from SQL or from a
-//! view by [`run_view`]; and the view helpers [`view_as_sql`], [`board`] and
-//! [`key_between`]. A driver reads the first [`Step`] from [`Query::start`],
-//! serves each request, and feeds the pages, bins or op results back until a
-//! step is `done`. Values cross as plain JSON objects in the shapes `serde`
+//! view by [`run_view`]; and the view helpers [`board`] and [`key_between`].
+//! A driver reads the first [`Step`] from [`Query::start`], serves each read,
+//! and feeds the pages or bins back until a step is `done`; writes go to the
+//! server, never through here. Values cross as plain JSON objects in the shapes `serde`
 //! gives the engine's types, which `bin/database_sql_types.rs` writes out as
 //! TypeScript for `apps/web/src/lib/core/database-sql/wasm-module.ts`. Every
 //! failure is thrown as an [`EngineError`], except [`key_between`]'s, a JS
@@ -118,19 +118,6 @@ pub fn run_view(catalog: JsValue, view: JsValue) -> Result<Query, JsValue> {
     Ok(Query::held(Engine::from_select(&catalog, select)))
 }
 
-/// `view` as the SQL statement it runs.
-///
-/// # Errors
-///
-/// Throws an `EngineError` when the catalog or the view cannot be read, or
-/// the view does not fit its table.
-#[wasm_bindgen(js_name = viewAsSql)]
-pub fn view_as_sql(catalog: JsValue, view: JsValue) -> Result<String, JsValue> {
-    let catalog: Catalog = read(Input::Catalog, catalog)?;
-    let view: DatabaseView = read(Input::View, view)?;
-    view::view_as_sql(&view, &catalog).map_err(|problem| thrown(problem.into()))
-}
-
 /// The `Board` a board view makes of `outcome`, what its `runView` query
 /// produced, with the cards' stored `positions` (`CardPosition[]`).
 ///
@@ -188,5 +175,9 @@ fn thrown(error: RunError) -> JsValue {
 fn to_js(value: &impl Serialize) -> Result<JsValue, JsValue> {
     value
         .serialize(&Serializer::json_compatible())
-        .map_err(|error| JsValue::from_str(&error.to_string()))
+        .map_err(|error| {
+            thrown(RunError::Unwritable {
+                message: error.to_string(),
+            })
+        })
 }

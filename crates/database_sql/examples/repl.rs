@@ -20,7 +20,7 @@ use database_sql::catalog::{
     Catalog, Column, ColumnKind, EntityKind, SelectOption, Table, TableSource,
 };
 use database_sql::fold::{Bin, Cell, Row};
-use database_sql::run::{OpsSink, Page, RowSource, SourceError, WriteError, run};
+use database_sql::run::{OpsSink, Page, RowSource, run};
 use database_sql::split::GqlQuery;
 use models_databases::{
     CellValue, CellWrite, DatabaseOp, OpResult, OptionRef, RowChanges, TableVersion,
@@ -248,16 +248,36 @@ impl Memory {
     }
 }
 
+/// A read the in-memory table cannot answer.
+#[derive(Debug, thiserror::Error)]
+#[error("bins need a groupSoup query")]
+struct NotGrouped;
+
+/// A write the in-memory table refuses.
+#[derive(Debug, thiserror::Error)]
+enum Refused {
+    #[error("no column {0}")]
+    NoColumn(Uuid),
+    #[error("no option {0}")]
+    NoOption(String),
+    #[error("no row {0}")]
+    NoRow(Uuid),
+    #[error("the REPL's schema is fixed")]
+    SchemaFixed,
+}
+
 impl RowSource for Memory {
+    type Error = NotGrouped;
+
     async fn page(
         &self,
         query: &GqlQuery,
         _needs: &[Uuid],
         cursor: Option<String>,
         limit: usize,
-    ) -> Result<Page, SourceError> {
+    ) -> Result<Page, Self::Error> {
         let rows = self.select(query);
-        let start: usize = cursor.map(|c| c.parse().unwrap_or(0)).unwrap_or(0);
+        let start: usize = cursor.map_or(0, |cursor| cursor.parse().unwrap_or(0));
         let end = (start + limit).min(rows.len());
         Ok(Page {
             rows: rows[start..end].to_vec(),
@@ -265,9 +285,9 @@ impl RowSource for Memory {
         })
     }
 
-    async fn bins(&self, query: &GqlQuery) -> Result<Vec<Bin>, SourceError> {
+    async fn bins(&self, query: &GqlQuery) -> Result<Vec<Bin>, Self::Error> {
         let GqlQuery::GroupSoup { group_by, .. } = query else {
-            return Err(SourceError("bins need a groupSoup query".into()));
+            return Err(NotGrouped);
         };
         let mut bins: Vec<Bin> = Vec::new();
         for row in self.select(query) {
@@ -283,7 +303,7 @@ impl RowSource for Memory {
 
 impl Memory {
     /// A written value as the cell it stores; `None` empties the cell.
-    fn cell(&self, column: Uuid, value: CellValue) -> Result<Option<Cell>, WriteError> {
+    fn cell(&self, column: Uuid, value: CellValue) -> Result<Option<Cell>, Refused> {
         let options = self
             .catalog
             .tables
@@ -294,7 +314,7 @@ impl Memory {
                 ColumnKind::Select { options, .. } => options.clone(),
                 _ => Vec::new(),
             })
-            .ok_or_else(|| WriteError(format!("no column {column}")))?;
+            .ok_or(Refused::NoColumn(column))?;
         Ok(match value {
             CellValue::Clear => None,
             CellValue::Text(text) => Some(Cell::Text(text)),
@@ -310,7 +330,7 @@ impl Memory {
                             .iter()
                             .find(|option| option.label.eq_ignore_ascii_case(&label))
                             .map(|option| option.id)
-                            .ok_or_else(|| WriteError(format!("no option {label}"))),
+                            .ok_or(Refused::NoOption(label)),
                     })
                     .collect::<Result<_, _>>()?,
             )),
@@ -325,7 +345,7 @@ impl Memory {
         })
     }
 
-    fn write(&self, row: &mut Row, cells: Vec<CellWrite>) -> Result<(), WriteError> {
+    fn write(&self, row: &mut Row, cells: Vec<CellWrite>) -> Result<(), Refused> {
         for write in cells {
             match self.cell(write.column, write.value)? {
                 Some(cell) => {
@@ -341,11 +361,13 @@ impl Memory {
 }
 
 impl OpsSink for Memory {
+    type Error = Refused;
+
     async fn apply(
         &self,
         _database: Uuid,
         ops: Vec<DatabaseOp>,
-    ) -> Result<Vec<OpResult>, WriteError> {
+    ) -> Result<Vec<OpResult>, Self::Error> {
         let mut stored = self.rows.lock().unwrap();
         let mut results = Vec::new();
         for op in ops {
@@ -380,7 +402,7 @@ impl OpsSink for Memory {
                         let row = stored
                             .iter_mut()
                             .find(|row| row.id == id)
-                            .ok_or_else(|| WriteError(format!("no row {id}")))?;
+                            .ok_or(Refused::NoRow(id))?;
                         self.write(row, cells)?;
                     }
                     (Vec::new(), affected)
@@ -390,7 +412,7 @@ impl OpsSink for Memory {
                     (Vec::new(), rows.len())
                 }
                 _ => {
-                    return Err(WriteError("the REPL's schema is fixed".into()));
+                    return Err(Refused::SchemaFixed);
                 }
             };
             results.push(OpResult::RowsWritten {
@@ -464,7 +486,7 @@ fn main() {
         common::print_plan(&catalog, sql);
         match pollster::block_on(run(&catalog, sql, &memory, &memory)) {
             Ok(outcome) => common::print_outcome(&catalog, &outcome),
-            Err(error) => println!("  error: {error}"),
+            Err(error) => common::print_failure(&error),
         }
     }
 }

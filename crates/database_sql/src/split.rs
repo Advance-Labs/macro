@@ -124,13 +124,18 @@ pub enum GqlQuery {
     },
 }
 
+/// The most values a [`KeyHint`] carries. Past it a narrowed fetch costs
+/// more than it saves, so the joined relation is fetched whole.
+pub const MAX_KEY_HINT_VALUES: usize = 100;
+
 /// The values a joined relation is matched on.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct KeyHint {
     /// The property matched; `None` when the row id is.
     pub column: Option<Uuid>,
-    /// The values the earlier rows carry, each once.
+    /// The values the earlier rows carry, each once, one entity or option
+    /// per cell.
     pub values: Vec<Cell>,
 }
 
@@ -153,7 +158,7 @@ pub enum Shape {
 pub fn split(catalog: &Catalog, mut query: SelectQuery) -> Plan {
     let relations = query.relations.len();
     let (pushed, residual) = match query.where_.take() {
-        Some(filter) => pushdown::divide(filter, &query.bindings, relations),
+        Some(filter) => pushdown::divide(filter, &query.bindings, &query.relations),
         None => (vec![None; relations], None),
     };
 
@@ -178,6 +183,7 @@ pub fn split(catalog: &Catalog, mut query: SelectQuery) -> Plan {
         .group_by
         .filter(|group| {
             relations == 1
+                && query.relations[0].source == TableSource::Database
                 && !query.distinct
                 && residual.is_none()
                 && query.items.iter().all(|item| {

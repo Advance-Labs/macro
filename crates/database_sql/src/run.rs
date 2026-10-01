@@ -24,7 +24,8 @@ use crate::engine::{Engine, Step};
 use crate::fold::{Bin, Row, Table};
 use crate::parse::ParseError;
 use crate::resolve::{
-    AggregateFunction, Binding, CompileError, Relation, ResolveError, SelectItem, binding,
+    AggregateFunction, Binding, CompileError, Relation, ResolveError, SelectItem, SelectQuery,
+    binding,
 };
 use crate::split::{GqlQuery, column_of, virtual_column_of};
 
@@ -49,6 +50,9 @@ pub struct Page {
 /// Where rows come from: the Soup GraphQL API on the server, the normalized
 /// cache in the browser.
 pub trait RowSource {
+    /// Why the source could not answer.
+    type Error: std::error::Error + MaybeSend + 'static;
+
     /// One page of the query, from `cursor` (the start when `None`), at most
     /// `limit` rows. `needs` names the columns the rows must carry.
     fn page(
@@ -57,34 +61,42 @@ pub trait RowSource {
         needs: &[Uuid],
         cursor: Option<String>,
         limit: usize,
-    ) -> impl Future<Output = Result<Page, SourceError>> + MaybeSend;
+    ) -> impl Future<Output = Result<Page, Self::Error>> + MaybeSend;
 
     /// The bins of a `GqlQuery::GroupSoup`.
     fn bins(
         &self,
         query: &GqlQuery,
-    ) -> impl Future<Output = Result<Vec<Bin>, SourceError>> + MaybeSend;
+    ) -> impl Future<Output = Result<Vec<Bin>, Self::Error>> + MaybeSend;
 }
 
 /// Where writes go: a statement's ops, applied together to one database.
 pub trait OpsSink {
+    /// Why a write did not land.
+    type Error: std::error::Error + MaybeSend + 'static;
+
     /// Apply `ops` to `database`; one result per op, in order.
     fn apply(
         &self,
         database: Uuid,
         ops: Vec<DatabaseOp>,
-    ) -> impl Future<Output = Result<Vec<OpResult>, WriteError>> + MaybeSend;
+    ) -> impl Future<Output = Result<Vec<OpResult>, Self::Error>> + MaybeSend;
 }
 
-/// A source could not answer.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("{0}")]
-pub struct SourceError(pub String);
-
-/// A write did not land.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("{0}")]
-pub struct WriteError(pub String);
+/// Why [`run`] did not produce an outcome: the engine refused the
+/// statement, or its source or sink failed.
+#[derive(Debug, PartialEq, thiserror::Error)]
+pub enum RunFailure<SourceFailure, WriteFailure> {
+    /// The engine refused the statement or what it was fed.
+    #[error(transparent)]
+    Engine(#[from] RunError),
+    /// The source could not answer a read.
+    #[error("could not read rows")]
+    Source(#[source] SourceFailure),
+    /// The sink did not apply the statement's ops.
+    #[error(transparent)]
+    Write(WriteFailure),
+}
 
 /// Why a statement did not run, as one typed union: each failure is a
 /// value the browser reads by its `stage` (and, for resolution, `kind`), and
@@ -106,18 +118,6 @@ pub enum RunError {
     /// A view does not fit the table it shows.
     #[error(transparent)]
     View(ViewProblem),
-    /// The source could not answer a read.
-    #[error("could not read rows: {message}")]
-    Source {
-        /// The source's words.
-        message: String,
-    },
-    /// A write was refused, in the sink's words.
-    #[error("{message}")]
-    Write {
-        /// The sink's words.
-        message: String,
-    },
     /// An `UPDATE` or `DELETE` named a row by id that the table does not
     /// have.
     #[error("row {position}: no row {row} in this table")]
@@ -135,11 +135,35 @@ pub enum RunError {
         #[specta(type = u32)]
         limit: usize,
     },
-    /// Results were fed that do not answer what was asked.
-    #[error("{message}")]
-    Results {
-        /// What does not match.
-        message: String,
+    /// A feed answered the outstanding request with the wrong kind of
+    /// answer.
+    #[error("request {request} wants {expected}, but {fed} was fed")]
+    WrongAnswer {
+        /// The outstanding request.
+        request: u32,
+        /// What it asked for.
+        expected: Answer,
+        /// What was fed.
+        fed: Answer,
+    },
+    /// Bins were folded for a statement that counting groups does not
+    /// answer.
+    #[error("the statement is not answered by counting groups")]
+    NotAnsweredByBins,
+    /// The sink answered a different number of results than ops sent.
+    #[error("one op was sent, but {received} results came back")]
+    OpResultCount {
+        /// The results that came back.
+        #[specta(type = u32)]
+        received: usize,
+    },
+    /// The sink answered an op with a result of another kind.
+    #[error("{sent} was sent, but {received} came back")]
+    UnexpectedOpResult {
+        /// The op sent.
+        sent: SentOp,
+        /// The result that came back.
+        received: OpResultKind,
     },
     /// A feed quoted a request the engine is not waiting on.
     #[error("fed request {fed}, but request {expected} is outstanding")]
@@ -163,6 +187,12 @@ pub enum RunError {
         /// Why it could not be read.
         message: String,
     },
+    /// A value the engine hands back could not be written out.
+    #[error("the engine's answer could not be written out: {message}")]
+    Unwritable {
+        /// Why it could not be written.
+        message: String,
+    },
     /// The first step was asked for twice.
     #[error("the query has already started")]
     AlreadyStarted,
@@ -183,6 +213,74 @@ impl From<RunError> for EngineError {
         Self {
             message: error.to_string(),
             error,
+        }
+    }
+}
+
+/// What a request is answered with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type, strum::Display)]
+#[serde(rename_all = "camelCase")]
+pub enum Answer {
+    /// A page of rows, through [`Engine::feed_page`].
+    #[strum(serialize = "a page")]
+    Page,
+    /// The bins of a grouped read, through [`Engine::feed_bins`].
+    #[strum(serialize = "bins")]
+    Bins,
+    /// The results of ops, through [`Engine::feed_ops`].
+    #[strum(serialize = "op results")]
+    OpResults,
+}
+
+/// The op a statement sent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type, strum::Display)]
+#[serde(rename_all = "camelCase")]
+pub enum SentOp {
+    /// Rows inserted, updated or deleted.
+    #[strum(serialize = "a row write")]
+    RowWrite,
+    /// A column's type change.
+    #[strum(serialize = "a column type change")]
+    ColumnTypeChange,
+}
+
+/// The kind of an [`OpResult`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type, strum::Display)]
+#[serde(rename_all = "camelCase")]
+pub enum OpResultKind {
+    /// [`OpResult::RowsWritten`].
+    #[strum(serialize = "rows written")]
+    RowsWritten,
+    /// [`OpResult::ColumnTyped`].
+    #[strum(serialize = "a column typed")]
+    ColumnTyped,
+    /// [`OpResult::OptionChanged`].
+    #[strum(serialize = "an option changed")]
+    OptionChanged,
+    /// [`OpResult::ViewWritten`].
+    #[strum(serialize = "a view written")]
+    ViewWritten,
+    /// [`OpResult::ViewDeleted`].
+    #[strum(serialize = "a view deleted")]
+    ViewDeleted,
+    /// [`OpResult::ViewsReordered`].
+    #[strum(serialize = "views reordered")]
+    ViewsReordered,
+    /// [`OpResult::CardMoved`].
+    #[strum(serialize = "a card moved")]
+    CardMoved,
+}
+
+impl From<&OpResult> for OpResultKind {
+    fn from(result: &OpResult) -> Self {
+        match result {
+            OpResult::RowsWritten { .. } => OpResultKind::RowsWritten,
+            OpResult::ColumnTyped { .. } => OpResultKind::ColumnTyped,
+            OpResult::OptionChanged { .. } => OpResultKind::OptionChanged,
+            OpResult::ViewWritten { .. } => OpResultKind::ViewWritten,
+            OpResult::ViewDeleted { .. } => OpResultKind::ViewDeleted,
+            OpResult::ViewsReordered { .. } => OpResultKind::ViewsReordered,
+            OpResult::CardMoved { .. } => OpResultKind::CardMoved,
         }
     }
 }
@@ -222,18 +320,6 @@ impl From<CompileError> for RunError {
 impl From<ViewProblem> for RunError {
     fn from(problem: ViewProblem) -> Self {
         RunError::View(problem)
-    }
-}
-
-impl From<SourceError> for RunError {
-    fn from(SourceError(message): SourceError) -> Self {
-        RunError::Source { message }
-    }
-}
-
-impl From<WriteError> for RunError {
-    fn from(WriteError(message): WriteError) -> Self {
-        RunError::Write { message }
     }
 }
 
@@ -312,12 +398,12 @@ pub enum OutcomeKind {
 }
 
 /// Compile and execute one statement.
-pub async fn run(
+pub async fn run<Source: RowSource, Sink: OpsSink>(
     catalog: &Catalog,
     sql: &str,
-    source: &impl RowSource,
-    sink: &impl OpsSink,
-) -> Result<Outcome, RunError> {
+    source: &Source,
+    sink: &Sink,
+) -> Result<Outcome, RunFailure<Source::Error, Sink::Error>> {
     let (mut engine, mut step) = Engine::start(catalog, sql)?;
     loop {
         step = match step {
@@ -330,19 +416,35 @@ pub async fn run(
                         request.cursor,
                         request.limit,
                     )
-                    .await?;
+                    .await
+                    .map_err(RunFailure::Source)?;
                 engine.feed_page(request.id, page)?
             }
             Step::Bins(request) => {
-                let bins = source.bins(&request.query).await?;
+                let bins = source
+                    .bins(&request.query)
+                    .await
+                    .map_err(RunFailure::Source)?;
                 engine.feed_bins(request.id, bins)?
             }
             Step::Ops { id, database, ops } => {
-                let results = sink.apply(database, ops).await?;
+                let results = sink.apply(database, ops).await.map_err(RunFailure::Write)?;
                 engine.feed_ops(id, results)?
             }
         };
     }
+}
+
+/// The columns a resolved `SELECT` returns, named and typed as its outcome
+/// will be.
+pub fn result_columns(catalog: &Catalog, select: &SelectQuery) -> Vec<OutcomeColumn> {
+    describe(
+        catalog,
+        &select.items,
+        &select.labels,
+        &select.bindings,
+        &select.relations,
+    )
 }
 
 /// Name and type each select item.

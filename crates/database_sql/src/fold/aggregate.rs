@@ -1,10 +1,12 @@
 //! Grouping rows and computing the select list's aggregates per group.
 
+use std::collections::HashMap;
+
 use uuid::Uuid;
 
 use crate::resolve::{AggregateFunction, SelectItem};
 
-use super::{Cell, Row};
+use super::{Cell, CellKey, Row};
 
 /// One output row of an aggregate shape.
 #[derive(Debug, Clone, PartialEq)]
@@ -26,19 +28,21 @@ pub fn groups(rows: Vec<Row>, group_by: Option<Uuid>, items: &[SelectItem]) -> V
             members.push(rows);
         }
         Some(column) => {
+            let mut positions: HashMap<Option<CellKey>, usize> = HashMap::new();
             for row in rows {
                 let key = row
                     .cells
                     .get(&column)
                     .cloned()
                     .filter(|cell| !cell.is_empty());
-                match keys.iter().position(|seen| *seen == key) {
-                    Some(index) => members[index].push(row),
-                    None => {
+                let position = *positions
+                    .entry(key.as_ref().map(CellKey::from))
+                    .or_insert_with(|| {
                         keys.push(key);
-                        members.push(vec![row]);
-                    }
-                }
+                        members.push(Vec::new());
+                        keys.len() - 1
+                    });
+                members[position].push(row);
             }
         }
     }
@@ -75,7 +79,7 @@ fn evaluate(function: AggregateFunction, column: Option<Uuid>, rows: &[Row]) -> 
         AggregateFunction::Sum | AggregateFunction::Avg => {
             let numbers: Vec<f64> = present
                 .filter_map(|cell| match cell {
-                    Cell::Number(n) => Some(*n),
+                    Cell::Number(number) => Some(*number),
                     _ => None,
                 })
                 .collect();
@@ -93,18 +97,18 @@ fn evaluate(function: AggregateFunction, column: Option<Uuid>, rows: &[Row]) -> 
             for cell in present {
                 let replace = match (&best, cell) {
                     (None, _) => true,
-                    (Some(Cell::Number(b)), Cell::Number(n)) => {
+                    (Some(Cell::Number(current)), Cell::Number(candidate)) => {
                         if function == AggregateFunction::Min {
-                            n < b
+                            candidate < current
                         } else {
-                            n > b
+                            candidate > current
                         }
                     }
-                    (Some(Cell::Date(b)), Cell::Date(d)) => {
+                    (Some(Cell::Date(current)), Cell::Date(candidate)) => {
                         if function == AggregateFunction::Min {
-                            d < b
+                            candidate < current
                         } else {
-                            d > b
+                            candidate > current
                         }
                     }
                     _ => false,

@@ -31,7 +31,7 @@ use database_sql::catalog::{
     OptionValue, PropertyType, Schema, SelectOption, TableSchema, build,
 };
 use database_sql::fold::{Bin, Cell, Row};
-use database_sql::run::{OpsSink, Page, RowSource, SourceError, WriteError, run};
+use database_sql::run::{OpsSink, Page, RowSource, run};
 use database_sql::split::GqlQuery;
 use filter_ast::Expr;
 use item_filters::ast::properties::{PropertiesLiteral, PropertyMatchValue};
@@ -90,6 +90,38 @@ enum ApiError {
     Shape(#[from] serde_json::Error),
     #[error("option {0} has neither a text nor a number value")]
     OptionValue(Uuid),
+}
+
+/// Why a read did not land.
+#[derive(Debug, thiserror::Error)]
+enum ReadError {
+    #[error(transparent)]
+    Api(#[from] ApiError),
+    #[error("a page needs a soup query")]
+    NotSoup,
+    #[error("bins need a groupSoup query")]
+    NotGrouped,
+}
+
+/// Why a write did not land.
+#[derive(Debug, thiserror::Error)]
+enum WriteError {
+    #[error(transparent)]
+    Api(#[from] ApiError),
+    #[error("no option {0}")]
+    NoOption(String),
+    #[error("tasks have no relation columns")]
+    RelationColumn,
+    #[error("the task title is renamed in the app, not by SQL")]
+    TitleRename,
+    #[error("INSERT into macro.tasks needs a name")]
+    NameMissing,
+    #[error("create_task answered without an id: {0}")]
+    NoTaskId(Json),
+    #[error("deleting tasks is not wired here; trash it in the app")]
+    DeleteNotWired,
+    #[error("only row writes are wired here; change the schema in the app")]
+    SchemaNotWired,
 }
 
 /// One property definition as `propertyDefinitions` lists it.
@@ -344,18 +376,20 @@ fn row_from_item(item: &Json) -> Row {
 }
 
 impl RowSource for Api {
+    type Error = ReadError;
+
     async fn page(
         &self,
         query: &GqlQuery,
         _needs: &[Uuid],
         cursor: Option<String>,
         limit: usize,
-    ) -> Result<Page, SourceError> {
+    ) -> Result<Page, Self::Error> {
         let GqlQuery::Soup {
             property_filter, ..
         } = query
         else {
-            return Err(SourceError("page needs a soup query".into()));
+            return Err(ReadError::NotSoup);
         };
         let input = match cursor {
             Some(cursor) => {
@@ -375,8 +409,7 @@ impl RowSource for Api {
                 ),
                 json!({ "input": input }),
             )
-            .await
-            .map_err(|error| SourceError(error.to_string()))?;
+            .await?;
         let soup = &data["user"]["soup"];
         Ok(Page {
             rows: soup["items"]
@@ -389,14 +422,14 @@ impl RowSource for Api {
         })
     }
 
-    async fn bins(&self, query: &GqlQuery) -> Result<Vec<Bin>, SourceError> {
+    async fn bins(&self, query: &GqlQuery) -> Result<Vec<Bin>, Self::Error> {
         let GqlQuery::GroupSoup {
             property_filter,
             group_by,
             ..
         } = query
         else {
-            return Err(SourceError("bins need a groupSoup query".into()));
+            return Err(ReadError::NotGrouped);
         };
         let data = self
             .gql(
@@ -407,8 +440,7 @@ impl RowSource for Api {
                     "limit": 1, "sortMethod": "UPDATED_AT", "filters": filters(property_filter),
                 } } }),
             )
-            .await
-            .map_err(|error| SourceError(error.to_string()))?;
+            .await?;
         Ok(data["user"]["groupSoup"]["bins"]
             .as_array()
             .unwrap_or(&vec![])
@@ -455,7 +487,7 @@ impl Api {
                     .iter()
                     .find(|option| option.label.eq_ignore_ascii_case(&label))
                     .map(|option| option.id)
-                    .ok_or_else(|| WriteError(format!("no option {label}"))),
+                    .ok_or(WriteError::NoOption(label)),
             })
             .collect()
     }
@@ -494,16 +526,14 @@ impl Api {
                 }
             }
             CellValue::Rows(_) => {
-                return Err(WriteError("tasks have no relation columns".into()));
+                return Err(WriteError::RelationColumn);
             }
         })
     }
 
     async fn set(&self, task: Uuid, column: Uuid, value: CellValue) -> Result<(), WriteError> {
         if column == NAME {
-            return Err(WriteError(
-                "the task title is renamed in the app, not by SQL".into(),
-            ));
+            return Err(WriteError::TitleRename);
         }
         let value = self.property_input(column, value)?;
         self.gql(
@@ -513,9 +543,8 @@ impl Api {
                 "value": value,
             } }),
         )
-        .await
-        .map(|_| ())
-        .map_err(|error| WriteError(error.to_string()))
+        .await?;
+        Ok(())
     }
 
     async fn create(&self, cells: Vec<CellWrite>) -> Result<Uuid, WriteError> {
@@ -525,7 +554,7 @@ impl Api {
                 CellValue::Text(text) if cell.column == NAME => Some(text.clone()),
                 _ => None,
             })
-            .ok_or_else(|| WriteError("INSERT into macro.tasks needs a name".into()))?;
+            .ok_or(WriteError::NameMissing)?;
         let response = self
             .http
             .post(format!("{}/documents/create_task", self.base))
@@ -533,19 +562,16 @@ impl Api {
             .json(&json!({ "taskName": name, "markdown": null, "shareWithTeam": true }))
             .send()
             .await
-            .map_err(|error| WriteError(error.to_string()))?;
+            .map_err(ApiError::from)?;
         let status = response.status();
-        let body: Json = response
-            .json()
-            .await
-            .map_err(|error| WriteError(error.to_string()))?;
+        let body: Json = response.json().await.map_err(ApiError::from)?;
         if !status.is_success() {
-            return Err(WriteError(format!("create_task {status}: {body}")));
+            return Err(ApiError::Status { status, body }.into());
         }
         let task: Uuid = body["documentId"]
             .as_str()
             .and_then(|id| id.parse().ok())
-            .ok_or_else(|| WriteError(format!("create_task answered without an id: {body}")))?;
+            .ok_or_else(|| WriteError::NoTaskId(body.clone()))?;
         for cell in cells {
             if cell.column != NAME {
                 self.set(task, cell.column, cell.value).await?;
@@ -556,11 +582,13 @@ impl Api {
 }
 
 impl OpsSink for Api {
+    type Error = WriteError;
+
     async fn apply(
         &self,
         _database: Uuid,
         ops: Vec<DatabaseOp>,
-    ) -> Result<Vec<OpResult>, WriteError> {
+    ) -> Result<Vec<OpResult>, Self::Error> {
         let mut results = Vec::new();
         for op in ops {
             let (inserted, affected) = match op {
@@ -591,14 +619,10 @@ impl OpsSink for Api {
                     (Vec::new(), affected)
                 }
                 DatabaseOp::DeleteRows { .. } => {
-                    return Err(WriteError(
-                        "deleting tasks is not wired here; trash it in the app".into(),
-                    ));
+                    return Err(WriteError::DeleteNotWired);
                 }
                 _ => {
-                    return Err(WriteError(
-                        "only row writes are wired here; change the schema in the app".into(),
-                    ));
+                    return Err(WriteError::SchemaNotWired);
                 }
             };
             results.push(OpResult::RowsWritten {
@@ -677,7 +701,7 @@ async fn main() {
         common::print_plan(&catalog, sql);
         match run(&catalog, sql, &api, &api).await {
             Ok(outcome) => common::print_outcome(&catalog, &outcome),
-            Err(error) => println!("  error: {error}"),
+            Err(error) => common::print_failure(&error),
         }
     }
 }

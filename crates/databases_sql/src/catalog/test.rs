@@ -291,3 +291,77 @@ fn details_become_the_schema_the_engine_builds_its_catalog_from() {
         }
     );
 }
+
+/// Two tables placing one relation definition, each linking elsewhere: the
+/// related table is the one the asking table's placement links to.
+#[test]
+fn a_shared_relation_definition_relates_each_table_to_its_own_target() {
+    const LINKED: Uuid = Uuid::from_u128(0xc0de);
+    const LEADS: Uuid = Uuid::from_u128(0x7a02);
+    const ACCOUNTS: Uuid = Uuid::from_u128(0x7a03);
+    const CONTACTS: Uuid = Uuid::from_u128(0x7a04);
+    let link = PropertyDefinitionWithOptions {
+        definition: PropertyDefinition {
+            id: LINKED,
+            owner: PropertyOwner::System,
+            display_name: "Linked".into(),
+            data_type: DataType::Entity,
+            is_multi_select: true,
+            specific_entity_type: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            is_system: false,
+            is_metadata: false,
+        },
+        property_options: Vec::new(),
+    };
+    let table = |id: Uuid, name: &str, column: Uuid, target: Uuid| TableDetail {
+        table: Table {
+            id,
+            database_id: CRM,
+            name: name.into(),
+            position: "80".into(),
+            version: TableVersion(1),
+        },
+        sql_name: format!("\"{name}\""),
+        columns: vec![ColumnDetail {
+            column: Column {
+                id: column,
+                table_id: id,
+                property_definition_id: LINKED,
+                position: "80".into(),
+                config: Some(ColumnConfig::Link {
+                    database_id: CRM,
+                    table_id: target,
+                }),
+                display_name: None,
+                infer_type: false,
+            },
+            sql_name: "\"Linked\"".into(),
+            definition: link.clone(),
+            writable: true,
+            shared_outside_database: true,
+        }],
+        views: Vec::new(),
+    };
+    let catalog = super::ViewerCatalog::new(
+        vec![DatabaseDetail {
+            database: Database {
+                id: CRM,
+                name: "CRM".into(),
+                owner_id: "macro|owner@macro.com".into(),
+                created_at: Utc::now(),
+                trashed_at: None,
+            },
+            grant: AccessLevel::Owner,
+            tables: vec![
+                table(DEALS, "Deals", Uuid::from_u128(0xb101), ACCOUNTS),
+                table(LEADS, "Leads", Uuid::from_u128(0xb102), CONTACTS),
+            ],
+        }],
+        None,
+    );
+
+    assert_eq!(catalog.related_table(DEALS, LINKED), Some(ACCOUNTS));
+    assert_eq!(catalog.related_table(LEADS, LINKED), Some(CONTACTS));
+}

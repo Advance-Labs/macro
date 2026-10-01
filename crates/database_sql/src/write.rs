@@ -13,7 +13,7 @@ use crate::fold::Cell;
 use crate::resolve::{
     AlterColumnTypeQuery, Assigned, InsertQuery, SelectItem, UpdateQuery, Value, column_key,
 };
-use crate::run::{AlteredColumn, Outcome, RunError};
+use crate::run::{AlteredColumn, Outcome, RunError, SentOp};
 
 /// What was sent, so its result can be read back into an outcome.
 #[derive(Debug, Clone)]
@@ -142,8 +142,8 @@ pub(crate) fn alter(catalog: &Catalog, query: &AlterColumnTypeQuery) -> Database
 /// The outcome the results of what was sent make.
 pub(crate) fn outcome(sent: &Sent, results: &[OpResult]) -> Result<Outcome, RunError> {
     let [result] = results else {
-        return Err(RunError::Results {
-            message: format!("one op was sent, but {} results came back", results.len()),
+        return Err(RunError::OpResultCount {
+            received: results.len(),
         });
     };
     match (sent, result) {
@@ -174,22 +174,12 @@ pub(crate) fn outcome(sent: &Sent, results: &[OpResult]) -> Result<Outcome, RunE
             }),
             ..Outcome::default()
         }),
-        (Sent::Rows, OpResult::ColumnTyped { .. }) => Err(RunError::Results {
-            message: "rows were written, but a column type change came back".into(),
-        }),
-        (Sent::Column { .. }, OpResult::RowsWritten { .. }) => Err(RunError::Results {
-            message: "a column type change was sent, but rows written came back".into(),
-        }),
-        (
-            _,
-            OpResult::OptionChanged { .. }
-            | OpResult::ViewWritten { .. }
-            | OpResult::ViewDeleted { .. }
-            | OpResult::ViewsReordered { .. }
-            | OpResult::CardMoved { .. },
-        ) => Err(RunError::Results {
-            message: "a statement writes rows or a column type, but something else came back"
-                .into(),
+        (sent, received) => Err(RunError::UnexpectedOpResult {
+            sent: match sent {
+                Sent::Rows => SentOp::RowWrite,
+                Sent::Column { .. } => SentOp::ColumnTypeChange,
+            },
+            received: received.into(),
         }),
     }
 }

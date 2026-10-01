@@ -12,5 +12,5 @@ mod test_support;
 #[cfg(feature = "ai_tools")]
 pub mod toolset;
 
-pub use outcome::{AlteredColumn, ResultColumn, ResultSet, SqlOutcome};
-pub use service::{DatabasesSql, SqlError, SqlRequest};
+pub use outcome::{ResultColumn, ResultSet, SqlOutcome, SqlStatement};
+pub use service::{ChartColumns, DatabasesSql, SqlError, SqlRequest};

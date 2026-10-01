@@ -11,7 +11,7 @@ use chrono::Utc;
 use contacts::domain::models::messages::ContactsNodes;
 use database_sql::catalog::Catalog;
 use database_sql::fold::Bin;
-use database_sql::run::{OpsSink, Outcome, WriteError};
+use database_sql::run::{OpsSink, Outcome};
 use models_databases::{DatabaseOp, OpResult};
 use models_pagination::{Base64Str, Cursor, CursorVal, Paginated};
 use models_properties::service::property_definition::PropertyDefinition;
@@ -306,11 +306,13 @@ impl ReplaySink {
 }
 
 impl OpsSink for ReplaySink {
+    type Error = std::convert::Infallible;
+
     async fn apply(
         &self,
         _database: Uuid,
         ops: Vec<DatabaseOp>,
-    ) -> Result<Vec<OpResult>, WriteError> {
+    ) -> Result<Vec<OpResult>, Self::Error> {
         let (expected, results) = self
             .exchanges
             .lock()

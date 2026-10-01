@@ -51,13 +51,13 @@ impl ViewerCatalog {
         })
     }
 
-    /// The table a relation column's rows belong to, found by the column's
-    /// definition.
-    pub(crate) fn related_table(&self, definition: Uuid) -> Option<TableId> {
-        self.databases
+    /// The table the rows of `table`'s relation column `definition` belong
+    /// to. A definition shared by several tables can link each elsewhere.
+    pub(crate) fn related_table(&self, table: TableId, definition: Uuid) -> Option<TableId> {
+        self.table(table)?
+            .1
+            .columns
             .iter()
-            .flat_map(|database| &database.tables)
-            .flat_map(|table| &table.columns)
             .find(|column| column.definition.definition.id == definition)
             .and_then(|column| match column.column.config {
                 Some(ColumnConfig::Link { table_id, .. }) => Some(table_id),

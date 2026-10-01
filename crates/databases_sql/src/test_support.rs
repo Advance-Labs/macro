@@ -3,6 +3,7 @@
 //! receipts from the world's grants, Soup answers table rows with Soup's
 //! filter semantics, and contacts lists the world's people.
 
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use bot_id::BotId;
@@ -30,7 +31,7 @@ use item_filters::ast::properties::{PropertiesLiteral, PropertyMatchValue};
 use macro_user_id::lowercased::Lowercase;
 use macro_user_id::user_id::{MacroUserId, MacroUserIdStr};
 use model_owner::Owner;
-use models_databases::{DatabaseOp, OpResult, RowChanges};
+use models_databases::{DatabaseOp, OpResult};
 use models_grouping::GroupByField;
 use models_pagination::Paginated;
 use models_properties::service::property_definition::PropertyDefinition;
@@ -79,6 +80,8 @@ pub(crate) struct World {
     pub(crate) contacts: Vec<&'static str>,
     /// Every batch of ops the databases service applied.
     pub(crate) applied: Vec<AppliedOps>,
+    /// What the databases service answers each batch of ops with, in order.
+    pub(crate) op_answers: VecDeque<Result<Vec<OpResult>, DatabaseError>>,
     /// Every question the databases service stored.
     pub(crate) saved: Vec<(Option<DatabaseId>, QueryDefinition)>,
     /// The filter of every Soup read, in order.
@@ -165,35 +168,10 @@ impl DatabasesService for FakeDatabases {
             acting_bot: viewer.acting_bot,
             ops: ops.clone(),
         });
-        Ok(ops
-            .iter()
-            .map(|op| match op {
-                DatabaseOp::InsertRows { rows, .. } => OpResult::RowsWritten {
-                    table_version: TableVersion(2),
-                    inserted: rows.iter().map(|_| Uuid::new_v4()).collect(),
-                    affected: rows.len() as u32,
-                },
-                DatabaseOp::UpdateRows { changes, .. } => OpResult::RowsWritten {
-                    table_version: TableVersion(2),
-                    inserted: Vec::new(),
-                    affected: match changes {
-                        RowChanges::Uniform { rows, .. } => rows.len() as u32,
-                        RowChanges::PerRow { rows } => rows.len() as u32,
-                    },
-                },
-                DatabaseOp::DeleteRows { rows, .. } => OpResult::RowsWritten {
-                    table_version: TableVersion(2),
-                    inserted: Vec::new(),
-                    affected: rows.len() as u32,
-                },
-                DatabaseOp::ChangeColumnType { .. } => OpResult::ColumnTyped {
-                    table_version: TableVersion(2),
-                    cleared_cells: 1,
-                    trimmed_cells: 0,
-                },
-                other => panic!("a statement sends no {other:?}"),
-            })
-            .collect())
+        world
+            .op_answers
+            .pop_front()
+            .expect("the test answers every batch of ops")
     }
 
     async fn save_query(

@@ -8,10 +8,10 @@ use models_properties::service::property_option::{PropertyOption, PropertyOption
 use models_properties::shared::PropertyOwner;
 use std::sync::{Arc, Mutex};
 
-use databases::domain::models::{QueryDefinition, TableVersion};
+use databases::domain::models::{DatabaseError, OpRefusal, QueryDefinition, TableVersion};
 use entity_access::domain::models::AccessLevel;
 use item_filters::ast::database_row::DatabaseRowLiteral;
-use models_databases::{CellValue, CellWrite, DatabaseOp, OptionRef, RowChanges};
+use models_databases::{CellValue, CellWrite, DatabaseOp, OpResult, OptionRef, RowChanges};
 use models_properties::service::property_value::PropertyValue;
 use models_properties::shared::{DataType, EntityReference, EntityType as PropertyEntityType};
 use uuid::Uuid;
@@ -21,7 +21,7 @@ use database_sql::catalog::{EntityKind, SelectOption};
 use database_sql::fold::Cell;
 use database_sql::run::OutcomeKind;
 
-use crate::outcome::{ResultColumn, ResultSet};
+use crate::outcome::{ResultColumn, ResultSet, SqlStatement};
 use crate::test_support::{
     AppliedOps, OWNER, STRANGER, Shared, StoredRow, VIEWER, World, agent_for, row_literals, sql,
 };
@@ -462,6 +462,15 @@ async fn a_view_only_database_cannot_be_written() {
 #[tokio::test]
 async fn a_write_is_applied_under_an_edit_receipt_for_its_database() {
     let world = world();
+    world
+        .lock()
+        .unwrap()
+        .op_answers
+        .push_back(Ok(vec![OpResult::RowsWritten {
+            table_version: TableVersion(2),
+            inserted: vec![],
+            affected: 1,
+        }]));
     let outcome = sql(&world)
         .execute(
             agent_for(OWNER),
@@ -768,6 +777,15 @@ async fn a_stale_base_version_refuses_the_write() {
 #[tokio::test]
 async fn an_alter_column_reports_the_column_it_changed() {
     let world = world();
+    world
+        .lock()
+        .unwrap()
+        .op_answers
+        .push_back(Ok(vec![OpResult::ColumnTyped {
+            table_version: TableVersion(2),
+            cleared_cells: 1,
+            trimmed_cells: 0,
+        }]));
     let outcome = sql(&world)
         .execute(
             agent_for(OWNER),
@@ -781,15 +799,16 @@ async fn an_alter_column_reports_the_column_it_changed() {
         .expect("the owner retypes");
 
     assert_eq!(
-        outcome.altered_column,
-        Some(crate::outcome::AlteredColumn {
+        outcome.statement,
+        SqlStatement::AlterColumnType {
             table_id: GUESTS,
+            table_name: "Guests".into(),
             column_id: STATUS_COLUMN,
-            name: "Status".into(),
+            column_name: "Status".into(),
             to: "text".into(),
             cleared_cells: 1,
             trimmed_cells: 0,
-        })
+        }
     );
 }
 
@@ -800,7 +819,7 @@ async fn a_question_is_saved_once_it_compiles_as_a_select_in_its_database() {
         query: "SELECT COUNT(*) FROM \"Guests\"".into(),
     };
     let saved = sql(&world)
-        .save_query(agent_for(VIEWER), Some(OFFSITE), definition.clone())
+        .save_query(agent_for(VIEWER), Some(OFFSITE), definition.clone(), None)
         .await
         .expect("the viewer saves a read");
 
@@ -821,6 +840,7 @@ async fn a_question_that_writes_or_does_not_compile_is_not_saved() {
             QueryDefinition::V1 {
                 query: "DELETE FROM \"Guests\" WHERE \"Name\" = 'Sam'".into(),
             },
+            None,
         )
         .await
         .expect_err("a saved question never writes");
@@ -836,6 +856,7 @@ async fn a_question_that_writes_or_does_not_compile_is_not_saved() {
             QueryDefinition::V1 {
                 query: "SELECT statuz FROM \"Guests\"".into(),
             },
+            None,
         )
         .await
         .expect_err("a broken question is not saved");
@@ -848,10 +869,78 @@ async fn a_question_that_writes_or_does_not_compile_is_not_saved() {
             QueryDefinition::V1 {
                 query: "SELECT COUNT(*) FROM \"Plans\"".into(),
             },
+            None,
         )
         .await
         .expect_err("the owner cannot see Secret");
     assert!(matches!(hidden, SqlError::NotFound), "{hidden:?}");
 
     assert!(world.lock().unwrap().saved.is_empty());
+}
+
+#[tokio::test]
+async fn a_write_the_service_refuses_names_its_row_and_reason() {
+    let world = world();
+    world
+        .lock()
+        .unwrap()
+        .op_answers
+        .push_back(Err(DatabaseError::InvalidOp(OpRefusal {
+            op: 0,
+            row: Some(0),
+            column: Some(STATUS_COLUMN),
+            reason: "\"Status\" has no option \"Gone\"".into(),
+        })));
+    let error = sql(&world)
+        .execute(
+            agent_for(OWNER),
+            SqlRequest {
+                sql:
+                    "UPDATE \"Offsite\".\"Guests\" SET \"Status\" = 'Going' WHERE \"Name\" = 'Sam'"
+                        .into(),
+                scope: None,
+                base_versions: HashMap::new(),
+            },
+        )
+        .await
+        .expect_err("the service refuses the write");
+
+    assert!(
+        matches!(
+            &error,
+            SqlError::WriteRefused { row: Some(1), reason }
+                if reason == "\"Status\" has no option \"Gone\""
+        ),
+        "{error:?}"
+    );
+    assert_eq!(
+        error.to_string(),
+        "row 1: \"Status\" has no option \"Gone\""
+    );
+}
+
+#[tokio::test]
+async fn a_table_that_moves_during_the_write_is_a_version_conflict() {
+    let world = world();
+    world
+        .lock()
+        .unwrap()
+        .op_answers
+        .push_back(Err(DatabaseError::VersionConflict));
+    let error = sql(&world)
+        .execute(
+            agent_for(OWNER),
+            SqlRequest {
+                sql: "DELETE FROM \"Offsite\".\"Guests\" WHERE \"Name\" = 'Sam'".into(),
+                scope: None,
+                base_versions: HashMap::new(),
+            },
+        )
+        .await
+        .expect_err("the table moved");
+
+    assert!(
+        matches!(error, SqlError::VersionConflict { table_id } if table_id == GUESTS),
+        "{error:?}"
+    );
 }

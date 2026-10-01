@@ -5,6 +5,10 @@ use super::*;
 const PARTY_SQL: &str =
     "SELECT \"Status\" AS status, COUNT(*) AS guests FROM \"Guests\" GROUP BY \"Status\"";
 
+/// Three result columns, so a chart can split its one series by a third.
+const NAMED_PARTY_SQL: &str = "SELECT \"Status\" AS status, COUNT(*) AS guests, \
+     COUNT(\"Name\") AS named FROM \"Guests\" GROUP BY \"Status\"";
+
 /// The block is the document node's payload, so its exact text is the
 /// contract with the frontend.
 #[tokio::test]
@@ -12,14 +16,14 @@ async fn saving_a_chart_question_returns_its_live_block() {
     let world = world();
     let response = SaveDatabaseQuery {
         database_id: Some(OFFSITE),
-        sql: PARTY_SQL.to_string(),
+        sql: NAMED_PARTY_SQL.to_string(),
         title: "Guests by status".to_string(),
         display_mode: QueryDatabaseDisplay::Area,
         chart: Some(ToolChart {
-            x: "party".to_string(),
+            x: "status".to_string(),
             y: vec!["guests".to_string()],
             title: None,
-            color: Some("status".to_string()),
+            color: Some("named".to_string()),
             stack: Some(true),
         }),
         prompt: None,
@@ -33,14 +37,14 @@ async fn saving_a_chart_question_returns_its_live_block() {
 
     assert_eq!(
         response.markdown,
-        r#"<m-db-query>{"queryId":"00000000-0000-0000-0000-000000000e11","databaseId":"00000000-0000-0000-0000-00000000db01","title":"Guests by status","prompt":"Guests by status","displayMode":"area","chart":{"x":"party","y":["guests"],"color":"status","stack":true}}</m-db-query>"#
+        r#"<m-db-query>{"queryId":"00000000-0000-0000-0000-000000000e11","databaseId":"00000000-0000-0000-0000-00000000db01","title":"Guests by status","prompt":"Guests by status","displayMode":"area","chart":{"x":"status","y":["guests"],"color":"named","stack":true}}</m-db-query>"#
     );
     assert_eq!(
         world.lock().unwrap().saved,
         vec![(
             Some(OFFSITE),
             QueryDefinition::V1 {
-                query: PARTY_SQL.to_string(),
+                query: NAMED_PARTY_SQL.to_string(),
             }
         )]
     );
@@ -172,6 +176,28 @@ async fn a_chart_the_block_cannot_draw_is_refused_before_saving() {
                 stack: None,
             },
             "chart.color splits a single series; with chart.color, chart.y names one column.",
+        ),
+        (
+            ToolChart {
+                x: "party".to_string(),
+                y: vec!["guests".to_string()],
+                title: None,
+                color: None,
+                stack: None,
+            },
+            "the chart names \"party\", but the query returns \"status\", \"guests\". Name \
+             chart columns as the SELECT names its results, with AS for an aggregate.",
+        ),
+        (
+            ToolChart {
+                x: "guests".to_string(),
+                y: vec!["status".to_string()],
+                title: None,
+                color: None,
+                stack: None,
+            },
+            "the chart plots \"status\", which is not a number. Name chart columns as the \
+             SELECT names its results, with AS for an aggregate.",
         ),
         (
             ToolChart {

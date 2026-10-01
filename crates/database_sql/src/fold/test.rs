@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::{TimeZone, Utc};
 
 use super::*;
-use crate::resolve::{Query, compile};
+use crate::resolve::{Filter, Query, compile};
 use crate::split::split;
 use crate::test_support::{catalog, *};
 
@@ -202,11 +202,11 @@ fn bins_answer_a_count_only_group() {
 
     assert_eq!(
         fold_bins(&catalog(), &plan, bins),
-        vec![
+        Ok(vec![
             vec![Some(Cell::Options(vec![WON])), Some(Cell::Number(9.0))],
             vec![Some(Cell::Options(vec![LEAD])), Some(Cell::Number(4.0))],
             vec![None, Some(Cell::Number(4.0))],
-        ]
+        ])
     );
 }
 
@@ -388,4 +388,68 @@ fn join_matches_by_membership_and_leaves_empty_cells_unmatched() {
         ]
     );
     assert_eq!(ids, vec![ACME, GLOBEX, HOOLI, INITECH]);
+}
+
+/// Many `%`s over a long text that almost matches: backtracking would try
+/// every way to split the text between them.
+#[test]
+fn like_with_many_wildcards_matches_in_linear_passes() {
+    let row = Row {
+        id: ACME,
+        position: None,
+        cells: HashMap::from([(NAME, Cell::Text(format!("{}b", "a".repeat(5_000))))]),
+    };
+    let like = |pattern: &str| Filter::Like {
+        column: NAME,
+        pattern: pattern.into(),
+        escape: None,
+        negated: false,
+    };
+
+    assert!(!predicate::holds(&like("%a%a%a%a%a%a%a%a%a%a%a%a%c"), &row));
+    assert!(predicate::holds(&like("%a%a%a%a%a%a%a%a%a%a%a%a%b"), &row));
+    assert!(predicate::holds(&like("a%_b"), &row));
+    assert!(!predicate::holds(&like("%ab_"), &row));
+}
+
+/// `0` and `-0` are equal in SQL, so they are one group and one distinct row.
+#[test]
+fn zero_and_negative_zero_are_one_value() {
+    let rows = vec![
+        Row {
+            id: ACME,
+            position: None,
+            cells: HashMap::from([(AMOUNT, Cell::Number(0.0))]),
+        },
+        Row {
+            id: GLOBEX,
+            position: None,
+            cells: HashMap::from([(AMOUNT, Cell::Number(-0.0))]),
+        },
+    ];
+
+    assert_eq!(
+        fold_rows(
+            &catalog(),
+            &plan("SELECT DISTINCT amount FROM crm.deals"),
+            rows.clone()
+        ),
+        vec![vec![Some(Cell::Number(0.0))]]
+    );
+    assert_eq!(
+        fold_rows(
+            &catalog(),
+            &plan("SELECT amount, COUNT(*) FROM crm.deals GROUP BY amount"),
+            rows
+        ),
+        vec![vec![Some(Cell::Number(0.0)), Some(Cell::Number(2.0))]]
+    );
+}
+
+#[test]
+fn bins_do_not_answer_a_row_shaped_plan() {
+    assert_eq!(
+        fold_bins(&catalog(), &plan("SELECT name FROM crm.deals"), vec![]),
+        Err(RunError::NotAnsweredByBins)
+    );
 }

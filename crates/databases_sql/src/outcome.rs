@@ -5,11 +5,13 @@ use std::collections::HashMap;
 
 use database_sql::catalog::{ColumnKind, EntityKind, SelectOption};
 use database_sql::fold::Cell;
+use database_sql::resolve::{Query, SelectItem};
 use database_sql::run::{Outcome, OutcomeKind};
 use databases::domain::models::{ColumnId, RowId, TableId, TableVersion};
 use serde::Serialize;
 
 use crate::catalog::ViewerCatalog;
+use crate::service::SqlError;
 
 /// The answer to one statement.
 #[derive(Debug, Clone, PartialEq)]
@@ -28,8 +30,60 @@ pub struct SqlOutcome {
     /// cap: the engine reports the cap per statement, so aggregates over any
     /// of them may be partial.
     pub truncated_tables: Vec<String>,
-    /// The column an `ALTER COLUMN … TYPE` changed.
-    pub altered_column: Option<AlteredColumn>,
+    /// What kind of statement ran, and what it wrote.
+    pub statement: SqlStatement,
+}
+
+/// The statement that ran: a read, or the table (and for a type change, the
+/// column) it wrote.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ai_tools", derive(schemars::JsonSchema))]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum SqlStatement {
+    /// A `SELECT`.
+    Select,
+    /// An `INSERT`.
+    Insert {
+        /// The table written.
+        table_id: TableId,
+        /// Its name.
+        table_name: String,
+    },
+    /// An `UPDATE`.
+    Update {
+        /// The table written.
+        table_id: TableId,
+        /// Its name.
+        table_name: String,
+    },
+    /// A `DELETE`.
+    Delete {
+        /// The table written.
+        table_id: TableId,
+        /// Its name.
+        table_name: String,
+    },
+    /// An `ALTER COLUMN … TYPE`.
+    AlterColumnType {
+        /// The table.
+        table_id: TableId,
+        /// Its name.
+        table_name: String,
+        /// The column placement; its id survives the change.
+        column_id: ColumnId,
+        /// The column's name.
+        column_name: String,
+        /// The type it became, as SQL spells it, e.g. `select[]`.
+        to: String,
+        /// Cells `USING NULL` emptied because their value did not fit.
+        cleared_cells: usize,
+        /// Cells that held several values and kept only their first.
+        trimmed_cells: usize,
+    },
 }
 
 /// A `SELECT`'s rows, as the engine's typed cells.
@@ -68,29 +122,13 @@ pub struct ResultColumn {
     pub related_table: Option<TableId>,
 }
 
-/// A column an `ALTER COLUMN … TYPE` changed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AlteredColumn {
-    /// The table.
-    pub table_id: TableId,
-    /// The column placement; its id survives the change.
-    pub column_id: ColumnId,
-    /// The column's name.
-    pub name: String,
-    /// The type it became, as SQL spells it.
-    pub to: String,
-    /// Cells `USING NULL` emptied because their value did not fit.
-    pub cleared_cells: usize,
-    /// Cells that held several values and kept only their first.
-    pub trimmed_cells: usize,
-}
-
-/// The engine's outcome in the viewer's terms.
+/// The engine's outcome for `query` in the viewer's terms.
 pub(crate) fn shape(
     catalog: &ViewerCatalog,
+    query: &Query,
     outcome: &Outcome,
     new_versions: HashMap<TableId, TableVersion>,
-) -> SqlOutcome {
+) -> Result<SqlOutcome, SqlError> {
     let read_versions = outcome
         .read_tables
         .iter()
@@ -110,41 +148,97 @@ pub(crate) fn shape(
     } else {
         Vec::new()
     };
-    SqlOutcome {
-        result: result_set(catalog, outcome),
+    Ok(SqlOutcome {
+        result: result_set(catalog, query, outcome),
         changes_applied: outcome.changes_applied as usize,
         inserted_row_ids: outcome.inserted_row_ids.clone(),
         new_versions,
         read_versions,
         truncated_tables,
-        altered_column: outcome.altered_column.as_ref().and_then(|altered| {
-            let (_, table) = catalog.table(altered.table)?;
+        statement: statement(catalog, query, outcome)?,
+    })
+}
+
+/// What `query` was, naming what it wrote from the catalog it compiled
+/// against.
+fn statement(
+    catalog: &ViewerCatalog,
+    query: &Query,
+    outcome: &Outcome,
+) -> Result<SqlStatement, SqlError> {
+    let table_name = |table_id: TableId| {
+        catalog
+            .table(table_id)
+            .map(|(_, detail)| detail.table.name.clone())
+            .ok_or(SqlError::WrittenTableNotInCatalog { table_id })
+    };
+    Ok(match query {
+        Query::Select(_) => SqlStatement::Select,
+        Query::Insert(insert) => SqlStatement::Insert {
+            table_id: insert.table,
+            table_name: table_name(insert.table)?,
+        },
+        Query::Update(update) => SqlStatement::Update {
+            table_id: update.table,
+            table_name: table_name(update.table)?,
+        },
+        Query::Delete(delete) => SqlStatement::Delete {
+            table_id: delete.table,
+            table_name: table_name(delete.table)?,
+        },
+        Query::AlterColumnType(_) => {
+            let altered = outcome
+                .altered_column
+                .as_ref()
+                .ok_or(SqlError::AlterWithoutAlteredColumn)?;
+            let (_, table) =
+                catalog
+                    .table(altered.table)
+                    .ok_or(SqlError::WrittenTableNotInCatalog {
+                        table_id: altered.table,
+                    })?;
             let column = table
                 .columns
                 .iter()
-                .find(|column| column.definition.definition.id == altered.column)?;
-            Some(AlteredColumn {
+                .find(|column| column.definition.definition.id == altered.column)
+                .ok_or(SqlError::AlteredColumnNotInCatalog {
+                    table_id: altered.table,
+                    definition: altered.column,
+                })?;
+            SqlStatement::AlterColumnType {
                 table_id: altered.table,
+                table_name: table.table.name.clone(),
                 column_id: column.column.id,
-                name: column.name().to_string(),
+                column_name: column.name().to_string(),
                 to: altered.to.clone(),
                 cleared_cells: altered.cleared_cells,
                 trimmed_cells: altered.trimmed_cells,
-            })
-        }),
-    }
+            }
+        }
+    })
 }
 
-fn result_set(catalog: &ViewerCatalog, outcome: &Outcome) -> Option<ResultSet> {
+fn result_set(catalog: &ViewerCatalog, query: &Query, outcome: &Outcome) -> Option<ResultSet> {
     if outcome.columns.is_empty() {
         return None;
     }
+    // The table behind a result column: its select item's relation.
+    let table_of = |index: usize| -> Option<TableId> {
+        let Query::Select(select) = query else {
+            return None;
+        };
+        let SelectItem::Column(key) = select.items.get(index)? else {
+            return None;
+        };
+        Some(select.relations[select.binding(*key)?.relation].table)
+    };
     let row_shaped = outcome.row_ids.len() == outcome.rows.len();
     Some(ResultSet {
         columns: outcome
             .columns
             .iter()
-            .map(|column| {
+            .enumerate()
+            .map(|(index, column)| {
                 let kind = column
                     .column
                     .and_then(|definition| catalog.column(definition))
@@ -172,7 +266,8 @@ fn result_set(catalog: &ViewerCatalog, outcome: &Outcome) -> Option<ResultSet> {
                                 ..
                             }),
                             Some(definition),
-                        ) => catalog.related_table(definition),
+                        ) => table_of(index)
+                            .and_then(|table| catalog.related_table(table, definition)),
                         _ => None,
                     },
                 }

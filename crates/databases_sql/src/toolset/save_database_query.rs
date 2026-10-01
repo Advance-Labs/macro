@@ -18,6 +18,7 @@ use soup::domain::ports::SoupService;
 use uuid::Uuid;
 
 use super::{DatabasesSqlToolContext, QueryDatabaseDisplay, sql_error};
+use crate::service::ChartColumns;
 
 /// Most series one chart plots, matching what the document node accepts.
 const MAX_CHART_SERIES: usize = 5;
@@ -237,6 +238,11 @@ where
                 QueryDefinition::V1 {
                     query: self.sql.clone(),
                 },
+                self.chart.as_ref().map(|chart| ChartColumns {
+                    x: &chart.x,
+                    y: &chart.y,
+                    color: chart.color.as_deref(),
+                }),
             )
             .await
             .map_err(sql_error)?;

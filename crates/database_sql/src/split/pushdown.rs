@@ -9,21 +9,23 @@
 //! `OR` pushes only when every side does, because a half-pushed `OR` would
 //! drop rows the other side wanted. A conjunct pushes only when every column
 //! it tests belongs to one relation, since each relation is fetched on its
-//! own; the row id is not a property, so it never pushes.
+//! own; the row id is not a property, so it never pushes. Nothing pushes
+//! into `people`, whose query takes no filter.
 
 use filter_ast::Expr;
 use item_filters::ast::properties::{EntityRefId, PropertiesLiteral, PropertyMatchValue};
 
-use crate::resolve::{Binding, ComparisonOperator, Filter, Value, binding};
+use crate::catalog::TableSource;
+use crate::resolve::{Binding, ComparisonOperator, Filter, Relation, Value, binding};
 
 /// The expression pushed into each relation's query, indexed by relation,
 /// and the filter that remains.
 pub fn divide(
     filter: Filter,
     bindings: &[Binding],
-    relations: usize,
+    relations: &[Relation],
 ) -> (Vec<Option<Expr<PropertiesLiteral>>>, Option<Filter>) {
-    let mut pushed: Vec<Option<Expr<PropertiesLiteral>>> = vec![None; relations];
+    let mut pushed: Vec<Option<Expr<PropertiesLiteral>>> = vec![None; relations.len()];
     let mut push_into = |relation: usize, expr: Expr<PropertiesLiteral>| {
         pushed[relation] = Some(match pushed[relation].take() {
             Some(existing) => Expr::and(existing, expr),
@@ -34,7 +36,7 @@ pub fn divide(
         Filter::And(parts) => {
             let mut kept = Vec::new();
             for part in parts {
-                match pushable(&part, bindings) {
+                match pushable(&part, bindings, relations) {
                     Some((relation, expr)) => push_into(relation, expr),
                     None => kept.push(part),
                 }
@@ -45,7 +47,7 @@ pub fn divide(
                 _ => Some(Filter::And(kept)),
             }
         }
-        other => match pushable(&other, bindings) {
+        other => match pushable(&other, bindings, relations) {
             Some((relation, expr)) => {
                 push_into(relation, expr);
                 None
@@ -57,8 +59,12 @@ pub fn divide(
 }
 
 /// The relation a whole filter tests and its `propf` form, or `None` if it
-/// spans relations or any part of it cannot be expressed.
-fn pushable(filter: &Filter, bindings: &[Binding]) -> Option<(usize, Expr<PropertiesLiteral>)> {
+/// spans relations, tests `people`, or any part of it cannot be expressed.
+fn pushable(
+    filter: &Filter,
+    bindings: &[Binding],
+    relations: &[Relation],
+) -> Option<(usize, Expr<PropertiesLiteral>)> {
     let mut relation = None;
     let mut spans = false;
     filter.for_each_column(&mut |key| {
@@ -69,10 +75,11 @@ fn pushable(filter: &Filter, bindings: &[Binding]) -> Option<(usize, Expr<Proper
             _ => spans = true,
         }
     });
-    if spans {
+    let relation = relation?;
+    if spans || relations[relation].source != TableSource::Database {
         return None;
     }
-    Some((relation?, push(filter, bindings)?))
+    Some((relation, push(filter, bindings)?))
 }
 
 /// The whole filter as a `propf` expression, or `None` if any part of it

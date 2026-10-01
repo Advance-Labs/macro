@@ -70,10 +70,10 @@ pub fn holds(filter: &Filter, row: &Row) -> bool {
 /// which resolve rules out except for empty multi-valued cells.
 fn compare(cell: &Cell, value: &Value) -> Option<Ordering> {
     match (cell, value) {
-        (Cell::Text(a), Value::Text(b)) => Some(a.as_str().cmp(b.as_str())),
-        (Cell::Number(a), Value::Number(b)) => a.partial_cmp(b),
-        (Cell::Bool(a), Value::Bool(b)) => Some(a.cmp(b)),
-        (Cell::Date(a), Value::Date(b)) => Some(a.cmp(b)),
+        (Cell::Text(text), Value::Text(other)) => Some(text.as_str().cmp(other.as_str())),
+        (Cell::Number(number), Value::Number(other)) => number.partial_cmp(other),
+        (Cell::Bool(checked), Value::Bool(other)) => Some(checked.cmp(other)),
+        (Cell::Date(date), Value::Date(other)) => Some(date.cmp(other)),
         (Cell::Options(ids), Value::Option(id)) => single(ids).map(|only| only.cmp(id)),
         (Cell::Entities(ids), Value::Entity(id)) => {
             single(ids).map(|only| only.as_str().cmp(id.as_str()))
@@ -83,7 +83,7 @@ fn compare(cell: &Cell, value: &Value) -> Option<Ordering> {
 }
 
 /// The one value of a single-valued cell; an empty cell has none.
-fn single<T>(ids: &[T]) -> Option<&T> {
+fn single<Member>(ids: &[Member]) -> Option<&Member> {
     match ids {
         [only] => Some(only),
         _ => None,
@@ -132,13 +132,38 @@ enum Part {
     Literal(char),
 }
 
+/// Iterative wildcard matching: on a mismatch, retry from the last `%`
+/// with one more character absorbed, so the cost stays linear in the
+/// pattern times the text.
 fn matches(pattern: &[Part], text: &[char]) -> bool {
-    match pattern.split_first() {
-        None => text.is_empty(),
-        Some((Part::Any, rest)) => (0..=text.len()).any(|skip| matches(rest, &text[skip..])),
-        Some((Part::One, rest)) => !text.is_empty() && matches(rest, &text[1..]),
-        Some((Part::Literal(literal), rest)) => {
-            text.first() == Some(literal) && matches(rest, &text[1..])
+    let (mut pattern_at, mut text_at) = (0, 0);
+    // The last `%` seen, and where the text stood when it was.
+    let mut retry: Option<(usize, usize)> = None;
+    while text_at < text.len() {
+        match pattern.get(pattern_at) {
+            Some(Part::Any) => {
+                retry = Some((pattern_at, text_at));
+                pattern_at += 1;
+            }
+            Some(Part::One) => {
+                pattern_at += 1;
+                text_at += 1;
+            }
+            Some(Part::Literal(literal)) if *literal == text[text_at] => {
+                pattern_at += 1;
+                text_at += 1;
+            }
+            _ => match retry {
+                Some((any_at, absorbed_to)) => {
+                    retry = Some((any_at, absorbed_to + 1));
+                    pattern_at = any_at + 1;
+                    text_at = absorbed_to + 1;
+                }
+                None => return false,
+            },
         }
     }
+    pattern[pattern_at..]
+        .iter()
+        .all(|part| matches!(part, Part::Any))
 }

@@ -17,7 +17,7 @@ use crate::resolve::{
 use super::{checked_table, placed};
 
 /// The escape character of the `LIKE` patterns text tests become.
-pub(super) const LIKE_ESCAPE: char = '\\';
+const LIKE_ESCAPE: char = '\\';
 
 /// The `SELECT * … WHERE … ORDER BY …, row_position` a view shows, exactly as
 /// [`resolve`](crate::resolve::resolve) would bind it.

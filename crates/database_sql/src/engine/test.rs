@@ -9,7 +9,7 @@ use super::*;
 use crate::catalog::{PEOPLE_EMAIL, PEOPLE_ID, PEOPLE_NAME, PEOPLE_TABLE};
 use crate::fold::Cell;
 use crate::resolve::column_key;
-use crate::run::{OpsSink, OutcomeKind, RowSource, SourceError, WriteError, run};
+use crate::run::{OpsSink, OutcomeKind, RowSource, run};
 use crate::test_support::{catalog, *};
 
 const FIX_LOGIN: Uuid = Uuid::from_u128(0xe1);
@@ -569,29 +569,33 @@ fn steps_and_pages_cross_the_wire_as_json() {
 struct ByTable;
 
 impl RowSource for ByTable {
+    type Error = std::convert::Infallible;
+
     async fn page(
         &self,
         query: &GqlQuery,
         _needs: &[Uuid],
         _cursor: Option<String>,
         _limit: usize,
-    ) -> Result<Page, SourceError> {
+    ) -> Result<Page, Self::Error> {
         Ok(Page {
             rows: by_table(query),
             next: None,
         })
     }
 
-    async fn bins(&self, _: &GqlQuery) -> Result<Vec<Bin>, SourceError> {
-        unreachable!()
+    async fn bins(&self, _: &GqlQuery) -> Result<Vec<Bin>, Self::Error> {
+        unreachable!("these statements read no bins")
     }
 }
 
 struct NoWrites;
 
 impl OpsSink for NoWrites {
-    async fn apply(&self, _: Uuid, _: Vec<DatabaseOp>) -> Result<Vec<OpResult>, WriteError> {
-        unreachable!()
+    type Error = std::convert::Infallible;
+
+    async fn apply(&self, _: Uuid, _: Vec<DatabaseOp>) -> Result<Vec<OpResult>, Self::Error> {
+        unreachable!("these statements write nothing")
     }
 }
 
@@ -838,4 +842,200 @@ fn an_aggregate_of_row_position_is_named_after_it() {
         }]
     );
     assert_eq!(outcome.rows, vec![vec![Some(Cell::Number(1.0))]]);
+}
+
+/// `people` takes no filter, so a filter on it stays with the fold rather
+/// than being pushed into a query that would drop it.
+#[test]
+fn a_filter_on_people_is_applied_by_the_fold() {
+    let (mut engine, step) = Engine::start(
+        &catalog(),
+        "SELECT email FROM macro.people WHERE id = 'macro|ana@example.com'",
+    )
+    .unwrap();
+    let Step::Fetch(request) = step else {
+        panic!("expected a fetch");
+    };
+    assert_eq!(request.query, GqlQuery::People { ids: None });
+    assert_eq!(request.needs, vec![PEOPLE_EMAIL, PEOPLE_ID]);
+
+    let ana = Uuid::new_v5(&Uuid::NAMESPACE_OID, ANA.as_bytes());
+    let step = engine
+        .feed_page(
+            request.id,
+            Page {
+                rows: vec![
+                    Row {
+                        id: Uuid::new_v5(&Uuid::NAMESPACE_OID, SAM.as_bytes()),
+                        position: None,
+                        cells: HashMap::from([
+                            (PEOPLE_ID, Cell::Entities(vec![SAM.into()])),
+                            (PEOPLE_EMAIL, Cell::Text("sam@example.com".into())),
+                        ]),
+                    },
+                    Row {
+                        id: ana,
+                        position: None,
+                        cells: HashMap::from([
+                            (PEOPLE_ID, Cell::Entities(vec![ANA.into()])),
+                            (PEOPLE_EMAIL, Cell::Text("ana@example.com".into())),
+                        ]),
+                    },
+                ],
+                next: None,
+            },
+        )
+        .unwrap();
+
+    assert_eq!(
+        step,
+        Step::Done(Outcome {
+            columns: vec![OutcomeColumn {
+                name: "email".into(),
+                column: Some(PEOPLE_EMAIL),
+                kind: OutcomeKind::Text,
+            }],
+            rows: vec![vec![Some(Cell::Text("ana@example.com".into()))]],
+            row_ids: vec![ana],
+            read_tables: vec![PEOPLE_TABLE],
+            ..Outcome::default()
+        })
+    );
+}
+
+#[test]
+fn a_feed_of_the_wrong_kind_is_refused() {
+    let (mut engine, step) = Engine::start(&catalog(), "SELECT name FROM crm.deals").unwrap();
+    let Step::Fetch(request) = step else {
+        panic!("expected a fetch");
+    };
+    assert_eq!(
+        engine.feed_bins(request.id, vec![]),
+        Err(RunError::WrongAnswer {
+            request: 0,
+            expected: Answer::Page,
+            fed: Answer::Bins,
+        })
+    );
+
+    let (mut engine, step) = Engine::start(
+        &catalog(),
+        "SELECT stage, COUNT(*) FROM crm.deals GROUP BY stage",
+    )
+    .unwrap();
+    let Step::Bins(request) = step else {
+        panic!("expected bins");
+    };
+    assert_eq!(
+        engine.feed_page(request.id, Page::default()),
+        Err(RunError::WrongAnswer {
+            request: 0,
+            expected: Answer::Bins,
+            fed: Answer::Page,
+        })
+    );
+
+    let (mut engine, step) = Engine::start(
+        &catalog(),
+        "INSERT INTO crm.deals (name) VALUES ('Initech')",
+    )
+    .unwrap();
+    let Step::Ops { id, .. } = step else {
+        panic!("expected ops");
+    };
+    assert_eq!(
+        engine.feed_page(id, Page::default()),
+        Err(RunError::WrongAnswer {
+            request: 0,
+            expected: Answer::OpResults,
+            fed: Answer::Page,
+        })
+    );
+    assert_eq!(
+        engine.feed_ops(id, vec![]),
+        Err(RunError::NothingOutstanding { fed: 0 })
+    );
+}
+
+#[test]
+fn a_join_past_the_hint_limit_fetches_the_joined_relation_whole() {
+    let assigned = |count: usize| -> Vec<Row> {
+        (0..count)
+            .map(|index| Row {
+                id: Uuid::from_u128(0x1000 + index as u128),
+                position: None,
+                cells: HashMap::from([(
+                    ASSIGNEES,
+                    Cell::Entities(vec![format!("macro|person{index}@example.com")]),
+                )]),
+            })
+            .collect()
+    };
+    let sql = "SELECT p.email FROM macro.tasks t JOIN macro.people p ON t.assignees = p.id";
+
+    let (mut engine, step) = Engine::start(&catalog(), sql).unwrap();
+    let Step::Fetch(request) = step else {
+        panic!("expected a fetch");
+    };
+    let Step::Fetch(people) = engine
+        .feed_page(
+            request.id,
+            Page {
+                rows: assigned(MAX_KEY_HINT_VALUES),
+                next: None,
+            },
+        )
+        .unwrap()
+    else {
+        panic!("expected the people fetch");
+    };
+    assert_eq!(
+        people.query,
+        GqlQuery::People {
+            ids: Some(
+                (0..MAX_KEY_HINT_VALUES)
+                    .map(|index| format!("macro|person{index}@example.com"))
+                    .collect()
+            ),
+        }
+    );
+
+    let (mut engine, step) = Engine::start(&catalog(), sql).unwrap();
+    let Step::Fetch(request) = step else {
+        panic!("expected a fetch");
+    };
+    let Step::Fetch(people) = engine
+        .feed_page(
+            request.id,
+            Page {
+                rows: assigned(MAX_KEY_HINT_VALUES + 1),
+                next: None,
+            },
+        )
+        .unwrap()
+    else {
+        panic!("expected the people fetch");
+    };
+    assert_eq!(people.query, GqlQuery::People { ids: None });
+}
+
+/// `people` has no `groupSoup`, so a count per person reads the people.
+#[test]
+fn a_count_per_person_fetches_people_rather_than_bins() {
+    let (_, step) = Engine::start(
+        &catalog(),
+        "SELECT id, COUNT(*) FROM macro.people GROUP BY id",
+    )
+    .unwrap();
+
+    assert_eq!(
+        step,
+        Step::Fetch(Request {
+            id: 0,
+            query: GqlQuery::People { ids: None },
+            needs: vec![PEOPLE_ID],
+            cursor: None,
+            limit: PAGE_LIMIT,
+        })
+    );
 }

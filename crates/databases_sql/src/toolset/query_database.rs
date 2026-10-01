@@ -17,7 +17,7 @@ use soup::domain::ports::SoupService;
 use uuid::Uuid;
 
 use super::{DatabasesSqlToolContext, sql_error};
-use crate::outcome::{AlteredColumn, ResultSet, SqlOutcome};
+use crate::outcome::{ResultSet, SqlOutcome, SqlStatement};
 use crate::service::SqlRequest;
 
 /// Run SQL against the user's databases.
@@ -170,6 +170,8 @@ pub struct QueryDatabaseResponse {
     /// total.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub truncated_tables: Vec<String>,
+    /// What kind of statement ran, and the table (and column) it wrote.
+    pub statement: SqlStatement,
     /// A human-readable summary of what the statement did.
     pub summary: String,
 }
@@ -219,9 +221,20 @@ where
 impl From<SqlOutcome> for QueryDatabaseResponse {
     fn from(outcome: SqlOutcome) -> Self {
         let results: Vec<ResultSet> = outcome.result.into_iter().collect();
-        let summary = match &outcome.altered_column {
-            Some(altered) => altered_summary(altered),
-            None => summarize(&results, outcome.changes_applied, &outcome.truncated_tables),
+        let summary = match &outcome.statement {
+            SqlStatement::AlterColumnType {
+                column_name,
+                to,
+                cleared_cells,
+                trimmed_cells,
+                ..
+            } => altered_summary(column_name, to, *cleared_cells, *trimmed_cells),
+            SqlStatement::Select
+            | SqlStatement::Insert { .. }
+            | SqlStatement::Update { .. }
+            | SqlStatement::Delete { .. } => {
+                summarize(&results, outcome.changes_applied, &outcome.truncated_tables)
+            }
         };
         let mut read_versions: Vec<_> = outcome
             .read_versions
@@ -243,6 +256,7 @@ impl From<SqlOutcome> for QueryDatabaseResponse {
                 .into_iter()
                 .map(|(table_id, version)| (table_id, version.0))
                 .collect(),
+            statement: outcome.statement,
             summary,
             read_versions,
         }
@@ -250,20 +264,23 @@ impl From<SqlOutcome> for QueryDatabaseResponse {
 }
 
 /// What an `ALTER COLUMN` did, including what `USING NULL` cost.
-fn altered_summary(altered: &AlteredColumn) -> String {
-    let mut summary = format!("Changed \"{}\" to {}.", altered.name, altered.to);
-    if altered.cleared_cells > 0 {
-        let plural = if altered.cleared_cells == 1 { "" } else { "s" };
+fn altered_summary(
+    column_name: &str,
+    to: &str,
+    cleared_cells: usize,
+    trimmed_cells: usize,
+) -> String {
+    let mut summary = format!("Changed \"{column_name}\" to {to}.");
+    if cleared_cells > 0 {
+        let plural = if cleared_cells == 1 { "" } else { "s" };
         summary.push_str(&format!(
-            " Emptied {} cell{plural} whose value did not fit.",
-            altered.cleared_cells
+            " Emptied {cleared_cells} cell{plural} whose value did not fit."
         ));
     }
-    if altered.trimmed_cells > 0 {
-        let plural = if altered.trimmed_cells == 1 { "" } else { "s" };
+    if trimmed_cells > 0 {
+        let plural = if trimmed_cells == 1 { "" } else { "s" };
         summary.push_str(&format!(
-            " Kept only the first value of {} cell{plural}.",
-            altered.trimmed_cells
+            " Kept only the first value of {trimmed_cells} cell{plural}."
         ));
     }
     summary

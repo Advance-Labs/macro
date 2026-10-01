@@ -17,19 +17,21 @@
 #[cfg(test)]
 mod test;
 
+use std::collections::HashSet;
+
 use models_databases::{DatabaseOp, OpResult};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use uuid::Uuid;
 
 use crate::catalog::{Catalog, Table};
-use crate::fold::{Bin, Cell, Row, fold_bins, fold_relations};
+use crate::fold::{Bin, Cell, CellKey, Row, fold_bins, fold_relations};
 use crate::resolve::{
     ComparisonOperator, DeleteQuery, Filter, Query, SelectQuery, UpdateQuery, Value, binding,
     column_key, compile, row_id_key, row_position_key,
 };
-use crate::run::{Outcome, OutcomeColumn, PAGE_LIMIT, Page, ROW_CAP, RunError, describe};
-use crate::split::{GqlQuery, KeyHint, Plan, Shape, split};
+use crate::run::{Answer, Outcome, OutcomeColumn, PAGE_LIMIT, Page, ROW_CAP, RunError, describe};
+use crate::split::{GqlQuery, KeyHint, MAX_KEY_HINT_VALUES, Plan, Shape, split};
 use crate::write::{self, Sent};
 
 /// What the driver does next.
@@ -87,10 +89,11 @@ pub struct Engine {
     requests: Requests,
 }
 
-/// The ids handed to requests, and the one a feed must answer.
+/// The ids handed to requests, and the one a feed must answer with what
+/// it asked for.
 #[derive(Debug, Clone, Default)]
 struct Requests {
-    outstanding: Option<u32>,
+    outstanding: Option<(u32, Answer)>,
     next: u32,
 }
 
@@ -103,6 +106,9 @@ struct Read {
     fetched: Vec<Vec<Row>>,
     /// The relation being fetched.
     current: usize,
+    /// The current relation's query, its key hint filled in once its
+    /// relation starts.
+    query: Option<GqlQuery>,
     truncated: bool,
 }
 
@@ -163,17 +169,12 @@ impl Engine {
         }
     }
 
-    /// The plan of the read in flight, if the statement reads.
-    pub fn plan(&self) -> Option<&Plan> {
-        self.read.as_ref().map(|read| &read.plan)
-    }
-
     /// Take one page of the outstanding request. Cells may be keyed by
     /// property definition, as a source reads them; the engine keys a
     /// joined relation's cells itself (see [`column_key`]).
     pub fn feed_page(&mut self, request_id: u32, page: Page) -> Result<Step, RunError> {
-        self.requests.answer(request_id)?;
-        let read = reading(&mut self.read)?;
+        self.requests.answer(request_id, Answer::Page)?;
+        let read = reading(&mut self.read);
         let keyed = keyed(&self.catalog, read, page.rows);
         let rows = &mut read.fetched[read.current];
         rows.extend(keyed);
@@ -190,20 +191,20 @@ impl Engine {
 
     /// Take the bins of the outstanding request.
     pub fn feed_bins(&mut self, request_id: u32, bins: Vec<Bin>) -> Result<Step, RunError> {
-        self.requests.answer(request_id)?;
-        let read = reading(&mut self.read)?;
-        let rows = fold_bins(&self.catalog, &read.plan, bins);
+        self.requests.answer(request_id, Answer::Bins)?;
+        let read = reading(&mut self.read);
+        let rows = fold_bins(&self.catalog, &read.plan, bins)?;
         let outcome = read.outcome(rows, Vec::new());
         self.finish_read(outcome)
     }
 
     /// Take the results of the outstanding ops, one per op.
     pub fn feed_ops(&mut self, request_id: u32, results: Vec<OpResult>) -> Result<Step, RunError> {
-        self.requests.answer(request_id)?;
+        self.requests.answer(request_id, Answer::OpResults)?;
         let sent = self
             .sent
             .take()
-            .ok_or(RunError::NothingOutstanding { fed: request_id })?;
+            .expect("op results are only asked for once ops are sent");
         Ok(Step::Done(write::outcome(&sent, &results)?))
     }
 
@@ -222,6 +223,7 @@ impl Engine {
             plan,
             fetched: Vec::new(),
             current: 0,
+            query: None,
             truncated: false,
         });
         begin_relation(read, &mut self.requests)
@@ -230,7 +232,7 @@ impl Engine {
     /// A relation is complete: give it its row ids and positions, then move
     /// on or fold.
     fn finish_relation(&mut self) -> Result<Step, RunError> {
-        let read = reading(&mut self.read)?;
+        let read = reading(&mut self.read);
         let table = read.plan.relations[read.current].relation.table;
         let bound = |key: Uuid| binding(&read.plan.bindings, key).is_some();
         let (id_key, position_key) = (row_id_key(table), row_position_key(table));
@@ -299,7 +301,7 @@ impl Engine {
         let database = table(&self.catalog, table_id).database_id;
         self.sent = Some(sent);
         Step::Ops {
-            id: self.requests.issue(),
+            id: self.requests.issue(Answer::OpResults),
             database,
             ops: vec![op],
         }
@@ -307,19 +309,25 @@ impl Engine {
 }
 
 impl Requests {
-    /// A new request's id, now the one outstanding.
-    fn issue(&mut self) -> u32 {
+    /// A new request's id, now the one outstanding, answered by `answer`.
+    fn issue(&mut self, answer: Answer) -> u32 {
         let id = self.next;
         self.next += 1;
-        self.outstanding = Some(id);
+        self.outstanding = Some((id, answer));
         id
     }
 
-    /// A feed for `request_id`, which must be the outstanding request.
-    fn answer(&mut self, request_id: u32) -> Result<(), RunError> {
+    /// A feed of `fed` for `request_id`, which must be the outstanding
+    /// request and ask for it. The request is spent either way.
+    fn answer(&mut self, request_id: u32, fed: Answer) -> Result<(), RunError> {
         match self.outstanding.take() {
-            Some(expected) if expected == request_id => Ok(()),
-            Some(expected) => Err(RunError::WrongRequest {
+            Some((expected, wanted)) if expected == request_id && wanted == fed => Ok(()),
+            Some((expected, wanted)) if expected == request_id => Err(RunError::WrongAnswer {
+                request: request_id,
+                expected: wanted,
+                fed,
+            }),
+            Some((expected, _)) => Err(RunError::WrongRequest {
                 expected,
                 fed: request_id,
             }),
@@ -330,7 +338,8 @@ impl Requests {
 
 impl Read {
     /// The values the current relation is joined on, from the rows of the
-    /// relation on the other side of the join's first equality.
+    /// relation on the other side of the join's first equality, one member
+    /// each; `None` past [`MAX_KEY_HINT_VALUES`].
     fn key_hint(&self) -> Option<KeyHint> {
         let join = self
             .plan
@@ -339,17 +348,24 @@ impl Read {
             .find(|join| join.relation == self.current)?;
         let (left, right) = *join.on.first()?;
         let owner = binding(&self.plan.bindings, left)?;
+        let mut seen: HashSet<CellKey> = HashSet::new();
         let mut values: Vec<Cell> = Vec::new();
-        for row in &self.fetched[owner.relation] {
-            if let Some(cell) = row.cells.get(&left)
-                && !values.contains(cell)
-            {
-                values.push(cell.clone());
+        for cell in self.fetched[owner.relation]
+            .iter()
+            .filter_map(|row| row.cells.get(&left))
+        {
+            for member in members(cell) {
+                if seen.insert(CellKey::from(&member)) {
+                    if values.len() == MAX_KEY_HINT_VALUES {
+                        return None;
+                    }
+                    values.push(member);
+                }
             }
         }
         Some(KeyHint {
             column: binding(&self.plan.bindings, right)?.column,
-            values: flatten_entities(values),
+            values,
         })
     }
 
@@ -370,27 +386,20 @@ impl Read {
     }
 }
 
-/// Start fetching the current relation.
+/// Start fetching the current relation, with the join's key hint filled
+/// in.
 fn begin_relation(read: &mut Read, requests: &mut Requests) -> Step {
     read.fetched.push(Vec::new());
-    let query = read.plan.relations[read.current].query.clone();
-    if matches!(query, GqlQuery::GroupSoup { .. }) {
+    let mut query = read.plan.relations[read.current].query.clone();
+    if let GqlQuery::GroupSoup { .. } = query {
         return Step::Bins(Request {
-            id: requests.issue(),
+            id: requests.issue(Answer::Bins),
             query,
             needs: Vec::new(),
             cursor: None,
             limit: 0,
         });
     }
-    request(read, requests, None)
-}
-
-/// The next page of the current relation, with the join's key hint filled
-/// in.
-fn request(read: &Read, requests: &mut Requests, cursor: Option<String>) -> Step {
-    let relation = &read.plan.relations[read.current];
-    let mut query = relation.query.clone();
     if let Some(hint) = read.key_hint() {
         match &mut query {
             GqlQuery::Soup { key_hint, .. } => *key_hint = Some(hint),
@@ -398,10 +407,10 @@ fn request(read: &Read, requests: &mut Requests, cursor: Option<String>) -> Step
                 *ids = Some(
                     hint.values
                         .into_iter()
-                        .flat_map(|cell| match cell {
-                            Cell::Entities(ids) => ids,
-                            Cell::Text(id) => vec![id],
-                            _ => Vec::new(),
+                        .filter_map(|cell| match cell {
+                            Cell::Entities(mut ids) => ids.pop(),
+                            Cell::Text(id) => Some(id),
+                            _ => None,
                         })
                         .collect(),
                 )
@@ -409,10 +418,20 @@ fn request(read: &Read, requests: &mut Requests, cursor: Option<String>) -> Step
             GqlQuery::GroupSoup { .. } => {}
         }
     }
+    read.query = Some(query);
+    request(read, requests, None)
+}
+
+/// The next page of the current relation.
+fn request(read: &Read, requests: &mut Requests, cursor: Option<String>) -> Step {
+    let relation = &read.plan.relations[read.current];
     let fetched = read.fetched[read.current].len();
     Step::Fetch(Request {
-        id: requests.issue(),
-        query,
+        id: requests.issue(Answer::Page),
+        query: read
+            .query
+            .clone()
+            .expect("a relation's query is set when it starts"),
         needs: relation.needs.clone(),
         cursor,
         limit: (ROW_CAP - fetched).min(PAGE_LIMIT),
@@ -484,43 +503,35 @@ fn named_rows(read: &SelectQuery) -> Vec<Uuid> {
     }
 }
 
-fn reading(read: &mut Option<Read>) -> Result<&mut Read, RunError> {
-    read.as_mut().ok_or(RunError::Results {
-        message: "rows were fed to a statement that reads none".into(),
-    })
+/// The read in flight; pages and bins are only asked for while reading.
+fn reading(read: &mut Option<Read>) -> &mut Read {
+    read.as_mut()
+        .expect("pages and bins are only asked for while reading")
 }
 
 /// Position, then id, as `database_rows` orders a table; rows without a
 /// position (`people`) keep the order they came in, after any that have one.
-fn table_order(a: &Row, b: &Row) -> std::cmp::Ordering {
+fn table_order(left: &Row, right: &Row) -> std::cmp::Ordering {
     use std::cmp::Ordering;
-    match (&a.position, &b.position) {
-        (Some(left), Some(right)) => left.cmp(right).then(a.id.cmp(&b.id)),
+    match (&left.position, &right.position) {
+        (Some(left_position), Some(right_position)) => left_position
+            .cmp(right_position)
+            .then(left.id.cmp(&right.id)),
         (Some(_), None) => Ordering::Less,
         (None, Some(_)) => Ordering::Greater,
         (None, None) => Ordering::Equal,
     }
 }
 
-/// Entity cells one id each, so a driver can read the hint as a list of ids.
-fn flatten_entities(values: Vec<Cell>) -> Vec<Cell> {
-    let mut out: Vec<Cell> = Vec::new();
-    for value in values {
-        match value {
-            Cell::Entities(ids) => {
-                for id in ids {
-                    let cell = Cell::Entities(vec![id]);
-                    if !out.contains(&cell) {
-                        out.push(cell);
-                    }
-                }
-            }
-            other => {
-                if !out.contains(&other) {
-                    out.push(other);
-                }
-            }
-        }
+/// A cell one member at a time, so a driver can read a hint as a list of
+/// ids or options.
+fn members(cell: &Cell) -> Vec<Cell> {
+    match cell {
+        Cell::Entities(ids) => ids
+            .iter()
+            .map(|id| Cell::Entities(vec![id.clone()]))
+            .collect(),
+        Cell::Options(ids) => ids.iter().map(|id| Cell::Options(vec![*id])).collect(),
+        other => vec![other.clone()],
     }
-    out
 }

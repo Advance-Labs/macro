@@ -2,28 +2,39 @@
 //! select values sort in the column's option order; entities by id.
 
 use std::cmp::Ordering;
+use std::collections::HashMap;
 
 use uuid::Uuid;
 
 use crate::catalog::{Catalog, ColumnKind};
-use crate::resolve::{Direction, Order, OrderKey, SelectItem};
+use crate::resolve::{Direction, OrderKey, SelectItem};
+use crate::split::Plan;
 
 use super::aggregate::Group;
 use super::{Cell, Row, group_order_index};
 
+/// Each option's place in its column's declared order.
+type OptionRanks = HashMap<Uuid, usize>;
+
 /// Sort fetched rows by column keys. A key on an item index cannot occur
 /// here: a row shape has no aggregates to refer to.
-pub fn rows(catalog: &Catalog, rows: &mut [Row], order_by: &[Order]) {
-    rows.sort_by(|a, b| {
-        order_by
-            .iter()
-            .map(|order| {
-                let OrderKey::Column(column) = order.key else {
-                    unreachable!("row shapes order by columns only");
-                };
+pub fn rows(catalog: &Catalog, plan: &Plan, rows: &mut [Row]) {
+    let keys: Vec<(Uuid, Direction, OptionRanks)> = plan
+        .order_by
+        .iter()
+        .map(|order| {
+            let OrderKey::Column(column) = order.key else {
+                unreachable!("row shapes order by columns only");
+            };
+            (column, order.direction, option_ranks(catalog, plan, column))
+        })
+        .collect();
+    rows.sort_by(|left, right| {
+        keys.iter()
+            .map(|(column, direction, ranks)| {
                 directed(
-                    compare(catalog, a.cells.get(&column), b.cells.get(&column)),
-                    order.direction,
+                    compare(ranks, left.cells.get(column), right.cells.get(column)),
+                    *direction,
                 )
             })
             .find(|ordering| *ordering != Ordering::Equal)
@@ -34,27 +45,60 @@ pub fn rows(catalog: &Catalog, rows: &mut [Row], order_by: &[Order]) {
 /// Sort groups by select-list position.
 pub fn groups(
     catalog: &Catalog,
+    plan: &Plan,
     groups: &mut [Group],
-    order_by: &[Order],
     group_by: Option<Uuid>,
     items: &[SelectItem],
 ) {
-    groups.sort_by(|a, b| {
-        order_by
-            .iter()
-            .map(|order| {
-                let ordering = match group_order_index(&order.key, group_by, items) {
-                    Some(index) => {
-                        compare(catalog, a.cells[index].as_ref(), b.cells[index].as_ref())
-                    }
-                    // ORDER BY the group column when it is not selected.
-                    None => compare(catalog, a.key.as_ref(), b.key.as_ref()),
+    let keys: Vec<(Option<usize>, Direction, OptionRanks)> = plan
+        .order_by
+        .iter()
+        .map(|order| {
+            let index = group_order_index(&order.key, group_by, items);
+            let column = match index.map(|index| &items[index]) {
+                Some(SelectItem::Column(key))
+                | Some(SelectItem::Aggregate {
+                    column: Some(key), ..
+                }) => Some(*key),
+                Some(SelectItem::Aggregate { column: None, .. }) => None,
+                // ORDER BY the group column when it is not selected.
+                None => group_by,
+            };
+            let ranks = column
+                .map(|column| option_ranks(catalog, plan, column))
+                .unwrap_or_default();
+            (index, order.direction, ranks)
+        })
+        .collect();
+    groups.sort_by(|left, right| {
+        keys.iter()
+            .map(|(index, direction, ranks)| {
+                let ordering = match index {
+                    Some(index) => compare(
+                        ranks,
+                        left.cells[*index].as_ref(),
+                        right.cells[*index].as_ref(),
+                    ),
+                    None => compare(ranks, left.key.as_ref(), right.key.as_ref()),
                 };
-                directed(ordering, order.direction)
+                directed(ordering, *direction)
             })
             .find(|ordering| *ordering != Ordering::Equal)
             .unwrap_or(Ordering::Equal)
     });
+}
+
+/// The option order of the select column behind `key`; empty for any other
+/// column.
+fn option_ranks(catalog: &Catalog, plan: &Plan, key: Uuid) -> OptionRanks {
+    match plan.column(catalog, key).map(|column| &column.kind) {
+        Some(ColumnKind::Select { options, .. }) => options
+            .iter()
+            .enumerate()
+            .map(|(rank, option)| (option.id, rank))
+            .collect(),
+        _ => OptionRanks::new(),
+    }
 }
 
 /// Reverse for `DESC`, but keep empty cells last.
@@ -76,45 +120,35 @@ enum Ranked {
     BothEmpty,
 }
 
-fn compare(catalog: &Catalog, a: Option<&Cell>, b: Option<&Cell>) -> Ranked {
+fn compare(ranks: &OptionRanks, left: Option<&Cell>, right: Option<&Cell>) -> Ranked {
     match (
-        a.filter(|cell| !cell.is_empty()),
-        b.filter(|cell| !cell.is_empty()),
+        left.filter(|cell| !cell.is_empty()),
+        right.filter(|cell| !cell.is_empty()),
     ) {
         (None, None) => Ranked::BothEmpty,
         (None, Some(_)) => Ranked::EmptyLeft,
         (Some(_), None) => Ranked::EmptyRight,
-        (Some(a), Some(b)) => Ranked::Both(match (a, b) {
-            (Cell::Text(a), Cell::Text(b)) => a.to_lowercase().cmp(&b.to_lowercase()),
-            (Cell::Number(a), Cell::Number(b)) => a.partial_cmp(b).unwrap_or(Ordering::Equal),
-            (Cell::Bool(a), Cell::Bool(b)) => a.cmp(b),
-            (Cell::Date(a), Cell::Date(b)) => a.cmp(b),
-            (Cell::Options(a), Cell::Options(b)) => {
-                option_rank(catalog, a).cmp(&option_rank(catalog, b))
+        (Some(left), Some(right)) => Ranked::Both(match (left, right) {
+            (Cell::Text(left), Cell::Text(right)) => left.to_lowercase().cmp(&right.to_lowercase()),
+            (Cell::Number(left), Cell::Number(right)) => {
+                left.partial_cmp(right).unwrap_or(Ordering::Equal)
             }
-            (Cell::Entities(a), Cell::Entities(b)) => a.cmp(b),
+            (Cell::Bool(left), Cell::Bool(right)) => left.cmp(right),
+            (Cell::Date(left), Cell::Date(right)) => left.cmp(right),
+            (Cell::Options(left), Cell::Options(right)) => {
+                option_rank(ranks, left).cmp(&option_rank(ranks, right))
+            }
+            (Cell::Entities(left), Cell::Entities(right)) => left.cmp(right),
             _ => Ordering::Equal,
         }),
     }
 }
 
-/// Options in the order the column declares them; the rank of a cell is
-/// the rank of each option it holds, in order.
-fn option_rank(catalog: &Catalog, options: &[Uuid]) -> Vec<usize> {
+/// The rank of a cell is the rank of each option it holds, in order; an
+/// option the column no longer declares sorts after every declared one.
+fn option_rank(ranks: &OptionRanks, options: &[Uuid]) -> Vec<usize> {
     options
         .iter()
-        .map(|option| {
-            catalog
-                .tables
-                .iter()
-                .flat_map(|table| &table.columns)
-                .find_map(|column| match &column.kind {
-                    ColumnKind::Select { options, .. } => {
-                        options.iter().position(|candidate| candidate.id == *option)
-                    }
-                    _ => None,
-                })
-                .unwrap_or(usize::MAX)
-        })
+        .map(|option| ranks.get(option).copied().unwrap_or(usize::MAX))
         .collect()
 }

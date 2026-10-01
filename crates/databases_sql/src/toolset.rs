@@ -16,6 +16,8 @@ use entity_access::domain::ports::EntityAccessService;
 use macro_user_id::user_id::MacroUserIdStr;
 use soup::domain::ports::SoupService;
 
+use database_sql::run::RunError;
+
 use crate::service::{DatabasesSql, SqlError};
 
 pub use query_database::{
@@ -99,8 +101,10 @@ where
 /// A SQL error in words the model can act on; the engine's message passes
 /// through verbatim because it names exactly what to fix.
 fn sql_error(error: SqlError) -> ToolCallError {
+    const SERVICE_FAILED: &str = "The databases service failed.";
     let description = match &error {
-        SqlError::Compile(_) | SqlError::Run(_) | SqlError::WrittenTableNotInCatalog { .. } => {
+        SqlError::Compile(_)
+        | SqlError::Run(RunError::Parse(_) | RunError::Resolve(_) | RunError::View(_)) => {
             format!(
                 "SQL error: {error}\n\nCall ListDatabases to find the table inside its database, \
              then DescribeDatabase for the exact table and column names. Quote names that \
@@ -108,11 +112,38 @@ fn sql_error(error: SqlError) -> ToolCallError {
              establish that the user's table is missing."
             )
         }
-        SqlError::ReadOnlyQuery
-        | SqlError::SavedQueryNotSelect
-        | SqlError::TableReadOnly { .. } => format!(
+        SqlError::Run(RunError::NoSuchRow { .. } | RunError::TooManyRows { .. }) => {
+            format!("SQL error: {error}")
+        }
+        SqlError::Run(
+            RunError::WrongAnswer { .. }
+            | RunError::NotAnsweredByBins
+            | RunError::OpResultCount { .. }
+            | RunError::UnexpectedOpResult { .. }
+            | RunError::WrongRequest { .. }
+            | RunError::NothingOutstanding { .. }
+            | RunError::Unreadable { .. }
+            | RunError::Unwritable { .. }
+            | RunError::AlreadyStarted,
+        )
+        | SqlError::WrittenTableNotInCatalog { .. }
+        | SqlError::AlteredColumnNotInCatalog { .. }
+        | SqlError::AlterWithoutAlteredColumn
+        | SqlError::Infrastructure(_) => SERVICE_FAILED.to_string(),
+        SqlError::WriteRefused { .. } => {
+            format!(
+                "The write was refused, so nothing changed: {error}. Fix the statement and retry."
+            )
+        }
+        SqlError::ReadOnlyQuery | SqlError::TableReadOnly { .. } => format!(
             "{error}. Writes need edit access to the table's database, and the read-only \
              query tool never writes."
+        ),
+        SqlError::ChartColumnNotReturned { .. } | SqlError::ChartValueNotNumeric { .. } => format!(
+            "{error}. Name chart columns as the SELECT names its results, with AS for an aggregate."
+        ),
+        SqlError::SavedQueryNotSelect => format!(
+            "{error}. Save the SELECT that answers the question; make changes with QueryDatabase."
         ),
         SqlError::VersionConflict { table_id } => {
             format!("Table {table_id} changed underneath this statement. Re-read it and retry.")
@@ -121,7 +152,6 @@ fn sql_error(error: SqlError) -> ToolCallError {
         SqlError::NotFound => "That database does not exist, or the user cannot see it. Call \
                                ListDatabases for the user's databases."
             .to_string(),
-        SqlError::Infrastructure(_) => "The databases service failed.".to_string(),
     };
 
     // The error is handed over whole rather than rendered to a string: an

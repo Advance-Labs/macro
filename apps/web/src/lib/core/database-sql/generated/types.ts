@@ -13,6 +13,15 @@ export type AlteredColumn = {
   trimmedCells: number;
 };
 
+/**  What a request is answered with. */
+export type Answer =
+  /**  A page of rows, through [`Engine::feed_page`]. */
+  | 'page'
+  /**  The bins of a grouped read, through [`Engine::feed_bins`]. */
+  | 'bins'
+  /**  The results of ops, through [`Engine::feed_ops`]. */
+  | 'opResults';
+
 /**  One `groupSoup` bin: the grouped value and how many rows it holds. */
 export type Bin = {
   /**  The group's value; `None` for rows with an empty cell. */
@@ -630,7 +639,10 @@ export type Input =
 export type KeyHint = {
   /**  The property matched; `None` when the row id is. */
   column: string | null;
-  /**  The values the earlier rows carry, each once. */
+  /**
+   *  The values the earlier rows carry, each once, one entity or option
+   *  per cell.
+   */
   values: Cell[];
 };
 
@@ -799,6 +811,23 @@ export type OpResult =
       /**  The positions written, the moved card's last. */
       positions: CardPosition[];
     };
+
+/**  The kind of an [`OpResult`]. */
+export type OpResultKind =
+  /**  [`OpResult::RowsWritten`]. */
+  | 'rowsWritten'
+  /**  [`OpResult::ColumnTyped`]. */
+  | 'columnTyped'
+  /**  [`OpResult::OptionChanged`]. */
+  | 'optionChanged'
+  /**  [`OpResult::ViewWritten`]. */
+  | 'viewWritten'
+  /**  [`OpResult::ViewDeleted`]. */
+  | 'viewDeleted'
+  /**  [`OpResult::ViewsReordered`]. */
+  | 'viewsReordered'
+  /**  [`OpResult::CardMoved`]. */
+  | 'cardMoved';
 
 /**
  *  A colour select and tag options take, from the palette the tag picker
@@ -1286,32 +1315,6 @@ export type RunError =
   | ({
       stage: 'view';
     } & ViewProblem)
-  /**  The source could not answer a read. */
-  | ({
-      stage: 'source';
-      /**  The source's words. */
-      message: string;
-    } & {
-      expected?: never;
-      fed?: never;
-      limit?: never;
-      position?: never;
-      row?: never;
-      what?: never;
-    })
-  /**  A write was refused, in the sink's words. */
-  | ({
-      stage: 'write';
-      /**  The sink's words. */
-      message: string;
-    } & {
-      expected?: never;
-      fed?: never;
-      limit?: never;
-      position?: never;
-      row?: never;
-      what?: never;
-    })
   /**
    *  An `UPDATE` or `DELETE` named a row by id that the table does not
    *  have.
@@ -1327,6 +1330,9 @@ export type RunError =
       fed?: never;
       limit?: never;
       message?: never;
+      received?: never;
+      request?: never;
+      sent?: never;
       what?: never;
     })
   /**  An `UPDATE` or `DELETE` matched more rows than a statement reads. */
@@ -1339,19 +1345,79 @@ export type RunError =
       fed?: never;
       message?: never;
       position?: never;
+      received?: never;
+      request?: never;
       row?: never;
+      sent?: never;
       what?: never;
     })
-  /**  Results were fed that do not answer what was asked. */
+  /**
+   *  A feed answered the outstanding request with the wrong kind of
+   *  answer.
+   */
   | ({
-      stage: 'results';
-      /**  What does not match. */
-      message: string;
+      stage: 'wrongAnswer';
+      /**  The outstanding request. */
+      request: number;
+      /**  What it asked for. */
+      expected: Answer;
+      /**  What was fed. */
+      fed: Answer;
+    } & {
+      limit?: never;
+      message?: never;
+      position?: never;
+      received?: never;
+      row?: never;
+      sent?: never;
+      what?: never;
+    })
+  /**
+   *  Bins were folded for a statement that counting groups does not
+   *  answer.
+   */
+  | ({ stage: 'notAnsweredByBins' } & {
+      expected?: never;
+      fed?: never;
+      limit?: never;
+      message?: never;
+      position?: never;
+      received?: never;
+      request?: never;
+      row?: never;
+      sent?: never;
+      what?: never;
+    })
+  /**  The sink answered a different number of results than ops sent. */
+  | ({
+      stage: 'opResultCount';
+      /**  The results that came back. */
+      received: number;
     } & {
       expected?: never;
       fed?: never;
       limit?: never;
+      message?: never;
       position?: never;
+      request?: never;
+      row?: never;
+      sent?: never;
+      what?: never;
+    })
+  /**  The sink answered an op with a result of another kind. */
+  | ({
+      stage: 'unexpectedOpResult';
+      /**  The op sent. */
+      sent: SentOp;
+      /**  The result that came back. */
+      received: OpResultKind;
+    } & {
+      expected?: never;
+      fed?: never;
+      limit?: never;
+      message?: never;
+      position?: never;
+      request?: never;
       row?: never;
       what?: never;
     })
@@ -1366,7 +1432,10 @@ export type RunError =
       limit?: never;
       message?: never;
       position?: never;
+      received?: never;
+      request?: never;
       row?: never;
+      sent?: never;
       what?: never;
     })
   /**  A feed arrived when nothing was outstanding. */
@@ -1379,7 +1448,10 @@ export type RunError =
       limit?: never;
       message?: never;
       position?: never;
+      received?: never;
+      request?: never;
       row?: never;
+      sent?: never;
       what?: never;
     })
   /**  A value handed to the engine is not the shape it reads. */
@@ -1394,7 +1466,26 @@ export type RunError =
       fed?: never;
       limit?: never;
       position?: never;
+      received?: never;
+      request?: never;
       row?: never;
+      sent?: never;
+    })
+  /**  A value the engine hands back could not be written out. */
+  | ({
+      stage: 'unwritable';
+      /**  Why it could not be written. */
+      message: string;
+    } & {
+      expected?: never;
+      fed?: never;
+      limit?: never;
+      position?: never;
+      received?: never;
+      request?: never;
+      row?: never;
+      sent?: never;
+      what?: never;
     })
   /**  The first step was asked for twice. */
   | ({ stage: 'alreadyStarted' } & {
@@ -1403,7 +1494,10 @@ export type RunError =
       limit?: never;
       message?: never;
       position?: never;
+      received?: never;
+      request?: never;
       row?: never;
+      sent?: never;
       what?: never;
     });
 
@@ -1425,6 +1519,13 @@ export type SelectOption = {
   /**  The label users type in SQL. */
   label: string;
 };
+
+/**  The op a statement sent. */
+export type SentOp =
+  /**  Rows inserted, updated or deleted. */
+  | 'rowWrite'
+  /**  A column's type change. */
+  | 'columnTypeChange';
 
 /**
  *  How a cell's options or references relate to a set of them. The first
