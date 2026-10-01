@@ -196,7 +196,7 @@ describe('the GraphQL row source', () => {
       open: replay(transcript),
     });
 
-    expect(outcome).toEqual(transcript.outcome);
+    expect(outcome._unsafeUnwrap()).toEqual(transcript.outcome);
     expect(server.variables()).toEqual([
       {
         input: {
@@ -235,8 +235,8 @@ describe('the GraphQL row source', () => {
       open: replay(transcript),
     });
 
-    expect(outcome).toEqual(transcript.outcome);
-    expect(outcome.rowIds).toEqual([INITECH, ACME, GLOBEX]);
+    expect(outcome._unsafeUnwrap()).toEqual(transcript.outcome);
+    expect(outcome._unsafeUnwrap().rowIds).toEqual([INITECH, ACME, GLOBEX]);
   });
 
   it('counts per option with groupSoup bins', async () => {
@@ -264,7 +264,7 @@ describe('the GraphQL row source', () => {
       open: replay(transcript),
     });
 
-    expect(outcome).toEqual(transcript.outcome);
+    expect(outcome._unsafeUnwrap()).toEqual(transcript.outcome);
     expect(server.variables()).toEqual([
       {
         input: {
@@ -305,7 +305,7 @@ describe('the GraphQL row source', () => {
       open: replay(transcript),
     });
 
-    expect(outcome).toEqual(transcript.outcome);
+    expect(outcome._unsafeUnwrap()).toEqual(transcript.outcome);
     expect(server.variables()[1]).toEqual({
       input: {
         initial: {
@@ -345,7 +345,7 @@ describe('the GraphQL row source', () => {
       open: replay(transcript),
     });
 
-    expect(outcome).toEqual(transcript.outcome);
+    expect(outcome._unsafeUnwrap()).toEqual(transcript.outcome);
     expect(server.variables()).toEqual([
       {
         input: {

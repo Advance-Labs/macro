@@ -11,7 +11,10 @@
  */
 
 import { readRecordsByKeys, selectRecords } from '@app/lib/graphql-cache';
-import type { RowSource } from '@core/database-sql/driver';
+import type {
+  DatabaseSqlFetchFailure,
+  RowSource,
+} from '@core/database-sql/driver';
 import type {
   Bin,
   Catalog,
@@ -45,6 +48,7 @@ import {
 } from '@service-storage/graphql/generated/graphql';
 import type { GraphqlSoupItem } from '@service-storage/graphql-soup';
 import type { Client, RequestPolicy } from '@urql/core';
+import { ResultAsync } from 'neverthrow';
 import { match, P } from 'ts-pattern';
 import { NIL as NIL_UUID, v5 as uuidV5 } from 'uuid';
 
@@ -99,6 +103,14 @@ type DatabaseRowItem = Extract<
 
 const rowSelection = selectRecords(SoupItemFieldsFragmentDoc);
 
+/** Anything the source could not read is a fetch failure, in its own words. */
+function fetchFailure(thrown: unknown): DatabaseSqlFetchFailure {
+  return {
+    kind: 'fetch',
+    message: thrown instanceof Error ? thrown.message : String(thrown),
+  };
+}
+
 export function createGraphqlRowSource({
   client,
   catalog,
@@ -108,29 +120,39 @@ export function createGraphqlRowSource({
 }: GraphqlRowSourceCapabilities): RowSource {
   return {
     page: (query, _needs, cursor, limit) =>
-      match(query)
-        .with({ type: 'soup' }, (soup) =>
-          soupPage(
-            client,
-            requestPolicy,
-            soupInput(soup, cursor, limit),
-            membership
-          )
-        )
-        .with({ type: 'people' }, ({ ids }) => peoplePage(catalog, people, ids))
-        .with({ type: 'groupSoup' }, () => {
-          throw new Error('a grouped query is read as bins, not pages');
-        })
-        .exhaustive(),
+      ResultAsync.fromPromise(
+        (async () =>
+          match(query)
+            .with({ type: 'soup' }, (soup) =>
+              soupPage(
+                client,
+                requestPolicy,
+                soupInput(soup, cursor, limit),
+                membership
+              )
+            )
+            .with({ type: 'people' }, ({ ids }) =>
+              peoplePage(catalog, people, ids)
+            )
+            .with({ type: 'groupSoup' }, () => {
+              throw new Error('a grouped query is read as bins, not pages');
+            })
+            .exhaustive())(),
+        fetchFailure
+      ),
     bins: (query) =>
-      match(query)
-        .with({ type: 'groupSoup' }, (grouped) =>
-          groupBins(client, requestPolicy, catalog, grouped)
-        )
-        .with({ type: P.union('soup', 'people') }, () => {
-          throw new Error('only a grouped query has bins');
-        })
-        .exhaustive(),
+      ResultAsync.fromPromise(
+        (async () =>
+          match(query)
+            .with({ type: 'groupSoup' }, (grouped) =>
+              groupBins(client, requestPolicy, catalog, grouped)
+            )
+            .with({ type: P.union('soup', 'people') }, () => {
+              throw new Error('only a grouped query has bins');
+            })
+            .exhaustive())(),
+        fetchFailure
+      ),
   };
 }
 

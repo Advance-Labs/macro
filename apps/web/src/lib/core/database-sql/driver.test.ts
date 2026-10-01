@@ -1,9 +1,6 @@
+import { errAsync, okAsync } from 'neverthrow';
 import { describe, expect, it, vi } from 'vitest';
-import {
-  DatabaseSqlError,
-  runDatabaseSql,
-  runDatabaseSqlStatement,
-} from './driver';
+import { runDatabaseSql, runDatabaseSqlStatement } from './driver';
 import type {
   Bin,
   DatabaseOp,
@@ -17,15 +14,15 @@ describe('runDatabaseSql', () => {
   it('asks the source for each page the engine wants, following the cursor', async () => {
     const paging = readTranscript('paging');
     const page = vi.fn(
-      async (
+      (
         _query: GqlQuery,
         _needs: string[],
         cursor: string | null,
         _limit: number
-      ): Promise<Page> => {
+      ) => {
         const exchange = paging.exchanges[cursor === null ? 0 : 1];
         if (!('page' in exchange)) throw new Error('recorded bins');
-        return exchange.page;
+        return okAsync<Page>(exchange.page);
       }
     );
 
@@ -34,7 +31,7 @@ describe('runDatabaseSql', () => {
       open: replay(paging),
     });
 
-    expect(outcome).toEqual(paging.outcome);
+    expect(outcome._unsafeUnwrap()).toEqual(paging.outcome);
     expect(page.mock.calls).toEqual([
       [
         {
@@ -63,10 +60,10 @@ describe('runDatabaseSql', () => {
 
   it('answers a grouped count from the bins alone', async () => {
     const counts = readTranscript('count-per-option');
-    const bins = vi.fn(async (): Promise<Bin[]> => {
+    const bins = vi.fn(() => {
       const exchange = counts.exchanges[0];
       if (!('bins' in exchange)) throw new Error('recorded a page');
-      return exchange.bins;
+      return okAsync<Bin[]>(exchange.bins);
     });
     const page = vi.fn();
 
@@ -75,7 +72,7 @@ describe('runDatabaseSql', () => {
       open: replay(counts),
     });
 
-    expect(outcome).toEqual(counts.outcome);
+    expect(outcome._unsafeUnwrap()).toEqual(counts.outcome);
     expect(bins.mock.calls).toEqual([
       [
         {
@@ -89,15 +86,22 @@ describe('runDatabaseSql', () => {
     expect(page).not.toHaveBeenCalled();
   });
 
-  it('reports a statement the engine refuses as an error, freeing nothing it never opened', async () => {
-    await expect(
-      runDatabaseSql({ tables: [] }, 'SELECT name FROM crm.deals', {
+  it('reports a statement the engine refuses as an engine failure, freeing nothing it never opened', async () => {
+    const outcome = await runDatabaseSql(
+      { tables: [] },
+      'SELECT name FROM crm.deals',
+      {
         source: { page: vi.fn(), bins: vi.fn() },
         open: async () => {
           throw 'no such table: crm.deals';
         },
-      })
-    ).rejects.toEqual(new DatabaseSqlError('no such table: crm.deals'));
+      }
+    );
+
+    expect(outcome._unsafeUnwrapErr()).toEqual({
+      kind: 'engine',
+      message: 'no such table: crm.deals',
+    });
   });
 
   it('frees the engine when the source fails', async () => {
@@ -105,17 +109,19 @@ describe('runDatabaseSql', () => {
     const free = vi.fn();
     const open = replay(paging);
 
-    await expect(
-      runDatabaseSql(paging.catalog, paging.sql, {
-        source: {
-          page: async () => {
-            throw new Error('gateway timed out');
-          },
-          bins: vi.fn(),
-        },
-        open: async (catalog, sql) => ({ ...(await open(catalog, sql)), free }),
-      })
-    ).rejects.toThrow('gateway timed out');
+    const outcome = await runDatabaseSql(paging.catalog, paging.sql, {
+      source: {
+        page: () =>
+          errAsync({ kind: 'fetch' as const, message: 'gateway timed out' }),
+        bins: vi.fn(),
+      },
+      open: async (catalog, sql) => ({ ...(await open(catalog, sql)), free }),
+    });
+
+    expect(outcome._unsafeUnwrapErr()).toEqual({
+      kind: 'fetch',
+      message: 'gateway timed out',
+    });
     expect(free).toHaveBeenCalledTimes(1);
   });
 
@@ -125,34 +131,48 @@ describe('runDatabaseSql', () => {
     if (!('page' in read) || !('results' in write) || write.step.step !== 'ops')
       throw new Error('recorded a read, then a write');
     const recorded = write.step;
-    const apply = vi.fn(
-      async (_database: string, _ops: DatabaseOp[]): Promise<OpResult[]> =>
-        write.results
+    const apply = vi.fn((_database: string, _ops: DatabaseOp[]) =>
+      okAsync<OpResult[]>(write.results)
     );
 
     const outcome = await runDatabaseSqlStatement(update.catalog, update.sql, {
-      source: { page: async () => read.page, bins: vi.fn() },
+      source: { page: () => okAsync(read.page), bins: vi.fn() },
       ops: { apply },
       open: replay(update),
     });
 
-    expect(outcome).toEqual(update.outcome);
-    expect(outcome.changesApplied).toBe(2);
+    expect(outcome._unsafeUnwrap()).toEqual(update.outcome);
+    expect(outcome._unsafeUnwrap().changesApplied).toBe(2);
     expect(apply.mock.calls).toEqual([[recorded.database, recorded.ops]]);
   });
 
   it('refuses a write where only reads run, sending nothing', async () => {
     const insert = readTranscript('insert-two-rows');
 
-    await expect(
-      runDatabaseSql(insert.catalog, insert.sql, {
-        source: { page: vi.fn(), bins: vi.fn() },
-        open: replay(insert),
-      })
-    ).rejects.toEqual(
-      new DatabaseSqlError(
-        'This statement changes data, and only reads are run here.'
-      )
-    );
+    const outcome = await runDatabaseSql(insert.catalog, insert.sql, {
+      source: { page: vi.fn(), bins: vi.fn() },
+      open: replay(insert),
+    });
+
+    expect(outcome._unsafeUnwrapErr()).toEqual({ kind: 'read-only' });
+  });
+
+  it('reports the sink refusing a write as an ops failure carrying the refusal', async () => {
+    const update = readTranscript('update-uniform');
+    const [read] = update.exchanges;
+    if (!('page' in read)) throw new Error('recorded a read first');
+    const refusal = {
+      code: 'INVALID_OP' as const,
+      message: 'op 0, row 1: "Done" is not an option of "Status"',
+      refusal: { op: 0, row: 1, column: null },
+    };
+
+    const outcome = await runDatabaseSqlStatement(update.catalog, update.sql, {
+      source: { page: () => okAsync(read.page), bins: vi.fn() },
+      ops: { apply: () => errAsync(refusal) },
+      open: replay(update),
+    });
+
+    expect(outcome._unsafeUnwrapErr()).toEqual({ kind: 'ops', error: refusal });
   });
 });

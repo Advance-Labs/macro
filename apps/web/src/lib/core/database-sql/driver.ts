@@ -5,6 +5,8 @@
  * driver knows nothing about GraphQL or HTTP; the source and the sink do.
  */
 
+import type { DatabaseOpsError } from '@service-storage/databases';
+import { err, errAsync, ok, Result, ResultAsync } from 'neverthrow';
 import { match } from 'ts-pattern';
 import type {
   Bin,
@@ -18,6 +20,22 @@ import type {
 } from './generated/types';
 import { type DatabaseSqlQuery, openDatabaseSqlQuery } from './wasm-module';
 
+/** Why a statement has no outcome. */
+export type DatabaseSqlFailure =
+  /** The engine refused the statement or a step, in its own words. */
+  | { kind: 'engine'; message: string }
+  /** The row source could not read what the engine asked for. */
+  | { kind: 'fetch'; message: string }
+  /** The sink refused the statement's writes; none of them landed. */
+  | { kind: 'ops'; error: DatabaseOpsError }
+  /** The statement writes, and only reads run here. */
+  | { kind: 'read-only' };
+
+export type DatabaseSqlFetchFailure = Extract<
+  DatabaseSqlFailure,
+  { kind: 'fetch' }
+>;
+
 /** Where rows come from. Mirrors `database_sql::run::RowSource`. */
 export interface RowSource {
   /**
@@ -30,15 +48,18 @@ export interface RowSource {
     needs: string[],
     cursor: string | null,
     limit: number
-  ) => Promise<Page>;
+  ) => ResultAsync<Page, DatabaseSqlFetchFailure>;
   /** The bins of a `groupSoup` query. */
-  bins: (query: GqlQuery) => Promise<Bin[]>;
+  bins: (query: GqlQuery) => ResultAsync<Bin[], DatabaseSqlFetchFailure>;
 }
 
 /** Where writes go. Mirrors `database_sql::run::OpsSink`. */
 export interface OpsSink {
   /** Apply `ops` to `database` together; one result per op, in order. */
-  apply: (database: string, ops: DatabaseOp[]) => Promise<OpResult[]>;
+  apply: (
+    database: string,
+    ops: DatabaseOp[]
+  ) => ResultAsync<OpResult[], DatabaseOpsError>;
 }
 
 /** Opens the engine for one statement; the wasm module unless a test says otherwise. */
@@ -47,58 +68,72 @@ export type OpenEngine = (
   sql: string
 ) => Promise<DatabaseSqlQuery>;
 
-/** A statement the engine refused or a step it could not take. */
-export class DatabaseSqlError extends Error {
-  override name = 'DatabaseSqlError';
+/** The engine throws its messages as strings. */
+export function engineFailure(thrown: unknown): DatabaseSqlFailure {
+  return {
+    kind: 'engine',
+    message:
+      typeof thrown === 'string'
+        ? thrown
+        : thrown instanceof Error
+          ? thrown.message
+          : String(thrown),
+  };
 }
 
-/** The engine throws its messages as strings; keep them readable as errors. */
-function engineError(thrown: unknown): DatabaseSqlError {
-  return new DatabaseSqlError(
-    typeof thrown === 'string' ? thrown : String(thrown)
-  );
+function feed(next: () => Step): Result<Step, DatabaseSqlFailure> {
+  return Result.fromThrowable(next, engineFailure)();
 }
 
-function feed(next: () => Step): Step {
-  try {
-    return next();
-  } catch (thrown) {
-    throw engineError(thrown);
-  }
-}
-
-async function nextStep(
+function nextStep(
   query: DatabaseSqlQuery,
   step: Exclude<Step, { step: 'done' }>,
   source: RowSource,
   ops: OpsSink | undefined
-): Promise<Step> {
+): ResultAsync<Step, DatabaseSqlFailure> {
   return match(step)
-    .with({ step: 'fetch' }, async (request) => {
-      const page = await source.page(
-        request.query,
-        request.needs,
-        request.cursor,
-        request.limit
-      );
-      return feed(() => query.feed_page(request.id, page));
-    })
-    .with({ step: 'bins' }, async (request) => {
-      const bins = await source.bins(request.query);
-      return feed(() => query.feed_bins(request.id, bins));
-    })
-    .with({ step: 'ops' }, async (request) => {
-      if (!ops)
-        throw new DatabaseSqlError(
-          'This statement changes data, and only reads are run here.'
-        );
-      const results = await ops.apply(request.database, request.ops);
-      return feed(() => query.feed_ops(request.id, results));
-    })
+    .returnType<ResultAsync<Step, DatabaseSqlFailure>>()
+    .with({ step: 'fetch' }, (request) =>
+      source
+        .page(request.query, request.needs, request.cursor, request.limit)
+        .andThen((page) => feed(() => query.feed_page(request.id, page)))
+    )
+    .with({ step: 'bins' }, (request) =>
+      source
+        .bins(request.query)
+        .andThen((bins) => feed(() => query.feed_bins(request.id, bins)))
+    )
+    .with({ step: 'ops' }, (request) =>
+      ops
+        ? ops
+            .apply(request.database, request.ops)
+            .mapErr((error): DatabaseSqlFailure => ({ kind: 'ops', error }))
+            .andThen((results) =>
+              feed(() => query.feed_ops(request.id, results))
+            )
+        : errAsync<Step, DatabaseSqlFailure>({ kind: 'read-only' })
+    )
     .exhaustive();
 }
 
-async function drive(
+async function steps(
+  query: DatabaseSqlQuery,
+  source: RowSource,
+  ops: OpsSink | undefined
+): Promise<Result<Outcome, DatabaseSqlFailure>> {
+  let step = feed(() => query.start());
+  while (step.isOk()) {
+    const current = step.value;
+    if (current.step === 'done') {
+      const { step: _done, ...outcome } = current;
+      return ok(outcome);
+    }
+    step = await nextStep(query, current, source, ops);
+  }
+  return err(step.error);
+}
+
+function drive(
   catalog: Catalog,
   sql: string,
   {
@@ -106,23 +141,11 @@ async function drive(
     ops,
     open = openDatabaseSqlQuery,
   }: { source: RowSource; ops?: OpsSink; open?: OpenEngine }
-): Promise<Outcome> {
-  let query: DatabaseSqlQuery;
-  try {
-    query = await open(catalog, sql);
-  } catch (thrown) {
-    throw engineError(thrown);
-  }
-  try {
-    let step = feed(() => query.start());
-    while (step.step !== 'done') {
-      step = await nextStep(query, step, source, ops);
-    }
-    const { step: _done, ...outcome } = step;
-    return outcome;
-  } finally {
-    query.free();
-  }
+): ResultAsync<Outcome, DatabaseSqlFailure> {
+  return ResultAsync.fromPromise(open(catalog, sql), engineFailure).andThen(
+    (query) =>
+      new ResultAsync(steps(query, source, ops).finally(() => query.free()))
+  );
 }
 
 /**
@@ -134,7 +157,7 @@ export function runDatabaseSql(
   catalog: Catalog,
   sql: string,
   options: { source: RowSource; open?: OpenEngine }
-): Promise<Outcome> {
+): ResultAsync<Outcome, DatabaseSqlFailure> {
   return drive(catalog, sql, options);
 }
 
@@ -146,6 +169,6 @@ export function runDatabaseSqlStatement(
   catalog: Catalog,
   sql: string,
   options: { source: RowSource; ops: OpsSink; open?: OpenEngine }
-): Promise<Outcome> {
+): ResultAsync<Outcome, DatabaseSqlFailure> {
   return drive(catalog, sql, options);
 }

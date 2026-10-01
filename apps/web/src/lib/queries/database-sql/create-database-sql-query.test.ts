@@ -297,7 +297,7 @@ describe('createDatabaseSqlQuery', () => {
     );
   });
 
-  it('refreshes from the network, and a failed refresh rejects and keeps the answer', async () => {
+  it('refreshes from the network, and a failed refresh fails as a fetch and keeps the answer', async () => {
     const policies: string[] = [];
     let failing = false;
     const exchange: Exchange = () => (incoming) =>
@@ -344,16 +344,22 @@ describe('createDatabaseSqlQuery', () => {
       expect(query.outcome()?.rows).toEqual([[{ type: 'text', value: 'Acme' }]])
     );
 
-    await query.refresh();
+    expect((await query.refresh()).isOk()).toBe(true);
     failing = true;
-    await expect(query.refresh()).rejects.toThrow('offline');
+    expect((await query.refresh())._unsafeUnwrapErr()).toEqual({
+      kind: 'fetch',
+      message: '[Network] offline',
+    });
 
     expect(policies).toEqual([
       'cache-and-network',
       'network-only',
       'network-only',
     ]);
-    expect(query.error()).toBeInstanceOf(CombinedError);
+    expect(query.error()).toEqual({
+      kind: 'fetch',
+      message: '[Network] offline',
+    });
     expect(query.outcome()?.rows).toEqual([[{ type: 'text', value: 'Acme' }]]);
   });
 

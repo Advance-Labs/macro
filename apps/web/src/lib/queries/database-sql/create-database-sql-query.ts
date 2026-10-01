@@ -7,8 +7,9 @@
  */
 
 import {
+  type DatabaseSqlFailure,
+  engineFailure,
   type OpenEngine,
-  type RowSource,
   runDatabaseSql,
 } from '@core/database-sql/driver';
 import type {
@@ -27,6 +28,7 @@ import {
   getGraphqlSoupClient,
 } from '@service-storage/graphql-soup';
 import type { Client, RequestPolicy } from '@urql/core';
+import { errAsync, okAsync, ResultAsync } from 'neverthrow';
 import {
   type Accessor,
   batch,
@@ -82,10 +84,10 @@ export interface DatabaseSqlQuery {
   /** The catalog the last answer was read against. */
   catalog: Accessor<Catalog | undefined>;
   /** Why the last run failed, until one succeeds. */
-  error: Accessor<unknown>;
+  error: Accessor<DatabaseSqlFailure | undefined>;
   loading: Accessor<boolean>;
-  /** Read the statement's tables from the server again; rejects when that read fails. */
-  refresh: () => Promise<void>;
+  /** Read the statement's tables from the server again. */
+  refresh: () => ResultAsync<void, DatabaseSqlFailure>;
 }
 
 /** The app's GraphQL client and cache, and the contacts query for people. */
@@ -110,56 +112,64 @@ export function createDatabaseSqlQuery(
 ): DatabaseSqlQuery {
   const [outcome, setOutcome] = createSignal<Outcome>();
   const [catalog, setCatalog] = createSignal<Catalog>();
-  const [error, setError] = createSignal<unknown>();
+  const [error, setError] = createSignal<DatabaseSqlFailure>();
   const [loading, setLoading] = createSignal(false);
   let latest = 0;
   // The cache may not hold what an in-flight network read will bring, so a
   // cache change waits for it instead of answering from older rows.
-  let networkRead: Promise<void> | undefined;
+  let networkRead: ResultAsync<void, DatabaseSqlFailure> | undefined;
   // First-page evidence for the local filter index, per statement.
   let baselines: LocalMembership['baselines'] = new Map();
 
-  /** Rejects with the failure of this run, unless a later run replaced it. */
-  const run = async (
+  /** Fails with this run's failure, unless a later run replaced it. */
+  const run = (
     current: DatabaseSqlStatement,
     requestPolicy: RequestPolicy,
     reconcile: boolean
-  ) => {
+  ): ResultAsync<void, DatabaseSqlFailure> => {
     const run = ++latest;
     const host = capabilities.cacheHost();
     setLoading(true);
-    try {
-      const built = await (capabilities.catalog ?? buildDatabaseSqlCatalog)(
+    const answered = ResultAsync.fromPromise(
+      (capabilities.catalog ?? buildDatabaseSqlCatalog)(
         current.schema,
         current.scope
-      );
-      const source: RowSource = createGraphqlRowSource({
-        client: capabilities.client(),
-        catalog: built,
-        requestPolicy,
-        people: capabilities.people,
-        membership: host ? { host, baselines, reconcile } : undefined,
+      ),
+      engineFailure
+    )
+      .andThen((built) =>
+        runDatabaseSql(built, current.sql, {
+          source: createGraphqlRowSource({
+            client: capabilities.client(),
+            catalog: built,
+            requestPolicy,
+            people: capabilities.people,
+            membership: host ? { host, baselines, reconcile } : undefined,
+          }),
+          ...(capabilities.open ? { open: capabilities.open } : {}),
+        }).map((answer) => {
+          if (run !== latest) return;
+          // A cache change that left the answer alone keeps the same outcome.
+          batch(() => {
+            if (JSON.stringify(untrack(catalog)) !== JSON.stringify(built))
+              setCatalog(built);
+            if (JSON.stringify(untrack(outcome)) !== JSON.stringify(answer))
+              setOutcome(answer);
+            setError(undefined);
+          });
+        })
+      )
+      .orElse((failure) => {
+        if (run !== latest) return okAsync(undefined);
+        setError(failure);
+        return errAsync(failure);
       });
-      const answer = await runDatabaseSql(built, current.sql, {
-        source,
-        ...(capabilities.open ? { open: capabilities.open } : {}),
-      });
-      if (run !== latest) return;
-      // A cache change that left the answer alone keeps the same outcome.
-      batch(() => {
-        if (JSON.stringify(untrack(catalog)) !== JSON.stringify(built))
-          setCatalog(built);
-        if (JSON.stringify(untrack(outcome)) !== JSON.stringify(answer))
-          setOutcome(answer);
-        setError(undefined);
-      });
-    } catch (failure) {
-      if (run !== latest) return;
-      setError(failure);
-      throw failure;
-    } finally {
+    const settle = async () => {
+      const result = await answered;
       if (run === latest) setLoading(false);
-    }
+      return result;
+    };
+    return new ResultAsync(settle());
   };
 
   createEffect(
@@ -175,7 +185,7 @@ export function createDatabaseSqlQuery(
         });
         return;
       }
-      void settled(run(current, 'cache-and-network', false));
+      void run(current, 'cache-and-network', false);
     })
   );
 
@@ -185,10 +195,13 @@ export function createDatabaseSqlQuery(
     const host = capabilities.cacheHost();
     if (!host) return;
     onCleanup(
-      subscribeToVisibleCacheChanges(host, () => {
-        if (networkRead) return settled(networkRead);
+      subscribeToVisibleCacheChanges(host, async () => {
+        if (networkRead) {
+          await networkRead;
+          return;
+        }
         const current = untrack(statement);
-        return current ? settled(run(current, 'cache-first', true)) : undefined;
+        if (current) await run(current, 'cache-first', true);
       })
     );
   });
@@ -202,53 +215,45 @@ export function createDatabaseSqlQuery(
     catalog,
     error,
     loading,
-    refresh: async () => {
+    refresh: () => {
       const current = untrack(statement);
-      if (!current) return;
+      if (!current) return okAsync(undefined);
       const reading = run(current, 'network-only', false);
       networkRead = reading;
-      try {
-        await reading;
-      } finally {
+      const settle = async () => {
+        const result = await reading;
         if (networkRead === reading) networkRead = undefined;
-      }
+        return result;
+      };
+      return new ResultAsync(settle());
     },
   };
 }
 
-/** A run's failure is kept in `error`; only an explicit refresh rejects with it. */
-async function settled(running: Promise<void>): Promise<void> {
-  try {
-    await running;
-  } catch {
-    // Kept in `error`.
-  }
-}
-
 /** Refresh without waiting; a failure shows through the reader's own error. */
 export function refreshInBackground(reader: {
-  refresh: () => Promise<void>;
+  refresh: () => ResultAsync<void, unknown>;
 }): void {
-  void settled(reader.refresh());
+  void reader.refresh();
 }
 
 /** One read of a statement from the network, for an answer nothing keeps live. */
-export async function readDatabaseSql(
+export function readDatabaseSql(
   { schema, scope, sql }: DatabaseSqlStatement,
   capabilities: DatabaseSqlQueryCapabilities = productionDatabaseSqlCapabilities()
-): Promise<{ catalog: Catalog; outcome: Outcome }> {
-  const catalog = await (capabilities.catalog ?? buildDatabaseSqlCatalog)(
-    schema,
-    scope
+): ResultAsync<{ catalog: Catalog; outcome: Outcome }, DatabaseSqlFailure> {
+  return ResultAsync.fromPromise(
+    (capabilities.catalog ?? buildDatabaseSqlCatalog)(schema, scope),
+    engineFailure
+  ).andThen((catalog) =>
+    runDatabaseSql(catalog, sql, {
+      source: createGraphqlRowSource({
+        client: capabilities.client(),
+        catalog,
+        requestPolicy: 'network-only',
+        people: capabilities.people,
+      }),
+      ...(capabilities.open ? { open: capabilities.open } : {}),
+    }).map((outcome) => ({ catalog, outcome }))
   );
-  const outcome = await runDatabaseSql(catalog, sql, {
-    source: createGraphqlRowSource({
-      client: capabilities.client(),
-      catalog,
-      requestPolicy: 'network-only',
-      people: capabilities.people,
-    }),
-    ...(capabilities.open ? { open: capabilities.open } : {}),
-  });
-  return { catalog, outcome };
 }
