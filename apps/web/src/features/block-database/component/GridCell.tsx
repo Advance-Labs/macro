@@ -15,7 +15,7 @@ import {
 } from 'solid-js';
 import { match } from 'ts-pattern';
 import { focusAdjacent } from '../components/cell-focus';
-import { isOptionColumn } from '../components/option-column';
+
 import { OptionPicker } from '../components/option-picker';
 import {
   createPopupCellKeys,
@@ -32,6 +32,7 @@ import {
   type DatabaseCellValue,
   type DatabaseViewColumn,
   databaseCellValues,
+  isOptionColumn,
 } from '../core/database-view';
 import type {
   GridCellControl,

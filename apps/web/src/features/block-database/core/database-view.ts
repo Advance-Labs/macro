@@ -40,6 +40,18 @@ export function optionOf(
   return column.options.find((option) => option.label === label);
 }
 
+/** A select or tag column: its cells hold labels from the column's options. */
+export function isOptionColumn(
+  column: Pick<DatabaseViewColumn, 'dataType' | 'relation'>
+): boolean {
+  return (
+    !column.relation &&
+    (column.dataType === 'SELECT_STRING' ||
+      column.dataType === 'SELECT_NUMBER' ||
+      column.dataType === 'TAG')
+  );
+}
+
 /** A board groups by a single select, so each card has one lane. */
 export function isBoardGroupColumn(column: DatabaseViewColumn): boolean {
   return (

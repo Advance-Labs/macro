@@ -31,13 +31,12 @@ import {
   type DatabaseColumnTypeChange,
   type DatabaseSchemaChange,
 } from '../core/column-schema';
-import type { DatabaseViewColumn } from '../core/database-view';
+import { type DatabaseViewColumn, isOptionColumn } from '../core/database-view';
 import {
   ColumnTypeMenu,
   type DatabaseColumnClearingChoice,
 } from './column-type-menu';
 import { createInlineRename } from './inline-rename';
-import { isOptionColumn } from './option-column';
 import { OptionEditor } from './option-editor';
 import { PropertyIcon } from './property-icon';
 import { OptionPill } from './select-pill';

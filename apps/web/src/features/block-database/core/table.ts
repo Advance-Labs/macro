@@ -7,7 +7,11 @@ import {
 import { fromCellDate } from './cell-date';
 import type { DatabaseColumnType } from './column-inference';
 import { relatedRowIds } from './database-relations';
-import type { DatabaseCellValue, DatabaseViewColumn } from './database-view';
+import {
+  type DatabaseCellValue,
+  type DatabaseViewColumn,
+  isOptionColumn,
+} from './database-view';
 
 export type DatabaseRow = {
   rowId: string;
@@ -62,8 +66,7 @@ export function canEditCell(column: DatabaseViewColumn): boolean {
   if (column.relation) return column.writable;
   return (
     column.writable &&
-    (!column.isMultiSelect ||
-      ['SELECT_STRING', 'SELECT_NUMBER', 'TAG'].includes(column.dataType)) &&
+    (!column.isMultiSelect || isOptionColumn(column)) &&
     [
       'STRING',
       'NUMBER',

@@ -35,6 +35,7 @@ import {
   type DatabaseOption,
   type DatabaseViewColumn,
   databaseCellValues,
+  isOptionColumn,
 } from '../core/database-view';
 import { isDatabaseNameTaken } from '../core/property-creation';
 import {
@@ -45,7 +46,6 @@ import {
   titleColumn,
 } from '../core/table';
 import { laneLabel } from '../core/views';
-import { isOptionColumn } from './option-column';
 import { OptionEditor } from './option-editor';
 import { PropertyIcon } from './property-icon';
 import { SelectPill } from './select-pill';
