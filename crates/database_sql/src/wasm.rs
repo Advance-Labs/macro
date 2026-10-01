@@ -7,12 +7,14 @@
 //! bins or op results back until a step is `done`. Values cross as plain JSON
 //! objects in the shapes `serde` gives the engine's types, which
 //! `bin/database_sql_types.rs` writes out as TypeScript for
-//! `apps/web/src/lib/core/database-sql/wasm-module.ts`.
+//! `apps/web/src/lib/core/database-sql/wasm-module.ts`. Every failure is
+//! thrown as an [`EngineError`].
 //!
 //! Only the wasm-bindgen glue lives here; the engine knows nothing of it.
 
 use models_databases::OpResult;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_wasm_bindgen::Serializer;
 use uuid::Uuid;
 use wasm_bindgen::prelude::*;
@@ -20,7 +22,7 @@ use wasm_bindgen::prelude::*;
 use crate::catalog::{Catalog, Schema, build};
 use crate::engine::{Engine, Step};
 use crate::fold::Bin;
-use crate::run::Page;
+use crate::run::{EngineError, Input, Page, RunError};
 
 /// One statement in flight.
 #[wasm_bindgen]
@@ -35,14 +37,12 @@ impl Query {
     ///
     /// # Errors
     ///
-    /// Returns a JS string when the catalog cannot be read or the statement
-    /// does not compile; the string is what the agent should read.
+    /// Throws an `EngineError` when the catalog cannot be read or the
+    /// statement does not compile.
     #[wasm_bindgen(constructor)]
     pub fn new(catalog: JsValue, sql: &str) -> Result<Query, JsValue> {
-        let catalog: Catalog = serde_wasm_bindgen::from_value(catalog)
-            .map_err(|error| JsValue::from_str(&format!("catalog is not readable: {error}")))?;
-        let (engine, first) =
-            Engine::start(&catalog, sql).map_err(|error| JsValue::from_str(&error.to_string()))?;
+        let catalog: Catalog = read(Input::Catalog, catalog)?;
+        let (engine, first) = Engine::start(&catalog, sql).map_err(thrown)?;
         Ok(Self {
             engine,
             first: Some(first),
@@ -54,41 +54,26 @@ impl Query {
         let step = self
             .first
             .take()
-            .ok_or_else(|| JsValue::from_str("the query has already started"))?;
+            .ok_or_else(|| thrown(RunError::AlreadyStarted))?;
         to_js(&step)
     }
 
     /// Feed one page (`{rows, next}`) of the outstanding request.
     pub fn feed_page(&mut self, request_id: u32, page: JsValue) -> Result<JsValue, JsValue> {
-        let page: Page = serde_wasm_bindgen::from_value(page)
-            .map_err(|error| JsValue::from_str(&format!("page is not readable: {error}")))?;
-        let step = self
-            .engine
-            .feed_page(request_id, page)
-            .map_err(|error| JsValue::from_str(&error.to_string()))?;
-        to_js(&step)
+        let page: Page = read(Input::Page, page)?;
+        to_js(&self.engine.feed_page(request_id, page).map_err(thrown)?)
     }
 
     /// Feed the results (`[{kind, …}]`, one per op) of the outstanding ops.
     pub fn feed_ops(&mut self, request_id: u32, results: JsValue) -> Result<JsValue, JsValue> {
-        let results: Vec<OpResult> = serde_wasm_bindgen::from_value(results)
-            .map_err(|error| JsValue::from_str(&format!("results are not readable: {error}")))?;
-        let step = self
-            .engine
-            .feed_ops(request_id, results)
-            .map_err(|error| JsValue::from_str(&error.to_string()))?;
-        to_js(&step)
+        let results: Vec<OpResult> = read(Input::Results, results)?;
+        to_js(&self.engine.feed_ops(request_id, results).map_err(thrown)?)
     }
 
     /// Feed the bins (`[{key, count}]`) of the outstanding request.
     pub fn feed_bins(&mut self, request_id: u32, bins: JsValue) -> Result<JsValue, JsValue> {
-        let bins: Vec<Bin> = serde_wasm_bindgen::from_value(bins)
-            .map_err(|error| JsValue::from_str(&format!("bins are not readable: {error}")))?;
-        let step = self
-            .engine
-            .feed_bins(request_id, bins)
-            .map_err(|error| JsValue::from_str(&error.to_string()))?;
-        to_js(&step)
+        let bins: Vec<Bin> = read(Input::Bins, bins)?;
+        to_js(&self.engine.feed_bins(request_id, bins).map_err(thrown)?)
     }
 }
 
@@ -97,16 +82,36 @@ impl Query {
 ///
 /// # Errors
 ///
-/// Returns a JS string when the schema or the scope cannot be read.
+/// Throws an `EngineError` when the schema or the scope cannot be read.
 #[wasm_bindgen(js_name = buildCatalog)]
 pub fn build_catalog(schema: JsValue, scope: Option<String>) -> Result<JsValue, JsValue> {
-    let schema: Schema = serde_wasm_bindgen::from_value(schema)
-        .map_err(|error| JsValue::from_str(&format!("schema is not readable: {error}")))?;
+    let schema: Schema = read(Input::Schema, schema)?;
     let scope = scope
         .map(|scope| Uuid::parse_str(&scope))
         .transpose()
-        .map_err(|error| JsValue::from_str(&format!("scope is not a database id: {error}")))?;
+        .map_err(|error| {
+            thrown(RunError::Unreadable {
+                what: Input::Scope,
+                message: error.to_string(),
+            })
+        })?;
     to_js(&build(&schema, scope))
+}
+
+fn read<Value: DeserializeOwned>(what: Input, value: JsValue) -> Result<Value, JsValue> {
+    serde_wasm_bindgen::from_value(value).map_err(|error| {
+        thrown(RunError::Unreadable {
+            what,
+            message: error.to_string(),
+        })
+    })
+}
+
+/// The error as the value a driver catches.
+fn thrown(error: RunError) -> JsValue {
+    EngineError::from(error)
+        .serialize(&Serializer::json_compatible())
+        .unwrap_or_else(|error| JsValue::from_str(&error.to_string()))
 }
 
 /// Plain objects and arrays, as JSON would give them: maps become objects

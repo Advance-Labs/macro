@@ -1,10 +1,15 @@
-//! Resolution failures. The `Display` text is the contract: agents read it
-//! and correct their statement from it, so tests assert it verbatim.
+//! Resolution failures, as typed values the browser reads by `kind` and the
+//! `Display` text agents correct their statement from; tests assert both.
 
 use std::fmt;
 
 /// Why a statement could not be bound to the catalog.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, serde::Serialize, specta::Type)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ResolveError {
     /// No table has the name.
     UnknownTable {
@@ -78,6 +83,7 @@ pub enum ResolveError {
         /// The column.
         column: String,
         /// What the column holds.
+        #[serde(rename = "columnKind")]
         kind: &'static str,
     },
     /// A plain column in a select list that aggregates, without a `GROUP BY`
@@ -93,6 +99,7 @@ pub enum ResolveError {
         /// The position as written.
         position: u32,
         /// How many items the select list has.
+        #[specta(type = u32)]
         items: usize,
     },
     /// `ORDER BY agg(...)` where the aggregate is not in the select list.
@@ -116,6 +123,7 @@ pub enum ResolveError {
         /// The column.
         column: String,
         /// How many values the list had.
+        #[specta(type = u32)]
         count: usize,
     },
     /// A list where a single value is compared.

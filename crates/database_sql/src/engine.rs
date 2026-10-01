@@ -410,7 +410,7 @@ impl Engine {
             return Ok(Step::Done(found));
         };
         if found.truncated {
-            return Err(RunError::TooManyRows);
+            return Err(RunError::TooManyRows { limit: ROW_CAP });
         }
         let read = match &then {
             Then::Update(update) => &update.read,
@@ -421,7 +421,10 @@ impl Engine {
             .enumerate()
             .find(|(_, row)| !found.row_ids.contains(row))
         {
-            return Err(RunError::NoSuchRow { position, row });
+            return Err(RunError::NoSuchRow {
+                position: position + 1,
+                row,
+            });
         }
         let (table, op) = match &then {
             Then::Update(update) => (update.table, write::update(&self.catalog, update, &found)),
@@ -505,9 +508,9 @@ fn named_rows(read: &SelectQuery) -> Vec<Uuid> {
 }
 
 fn reading(read: &mut Option<Read>) -> Result<&mut Read, RunError> {
-    read.as_mut().ok_or(RunError::Results(
-        "rows were fed to a statement that reads none".into(),
-    ))
+    read.as_mut().ok_or(RunError::Results {
+        message: "rows were fed to a statement that reads none".into(),
+    })
 }
 
 /// Position, then id, as `database_rows` orders a table; rows without a

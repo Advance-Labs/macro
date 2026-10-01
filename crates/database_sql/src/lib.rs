@@ -35,8 +35,8 @@ pub use fold::{Bin, Cell, Row, Table, fold_bins, fold_relations, fold_rows};
 pub use parse::{ParseError, parse};
 pub use resolve::{CompileError, Query, ResolveError, compile, resolve};
 pub use run::{
-    AlteredColumn, OpsSink, Outcome, OutcomeColumn, OutcomeKind, Page, RowSource, RunError,
-    SourceError, WriteError, run,
+    AlteredColumn, EngineError, Input, OpsSink, Outcome, OutcomeColumn, OutcomeKind, Page,
+    RowSource, RunError, SourceError, WriteError, run,
 };
 pub use split::{
     GqlQuery, JoinPlan, KeyHint, Plan, Propf, PropfLiteral, PropfValue, RelationPlan, Shape, split,

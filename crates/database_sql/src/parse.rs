@@ -49,13 +49,25 @@ use std::ops::Range;
 pub use ast::*;
 
 /// Why a statement could not be parsed, with the byte range it points at.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, serde::Serialize, specta::Type)]
 #[error("{message} at {span:?}")]
 pub struct ParseError {
     /// Byte range in the source the message is about. Empty at end of input.
+    #[specta(type = Span)]
     pub span: Range<usize>,
     /// What was expected and what was found, in words an agent can act on.
     pub message: String,
+}
+
+/// A byte range as it crosses the wasm boundary: `{start, end}`.
+#[derive(specta::Type)]
+#[expect(
+    dead_code,
+    reason = "only its shape is exported, for the span of a ParseError"
+)]
+struct Span {
+    start: u32,
+    end: u32,
 }
 
 /// Parse one statement.

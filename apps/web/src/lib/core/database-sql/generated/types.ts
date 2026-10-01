@@ -239,6 +239,17 @@ export type DatabaseSchema = {
 };
 
 /**
+ *  A failure as it crosses the wasm boundary: the typed error, and the words
+ *  the engine would give an agent for it.
+ */
+export type EngineError = {
+  /**  What went wrong. */
+  error: RunError;
+  /**  The error in words. */
+  message: string;
+};
+
+/**
  *  What an entity column's references point at: a kind of Macro entity, or
  *  the rows of another table for a relation.
  *
@@ -320,6 +331,21 @@ export type GqlQuery =
       /**  The user ids wanted, or every visible person. */
       ids: string[] | null;
     };
+
+/**  A value a driver hands the engine. */
+export type Input =
+  /**  The catalog a statement compiles against. */
+  | 'catalog'
+  /**  The schema a catalog is built from. */
+  | 'schema'
+  /**  The database a catalog is scoped to. */
+  | 'scope'
+  /**  A page of rows. */
+  | 'page'
+  /**  The bins of a grouped read. */
+  | 'bins'
+  /**  The results of a write's ops. */
+  | 'results';
 
 /**  The values a joined relation is matched on. */
 export type KeyHint = {
@@ -506,6 +532,14 @@ export type Page = {
   next: string | null;
 };
 
+/**  Why a statement could not be parsed, with the byte range it points at. */
+export type ParseError = {
+  /**  Byte range in the source the message is about. Empty at end of input. */
+  span: Span;
+  /**  What was expected and what was found, in words an agent can act on. */
+  message: string;
+};
+
 /**  A table every viewer has, whatever databases they can see. */
 export type PlatformTable =
   /**  `macro.people`. */
@@ -569,6 +603,238 @@ export type Request = {
   limit: number;
 };
 
+/**  Why a statement could not be bound to the catalog. */
+export type ResolveError =
+  /**  No table has the name. */
+  | {
+      kind: 'unknownTable';
+      /**  The name as written, qualified if it was. */
+      name: string;
+      /**  The closest existing name, if one is close. */
+      suggestion: string | null;
+    }
+  /**  A bare table name matches tables in several databases. */
+  | {
+      kind: 'ambiguousTable';
+      /**  The bare name. */
+      name: string;
+      /**  The databases that have a table of that name. */
+      databases: string[];
+    }
+  /**  The table has no such column. */
+  | {
+      kind: 'unknownColumn';
+      /**  The name as written. */
+      name: string;
+      /**  The qualified table name. */
+      table: string;
+      /**  The closest existing column name, if one is close. */
+      suggestion: string | null;
+    }
+  /**  A select column has no option with that label. */
+  | {
+      kind: 'unknownOption';
+      /**  The column. */
+      column: string;
+      /**  The label as written. */
+      label: string;
+      /**  Every option label the column has. */
+      options: string[];
+    }
+  /**  The operator is not defined for the column's type. */
+  | {
+      kind: 'operatorNotSupported';
+      /**  The column. */
+      column: string;
+      /**  The operator as written. */
+      op: string;
+      /**  What the column's type does support. */
+      supported: string;
+    }
+  /**  `HAS` on a column that holds one value. */
+  | {
+      kind: 'hasOnSingleValued';
+      /**  The column. */
+      column: string;
+    }
+  /**  `=`/`IN` on a column that holds several values. */
+  | {
+      kind: 'equalityOnMultiValued';
+      /**  The column. */
+      column: string;
+    }
+  /**  The literal is the wrong type for the column. */
+  | {
+      kind: 'typeMismatch';
+      /**  The column. */
+      column: string;
+      /**  What the column holds. */
+      expected: string;
+      /**  What to write instead. */
+      hint: string;
+    }
+  /**  `= NULL` or `!= NULL`. */
+  | {
+      kind: 'compareToNull';
+      /**  The column. */
+      column: string;
+    }
+  /**  The aggregate cannot apply to the column's type. */
+  | {
+      kind: 'aggregateNotSupported';
+      /**  The aggregate. */
+      func: string;
+      /**  The column. */
+      column: string;
+      /**  What the column holds. */
+      columnKind: string;
+    }
+  /**
+   *  A plain column in a select list that aggregates, without a `GROUP BY`
+   *  on that column.
+   */
+  | {
+      kind: 'columnNotGrouped';
+      /**  The column. */
+      column: string;
+      /**  Whether a `GROUP BY` is present at all. */
+      grouped: boolean;
+    }
+  /**  `ORDER BY n` past the end of the select list. */
+  | {
+      kind: 'orderPositionOutOfRange';
+      /**  The position as written. */
+      position: number;
+      /**  How many items the select list has. */
+      items: number;
+    }
+  /**  `ORDER BY agg(...)` where the aggregate is not in the select list. */
+  | {
+      kind: 'orderAggregateNotSelected';
+      /**  The aggregate as written. */
+      agg: string;
+    }
+  /**
+   *  `ORDER BY column` on a grouped query where the column is neither the
+   *  group column nor aggregated.
+   */
+  | {
+      kind: 'orderColumnNotGrouped';
+      /**  The column. */
+      column: string;
+    }
+  /**  `WHERE row_id = …` with something that is not a row id. */
+  | {
+      kind: 'rowIdNotAnId';
+      /**  The value as written. */
+      written: string;
+    }
+  /**  A list written to a column that holds one value. */
+  | {
+      kind: 'listOnSingleValued';
+      /**  The column. */
+      column: string;
+      /**  How many values the list had. */
+      count: number;
+    }
+  /**  A list where a single value is compared. */
+  | {
+      kind: 'listInComparison';
+      /**  The column. */
+      column: string;
+    }
+  /**  A column named twice in an `INSERT` column list or `UPDATE`. */
+  | {
+      kind: 'duplicateInsertColumn';
+      /**  The column. */
+      column: string;
+    }
+  /**  Two tables of a `SELECT` share an alias. */
+  | {
+      kind: 'duplicateAlias';
+      /**  The alias. */
+      alias: string;
+      /**  The table already using it. */
+      table: string;
+    }
+  /**  `alias.column` names an alias the query does not have. */
+  | {
+      kind: 'unknownAlias';
+      /**  The alias as written. */
+      alias: string;
+      /**  The column as written. */
+      column: string;
+      /**  Every relation, as `database.table as alias`. */
+      relations: string[];
+    }
+  /**  A bare column name that several relations have. */
+  | {
+      kind: 'ambiguousColumn';
+      /**  The name. */
+      name: string;
+      /**  The `alias.column` spellings that would pick one. */
+      qualified: string[];
+    }
+  /**
+   *  An `ON` equality that does not relate the joined table to an
+   *  earlier one.
+   */
+  | {
+      kind: 'joinNotAcrossTables';
+      /**  The joined table's alias. */
+      alias: string;
+      /**  The left column as written. */
+      left: string;
+      /**  The right column as written. */
+      right: string;
+    }
+  /**
+   *  A type change the cast rule never allows while the column holds
+   *  values.
+   */
+  | {
+      kind: 'castNever';
+      /**  The column. */
+      column: string;
+      /**  The type asked for, as SQL spells it. */
+      to: string;
+      /**  Why no value converts. */
+      reason: string;
+    }
+  /**  A write to a table nobody writes, such as `macro.people`. */
+  | {
+      kind: 'readOnlyTable';
+      /**  The qualified table name. */
+      table: string;
+    }
+  /**
+   *  `SET column = other` where the other column holds a different kind of
+   *  value.
+   */
+  | {
+      kind: 'copyKindMismatch';
+      /**  The column set. */
+      column: string;
+      /**  Its kind. */
+      columnKind: string;
+      /**  The column copied. */
+      copied: string;
+      /**  Its kind. */
+      copiedKind: string;
+    }
+  /**  An `ON` equality between columns of different kinds. */
+  | {
+      kind: 'joinKindMismatch';
+      /**  The earlier table's column. */
+      left: string;
+      /**  Its kind. */
+      leftKind: string;
+      /**  The joined table's column. */
+      right: string;
+      /**  Its kind. */
+      rightKind: string;
+    };
+
 /**
  *  One fetched row: the entity id and the cells the plan asked for. After
  *  a join, the cells of every matched relation under their keys, with the
@@ -612,6 +878,144 @@ export type RowChanges =
     };
 
 /**
+ *  Why a statement did not run, as one typed union: each failure is a
+ *  value the browser reads by its `stage` (and, for resolution, `kind`), and
+ *  its `Display` text is what an agent reads.
+ */
+export type RunError =
+  /**  The text was not a statement of the supported grammar. */
+  | ({
+      stage: 'parse';
+    } & ParseError)
+  /**
+   *  The statement named something the catalog does not have, or used a
+   *  column in a way its type does not allow.
+   */
+  | ({
+      stage: 'resolve';
+    } & ResolveError)
+  /**  The source could not answer a read. */
+  | ({
+      stage: 'source';
+      /**  The source's words. */
+      message: string;
+    } & {
+      expected?: never;
+      fed?: never;
+      limit?: never;
+      position?: never;
+      row?: never;
+      what?: never;
+    })
+  /**  A write was refused, in the sink's words. */
+  | ({
+      stage: 'write';
+      /**  The sink's words. */
+      message: string;
+    } & {
+      expected?: never;
+      fed?: never;
+      limit?: never;
+      position?: never;
+      row?: never;
+      what?: never;
+    })
+  /**
+   *  An `UPDATE` or `DELETE` named a row by id that the table does not
+   *  have.
+   */
+  | ({
+      stage: 'noSuchRow';
+      /**  Where the row is named in the statement's list of ids, from 1. */
+      position: number;
+      /**  The row. */
+      row: string;
+    } & {
+      expected?: never;
+      fed?: never;
+      limit?: never;
+      message?: never;
+      what?: never;
+    })
+  /**  An `UPDATE` or `DELETE` matched more rows than a statement reads. */
+  | ({
+      stage: 'tooManyRows';
+      /**  The most rows a statement reads. */
+      limit: number;
+    } & {
+      expected?: never;
+      fed?: never;
+      message?: never;
+      position?: never;
+      row?: never;
+      what?: never;
+    })
+  /**  Results were fed that do not answer what was asked. */
+  | ({
+      stage: 'results';
+      /**  What does not match. */
+      message: string;
+    } & {
+      expected?: never;
+      fed?: never;
+      limit?: never;
+      position?: never;
+      row?: never;
+      what?: never;
+    })
+  /**  A feed quoted a request the engine is not waiting on. */
+  | ({
+      stage: 'wrongRequest';
+      /**  The outstanding request. */
+      expected: number;
+      /**  The id fed. */
+      fed: number;
+    } & {
+      limit?: never;
+      message?: never;
+      position?: never;
+      row?: never;
+      what?: never;
+    })
+  /**  A feed arrived when nothing was outstanding. */
+  | ({
+      stage: 'nothingOutstanding';
+      /**  The id fed. */
+      fed: number;
+    } & {
+      expected?: never;
+      limit?: never;
+      message?: never;
+      position?: never;
+      row?: never;
+      what?: never;
+    })
+  /**  A value handed to the engine is not the shape it reads. */
+  | ({
+      stage: 'unreadable';
+      /**  What was handed in: the catalog, a page, the bins, …. */
+      what: Input;
+      /**  Why it could not be read. */
+      message: string;
+    } & {
+      expected?: never;
+      fed?: never;
+      limit?: never;
+      position?: never;
+      row?: never;
+    })
+  /**  The first step was asked for twice. */
+  | ({ stage: 'alreadyStarted' } & {
+      expected?: never;
+      fed?: never;
+      limit?: never;
+      message?: never;
+      position?: never;
+      row?: never;
+      what?: never;
+    });
+
+/**
  *  What a catalog is built from: the viewer's databases, and the platform
  *  tables to add.
  */
@@ -628,6 +1032,12 @@ export type SelectOption = {
   id: string;
   /**  The label users type in SQL. */
   label: string;
+};
+
+/**  A byte range as it crosses the wasm boundary: `{start, end}`. */
+export type Span = {
+  start: number;
+  end: number;
 };
 
 /**  What the driver does next. */

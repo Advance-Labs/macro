@@ -142,10 +142,9 @@ pub(crate) fn alter(catalog: &Catalog, query: &AlterColumnTypeQuery) -> Database
 /// The outcome the results of what was sent make.
 pub(crate) fn outcome(sent: &Sent, results: &[OpResult]) -> Result<Outcome, RunError> {
     let [result] = results else {
-        return Err(RunError::Results(format!(
-            "one op was sent, but {} results came back",
-            results.len()
-        )));
+        return Err(RunError::Results {
+            message: format!("one op was sent, but {} results came back", results.len()),
+        });
     };
     match (sent, result) {
         (
@@ -175,12 +174,12 @@ pub(crate) fn outcome(sent: &Sent, results: &[OpResult]) -> Result<Outcome, RunE
             }),
             ..Outcome::default()
         }),
-        (Sent::Rows, OpResult::ColumnTyped { .. }) => Err(RunError::Results(
-            "rows were written, but a column type change came back".into(),
-        )),
-        (Sent::Column { .. }, OpResult::RowsWritten { .. }) => Err(RunError::Results(
-            "a column type change was sent, but rows written came back".into(),
-        )),
+        (Sent::Rows, OpResult::ColumnTyped { .. }) => Err(RunError::Results {
+            message: "rows were written, but a column type change came back".into(),
+        }),
+        (Sent::Column { .. }, OpResult::RowsWritten { .. }) => Err(RunError::Results {
+            message: "a column type change was sent, but rows written came back".into(),
+        }),
     }
 }
 

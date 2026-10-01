@@ -21,7 +21,8 @@ use models_databases::{DatabaseOp, OpResult};
 use crate::catalog::{Catalog, ColumnKind};
 use crate::engine::{Engine, Step};
 use crate::fold::{Bin, Row, Table};
-use crate::resolve::{AggFn, Binding, CompileError, Relation, SelectItem};
+use crate::parse::ParseError;
+use crate::resolve::{AggFn, Binding, CompileError, Relation, ResolveError, SelectItem};
 use crate::split::{GqlQuery, column_of, virtual_column_of};
 
 /// The most rows one statement reads before the fold. Past it the answer
@@ -82,33 +83,58 @@ pub struct SourceError(pub String);
 #[error("{0}")]
 pub struct WriteError(pub String);
 
-/// Why a statement did not run.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Why a statement did not run, as one typed union: each failure is a
+/// value the browser reads by its `stage` (and, for resolution, `kind`), and
+/// its `Display` text is what an agent reads.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, Type)]
+#[serde(
+    tag = "stage",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum RunError {
-    /// The statement did not compile.
+    /// The text was not a statement of the supported grammar.
     #[error(transparent)]
-    Compile(#[from] CompileError),
-    /// The server could not be read.
-    #[error("could not read rows: {0}")]
-    Source(#[from] SourceError),
+    Parse(ParseError),
+    /// The statement named something the catalog does not have, or used a
+    /// column in a way its type does not allow.
+    #[error(transparent)]
+    Resolve(ResolveError),
+    /// The source could not answer a read.
+    #[error("could not read rows: {message}")]
+    Source {
+        /// The source's words.
+        message: String,
+    },
     /// A write was refused, in the sink's words.
-    #[error(transparent)]
-    Write(#[from] WriteError),
+    #[error("{message}")]
+    Write {
+        /// The sink's words.
+        message: String,
+    },
     /// An `UPDATE` or `DELETE` named a row by id that the table does not
     /// have.
-    #[error("row {}: no row {row} in this table", position + 1)]
+    #[error("row {position}: no row {row} in this table")]
     NoSuchRow {
-        /// Where the row is named in the statement's list of ids, from 0.
+        /// Where the row is named in the statement's list of ids, from 1.
+        #[specta(type = u32)]
         position: usize,
         /// The row.
         row: Uuid,
     },
     /// An `UPDATE` or `DELETE` matched more rows than a statement reads.
-    #[error("the WHERE matches more than {ROW_CAP} rows; narrow it and run the statement again")]
-    TooManyRows,
+    #[error("the WHERE matches more than {limit} rows; narrow it and run the statement again")]
+    TooManyRows {
+        /// The most rows a statement reads.
+        #[specta(type = u32)]
+        limit: usize,
+    },
     /// Results were fed that do not answer what was asked.
-    #[error("{0}")]
-    Results(String),
+    #[error("{message}")]
+    Results {
+        /// What does not match.
+        message: String,
+    },
     /// A feed quoted a request the engine is not waiting on.
     #[error("fed request {fed}, but request {expected} is outstanding")]
     WrongRequest {
@@ -123,6 +149,76 @@ pub enum RunError {
         /// The id fed.
         fed: u32,
     },
+    /// A value handed to the engine is not the shape it reads.
+    #[error("{what} is not readable: {message}")]
+    Unreadable {
+        /// What was handed in: the catalog, a page, the bins, ….
+        what: Input,
+        /// Why it could not be read.
+        message: String,
+    },
+    /// The first step was asked for twice.
+    #[error("the query has already started")]
+    AlreadyStarted,
+}
+
+/// A failure as it crosses the wasm boundary: the typed error, and the words
+/// the engine would give an agent for it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct EngineError {
+    /// What went wrong.
+    pub error: RunError,
+    /// The error in words.
+    pub message: String,
+}
+
+impl From<RunError> for EngineError {
+    fn from(error: RunError) -> Self {
+        Self {
+            message: error.to_string(),
+            error,
+        }
+    }
+}
+
+/// A value a driver hands the engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type, strum::Display)]
+#[serde(rename_all = "camelCase")]
+#[strum(serialize_all = "lowercase")]
+pub enum Input {
+    /// The catalog a statement compiles against.
+    Catalog,
+    /// The schema a catalog is built from.
+    Schema,
+    /// The database a catalog is scoped to.
+    Scope,
+    /// A page of rows.
+    Page,
+    /// The bins of a grouped read.
+    Bins,
+    /// The results of a write's ops.
+    Results,
+}
+
+impl From<CompileError> for RunError {
+    fn from(error: CompileError) -> Self {
+        match error {
+            CompileError::Parse(error) => RunError::Parse(error),
+            CompileError::Resolve(error) => RunError::Resolve(error),
+        }
+    }
+}
+
+impl From<SourceError> for RunError {
+    fn from(SourceError(message): SourceError) -> Self {
+        RunError::Source { message }
+    }
+}
+
+impl From<WriteError> for RunError {
+    fn from(WriteError(message): WriteError) -> Self {
+        RunError::Write { message }
+    }
 }
 
 /// What a statement produced.

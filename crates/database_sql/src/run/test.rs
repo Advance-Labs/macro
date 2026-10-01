@@ -447,6 +447,51 @@ fn a_source_failure_is_the_outcome_error() {
     );
 }
 
+/// What the browser catches: the typed error, tagged by stage (and, for
+/// resolution, kind), with the words an agent reads beside it.
+#[test]
+fn an_error_crosses_as_a_typed_value_with_its_words() {
+    let unknown_column = pollster::block_on(run(
+        &catalog(),
+        "SELECT nam FROM crm.deals",
+        &source(deals()),
+        &FakeSink::new(),
+    ))
+    .unwrap_err();
+    assert_eq!(
+        serde_json::to_value(EngineError::from(unknown_column)).unwrap(),
+        serde_json::json!({
+            "error": {
+                "stage": "resolve",
+                "kind": "unknownColumn",
+                "name": "nam",
+                "table": "crm.deals",
+                "suggestion": "name",
+            },
+            "message": "unknown column \"nam\" in crm.deals — did you mean \"name\"?",
+        })
+    );
+
+    let unparsed = pollster::block_on(run(
+        &catalog(),
+        "SELEC name FROM crm.deals",
+        &source(deals()),
+        &FakeSink::new(),
+    ))
+    .unwrap_err();
+    let wire = serde_json::to_value(EngineError::from(unparsed)).unwrap();
+    assert_eq!(wire["error"]["stage"], "parse");
+    assert_eq!(
+        wire["error"]["span"],
+        serde_json::json!({"start": 0, "end": 5})
+    );
+
+    assert_eq!(
+        serde_json::to_value(RunError::TooManyRows { limit: ROW_CAP }).unwrap(),
+        serde_json::json!({"stage": "tooManyRows", "limit": ROW_CAP})
+    );
+}
+
 // ---- writes -----------------------------------------------------------------
 
 #[test]
