@@ -411,7 +411,9 @@ where
             | EntityType::Skill
             | EntityType::AgentSession
             | EntityType::ScheduledAction
-            | EntityType::Initiative => {
+            | EntityType::Initiative
+            | EntityType::Database
+            | EntityType::DatabaseRow => {
                 return unsupported(requested, "rename");
             }
         };
@@ -459,7 +461,9 @@ where
             | EntityType::Skill
             | EntityType::AgentSession
             | EntityType::ScheduledAction
-            | EntityType::Initiative => {
+            | EntityType::Initiative
+            | EntityType::Database
+            | EntityType::DatabaseRow => {
                 return unsupported(requested, "move");
             }
         };
@@ -509,7 +513,9 @@ where
             | EntityType::Skill
             | EntityType::AgentSession
             | EntityType::ScheduledAction
-            | EntityType::Initiative => {
+            | EntityType::Initiative
+            | EntityType::Database
+            | EntityType::DatabaseRow => {
                 return unsupported(requested, "share policy updates");
             }
         };
@@ -562,7 +568,9 @@ where
             | EntityType::Skill
             | EntityType::AgentSession
             | EntityType::ScheduledAction
-            | EntityType::Initiative => {
+            | EntityType::Initiative
+            | EntityType::Database
+            | EntityType::DatabaseRow => {
                 return unsupported(requested, "trash");
             }
         };
@@ -594,7 +602,9 @@ where
             | EntityType::Skill
             | EntityType::AgentSession
             | EntityType::ScheduledAction
-            | EntityType::Initiative => {
+            | EntityType::Initiative
+            | EntityType::Database
+            | EntityType::DatabaseRow => {
                 return unsupported(requested, "restore");
             }
         };
@@ -646,7 +656,9 @@ where
             | EntityType::Skill
             | EntityType::AgentSession
             | EntityType::ScheduledAction
-            | EntityType::Initiative => {
+            | EntityType::Initiative
+            | EntityType::Database
+            | EntityType::DatabaseRow => {
                 return unsupported(requested, "permanent deletion");
             }
         };
@@ -708,7 +720,9 @@ where
             | EntityType::Skill
             | EntityType::AgentSession
             | EntityType::ScheduledAction
-            | EntityType::Initiative => {
+            | EntityType::Initiative
+            | EntityType::Database
+            | EntityType::DatabaseRow => {
                 return unsupported(requested, "duplication");
             }
         };

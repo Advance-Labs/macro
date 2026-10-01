@@ -26,6 +26,7 @@ fn is_property_target(entity_type: model_entity::EntityType) -> bool {
             | EntityType::Channel
             | EntityType::Project
             | EntityType::Initiative
+            | EntityType::DatabaseRow
             | EntityType::User
     )
 }

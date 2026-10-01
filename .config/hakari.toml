@@ -91,6 +91,9 @@ workspace-members = [
     "macro_uuid",
     "non_empty",
     "cowlike",
+    # option_palette: the option colours the databases ops name, so it joins
+    # models_databases in the browser.
+    "option_palette",
     # soup-filter-projection is intentionally absent: its wasm-facing adapter
     # disables the native-only default `models` feature, so the crate itself
     # does not pull workspace-hack into wasm dependency traversal.

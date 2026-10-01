@@ -9,3 +9,9 @@ pub mod service;
 pub mod service_impl;
 #[cfg(test)]
 mod test;
+
+/// Atomic schema composition for database-owned definitions.
+pub mod database_definition_writer;
+
+/// Atomic cell and option writes for database rows.
+pub mod database_cell_writer;

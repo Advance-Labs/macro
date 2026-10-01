@@ -365,7 +365,8 @@ async fn remap_entity_values(
     .execute(&mut **tx)
     .await?;
 
-    rows.into_iter()
+    Ok(rows
+        .into_iter()
         .map(EntityPropertyMutationRow::into_snapshot)
-        .collect()
+        .collect::<Result<_, _>>()?)
 }

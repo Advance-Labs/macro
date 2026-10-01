@@ -9,6 +9,7 @@ ai_tools = [
   "dep:ai_toolset",
   "dep:async-trait",
   "dep:schemars",
+  "option_palette/schema",
   "ports",
 ]
 default = ["ai_tools", "inbound", "outbound", "ports"]
@@ -59,6 +60,7 @@ model-entity = { path = "../model-entity", optional = true }
 model_notifications = { path = "../model_notifications", optional = true }
 models_permissions = { path = "../models_permissions", optional = true }
 models_properties = { path = "../models_properties" }
+option_palette = { path = "../option_palette" }
 notification = { path = "../notification", optional = true }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true }
