@@ -413,6 +413,7 @@ fn empty_query_is_bounded_and_uses_recent_projection_path() {
         assert_eq!(page.documents[0].timestamp_ms, 999);
         assert!(page.next_cursor.is_some());
         assert_eq!(diagnostics.search_catalog_load_count(), 0);
-        assert_eq!(diagnostics.record_get_count(), 0);
+        // One bounded metadata read initializes the schema; no normalized records are scanned.
+        assert_eq!(diagnostics.record_get_count(), 1);
     });
 }

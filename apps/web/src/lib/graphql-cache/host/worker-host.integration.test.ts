@@ -165,7 +165,10 @@ class IntegrationCore {
       const gate = this.enqueueGates.get(request.operationName ?? '');
       if (gate) await gate;
     }
-    let result: unknown = null;
+    let result: unknown =
+      request.kind === 'init'
+        ? { protocolVersion: 1, fingerprint: 'a'.repeat(64) }
+        : null;
     if (request.kind === 'read') result = { kind: 'miss' };
     if (request.kind === 'enqueue-optimistic-mutation') {
       result = {

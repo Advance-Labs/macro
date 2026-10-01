@@ -1,3 +1,7 @@
+import {
+  assertCacheSchemaAcknowledged,
+  runtimeCacheSchema,
+} from '../runtime-schema';
 /**
  * Tauri CacheHost: talks to the native cache engine living in the Tauri
  * host process (graphql_cache_plugin) over invoke commands. The host
@@ -220,10 +224,19 @@ export function createTauriCacheHost(options: TauriHostOptions): CacheHost {
     unlisten?.();
   }
 
-  const ready = request<void>('graphql_cache_init', {
-    scope: options.scope,
-    hotCapacity: options.hotCapacity,
-  });
+  const ready = (async () => {
+    await request<void>('graphql_cache_init', {
+      scope: options.scope,
+      hotCapacity: options.hotCapacity,
+    });
+    const acknowledgement = await request<unknown>(
+      'graphql_cache_configure_schema',
+      {
+        schemaJson: runtimeCacheSchema,
+      }
+    );
+    assertCacheSchemaAcknowledged(acknowledgement);
+  })();
   void (async () => {
     try {
       await ready;

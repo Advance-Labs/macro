@@ -183,8 +183,10 @@ fn ordinary_network_refresh_loads_each_cold_batch_only_once() {
             .await
             .unwrap();
         let storage = original.into_storage();
-        let before = storage.record_get_count();
         let mut reopened = Engine::with_capacity(storage, 1);
+        // Schema bootstrap belongs to initialization, outside this write-path measurement.
+        reopened.hydrate_schema().await.unwrap();
+        let before = reopened.storage().record_get_count();
         let result = reopened
             .write_query(None, query, Some("Page"), &variables, &data, None)
             .await
@@ -287,6 +289,7 @@ fn fragment_reads_keep_hot_and_cold_linked_records_in_the_working_set() {
             "fragment Thread on GraphqlSoupEmailThread { id messages(offset: 0, limit: 1) { id subject } }",
             "Thread",
         ).unwrap();
+            engine.hydrate_schema().await.unwrap();
             let reads = engine.storage().record_get_count();
             for _ in 0..2 {
                 let result = engine

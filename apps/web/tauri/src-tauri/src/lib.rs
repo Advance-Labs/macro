@@ -259,6 +259,7 @@ pub fn run() {
         .manage(IsIpad(is_ipad_device))
         .invoke_handler(tauri::generate_handler![
             graphql_cache_plugin::commands::graphql_cache_init,
+            graphql_cache_plugin::commands::graphql_cache_configure_schema,
             graphql_cache_plugin::commands::graphql_cache_current_revision,
             graphql_cache_plugin::commands::graphql_cache_current_storage_generation,
             graphql_cache_plugin::commands::graphql_cache_read,

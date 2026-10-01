@@ -12,12 +12,12 @@ use crate::deps::{
 use crate::document::{Document, DocumentError, OperationKind};
 use crate::entity_resolver::{EntityResolver, EntityResolverError, EntityResolverLookup};
 use crate::link_patch::{
-    LinkPatchError, OptimisticLinkPatch, QueryRevalidation, apply_link_patches,
-    deduplicate_patches, missing_patch_records,
+    LinkPatchError, OptimisticLinkPatch, QueryRevalidation, apply_link_patches_with_schema,
+    deduplicate_patches_with_schema, missing_patch_records_with_schema,
 };
 use crate::normalize::{
-    DependencyCompleteness, NormalizeError, RecordUpdates, normalize, normalize_with_dependencies,
-    project_hydration_response,
+    DependencyCompleteness, NormalizeError, RecordUpdates, normalize_with_dependencies,
+    normalize_with_schema, project_hydration_response_with_schema,
 };
 use crate::predicate::reconciliation::{
     MAX_RECONCILIATION_BASELINE, PredicateBaselineEntry, PredicateReconciliation,
@@ -63,6 +63,8 @@ use uuid::Uuid;
 
 #[derive(Debug, Error)]
 pub enum EngineError<S: std::error::Error + 'static> {
+    #[error(transparent)]
+    Schema(#[from] crate::meta::SchemaError),
     #[error(transparent)]
     Document(#[from] DocumentError),
     #[error(transparent)]
@@ -314,6 +316,8 @@ pub const DEFAULT_HOT_CAPACITY: usize = 10_000;
 const DOCUMENT_CACHE_CAPACITY: usize = 128;
 
 pub struct Engine<S: Storage> {
+    schema: std::sync::Arc<crate::meta::Schema>,
+    schema_hydrated: bool,
     storage: S,
     revision: CacheRevision,
     hot: LruCache<EntityKey<'static>, Record>,
@@ -335,6 +339,8 @@ impl<S: Storage> Engine<S> {
 
     pub fn with_capacity(storage: S, hot_capacity: usize) -> Self {
         Engine {
+            schema: std::sync::Arc::new(crate::meta::Schema::compiled().clone()),
+            schema_hydrated: false,
             storage,
             revision: CacheRevision::ZERO,
             hot: LruCache::new(NonZeroUsize::new(hot_capacity).expect("capacity > 0")),
@@ -345,6 +351,76 @@ impl<S: Storage> Engine<S> {
             optimistic_hydrated: false,
             search_catalogs: SearchCatalogs::default(),
         }
+    }
+
+    /// Metadata accepted by this engine, including durable additive extensions.
+    pub fn schema(&self) -> &crate::meta::Schema {
+        &self.schema
+    }
+
+    /// Validate and persist a compatible extension before exposing it to callers.
+    /// This never clears records or pending mutations on incompatibility.
+    pub async fn configure_schema(
+        &mut self,
+        incoming: crate::meta::Schema,
+    ) -> Result<crate::meta::SchemaAcknowledgement, EngineError<S::Error>> {
+        let persisted = self.stored_schema().await?;
+        let current = match persisted {
+            Some(stored) => self.schema.merge(&stored)?,
+            None => (*self.schema).clone(),
+        };
+        let merged = current.merge(&incoming)?;
+        self.persist_schema(&merged).await?;
+        let acknowledgement = merged.acknowledgement();
+        self.schema = std::sync::Arc::new(merged);
+        self.schema_hydrated = true;
+        Ok(acknowledgement)
+    }
+
+    async fn stored_schema(&self) -> Result<Option<crate::meta::Schema>, EngineError<S::Error>> {
+        let key = EntityKey("__meta:runtime-schema".into());
+        let records = self
+            .storage
+            .get_batch(&[key])
+            .await
+            .map_err(EngineError::Storage)?;
+        match records.into_iter().next().flatten() {
+            None => Ok(None),
+            Some(record) => match record.fields.get("metadata") {
+                Some(crate::value::CacheValue::String(json)) => {
+                    Ok(Some(crate::meta::Schema::from_json(json)?))
+                }
+                _ => Err(crate::meta::SchemaError("invalid persisted metadata".into()).into()),
+            },
+        }
+    }
+
+    async fn persist_schema(
+        &mut self,
+        schema: &crate::meta::Schema,
+    ) -> Result<(), EngineError<S::Error>> {
+        let mut record = Record::default();
+        record.fields.insert(
+            "metadata".into(),
+            crate::value::CacheValue::String(schema.to_json()),
+        );
+        self.storage
+            .put_batch(vec![(EntityKey("__meta:runtime-schema".into()), record)])
+            .await
+            .map_err(EngineError::Storage)
+    }
+
+    async fn hydrate_schema(&mut self) -> Result<(), EngineError<S::Error>> {
+        if !self.schema_hydrated {
+            if let Some(stored) = self.stored_schema().await? {
+                self.schema = std::sync::Arc::new(self.schema.merge(&stored)?);
+            } else if *self.schema != *crate::meta::Schema::compiled() {
+                self.persist_schema(&std::sync::Arc::clone(&self.schema))
+                    .await?;
+            }
+            self.schema_hydrated = true;
+        }
+        Ok(())
     }
 
     /// Returns the current effective-view revision of this engine generation.
@@ -415,6 +491,7 @@ impl<S: Storage> Engine<S> {
     /// order is the optimistic composition order. Relation recipes are
     /// reconstructed against the durable base and preceding layers.
     async fn hydrate_optimistic(&mut self) -> Result<(), EngineError<S::Error>> {
+        self.hydrate_schema().await?;
         if self.optimistic_hydrated {
             return Ok(());
         }
@@ -501,13 +578,13 @@ impl<S: Storage> Engine<S> {
             let document = Self::document(&mut self.docs, &queued.mutation.request.query)?;
             let operation =
                 document.operation(queued.mutation.request.operation_name.as_deref())?;
-            let mut updates = normalize(operation, &variables, &source.mutation_data)?;
-            let patches = deduplicate_patches(&source.link_patches).map_err(|error| {
-                EngineError::InvalidQueuedMutation {
+            let mut updates =
+                normalize_with_schema(&self.schema, operation, &variables, &source.mutation_data)?;
+            let patches = deduplicate_patches_with_schema(&self.schema, &source.link_patches)
+                .map_err(|error| EngineError::InvalidQueuedMutation {
                     id: queued.id,
                     detail: error.to_string(),
-                }
-            })?;
+                })?;
             let candidates: BTreeSet<EntityKey<'static>> = updates.keys().cloned().collect();
             let (candidates, bases) = self
                 .load_link_patch_bases(candidates, &layers, &updates, &patches)
@@ -518,7 +595,8 @@ impl<S: Storage> Engine<S> {
             // Missing query fields after a format wipe are intentionally not
             // recreated from stale recipes during hydration. A newly submitted
             // tail remains strict so invalid caller patches cannot be persisted.
-            apply_link_patches(
+            apply_link_patches_with_schema(
+                &self.schema,
                 &mut effective,
                 &mut updates,
                 &patches,
@@ -617,8 +695,9 @@ impl<S: Storage> Engine<S> {
         variables: &serde_json::Map<String, Json>,
         entity_resolvers: &[EntityResolver],
     ) -> Result<ReadResult, EngineError<S::Error>> {
-        let entity_resolvers = EntityResolverLookup::compile(entity_resolvers)?;
         self.hydrate_optimistic().await?;
+        let entity_resolvers =
+            EntityResolverLookup::compile_with_schema(&self.schema, entity_resolvers)?;
         let doc = Self::document(&mut self.docs, query)?;
         let op = doc.operation(operation_name)?;
         if op.kind != OperationKind::Query {
@@ -653,7 +732,7 @@ impl<S: Storage> Engine<S> {
         let mut plans = ReadPlans::default();
         let mut session = ReadSession::new(
             &EntityKey::root(),
-            crate::meta::QUERY_ROOT_TYPE,
+            self.schema.query_root(),
             &op.selection_set,
         );
         let outcome = loop {
@@ -662,7 +741,14 @@ impl<S: Storage> Engine<S> {
                 fetched: &fetched_base,
                 composed: &composed,
             };
-            match session.resume(variables, &source, &mut deps, &entity_resolvers, &mut plans)? {
+            match session.resume(
+                &self.schema,
+                variables,
+                &source,
+                &mut deps,
+                &entity_resolvers,
+                &mut plans,
+            )? {
                 ReadOutcome::Complete(data) => break ReadResult::Hit { data },
                 ReadOutcome::Miss { .. } => break ReadResult::Miss,
                 ReadOutcome::NeedRecords(missing) => {
@@ -822,6 +908,7 @@ impl<S: Storage> Engine<S> {
             let current: Vec<_> = pending.keys().cloned().collect();
             for key in current {
                 match pending.get_mut(&key).expect("pending record").resume(
+                    &self.schema,
                     &variables,
                     &source,
                     &mut dependencies,
@@ -1085,7 +1172,8 @@ impl<S: Storage> Engine<S> {
             identity,
         } = input;
         self.hydrate_optimistic().await?;
-        let entity_resolvers = EntityResolverLookup::compile(
+        let entity_resolvers = EntityResolverLookup::compile_with_schema(
+            &self.schema,
             registration.map_or(&[][..], |registration| registration.entity_resolvers),
         )?;
         let doc = Self::document(&mut self.docs, query)?;
@@ -1099,7 +1187,8 @@ impl<S: Storage> Engine<S> {
             ));
         }
         let is_query = op.kind == OperationKind::Query;
-        let normalized = normalize_with_dependencies(op, variables, data, &entity_resolvers)?;
+        let normalized =
+            normalize_with_dependencies(&self.schema, op, variables, data, &entity_resolvers)?;
         let mut updates = normalized.updates;
         if !retain_pages {
             crate::page_retention::omit_hydration_pages(&mut updates);
@@ -1119,6 +1208,8 @@ impl<S: Storage> Engine<S> {
                     self.optimistic_hydrated = true;
                     self.search_catalogs.clear();
                     self.storage.clear().await.map_err(EngineError::Storage)?;
+                    self.persist_schema(&std::sync::Arc::clone(&self.schema))
+                        .await?;
                     self.bind_identity(observed).await?;
                     reset = true;
                 }
@@ -1266,7 +1357,7 @@ impl<S: Storage> Engine<S> {
                     )),
                 ));
             }
-            project_hydration_response(op, data)?
+            project_hydration_response_with_schema(&self.schema, op, data)?
         };
         let (write_result, search_changed_buckets) = self
             .write_network(
@@ -1498,7 +1589,7 @@ impl<S: Storage> Engine<S> {
             Some((removed_id, false)) => MutationUpsertKind::ReplacedPending { removed_id },
         };
 
-        let patches = deduplicate_patches(link_patches)?;
+        let patches = deduplicate_patches_with_schema(&self.schema, link_patches)?;
         let revalidations = deduplicate_revalidations(
             revalidations
                 .iter()
@@ -2027,7 +2118,7 @@ impl<S: Storage> Engine<S> {
         let revalidations = self.optimistic[index].revalidations.clone();
         let doc = Self::document(&mut self.docs, query)?;
         let op = doc.operation(operation_name)?;
-        let mut updates = normalize(op, variables, data)?;
+        let mut updates = normalize_with_schema(&self.schema, op, variables, data)?;
 
         let mut candidates = layer_keys(&self.optimistic);
         candidates.extend(updates.keys().cloned());
@@ -2041,7 +2132,7 @@ impl<S: Storage> Engine<S> {
         // and recovered by the returned revalidations.
         let mut effective = bases.clone();
         merge_updates_into_effective(&mut effective, &updates);
-        apply_link_patches(&mut effective, &mut updates, &recipes, true)?;
+        apply_link_patches_with_schema(&self.schema, &mut effective, &mut updates, &recipes, true)?;
         let (durable_changed, entries) = stage_updates(&bases, updates);
         let reconciliation = self
             .stage_shadow_reconciliation(transaction, &projections)
@@ -2210,7 +2301,9 @@ impl<S: Storage> Engine<S> {
             // loop from retrying it.
             let missing: BTreeSet<_> = patches
                 .iter()
-                .flat_map(|patch| missing_patch_records(&effective, patch))
+                .flat_map(|patch| {
+                    missing_patch_records_with_schema(&self.schema, &effective, patch)
+                })
                 .chain(patches.iter().filter_map(|patch| {
                     let inserted = patch.operation.inserted_entity_key()?;
                     (!effective.contains_key(inserted)).then(|| inserted.clone())
@@ -2267,14 +2360,14 @@ impl<S: Storage> Engine<S> {
         let operation = Self::document(&mut self.docs, &inspection.query)?
             .operation(inspection.operation_name.as_deref())?
             .clone();
-        let prepared = prepare(&operation, &inspection.path)?;
+        let prepared = prepare(&self.schema, &operation, &inspection.path)?;
 
         let mut candidates = BTreeSet::from([EntityKey::root()]);
         let variants = loop {
             let bases = self.load_bases(&candidates).await?;
             let effective =
                 present_records(effective_records(&bases, &self.optimistic, &candidates));
-            match resolve_owner(&effective, &operation, &inspection.path)? {
+            match resolve_owner(&self.schema, &effective, &operation, &inspection.path)? {
                 OwnerResolution::Owner(owner) => break recover_variants(&owner, &prepared)?,
                 OwnerResolution::Absent => return Ok(Vec::new()),
                 OwnerResolution::NeedRecord(key) if !candidates.contains(&key) => {
@@ -2326,6 +2419,7 @@ impl<S: Storage> Engine<S> {
     /// same storage (cross-tab broadcast): drops all local in-memory state
     /// and returns every local active operation for re-execution.
     pub fn external_reset(&mut self) -> Result<Revisioned<BTreeSet<OpId>>, EngineError<S::Error>> {
+        self.schema_hydrated = false;
         self.ensure_revision_can_advance()?;
         self.hot.clear();
         self.docs.clear();
@@ -2411,6 +2505,8 @@ impl<S: Storage> Engine<S> {
         // The wipe below removes the binding record too.
         self.identity = IdentityState::Missing;
         self.storage.clear().await.map_err(EngineError::Storage)?;
+        self.persist_schema(&std::sync::Arc::clone(&self.schema))
+            .await?;
         self.advance_revision()
     }
 

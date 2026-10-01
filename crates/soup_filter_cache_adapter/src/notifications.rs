@@ -2,7 +2,7 @@
 
 use super::*;
 use cache_core::{
-    normalize::normalize,
+    normalize::normalize_with_schema,
     predicate::ProjectionState,
     store::Storage,
     value::{CacheValue, EntityKey, Record},
@@ -16,6 +16,7 @@ mod test;
 
 /// Resolve edge and child aliases from the actual selection, not arbitrary payload fields.
 pub(super) fn selected_snapshot(
+    schema: &cache_core::meta::Schema,
     object: &serde_json::Map<String, serde_json::Value>,
     fields: &[&FieldNode],
 ) -> Option<serde_json::Value> {
@@ -28,6 +29,7 @@ pub(super) fn selected_snapshot(
             Some(values) => {
                 let mut child_fields = Vec::new();
                 collect_applicable_fields(
+                    schema,
                     &field.selection_set,
                     "GraphqlNotification",
                     &mut child_fields,
@@ -289,7 +291,8 @@ async fn retain_complete_parents<S: Storage>(
 /// ID-only patches against durable normalized identity. No aggregate snapshot is
 /// stored in an optimistic layer: replay edits only this notification's
 /// contribution, even after another layer fails.
-pub async fn notification_projection_updates<S: Storage>(
+pub async fn notification_projection_updates_with_schema<S: Storage>(
+    schema: &cache_core::meta::Schema,
     storage: &S,
     query: &str,
     operation_name: Option<&str>,
@@ -301,7 +304,7 @@ pub async fn notification_projection_updates<S: Storage>(
     let operation = document
         .operation(operation_name)
         .map_err(|e| SoupFilterCacheAdapterError(e.to_string()))?;
-    let updates = normalize(operation, variables, data)
+    let updates = normalize_with_schema(schema, operation, variables, data)
         .map_err(|e| SoupFilterCacheAdapterError(e.to_string()))?;
     let updates = updates
         .into_iter()
@@ -432,4 +435,23 @@ pub async fn notification_deletion_updates<S: Storage>(
         })
         .collect();
     retain_complete_parents(storage, mutations).await
+}
+
+/// Uses compiled metadata for standalone callers.
+pub async fn notification_projection_updates<S: Storage>(
+    storage: &S,
+    query: &str,
+    operation_name: Option<&str>,
+    variables: &serde_json::Map<String, serde_json::Value>,
+    data: &serde_json::Value,
+) -> Result<Vec<ProjectionMutation>, SoupFilterCacheAdapterError> {
+    notification_projection_updates_with_schema(
+        cache_core::meta::Schema::compiled(),
+        storage,
+        query,
+        operation_name,
+        variables,
+        data,
+    )
+    .await
 }

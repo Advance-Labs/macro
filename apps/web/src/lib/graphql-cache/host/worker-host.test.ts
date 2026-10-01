@@ -6,6 +6,7 @@ import type {
   WriteResult,
 } from '../protocol';
 import { INITIAL_CACHE_REVISION } from '../protocol';
+import { runtimeCacheSchema } from '../runtime-schema';
 import type {
   CacheCoordinatorPageAdapter,
   CacheCoordinatorPageAdapterOptions,
@@ -76,6 +77,7 @@ function responseFor(request: CacheRequest): unknown {
     case 'delete-records':
       return { revision: INITIAL_CACHE_REVISION, affectedOps: request.keys };
     case 'init':
+      return { protocolVersion: 1, fingerprint: 'a'.repeat(64) };
     case 'defer-optimistic-write':
     case 'teardown':
       return null;
@@ -524,6 +526,7 @@ describe('createWorkerCacheHost', () => {
     expect(requests[0]).toEqual({
       id: 1,
       kind: 'init',
+      schemaJson: runtimeCacheSchema,
       scope: 'scope-1',
       hotCapacity: 42,
     });
@@ -627,7 +630,7 @@ describe('createWorkerCacheHost', () => {
     progress(2, 'loading-assets', 60_000);
     await vi.advanceTimersByTimeAsync(30_000);
     expect(onInitializationError).not.toHaveBeenCalled();
-    adapter.respond(1, null);
+    adapter.respond(1, { protocolVersion: 1, fingerprint: 'a'.repeat(64) });
     await vi.advanceTimersByTimeAsync(11);
     await rejected;
     expect(onInitializationError).not.toHaveBeenCalled();
@@ -852,7 +855,7 @@ describe('createWorkerCacheHost', () => {
       [3, 'init'],
     ]);
     expect(affected).toEqual([]);
-    adapter.respond(3, null);
+    adapter.respond(3, { protocolVersion: 1, fingerprint: 'a'.repeat(64) });
     await vi.waitFor(() =>
       expect(
         adapter.requests.filter(({ kind }) => kind === 'init')
@@ -881,7 +884,7 @@ describe('createWorkerCacheHost', () => {
     const adapter = requireAdapter();
     await vi.waitFor(() => expect(adapter.requests).toHaveLength(1));
     adapter.replace(2);
-    adapter.respond(1, null);
+    adapter.respond(1, { protocolVersion: 1, fingerprint: 'a'.repeat(64) });
     await expect(read).resolves.toEqual({ kind: 'miss' });
 
     expect(affected).toEqual([]);

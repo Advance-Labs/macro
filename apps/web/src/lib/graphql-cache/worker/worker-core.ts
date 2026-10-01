@@ -1,3 +1,7 @@
+import {
+  assertCacheSchemaAcknowledged,
+  runtimeCacheSchema,
+} from '../runtime-schema';
 /**
  * Dedicated engine-worker core: owns the elected browser WASM engine, serves
  * coordinator-routed RPCs, and fans out invalidations.
@@ -454,7 +458,11 @@ export class CacheWorkerCore {
     return await match(request)
       .with({ kind: 'init' }, async (request) => {
         await this.init(request.scope, request.hotCapacity);
-        return null;
+        const acknowledgement = await this.requireEngine().configureSchema(
+          request.schemaJson ?? runtimeCacheSchema
+        );
+        assertCacheSchemaAcknowledged(acknowledgement);
+        return acknowledgement;
       })
       .with({ kind: 'current-revision' }, async () => {
         return parseCacheRevision(await this.requireEngine().currentRevision());
@@ -961,6 +969,9 @@ export class CacheWorkerCore {
           // A stale artifact opened storage without asking the coordinator.
           throw new Error('cache WASM does not support the owner-lock grant');
         }
+        assertCacheSchemaAcknowledged(
+          await this.engine.configureSchema(runtimeCacheSchema)
+        );
         this.options.onInitializationOutcome?.(openOutcome);
         this.telemetry.record({
           name: 'graphql_cache.schema_init',

@@ -1,10 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const invokeMock = vi.hoisted(() => vi.fn());
+const configureSchemaMock = vi.hoisted(() => vi.fn());
 const listenMock = vi.hoisted(() => vi.fn());
 const emitMock = vi.hoisted(() => vi.fn());
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: (command: string, args: unknown) =>
+    command === 'graphql_cache_configure_schema'
+      ? configureSchemaMock(args)
+      : invokeMock(command, args),
+}));
 vi.mock('@tauri-apps/api/event', () => ({
   listen: listenMock,
   emit: emitMock,
@@ -42,6 +48,10 @@ describe('createTauriCacheHost', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    configureSchemaMock.mockResolvedValue({
+      protocolVersion: 1,
+      fingerprint: 'a'.repeat(64),
+    });
     eventCallbacks = new Map();
     invokeMock.mockResolvedValue(null);
     emitMock.mockResolvedValue(undefined);
@@ -49,6 +59,48 @@ describe('createTauriCacheHost', () => {
       eventCallbacks.set(event, cb);
       return Promise.resolve(unlisten);
     });
+  });
+
+  it('waits for schema acknowledgement before admitting reads', async () => {
+    let acknowledge!: (value: unknown) => void;
+    configureSchemaMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          acknowledge = resolve;
+        })
+    );
+    invokeMock.mockImplementation(async (command: string) =>
+      command === 'graphql_cache_read' ? { kind: 'miss' } : null
+    );
+    const host = createTauriCacheHost({ scope: 'scope-1' });
+    const read = host.readQuery({ query: '{ user { id } }' });
+    await vi.waitFor(() => expect(configureSchemaMock).toHaveBeenCalledOnce());
+    expect(invokeMock.mock.calls.map(([command]) => command)).toEqual([
+      'graphql_cache_init',
+    ]);
+    expect(configureSchemaMock.mock.calls[0][0].schemaJson).toContain(
+      'calendarInvitations'
+    );
+    acknowledge({ protocolVersion: 1, fingerprint: 'a'.repeat(64) });
+    await expect(read).resolves.toEqual({ kind: 'miss' });
+    host.dispose();
+  });
+
+  it('rejects an older engine acknowledgement without reading or clearing data', async () => {
+    configureSchemaMock.mockResolvedValueOnce(null);
+    const onInitializationError = vi.fn();
+    const host = createTauriCacheHost({
+      scope: 'scope-1',
+      onInitializationError,
+    });
+    await expect(host.readQuery({ query: '{ user { id } }' })).rejects.toThrow(
+      'Update the app'
+    );
+    expect(invokeMock.mock.calls.map(([command]) => command)).toEqual([
+      'graphql_cache_init',
+    ]);
+    expect(onInitializationError).toHaveBeenCalledOnce();
+    host.dispose();
   });
 
   it('reads the database generation after native initialization', async () => {

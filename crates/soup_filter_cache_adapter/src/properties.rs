@@ -19,7 +19,7 @@ mod prepare;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod test;
 
-pub use optimistic::augment_optimistic;
+pub use optimistic::{augment_optimistic, augment_optimistic_with_schema};
 use prepare::prepare;
 
 fn error(error: impl std::fmt::Display) -> SoupFilterCacheAdapterError {
@@ -113,7 +113,8 @@ fn extend_document(
 /// Upgrade legacy core/Mail mutations and maintain property-only writes atomically.
 /// An absent property snapshot cannot establish completeness; it may only retain
 /// same-identity property proof already present in the current profile.
-pub async fn augment_authoritative<S: cache_core::predicate::PredicateIndexStorage>(
+pub async fn augment_authoritative_with_schema<S: cache_core::predicate::PredicateIndexStorage>(
+    schema: &cache_core::meta::Schema,
     storage: &S,
     query: &str,
     operation: Option<&str>,
@@ -123,6 +124,7 @@ pub async fn augment_authoritative<S: cache_core::predicate::PredicateIndexStora
     mutations: Vec<ProjectionMutation>,
 ) -> Result<Vec<ProjectionMutation>, ProjectionError<S::Error>> {
     let changes = prepare(
+        schema,
         storage,
         query,
         operation,
@@ -232,4 +234,27 @@ pub async fn deletion_updates<S: cache_core::predicate::PredicateIndexStorage>(
     keys: &[String],
 ) -> Result<Vec<ProjectionMutation>, ProjectionError<S::Error>> {
     prepare::deletion_updates(storage, keys).await
+}
+
+/// Uses compiled metadata for standalone callers.
+pub async fn augment_authoritative<S: cache_core::predicate::PredicateIndexStorage>(
+    storage: &S,
+    query: &str,
+    operation: Option<&str>,
+    variables: &Map<String, Value>,
+    data: &Value,
+    reuse_stored_identity: bool,
+    mutations: Vec<ProjectionMutation>,
+) -> Result<Vec<ProjectionMutation>, ProjectionError<S::Error>> {
+    augment_authoritative_with_schema(
+        cache_core::meta::Schema::compiled(),
+        storage,
+        query,
+        operation,
+        variables,
+        data,
+        reuse_stored_identity,
+        mutations,
+    )
+    .await
 }

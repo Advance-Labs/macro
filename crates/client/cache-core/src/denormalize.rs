@@ -131,6 +131,7 @@ fn denormalize_record_with_entity_resolvers(
     entity_resolvers: &EntityResolverLookup,
 ) -> Result<ReadOutcome, DenormalizeError> {
     ReadSession::new(key, type_name, selections).resume(
+        meta::Schema::compiled(),
         variables,
         source,
         deps,
@@ -183,6 +184,7 @@ impl<'a> ReadSession<'a> {
 
     pub(crate) fn resume(
         &mut self,
+        schema: &'a meta::Schema,
         variables: &serde_json::Map<String, Json>,
         source: &impl RecordSource,
         deps: &mut impl DependencyTracker,
@@ -192,6 +194,7 @@ impl<'a> ReadSession<'a> {
         for pending in std::mem::take(&mut self.pending) {
             let retain_output = pending.destination.is_some();
             let mut walk = Walk {
+                schema,
                 variables,
                 source,
                 deps,
@@ -231,6 +234,7 @@ impl<'a> ReadSession<'a> {
 }
 
 struct Walk<'a, 'document, S: RecordSource, D: DependencyTracker> {
+    schema: &'document meta::Schema,
     variables: &'a serde_json::Map<String, Json>,
     source: &'a S,
     deps: &'a mut D,
@@ -271,9 +275,13 @@ impl<'document, S: RecordSource, D: DependencyTracker> Walk<'_, 'document, S, D>
         concrete: &str,
         selections: &'document [Selection],
     ) -> Result<Json, DenormalizeError> {
-        let fields_plan =
-            self.plans
-                .fields(selections, concrete, self.variables, self.entity_resolvers)?;
+        let fields_plan = self.plans.fields(
+            self.schema,
+            selections,
+            concrete,
+            self.variables,
+            self.entity_resolvers,
+        )?;
         let pending_start = self.pending.len();
         let mut out = serde_json::Map::new();
         for planned_field in fields_plan.iter() {
@@ -348,7 +356,7 @@ impl<'document, S: RecordSource, D: DependencyTracker> Walk<'_, 'document, S, D>
         &mut self,
         owner: &EntityKey<'static>,
         field: &'document FieldNode,
-        named_type: &'static str,
+        named_type: &'document str,
         value: &CacheValue,
     ) -> Result<Json, DenormalizeError> {
         Ok(match value {
@@ -384,6 +392,7 @@ impl<'document, S: RecordSource, D: DependencyTracker> Walk<'_, 'document, S, D>
 }
 
 fn collect_fields<'a>(
+    schema: &crate::meta::Schema,
     selections: &'a [Selection],
     concrete_type: &str,
     out: &mut Vec<&'a FieldNode>,
@@ -397,10 +406,10 @@ fn collect_fields<'a>(
             } => {
                 let applies = match type_condition {
                     None => true,
-                    Some(cond) => meta::type_matches(concrete_type, cond),
+                    Some(cond) => schema.type_matches(concrete_type, cond),
                 };
                 if applies {
-                    collect_fields(selection_set, concrete_type, out);
+                    collect_fields(schema, selection_set, concrete_type, out);
                 }
             }
         }

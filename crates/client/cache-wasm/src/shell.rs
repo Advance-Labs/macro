@@ -27,10 +27,10 @@ use cache_turso::{
 use predicate_index::RecordKey;
 use serde::{Deserialize, Serialize};
 use soup_filter_cache_adapter::{
-    SoupFilterCompileOutcome, authoritative_projection_mutations,
+    SoupFilterCompileOutcome, authoritative_projection_mutations_with_schema,
     compile_current_filter_request as compile_filter_request, dirty_projection_mutations,
     mail::ProjectionError as MailProjectionError, notification_deletion_updates,
-    notification_projection_updates, optimistic_notification_updates,
+    notification_projection_updates_with_schema, optimistic_notification_updates,
     optimistic_projection_mutations,
 };
 use std::cell::RefCell;
@@ -1149,6 +1149,19 @@ async fn close_storage(storage: BrowserStorage, force_reset: bool) -> Result<Opf
 
 #[wasm_bindgen]
 impl CacheEngine {
+    /// Accept the frontend's schema before any cache operations or queue replay.
+    #[wasm_bindgen(js_name = configureSchema)]
+    pub fn configure_schema(&self, schema_json: String) -> js_sys::Promise {
+        let state = self.state.clone();
+        future_to_promise(async move {
+            let schema = cache_core::meta::Schema::from_json(&schema_json).map_err(err_js)?;
+            let mut state = state.lock().await;
+            let result = state.engine_mut()?.configure_schema(schema).await;
+            let acknowledgement = state.engine_result(result)?;
+            serde_wasm_bindgen::to_value(&acknowledgement).map_err(err_js)
+        })
+    }
+
     /// Returns payload-free durable mutation queue diagnostics.
     #[wasm_bindgen(js_name = queueDiagnostics)]
     pub fn queue_diagnostics(&self) -> js_sys::Promise {
@@ -1291,9 +1304,15 @@ impl CacheEngine {
         future_to_promise(async move {
             let mut state = state.lock().await;
             state.ensure_callable()?;
-            let selection = state
-                .selections
-                .get(document, fragment_name)
+            let CacheState {
+                engine, selections, ..
+            } = &mut *state;
+            let selection = selections
+                .get_with_schema(
+                    engine.as_ref().expect("callable engine").schema(),
+                    document,
+                    fragment_name,
+                )
                 .map_err(err_js)?;
             let keys: Vec<String> = parse_vec(keys)?;
             let keys: Vec<_> = keys.into_iter().map(|key| EntityKey(key.into())).collect();
@@ -1468,15 +1487,20 @@ impl CacheEngine {
                 let op_id = ops.borrow_mut().intern(&registration.op_id);
                 (op_id, registration.entity_resolvers)
             });
-            let mut projections =
-                authoritative_projection_mutations(&query, operation_name.as_deref(), &data)
-                    .map_err(err_js)?;
+            let mut projections = authoritative_projection_mutations_with_schema(
+                state.engine_mut()?.schema(),
+                &query,
+                operation_name.as_deref(),
+                &data,
+            )
+            .map_err(err_js)?;
             let reuse_stored_identity =
                 state.can_reuse_stored_identity(identity.as_deref()).await?;
             if reuse_stored_identity {
                 projections.extend(
-                    notification_projection_updates(
-                        state.engine_mut()?.storage(),
+                    notification_projection_updates_with_schema(
+                        state.engine.as_ref().expect("callable engine").schema(),
+                        state.engine.as_ref().expect("callable engine").storage(),
                         &query,
                         operation_name.as_deref(),
                         &vars,
@@ -1487,8 +1511,9 @@ impl CacheEngine {
                 );
             }
             projections.extend(
-                soup_filter_cache_adapter::mail::projection_updates_for_write(
-                    state.engine_mut()?.storage(),
+                soup_filter_cache_adapter::mail::projection_updates_for_write_with_schema(
+                    state.engine.as_ref().expect("callable engine").schema(),
+                    state.engine.as_ref().expect("callable engine").storage(),
                     &query,
                     operation_name.as_deref(),
                     &vars,
@@ -1498,17 +1523,19 @@ impl CacheEngine {
                 .await
                 .map_err(|error| state.mail_projection_error(error))?,
             );
-            let projections = soup_filter_cache_adapter::properties::augment_authoritative(
-                state.engine_mut()?.storage(),
-                &query,
-                operation_name.as_deref(),
-                &vars,
-                &data,
-                reuse_stored_identity,
-                projections,
-            )
-            .await
-            .map_err(|error| state.mail_projection_error(error))?;
+            let projections =
+                soup_filter_cache_adapter::properties::augment_authoritative_with_schema(
+                    state.engine.as_ref().expect("callable engine").schema(),
+                    state.engine.as_ref().expect("callable engine").storage(),
+                    &query,
+                    operation_name.as_deref(),
+                    &vars,
+                    &data,
+                    reuse_stored_identity,
+                    projections,
+                )
+                .await
+                .map_err(|error| state.mail_projection_error(error))?;
             let result = state
                 .engine_mut()?
                 .write_query_with_registration_and_projections(
@@ -1552,15 +1579,20 @@ impl CacheEngine {
             state.ensure_callable()?;
             let variables = parse_variables(variables)?;
             let data: serde_json::Value = serde_wasm_bindgen::from_value(data).map_err(err_js)?;
-            let mut projections =
-                authoritative_projection_mutations(&query, operation_name.as_deref(), &data)
-                    .map_err(err_js)?;
+            let mut projections = authoritative_projection_mutations_with_schema(
+                state.engine_mut()?.schema(),
+                &query,
+                operation_name.as_deref(),
+                &data,
+            )
+            .map_err(err_js)?;
             let reuse_stored_identity =
                 state.can_reuse_stored_identity(identity.as_deref()).await?;
             if reuse_stored_identity {
                 projections.extend(
-                    notification_projection_updates(
-                        state.engine_mut()?.storage(),
+                    notification_projection_updates_with_schema(
+                        state.engine.as_ref().expect("callable engine").schema(),
+                        state.engine.as_ref().expect("callable engine").storage(),
                         &query,
                         operation_name.as_deref(),
                         &variables,
@@ -1571,8 +1603,9 @@ impl CacheEngine {
                 );
             }
             projections.extend(
-                soup_filter_cache_adapter::mail::projection_updates_for_write(
-                    state.engine_mut()?.storage(),
+                soup_filter_cache_adapter::mail::projection_updates_for_write_with_schema(
+                    state.engine.as_ref().expect("callable engine").schema(),
+                    state.engine.as_ref().expect("callable engine").storage(),
                     &query,
                     operation_name.as_deref(),
                     &variables,
@@ -1582,17 +1615,19 @@ impl CacheEngine {
                 .await
                 .map_err(|error| state.mail_projection_error(error))?,
             );
-            let projections = soup_filter_cache_adapter::properties::augment_authoritative(
-                state.engine_mut()?.storage(),
-                &query,
-                operation_name.as_deref(),
-                &variables,
-                &data,
-                reuse_stored_identity,
-                projections,
-            )
-            .await
-            .map_err(|error| state.mail_projection_error(error))?;
+            let projections =
+                soup_filter_cache_adapter::properties::augment_authoritative_with_schema(
+                    state.engine.as_ref().expect("callable engine").schema(),
+                    state.engine.as_ref().expect("callable engine").storage(),
+                    &query,
+                    operation_name.as_deref(),
+                    &variables,
+                    &data,
+                    reuse_stored_identity,
+                    projections,
+                )
+                .await
+                .map_err(|error| state.mail_projection_error(error))?;
             let result = state
                 .engine_mut()?
                 .hydrate_query_with_projections(
@@ -1656,8 +1691,9 @@ impl CacheEngine {
             let mut projection_mutations = optimistic_projection_mutations(&data, created_at_ms);
             projection_mutations.extend(
                 optimistic_notification_updates(
-                    notification_projection_updates(
-                        state.engine_mut()?.storage(),
+                    notification_projection_updates_with_schema(
+                        state.engine.as_ref().expect("callable engine").schema(),
+                        state.engine.as_ref().expect("callable engine").storage(),
                         &query,
                         operation_name.as_deref(),
                         &vars,
@@ -1669,8 +1705,9 @@ impl CacheEngine {
                 .map_err(err_js)?,
             );
             projection_mutations.extend(soup_filter_cache_adapter::mail::optimistic_updates(
-                soup_filter_cache_adapter::mail::projection_updates(
-                    state.engine_mut()?.storage(),
+                soup_filter_cache_adapter::mail::projection_updates_with_schema(
+                    state.engine.as_ref().expect("callable engine").schema(),
+                    state.engine.as_ref().expect("callable engine").storage(),
                     &query,
                     operation_name.as_deref(),
                     &vars,
@@ -1679,16 +1716,18 @@ impl CacheEngine {
                 .await
                 .map_err(|error| state.mail_projection_error(error))?,
             ));
-            let projection_mutations = soup_filter_cache_adapter::properties::augment_optimistic(
-                state.engine_mut()?.storage(),
-                &query,
-                operation_name.as_deref(),
-                &vars,
-                &data,
-                projection_mutations,
-            )
-            .await
-            .map_err(|error| state.mail_projection_error(error))?;
+            let projection_mutations =
+                soup_filter_cache_adapter::properties::augment_optimistic_with_schema(
+                    state.engine.as_ref().expect("callable engine").schema(),
+                    state.engine.as_ref().expect("callable engine").storage(),
+                    &query,
+                    operation_name.as_deref(),
+                    &vars,
+                    &data,
+                    projection_mutations,
+                )
+                .await
+                .map_err(|error| state.mail_projection_error(error))?;
             let claim = MutationClaimRequest {
                 owner: lease_owner,
                 now_ms: parse_timestamp(now_ms, "claim timestamp")?,
@@ -1882,12 +1921,17 @@ impl CacheEngine {
             };
             let vars = parse_variables(variables)?;
             let data: serde_json::Value = serde_wasm_bindgen::from_value(data).map_err(err_js)?;
-            let mut projections =
-                authoritative_projection_mutations(&query, operation_name.as_deref(), &data)
-                    .map_err(err_js)?;
+            let mut projections = authoritative_projection_mutations_with_schema(
+                state.engine_mut()?.schema(),
+                &query,
+                operation_name.as_deref(),
+                &data,
+            )
+            .map_err(err_js)?;
             projections.extend(
-                notification_projection_updates(
-                    state.engine_mut()?.storage(),
+                notification_projection_updates_with_schema(
+                    state.engine.as_ref().expect("callable engine").schema(),
+                    state.engine.as_ref().expect("callable engine").storage(),
                     &query,
                     operation_name.as_deref(),
                     &vars,
@@ -1897,8 +1941,9 @@ impl CacheEngine {
                 .map_err(err_js)?,
             );
             projections.extend(
-                soup_filter_cache_adapter::mail::projection_updates(
-                    state.engine_mut()?.storage(),
+                soup_filter_cache_adapter::mail::projection_updates_with_schema(
+                    state.engine.as_ref().expect("callable engine").schema(),
+                    state.engine.as_ref().expect("callable engine").storage(),
                     &query,
                     operation_name.as_deref(),
                     &vars,
@@ -1907,17 +1952,19 @@ impl CacheEngine {
                 .await
                 .map_err(|error| state.mail_projection_error(error))?,
             );
-            let projections = soup_filter_cache_adapter::properties::augment_authoritative(
-                state.engine_mut()?.storage(),
-                &query,
-                operation_name.as_deref(),
-                &vars,
-                &data,
-                true,
-                projections,
-            )
-            .await
-            .map_err(|error| state.mail_projection_error(error))?;
+            let projections =
+                soup_filter_cache_adapter::properties::augment_authoritative_with_schema(
+                    state.engine.as_ref().expect("callable engine").schema(),
+                    state.engine.as_ref().expect("callable engine").storage(),
+                    &query,
+                    operation_name.as_deref(),
+                    &vars,
+                    &data,
+                    true,
+                    projections,
+                )
+                .await
+                .map_err(|error| state.mail_projection_error(error))?;
             let result = state
                 .engine_mut()?
                 .commit_optimistic_write_with_projections_outcome(
@@ -2145,6 +2192,7 @@ impl CacheEngine {
             })?;
             let scope = state.scope.clone();
             let hot_capacity = state.hot_capacity;
+            let schema = engine.schema().clone();
             let owner = match close_storage(engine.into_storage(), true).await {
                 Ok(owner) => owner,
                 Err(error) => {
@@ -2159,9 +2207,13 @@ impl CacheEngine {
                     return Err(error);
                 }
             };
+            // Retain ownership even if restoring metadata encounters an I/O
+            // failure: close/recovery must still be able to release the database.
             state.engine = Some(build_engine(storage, hot_capacity));
-            state.mail_generation = soup_filter_cache_adapter::mail::new_generation();
             state.reset_required = false;
+            let result = state.engine_mut()?.configure_schema(schema).await;
+            state.engine_result(result)?;
+            state.mail_generation = soup_filter_cache_adapter::mail::new_generation();
             Ok(JsValue::UNDEFINED)
         })
     }

@@ -2,7 +2,7 @@
 use super::*;
 use cache_core::{
     engine::{Engine, EngineError},
-    normalize::normalize,
+    normalize::normalize_with_schema,
     predicate::{PredicateIndexStorage, ProjectionState},
     store::Storage,
     value::{CacheValue, EntityKey, Record},
@@ -185,21 +185,26 @@ pub enum ProjectionError<S: std::error::Error + 'static> {
 /// Compose full canonical snapshots, or bounded patches preserving completeness.
 /// Canonical preview edges are independent of the source query's view/filter.
 /// A missing v2 field cannot borrow completeness from an older projection.
-pub async fn projection_updates<S: Storage>(
+pub async fn projection_updates_with_schema<S: Storage>(
+    schema: &cache_core::meta::Schema,
     storage: &S,
     query: &str,
     operation: Option<&str>,
     variables: &Map<String, Value>,
     data: &Value,
 ) -> Result<Vec<ProjectionMutation>, ProjectionError<S::Error>> {
-    projection_updates_for_write(storage, query, operation, variables, data, true).await
+    projection_updates_for_write_with_schema(
+        schema, storage, query, operation, variables, data, true,
+    )
+    .await
 }
 
 /// Prepare Mail facts without consulting the old user's records when the write
 /// will reset cache identity. Complete incoming snapshots remain projectable;
 /// partial incoming rows remain incomplete instead of borrowing old metadata.
 /// The cache engine, not this adapter, performs the actual identity reset.
-pub async fn projection_updates_for_write<S: Storage>(
+pub async fn projection_updates_for_write_with_schema<S: Storage>(
+    schema: &cache_core::meta::Schema,
     storage: &S,
     query: &str,
     operation: Option<&str>,
@@ -209,7 +214,7 @@ pub async fn projection_updates_for_write<S: Storage>(
 ) -> Result<Vec<ProjectionMutation>, ProjectionError<S::Error>> {
     let parsed = Document::parse(query).map_err(error)?;
     let op = parsed.operation(operation).map_err(error)?;
-    let updates = normalize(op, variables, data)
+    let updates = normalize_with_schema(schema, op, variables, data)
         .map_err(error)?
         .into_iter()
         .filter(|(key, record)| {
@@ -735,4 +740,44 @@ async fn page_impl<S: PredicateIndexStorage>(
         next_cursor,
         optimistic: result.value.optimistic,
     })
+}
+
+/// Uses compiled metadata for standalone callers.
+pub async fn projection_updates<S: Storage>(
+    storage: &S,
+    query: &str,
+    operation: Option<&str>,
+    variables: &Map<String, Value>,
+    data: &Value,
+) -> Result<Vec<ProjectionMutation>, ProjectionError<S::Error>> {
+    projection_updates_with_schema(
+        cache_core::meta::Schema::compiled(),
+        storage,
+        query,
+        operation,
+        variables,
+        data,
+    )
+    .await
+}
+
+/// Uses compiled metadata for standalone callers.
+pub async fn projection_updates_for_write<S: Storage>(
+    storage: &S,
+    query: &str,
+    operation: Option<&str>,
+    variables: &Map<String, Value>,
+    data: &Value,
+    reuse_stored_identity: bool,
+) -> Result<Vec<ProjectionMutation>, ProjectionError<S::Error>> {
+    projection_updates_for_write_with_schema(
+        cache_core::meta::Schema::compiled(),
+        storage,
+        query,
+        operation,
+        variables,
+        data,
+        reuse_stored_identity,
+    )
+    .await
 }

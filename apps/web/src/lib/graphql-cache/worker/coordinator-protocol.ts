@@ -477,7 +477,16 @@ export function isCacheRequest(value: unknown): value is CacheRequest {
   switch (value.kind) {
     case 'init':
       return (
-        hasOnlyKeys(value, ['id', 'kind', 'scope', 'hotCapacity']) &&
+        hasOnlyKeys(value, [
+          'id',
+          'kind',
+          'scope',
+          'hotCapacity',
+          'schemaJson',
+        ]) &&
+        (value.schemaJson === undefined ||
+          (typeof value.schemaJson === 'string' &&
+            value.schemaJson.length <= 4 * 1024 * 1024)) &&
         isNonEmptyString(value.scope) &&
         isOptionalPositiveInteger(value.hotCapacity)
       );

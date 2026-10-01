@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { INITIAL_CACHE_REVISION } from '../protocol';
 
+const schemaAcknowledgement = {
+  protocolVersion: 1,
+  fingerprint: 'a'.repeat(64),
+};
+const configureSchema = async () => schemaAcknowledgement;
+
 const loadCacheWasmMock = vi.hoisted(() => vi.fn());
 
 vi.mock('./wasm-module', () => ({ loadCacheWasm: loadCacheWasmMock }));
@@ -25,7 +31,9 @@ describe('CacheWorkerCore', () => {
       .mockResolvedValueOnce(before)
       .mockResolvedValueOnce(after);
     loadCacheWasmMock.mockResolvedValue({
-      openCache: vi.fn().mockResolvedValue({ currentStorageGeneration }),
+      openCache: vi
+        .fn()
+        .mockResolvedValue({ configureSchema, currentStorageGeneration }),
     });
     const messages: unknown[] = [];
     const port = { postMessage: (message: unknown) => messages.push(message) };
@@ -57,7 +65,9 @@ describe('CacheWorkerCore', () => {
     };
     const readRecordsByKeys = vi.fn().mockResolvedValue(selectionResult);
     loadCacheWasmMock.mockResolvedValue({
-      openCache: vi.fn().mockResolvedValue({ readRecordsByKeys }),
+      openCache: vi
+        .fn()
+        .mockResolvedValue({ configureSchema, readRecordsByKeys }),
     });
     const messages: unknown[] = [];
     const port = { postMessage: (message: unknown) => messages.push(message) };
@@ -104,7 +114,7 @@ describe('CacheWorkerCore', () => {
     };
     const search = vi.fn().mockResolvedValue(page);
     loadCacheWasmMock.mockResolvedValue({
-      openCache: vi.fn().mockResolvedValue({ search }),
+      openCache: vi.fn().mockResolvedValue({ configureSchema, search }),
     });
     const messages: unknown[] = [];
     const port = { postMessage: (message: unknown) => messages.push(message) };
@@ -139,7 +149,9 @@ describe('CacheWorkerCore', () => {
       revalidations: [],
     });
     loadCacheWasmMock.mockResolvedValue({
-      openCache: vi.fn().mockResolvedValue({ commitOptimisticWrite }),
+      openCache: vi
+        .fn()
+        .mockResolvedValue({ configureSchema, commitOptimisticWrite }),
     });
     const messages: unknown[] = [];
     const port = { postMessage: (message: unknown) => messages.push(message) };
@@ -212,6 +224,7 @@ describe('CacheWorkerCore', () => {
     });
     loadCacheWasmMock.mockResolvedValue({
       openCache: vi.fn().mockResolvedValue({
+        configureSchema,
         enqueueOptimisticMutation,
         readQuery,
       }),
@@ -308,10 +321,9 @@ describe('CacheWorkerCore', () => {
       return undefined;
     });
     loadCacheWasmMock.mockResolvedValue({
-      openCache: vi.fn().mockResolvedValue({
-        readQuery,
-        claimNextMutation,
-      }),
+      openCache: vi
+        .fn()
+        .mockResolvedValue({ configureSchema, readQuery, claimNextMutation }),
     });
     const port = { postMessage: vi.fn() };
     const core = new CacheWorkerCore();
@@ -380,6 +392,7 @@ describe('CacheWorkerCore', () => {
     });
     loadCacheWasmMock.mockResolvedValue({
       openCache: vi.fn().mockResolvedValue({
+        configureSchema,
         readQuery,
         entityFilter,
         hydrateQuery,
@@ -466,6 +479,7 @@ describe('CacheWorkerCore', () => {
     });
     loadCacheWasmMock.mockResolvedValue({
       openCache: vi.fn().mockResolvedValue({
+        configureSchema,
         readQuery,
         hydrateQuery,
         writeQuery,
@@ -512,6 +526,7 @@ describe('CacheWorkerCore', () => {
     const generation = '00000000-0000-4000-8000-000000000001';
     loadCacheWasmMock.mockResolvedValue({
       openCache: vi.fn().mockResolvedValue({
+        configureSchema,
         readQuery: async (opId: string) => {
           order.push(opId);
           if (opId === 'blocker') {
@@ -596,6 +611,7 @@ describe('CacheWorkerCore', () => {
     );
     loadCacheWasmMock.mockResolvedValue({
       openCache: vi.fn().mockResolvedValue({
+        configureSchema,
         readQuery,
         enqueueOptimisticMutation,
       }),
@@ -725,7 +741,7 @@ describe('CacheWorkerCore', () => {
       }
     );
     loadCacheWasmMock.mockResolvedValue({
-      openCache: vi.fn().mockResolvedValue({ readQuery }),
+      openCache: vi.fn().mockResolvedValue({ configureSchema, readQuery }),
     });
     const port = { postMessage: vi.fn() };
     const core = new CacheWorkerCore();
@@ -820,6 +836,7 @@ describe('CacheWorkerCore', () => {
     });
     loadCacheWasmMock.mockResolvedValue({
       openCache: vi.fn().mockResolvedValue({
+        configureSchema,
         readQuery,
         teardownOperation,
         enqueueOptimisticMutation,
@@ -895,7 +912,9 @@ describe('CacheWorkerCore', () => {
     const variants = [{ variables: { input: { initial: { limit: 20 } } } }];
     const inspectQueryVariants = vi.fn().mockResolvedValue(variants);
     loadCacheWasmMock.mockResolvedValue({
-      openCache: vi.fn().mockResolvedValue({ inspectQueryVariants }),
+      openCache: vi
+        .fn()
+        .mockResolvedValue({ configureSchema, inspectQueryVariants }),
     });
     const messages: unknown[] = [];
     const port = { postMessage: (message: unknown) => messages.push(message) };
@@ -931,7 +950,7 @@ describe('CacheWorkerCore', () => {
     };
     const writeQuery = vi.fn().mockResolvedValue(writeResult);
     loadCacheWasmMock.mockResolvedValue({
-      openCache: vi.fn().mockResolvedValue({ writeQuery }),
+      openCache: vi.fn().mockResolvedValue({ configureSchema, writeQuery }),
     });
     const messages: unknown[] = [];
     const port = { postMessage: (message: unknown) => messages.push(message) };
@@ -981,6 +1000,7 @@ describe('CacheWorkerCore', () => {
     async ({ searchChangedBuckets, reset }) => {
       loadCacheWasmMock.mockResolvedValue({
         openCache: vi.fn().mockResolvedValue({
+          configureSchema,
           writeQuery: vi.fn().mockResolvedValue({
             revision: INITIAL_CACHE_REVISION,
             revisionAdvanced: true,
@@ -1022,6 +1042,7 @@ describe('CacheWorkerCore', () => {
     };
     loadCacheWasmMock.mockResolvedValue({
       openCache: vi.fn().mockResolvedValue({
+        configureSchema,
         writeQuery: vi.fn().mockResolvedValue(writeResult),
       }),
     });
@@ -1061,7 +1082,7 @@ describe('CacheWorkerCore', () => {
         searchChangedBuckets: ['note'],
       });
       loadCacheWasmMock.mockResolvedValue({
-        openCache: vi.fn().mockResolvedValue({ hydrateQuery }),
+        openCache: vi.fn().mockResolvedValue({ configureSchema, hydrateQuery }),
       });
       const messages: unknown[] = [];
       const port = {
@@ -1141,7 +1162,9 @@ describe('CacheWorkerCore', () => {
       order.push('close');
     });
     loadCacheWasmMock.mockResolvedValue({
-      openCache: vi.fn().mockResolvedValue({ readQuery, close }),
+      openCache: vi
+        .fn()
+        .mockResolvedValue({ configureSchema, readQuery, close }),
     });
     const messages: unknown[] = [];
     const port = {
@@ -1196,7 +1219,7 @@ describe('CacheWorkerCore', () => {
           order.push('owner-lock');
           await grant?.();
           order.push('storage');
-          return { engine: {}, outcome: 'opened-existing' };
+          return { engine: { configureSchema }, outcome: 'opened-existing' };
         }
       );
       loadCacheWasmMock.mockResolvedValue({ [openName]: open });
@@ -1214,14 +1237,16 @@ describe('CacheWorkerCore', () => {
       );
 
       expect(order).toEqual(['owner-lock', 'grant', 'storage']);
-      expect(messages).toEqual([{ id: 1, ok: true, result: null }]);
+      expect(messages).toEqual([
+        { id: 1, ok: true, result: schemaAcknowledgement },
+      ]);
     }
   );
 
   it('refuses a WASM open that never asked for the storage grant', async () => {
     loadCacheWasmMock.mockResolvedValue({
       openCacheWithOutcome: vi.fn(async () => ({
-        engine: {},
+        engine: { configureSchema },
         outcome: 'opened-existing',
       })),
     });
@@ -1275,7 +1300,7 @@ describe('CacheWorkerCore', () => {
             grant?: () => Promise<void>
           ) => {
             await grant?.();
-            return { engine: {}, outcome: 'opened-existing' };
+            return { engine: { configureSchema }, outcome: 'opened-existing' };
           }
         );
       loadCacheWasmMock.mockResolvedValue({
@@ -1290,7 +1315,7 @@ describe('CacheWorkerCore', () => {
       });
 
       expect(await initMessages(core)).toEqual([
-        { id: 1, ok: true, result: null },
+        { id: 1, ok: true, result: schemaAcknowledgement },
       ]);
       expect(onOwnerLockBusy.mock.calls).toEqual([[1], [2]]);
       // Every attempt declines to queue behind another holder.
@@ -1352,7 +1377,7 @@ describe('CacheWorkerCore', () => {
 
   it('uses atomic recovery-open instead of opening before a reset', async () => {
     const openCache = vi.fn();
-    const openCacheForRecovery = vi.fn().mockResolvedValue({});
+    const openCacheForRecovery = vi.fn().mockResolvedValue({ configureSchema });
     loadCacheWasmMock.mockResolvedValue({
       openCache,
       openCacheForRecovery,
@@ -1367,11 +1392,13 @@ describe('CacheWorkerCore', () => {
 
     expect(openCache).not.toHaveBeenCalled();
     expect(openCacheForRecovery).toHaveBeenCalledWith('scope-1', 17);
-    expect(messages).toEqual([{ id: 1, ok: true, result: null }]);
+    expect(messages).toEqual([
+      { id: 1, ok: true, result: schemaAcknowledgement },
+    ]);
   });
 
   it('rejects repeated init scope and exact optional capacity mismatches', async () => {
-    const openCache = vi.fn().mockResolvedValue({});
+    const openCache = vi.fn().mockResolvedValue({ configureSchema });
     loadCacheWasmMock.mockResolvedValue({ openCache });
     const messages: unknown[] = [];
     const port = { postMessage: (message: unknown) => messages.push(message) };
@@ -1401,8 +1428,8 @@ describe('CacheWorkerCore', () => {
 
     expect(openCache).toHaveBeenCalledOnce();
     expect(messages).toEqual([
-      { id: 1, ok: true, result: null },
-      { id: 2, ok: true, result: null },
+      { id: 1, ok: true, result: schemaAcknowledgement },
+      { id: 2, ok: true, result: schemaAcknowledgement },
       {
         id: 3,
         ok: false,
@@ -1452,7 +1479,7 @@ describe('CacheWorkerCore', () => {
     });
     loadCacheWasmMock.mockResolvedValue({
       openCacheWithOutcome: vi.fn().mockResolvedValue({
-        engine: { queueDiagnostics, close, writeQuery },
+        engine: { configureSchema, queueDiagnostics, close, writeQuery },
         outcome: 'opened-new',
       }),
     });
@@ -1538,7 +1565,7 @@ describe('CacheWorkerCore', () => {
 
   it('marks compatibility diagnostics unavailable instead of authoritative empty', async () => {
     loadCacheWasmMock.mockResolvedValue({
-      openCache: vi.fn().mockResolvedValue({ close: vi.fn() }),
+      openCache: vi.fn().mockResolvedValue({ configureSchema, close: vi.fn() }),
     });
     const observations: Array<Record<string, unknown>> = [];
     const core = new CacheWorkerCore({
@@ -1586,6 +1613,7 @@ describe('CacheWorkerCore', () => {
     });
     loadCacheWasmMock.mockResolvedValue({
       openCache: vi.fn().mockResolvedValue({
+        configureSchema,
         queueDiagnostics,
         readQuery,
         writeQuery,
@@ -1657,6 +1685,7 @@ describe('CacheWorkerCore', () => {
     const close = vi.fn().mockResolvedValue(undefined);
     loadCacheWasmMock.mockResolvedValue({
       openCache: vi.fn().mockResolvedValue({
+        configureSchema,
         queueDiagnostics,
         writeQuery,
         close,
@@ -1728,7 +1757,7 @@ describe('CacheWorkerCore', () => {
       data: { cursor: 'next' },
     });
     loadCacheWasmMock.mockResolvedValue({
-      openCache: vi.fn().mockResolvedValue({ hydrateQuery }),
+      openCache: vi.fn().mockResolvedValue({ configureSchema, hydrateQuery }),
     });
     const observations: Array<Record<string, unknown>> = [];
     const port = { postMessage: vi.fn() };
@@ -1782,6 +1811,7 @@ describe('CacheWorkerCore', () => {
     loadCacheWasmMock.mockResolvedValue({
       openCacheWithOutcome: vi.fn().mockResolvedValue({
         engine: {
+          configureSchema,
           queueDiagnostics: vi.fn().mockResolvedValue({
             availability: 'available',
             depth: '0',
@@ -1828,6 +1858,7 @@ describe('CacheWorkerCore', () => {
     loadCacheWasmMock.mockResolvedValue({
       openCacheForRecoveryWithOutcome: vi.fn().mockResolvedValue({
         engine: {
+          configureSchema,
           queueDiagnostics: vi.fn().mockResolvedValue({
             availability: 'available',
             depth: '0',
@@ -1873,7 +1904,7 @@ describe('CacheWorkerCore', () => {
     );
     const readQuery = vi.fn().mockRejectedValue(resetError);
     loadCacheWasmMock.mockResolvedValue({
-      openCache: vi.fn().mockResolvedValue({ readQuery }),
+      openCache: vi.fn().mockResolvedValue({ configureSchema, readQuery }),
     });
     const onStorageResetRequired = vi.fn();
     const observations: Array<Record<string, unknown>> = [];
@@ -1946,5 +1977,61 @@ describe('CacheWorkerCore', () => {
         error: 'OPFS sync handle open failed (NoModificationAllowedError)',
       },
     ]);
+  });
+});
+
+describe('runtime cache schema negotiation', () => {
+  it('accepts each connecting frontend schema, preserving the worker after a rejected extension', async () => {
+    const configure = vi.fn(async (schema: string) => {
+      if (schema === 'incompatible')
+        throw new Error('incompatible cache schema');
+      return schemaAcknowledgement;
+    });
+    const readQuery = vi.fn().mockResolvedValue({ kind: 'miss' });
+    const physicalReset = vi.fn();
+    loadCacheWasmMock.mockResolvedValue({
+      openCache: vi.fn().mockResolvedValue({
+        configureSchema: configure,
+        readQuery,
+        physicalReset,
+      }),
+    });
+    const messages: unknown[] = [];
+    const port = { postMessage: (message: unknown) => messages.push(message) };
+    const core = new CacheWorkerCore();
+    await core.handleRequest(port, {
+      id: 1,
+      kind: 'init',
+      scope: 'scope-1',
+      schemaJson: 'newer-frontend',
+    });
+    expect(configure).toHaveBeenLastCalledWith('newer-frontend');
+    expect(messages.at(-1)).toEqual({
+      id: 1,
+      ok: true,
+      result: schemaAcknowledgement,
+    });
+    await core.handleRequest(port, {
+      id: 2,
+      kind: 'init',
+      scope: 'scope-1',
+      schemaJson: 'incompatible',
+    });
+    expect(messages.at(-1)).toEqual({
+      id: 2,
+      ok: false,
+      error: 'incompatible cache schema',
+    });
+    await core.handleRequest(port, {
+      id: 3,
+      kind: 'read',
+      query: '{ user { id } }',
+    });
+    expect(messages.at(-1)).toEqual({
+      id: 3,
+      ok: true,
+      result: { kind: 'miss' },
+    });
+    expect(physicalReset).not.toHaveBeenCalled();
   });
 });

@@ -74,19 +74,40 @@ fn resumes_only_missing_branches_preserving_aliases_nulls_order_and_dependencies
     let resolvers = EntityResolverLookup::default();
     let mut plans = ReadPlans::default();
     let first = session
-        .resume(&variables, &source, &mut deps, &resolvers, &mut plans)
+        .resume(
+            crate::meta::Schema::compiled(),
+            &variables,
+            &source,
+            &mut deps,
+            &resolvers,
+            &mut plans,
+        )
         .unwrap();
     assert!(matches!(first, ReadOutcome::NeedRecords(keys) if keys == [thread_key.clone()].into()));
     source.records.insert(thread_key.clone(), thread);
     source.records.insert(key("hot"), message("hot"));
     let second = session
-        .resume(&variables, &source, &mut deps, &resolvers, &mut plans)
+        .resume(
+            crate::meta::Schema::compiled(),
+            &variables,
+            &source,
+            &mut deps,
+            &resolvers,
+            &mut plans,
+        )
         .unwrap();
     assert!(matches!(second, ReadOutcome::NeedRecords(keys) if keys == [key("cold")].into()));
     let completed_reads = source.reads.borrow().clone();
     source.records.insert(key("cold"), message("cold"));
     let ReadOutcome::Complete(data) = session
-        .resume(&variables, &source, &mut deps, &resolvers, &mut plans)
+        .resume(
+            crate::meta::Schema::compiled(),
+            &variables,
+            &source,
+            &mut deps,
+            &resolvers,
+            &mut plans,
+        )
         .unwrap()
     else {
         panic!("all selected records are present");
@@ -130,13 +151,27 @@ fn overwritten_duplicate_selection_cannot_patch_later_output() {
     let mut plans = ReadPlans::default();
     assert!(matches!(
         session
-            .resume(&variables, &source, &mut deps, &resolvers, &mut plans)
+            .resume(
+                crate::meta::Schema::compiled(),
+                &variables,
+                &source,
+                &mut deps,
+                &resolvers,
+                &mut plans
+            )
             .unwrap(),
         ReadOutcome::NeedRecords(_)
     ));
     source.records.insert(key("cold"), message("cold"));
     let ReadOutcome::Complete(data) = session
-        .resume(&variables, &source, &mut deps, &resolvers, &mut plans)
+        .resume(
+            crate::meta::Schema::compiled(),
+            &variables,
+            &source,
+            &mut deps,
+            &resolvers,
+            &mut plans,
+        )
         .unwrap()
     else {
         panic!("all selected records are present");
@@ -179,14 +214,21 @@ fn a_field_miss_survives_later_record_hydration() {
     let mut plans = ReadPlans::default();
     assert!(matches!(
         session
-            .resume(&variables, &source, &mut deps, &resolvers, &mut plans)
+            .resume(
+                crate::meta::Schema::compiled(),
+                &variables,
+                &source,
+                &mut deps,
+                &resolvers,
+                &mut plans
+            )
             .unwrap(),
         ReadOutcome::NeedRecords(_)
     ));
     source.records.insert(key("hot"), message("hot"));
     source.records.insert(key("cold"), message("cold"));
     assert!(
-        matches!(session.resume(&variables, &source, &mut deps, &resolvers, &mut plans).unwrap(), ReadOutcome::Miss { entity, field } if entity == thread_key && field == "id")
+        matches!(session.resume(crate::meta::Schema::compiled(), &variables, &source, &mut deps, &resolvers, &mut plans).unwrap(), ReadOutcome::Miss { entity, field } if entity == thread_key && field == "id")
     );
     assert_eq!(deps, [thread_key, key("hot"), key("cold")].into());
 }
@@ -214,7 +256,7 @@ fn resumed_reads_retain_argument_qualified_viewer_fields() {
     let variables = serde_json::Map::new();
     let resolvers = EntityResolverLookup::default();
     assert!(matches!(
-        session.resume(&variables, &source, &mut deps, &resolvers, &mut plans).unwrap(),
+        session.resume(crate::meta::Schema::compiled(), &variables, &source, &mut deps, &resolvers, &mut plans).unwrap(),
         ReadOutcome::NeedRecords(keys) if keys == [viewer.clone()].into()
     ));
     source.records.insert(
@@ -237,7 +279,7 @@ fn resumed_reads_retain_argument_qualified_viewer_fields() {
         },
     );
     assert!(matches!(
-        session.resume(&variables, &source, &mut deps, &resolvers, &mut plans).unwrap(),
+        session.resume(crate::meta::Schema::compiled(), &variables, &source, &mut deps, &resolvers, &mut plans).unwrap(),
         ReadOutcome::NeedRecords(keys) if keys == [item.clone()].into()
     ));
     let viewer_reads = source.reads.borrow()[&viewer];
@@ -255,7 +297,14 @@ fn resumed_reads_retain_argument_qualified_viewer_fields() {
         },
     );
     let ReadOutcome::Complete(data) = session
-        .resume(&variables, &source, &mut deps, &resolvers, &mut plans)
+        .resume(
+            crate::meta::Schema::compiled(),
+            &variables,
+            &source,
+            &mut deps,
+            &resolvers,
+            &mut plans,
+        )
         .unwrap()
     else {
         panic!("hydrated query completes")

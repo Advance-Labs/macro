@@ -8,9 +8,9 @@ use predicate_index::{OptimisticProjectionMutation, RecordKey};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use soup_filter_cache_adapter::{
-    SoupFilterCompileOutcome, authoritative_projection_mutations,
+    SoupFilterCompileOutcome, authoritative_projection_mutations_with_schema,
     compile_current_filter_request as compile_filter_request, dirty_projection_mutations, mail,
-    notification_deletion_updates, notification_projection_updates,
+    notification_deletion_updates, notification_projection_updates_with_schema,
     optimistic_notification_updates, optimistic_projection_mutations,
 };
 
@@ -192,8 +192,9 @@ pub(super) async fn write_projections(
     data: &Value,
     identity: Option<&str>,
 ) -> Result<Vec<ProjectionMutation>, String> {
-    let mut projections = authoritative_projection_mutations(query, operation, data)
-        .map_err(|error| error.to_string())?;
+    let mut projections =
+        authoritative_projection_mutations_with_schema(engine.schema(), query, operation, data)
+            .map_err(|error| error.to_string())?;
     // Do not compose the new viewer's partial writes with the old viewer's
     // authoritative data. Engine still owns the actual atomic identity reset.
     let reuse_stored_identity = match identity {
@@ -207,13 +208,21 @@ pub(super) async fn write_projections(
     };
     if reuse_stored_identity {
         projections.extend(
-            notification_projection_updates(engine.storage(), query, operation, variables, data)
-                .await
-                .map_err(|error| error.to_string())?,
+            notification_projection_updates_with_schema(
+                engine.schema(),
+                engine.storage(),
+                query,
+                operation,
+                variables,
+                data,
+            )
+            .await
+            .map_err(|error| error.to_string())?,
         );
     }
     projections.extend(
-        mail::projection_updates_for_write(
+        mail::projection_updates_for_write_with_schema(
+            engine.schema(),
             engine.storage(),
             query,
             operation,
@@ -224,7 +233,8 @@ pub(super) async fn write_projections(
         .await
         .map_err(|error| error.to_string())?,
     );
-    soup_filter_cache_adapter::properties::augment_authoritative(
+    soup_filter_cache_adapter::properties::augment_authoritative_with_schema(
+        engine.schema(),
         engine.storage(),
         query,
         operation,
@@ -248,18 +258,33 @@ pub(super) async fn optimistic_projections(
     let mut projections = optimistic_projection_mutations(data, created_at_ms);
     projections.extend(
         optimistic_notification_updates(
-            notification_projection_updates(engine.storage(), query, operation, variables, data)
-                .await
-                .map_err(|error| error.to_string())?,
+            notification_projection_updates_with_schema(
+                engine.schema(),
+                engine.storage(),
+                query,
+                operation,
+                variables,
+                data,
+            )
+            .await
+            .map_err(|error| error.to_string())?,
         )
         .map_err(|error| error.to_string())?,
     );
     projections.extend(mail::optimistic_updates(
-        mail::projection_updates(engine.storage(), query, operation, variables, data)
-            .await
-            .map_err(|error| error.to_string())?,
+        mail::projection_updates_with_schema(
+            engine.schema(),
+            engine.storage(),
+            query,
+            operation,
+            variables,
+            data,
+        )
+        .await
+        .map_err(|error| error.to_string())?,
     ));
-    soup_filter_cache_adapter::properties::augment_optimistic(
+    soup_filter_cache_adapter::properties::augment_optimistic_with_schema(
+        engine.schema(),
         engine.storage(),
         query,
         operation,

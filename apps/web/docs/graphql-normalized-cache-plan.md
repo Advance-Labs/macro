@@ -2,6 +2,55 @@
 
 Status: **draft / pre-implementation**
 
+## Runtime schema metadata and OTA updates
+
+The native engine and browser WASM engine accept schema metadata supplied by the
+frontend bundle. `bun run gen-graphql-cache-schema` derives
+`src/lib/graphql-cache/generated/runtime-schema.json` from
+`static_assets/schema.graphql`; `bun run check-graphql-cache-schema` checks it for
+drift. A Rust regression compares that artifact with the independently generated
+compiled baseline, including field wrapping, scalar classification, keys, and
+abstract type membership.
+
+Before serving cache operations, the native host calls
+`graphql_cache_configure_schema` and the browser worker calls `configureSchema`.
+Both require a protocol-1 acknowledgement. This capability requires **one native
+app release**; binaries predating it cannot gain it through an OTA. Their cache
+initialization fails through the existing network fallback rather than claiming
+that the new schema was installed.
+
+After that release, additive output fields and types can travel with OTA bundles
+without rebuilding the native engine. Metadata belongs to each engine, and all
+normalization, read plans, fragment selection, entity resolvers, link patches,
+optimistic replay, and projection preparation use it. Native business-specific
+filtering or new engine algorithms still require native code changes.
+
+Accepted metadata is persisted in a reserved cache record and merged with the
+compiled baseline and each connecting frontend. Older tabs/webviews or a rolled
+back bundle cannot remove newer metadata. Reopening the database restores it
+before optimistic replay. These extensions preserve records, queued mutations,
+and the storage generation. Logical clears and identity changes continue to
+clear user data and retain the current schema for subsequent writes.
+
+Protocol versions, operation roots, field types/wrapping, type kinds, and entity
+keys must remain compatible. Conflicts, malformed metadata, and oversized
+payloads fail before metadata is installed; a schema conflict never triggers a
+cache wipe. Breaking changes need a separately designed migration or engine
+upgrade, not an automatic destructive reset. The protocol version must advance
+when new metadata semantics are introduced.
+
+Adding metadata does not manufacture values for existing records. A query that
+selects an uncached field misses until a successful online response supplies it.
+That response merges into the existing entity even if its timestamp is unchanged;
+a later narrower response preserves the added field. Routine field additions do
+not require restarting backfills. Use a backfill only when the product needs to
+populate fields for records that users have not subsequently fetched.
+
+The browser regression is `runtime-schema.browser.e2e.ts` in the cache worker
+harness. It adds an invitation field absent from the compiled WASM schema, fetches
+it, writes a narrower email response, reopens OPFS with older frontend metadata,
+and verifies that an incompatible update preserves the cached email.
+
 ## 1. Problem
 
 We are migrating data fetching from REST to GraphQL (urql). We need normalized
@@ -44,8 +93,8 @@ entire cache in browser memory. With 10s of thousands of cached objects
    the cache needs possible-types metadata and per-type key config (e.g.
    `GraphqlSoupChannelMessage.id`, embedded non-keyable types like
    `GraphqlPropertyValue`). Schema lives in-repo
-   (`static_assets/schema.graphql`) → embed metadata at build time, no
-   runtime introspection. Lightweight channel-message previews are embedded
+   (`static_assets/schema.graphql`) → generate metadata for the frontend bundle
+   and compiled baseline, with no runtime server introspection. Lightweight channel-message previews are embedded
    under `GraphqlSoupChannelMessagePreview` without an `id` field; only rich
    thread rows use the normalized `GraphqlSoupChannelMessage` identity.
 9. **External write API** — no GraphQL subscriptions exist; updates arrive

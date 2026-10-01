@@ -94,12 +94,12 @@ fn resolution_rejects_missing_fields_and_cached_type_mismatches() {
     let patch = recipe();
     let root = patch.record_root.as_ref().unwrap();
     assert!(matches!(
-        root.resolve(&HashMap::new(), &patch),
+        root.resolve(crate::meta::Schema::compiled(), &HashMap::new(), &patch),
         Err(LinkPatchError::MissingParent(_))
     ));
     let mut effective = HashMap::from([(root.entity_key.clone(), Record::default())]);
     assert!(matches!(
-        root.resolve(&effective, &patch),
+        root.resolve(crate::meta::Schema::compiled(), &effective, &patch),
         Err(LinkPatchError::MissingField { .. })
     ));
     effective.get_mut(&root.entity_key).unwrap().fields.insert(
@@ -107,7 +107,7 @@ fn resolution_rejects_missing_fields_and_cached_type_mismatches() {
         crate::value::CacheValue::String("GraphqlSoupChat".into()),
     );
     assert!(matches!(
-        root.resolve(&effective, &patch),
+        root.resolve(crate::meta::Schema::compiled(), &effective, &patch),
         Err(LinkPatchError::InvalidEntrypoint(_))
     ));
 }

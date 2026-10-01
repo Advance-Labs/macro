@@ -111,7 +111,8 @@ fn only_requested_buckets_load_and_empty_buckets_are_cached() {
         );
         assert_eq!(diagnostics.search_catalog_load_count(), 3);
         assert_eq!(diagnostics.search_catalog_rows_loaded(), 2);
-        assert_eq!(diagnostics.record_get_count(), 0);
+        // Startup reads metadata once; bucket search never reads normalized records.
+        assert_eq!(diagnostics.record_get_count(), 1);
         assert_eq!(
             engine.search(&request(&[])).await.unwrap().documents.len(),
             20

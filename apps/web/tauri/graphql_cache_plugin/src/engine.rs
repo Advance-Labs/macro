@@ -392,6 +392,20 @@ fn parse_transaction_id(id: &str) -> Result<u64, String> {
 }
 
 impl EngineHandle {
+    /// Installs and persists compatible metadata for every native webview.
+    pub async fn configure_schema(
+        &self,
+        schema: cache_core::meta::Schema,
+    ) -> Result<cache_core::meta::SchemaAcknowledgement, String> {
+        self.inner
+            .lock()
+            .await
+            .engine
+            .configure_schema(schema)
+            .await
+            .map_err(|error| error.to_string())
+    }
+
     /// Wraps an opened storage backend. A `hot_capacity` of 0 is treated as
     /// unset (engine default).
     pub fn new(storage: TursoStorage, hot_capacity: Option<u32>) -> Self {
@@ -479,9 +493,11 @@ impl EngineHandle {
         keys: Vec<String>,
     ) -> Result<RecordSelectionResultWire, String> {
         let mut state = self.inner.lock().await;
-        let selection = state
-            .selections
-            .get(document, fragment_name)
+        let EngineState {
+            engine, selections, ..
+        } = &mut *state;
+        let selection = selections
+            .get_with_schema(engine.schema(), document, fragment_name)
             .map_err(|error| error.to_string())?;
         let keys: Vec<_> = keys.into_iter().map(|key| EntityKey(key.into())).collect();
         state

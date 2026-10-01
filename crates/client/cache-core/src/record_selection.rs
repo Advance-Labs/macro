@@ -25,22 +25,31 @@ pub struct RecordSelection {
 }
 
 impl RecordSelection {
-    /// Parses and validates a named fragment document.
     pub fn parse(document: &str, fragment_name: &str) -> Result<Self, RecordSelectionError> {
+        Self::parse_with_schema(meta::Schema::compiled(), document, fragment_name)
+    }
+
+    /// Parses and validates a named fragment document.
+    pub fn parse_with_schema(
+        schema: &meta::Schema,
+        document: &str,
+        fragment_name: &str,
+    ) -> Result<Self, RecordSelectionError> {
         let document = Document::parse(document)?;
         for fragment in &document.fragments {
-            concrete_type_names(&fragment.type_condition)?;
-            validate_selections(&fragment.selection_set, &fragment.type_condition)?;
+            concrete_type_names(schema, &fragment.type_condition)?;
+            validate_selections(schema, &fragment.selection_set, &fragment.type_condition)?;
         }
         let fragment = document.fragment(fragment_name)?;
-        let type_names = concrete_type_names(&fragment.type_condition)?;
+        let type_names = concrete_type_names(schema, &fragment.type_condition)?;
         if type_names.is_empty() {
             return Err(RecordSelectionError::NoConcreteTypes(
                 fragment.type_condition.clone(),
             ));
         }
         for type_name in &type_names {
-            let metadata = meta::type_meta(type_name)
+            let metadata = schema
+                .type_meta(type_name)
                 .ok_or_else(|| RecordSelectionError::UnknownType(type_name.clone()))?;
             if metadata.kind != TypeKind::Object || metadata.key_fields.is_none() {
                 return Err(RecordSelectionError::NotNormalized(type_name.clone()));
@@ -107,8 +116,12 @@ pub enum RecordSelectionError {
     InvalidKey,
 }
 
-fn concrete_type_names(type_name: &str) -> Result<Vec<String>, RecordSelectionError> {
-    let metadata = meta::type_meta(type_name)
+fn concrete_type_names(
+    schema: &crate::meta::Schema,
+    type_name: &str,
+) -> Result<Vec<String>, RecordSelectionError> {
+    let metadata = schema
+        .type_meta(type_name)
         .ok_or_else(|| RecordSelectionError::UnknownType(type_name.to_string()))?;
     let mut names = match metadata.kind {
         TypeKind::Object => vec![type_name.to_string()],
@@ -124,21 +137,23 @@ fn concrete_type_names(type_name: &str) -> Result<Vec<String>, RecordSelectionEr
 }
 
 fn validate_selections(
+    schema: &crate::meta::Schema,
     selections: &[Selection],
     parent_type: &str,
 ) -> Result<(), RecordSelectionError> {
     for selection in selections {
         match selection {
-            Selection::Field(field) => validate_field(field, parent_type)?,
+            Selection::Field(field) => validate_field(schema, field, parent_type)?,
             Selection::Fragment {
                 type_condition,
                 selection_set,
             } => match type_condition {
-                None => validate_selections(selection_set, parent_type)?,
+                None => validate_selections(schema, selection_set, parent_type)?,
                 Some(condition) => {
-                    let parent_types: BTreeSet<_> =
-                        concrete_type_names(parent_type)?.into_iter().collect();
-                    let condition_types = concrete_type_names(condition)?;
+                    let parent_types: BTreeSet<_> = concrete_type_names(schema, parent_type)?
+                        .into_iter()
+                        .collect();
+                    let condition_types = concrete_type_names(schema, condition)?;
                     if !condition_types
                         .iter()
                         .any(|type_name| parent_types.contains(type_name))
@@ -148,7 +163,7 @@ fn validate_selections(
                             parent: parent_type.to_string(),
                         });
                     }
-                    validate_selections(selection_set, condition)?;
+                    validate_selections(schema, selection_set, condition)?;
                 }
             },
         }
@@ -156,7 +171,11 @@ fn validate_selections(
     Ok(())
 }
 
-fn validate_field(field: &FieldNode, parent_type: &str) -> Result<(), RecordSelectionError> {
+fn validate_field(
+    schema: &crate::meta::Schema,
+    field: &FieldNode,
+    parent_type: &str,
+) -> Result<(), RecordSelectionError> {
     for (_, value) in &field.arguments {
         if let Some(variable) = referenced_variable(value) {
             return Err(RecordSelectionError::UnboundVariable(variable.to_string()));
@@ -172,7 +191,7 @@ fn validate_field(field: &FieldNode, parent_type: &str) -> Result<(), RecordSele
         });
     }
 
-    let metadata = meta::field_meta(parent_type, &field.name).ok_or_else(|| {
+    let metadata = schema.field_meta(parent_type, &field.name).ok_or_else(|| {
         RecordSelectionError::UnknownField {
             type_name: parent_type.to_string(),
             field: field.name.clone(),
@@ -185,7 +204,9 @@ fn validate_field(field: &FieldNode, parent_type: &str) -> Result<(), RecordSele
                 field: field.name.clone(),
             })
         }
-        FieldKind::Composite => validate_selections(&field.selection_set, metadata.ty.name),
+        FieldKind::Composite => {
+            validate_selections(schema, &field.selection_set, &metadata.ty.name)
+        }
         FieldKind::Leaf | FieldKind::OpaqueScalar if !field.selection_set.is_empty() => {
             Err(RecordSelectionError::InvalidFieldShape {
                 type_name: parent_type.to_string(),

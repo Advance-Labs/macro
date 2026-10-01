@@ -37,6 +37,14 @@ fn eviction_is_bounded_and_keeps_recent_plans() {
         .get(document(CAPACITY), format!("F{CAPACITY}"))
         .unwrap();
     assert_eq!(selections.plans.len(), CAPACITY);
-    assert!(selections.plans.contains(&(document(0), "F0".into())));
-    assert!(!selections.plans.contains(&(document(1), "F1".into())));
+    assert!(selections.plans.contains(&(
+        document(0),
+        "F0".into(),
+        crate::meta::Schema::compiled().fingerprint().to_owned()
+    )));
+    assert!(!selections.plans.contains(&(
+        document(1),
+        "F1".into(),
+        crate::meta::Schema::compiled().fingerprint().to_owned()
+    )));
 }

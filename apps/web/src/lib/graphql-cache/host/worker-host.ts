@@ -1,3 +1,7 @@
+import {
+  assertCacheSchemaAcknowledged,
+  runtimeCacheSchema,
+} from '../runtime-schema';
 /**
  * Browser CacheHost: routes cache RPC through the SharedWorker coordinator to
  * the currently elected dedicated cache engine. Unsupported browsers receive
@@ -1028,6 +1032,7 @@ export function createWorkerCacheHost(options: WorkerHostOptions): CacheHost {
     const sendInit = () =>
       request({
         kind: 'init',
+        schemaJson: runtimeCacheSchema,
         scope: options.scope,
         hotCapacity: options.hotCapacity,
       });
@@ -1063,7 +1068,7 @@ export function createWorkerCacheHost(options: WorkerHostOptions): CacheHost {
       if (!adapter || registeredAdapter !== adapter)
         await registerAdapter(attempt);
       if (attempt !== initializationAttempt) throw new CacheNavigationError();
-      return await sendInit();
+      assertCacheSchemaAcknowledged(await sendInit());
     })();
     const handshake = ready.then(
       () => {

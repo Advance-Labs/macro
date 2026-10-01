@@ -109,7 +109,11 @@ const execute = async (
   }
   switch (request.kind) {
     case 'init':
-      return { id: request.id, ok: true, result: null };
+      return {
+        id: request.id,
+        ok: true,
+        result: { protocolVersion: 1, fingerprint: 'a'.repeat(64) },
+      };
     case 'current-revision':
       return { id: request.id, ok: true, result: state.revision.toString() };
     case 'write':

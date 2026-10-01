@@ -91,8 +91,9 @@ impl Storage for OwnerOnlyStorage {
 
     async fn get_batch(&self, keys: &[EntityKey<'_>]) -> Result<Vec<Option<Record>>, Self::Error> {
         assert!(
-            keys.iter()
-                .all(|key| key.is_root() || key.0 == "GraphqlUser:user-1"),
+            keys.iter().all(|key| key.is_root()
+                || key.0 == "GraphqlUser:user-1"
+                || key.0 == "__meta:runtime-schema"),
             "variables-only inspection loaded a non-owner record: {keys:?}"
         );
         self.0.get_batch(keys).await

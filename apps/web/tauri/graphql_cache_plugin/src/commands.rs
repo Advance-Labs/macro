@@ -83,6 +83,17 @@ pub async fn graphql_cache_init<R: Runtime>(
     Ok(())
 }
 
+/// Installs compatible OTA schema metadata without replacing the native engine.
+#[tauri::command]
+pub async fn graphql_cache_configure_schema(
+    state: State<'_, CacheState>,
+    schema_json: String,
+) -> Result<cache_core::meta::SchemaAcknowledgement, String> {
+    let schema =
+        cache_core::meta::Schema::from_json(&schema_json).map_err(|error| error.to_string())?;
+    engine_handle(&state)?.configure_schema(schema).await
+}
+
 /// Returns the current in-memory cache revision as a decimal string.
 #[tauri::command]
 pub async fn graphql_cache_current_revision(

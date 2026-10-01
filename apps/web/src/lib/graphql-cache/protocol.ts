@@ -461,7 +461,7 @@ export type MutationSettlement =
     };
 
 export type CacheRequest = { id: number } & (
-  | { kind: 'init'; scope: string; hotCapacity?: number }
+  | { kind: 'init'; scope: string; hotCapacity?: number; schemaJson?: string }
   | { kind: 'current-revision' }
   | { kind: 'current-storage-generation' }
   | {

@@ -1,7 +1,7 @@
 use super::*;
 use cache_core::{
     document::{Document, OperationKind, resolve_args},
-    normalize::normalize,
+    normalize::normalize_with_schema,
     predicate::PredicateIndexStorage,
     value::{CacheValue, EntityKey, Record},
 };
@@ -208,6 +208,7 @@ fn snapshot(
 }
 
 fn mutation_owners(
+    schema: &cache_core::meta::Schema,
     query: &str,
     operation: Option<&str>,
     variables: &Map<String, Value>,
@@ -221,8 +222,9 @@ fn mutation_owners(
     }
     let mut fields = Vec::new();
     crate::collect_applicable_fields(
+        schema,
         &op.selection_set,
-        cache_core::meta::MUTATION_ROOT_TYPE.unwrap_or(""),
+        schema.mutation_root().unwrap_or(""),
         &mut fields,
     );
     for field in fields {
@@ -247,7 +249,12 @@ fn mutation_owners(
             continue;
         };
         let mut selections = Vec::new();
-        crate::collect_applicable_fields(&field.selection_set, "GraphqlProperty", &mut selections);
+        crate::collect_applicable_fields(
+            schema,
+            &field.selection_set,
+            "GraphqlProperty",
+            &mut selections,
+        );
         let Some(id) = selections
             .iter()
             .find(|f| f.name == "id")
@@ -319,6 +326,7 @@ async fn owners<S: PredicateIndexStorage>(
 }
 
 pub(super) async fn prepare<S: PredicateIndexStorage>(
+    schema: &cache_core::meta::Schema,
     storage: &S,
     query: &str,
     operation: Option<&str>,
@@ -328,7 +336,7 @@ pub(super) async fn prepare<S: PredicateIndexStorage>(
 ) -> Result<BTreeMap<RecordKey, Changes>, ProjectionError<S::Error>> {
     let document = Document::parse(query).map_err(error)?;
     let op = document.operation(operation).map_err(error)?;
-    let updates: BTreeMap<_, _> = normalize(op, variables, data)
+    let updates: BTreeMap<_, _> = normalize_with_schema(schema, op, variables, data)
         .map_err(error)?
         .into_iter()
         .collect();
@@ -363,7 +371,7 @@ pub(super) async fn prepare<S: PredicateIndexStorage>(
                 .snapshot = Some(snapshot(properties, &updates));
         }
     }
-    let routed = mutation_owners(query, operation, variables, data)?;
+    let routed = mutation_owners(schema, query, operation, variables, data)?;
     for (key, parent) in &routed {
         if updates
             .get(key)

@@ -20,7 +20,8 @@ fn upgrade(mut mutation: OptimisticProjectionMutation) -> OptimisticProjectionMu
 
 /// Prepare property-specific optimistic patches without snapshotting unrelated
 /// properties from older layers. The existing queue owns commit/rollback/replay.
-pub async fn augment_optimistic<S: PredicateIndexStorage>(
+pub async fn augment_optimistic_with_schema<S: PredicateIndexStorage>(
+    schema: &cache_core::meta::Schema,
     storage: &S,
     query: &str,
     operation: Option<&str>,
@@ -28,7 +29,7 @@ pub async fn augment_optimistic<S: PredicateIndexStorage>(
     data: &Value,
     mutations: Vec<OptimisticProjectionMutation>,
 ) -> Result<Vec<OptimisticProjectionMutation>, ProjectionError<S::Error>> {
-    let changes = prepare(storage, query, operation, variables, data, true).await?;
+    let changes = prepare(schema, storage, query, operation, variables, data, true).await?;
     let keys: Vec<_> = mutations
         .iter()
         .map(|mutation| mutation.record_key().clone())
@@ -141,4 +142,25 @@ pub async fn augment_optimistic<S: PredicateIndexStorage>(
         });
     }
     Ok(result)
+}
+
+/// Uses compiled metadata for standalone callers.
+pub async fn augment_optimistic<S: PredicateIndexStorage>(
+    storage: &S,
+    query: &str,
+    operation: Option<&str>,
+    variables: &Map<String, Value>,
+    data: &Value,
+    mutations: Vec<OptimisticProjectionMutation>,
+) -> Result<Vec<OptimisticProjectionMutation>, ProjectionError<S::Error>> {
+    augment_optimistic_with_schema(
+        cache_core::meta::Schema::compiled(),
+        storage,
+        query,
+        operation,
+        variables,
+        data,
+        mutations,
+    )
+    .await
 }

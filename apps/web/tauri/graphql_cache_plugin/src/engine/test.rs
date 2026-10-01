@@ -649,3 +649,65 @@ fn bad_transaction_id_is_an_error() {
     .unwrap_err();
     assert!(error.contains("invalid optimistic transaction id"));
 }
+
+#[test]
+fn ota_schema_addition_flows_through_native_projection_adapters_and_reopening() {
+    block_on(async {
+        let directory = tempfile::tempdir().unwrap();
+        let database =
+            cache_turso::TursoFileDatabase::new(directory.path().join("ota.turso")).unwrap();
+        let handle = EngineHandle::new(database.open_or_reset("scope").unwrap(), None);
+        let mut metadata: serde_json::Value =
+            serde_json::from_str(&cache_core::meta::Schema::compiled().to_json()).unwrap();
+        let viewer = metadata["types"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|ty| ty["name"] == "GraphqlUser")
+            .unwrap();
+        viewer["fields"].as_array_mut().unwrap().push(serde_json::json!({
+            "name":"otaInvitations", "ty":{ "name":"JSON", "kind":"OpaqueScalar", "nullable":false, "list":false, "item_nullable":false }
+        }));
+        handle
+            .configure_schema(cache_core::meta::Schema::from_json(&metadata.to_string()).unwrap())
+            .await
+            .unwrap();
+        let query = "query { user { id otaInvitations } }";
+        let data = serde_json::json!({"user":{"id":"viewer","otaInvitations":[{"uid":"meeting"}]}});
+        handle
+            .write(WriteRequest {
+                origin_op_id: None,
+                registration: None,
+                query: query.into(),
+                operation_name: None,
+                variables: Variables::new(),
+                data: data.clone(),
+                identity: Some("viewer".into()),
+            })
+            .await
+            .unwrap();
+        let generation = handle.current_storage_generation().await.unwrap();
+        // A second window carrying older metadata cannot downgrade the shared engine.
+        handle
+            .clone()
+            .configure_schema(cache_core::meta::Schema::compiled().clone())
+            .await
+            .unwrap();
+        handle.shutdown().unwrap();
+        let reopened = EngineHandle::new(database.open_or_reset("scope").unwrap(), None);
+        reopened
+            .configure_schema(cache_core::meta::Schema::compiled().clone())
+            .await
+            .unwrap();
+        let read = reopened
+            .read(None, query.into(), None, Variables::new(), vec![])
+            .await
+            .unwrap();
+        assert!(matches!(read, ReadResultWire::Hit { data: actual } if actual == data));
+        assert_eq!(
+            reopened.current_storage_generation().await.unwrap(),
+            generation
+        );
+        reopened.shutdown().unwrap();
+    });
+}

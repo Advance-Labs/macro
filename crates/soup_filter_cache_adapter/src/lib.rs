@@ -28,7 +28,8 @@ pub mod mail;
 mod notifications;
 pub mod properties;
 pub use notifications::{
-    notification_deletion_updates, notification_projection_updates, optimistic_notification_updates,
+    notification_deletion_updates, notification_projection_updates,
+    notification_projection_updates_with_schema, optimistic_notification_updates,
 };
 
 /// Failure to materialize or compile a Soup filter request.
@@ -141,7 +142,8 @@ pub fn reconciliation_baseline_entry(
 /// v4 patches, preserving server-owned facts and any unselected notification
 /// membership from an existing complete projection. A missing base remains
 /// explicitly incomplete.
-pub fn authoritative_projection_mutations(
+pub fn authoritative_projection_mutations_with_schema(
+    schema: &meta::Schema,
     query: &str,
     operation_name: Option<&str>,
     data: &serde_json::Value,
@@ -152,11 +154,11 @@ pub fn authoritative_projection_mutations(
         .operation(operation_name)
         .map_err(|error| SoupFilterCacheAdapterError(error.to_string()))?;
     let root_type = match operation.kind {
-        OperationKind::Query => meta::QUERY_ROOT_TYPE,
-        OperationKind::Mutation => meta::MUTATION_ROOT_TYPE.ok_or_else(|| {
+        OperationKind::Query => schema.query_root(),
+        OperationKind::Mutation => schema.mutation_root().ok_or_else(|| {
             SoupFilterCacheAdapterError("GraphQL schema has no mutation root".to_owned())
         })?,
-        OperationKind::Subscription => meta::SUBSCRIPTION_ROOT_TYPE.ok_or_else(|| {
+        OperationKind::Subscription => schema.subscription_root().ok_or_else(|| {
             SoupFilterCacheAdapterError("GraphQL schema has no subscription root".to_owned())
         })?,
     };
@@ -169,6 +171,7 @@ pub fn authoritative_projection_mutations(
     let mut mutations = IndexMap::new();
     let mut has_unbound_incomplete_entity = false;
     walk_authoritative_object(
+        schema,
         &operation.selection_set,
         root_type,
         root,
@@ -190,6 +193,7 @@ pub fn authoritative_projection_mutations(
 }
 
 fn walk_authoritative_object(
+    schema: &meta::Schema,
     selections: &[Selection],
     declared_type: &str,
     object: &serde_json::Map<String, serde_json::Value>,
@@ -201,7 +205,7 @@ fn walk_authoritative_object(
         .and_then(serde_json::Value::as_str)
         .unwrap_or(declared_type);
     let mut fields = Vec::new();
-    collect_applicable_fields(selections, concrete_type, &mut fields);
+    collect_applicable_fields(schema, selections, concrete_type, &mut fields);
 
     if let Some(partition) = projection_partition(concrete_type) {
         let (mut projection_object, valid_selection) =
@@ -216,7 +220,7 @@ fn walk_authoritative_object(
                 (object.clone(), true)
             };
         projection_object.remove("notifications");
-        if let Some(snapshot) = notifications::selected_snapshot(object, &fields) {
+        if let Some(snapshot) = notifications::selected_snapshot(schema, object, &fields) {
             projection_object.insert("notifications".into(), snapshot);
         }
         let mut projection_fields = fields
@@ -299,7 +303,7 @@ fn walk_authoritative_object(
         let Some(value) = object.get(&field.response_key) else {
             continue;
         };
-        let Some(field_meta) = meta::field_meta(concrete_type, &field.name) else {
+        let Some(field_meta) = schema.field_meta(concrete_type, &field.name) else {
             continue;
         };
         if field_meta.ty.kind != FieldKind::Composite {
@@ -307,8 +311,9 @@ fn walk_authoritative_object(
         }
         match value {
             serde_json::Value::Object(child) => walk_authoritative_object(
+                schema,
                 &field.selection_set,
-                field_meta.ty.name,
+                &field_meta.ty.name,
                 child,
                 mutations,
                 has_unbound_incomplete_entity,
@@ -317,8 +322,9 @@ fn walk_authoritative_object(
                 for child in children {
                     if let serde_json::Value::Object(child) = child {
                         walk_authoritative_object(
+                            schema,
                             &field.selection_set,
-                            field_meta.ty.name,
+                            &field_meta.ty.name,
                             child,
                             mutations,
                             has_unbound_incomplete_entity,
@@ -332,6 +338,7 @@ fn walk_authoritative_object(
 }
 
 fn collect_applicable_fields<'a>(
+    schema: &meta::Schema,
     selections: &'a [Selection],
     concrete_type: &str,
     fields: &mut Vec<&'a FieldNode>,
@@ -344,9 +351,9 @@ fn collect_applicable_fields<'a>(
                 selection_set,
             } if type_condition
                 .as_deref()
-                .is_none_or(|condition| meta::type_matches(concrete_type, condition)) =>
+                .is_none_or(|condition| schema.type_matches(concrete_type, condition)) =>
             {
-                collect_applicable_fields(selection_set, concrete_type, fields);
+                collect_applicable_fields(schema, selection_set, concrete_type, fields);
             }
             Selection::Fragment { .. } => {}
         }
@@ -875,3 +882,17 @@ fn projection_partition(typename: &str) -> Option<Token> {
 
 #[cfg(test)]
 mod test;
+
+/// Uses the compiled baseline for standalone projection callers.
+pub fn authoritative_projection_mutations(
+    query: &str,
+    operation_name: Option<&str>,
+    data: &serde_json::Value,
+) -> Result<Vec<ProjectionMutation>, SoupFilterCacheAdapterError> {
+    authoritative_projection_mutations_with_schema(
+        meta::Schema::compiled(),
+        query,
+        operation_name,
+        data,
+    )
+}

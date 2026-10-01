@@ -1,3 +1,4 @@
+import type { CacheSchemaAcknowledgement } from '../runtime-schema';
 /**
  * Typed surface of the generated wasm package (`cache-wasm`), loaded
  * dynamically so the repo type-checks without the generated artifacts.
@@ -71,6 +72,7 @@ export type CacheEngineHydrationResult = WriteResult &
   };
 
 export interface CacheEngine {
+  configureSchema(schemaJson: string): Promise<CacheSchemaAcknowledgement>;
   currentRevision(): Promise<CacheRevision>;
   currentStorageGeneration(): Promise<string>;
   boundIdentity(): Promise<string | null>;
