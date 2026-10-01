@@ -33,6 +33,7 @@ use entity_access::domain::{
     ports::EntityAccessService,
 };
 use macro_user_id::user_id::MacroUserIdStr;
+use models_databases::cast::SpelledColumnType;
 use models_properties::shared::DataType;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -359,9 +360,9 @@ pub enum ColumnType {
     Text,
     /// A number.
     Number,
-    /// True/false, stored as 0/1.
+    /// True/false.
     Boolean,
-    /// An ISO-8601 date-time, stored as TEXT.
+    /// An ISO-8601 date-time.
     Date,
     /// A URL.
     Link,
@@ -535,11 +536,11 @@ pub struct ToolColumn {
     pub relation: Option<ToolRelation>,
     /// Types ChangeColumnType converts every value to, spelled as SQL types
     /// (`select[]` is a multi-valued select, `entity(USER)` a person).
-    pub safe_types: Vec<String>,
+    pub safe_types: Vec<SpelledColumnType>,
     /// Types whose conversion checks each value first and refuses, or with
     /// `clearInvalid` empties, the ones that do not fit. Any type in neither
     /// list is refused while the column holds values.
-    pub checked_types: Vec<String>,
+    pub checked_types: Vec<SpelledColumnType>,
 }
 
 /// One option of a select or tag column.
@@ -626,10 +627,9 @@ impl From<DatabaseDetail> for ToolDatabaseSchema {
 impl From<ColumnDetail> for ToolColumn {
     fn from(column: ColumnDetail) -> Self {
         let (safe_types, checked_types) = cast_targets(&column.column, &column.definition);
-        let names = |types: Vec<_>| types.iter().map(ToString::to_string).collect::<Vec<_>>();
         Self {
-            safe_types: names(safe_types),
-            checked_types: names(checked_types),
+            safe_types: safe_types.into_iter().map(SpelledColumnType).collect(),
+            checked_types: checked_types.into_iter().map(SpelledColumnType).collect(),
             id: column.column.id,
             name: column.name().to_string(),
             data_type: column.definition.definition.data_type.into(),

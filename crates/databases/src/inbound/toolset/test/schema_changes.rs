@@ -316,9 +316,12 @@ async fn describing_a_column_lists_the_types_it_can_change_to() {
     .expect("view access describes");
 
     let status = &schema.tables[0].columns[0];
-    assert_eq!(status.safe_types, vec!["text", "select[]"]);
     assert_eq!(
-        status.checked_types,
-        vec!["number", "date", "boolean", "link"]
+        serde_json::to_value(&status.safe_types).unwrap(),
+        serde_json::json!(["text", "select[]"])
+    );
+    assert_eq!(
+        serde_json::to_value(&status.checked_types).unwrap(),
+        serde_json::json!(["number", "date", "boolean", "link"])
     );
 }

@@ -497,3 +497,24 @@ fn whole_numbers_label_without_a_fraction() {
     assert_eq!(number_label(2.0), "2");
     assert_eq!(number_label(2.5), "2.5");
 }
+
+#[test]
+fn a_spelled_column_type_serializes_as_its_sql_spelling() {
+    let spelled = vec![
+        SpelledColumnType(ColumnKind::Text),
+        SpelledColumnType(ColumnKind::Select { multi: true }),
+        SpelledColumnType(ColumnKind::SelectNumber { multi: false }),
+        SpelledColumnType(ColumnKind::Entity {
+            target: EntityKind::User,
+            multi: false,
+        }),
+        SpelledColumnType(ColumnKind::Entity {
+            target: EntityKind::Document,
+            multi: true,
+        }),
+    ];
+    assert_eq!(
+        serde_json::to_string(&spelled).unwrap(),
+        r#"["text","select[]","select_number","entity(USER)","entity(DOCUMENT)[]"]"#
+    );
+}

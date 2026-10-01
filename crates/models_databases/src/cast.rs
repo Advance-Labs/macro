@@ -167,6 +167,36 @@ impl fmt::Display for ColumnKind {
     }
 }
 
+/// A [`ColumnKind`] that serializes as its SQL spelling (`select[]`,
+/// `entity(USER)`), for responses that list types to change to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpelledColumnType(pub ColumnKind);
+
+impl serde::Serialize for SpelledColumnType {
+    fn serialize<Serializer: serde::Serializer>(
+        &self,
+        serializer: Serializer,
+    ) -> Result<Serializer::Ok, Serializer::Error> {
+        serializer.collect_str(&self.0)
+    }
+}
+
+#[cfg(feature = "schema")]
+impl schemars::JsonSchema for SpelledColumnType {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "SpelledColumnType".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "string",
+            "description": "A column type as SQL spells it: text, number, boolean, date, link, \
+        select, select_number, tag, entity(KIND) or relation, with [] when a select or reference \
+        column holds several values (select[], entity(USER)).",
+        })
+    }
+}
+
 impl CastKind {
     /// The kind of value the column holds, as a view's filters test it.
     pub fn value_kind(self) -> ValueKind {
