@@ -31,6 +31,44 @@ export type DatabaseWriteFailure =
   /** The service answered the write with something other than rows. */
   | { kind: 'unexpected-result' };
 
+/** Why an option or view op did not land. */
+export type DatabaseOpFailure =
+  | { kind: 'ops'; error: DatabaseOpsError }
+  | { kind: 'unexpected-result' };
+
+/** What an option, view or card change that did not land says, for `subject` ("this option"). */
+export function databaseOpMessage(
+  failure: DatabaseOpFailure,
+  subject: string
+): string {
+  return match(failure)
+    .returnType<string>()
+    .with({ kind: 'ops' }, ({ error }) =>
+      match(error.code)
+        .with('INVALID_OP', () => error.refusal?.message ?? error.message)
+        .with('FORBIDDEN', () => `You can’t change ${subject}.`)
+        .with(
+          'NOT_FOUND',
+          'GONE',
+          () => `${capitalized(subject)} is no longer available.`
+        )
+        .with(
+          'NETWORK_ERROR',
+          () => 'Your change could not be sent. Check your connection.'
+        )
+        .otherwise(() => `Could not change ${subject}. Try again.`)
+    )
+    .with(
+      { kind: 'unexpected-result' },
+      () => 'The database answered the change with something else.'
+    )
+    .exhaustive();
+}
+
+function capitalized(text: string): string {
+  return text.charAt(0).toLocaleUpperCase() + text.slice(1);
+}
+
 /** Why the table's rows could not be read again. */
 export type DatabaseReadFailure =
   | DatabaseSqlFailure
