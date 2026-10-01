@@ -103,7 +103,7 @@ export type CellValue =
    *  most one for a single-valued column.
    */
   | { type: 'entities'; value: EntityRef[] }
-  /**  Rows of the table a relation column points at, by [`RowId`]. */
+  /**  Rows of the table a relation column points at. */
   | { type: 'rows'; value: string[] }
   /**  No value: the cell is emptied. */
   | { type: 'clear' };
@@ -807,29 +807,29 @@ export type OpResult =
  *  renders.
  */
 export type OptionColor =
-  /**  Red (`#E5484D`). */
+  /**  Red. */
   | 'red'
-  /**  Tomato (`#E54D2E`). */
+  /**  Tomato. */
   | 'tomato'
-  /**  Orange (`#F76B15`). */
+  /**  Orange. */
   | 'orange'
-  /**  Amber (`#FFB224`). */
+  /**  Amber. */
   | 'amber'
-  /**  Yellow (`#F5D90A`). */
+  /**  Yellow. */
   | 'yellow'
-  /**  Green (`#46A758`). */
+  /**  Green. */
   | 'green'
-  /**  Teal (`#12A594`). */
+  /**  Teal. */
   | 'teal'
-  /**  Blue (`#0091FF`). */
+  /**  Blue. */
   | 'blue'
-  /**  Indigo (`#3E63DD`). */
+  /**  Indigo. */
   | 'indigo'
-  /**  Purple (`#8E4EC6`). */
+  /**  Purple. */
   | 'purple'
-  /**  Pink (`#E93D82`). */
+  /**  Pink. */
   | 'pink'
-  /**  Gray (`#889096`). */
+  /**  Gray. */
   | 'gray';
 
 /**  A select option, by its id or by its label. */
