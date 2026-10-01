@@ -10,6 +10,7 @@ import {
 } from '@solidjs/testing-library';
 import { errAsync, okAsync, type ResultAsync } from 'neverthrow';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { toast } from '@core/component/Toast/Toast';
 import { DatabaseTitle } from '../components/database-title';
 import type { DatabaseEntityFailure } from '../core/write-failure';
 import { DatabasePageActions } from './database-page-actions';
@@ -157,6 +158,62 @@ describe('database page actions', () => {
         screen.getByRole('button', { name: 'Database actions' })
       )
     );
+  });
+  it('says a file could not be read and accepts the next one', async () => {
+    setup();
+    const input = screen.getByLabelText('Choose CSV file');
+    fireEvent.change(input, {
+      target: {
+        files: [
+          {
+            name: 'Broken.csv',
+            size: 9,
+            text: () => Promise.reject(new Error('NotReadableError')),
+          },
+        ],
+      },
+    });
+    await waitFor(() =>
+      expect(toast.failure).toHaveBeenCalledWith('Could not read this file.')
+    );
+    fireEvent.change(input, {
+      target: {
+        files: [
+          { name: 'Contacts.csv', size: 9, text: async () => 'Name\nAcme' },
+        ],
+      },
+    });
+    const name = (await screen.findByRole('textbox', {
+      name: 'Table name',
+    })) as HTMLInputElement;
+    expect(name.value).toBe('Contacts');
+  });
+  it('names an imported table apart from existing names, ignoring case and spaces', async () => {
+    render(() => (
+      <DatabasePageActions
+        detail={
+          {
+            database: { id: 'db', name: 'Customers', owner_id: 'owner' },
+            grant: 'owner',
+            tables: [{ table: { id: 'contacts', name: ' contacts ' } }],
+          } as unknown as DatabaseDetail
+        }
+        onImported={vi.fn()}
+        onRename={vi.fn()}
+        onDelete={vi.fn(() => okAsync(undefined))}
+      />
+    ));
+    fireEvent.change(screen.getByLabelText('Choose CSV file'), {
+      target: {
+        files: [
+          { name: 'Contacts.csv', size: 9, text: async () => 'Name\nAcme' },
+        ],
+      },
+    });
+    const name = (await screen.findByRole('textbox', {
+      name: 'Table name',
+    })) as HTMLInputElement;
+    expect(name.value).toBe('Contacts 2');
   });
   it('confirms deletion and retains a failed dialog for retry', async () => {
     const remove = vi

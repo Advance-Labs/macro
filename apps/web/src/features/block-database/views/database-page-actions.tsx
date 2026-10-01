@@ -11,7 +11,7 @@ import type { ImportTable } from '@service-storage/generated/schemas/importTable
 import type { TableDetail } from '@service-storage/generated/schemas/tableDetail';
 import { DeleteDialog } from '@ui/components/DeleteDialog';
 import { Dropdown } from '@ui/components/Dropdown';
-import { err, type ResultAsync } from 'neverthrow';
+import { err, ResultAsync } from 'neverthrow';
 import { createSignal, Show } from 'solid-js';
 import { CsvImportDialog } from '../components/csv-import-dialog';
 import {
@@ -21,6 +21,7 @@ import {
   MAX_CSV_BYTES,
   parseDatabaseCsv,
 } from '../core/csv';
+import { isDatabaseNameTaken } from '../core/property-creation';
 import {
   type DatabaseEntityFailure,
   databaseEntityMessage,
@@ -51,31 +52,38 @@ export function DatabasePageActions(props: {
   async function selectFile(file: File | undefined) {
     if (!file || reading()) return;
     setReading(true);
-    const parsed =
+    const text =
       file.size > MAX_CSV_BYTES
-        ? err<DatabaseCsv, DatabaseCsvFailure>({ kind: 'too-large' })
-        : parseDatabaseCsv(await file.text());
+        ? undefined
+        : await ResultAsync.fromPromise(
+            file.text(),
+            () => 'unreadable' as const
+          );
     setReading(false);
     if (fileInput) fileInput.value = '';
+    if (text?.isErr()) {
+      toast.failure('Could not read this file.');
+      return;
+    }
+    const parsed = text
+      ? parseDatabaseCsv(text.value)
+      : err<DatabaseCsv, DatabaseCsvFailure>({ kind: 'too-large' });
     parsed.match(
-      (data) => {
-        const base =
-          file.name
-            .replace(/\.csv$/i, '')
-            .trim()
-            .slice(0, 190) || 'Imported table';
-        let name = base;
-        let suffix = 2;
-        while (
-          props.detail.tables.some(
-            (table) => table.table.name.toLowerCase() === name.toLowerCase()
-          )
-        )
-          name = `${base} ${suffix++}`;
-        setDraft({ data, name });
-      },
+      (data) => setDraft({ data, name: importedTableName(file.name) }),
       (failure) => toast.failure(databaseCsvMessage(failure))
     );
+  }
+  function importedTableName(fileName: string) {
+    const base =
+      fileName
+        .replace(/\.csv$/i, '')
+        .trim()
+        .slice(0, 190) || 'Imported table';
+    const names = props.detail.tables.map((table) => table.table.name);
+    let name = base;
+    let suffix = 2;
+    while (isDatabaseNameTaken(name, names)) name = `${base} ${suffix++}`;
+    return name;
   }
   async function exportCsv() {
     const table = props.table;
