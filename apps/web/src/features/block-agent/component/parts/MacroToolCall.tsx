@@ -35,6 +35,7 @@ type ToolResponse = NamedTool<ToolName, 'response'>;
 export function MacroToolCall(props: {
   detail: MacroDetail;
   common: ToolCallCommon;
+  grouped?: boolean;
   context: ToolCallContext;
 }): JSX.Element {
   const response = createMemo(() =>
@@ -124,7 +125,7 @@ export function MacroToolCall(props: {
             renderContext={{
               renderContext: {
                 isStreaming: false,
-                grouped: true,
+                grouped: props.grouped ?? true,
                 followedBy: props.context.followedBy,
               },
             }}

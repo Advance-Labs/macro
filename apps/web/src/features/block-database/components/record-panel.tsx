@@ -139,7 +139,7 @@ export function RecordPanel(props: RecordPanelProps) {
         <Show when={props.canEdit}>
           <div class="mt-3 flex min-h-8 items-center border-t border-edge-muted/60 pt-2">
             <Button
-              variant="plain"
+              variant="ghost"
               size="xs"
               disabled={props.pending}
               class="hover:text-failure-ink"

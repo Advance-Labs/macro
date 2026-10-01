@@ -8,7 +8,7 @@ use crate::domain::{
         CrmEntityAccess, Entity, EntityAccessAuth, EntityAccessReceipt, EntityPermission,
         EntityType, RequiredPermission, TeamRole, UserTeamInfo, ViewAccessLevel,
     },
-    ports::{AccessRepository, AccessibleDatabases, EntityAccessService},
+    ports::{AccessRepository, AccessibleDatabases, EntityAccessService, ScheduledActionGrants},
 };
 use futures::{StreamExt, stream};
 use macro_user_id::{
@@ -70,6 +70,11 @@ where
             EntityType::Initiative => self.repo.get_initiative_access(entity_id, user_id).await,
             EntityType::Database => self.repo.get_database_access(entity_id, user_id).await,
             EntityType::DatabaseRow => self.repo.get_database_row_access(entity_id, user_id).await,
+            EntityType::ScheduledAction => {
+                self.repo
+                    .get_scheduled_action_access(entity_id, user_id)
+                    .await
+            }
             EntityType::CalendarEvent => {
                 self.repo
                     .get_calendar_event_access(entity_id, user_id)
@@ -459,7 +464,8 @@ where
             | EntityType::AgentSession
             | EntityType::Initiative
             | EntityType::Database
-            | EntityType::DatabaseRow => {
+            | EntityType::DatabaseRow
+            | EntityType::ScheduledAction => {
                 self.get_optimized_access(entity_id, user_id, entity_type)
                     .await
             }
@@ -481,8 +487,7 @@ where
             EntityType::Team
             | EntityType::User
             | EntityType::ChannelMessage
-            | EntityType::Skill
-            | EntityType::ScheduledAction => Ok(None),
+            | EntityType::Skill => Ok(None),
         }
     }
 
@@ -538,7 +543,8 @@ where
             | EntityType::AgentSession
             | EntityType::Initiative
             | EntityType::Database
-            | EntityType::DatabaseRow => {
+            | EntityType::DatabaseRow
+            | EntityType::ScheduledAction => {
                 let access = self
                     .get_optimized_access(entity_id, user_id, entity_type)
                     .await?;
@@ -717,6 +723,15 @@ where
         user_id: &MacroUserId<Lowercase<'_>>,
     ) -> Result<Option<UserTeamInfo>, AccessError> {
         self.repo.get_user_team(user_id).await
+    }
+}
+
+impl<R: AccessRepository> ScheduledActionGrants for EntityAccessServiceImpl<R> {
+    async fn accessible_scheduled_action_ids(
+        &self,
+        user_id: &MacroUserId<Lowercase<'_>>,
+    ) -> Result<Vec<Uuid>, AccessError> {
+        self.repo.accessible_scheduled_action_ids(user_id).await
     }
 }
 

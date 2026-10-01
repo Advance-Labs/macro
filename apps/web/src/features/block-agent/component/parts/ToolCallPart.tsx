@@ -59,7 +59,12 @@ export function ToolCallPart(props: {
   // its detail object; each child receives the current detail through an accessor.
   return (
     <Switch>
-      <Match when={rendersOwnView(props.part)}>
+      <Match
+        when={
+          rendersOwnView(props.part) &&
+          toolLabel(props.part.name) === 'DisplayResults'
+        }
+      >
         <DisplayResultsToolCall
           input={
             'input' in props.part.detail ? props.part.detail.input : undefined
@@ -116,6 +121,7 @@ export function ToolCallPart(props: {
                 error: detail().error,
               }}
               common={common()}
+              grouped={!rendersOwnView(props.part)}
               context={props.context}
             />
           </Show>
@@ -126,6 +132,7 @@ export function ToolCallPart(props: {
           <MacroToolCall
             detail={detail()}
             common={common()}
+            grouped={!rendersOwnView(props.part)}
             context={props.context}
           />
         )}

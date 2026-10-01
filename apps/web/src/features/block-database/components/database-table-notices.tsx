@@ -80,7 +80,7 @@ export function RefreshNotice(props: { onRefresh: () => void }) {
     >
       The latest data could not be refreshed.
       <Button
-        variant="plain"
+        variant="ghost"
         size="xs"
         class="text-accent"
         onClick={props.onRefresh}

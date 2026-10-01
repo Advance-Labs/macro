@@ -1633,7 +1633,7 @@ export type PropertyDefinition = {
      */
     is_system: boolean;
     owner: PropertyOwner;
-    specific_entity_type?: null | EntityType;
+    specific_entity_type: null | EntityType;
     updated_at: string;
 };
 

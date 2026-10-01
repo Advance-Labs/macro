@@ -72,6 +72,7 @@ type RenderItem =
 const STANDALONE_TOOLS: ReadonlySet<string> = new Set([
   'CreateCalendarEvent',
   'DisplayResults',
+  'GenerateImage',
   'ReadActivity',
   'QueryDatabase',
   'SaveDatabaseView',

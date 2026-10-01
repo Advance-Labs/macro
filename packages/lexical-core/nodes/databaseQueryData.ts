@@ -89,12 +89,10 @@ export function parseDatabaseQueryChart(
     !isOptionalString(title)
   )
     return;
+  if (!isOptionalString(color) || color?.trim() === '') return;
   if (
     color !== undefined &&
-    (!isNonEmptyName(color) ||
-      color === x ||
-      y.length !== 1 ||
-      y.includes(color))
+    (color === x || y.length !== 1 || y.includes(color))
   )
     return;
   if (stack !== undefined && typeof stack !== 'boolean') return;

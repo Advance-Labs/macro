@@ -1,5 +1,7 @@
 use filter_ast::Expr;
-use item_filters::ast::{chat::ChatLiteral, document::DocumentLiteral};
+use item_filters::ast::{
+    channel::ChannelThreadLiteral, chat::ChatLiteral, document::DocumentLiteral,
+};
 use serde_json::{Value, json};
 
 use super::*;
@@ -222,4 +224,23 @@ fn a_database_row_filter_names_a_table_or_a_row() {
             .database_row_filter
             .is_none()
     );
+}
+
+#[test]
+fn channel_thread_has_replies_materializes_for_browser_and_server() {
+    for has_replies in [true, false] {
+        let value = json!({
+            "channelThreadFilter": {"literal": {"hasReplies": has_replies}}
+        });
+        let ast = materialize_graphql_filter(value.clone()).unwrap();
+        assert!(matches!(
+            ast.channel_thread_filter.as_deref(),
+            Some(Expr::Literal(ChannelThreadLiteral::HasReplies(v))) if *v == has_replies
+        ));
+        let input: GraphqlEntityFilterAst = serde_json::from_value(value).unwrap();
+        assert_eq!(
+            serde_json::to_value(ast).unwrap(),
+            serde_json::to_value(input.into_ast().unwrap()).unwrap()
+        );
+    }
 }

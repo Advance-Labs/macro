@@ -20,9 +20,9 @@ export type DeleteDialogProps = ManagedDialogProps & {
   confirmationPhrase?: string;
   pending?: boolean;
   position?: DialogProps['position'];
-  /** Lets a caller that opened the dialog without a trigger restore focus. */
-  onCloseAutoFocus?: DialogProps['onCloseAutoFocus'];
   class?: string;
+  /** Where focus lands on close, e.g. when the opener no longer exists. */
+  onCloseAutoFocus?: DialogProps['onCloseAutoFocus'];
   onDelete: () => void;
 };
 
@@ -51,8 +51,8 @@ export function DeleteDialog(props: DeleteDialogProps) {
       onOpenChange={(open) => {
         if (!open) close();
       }}
-      position={props.position ?? 'center'}
       onCloseAutoFocus={props.onCloseAutoFocus}
+      position={props.position ?? 'center'}
       class={cn('w-110', props.class)}
       visibleScrim
     >
@@ -95,7 +95,6 @@ export function DeleteDialog(props: DeleteDialogProps) {
             type="button"
             variant="ghost"
             depth={2}
-            class="rounded-lg"
             disabled={props.pending}
             onClick={close}
           >
@@ -103,9 +102,8 @@ export function DeleteDialog(props: DeleteDialogProps) {
           </Button>
           <Button
             type="button"
-            variant="danger"
+            variant="strong"
             depth={2}
-            class="rounded-lg"
             disabled={!canDelete()}
             onClick={deleteItem}
           >

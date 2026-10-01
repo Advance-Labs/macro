@@ -1537,6 +1537,32 @@ export type BotOwner = {
 };
 
 /**
+ * Bot identity for rendering, including the sponsor and soft-delete time.
+ *
+ * `owner` is none only for a registry system bot. A persisted row always has
+ * a sponsor.
+ */
+export type BotOwnerProfile = {
+    /**
+     * Avatar URL. Registry system bots have none.
+     */
+    avatar_url?: string | null;
+    /**
+     * Soft-delete time. Absent for an active bot and for a registry system bot.
+     */
+    deleted_at?: string | null;
+    /**
+     * Bot id.
+     */
+    id: BotId;
+    /**
+     * Display name.
+     */
+    name: string;
+    owner?: null | BotOwner;
+};
+
+/**
  * Public bot profile attached to bot-authored messages.
  */
 export type BotSenderProfile = {
@@ -8156,6 +8182,14 @@ export type MessageChange = {
     type: 'message_deleted';
 } | {
     /**
+     * Whether the reaction was added (`true`) or removed (`false`).
+     */
+    added: boolean;
+    /**
+     * Emoji whose membership changed.
+     */
+    emoji: string;
+    /**
      * Persisted message.
      */
     message: Message;
@@ -8468,6 +8502,20 @@ export type NewThreadAnchor = {
      * Vertical position as a fraction of the page height.
      */
     y_pct: number;
+} | {
+    /**
+     * A1 cell or range, such as B4 or B4:C9.
+     */
+    range: string;
+    /**
+     * Stable sheet identity within the workbook.
+     */
+    sheetId: string;
+    /**
+     * Sheet name when the discussion was created.
+     */
+    sheetName: string;
+    type: 'spreadsheet';
 };
 
 /**
@@ -10261,6 +10309,10 @@ export type SoupAgentSessionSoupPropertiesField = {
      */
     id: string;
     /**
+     * Whether the session is archived and read-only.
+     */
+    isArchived: boolean;
+    /**
      * The user-facing name of the session
      */
     name: string;
@@ -11838,7 +11890,7 @@ export type Thread = {
 };
 
 /**
- * A thread's location within its document. Geometry remains annotation-owned.
+ * A thread's location within its document. PDF geometry remains annotation-owned.
  */
 export type ThreadAnchor = {
     /**
@@ -11872,6 +11924,20 @@ export type ThreadAnchor = {
      */
     anchor_id: string;
     type: 'pdf_placeable';
+} | {
+    /**
+     * A1 cell or range, such as B4 or B4:C9.
+     */
+    range: string;
+    /**
+     * Stable sheet identity within the workbook.
+     */
+    sheetId: string;
+    /**
+     * Sheet name when the discussion was created.
+     */
+    sheetName: string;
+    type: 'spreadsheet';
 };
 
 /**
@@ -13059,6 +13125,32 @@ export type GetSelfBotResponses = {
 };
 
 export type GetSelfBotResponse = GetSelfBotResponses[keyof GetSelfBotResponses];
+
+export type GetBotOwnerProfilesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Bot ids. Repeat the key: `?ids=<uuid>&ids=<uuid>`.
+         */
+        ids?: Array<BotId>;
+    };
+    url: '/bots/profiles';
+};
+
+export type GetBotOwnerProfilesErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetBotOwnerProfilesError = GetBotOwnerProfilesErrors[keyof GetBotOwnerProfilesErrors];
+
+export type GetBotOwnerProfilesResponses = {
+    200: Array<BotOwnerProfile>;
+};
+
+export type GetBotOwnerProfilesResponse = GetBotOwnerProfilesResponses[keyof GetBotOwnerProfilesResponses];
 
 export type ListBotChannelsData = {
     body?: never;

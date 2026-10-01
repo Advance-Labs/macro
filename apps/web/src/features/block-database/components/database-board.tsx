@@ -498,7 +498,7 @@ function BoardLane(
         <Show when={props.acceptsRecords && !hasOpenDraft()}>
           <Button
             ref={props.newButtonRef}
-            variant="plain"
+            variant="ghost"
             size="xs"
             aria-label="New record"
             class="h-7 justify-start gap-1.5 rounded-md px-1.5 text-ink-placeholder"

@@ -361,7 +361,7 @@ export type PropertyDefinition = {
      */
     is_system: boolean;
     owner: PropertyOwner;
-    specific_entity_type?: null | EntityType;
+    specific_entity_type: null | EntityType;
     updated_at: string;
 };
 
@@ -411,7 +411,7 @@ export type PropertyDefinitionWithOptionsResponse = {
  * A selectable option for select-type properties (service representation).
  */
 export type PropertyOption = {
-    color?: string | null;
+    color: string | null;
     created_at: string;
     display_order: number;
     id: string;

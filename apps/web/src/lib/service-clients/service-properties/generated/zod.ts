@@ -102,29 +102,27 @@ export const listPropertiesResponseItem = zod
           .describe(
             'Defines who owns a property - user-scoped, team-scoped, database-scoped, or system.'
           ),
-        specific_entity_type: zod
-          .union([
-            zod.null(),
-            zod
-              .enum([
-                'CALENDAR_EVENT',
-                'CALL_RECORD',
-                'CHANNEL',
-                'CHAT',
-                'COMPANY',
-                'DATABASE_ROW',
-                'DOCUMENT',
-                'INITIATIVE',
-                'PROJECT',
-                'TASK',
-                'THREAD',
-                'USER',
-              ])
-              .describe(
-                'Type of entity that can be referenced by entity properties.'
-              ),
-          ])
-          .optional(),
+        specific_entity_type: zod.union([
+          zod.null(),
+          zod
+            .enum([
+              'CALENDAR_EVENT',
+              'CALL_RECORD',
+              'CHANNEL',
+              'CHAT',
+              'COMPANY',
+              'DATABASE_ROW',
+              'DOCUMENT',
+              'INITIATIVE',
+              'PROJECT',
+              'TASK',
+              'THREAD',
+              'USER',
+            ])
+            .describe(
+              'Type of entity that can be referenced by entity properties.'
+            ),
+        ]),
         updated_at: zod.iso.datetime({}),
       })
       .describe('Property definition model (service representation).'),
@@ -194,36 +192,34 @@ export const listPropertiesResponseItem = zod
               .describe(
                 'Defines who owns a property - user-scoped, team-scoped, database-scoped, or system.'
               ),
-            specific_entity_type: zod
-              .union([
-                zod.null(),
-                zod
-                  .enum([
-                    'CALENDAR_EVENT',
-                    'CALL_RECORD',
-                    'CHANNEL',
-                    'CHAT',
-                    'COMPANY',
-                    'DATABASE_ROW',
-                    'DOCUMENT',
-                    'INITIATIVE',
-                    'PROJECT',
-                    'TASK',
-                    'THREAD',
-                    'USER',
-                  ])
-                  .describe(
-                    'Type of entity that can be referenced by entity properties.'
-                  ),
-              ])
-              .optional(),
+            specific_entity_type: zod.union([
+              zod.null(),
+              zod
+                .enum([
+                  'CALENDAR_EVENT',
+                  'CALL_RECORD',
+                  'CHANNEL',
+                  'CHAT',
+                  'COMPANY',
+                  'DATABASE_ROW',
+                  'DOCUMENT',
+                  'INITIATIVE',
+                  'PROJECT',
+                  'TASK',
+                  'THREAD',
+                  'USER',
+                ])
+                .describe(
+                  'Type of entity that can be referenced by entity properties.'
+                ),
+            ]),
             updated_at: zod.iso.datetime({}),
           })
           .describe('Property definition model (service representation).'),
         property_options: zod.array(
           zod
             .object({
-              color: zod.string().nullish(),
+              color: zod.string().nullable(),
               created_at: zod.iso.datetime({}),
               display_order: zod.number(),
               id: zod.uuid(),
@@ -438,29 +434,27 @@ export const getPropertyDefinitionResponse = zod
       .describe(
         'Defines who owns a property - user-scoped, team-scoped, database-scoped, or system.'
       ),
-    specific_entity_type: zod
-      .union([
-        zod.null(),
-        zod
-          .enum([
-            'CALENDAR_EVENT',
-            'CALL_RECORD',
-            'CHANNEL',
-            'CHAT',
-            'COMPANY',
-            'DATABASE_ROW',
-            'DOCUMENT',
-            'INITIATIVE',
-            'PROJECT',
-            'TASK',
-            'THREAD',
-            'USER',
-          ])
-          .describe(
-            'Type of entity that can be referenced by entity properties.'
-          ),
-      ])
-      .optional(),
+    specific_entity_type: zod.union([
+      zod.null(),
+      zod
+        .enum([
+          'CALENDAR_EVENT',
+          'CALL_RECORD',
+          'CHANNEL',
+          'CHAT',
+          'COMPANY',
+          'DATABASE_ROW',
+          'DOCUMENT',
+          'INITIATIVE',
+          'PROJECT',
+          'TASK',
+          'THREAD',
+          'USER',
+        ])
+        .describe(
+          'Type of entity that can be referenced by entity properties.'
+        ),
+    ]),
     updated_at: zod.iso.datetime({}),
   })
   .describe('Property definition model (service representation).');
@@ -481,7 +475,7 @@ export const getPropertyOptionsParams = zod.object({
 
 export const getPropertyOptionsResponseItem = zod
   .object({
-    color: zod.string().nullish(),
+    color: zod.string().nullable(),
     created_at: zod.iso.datetime({}),
     display_order: zod.number(),
     id: zod.uuid(),
@@ -593,7 +587,7 @@ export const updatePropertyOptionBody = zod
 
 export const updatePropertyOptionResponse = zod
   .object({
-    color: zod.string().nullish(),
+    color: zod.string().nullable(),
     created_at: zod.iso.datetime({}),
     display_order: zod.number(),
     id: zod.uuid(),
@@ -739,29 +733,27 @@ export const getBulkEntityPropertiesResponse = zod.record(
                   .describe(
                     'Defines who owns a property - user-scoped, team-scoped, database-scoped, or system.'
                   ),
-                specific_entity_type: zod
-                  .union([
-                    zod.null(),
-                    zod
-                      .enum([
-                        'CALENDAR_EVENT',
-                        'CALL_RECORD',
-                        'CHANNEL',
-                        'CHAT',
-                        'COMPANY',
-                        'DATABASE_ROW',
-                        'DOCUMENT',
-                        'INITIATIVE',
-                        'PROJECT',
-                        'TASK',
-                        'THREAD',
-                        'USER',
-                      ])
-                      .describe(
-                        'Type of entity that can be referenced by entity properties.'
-                      ),
-                  ])
-                  .optional(),
+                specific_entity_type: zod.union([
+                  zod.null(),
+                  zod
+                    .enum([
+                      'CALENDAR_EVENT',
+                      'CALL_RECORD',
+                      'CHANNEL',
+                      'CHAT',
+                      'COMPANY',
+                      'DATABASE_ROW',
+                      'DOCUMENT',
+                      'INITIATIVE',
+                      'PROJECT',
+                      'TASK',
+                      'THREAD',
+                      'USER',
+                    ])
+                    .describe(
+                      'Type of entity that can be referenced by entity properties.'
+                    ),
+                ]),
                 updated_at: zod.iso.datetime({}),
               })
               .describe('Property definition model (service representation).'),
@@ -769,7 +761,7 @@ export const getBulkEntityPropertiesResponse = zod.record(
               .array(
                 zod
                   .object({
-                    color: zod.string().nullish(),
+                    color: zod.string().nullable(),
                     created_at: zod.iso.datetime({}),
                     display_order: zod.number(),
                     id: zod.uuid(),
@@ -1070,29 +1062,27 @@ export const getEntityPropertiesResponse = zod
                 .describe(
                   'Defines who owns a property - user-scoped, team-scoped, database-scoped, or system.'
                 ),
-              specific_entity_type: zod
-                .union([
-                  zod.null(),
-                  zod
-                    .enum([
-                      'CALENDAR_EVENT',
-                      'CALL_RECORD',
-                      'CHANNEL',
-                      'CHAT',
-                      'COMPANY',
-                      'DATABASE_ROW',
-                      'DOCUMENT',
-                      'INITIATIVE',
-                      'PROJECT',
-                      'TASK',
-                      'THREAD',
-                      'USER',
-                    ])
-                    .describe(
-                      'Type of entity that can be referenced by entity properties.'
-                    ),
-                ])
-                .optional(),
+              specific_entity_type: zod.union([
+                zod.null(),
+                zod
+                  .enum([
+                    'CALENDAR_EVENT',
+                    'CALL_RECORD',
+                    'CHANNEL',
+                    'CHAT',
+                    'COMPANY',
+                    'DATABASE_ROW',
+                    'DOCUMENT',
+                    'INITIATIVE',
+                    'PROJECT',
+                    'TASK',
+                    'THREAD',
+                    'USER',
+                  ])
+                  .describe(
+                    'Type of entity that can be referenced by entity properties.'
+                  ),
+              ]),
               updated_at: zod.iso.datetime({}),
             })
             .describe('Property definition model (service representation).'),
@@ -1100,7 +1090,7 @@ export const getEntityPropertiesResponse = zod
             .array(
               zod
                 .object({
-                  color: zod.string().nullish(),
+                  color: zod.string().nullable(),
                   created_at: zod.iso.datetime({}),
                   display_order: zod.number(),
                   id: zod.uuid(),

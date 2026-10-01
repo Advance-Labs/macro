@@ -48,6 +48,7 @@ mod database_activity;
 mod database_row;
 mod email_archive;
 mod initiative;
+mod scheduled_actions;
 mod soup_patches;
 
 const VALID_USER_ID: &str = "macro|user@example.com";

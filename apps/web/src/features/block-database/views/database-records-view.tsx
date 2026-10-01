@@ -522,7 +522,7 @@ export function DatabaseRecordsView(props: {
                     </p>
                     <Show when={constrained()}>
                       <Button
-                        variant="plain"
+                        variant="ghost"
                         size="xs"
                         class="mt-2 text-accent"
                         onClick={() => props.onClearConstraints?.()}

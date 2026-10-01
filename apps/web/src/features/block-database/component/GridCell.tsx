@@ -891,7 +891,7 @@ function DateCell(props: GridCellProps) {
     <Dropdown open={open()} onOpenChange={setOpen}>
       <Dropdown.Trigger
         ref={keys.triggerRef}
-        variant="plain"
+        variant="ghost"
         class="h-auto min-h-9 w-full min-w-0 justify-start rounded px-2.5 py-1.5 text-left text-[13px] leading-5 font-normal outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50"
         aria-label={`${props.column.name}: ${label() || props.emptyLabel || 'Empty'}. Click to edit`}
         onKeyDown={(event: KeyboardEvent) => {

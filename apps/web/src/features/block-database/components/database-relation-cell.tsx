@@ -351,7 +351,7 @@ export function DatabaseRelationCell(props: DatabaseRelationCellProps) {
                   {(id) => (
                     <span class="inline-flex min-w-0 max-w-full items-center rounded border border-edge-muted bg-hover/60">
                       <Button
-                        variant="plain"
+                        variant="ghost"
                         size="xs"
                         class="min-w-0 gap-1"
                         disabled={!available(id)}

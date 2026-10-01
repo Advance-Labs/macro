@@ -253,7 +253,6 @@ export function TagEditorDialog(props: {
             <Button
               variant="danger"
               size="sm"
-              class="rounded-lg"
               disabled={pending()}
               onClick={remove}
             >
@@ -265,16 +264,15 @@ export function TagEditorDialog(props: {
             <Button
               variant="ghost"
               size="sm"
-              class="rounded-lg"
               disabled={pending()}
               onClick={close}
             >
               Cancel
             </Button>
             <Button
-              variant={canSubmit() ? 'accent' : 'ghost'}
+              variant="strong"
               depth={3}
-              class="gap-3 rounded-lg border-0"
+              class="gap-3 "
               disabled={!canSubmit() || pending()}
               onClick={submit}
             >
