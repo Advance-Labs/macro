@@ -1,8 +1,4 @@
-use database_sql::resolve::Query;
-
-use super::query::QueryMode;
 use super::*;
-use crate::domain::models::{QueryDefinition, QueryId, SavedQuery};
 
 impl<Repo, Defs, Cells, Events, Access, Broker>
     DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
@@ -19,32 +15,23 @@ where
         viewer: Viewer,
         database_id: Option<DatabaseId>,
         definition: QueryDefinition,
-    ) -> Result<SavedQuery, QueryError> {
-        let sql = definition.sql();
-        if sql.len() > MAX_SQL_LEN {
-            return Err(QueryError::BudgetExceeded);
+    ) -> Result<SavedQuery, SavedQueryError> {
+        if definition.sql().len() > MAX_QUERY_LEN {
+            return Err(SavedQueryError::TooLong);
         }
         if let Some(database_id) = database_id
             && self
                 .live_database_grant(&viewer, database_id)
                 .await
-                .map_err(QueryError::Infrastructure)?
+                .map_err(SavedQueryError::Repo)?
                 .is_none()
         {
-            return Err(QueryError::NotFound);
-        }
-        let (_, catalog) = self.viewer_catalog(&viewer, database_id).await?;
-        let compiled = database_sql::compile(&catalog, sql)
-            .map_err(|error| QueryError::Sql(error.to_string()))?;
-        if !matches!(compiled, Query::Select(_)) {
-            return Err(QueryError::ReadOnly(
-                "a saved query must be a SELECT; it cannot change data".into(),
-            ));
+            return Err(SavedQueryError::NotFound);
         }
         self.repo
             .save_query(database_id, &definition, viewer.user_id.as_ref())
             .await
-            .map_err(infra)
+            .map_err(|error| SavedQueryError::Repo(rootcause::Report::new(error).into_dynamic()))
     }
 
     /// A saved query the viewer may read: their own, or one scoped to a live
@@ -54,44 +41,26 @@ where
         &self,
         viewer: &Viewer,
         id: QueryId,
-    ) -> Result<SavedQuery, QueryError> {
+    ) -> Result<SavedQuery, SavedQueryError> {
         let saved = self
             .repo
             .get_query(id)
             .await
-            .map_err(infra)?
-            .ok_or(QueryError::NotFound)?;
+            .map_err(|error| SavedQueryError::Repo(rootcause::Report::new(error).into_dynamic()))?
+            .ok_or(SavedQueryError::NotFound)?;
         if saved.created_by == viewer.user_id.as_ref() {
             return Ok(saved);
         }
         let Some(database_id) = saved.database_id else {
-            return Err(QueryError::NotFound);
+            return Err(SavedQueryError::NotFound);
         };
         match self
             .live_database_grant(viewer, database_id)
             .await
-            .map_err(QueryError::Infrastructure)?
+            .map_err(SavedQueryError::Repo)?
         {
             Some(_) => Ok(saved),
-            None => Err(QueryError::NotFound),
+            None => Err(SavedQueryError::NotFound),
         }
-    }
-
-    pub(super) async fn run_saved_query(
-        &self,
-        viewer: Viewer,
-        id: QueryId,
-    ) -> Result<ExecOutcome, QueryError> {
-        let saved = self.readable_query(&viewer, id).await?;
-        self.run_sql(
-            viewer,
-            ExecRequest {
-                scope: saved.database_id,
-                sql: saved.definition.sql().to_owned(),
-                base_versions: None,
-            },
-            QueryMode::ReadOnly,
-        )
-        .await
     }
 }

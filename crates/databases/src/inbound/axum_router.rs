@@ -1,12 +1,10 @@
 //! Axum router for the databases endpoints.
 //!
-//! The surface is deliberately tiny and SQL-first:
+//! The surface is typed; SQL is not part of it (the browser runs the engine
+//! itself, agents run it through the `databases_sql` adapter):
 //!
-//! - `POST /exec` — run SQL (reads and writes) as the caller; the viewer's
-//!   catalog is the authorization boundary, enforced in the domain service.
-//! - `POST /query` — read-only SQL for live chips and query previews.
-//! - `POST /queries`, `GET /queries/{query_id}`, `POST /queries/{query_id}/run`
-//!   — saved, immutable queries that document nodes point at.
+//! - `POST /queries`, `GET /queries/{query_id}` — saved, immutable queries
+//!   that document nodes point at.
 //! - `GET /` — list the caller's databases; `POST /` — create one.
 //! - `GET /{id}` — schema detail (tables, columns, definitions, SQL names).
 //! - `POST /{id}/ops` — typed, batched writes to the database's rows and
@@ -19,7 +17,6 @@
 //! Handlers are thin: extract identity/receipts, convert DTOs, call the
 //! service, map errors. No policy, no persistence.
 
-use std::collections::HashMap;
 /// Structured column type, ordering, and placement deletion endpoints.
 pub mod column_mutations;
 /// Typed, batched writes: `POST /{id}/ops`.
@@ -60,9 +57,9 @@ use uuid::Uuid;
 
 use crate::domain::models::{
     AddColumnOptions, Awareness, ColumnBinding, ColumnConfig, ColumnDetail, ColumnId, CreateColumn,
-    CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, ExecOutcome, ExecRequest,
-    InferColumnType, InferColumnTypeOutcome, ListedDatabase, QueryError, RenameColumnOutcome,
-    Table, TableVersion, Viewer,
+    CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, InferColumnType,
+    InferColumnTypeOutcome, ListedDatabase, RenameColumnOutcome, SavedQueryError, Table,
+    TableVersion, Viewer,
 };
 use crate::domain::ports::DatabasesService;
 
@@ -133,8 +130,6 @@ where
                 .layer(axum::extract::DefaultBodyLimit::max(MAX_IMPORT_BODY_BYTES)),
         )
         .route("/", post(create_database_handler::<S, Eas, Auth>))
-        .route("/exec", post(exec_handler::<S, Eas, Auth>))
-        .route("/query", post(query_handler::<S, Eas, Auth>))
         // Static segments win over `/{id}`, so these never read as a database.
         .route(
             "/queries",
@@ -143,10 +138,6 @@ where
         .route(
             "/queries/{query_id}",
             get(saved_queries::get_query_handler::<S, Eas, Auth>),
-        )
-        .route(
-            "/queries/{query_id}/run",
-            post(saved_queries::run_query_handler::<S, Eas, Auth>),
         )
         .route("/{id}", get(get_database_handler::<S, Eas, Auth>))
         .route("/{id}/awareness", put(awareness_handler::<S, Eas, Auth>))
@@ -292,31 +283,6 @@ pub struct CreateColumnRequest {
     /// Database of the linked table (defaults to this database).
     #[schema(nullable = false)]
     pub link_to_database_id: Option<Uuid>,
-}
-
-/// Request body for `POST /exec`.
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ExecRequestBody {
-    /// The statements to run, executed in one transaction.
-    pub sql: String,
-    /// Optional compare-and-swap: reject writes if a listed table being written
-    /// has moved past the given version. Read-only dependencies are not guarded.
-    /// Omitted → cell-level last-write-wins.
-    #[schema(nullable = false)]
-    pub base_versions: Option<HashMap<Uuid, i64>>,
-    /// The database the statement is written from. A same-named table of
-    /// another database is left out of name resolution when this is set.
-    #[serde(default)]
-    #[schema(nullable = false)]
-    pub scope: Option<Uuid>,
-}
-
-/// Request body for read-only SQL queries.
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub struct QueryRequestBody {
-    /// SQL to read. Writes are refused by the domain service.
-    pub sql: String,
 }
 
 /// Path params for the single-database routes.
@@ -482,87 +448,6 @@ where
         .share_awareness(access.entity_access_receipt, viewer_of(&user), awareness)
         .await?;
     Ok(StatusCode::NO_CONTENT)
-}
-
-/// Execute SQL as the caller. The whole read/write surface.
-#[utoipa::path(
-    post,
-    tag = "databases",
-    operation_id = "exec_database_sql",
-    path = "/databases/exec",
-    request_body = ExecRequestBody,
-    responses(
-        (status = 200, body = ExecOutcome),
-        (status = 400, description = "SQL error (message verbatim from the SQL engine) or a refused write", body = ErrorResponse),
-        (status = 401, description = "Missing or invalid credentials", body = ErrorResponse),
-        (status = 403, description = "Write to a read-only table or column", body = ErrorResponse),
-        (status = 409, description = "A written table moved past its base version", body = ErrorResponse),
-        (status = 422, description = "Query budget exceeded", body = ErrorResponse),
-        (status = 500, body = ErrorResponse),
-    )
-)]
-#[tracing::instrument(err, skip_all)]
-pub async fn exec_handler<S, Eas, Auth>(
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
-    Json(req): Json<ExecRequestBody>,
-) -> Result<Json<ExecOutcome>, QueryError>
-where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
-{
-    let outcome = state
-        .service
-        .exec_sql(
-            viewer_of(&user),
-            ExecRequest {
-                scope: req.scope,
-                sql: req.sql,
-                base_versions: req.base_versions.map(|versions| {
-                    versions
-                        .into_iter()
-                        .map(|(table, version)| (table, TableVersion(version)))
-                        .collect()
-                }),
-            },
-        )
-        .await?;
-    Ok(Json(outcome))
-}
-
-/// Run read-only SQL with the caller's current visibility.
-#[utoipa::path(
-    post,
-    tag = "databases",
-    operation_id = "query_database_sql",
-    path = "/databases/query",
-    request_body = QueryRequestBody,
-    responses(
-        (status = 200, body = ExecOutcome),
-        (status = 400, description = "Invalid SQL", body = ErrorResponse),
-        (status = 401, description = "Missing or invalid credentials", body = ErrorResponse),
-        (status = 403, description = "Queries cannot write data", body = ErrorResponse),
-        (status = 422, description = "Query budget exceeded", body = ErrorResponse),
-        (status = 500, body = ErrorResponse),
-    )
-)]
-#[tracing::instrument(err, skip_all)]
-pub async fn query_handler<S, Eas, Auth>(
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
-    Json(req): Json<QueryRequestBody>,
-) -> Result<Json<ExecOutcome>, QueryError>
-where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
-{
-    state
-        .service
-        .query_sql(viewer_of(&user), req.sql)
-        .await
-        .map(Json)
 }
 
 /// Create a table in a database.
@@ -990,21 +875,16 @@ impl IntoResponse for DatabaseError {
     }
 }
 
-impl IntoResponse for QueryError {
+impl IntoResponse for SavedQueryError {
     fn into_response(self) -> axum::response::Response {
         let status = match &self {
-            // The engine's message is the product's "broken query" state —
-            // pass it through verbatim for chips to render.
-            QueryError::Sql(_) => StatusCode::BAD_REQUEST,
-            QueryError::ReadOnly(_) => StatusCode::FORBIDDEN,
-            QueryError::VersionConflict { .. } => StatusCode::CONFLICT,
-            QueryError::BudgetExceeded => StatusCode::UNPROCESSABLE_ENTITY,
-            QueryError::NotFound => StatusCode::NOT_FOUND,
-            QueryError::Infrastructure(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            SavedQueryError::NotFound => StatusCode::NOT_FOUND,
+            SavedQueryError::TooLong => StatusCode::UNPROCESSABLE_ENTITY,
+            SavedQueryError::Repo(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
         let message = match &self {
-            QueryError::Infrastructure(_) => {
-                tracing::error!(error = ?self, "databases query infrastructure error");
+            SavedQueryError::Repo(_) => {
+                tracing::error!(error = ?self, "saved query repository error");
                 "internal server error".to_string()
             }
             other => other.to_string(),

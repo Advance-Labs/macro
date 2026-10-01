@@ -1,12 +1,11 @@
-//! Domain models: entities, commands, the query/exec pipeline vocabulary,
-//! and domain errors.
+//! Domain models: entities, commands, the batched row writes, and domain
+//! errors.
 
 use std::collections::HashMap;
 
 use bot_id::BotId;
 use chrono::{DateTime, Utc};
 use macro_user_id::user_id::MacroUserIdStr;
-use model_entity::EntityType;
 use models_permissions::share_permission::access_level::AccessLevel;
 use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::service::property_value::PropertyValue;
@@ -340,133 +339,17 @@ pub struct AddColumnOptions {
     pub labels: Vec<String>,
 }
 
-// ===== The query/exec pipeline =====
+// ===== Acting viewer =====
 
-/// The acting viewer: every catalog build, materialization, and write is
-/// scoped to this identity. The catalog IS the authorization for SQL.
+/// The acting viewer: the user a listing, a read or a write is scoped to.
 #[derive(Debug, Clone)]
 pub struct Viewer {
-    /// The user running the statement.
+    /// The user acting.
     pub user_id: MacroUserIdStr<'static>,
-    /// The agent running it for that user; `None` when the user acts. Only
-    /// attribution reads it: the catalog stays scoped to `user_id`.
+    /// The agent acting for that user; `None` when the user acts. Only
+    /// attribution reads it: what the viewer can reach stays scoped to
+    /// `user_id`.
     pub acting_bot: Option<BotId>,
-}
-
-/// A request to execute SQL (any mix of reads and writes).
-#[derive(Debug, Clone, Deserialize)]
-pub struct ExecRequest {
-    /// The statements to run, executed in one transaction.
-    pub sql: String,
-    /// The database the statement is written from, when a client knows it
-    /// (the grid always does). Names are resolved against the whole catalog,
-    /// but a table of another database whose qualified name collides with
-    /// one of this database's is left out, so two databases both called
-    /// "Untitled database" with a "Table 1" each stay addressable.
-    pub scope: Option<DatabaseId>,
-    /// Compare-and-set, **opt in per table**. A written table named here is
-    /// refused (nothing commits) unless it is still at the given version;
-    /// entries for tables the statement does not write are ignored.
-    ///
-    /// A written table that is *not* named — including the case where the
-    /// whole field is omitted — is committed blind: cell-level
-    /// last-write-wins, with no check that the table moved underneath the
-    /// caller. Omission is therefore a deliberate choice, correct for a
-    /// human typing ad-hoc SQL into the console or for an agent tool, and
-    /// wrong for a client re-sending a statement it built from data it
-    /// already read. Such a client should send back the
-    /// [`ExecOutcome::read_versions`] of the previous run to guard tables
-    /// the follow-up statement writes. Read-only dependencies are not guarded.
-    pub base_versions: Option<HashMap<TableId, TableVersion>>,
-}
-
-/// A value in a statement's result, kept engine-agnostic so the wire shape
-/// does not follow `database_sql`'s types. Serializes as a plain JSON scalar.
-#[derive(utoipa::ToSchema, Debug, Clone, PartialEq, Serialize)]
-#[serde(untagged)]
-pub enum SqlValue {
-    /// SQL NULL.
-    Null,
-    /// Integer (also booleans as 0/1).
-    Integer(i64),
-    /// Float.
-    Real(f64),
-    /// Text (also ids, dates as ISO-8601, resolved option display values).
-    Text(String),
-}
-
-/// A SELECT's result set with provenance for hydration and write-through.
-#[derive(utoipa::ToSchema, Debug, Clone, Serialize)]
-pub struct QueryResult {
-    /// Result columns.
-    pub columns: Vec<ResultColumn>,
-    /// Row values as JSON scalars.
-    pub rows: Vec<Vec<SqlValue>>,
-}
-
-/// One result column with its origin.
-#[derive(utoipa::ToSchema, Debug, Clone, Serialize)]
-pub struct ResultColumn {
-    /// Column name or alias.
-    pub name: String,
-    /// Entity type of id values, when known — drives chip rendering.
-    #[schema(inline)]
-    pub entity_type: Option<EntityType>,
-    /// Origin `(table, column)` when the column traces to a single base
-    /// column — the precondition for write-through.
-    pub origin: Option<(String, String)>,
-}
-
-/// Outcome of an [`ExecRequest`].
-#[derive(utoipa::ToSchema, Debug, Clone, Serialize)]
-pub struct ExecOutcome {
-    /// Result sets of the SELECT statements, in order.
-    pub results: Vec<QueryResult>,
-    /// How many row changes were applied to Postgres.
-    pub changes_applied: usize,
-    /// Server-minted ids for rows the statement inserted.
-    #[schema(value_type = Vec<Uuid>)]
-    pub inserted_row_ids: Vec<RowId>,
-    /// New versions of every written table, for client-side liveness.
-    #[schema(value_type = HashMap<String, TableVersion>)]
-    pub new_versions: HashMap<TableId, TableVersion>,
-    /// Dependency set of the statement, for liveness subscription.
-    #[schema(value_type = Vec<Uuid>)]
-    pub read_tables: Vec<TableId>,
-    /// Databases containing the read dependencies, for live subscriptions.
-    #[schema(value_type = Vec<Uuid>)]
-    pub read_database_ids: Vec<DatabaseId>,
-    /// The version every user table in [`ExecOutcome::read_tables`] was at
-    /// when this statement materialized it. Send these back as
-    /// [`ExecRequest::base_versions`] to guard tables the follow-up statement
-    /// writes. Versions for tables it only reads are ignored.
-    #[schema(value_type = HashMap<String, TableVersion>)]
-    pub read_versions: HashMap<TableId, TableVersion>,
-    /// Tables whose read hit the engine's row cap; aggregates over them are
-    /// incomplete.
-    pub truncated_tables: Vec<String>,
-    /// The column an `ALTER COLUMN … TYPE` changed.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub altered_column: Option<AlteredColumn>,
-}
-
-/// A column whose type an `ALTER COLUMN … TYPE` statement changed.
-#[derive(utoipa::ToSchema, Debug, Clone, PartialEq, Serialize)]
-pub struct AlteredColumn {
-    /// The table.
-    #[schema(value_type = Uuid)]
-    pub table_id: TableId,
-    /// The column placement; its id survives the change.
-    #[schema(value_type = Uuid)]
-    pub column_id: ColumnId,
-    /// The column's name.
-    pub name: String,
-    /// The type it became, as SQL spells it.
-    pub to: String,
-    /// Cells `USING NULL` emptied because their value did not fit.
-    pub cleared_cells: usize,
-    /// Cells that held several values and kept only their first.
-    pub trimmed_cells: usize,
 }
 
 // ===== Batched row writes =====
@@ -832,32 +715,17 @@ pub enum DatabaseError {
     Repo(rootcause::Report),
 }
 
-/// Errors for SQL analysis, execution, and write-back.
+/// Why a saved query could not be stored or read.
 #[derive(Debug, thiserror::Error)]
-pub enum QueryError {
-    /// The statement did not compile or a write was refused (syntax, an
-    /// unknown table or column, a value of the wrong type). Surfaced verbatim
-    /// — these errors are the product's "broken query" state.
-    #[error("sql error: {0}")]
-    Sql(String),
-    /// The statement writes to a read-only table (View-only grants) or was
-    /// sent through the read-only entry point.
-    #[error("read-only: {0}")]
-    ReadOnly(String),
-    /// `base_versions` was set and a written table has moved.
-    #[error("version conflict on table {table_id}")]
-    VersionConflict {
-        /// The table that changed underneath the caller.
-        table_id: TableId,
-    },
-    /// The statement exceeded the execution budget (time or row caps).
-    #[error("query budget exceeded")]
-    BudgetExceeded,
+pub enum SavedQueryError {
     /// The saved query, or the database it is scoped to, does not exist or
     /// is invisible to the viewer.
     #[error("not found")]
     NotFound,
-    /// Materialization or apply-side persistence failure.
-    #[error("query infrastructure error: {0:?}")]
-    Infrastructure(rootcause::Report),
+    /// The query is longer than any saved query may be.
+    #[error("the query is too long")]
+    TooLong,
+    /// Persistence failure.
+    #[error("repository error: {0:?}")]
+    Repo(rootcause::Report),
 }

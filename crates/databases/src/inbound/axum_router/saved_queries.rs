@@ -30,11 +30,9 @@ pub struct QueryPath {
     request_body = SaveQueryRequest,
     responses(
         (status = 201, body = SavedQuery),
-        (status = 400, description = "The query does not compile", body = ErrorResponse),
         (status = 401, description = "Missing or invalid credentials", body = ErrorResponse),
-        (status = 403, description = "The query is not a SELECT", body = ErrorResponse),
         (status = 404, description = "The database is missing or not visible", body = ErrorResponse),
-        (status = 422, description = "Query budget exceeded", body = ErrorResponse),
+        (status = 422, description = "The query is too long", body = ErrorResponse),
         (status = 500, body = ErrorResponse),
     )
 )]
@@ -43,7 +41,7 @@ pub async fn save_query_handler<S, Eas, Auth>(
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
     user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
     Json(req): Json<SaveQueryRequest>,
-) -> Result<(StatusCode, Json<SavedQuery>), QueryError>
+) -> Result<(StatusCode, Json<SavedQuery>), SavedQueryError>
 where
     S: DatabasesService,
     Eas: EntityAccessService,
@@ -75,7 +73,7 @@ pub async fn get_query_handler<S, Eas, Auth>(
     State(state): State<DatabasesRouterState<S, Eas, Auth>>,
     user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
     Path(QueryPath { query_id }): Path<QueryPath>,
-) -> Result<Json<SavedQuery>, QueryError>
+) -> Result<Json<SavedQuery>, SavedQueryError>
 where
     S: DatabasesService,
     Eas: EntityAccessService,
@@ -84,40 +82,6 @@ where
     state
         .service
         .get_query(viewer_of(&user), query_id)
-        .await
-        .map(Json)
-}
-
-/// Run a saved query as the caller; results are permission-filtered.
-#[utoipa::path(
-    post,
-    tag = "databases",
-    operation_id = "run_database_query",
-    path = "/databases/queries/{query_id}/run",
-    params(("query_id" = Uuid, Path, description = "Saved query id")),
-    responses(
-        (status = 200, body = ExecOutcome),
-        (status = 400, description = "The query no longer compiles", body = ErrorResponse),
-        (status = 401, description = "Missing or invalid credentials", body = ErrorResponse),
-        (status = 404, description = "Missing, or not readable by the caller", body = ErrorResponse),
-        (status = 422, description = "Query budget exceeded", body = ErrorResponse),
-        (status = 500, body = ErrorResponse),
-    )
-)]
-#[tracing::instrument(err, skip_all)]
-pub async fn run_query_handler<S, Eas, Auth>(
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
-    Path(QueryPath { query_id }): Path<QueryPath>,
-) -> Result<Json<ExecOutcome>, QueryError>
-where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
-{
-    state
-        .service
-        .run_query(viewer_of(&user), query_id)
         .await
         .map(Json)
 }

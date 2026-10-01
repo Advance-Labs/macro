@@ -33,26 +33,10 @@ async fn label_rename_preserves_the_binding_moves_the_sql_name_and_retries_idemp
         Some(&(table_id, TableVersion(2)))
     );
 
-    // SQL follows the label: the cell is the same, the name is new.
-    let answer = svc
-        .query_sql(viewer(OWNER), "SELECT task FROM guests".into())
-        .await
-        .unwrap();
-    assert_eq!(answer.results[0].columns[1].name, "Task");
+    // The cell stays where it was: the label moved, the binding did not.
     assert_eq!(
-        answer.results[0].rows,
-        vec![vec![
-            SqlValue::Text(row_id.to_string()),
-            SqlValue::Text("Sam".into())
-        ]]
-    );
-    let error = svc
-        .query_sql(viewer(OWNER), "SELECT name FROM guests".into())
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(error, QueryError::Sql(ref message) if message == "unknown column \"name\" in Offsite.Guests"),
-        "{error:?}"
+        cell(&world, row_id, column.property_definition_id),
+        Some(PropertyValue::Str("Sam".into()))
     );
     let detail = svc
         .get_database(
@@ -238,7 +222,8 @@ async fn rename_refuses_foreign_columns_tables_and_trashed_database() {
 #[tokio::test]
 async fn reusing_a_previous_label_keeps_the_renamed_columns_values_intact() {
     let seeded = seeded().await;
-    let (svc, db, table_id, row_id, column) = (
+    let (world, svc, db, table_id, row_id, column) = (
+        seeded.world,
         seeded.service,
         seeded.database_id,
         seeded.table_id,
@@ -299,16 +284,9 @@ async fn reusing_a_previous_label_keeps_the_renamed_columns_values_intact() {
 
     // The old label now names the new, empty column; the value stayed with
     // the renamed one.
-    let answer = svc
-        .query_sql(viewer(OWNER), "SELECT task, name FROM guests".into())
-        .await
-        .unwrap();
     assert_eq!(
-        answer.results[0].rows,
-        vec![vec![
-            SqlValue::Text(row_id.to_string()),
-            SqlValue::Text("Sam".into()),
-            SqlValue::Null,
-        ]]
+        cell(&world, row_id, renamed.definition.definition.id),
+        Some(PropertyValue::Str("Sam".into()))
     );
+    assert_eq!(cell(&world, row_id, added.definition.definition.id), None);
 }

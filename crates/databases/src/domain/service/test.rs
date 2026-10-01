@@ -1,7 +1,7 @@
-//! Service tests: the real `database_sql` engine over in-memory fakes for
-//! every port, so the whole exec pipeline (catalog → compile → fetch → fold
-//! → write) is exercised without Postgres, and every allow/deny decision is
-//! asserted at the service boundary.
+//! Service tests: the domain service over in-memory fakes for every port, so
+//! every write path (schema changes, typed ops, lifecycle) runs without
+//! Postgres, and every allow/deny decision is asserted at the service
+//! boundary.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -12,6 +12,7 @@ use entity_access::domain::models::{
 };
 use macro_event_broker::{EventBrokerError, MacroEvent, MacroEventBroker};
 use macro_user_id::user_id::MacroUserIdStr;
+use models_databases::{CellValue, CellWrite, DatabaseOp, OpResult, OptionRef, RowChanges};
 use models_properties::service::property_definition::PropertyDefinition;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
 use models_properties::service::property_option::{PropertyOption, PropertyOptionValue};
@@ -21,8 +22,8 @@ use uuid::Uuid;
 
 use super::*;
 use crate::domain::models::{
-    Column, ColumnBinding, ColumnConfig, PropertyDefinitionId, RowId, RowRef, RowWrite, RowWrites,
-    RowWritesOutcome, SqlValue, TableDeletion, TableOrderOutcome, TableVersion,
+    Column, ColumnBinding, ColumnConfig, OpRefusal, PropertyDefinitionId, RowId, RowRef, RowWrite,
+    RowWrites, RowWritesOutcome, TableDeletion, TableOrderOutcome, TableVersion,
 };
 
 mod casts;
@@ -1059,6 +1060,76 @@ fn receipt<T: RequiredPermission>(
     .expect("level satisfies the requirement")
 }
 
+fn edit(database_id: DatabaseId) -> EntityAccessReceipt<EditAccessLevel> {
+    receipt::<EditAccessLevel>(database_id, OWNER, AccessLevel::Owner)
+}
+
+fn table_version(world: &Shared, table_id: TableId) -> TableVersion {
+    world
+        .lock()
+        .unwrap()
+        .tables
+        .iter()
+        .find(|table| table.id == table_id)
+        .unwrap()
+        .version
+}
+
+fn option_id(world: &Shared, definition_id: PropertyDefinitionId, label: &str) -> Uuid {
+    world.lock().unwrap().definitions[&definition_id]
+        .property_options
+        .iter()
+        .find(|option| option.value == PropertyOptionValue::String(label.into()))
+        .unwrap()
+        .id
+}
+
+fn row_ids(world: &Shared, table_id: TableId) -> Vec<RowId> {
+    world.lock().unwrap().rows[&table_id]
+        .iter()
+        .map(|row| row.id)
+        .collect()
+}
+
+fn cell(world: &Shared, row: RowId, definition_id: PropertyDefinitionId) -> Option<PropertyValue> {
+    world
+        .lock()
+        .unwrap()
+        .cells
+        .get(&row)
+        .and_then(|cells| cells.get(&definition_id))
+        .cloned()
+}
+
+/// Insert one row per name into the seeded Guests table, answering their ids.
+async fn insert_names(seeded: &Seeded, names: &[&str]) -> Vec<RowId> {
+    let results = seeded
+        .service
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            vec![DatabaseOp::InsertRows {
+                table: seeded.table_id,
+                rows: names
+                    .iter()
+                    .map(|name| {
+                        vec![CellWrite {
+                            column: seeded.name_column.id,
+                            value: CellValue::Text((*name).into()),
+                        }]
+                    })
+                    .collect(),
+                create_missing_options: false,
+            }],
+        )
+        .await
+        .unwrap();
+    let [OpResult::RowsWritten { inserted, .. }] = results.as_slice() else {
+        panic!("expected one insert, got {results:?}");
+    };
+    inserted.clone()
+}
+
 /// The seeded world: database `Offsite` with one table
 /// `Guests(Name TEXT, Status SELECT[Going|Declined], Plus ones NUMBER)`
 /// holding one row (`Sam`, `Going`, `2`), owned by OWNER and shared
@@ -1153,17 +1224,33 @@ async fn seeded() -> Seeded {
         .or_default()
         .push((database.id, AccessLevel::View));
     let inserted = service
-        .exec_sql(
+        .apply_ops(
+            receipt::<EditAccessLevel>(database.id, OWNER, AccessLevel::Owner),
             viewer(OWNER),
-            ExecRequest {
-                scope: None,
-                sql: "INSERT INTO guests (name, status, \"Plus ones\") VALUES ('Sam', 'Going', 2)"
-                    .into(),
-                base_versions: None,
-            },
+            vec![DatabaseOp::InsertRows {
+                table: table_id,
+                rows: vec![vec![
+                    CellWrite {
+                        column: name_column,
+                        value: CellValue::Text("Sam".into()),
+                    },
+                    CellWrite {
+                        column: status_column,
+                        value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
+                    },
+                    CellWrite {
+                        column: plus_ones_column,
+                        value: CellValue::Number(2.0),
+                    },
+                ]],
+                create_missing_options: false,
+            }],
         )
         .await
         .unwrap();
+    let [OpResult::RowsWritten { inserted, .. }] = inserted.as_slice() else {
+        panic!("expected one insert, got {inserted:?}");
+    };
     // Tests count the batches their own writes make, not the seed row's.
     world.lock().unwrap().row_write_batches = 0;
     let column = |id: ColumnId| {
@@ -1179,7 +1266,7 @@ async fn seeded() -> Seeded {
     Seeded {
         database_id: database.id,
         table_id,
-        row_id: inserted.inserted_row_ids[0],
+        row_id: inserted[0],
         name_column: column(name_column),
         status_column: column(status_column),
         plus_ones_column: column(plus_ones_column),
@@ -1230,6 +1317,103 @@ async fn create_database_grants_owner_and_starter_table() {
         .await
         .unwrap_err();
     assert!(matches!(err, DatabaseError::InvalidSchemaOperation(_)));
+}
+
+#[tokio::test]
+async fn database_details_answer_every_live_database_the_viewer_holds_a_grant_on() {
+    let seeded = seeded().await;
+    let (svc, offsite, guests) = (seeded.service, seeded.database_id, seeded.table_id);
+    let sessions = svc
+        .create_table(
+            receipt::<EditAccessLevel>(offsite, OWNER, AccessLevel::Owner),
+            CreateTable {
+                database_id: offsite,
+                name: "Sessions".into(),
+            },
+        )
+        .await
+        .unwrap();
+    svc.reorder_tables(
+        receipt::<EditAccessLevel>(offsite, OWNER, AccessLevel::Owner),
+        vec![sessions.id, guests],
+    )
+    .await
+    .unwrap();
+    let venue = svc
+        .create_database(CreateDatabase {
+            name: "Venue".into(),
+            owner_id: user(OWNER),
+            acting_bot: None,
+        })
+        .await
+        .unwrap();
+    let archive = svc
+        .create_database(CreateDatabase {
+            name: "Archive".into(),
+            owner_id: user(OWNER),
+            acting_bot: None,
+        })
+        .await
+        .unwrap();
+    svc.trash_database(receipt::<OwnerAccessLevel>(
+        archive.id,
+        OWNER,
+        AccessLevel::Owner,
+    ))
+    .await
+    .unwrap();
+
+    let details = svc.database_details(viewer(OWNER)).await.unwrap();
+    assert_eq!(
+        details
+            .iter()
+            .map(|detail| (detail.database.name.as_str(), detail.grant))
+            .collect::<Vec<_>>(),
+        vec![
+            ("Offsite", AccessLevel::Owner),
+            ("Venue", AccessLevel::Owner)
+        ],
+        "the trashed Archive is left out"
+    );
+    assert_eq!(
+        details[0]
+            .tables
+            .iter()
+            .map(|table| table.table.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Sessions", "Guests"]
+    );
+    assert!(details[0].tables[0].columns.is_empty());
+    assert_eq!(
+        details[0].tables[1]
+            .columns
+            .iter()
+            .map(|column| column.definition.definition.display_name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Name", "Status", "Plus ones"]
+    );
+    assert_eq!(details[1].database.id, venue.id);
+    assert_eq!(details[1].tables[0].table.name, "Table 1");
+
+    let shared = svc.database_details(viewer(VIEWER)).await.unwrap();
+    assert_eq!(shared.len(), 1);
+    assert_eq!(shared[0].database.id, offsite);
+    assert_eq!(shared[0].grant, AccessLevel::View);
+    assert_eq!(
+        shared[0]
+            .tables
+            .iter()
+            .map(|table| table.table.id)
+            .collect::<Vec<_>>(),
+        vec![sessions.id, guests]
+    );
+
+    assert!(
+        svc.database_details(viewer(STRANGER))
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -1291,20 +1475,14 @@ async fn table_rename_moves_the_sql_name_and_retries_without_overwriting_a_new_n
         Some(&(table_id, TableVersion(2)))
     );
 
-    let answer = svc
-        .query_sql(viewer(OWNER), "SELECT name FROM attendees".into())
+    let detail = svc
+        .get_database(
+            receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::Owner),
+            viewer(OWNER),
+        )
         .await
         .unwrap();
-    assert_eq!(answer.results[0].rows.len(), 1);
-    assert_eq!(answer.results[0].rows[0][1], SqlValue::Text("Sam".into()));
-    let error = svc
-        .query_sql(viewer(OWNER), "SELECT name FROM guests".into())
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(error, QueryError::Sql(ref message) if message == "unknown table guests"),
-        "{error:?}"
-    );
+    assert_eq!(detail.tables[0].sql_name, "\"Offsite\".\"Attendees\"");
 
     let retried = svc
         .rename_table(
@@ -1408,7 +1586,7 @@ async fn trash_hides_the_database_and_restore_brings_it_back() {
     let trashed_at = world.lock().unwrap().databases[0].trashed_at;
     assert!(trashed_at.is_some());
 
-    // A trashed database is invisible to listing, reads, SQL, and renames.
+    // A trashed database is invisible to listing, reads, ops, and renames.
     assert!(svc.list_databases(viewer(OWNER)).await.unwrap().is_empty());
     let err = svc
         .get_database(
@@ -1419,13 +1597,17 @@ async fn trash_hides_the_database_and_restore_brings_it_back() {
         .unwrap_err();
     assert!(matches!(err, DatabaseError::NotFound));
     let err = svc
-        .query_sql(viewer(OWNER), "SELECT name FROM guests".into())
+        .apply_ops(
+            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
+            viewer(OWNER),
+            vec![DatabaseOp::DeleteRows {
+                table: seeded.table_id,
+                rows: vec![seeded.row_id],
+            }],
+        )
         .await
         .unwrap_err();
-    assert!(
-        matches!(err, QueryError::Sql(ref message) if message == "unknown table guests"),
-        "{err:?}"
-    );
+    assert!(matches!(err, DatabaseError::NotFound), "{err:?}");
     let err = svc
         .rename_database(
             receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
@@ -1571,707 +1753,7 @@ async fn schema_operations_respect_receipts() {
     assert!(detail.tables[0].columns.iter().all(|c| c.writable));
 }
 
-// ===== SQL: reads =====
-
-#[tokio::test]
-async fn select_answers_row_id_first_and_maps_every_value_kind() {
-    let seeded = seeded().await;
-    let (world, svc, database_id, table_id, row_id) = (
-        seeded.world,
-        seeded.service,
-        seeded.database_id,
-        seeded.table_id,
-        seeded.row_id,
-    );
-    svc.create_column(
-        receipt::<EditAccessLevel>(database_id, OWNER, AccessLevel::Owner),
-        viewer(OWNER),
-        CreateColumn {
-            infer_type: false,
-            table_id,
-            binding: ColumnBinding::NewDefinition {
-                name: "Confirmed".into(),
-                data_type: DataType::Boolean,
-                is_multi_select: false,
-                options: vec![],
-            },
-            config: None,
-        },
-    )
-    .await
-    .unwrap();
-    svc.create_column(
-        receipt::<EditAccessLevel>(database_id, OWNER, AccessLevel::Owner),
-        viewer(OWNER),
-        CreateColumn {
-            infer_type: false,
-            table_id,
-            binding: ColumnBinding::NewDefinition {
-                name: "Tags".into(),
-                data_type: DataType::Tag,
-                is_multi_select: true,
-                options: vec!["vip".into(), "speaker".into()],
-            },
-            config: None,
-        },
-    )
-    .await
-    .unwrap();
-    svc.exec_sql(
-        viewer(OWNER),
-        ExecRequest {
-            scope: None,
-            sql: format!(
-                "UPDATE guests SET confirmed = TRUE, tags = ['speaker', 'vip'] WHERE row_id = '{row_id}'"
-            ),
-            base_versions: None,
-        },
-    )
-    .await
-    .unwrap();
-
-    for caller in [OWNER, VIEWER] {
-        let outcome = svc
-            .query_sql(viewer(caller), "SELECT * FROM guests".into())
-            .await
-            .unwrap();
-        assert_eq!(outcome.results.len(), 1);
-        let result = &outcome.results[0];
-        assert_eq!(
-            result
-                .columns
-                .iter()
-                .map(|column| column.name.as_str())
-                .collect::<Vec<_>>(),
-            vec!["row_id", "Name", "Status", "Plus ones", "Confirmed", "Tags"]
-        );
-        assert_eq!(result.columns[0].origin, None);
-        assert_eq!(
-            result.columns[1].origin,
-            Some(("Guests".to_string(), "Name".to_string()))
-        );
-        assert_eq!(
-            result.rows,
-            vec![vec![
-                SqlValue::Text(row_id.to_string()),
-                SqlValue::Text("Sam".into()),
-                SqlValue::Text("Going".into()),
-                SqlValue::Real(2.0),
-                SqlValue::Integer(1),
-                SqlValue::Text("[\"speaker\",\"vip\"]".into()),
-            ]]
-        );
-        assert_eq!(outcome.changes_applied, 0);
-        assert!(outcome.new_versions.is_empty());
-        assert!(outcome.inserted_row_ids.is_empty());
-        assert_eq!(outcome.read_tables, vec![table_id]);
-        assert_eq!(outcome.read_database_ids, vec![database_id]);
-        assert_eq!(
-            outcome.read_versions,
-            HashMap::from([(table_id, world.lock().unwrap().tables[0].version)])
-        );
-        assert!(outcome.truncated_tables.is_empty());
-    }
-}
-
-#[tokio::test]
-async fn row_position_orders_rows_by_their_stored_position() {
-    let seeded = seeded().await;
-    let (svc, world, table_id) = (seeded.service, seeded.world, seeded.table_id);
-    svc.exec_sql(
-        viewer(OWNER),
-        ExecRequest {
-            scope: None,
-            sql: "INSERT INTO guests (name) VALUES ('Ada'), ('Bo')".into(),
-            base_versions: None,
-        },
-    )
-    .await
-    .unwrap();
-    // The store lists Sam, Ada, Bo; their positions put Bo first and Sam last.
-    for (row, position) in world
-        .lock()
-        .unwrap()
-        .rows
-        .get_mut(&table_id)
-        .unwrap()
-        .iter_mut()
-        .zip(["0003", "0002", "0001"])
-    {
-        row.position = position.into();
-    }
-
-    let ascending = svc
-        .query_sql(
-            viewer(OWNER),
-            "SELECT name FROM guests ORDER BY row_position".into(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        ascending.results[0]
-            .rows
-            .iter()
-            .map(|row| row[1].clone())
-            .collect::<Vec<_>>(),
-        vec![
-            SqlValue::Text("Bo".into()),
-            SqlValue::Text("Ada".into()),
-            SqlValue::Text("Sam".into()),
-        ]
-    );
-
-    let descending = svc
-        .query_sql(
-            viewer(OWNER),
-            "SELECT name, row_position FROM guests ORDER BY row_position DESC".into(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        descending.results[0]
-            .columns
-            .iter()
-            .map(|column| column.name.as_str())
-            .collect::<Vec<_>>(),
-        vec!["row_id", "Name", "row_position"]
-    );
-    assert_eq!(
-        descending.results[0]
-            .rows
-            .iter()
-            .map(|row| row[1..].to_vec())
-            .collect::<Vec<_>>(),
-        vec![
-            vec![SqlValue::Text("Sam".into()), SqlValue::Text("0003".into())],
-            vec![SqlValue::Text("Ada".into()), SqlValue::Text("0002".into())],
-            vec![SqlValue::Text("Bo".into()), SqlValue::Text("0001".into())],
-        ]
-    );
-}
-
-#[tokio::test]
-async fn select_filters_orders_and_counts_by_group() {
-    let seeded = seeded().await;
-    let (svc, table_id) = (seeded.service, seeded.table_id);
-    svc.exec_sql(
-        viewer(OWNER),
-        ExecRequest {
-            scope: None,
-            sql: "INSERT INTO guests (name, status, \"Plus ones\") VALUES ('Ada', 'Declined', 0), ('Bo', 'Going', 1), ('Cy', NULL, 3)".into(),
-            base_versions: None,
-        },
-    )
-    .await
-    .unwrap();
-
-    // A select option pushes down to the store; text and numbers fold here.
-    let going = svc
-        .query_sql(
-            viewer(OWNER),
-            "SELECT name, \"Plus ones\" FROM guests WHERE status = 'Going' AND \"Plus ones\" > 1 ORDER BY name DESC".into(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        going.results[0]
-            .columns
-            .iter()
-            .map(|column| column.name.as_str())
-            .collect::<Vec<_>>(),
-        vec!["row_id", "Name", "Plus ones"]
-    );
-    assert_eq!(
-        going.results[0]
-            .rows
-            .iter()
-            .map(|row| row[1..].to_vec())
-            .collect::<Vec<_>>(),
-        vec![vec![SqlValue::Text("Sam".into()), SqlValue::Real(2.0)]]
-    );
-
-    let ordered = svc
-        .query_sql(
-            viewer(OWNER),
-            "SELECT name FROM guests WHERE name LIKE '%a%' OR status IS NULL ORDER BY \"Plus ones\" DESC LIMIT 2".into(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        ordered.results[0]
-            .rows
-            .iter()
-            .map(|row| row[1].clone())
-            .collect::<Vec<_>>(),
-        vec![SqlValue::Text("Cy".into()), SqlValue::Text("Sam".into())]
-    );
-
-    // Aggregates are not row-shaped: no `row_id`, numbers as reals.
-    let total = svc
-        .query_sql(viewer(OWNER), "SELECT COUNT(*) FROM guests".into())
-        .await
-        .unwrap();
-    assert_eq!(total.results[0].columns.len(), 1);
-    assert_eq!(total.results[0].columns[0].name, "COUNT(*)");
-    assert_eq!(total.results[0].rows, vec![vec![SqlValue::Real(4.0)]]);
-    assert_eq!(total.read_tables, vec![table_id]);
-
-    let by_status = svc
-        .query_sql(
-            viewer(OWNER),
-            "SELECT status, COUNT(*) FROM guests GROUP BY status ORDER BY status".into(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        by_status.results[0]
-            .columns
-            .iter()
-            .map(|column| column.name.as_str())
-            .collect::<Vec<_>>(),
-        vec!["Status", "COUNT(*)"]
-    );
-    assert_eq!(
-        by_status.results[0].rows,
-        vec![
-            vec![SqlValue::Text("Going".into()), SqlValue::Real(2.0)],
-            vec![SqlValue::Text("Declined".into()), SqlValue::Real(1.0)],
-            vec![SqlValue::Null, SqlValue::Real(1.0)],
-        ]
-    );
-}
-
-#[tokio::test]
-async fn compile_errors_surface_the_engines_message() {
-    let seeded = seeded().await;
-    let (world, svc, row_id) = (seeded.world, seeded.service, seeded.row_id);
-    let version = world.lock().unwrap().tables[0].version;
-
-    let error = svc
-        .query_sql(viewer(OWNER), "SELECT nam FROM guests".into())
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(
-            error,
-            QueryError::Sql(ref message)
-                if message == "unknown column \"nam\" in Offsite.Guests — did you mean \"Name\"?"
-        ),
-        "{error:?}"
-    );
-
-    let error = svc
-        .exec_sql(
-            viewer(OWNER),
-            ExecRequest {
-                scope: None,
-                sql: "INSERT INTO guests (name, status) VALUES ('Bo', 'Waitlisted')".into(),
-                base_versions: None,
-            },
-        )
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(
-            error,
-            QueryError::Sql(ref message)
-                if message == "\"Waitlisted\" is not an option of \"Status\" (Going, Declined)"
-        ),
-        "{error:?}"
-    );
-
-    let error = svc
-        .exec_sql(
-            viewer(OWNER),
-            ExecRequest {
-                scope: None,
-                sql: format!(
-                    "UPDATE guests SET status = ['Going', 'Declined'] WHERE row_id = '{row_id}'"
-                ),
-                base_versions: None,
-            },
-        )
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(
-            error,
-            QueryError::Sql(ref message)
-                if message == "\"Status\" holds one value; a list of 2 was given"
-        ),
-        "{error:?}"
-    );
-
-    let error = svc
-        .query_sql(
-            viewer(OWNER),
-            "SELECT name FROM guests WHERE \"Plus ones\" = 'two'".into(),
-        )
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(
-            error,
-            QueryError::Sql(ref message)
-                if message == "\"Plus ones\" is a number column; compare it to a number"
-        ),
-        "{error:?}"
-    );
-
-    let error = svc
-        .query_sql(
-            viewer(OWNER),
-            "SELECT name FROM guests; DROP TABLE guests".into(),
-        )
-        .await
-        .unwrap_err();
-    assert!(matches!(error, QueryError::Sql(_)), "{error:?}");
-
-    let w = world.lock().unwrap();
-    assert_eq!(w.tables[0].version, version);
-    assert_eq!(w.rows.values().map(Vec::len).sum::<usize>(), 1);
-    assert_eq!(w.cells.len(), 1);
-}
-
-#[tokio::test]
-async fn bare_table_names_shared_across_databases_need_qualifying() {
-    let world: Shared = Arc::default();
-    let svc = service(&world);
-    for name in ["First", "Second"] {
-        svc.create_database(CreateDatabase {
-            name: name.into(),
-            owner_id: user(OWNER),
-            acting_bot: None,
-        })
-        .await
-        .unwrap();
-    }
-
-    let error = svc
-        .query_sql(viewer(OWNER), "SELECT COUNT(*) FROM \"Table 1\"".into())
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(
-            error,
-            QueryError::Sql(ref message)
-                if message == "table \"Table 1\" exists in First and Second — qualify it as First.Table 1 or Second.Table 1"
-        ),
-        "{error:?}"
-    );
-
-    let qualified = svc
-        .query_sql(
-            viewer(OWNER),
-            "SELECT COUNT(*) FROM second.\"Table 1\"".into(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(qualified.results[0].rows, vec![vec![SqlValue::Real(0.0)]]);
-    assert_eq!(
-        qualified.read_tables,
-        vec![world.lock().unwrap().tables[1].id]
-    );
-}
-
-#[tokio::test]
-async fn a_scoped_statement_reaches_its_own_table_past_an_identically_named_database() {
-    let world: Shared = Arc::default();
-    let svc = service(&world);
-    for _ in 0..2 {
-        svc.create_database(CreateDatabase {
-            name: "Untitled database".into(),
-            owner_id: user(OWNER),
-            acting_bot: None,
-        })
-        .await
-        .unwrap();
-    }
-    let (first, second) = {
-        let w = world.lock().unwrap();
-        (w.databases[0].id, w.databases[1].id)
-    };
-
-    let unscoped = svc
-        .query_sql(
-            viewer(OWNER),
-            "SELECT COUNT(*) FROM \"Untitled database\".\"Table 1\"".into(),
-        )
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(unscoped, QueryError::Sql(ref message) if message.starts_with("table \"Table 1\" exists in")),
-        "{unscoped:?}"
-    );
-
-    let scoped = svc
-        .exec_sql(
-            viewer(OWNER),
-            ExecRequest {
-                scope: Some(second),
-                sql: "INSERT INTO \"Untitled database\".\"Table 1\" DEFAULT VALUES".into(),
-                base_versions: None,
-            },
-        )
-        .await
-        .unwrap();
-    assert_eq!(scoped.inserted_row_ids.len(), 1);
-    let w = world.lock().unwrap();
-    let second_table = w
-        .tables
-        .iter()
-        .find(|t| t.database_id == second)
-        .unwrap()
-        .id;
-    let first_table = w.tables.iter().find(|t| t.database_id == first).unwrap().id;
-    assert_eq!(w.rows.get(&second_table).map(Vec::len), Some(1));
-    assert!(w.rows.get(&first_table).is_none_or(Vec::is_empty));
-}
-
-// ===== SQL: writes =====
-
-#[tokio::test]
-async fn insert_mints_rows_and_lands_cells_in_the_cell_store() {
-    let seeded = seeded().await;
-    let (world, svc, database_id, table_id, status_column) = (
-        seeded.world,
-        seeded.service,
-        seeded.database_id,
-        seeded.table_id,
-        seeded.status_column,
-    );
-    let declined = world.lock().unwrap().definitions[&status_column.property_definition_id]
-        .property_options
-        .iter()
-        .find(|option| option.value == PropertyOptionValue::String("Declined".into()))
-        .unwrap()
-        .id;
-    let published_before = world.lock().unwrap().published.len();
-    world.lock().unwrap().broker_events.clear();
-
-    let outcome = svc
-        .exec_sql(
-            viewer(OWNER),
-            ExecRequest {
-                scope: None,
-                sql: "INSERT INTO guests (name, status, \"Plus ones\") VALUES ('Ada', 'Declined', 1), ('Bo', NULL, 0)".into(),
-                base_versions: None,
-            },
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(outcome.inserted_row_ids.len(), 2);
-    assert_eq!(outcome.changes_applied, 2);
-    assert!(outcome.results.is_empty());
-    assert_eq!(
-        outcome.new_versions,
-        HashMap::from([(table_id, TableVersion(2))])
-    );
-    assert!(outcome.read_tables.is_empty());
-    let (ada, bo) = (outcome.inserted_row_ids[0], outcome.inserted_row_ids[1]);
-    let w = world.lock().unwrap();
-    assert_eq!(
-        w.rows[&table_id]
-            .iter()
-            .map(|row| row.id)
-            .collect::<Vec<_>>(),
-        vec![seeded.row_id, ada, bo]
-    );
-    assert_eq!(w.rows[&table_id][2].position, "0002");
-    assert_eq!(
-        w.cells[&ada],
-        HashMap::from([
-            (
-                seeded.name_column.property_definition_id,
-                PropertyValue::Str("Ada".into())
-            ),
-            (
-                status_column.property_definition_id,
-                PropertyValue::SelectOption(vec![declined])
-            ),
-            (
-                seeded.plus_ones_column.property_definition_id,
-                PropertyValue::Num(1.0)
-            ),
-        ])
-    );
-    assert_eq!(
-        w.cells[&bo],
-        HashMap::from([
-            (
-                seeded.name_column.property_definition_id,
-                PropertyValue::Str("Bo".into())
-            ),
-            (
-                seeded.plus_ones_column.property_definition_id,
-                PropertyValue::Num(0.0)
-            ),
-        ]),
-        "NULL is not a cell"
-    );
-    assert_eq!(w.tables[0].version, TableVersion(2));
-    assert_eq!(w.published.len(), published_before + 1);
-    assert_eq!(w.published.last(), Some(&(table_id, TableVersion(2))));
-    assert_eq!(w.broker_events.len(), 1);
-    assert_eq!(w.broker_events[0]["event_type"], "database.tables_changed");
-    assert_eq!(
-        w.broker_events[0]["metadata"]["database_id"],
-        database_id.to_string()
-    );
-    assert_eq!(
-        w.broker_events[0]["metadata"]["attribution"]["actor"],
-        OWNER
-    );
-}
-
-#[tokio::test]
-async fn insert_default_values_mints_an_empty_row() {
-    let seeded = seeded().await;
-    let (world, svc, table_id) = (seeded.world, seeded.service, seeded.table_id);
-    let outcome = svc
-        .exec_sql(
-            viewer(OWNER),
-            ExecRequest {
-                scope: None,
-                sql: "INSERT INTO guests DEFAULT VALUES".into(),
-                base_versions: None,
-            },
-        )
-        .await
-        .unwrap();
-    assert_eq!(outcome.inserted_row_ids.len(), 1);
-    assert_eq!(outcome.changes_applied, 1);
-    let w = world.lock().unwrap();
-    assert_eq!(w.rows[&table_id].len(), 2);
-    assert!(!w.cells.contains_key(&outcome.inserted_row_ids[0]));
-}
-
-#[tokio::test]
-async fn update_by_row_id_sets_and_clears_cells() {
-    let seeded = seeded().await;
-    let (world, svc, table_id, row_id) =
-        (seeded.world, seeded.service, seeded.table_id, seeded.row_id);
-    let declined = world.lock().unwrap().definitions[&seeded.status_column.property_definition_id]
-        .property_options
-        .iter()
-        .find(|option| option.value == PropertyOptionValue::String("Declined".into()))
-        .unwrap()
-        .id;
-    let published_before = world.lock().unwrap().published.len();
-
-    let outcome = svc
-        .exec_sql(
-            viewer(OWNER),
-            ExecRequest {
-                scope: None,
-                sql: format!(
-                    "UPDATE guests SET status = 'Declined', \"Plus ones\" = NULL WHERE row_id = '{row_id}'"
-                ),
-                base_versions: None,
-            },
-        )
-        .await
-        .unwrap();
-    assert_eq!(outcome.changes_applied, 1);
-    assert!(outcome.inserted_row_ids.is_empty());
-    assert_eq!(
-        outcome.new_versions,
-        HashMap::from([(table_id, TableVersion(2))])
-    );
-    {
-        let w = world.lock().unwrap();
-        assert_eq!(
-            w.cells[&row_id],
-            HashMap::from([
-                (
-                    seeded.name_column.property_definition_id,
-                    PropertyValue::Str("Sam".into())
-                ),
-                (
-                    seeded.status_column.property_definition_id,
-                    PropertyValue::SelectOption(vec![declined])
-                ),
-            ])
-        );
-        assert_eq!(w.published.len(), published_before + 1);
-    }
-
-    let read = svc
-        .query_sql(
-            viewer(OWNER),
-            "SELECT status, \"Plus ones\" FROM guests".into(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        read.results[0].rows,
-        vec![vec![
-            SqlValue::Text(row_id.to_string()),
-            SqlValue::Text("Declined".into()),
-            SqlValue::Null,
-        ]]
-    );
-}
-
-#[tokio::test]
-async fn delete_by_row_id_removes_the_row_and_its_cells() {
-    let seeded = seeded().await;
-    let (world, svc, table_id, row_id) =
-        (seeded.world, seeded.service, seeded.table_id, seeded.row_id);
-    let outcome = svc
-        .exec_sql(
-            viewer(OWNER),
-            ExecRequest {
-                scope: None,
-                sql: format!("DELETE FROM guests WHERE row_id = '{row_id}'"),
-                base_versions: None,
-            },
-        )
-        .await
-        .unwrap();
-    assert_eq!(outcome.changes_applied, 1);
-    assert_eq!(
-        outcome.new_versions,
-        HashMap::from([(table_id, TableVersion(2))])
-    );
-    {
-        let w = world.lock().unwrap();
-        assert!(w.rows[&table_id].is_empty());
-        assert!(!w.cells.contains_key(&row_id));
-    }
-    let read = svc
-        .query_sql(viewer(OWNER), "SELECT name FROM guests".into())
-        .await
-        .unwrap();
-    assert_eq!(
-        read.results[0]
-            .columns
-            .iter()
-            .map(|column| column.name.as_str())
-            .collect::<Vec<_>>(),
-        vec!["row_id", "Name"]
-    );
-    assert!(read.results[0].rows.is_empty());
-
-    // Deleting it again names a row the table no longer has.
-    let error = svc
-        .exec_sql(
-            viewer(OWNER),
-            ExecRequest {
-                scope: None,
-                sql: format!("DELETE FROM guests WHERE row_id = '{row_id}'"),
-                base_versions: None,
-            },
-        )
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(error, QueryError::Sql(ref message) if *message == format!("row 1: no row {row_id} in this table")),
-        "{error:?}"
-    );
-    assert_eq!(world.lock().unwrap().tables[0].version, TableVersion(2));
-}
+// ===== Row writes =====
 
 #[tokio::test]
 async fn a_write_to_a_row_of_another_table_is_refused() {
@@ -2293,171 +1775,116 @@ async fn a_write_to_a_row_of_another_table_is_refused() {
         )
         .await
         .unwrap();
-    svc.create_column(
-        receipt::<EditAccessLevel>(database_id, OWNER, AccessLevel::Owner),
-        viewer(OWNER),
-        CreateColumn {
-            infer_type: false,
-            table_id: sessions.id,
-            binding: ColumnBinding::NewDefinition {
-                name: "Title".into(),
-                data_type: DataType::String,
-                is_multi_select: false,
-                options: vec![],
-            },
-            config: None,
-        },
-    )
-    .await
-    .unwrap();
-    let cells_before = world.lock().unwrap().cells.clone();
-    let sessions_version = world
-        .lock()
-        .unwrap()
-        .tables
-        .iter()
-        .find(|table| table.id == sessions.id)
-        .unwrap()
-        .version;
-
-    let error = svc
-        .exec_sql(
+    let title = svc
+        .create_column(
+            receipt::<EditAccessLevel>(database_id, OWNER, AccessLevel::Owner),
             viewer(OWNER),
-            ExecRequest {
-                scope: None,
-                sql: format!("UPDATE sessions SET title = 'Hijacked' WHERE row_id = '{row_id}'"),
-                base_versions: None,
-            },
-        )
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(error, QueryError::Sql(ref message) if *message == format!("row 1: no row {row_id} in this table")),
-        "{error:?}"
-    );
-    let error = svc
-        .exec_sql(
-            viewer(OWNER),
-            ExecRequest {
-                scope: None,
-                sql: format!("DELETE FROM sessions WHERE row_id = '{row_id}'"),
-                base_versions: None,
-            },
-        )
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(error, QueryError::Sql(ref message) if *message == format!("row 1: no row {row_id} in this table")),
-        "{error:?}"
-    );
-
-    let w = world.lock().unwrap();
-    assert_eq!(w.cells, cells_before);
-    assert_eq!(w.rows[&table_id].len(), 1);
-    assert_eq!(
-        w.tables
-            .iter()
-            .find(|table| table.id == sessions.id)
-            .unwrap()
-            .version,
-        sessions_version
-    );
-}
-
-#[tokio::test]
-async fn queries_refuse_writes_even_for_owners_without_changes_or_events() {
-    let seeded = seeded().await;
-    let (world, svc, table_id, row_id) =
-        (seeded.world, seeded.service, seeded.table_id, seeded.row_id);
-    let (cells, published, events, version) = {
-        let world = world.lock().unwrap();
-        (
-            world.cells.clone(),
-            world.published.len(),
-            world.broker_events.len(),
-            world.tables[0].version,
-        )
-    };
-    for sql in [
-        format!("UPDATE guests SET status = 'Declined' WHERE row_id = '{row_id}'"),
-        format!("DELETE FROM guests WHERE row_id = '{row_id}'"),
-        "INSERT INTO guests (name) VALUES ('Intruder')".to_string(),
-        "INSERT INTO guests DEFAULT VALUES".to_string(),
-    ] {
-        let error = svc.query_sql(viewer(OWNER), sql.clone()).await.unwrap_err();
-        assert!(
-            matches!(error, QueryError::ReadOnly(ref message) if message == "queries cannot change data"),
-            "{sql}: {error:?}"
-        );
-    }
-    let world = world.lock().unwrap();
-    assert_eq!(world.cells, cells);
-    assert_eq!(world.published.len(), published);
-    assert_eq!(world.broker_events.len(), events);
-    assert_eq!(world.tables[0].version, version);
-    assert_eq!(world.rows[&table_id].len(), 1);
-}
-
-#[tokio::test]
-async fn view_grant_can_read_but_not_write() {
-    let seeded = seeded().await;
-    let (world, svc, table_id, row_id) =
-        (seeded.world, seeded.service, seeded.table_id, seeded.row_id);
-    let read = svc
-        .exec_sql(
-            viewer(VIEWER),
-            ExecRequest {
-                scope: None,
-                sql: "SELECT COUNT(*) FROM guests".into(),
-                base_versions: None,
+            CreateColumn {
+                infer_type: false,
+                table_id: sessions.id,
+                binding: ColumnBinding::NewDefinition {
+                    name: "Title".into(),
+                    data_type: DataType::String,
+                    is_multi_select: false,
+                    options: vec![],
+                },
+                config: None,
             },
         )
         .await
         .unwrap();
-    assert_eq!(read.results[0].rows, vec![vec![SqlValue::Real(1.0)]]);
+    let cells_before = world.lock().unwrap().cells.clone();
+    let sessions_version = table_version(&world, sessions.id);
 
-    for sql in [
-        format!("DELETE FROM guests WHERE row_id = '{row_id}'"),
-        format!("UPDATE guests SET name = 'Changed' WHERE row_id = '{row_id}'"),
-        "INSERT INTO guests (name) VALUES ('Intruder')".to_string(),
-    ] {
-        let err = svc
-            .exec_sql(
-                viewer(VIEWER),
-                ExecRequest {
-                    scope: None,
-                    sql: sql.clone(),
-                    base_versions: None,
+    let error = svc
+        .apply_ops(
+            receipt::<EditAccessLevel>(database_id, OWNER, AccessLevel::Owner),
+            viewer(OWNER),
+            vec![DatabaseOp::UpdateRows {
+                table: sessions.id,
+                changes: RowChanges::Uniform {
+                    rows: vec![row_id],
+                    cells: vec![CellWrite {
+                        column: title,
+                        value: CellValue::Text("Hijacked".into()),
+                    }],
                 },
-            )
-            .await
-            .unwrap_err();
-        assert!(
-            matches!(err, QueryError::ReadOnly(ref message) if message == "table Guests is read-only"),
-            "{sql}: {err:?}"
-        );
-    }
-    {
-        let w = world.lock().unwrap();
-        assert_eq!(w.rows[&table_id].len(), 1);
-        assert_eq!(w.tables[0].version, TableVersion(1));
-    }
-
-    // A stranger's catalog has no such table at all.
-    let err = svc
-        .exec_sql(
-            viewer(STRANGER),
-            ExecRequest {
-                scope: None,
-                sql: "SELECT * FROM guests".into(),
-                base_versions: None,
-            },
+                create_missing_options: false,
+            }],
         )
         .await
         .unwrap_err();
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
+    assert_eq!(
+        refusal,
+        OpRefusal {
+            op: 0,
+            row: Some(0),
+            column: None,
+            reason: format!("no row {row_id} in this table"),
+        }
+    );
+    let error = svc
+        .apply_ops(
+            receipt::<EditAccessLevel>(database_id, OWNER, AccessLevel::Owner),
+            viewer(OWNER),
+            vec![DatabaseOp::DeleteRows {
+                table: sessions.id,
+                rows: vec![row_id],
+            }],
+        )
+        .await
+        .unwrap_err();
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
+    assert_eq!(
+        refusal,
+        OpRefusal {
+            op: 0,
+            row: Some(0),
+            column: None,
+            reason: format!("no row {row_id} in this table"),
+        }
+    );
+
+    assert_eq!(world.lock().unwrap().cells, cells_before);
+    assert_eq!(row_ids(&world, table_id), vec![row_id]);
+    assert_eq!(table_version(&world, sessions.id), sessions_version);
+}
+
+#[tokio::test]
+async fn a_view_grant_reads_but_cannot_be_receipted_for_ops() {
+    let seeded = seeded().await;
+
+    let edit = EntityAccessReceipt::<EditAccessLevel>::try_new_authenticated_user(
+        user(VIEWER),
+        Entity {
+            entity_id: seeded.database_id.to_string(),
+            entity_type: EntityType::Database,
+        },
+        EntityPermission::AccessLevel {
+            access_level: AccessLevel::View,
+        },
+    );
+    assert!(edit.is_err(), "ops need an edit receipt");
+
+    let detail = seeded
+        .service
+        .get_database(
+            receipt::<ViewAccessLevel>(seeded.database_id, VIEWER, AccessLevel::View),
+            viewer(VIEWER),
+        )
+        .await
+        .unwrap();
+    assert_eq!(detail.grant, AccessLevel::View);
     assert!(
-        matches!(err, QueryError::Sql(ref message) if message == "unknown table guests"),
-        "{err:?}"
+        detail.tables[0]
+            .columns
+            .iter()
+            .all(|column| !column.writable)
     );
 }
 
@@ -2483,159 +1910,83 @@ async fn grants_scope_writes_per_database() {
         table.name = "Rooms".into();
         table.id
     };
-    svc.create_column(
-        receipt::<EditAccessLevel>(venue.id, VIEWER, AccessLevel::Owner),
-        viewer(VIEWER),
-        CreateColumn {
-            infer_type: false,
-            table_id: rooms,
-            binding: ColumnBinding::NewDefinition {
-                name: "Name".into(),
-                data_type: DataType::String,
-                is_multi_select: false,
-                options: vec![],
-            },
-            config: None,
-        },
-    )
-    .await
-    .unwrap();
-
-    // VIEWER writes their own database and only reads OWNER's.
-    let inserted = svc
-        .exec_sql(
+    let room_name = svc
+        .create_column(
+            receipt::<EditAccessLevel>(venue.id, VIEWER, AccessLevel::Owner),
             viewer(VIEWER),
-            ExecRequest {
-                scope: None,
-                sql: "INSERT INTO rooms (name) VALUES ('Main Hall')".into(),
-                base_versions: None,
+            CreateColumn {
+                infer_type: false,
+                table_id: rooms,
+                binding: ColumnBinding::NewDefinition {
+                    name: "Name".into(),
+                    data_type: DataType::String,
+                    is_multi_select: false,
+                    options: vec![],
+                },
+                config: None,
             },
         )
         .await
         .unwrap();
-    assert_eq!(
-        inserted.new_versions,
-        HashMap::from([(rooms, TableVersion(1))])
-    );
-    let err = svc
-        .exec_sql(
+
+    // VIEWER writes their own database...
+    let written = svc
+        .apply_ops(
+            receipt::<EditAccessLevel>(venue.id, VIEWER, AccessLevel::Owner),
             viewer(VIEWER),
-            ExecRequest {
-                scope: None,
-                sql: "INSERT INTO guests (name) VALUES ('Main Hall')".into(),
-                base_versions: None,
-            },
+            vec![DatabaseOp::InsertRows {
+                table: rooms,
+                rows: vec![vec![CellWrite {
+                    column: room_name,
+                    value: CellValue::Text("Main Hall".into()),
+                }]],
+                create_missing_options: false,
+            }],
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        written.as_slice(),
+        [OpResult::RowsWritten {
+            table_version: TableVersion(1),
+            affected: 1,
+            ..
+        }]
+    ));
+
+    // ...but their receipt on it reaches no table of OWNER's.
+    let error = svc
+        .apply_ops(
+            receipt::<EditAccessLevel>(venue.id, VIEWER, AccessLevel::Owner),
+            viewer(VIEWER),
+            vec![DatabaseOp::InsertRows {
+                table: seeded.table_id,
+                rows: vec![vec![]],
+                create_missing_options: false,
+            }],
         )
         .await
         .unwrap_err();
-    assert!(
-        matches!(err, QueryError::ReadOnly(ref message) if message == "table Guests is read-only"),
-        "{err:?}"
-    );
-    let both = svc
-        .query_sql(viewer(VIEWER), "SELECT name FROM rooms".into())
-        .await
-        .unwrap();
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
     assert_eq!(
-        both.results[0].rows[0][1],
-        SqlValue::Text("Main Hall".into())
+        refusal.reason,
+        format!("table {} is not in this database", seeded.table_id)
     );
-    assert_eq!(both.read_database_ids, vec![venue.id]);
 
-    // OWNER has no grant on Venue: the table does not exist for them.
-    let err = svc
-        .query_sql(viewer(OWNER), "SELECT * FROM rooms".into())
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(err, QueryError::Sql(ref message) if message == "unknown table rooms"),
-        "{err:?}"
+    // OWNER has no grant on Venue: it is not theirs to list.
+    let listed = svc.list_databases(viewer(OWNER)).await.unwrap();
+    assert_eq!(
+        listed
+            .iter()
+            .map(|listed| listed.database.id)
+            .collect::<Vec<_>>(),
+        vec![seeded.database_id]
     );
     let w = world.lock().unwrap();
     assert_eq!(w.rows[&rooms].len(), 1);
     assert_eq!(w.rows[&seeded.table_id].len(), 1);
-}
-
-#[tokio::test]
-async fn has_predicate_runs_end_to_end() {
-    let seeded = seeded().await;
-    let (svc, database_id, table_id) = (seeded.service, seeded.database_id, seeded.table_id);
-    svc.create_column(
-        receipt::<EditAccessLevel>(database_id, OWNER, AccessLevel::Owner),
-        viewer(OWNER),
-        CreateColumn {
-            infer_type: false,
-            table_id,
-            binding: ColumnBinding::NewDefinition {
-                name: "Tags".into(),
-                data_type: DataType::Tag,
-                is_multi_select: true,
-                options: vec!["vip".into()],
-            },
-            config: None,
-        },
-    )
-    .await
-    .unwrap();
-    svc.exec_sql(
-        viewer(OWNER),
-        ExecRequest {
-            scope: None,
-            sql: "INSERT INTO guests (name, tags) VALUES ('Tara', ['vip']), ('Uma', NULL)".into(),
-            base_versions: None,
-        },
-    )
-    .await
-    .unwrap();
-
-    let vip = svc
-        .query_sql(
-            viewer(OWNER),
-            "SELECT name FROM guests WHERE tags HAS 'vip' ORDER BY name".into(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        vip.results[0]
-            .rows
-            .iter()
-            .map(|row| row[1].clone())
-            .collect::<Vec<_>>(),
-        vec![SqlValue::Text("Tara".into())]
-    );
-    assert_eq!(vip.read_tables, vec![table_id]);
-
-    let not_vip = svc
-        .query_sql(
-            viewer(OWNER),
-            "SELECT name FROM guests WHERE tags NOT HAS 'vip' ORDER BY name".into(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        not_vip.results[0]
-            .rows
-            .iter()
-            .map(|row| row[1].clone())
-            .collect::<Vec<_>>(),
-        vec![SqlValue::Text("Sam".into()), SqlValue::Text("Uma".into())]
-    );
-
-    let err = svc
-        .exec_sql(
-            viewer(OWNER),
-            ExecRequest {
-                scope: None,
-                sql: "INSERT INTO guests (name, tags) VALUES ('Vic', ['nope'])".into(),
-                base_versions: None,
-            },
-        )
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(err, QueryError::Sql(ref message) if message == "\"nope\" is not an option of \"Tags\" (vip)"),
-        "{err:?}"
-    );
 }
 
 // ===== Select options are explicit schema =====
@@ -2644,45 +1995,50 @@ async fn has_predicate_runs_end_to_end() {
 async fn a_select_column_with_no_options_accepts_nothing() {
     let seeded = seeded().await;
     let (svc, database_id, table_id) = (seeded.service, seeded.database_id, seeded.table_id);
-    svc.create_column(
-        receipt::<EditAccessLevel>(database_id, OWNER, AccessLevel::Owner),
-        viewer(OWNER),
-        CreateColumn {
-            infer_type: false,
-            table_id,
-            binding: ColumnBinding::NewDefinition {
-                name: "Stage".into(),
-                data_type: DataType::SelectString,
-                is_multi_select: false,
-                options: vec![],
-            },
-            config: None,
-        },
-    )
-    .await
-    .unwrap();
-
-    let err = svc
-        .exec_sql(
+    let stage = svc
+        .create_column(
+            receipt::<EditAccessLevel>(database_id, OWNER, AccessLevel::Owner),
             viewer(OWNER),
-            ExecRequest {
-                scope: None,
-                sql: "INSERT INTO guests (name, stage) VALUES ('Ada', 'Main')".into(),
-                base_versions: None,
+            CreateColumn {
+                infer_type: false,
+                table_id,
+                binding: ColumnBinding::NewDefinition {
+                    name: "Stage".into(),
+                    data_type: DataType::SelectString,
+                    is_multi_select: false,
+                    options: vec![],
+                },
+                config: None,
             },
         )
         .await
+        .unwrap();
+
+    let error = svc
+        .apply_ops(
+            receipt::<EditAccessLevel>(database_id, OWNER, AccessLevel::Owner),
+            viewer(OWNER),
+            vec![DatabaseOp::InsertRows {
+                table: table_id,
+                rows: vec![vec![CellWrite {
+                    column: stage,
+                    value: CellValue::Options(vec![OptionRef::Label("Main".into())]),
+                }]],
+                create_missing_options: false,
+            }],
+        )
+        .await
         .unwrap_err();
-    assert!(
-        matches!(err, QueryError::Sql(ref message) if message == "\"Main\" is not an option of \"Stage\" ()"),
-        "{err:?}"
-    );
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
+    assert_eq!(refusal.reason, "`Main` is not an option of \"Stage\"");
 }
 
 /// The point of the operation: the write that failed succeeds once the option
 /// exists, and the table's version moves because its schema did.
 #[tokio::test]
-async fn add_column_options_extends_what_sql_accepts_and_bumps_the_version() {
+async fn add_column_options_extends_what_ops_accept_and_bumps_the_version() {
     let seeded = seeded().await;
     let (world, svc, db, guests, status) = (
         seeded.world,
@@ -2727,29 +2083,27 @@ async fn add_column_options_extends_what_sql_accepts_and_bumps_the_version() {
     }
 
     let inserted = svc
-        .exec_sql(
+        .apply_ops(
+            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
             viewer(OWNER),
-            ExecRequest {
-                scope: None,
-                sql: "INSERT INTO guests (name, status) VALUES ('Bo', 'Waitlisted')".into(),
-                base_versions: None,
-            },
+            vec![DatabaseOp::InsertRows {
+                table: guests,
+                rows: vec![vec![CellWrite {
+                    column: status,
+                    value: CellValue::Options(vec![OptionRef::Label("Waitlisted".into())]),
+                }]],
+                create_missing_options: false,
+            }],
         )
         .await
         .expect("the option now resolves");
-    let read = svc
-        .query_sql(
-            viewer(OWNER),
-            "SELECT status FROM guests WHERE name = 'Bo'".into(),
-        )
-        .await
-        .unwrap();
+    let [OpResult::RowsWritten { inserted, .. }] = inserted.as_slice() else {
+        panic!("expected one insert, got {inserted:?}");
+    };
+    let waitlisted = option_id(&world, column.definition.definition.id, "Waitlisted");
     assert_eq!(
-        read.results[0].rows,
-        vec![vec![
-            SqlValue::Text(inserted.inserted_row_ids[0].to_string()),
-            SqlValue::Text("Waitlisted".into()),
-        ]]
+        cell(&world, inserted[0], column.definition.definition.id),
+        Some(PropertyValue::SelectOption(vec![waitlisted]))
     );
 }
 
@@ -2839,12 +2193,17 @@ async fn options_are_refused_on_a_column_that_cannot_hold_them() {
     );
 }
 
-/// A numeric select stores numbers, so its labels have to be numbers — and
-/// the label SQL sees is the normalized one.
+/// A numeric select stores numbers, so its labels have to be numbers, and
+/// labels naming the same number are one option.
 #[tokio::test]
 async fn numeric_select_options_are_parsed_as_numbers() {
     let seeded = seeded().await;
-    let (svc, db, guests) = (seeded.service, seeded.database_id, seeded.table_id);
+    let (world, svc, db, guests) = (
+        seeded.world,
+        seeded.service,
+        seeded.database_id,
+        seeded.table_id,
+    );
 
     let err = svc
         .create_column(
@@ -2869,47 +2228,41 @@ async fn numeric_select_options_are_parsed_as_numbers() {
         "{err:?}"
     );
 
-    svc.create_column(
-        receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-        viewer(OWNER),
-        CreateColumn {
-            infer_type: false,
-            table_id: guests,
-            binding: ColumnBinding::NewDefinition {
-                name: "Priority".into(),
-                data_type: DataType::SelectNumber,
-                is_multi_select: false,
-                options: vec!["1".into(), "2.0".into(), "2".into()],
-            },
-            config: None,
-        },
-    )
-    .await
-    .unwrap();
-    let inserted = svc
-        .exec_sql(
+    let priority = svc
+        .create_column(
+            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
             viewer(OWNER),
-            ExecRequest {
-                scope: None,
-                sql: "INSERT INTO guests (name, priority) VALUES ('Ada', '2')".into(),
-                base_versions: None,
+            CreateColumn {
+                infer_type: false,
+                table_id: guests,
+                binding: ColumnBinding::NewDefinition {
+                    name: "Priority".into(),
+                    data_type: DataType::SelectNumber,
+                    is_multi_select: false,
+                    options: vec!["1".into(), "2.0".into(), "2".into()],
+                },
+                config: None,
             },
-        )
-        .await
-        .expect("`2.0` and `2` are one option, written as `2`");
-    let read = svc
-        .query_sql(
-            viewer(OWNER),
-            "SELECT priority FROM guests WHERE name = 'Ada'".into(),
         )
         .await
         .unwrap();
+    let w = world.lock().unwrap();
+    let definition = w
+        .columns
+        .iter()
+        .find(|column| column.id == priority)
+        .unwrap()
+        .property_definition_id;
     assert_eq!(
-        read.results[0].rows,
-        vec![vec![
-            SqlValue::Text(inserted.inserted_row_ids[0].to_string()),
-            SqlValue::Text("2".into()),
-        ]]
+        w.definitions[&definition]
+            .property_options
+            .iter()
+            .map(|option| option.value.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            PropertyOptionValue::Number(1.0),
+            PropertyOptionValue::Number(2.0)
+        ]
     );
 }
 
@@ -3046,13 +2399,20 @@ async fn lifecycle_and_writes_publish_domain_events() {
     )
     .await
     .unwrap();
-    svc.exec_sql(
+    svc.apply_ops(
+        receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
         viewer(OWNER),
-        ExecRequest {
-            scope: None,
-            sql: format!("UPDATE guests SET status = 'Declined' WHERE row_id = '{row_id}'"),
-            base_versions: None,
-        },
+        vec![DatabaseOp::UpdateRows {
+            table: seeded.table_id,
+            changes: RowChanges::Uniform {
+                rows: vec![row_id],
+                cells: vec![CellWrite {
+                    column: seeded.status_column.id,
+                    value: CellValue::Options(vec![OptionRef::Label("Declined".into())]),
+                }],
+            },
+            create_missing_options: false,
+        }],
     )
     .await
     .unwrap();
@@ -3130,16 +2490,23 @@ async fn an_agent_is_attributed_as_acting_for_the_user() {
     )
     .await
     .unwrap();
-    svc.exec_sql(
+    svc.apply_ops(
+        receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
         Viewer {
             user_id: user(OWNER),
             acting_bot: Some(agent),
         },
-        ExecRequest {
-            scope: None,
-            sql: format!("UPDATE guests SET status = 'Declined' WHERE row_id = '{row_id}'"),
-            base_versions: None,
-        },
+        vec![DatabaseOp::UpdateRows {
+            table: seeded.table_id,
+            changes: RowChanges::Uniform {
+                rows: vec![row_id],
+                cells: vec![CellWrite {
+                    column: seeded.status_column.id,
+                    value: CellValue::Options(vec![OptionRef::Label("Declined".into())]),
+                }],
+            },
+            create_missing_options: false,
+        }],
     )
     .await
     .unwrap();

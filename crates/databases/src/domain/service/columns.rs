@@ -27,8 +27,8 @@ where
 
     /// Change a column's type, for a caller already known to hold edit
     /// access to `database_id`: the type menu and the agent tool through a
-    /// receipt, `ALTER COLUMN` through the catalog. The cast rule is
-    /// consulted before any cell is read for conversion.
+    /// receipt, `ALTER COLUMN` through its op. The cast rule is consulted
+    /// before any cell is read for conversion.
     pub(super) async fn retype_column(
         &self,
         database_id: DatabaseId,
@@ -124,10 +124,7 @@ where
             });
         }
 
-        let rows = self
-            .rows_with_cells(table.id)
-            .await
-            .map_err(|error| DatabaseError::Repo(rootcause::Report::new(error).into_dynamic()))?;
+        let rows = self.rows_with_cells(table.id).await?;
         if rows.len() > MAX_CONVERTED_ROWS {
             return Err(DatabaseError::InvalidSchemaOperation(
                 "This table is too large to validate a type change in one operation.".into(),

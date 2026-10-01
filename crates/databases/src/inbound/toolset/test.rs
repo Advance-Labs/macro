@@ -1,6 +1,6 @@
 //! Toolset tests: fake service + fake entity access, asserting that the
-//! receipts gate the schema operations, that SQL runs without one, and that
-//! errors reach the model in a form it can act on.
+//! receipts gate the schema operations and that errors reach the model in a
+//! form it can act on.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -23,14 +23,11 @@ use uuid::Uuid;
 
 use super::*;
 mod committed_writes;
-mod read_only;
 mod relations;
-mod saved_queries;
 mod saved_views;
 mod schema_changes;
 use crate::domain::models::{
-    Column, ColumnDetail, Database, ExecOutcome, QueryResult, RenameColumnOutcome, ResultColumn,
-    SqlValue, Table, TableDetail, TableVersion,
+    Column, ColumnDetail, Database, RenameColumnOutcome, Table, TableDetail, TableVersion,
 };
 use saved_views::FakeViews;
 
@@ -52,9 +49,6 @@ fn request_context() -> RequestContext {
 struct Calls {
     listed: usize,
     described: usize,
-    executed: Vec<String>,
-    queried: Vec<String>,
-    base_versions: Vec<Option<HashMap<Uuid, TableVersion>>>,
     created_databases: Vec<String>,
     created_tables: Vec<String>,
     renamed_tables: Vec<(Uuid, String, String)>,
@@ -71,7 +65,6 @@ struct Calls {
     reordered_columns: Vec<(Uuid, Vec<Uuid>, TableVersion)>,
     /// Every table order the service was asked for.
     reordered_tables: Vec<Vec<Uuid>>,
-    saved_queries: Vec<(Option<Uuid>, crate::domain::models::QueryDefinition)>,
     /// The agent each attributed write reached the service as.
     acting_bots: Vec<Option<BotId>>,
 }
@@ -79,8 +72,6 @@ struct Calls {
 #[derive(Clone, Default)]
 struct FakeService {
     calls: Arc<Mutex<Calls>>,
-    /// When set, `exec_sql` fails with this message instead of running.
-    sql_error: Option<String>,
     /// Fail only the post-write schema enrichment.
     schema_error: bool,
     multi_select_group: bool,
@@ -89,7 +80,6 @@ struct FakeService {
 const DATABASE_ID: Uuid = Uuid::from_u128(0x0dbb_0000_0000_0000_0000_0000_0000_0001);
 const TABLE_ID: Uuid = Uuid::from_u128(0x7ab1_0000_0000_0000_0000_0000_0000_0001);
 const COLUMN_ID: Uuid = Uuid::from_u128(0xc01a_0000_0000_0000_0000_0000_0000_0001);
-const QUERY_ID: Uuid = Uuid::from_u128(0x0e11_0000_0000_0000_0000_0000_0000_0001);
 
 fn database() -> Database {
     Database {
@@ -188,6 +178,13 @@ impl DatabasesService for FakeService {
             grant: AccessLevel::Owner,
             tables: vec![table()],
         }])
+    }
+
+    async fn database_details(
+        &self,
+        _viewer: Viewer,
+    ) -> Result<Vec<DatabaseDetail>, DatabaseError> {
+        unimplemented!("no tool reads every database in detail")
     }
 
     async fn share_awareness(
@@ -443,107 +440,21 @@ impl DatabasesService for FakeService {
         Ok(column)
     }
 
-    async fn exec_sql(
-        &self,
-        viewer: Viewer,
-        req: crate::domain::models::ExecRequest,
-    ) -> Result<ExecOutcome, QueryError> {
-        self.calls
-            .lock()
-            .unwrap()
-            .acting_bots
-            .push(viewer.acting_bot);
-        self.calls.lock().unwrap().executed.push(req.sql);
-        self.calls
-            .lock()
-            .unwrap()
-            .base_versions
-            .push(req.base_versions);
-        if let Some(message) = &self.sql_error {
-            return Err(QueryError::Sql(message.clone()));
-        }
-        Ok(ExecOutcome {
-            results: vec![QueryResult {
-                columns: vec![ResultColumn {
-                    name: "id".to_string(),
-                    entity_type: Some(EntityType::User),
-                    origin: None,
-                }],
-                rows: vec![vec![SqlValue::Text("usr_1".to_string())]],
-            }],
-            changes_applied: 2,
-            inserted_row_ids: vec![Uuid::nil()],
-            new_versions: std::collections::HashMap::from([(TABLE_ID, TableVersion(4))]),
-            read_tables: vec![TABLE_ID],
-            read_database_ids: vec![DATABASE_ID],
-            read_versions: std::collections::HashMap::from([(TABLE_ID, TableVersion(3))]),
-            truncated_tables: Vec::new(),
-            altered_column: None,
-        })
-    }
-
     async fn save_query(
         &self,
         _viewer: Viewer,
-        database_id: Option<crate::domain::models::DatabaseId>,
-        definition: crate::domain::models::QueryDefinition,
-    ) -> Result<crate::domain::models::SavedQuery, QueryError> {
-        if let Some(message) = &self.sql_error {
-            return Err(QueryError::Sql(message.clone()));
-        }
-        self.calls
-            .lock()
-            .unwrap()
-            .saved_queries
-            .push((database_id, definition.clone()));
-        Ok(crate::domain::models::SavedQuery {
-            id: QUERY_ID,
-            definition,
-            database_id,
-            created_by: USER.to_string(),
-            created_at: Utc::now(),
-        })
+        _database_id: Option<crate::domain::models::DatabaseId>,
+        _definition: crate::domain::models::QueryDefinition,
+    ) -> Result<crate::domain::models::SavedQuery, crate::domain::models::SavedQueryError> {
+        unimplemented!("no tool saves a query")
     }
 
     async fn get_query(
         &self,
         _viewer: Viewer,
         _id: crate::domain::models::QueryId,
-    ) -> Result<crate::domain::models::SavedQuery, QueryError> {
+    ) -> Result<crate::domain::models::SavedQuery, crate::domain::models::SavedQueryError> {
         unimplemented!("no tool reads a saved query back")
-    }
-
-    async fn run_query(
-        &self,
-        _viewer: Viewer,
-        _id: crate::domain::models::QueryId,
-    ) -> Result<ExecOutcome, QueryError> {
-        unimplemented!("no tool runs a saved query")
-    }
-
-    async fn query_sql(&self, _viewer: Viewer, sql: String) -> Result<ExecOutcome, QueryError> {
-        self.calls.lock().unwrap().queried.push(sql);
-        if let Some(message) = &self.sql_error {
-            return Err(QueryError::ReadOnly(message.clone()));
-        }
-        Ok(ExecOutcome {
-            results: vec![QueryResult {
-                columns: vec![ResultColumn {
-                    name: "count".into(),
-                    entity_type: None,
-                    origin: None,
-                }],
-                rows: vec![vec![SqlValue::Integer(12)]],
-            }],
-            changes_applied: 0,
-            inserted_row_ids: vec![],
-            new_versions: HashMap::new(),
-            read_tables: vec![TABLE_ID],
-            read_database_ids: vec![DATABASE_ID],
-            read_versions: HashMap::from([(TABLE_ID, TableVersion(3))]),
-            truncated_tables: vec![],
-            altered_column: None,
-        })
     }
 }
 
@@ -695,17 +606,6 @@ fn context(access: Arc<FakeAccess>) -> (Context, Arc<Mutex<Calls>>) {
     )
 }
 
-fn failing_sql_context(message: &str) -> Context {
-    DatabasesToolContext::new(
-        FakeService {
-            sql_error: Some(message.to_string()),
-            ..FakeService::default()
-        },
-        FakeAccess::granting(AccessLevel::Owner),
-        FakeViews::default(),
-    )
-}
-
 // --- schema validation ---
 
 #[test]
@@ -800,28 +700,6 @@ fn every_tool_schema_is_valid() {
             .name,
         "ReorderTables"
     );
-    assert_eq!(
-        generate_validated_input_schema::<SaveDatabaseQuery>()
-            .expect("schema should validate")
-            .name,
-        "SaveDatabaseQuery"
-    );
-}
-
-/// The dialect note is the whole reason a model can write correct SQL on the
-/// first try, so it has to actually reach the description.
-#[test]
-fn query_schema_teaches_the_dialect() {
-    let validated =
-        generate_validated_input_schema::<QueryDatabase>().expect("schema should validate");
-    assert_eq!(validated.name, "QueryDatabase");
-    for expected in ["row_id", "HAS", "DescribeDatabase"] {
-        assert!(
-            validated.description.contains(expected),
-            "description is missing {expected}: {}",
-            validated.description
-        );
-    }
 }
 
 /// Every tool has to survive being put in a collection — that is where name
@@ -833,7 +711,6 @@ fn toolset_builds_with_every_tool() {
     for name in [
         "ListDatabases",
         "DescribeDatabase",
-        "QueryDatabase",
         "CreateDatabase",
         "CreateTable",
         "RenameDatabase",
@@ -847,15 +724,23 @@ fn toolset_builds_with_every_tool() {
         "DeleteColumn",
         "ReorderColumns",
         "SaveDatabaseView",
-        "SaveDatabaseQuery",
     ] {
         assert!(toolset.tools.contains_key(name), "missing {name}");
     }
-    assert_eq!(toolset.tools.len(), 17);
+    assert_eq!(toolset.tools.len(), 15);
     assert!(
         toolset.user_tools.is_empty(),
         "database tools run in the loop, none are user-executed"
     );
+}
+
+#[test]
+fn the_read_only_toolset_only_discovers() {
+    let toolset = databases_read_only_toolset::<FakeService, FakeAccess>();
+
+    let mut names: Vec<&str> = toolset.tools.keys().map(String::as_str).collect();
+    names.sort_unstable();
+    assert_eq!(names, ["DescribeDatabase", "ListDatabases"]);
 }
 
 // --- receipts gate the schema operations ---
@@ -1070,101 +955,6 @@ fn column_types_round_trip_through_the_property_system() {
     }
 }
 
-// --- SQL needs no receipt, because the catalog is the authorization ---
-
-/// `exec_sql` is scoped by the viewer's catalog, not by an entity receipt, so
-/// it must run even when no single database can be proved — that is how a
-/// query spanning several databases works at all.
-#[tokio::test]
-async fn querying_does_not_mint_a_receipt() {
-    let (context, calls) = context(FakeAccess::denying());
-    let response = QueryDatabase {
-        database_id: None,
-        sql: "SELECT row_id FROM guests".to_string(),
-        base_versions: None,
-        display: None,
-    }
-    .call(ServiceContext(context), request_context())
-    .await
-    .expect("SQL is authorized by the catalog, not by a receipt");
-
-    assert_eq!(
-        calls.lock().unwrap().executed,
-        vec!["SELECT row_id FROM guests"]
-    );
-    assert_eq!(response.changes_applied, 2);
-    assert_eq!(response.new_versions.get(&TABLE_ID), Some(&4));
-    assert_eq!(response.read_versions[0].table_id, TABLE_ID);
-    assert_eq!(response.read_versions[0].version, 3);
-    assert_eq!(calls.lock().unwrap().base_versions, vec![None]);
-    assert_eq!(
-        response.results[0].columns[0].entity_type.as_deref(),
-        Some("user"),
-        "entity provenance survives so the UI can render a chip"
-    );
-    assert!(response.summary.contains("Applied 2 row changes"));
-}
-
-#[tokio::test]
-async fn conditional_tool_edits_forward_only_explicit_read_versions() {
-    let (context, calls) = context(FakeAccess::denying());
-    let request: QueryDatabase = serde_json::from_value(serde_json::json!({
-        "sql": "UPDATE guests SET status = 'Going' WHERE row_id = 'record'",
-        "baseVersions": [{"tableId": TABLE_ID, "version": 3}],
-    }))
-    .unwrap();
-    request
-        .call(ServiceContext(context), request_context())
-        .await
-        .unwrap();
-    assert_eq!(
-        calls.lock().unwrap().base_versions,
-        vec![Some(HashMap::from([(TABLE_ID, TableVersion(3))]))]
-    );
-    let legacy: QueryDatabase =
-        serde_json::from_value(serde_json::json!({"sql":"SELECT 1"})).unwrap();
-    assert!(legacy.base_versions.is_none());
-}
-
-/// The compiler's message is the product's broken-query state: it is what lets a
-/// model fix the name and retry, so it has to arrive verbatim.
-#[tokio::test]
-async fn a_sql_error_reaches_the_model_verbatim() {
-    let error = QueryDatabase {
-        database_id: None,
-        sql: "SELECT statuz FROM guests".to_string(),
-        base_versions: None,
-        display: None,
-    }
-    .call(
-        ServiceContext(failing_sql_context("no such column: statuz")),
-        request_context(),
-    )
-    .await
-    .expect_err("a bad statement is an error");
-
-    assert!(
-        error.description.contains("no such column: statuz"),
-        "{}",
-        error.description
-    );
-    assert!(
-        error.description.contains("DescribeDatabase"),
-        "the error should say how to recover: {}",
-        error.description
-    );
-}
-
-#[test]
-fn a_read_only_table_says_why() {
-    let error = query_error(QueryError::ReadOnly("table Guests is read-only".into()));
-    assert!(
-        error.description.contains("edit access"),
-        "{}",
-        error.description
-    );
-}
-
 // --- rendering ---
 
 #[tokio::test]
@@ -1205,7 +995,6 @@ fn describing_a_database_renders_option_labels() {
     assert_eq!(column.sql_name, "\"Status\"");
     assert_eq!(column.data_type, ColumnType::Select);
     assert_eq!(column.options, vec!["Going", "Declined"]);
-    assert!(schema.sql_guide.contains("row_id"));
 }
 
 #[test]
@@ -1250,7 +1039,6 @@ fn the_response_serializes_with_camel_case_keys() {
 
     assert!(json["tables"][0]["sqlName"].is_string());
     assert!(json["tables"][0]["columns"][0]["isMultiSelect"].is_boolean());
-    assert!(json["sqlGuide"].is_string());
 }
 
 // --- select options are explicit schema ---
@@ -1320,19 +1108,6 @@ async fn adding_options_returns_the_labels_sql_accepts() {
 }
 
 #[test]
-fn query_response_schema_accepts_omitted_empty_metadata() {
-    let schema = serde_json::to_value(schemars::schema_for!(QueryDatabaseResponse)).unwrap();
-    let required = schema["required"].as_array().unwrap();
-    for omitted in ["insertedRowIds", "newVersions", "truncatedTables"] {
-        assert!(
-            !required.contains(&serde_json::json!(omitted)),
-            "{omitted} is omitted by serialization and must be optional in the frontend schema"
-        );
-    }
-    assert!(required.contains(&serde_json::json!("results")));
-}
-
-#[test]
 fn describe_column_schema_accepts_omitted_select_options() {
     let schema = serde_json::to_value(schemars::schema_for!(ToolColumn)).unwrap();
     let required = schema["required"].as_array().unwrap();
@@ -1341,21 +1116,4 @@ fn describe_column_schema_accepts_omitted_select_options() {
         "non-select columns omit empty options in actual tool responses"
     );
     assert!(required.contains(&serde_json::json!("name")));
-}
-
-#[test]
-fn query_display_is_optional_and_only_accepts_supported_views() {
-    use super::query_database::QueryDatabaseDisplay;
-    let query: QueryDatabase =
-        serde_json::from_value(serde_json::json!({"sql": "SELECT 1"})).unwrap();
-    assert!(query.display.is_none());
-    let chart: QueryDatabase =
-        serde_json::from_value(serde_json::json!({"sql": "SELECT 1", "display": "bar"})).unwrap();
-    assert_eq!(chart.display, Some(QueryDatabaseDisplay::Bar));
-    assert!(
-        serde_json::from_value::<QueryDatabase>(
-            serde_json::json!({"sql": "SELECT 1", "display": "unsupported"})
-        )
-        .is_err()
-    );
 }

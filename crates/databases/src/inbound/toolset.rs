@@ -3,11 +3,10 @@
 //! A driving adapter like [`axum_router`](super::axum_router), but for the
 //! agent loop. It goes through the same [`DatabasesService`] port and the same
 //! access receipts, so a tool can reach exactly what the HTTP API can and
-//! nothing more — in particular, SQL is authorized by the catalog the service
-//! builds for the acting user, not by anything decided here.
+//! nothing more. The SQL tools live in the `databases_sql` adapter.
 //!
 //! The tools are deliberately thin: mint a receipt, convert the request, call
-//! the service, render the answer. No policy, no SQL, no persistence.
+//! the service, render the answer. No policy, no persistence.
 
 mod add_column;
 mod add_column_options;
@@ -18,86 +17,15 @@ mod delete_column;
 mod delete_table;
 mod describe_database;
 mod list_databases;
-mod query_database;
 mod rename_column;
 mod rename_database;
 mod rename_table;
 mod reorder_columns;
 mod reorder_tables;
-mod save_database_query;
 mod save_database_view;
 
 #[cfg(test)]
 mod test;
-
-/// The SQL dialect note, shared verbatim by every tool that writes or reads
-/// SQL and returned as a field by `DescribeDatabase`.
-///
-/// A macro rather than a `const` because `#[schemars(description = ...)]` is
-/// built at compile time from literals, and `concat!` only concatenates
-/// literals. One definition is the point: a dialect explained three ways is how
-/// the three drift apart.
-macro_rules! sql_guide {
-    () => {
-        "A small SQL subset, compiled by Macro rather than run by a SQL engine. What is \
-         listed here is everything there is:\n\
-         \n\
-         - **Reads:** `SELECT [DISTINCT] items FROM [database.]table [alias] [JOIN [database.]table \
-         [alias] ON a.col = b.col ...] [WHERE cond] [GROUP BY col] [ORDER BY col|alias|position \
-         [ASC|DESC], ...] [LIMIT n [OFFSET m]]`. Items are `*`, columns, or `COUNT(*)`, \
-         `COUNT(col)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`, each optionally named \
-         with `AS name`; the alias names the result column and can be ordered by. No other \
-         expressions or functions, no HAVING.\n\
-         - **Count per related row:** `SELECT p.\"Name\" AS party, COUNT(*) AS invites FROM \
-         \"Party Invites\".\"Invites\" i JOIN \"Party Invites\".\"Parties\" p ON i.\"Party\" = \
-         p.row_id GROUP BY p.\"Name\" ORDER BY invites DESC`.\n\
-         - **No subqueries** (`IN (SELECT ...)`) and no comma joins: SELECT the ids first, then \
-         use them as literals (`WHERE row_id IN ('<id>', '<id>')`), or JOIN.\n\
-         - **Conditions:** `col = | != | < | <= | > | >= literal`, `col [NOT] IN ('a', 'b')`, \
-         `col [NOT] LIKE 'pat%'` (case-insensitive), `col IS [NOT] NULL`, `col [NOT] HAS 'x'` \
-         (membership in a multi-valued column), combined with AND, OR and parentheses.\n\
-         - **Literals:** `'text'` (a quote inside is doubled: `'Wolf''s place'`), numbers, \
-         TRUE/FALSE, NULL; dates are `'2026-08-13'` or an ISO date-time.\n\
-         - **Writes:** `INSERT INTO table (col, ...) VALUES (...), (...)` or \
-         `INSERT INTO table DEFAULT VALUES`; `UPDATE table SET col = value, ... WHERE cond`; \
-         `DELETE FROM table WHERE cond`. The WHERE is required and takes any condition; \
-         `WHERE row_id = '<id>'` or `row_id IN ('<id>', ...)` names rows, and every id named \
-         must exist: read the ids first. `SET col = other_col` copies each row's own value of \
-         a column of the same kind. A multi-valued cell is written as a list: \
-         `tags = ['Urgent', 'Backend']`; `NULL` clears a cell.\n\
-         - **`row_id`** is every row's id. It comes back as the first column of a row-shaped \
-         SELECT and in `insertedRowIds` after an INSERT; never invent one. A row the app shows \
-         as \"Unnamed\" has a NULL name: find it with `WHERE \"Name\" IS NULL`.\n\
-         - **Select columns take their option labels as text** (`status = 'Going'`), never \
-         option ids. Only the labels the column carries are accepted; add new ones with \
-         AddColumnOptions.\n\
-         - **Relation columns hold the ids of rows in another table.** Write them as a list \
-         of row ids (`guests = ['<row id>']`), test them with `HAS '<row id>'`, and join through \
-         them with `ON i.guest = g.row_id` (`ON i.guest HAS g.row_id` means the same). Never \
-         compare a relation to a name.\n\
-         - **Entity columns hold Macro ids** such as `macro|sam@example.com` for a person. \
-         Respect each column's `specificEntityType`; never invent an id or replace it with \
-         a name.\n\
-         - **Names are display names.** Quote a table or column name with double quotes when \
-         it has spaces or punctuation (`FROM \"Guest List\" WHERE \"Due Date\" < '2026-09-01'`); \
-         names match case-insensitively, and a miss suggests the closest name. \
-         A table may be qualified by its database's name (`FROM \"Offsite\".\"Guests\"`).\n\
-         - **Changing a column's type:** `ALTER TABLE table ALTER COLUMN col TYPE type [USING \
-         NULL]`, where type is text, number, boolean, date, link, select, select_number, tag or \
-         entity(USER), entity(DOCUMENT), entity(TASK)…, with `[]` for several values \
-         (`select[]`). Pick from the column's `safeTypes` and `checkedTypes`: any other type \
-         is refused while the column holds values (add a new column instead). A value that \
-         does not fit refuses the statement, counting and quoting the misfits; fix them with \
-         UPDATE, or add `USING NULL` to empty them (a cell with several values keeps its \
-         first) only when the user accepts losing those values.\n\
-         - **Other schema changes use tools, not SQL DDL:** CreateDatabase, RenameDatabase, \
-         CreateTable, RenameTable, ReorderTables, DeleteTable, AddColumn, AddColumnOptions, \
-         RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.\n\
-         - Tables you only hold view access on are read-only."
-    };
-}
-
-pub(crate) use sql_guide;
 
 use std::sync::Arc;
 
@@ -119,8 +47,7 @@ use uuid::Uuid;
 
 use crate::domain::catalog::{cast_targets, option_labels, sql_table_name};
 use crate::domain::models::{
-    ColumnConfig, ColumnDetail, DatabaseDetail, DatabaseError, ListedDatabase, QueryError,
-    TableDetail, Viewer,
+    ColumnConfig, ColumnDetail, DatabaseDetail, DatabaseError, ListedDatabase, TableDetail, Viewer,
 };
 use crate::domain::ports::DatabasesService;
 use crate::domain::views::{DatabaseViewService, DatabaseViewsServiceImpl};
@@ -134,15 +61,11 @@ pub use delete_column::{DeleteColumn, DeleteColumnResponse};
 pub use delete_table::{DeleteTable, DeleteTableResponse};
 pub use describe_database::DescribeDatabase;
 pub use list_databases::{ListDatabases, ListDatabasesResponse};
-pub use query_database::{
-    QueryDatabase, QueryDatabaseDisplay, QueryDatabaseResponse, ReadOnlyQueryDatabase,
-};
 pub use rename_column::{RenameColumn, RenameColumnResponse};
 pub use rename_database::{RenameDatabase, RenameDatabaseResponse};
 pub use rename_table::{RenameTable, RenameTableResponse};
 pub use reorder_columns::{ReorderColumns, ReorderColumnsResponse};
 pub use reorder_tables::{ReorderTables, ReorderTablesResponse};
-pub use save_database_query::{SaveDatabaseQuery, SaveDatabaseQueryResponse, ToolChart};
 pub use save_database_view::SaveDatabaseView;
 
 /// Service context for the databases AI tools.
@@ -308,7 +231,6 @@ where
     AsyncToolCollection::new()
         .add_tool::<ListDatabases, DatabasesToolContext<S, E>>()
         .add_tool::<DescribeDatabase, DatabasesToolContext<S, E>>()
-        .add_tool::<QueryDatabase, DatabasesToolContext<S, E>>()
         .add_tool::<CreateDatabase, DatabasesToolContext<S, E>>()
         .add_tool::<CreateTable, DatabasesToolContext<S, E>>()
         .add_tool::<RenameDatabase, DatabasesToolContext<S, E>>()
@@ -322,10 +244,9 @@ where
         .add_tool::<DeleteColumn, DatabasesToolContext<S, E>>()
         .add_tool::<ReorderColumns, DatabasesToolContext<S, E>>()
         .add_tool::<SaveDatabaseView, DatabasesToolContext<S, E>>()
-        .add_tool::<SaveDatabaseQuery, DatabasesToolContext<S, E>>()
 }
 
-/// Discovery and read-only SQL for live document answers. No mutation tools.
+/// Discovery for live document answers. No mutation tools.
 pub fn databases_read_only_toolset<S, E>() -> AsyncToolCollection<DatabasesToolContext<S, E>>
 where
     S: DatabasesService,
@@ -334,7 +255,6 @@ where
     AsyncToolCollection::new()
         .add_tool::<ListDatabases, DatabasesToolContext<S, E>>()
         .add_tool::<DescribeDatabase, DatabasesToolContext<S, E>>()
-        .add_tool::<ReadOnlyQueryDatabase, DatabasesToolContext<S, E>>()
 }
 
 /// One table of a described database, or an error pointing at DescribeDatabase.
@@ -418,55 +338,13 @@ pub(crate) fn database_error(error: DatabaseError) -> ToolCallError {
     }
 }
 
-/// Turn a SQL error into something the model can act on.
-///
-/// The compiler's message is passed through verbatim and is the whole point:
-/// "no column named statuz in guests; did you mean status?" tells a model
-/// exactly what to fix, where a generic "query failed" tells it nothing.
-pub(crate) fn query_error(error: QueryError) -> ToolCallError {
-    let description = match &error {
-        QueryError::Sql(message) => format!(
-            "SQL error: {message}\n\nCall ListDatabases to find the table inside its database, \
-             then DescribeDatabase for the exact table and column names. Quote names that \
-             have spaces and retry the corrected SQL. A guessed name failing does not \
-             establish that the user's table is missing."
-        ),
-        QueryError::ReadOnly(message) => format!(
-            "{message}. Writes need edit access to the table's database, and the read-only \
-             query tool never writes."
-        ),
-        QueryError::VersionConflict { table_id } => {
-            format!("Table {table_id} changed underneath this statement. Re-read it and retry.")
-        }
-        QueryError::BudgetExceeded => {
-            "The statement exceeded the query budget. Narrow it with a WHERE clause or a LIMIT."
-                .to_string()
-        }
-        QueryError::NotFound => "That database or saved query does not exist, or the user \
-                                 cannot see it. Call ListDatabases for the user's databases."
-            .to_string(),
-        QueryError::Infrastructure(_) => "The databases service failed.".to_string(),
-    };
-
-    // As in [`database_error`]: keep the report, not a rendering of it.
-    let internal_error = match error {
-        QueryError::Infrastructure(report) => report.into(),
-        other => anyhow::Error::new(other),
-    };
-
-    ToolCallError {
-        description,
-        internal_error,
-    }
-}
-
 /// What the user may do with a database, as the model sees it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolGrant {
-    /// Read rows and run read-only SQL.
+    /// Read rows.
     View,
-    /// View, plus commenting. Still read-only for SQL.
+    /// View, plus commenting. Still read-only.
     Comment,
     /// Write rows and change the schema.
     Edit,
@@ -720,8 +598,6 @@ pub struct ToolDatabaseSchema {
     pub grant: ToolGrant,
     /// Tables in tab order.
     pub tables: Vec<ToolTable>,
-    /// The SQL subset, in full.
-    pub sql_guide: String,
 }
 
 impl From<DatabaseDetail> for ToolDatabaseSchema {
@@ -801,7 +677,6 @@ impl From<DatabaseDetail> for ToolDatabaseSchema {
                         .collect(),
                 })
                 .collect(),
-            sql_guide: sql_guide!().to_string(),
         }
     }
 }

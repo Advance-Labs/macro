@@ -93,9 +93,9 @@ async fn parent_disappearing_at_table_write_stays_not_found_and_publishes_nothin
 }
 
 #[tokio::test]
-async fn a_new_table_is_empty_and_queryable_by_its_quoted_name() {
+async fn a_new_table_is_empty_and_named_by_its_quoted_sql_name() {
     let seeded = seeded().await;
-    let (svc, db) = (seeded.service, seeded.database_id);
+    let (world, svc, db) = (seeded.world, seeded.service, seeded.database_id);
     let table = svc
         .create_table(
             receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
@@ -125,15 +125,14 @@ async fn a_new_table_is_empty_and_queryable_by_its_quoted_name() {
     );
     assert!(detail.tables[1].columns.is_empty());
 
-    let answer = svc
-        .query_sql(
-            viewer(OWNER),
-            "SELECT COUNT(*) FROM \"Ticket sales\"".into(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(answer.results[0].rows, vec![vec![SqlValue::Real(0.0)]]);
-    assert_eq!(answer.read_tables, vec![table.id]);
+    assert!(
+        world
+            .lock()
+            .unwrap()
+            .rows
+            .get(&table.id)
+            .is_none_or(Vec::is_empty)
+    );
 }
 
 #[tokio::test]

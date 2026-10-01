@@ -2,30 +2,31 @@
 
 Databases contain tables of typed rows. A row is a `DATABASE_ROW` entity whose
 cells are its entity properties, and column placements bind to the existing
-property definitions and value types. There is no second store: user SQL is
-compiled by the `database_sql` crate and answered from the same rows.
+property definitions and value types. There is no second store.
 
-## Query and mutation flow
+## Reads and writes
 
-1. The domain service builds the caller's catalog from the databases they can
-   reach, as `entity_access` answers it. An unreadable table does not exist to
-   the statement, and a table without edit access is read-only.
-2. `database_sql` parses the statement against that catalog: names resolve,
-   literals are typed, and the filter is split into what Soup evaluates and
-   what is folded afterwards.
-3. Reads load the referenced tables' rows and cells within row and time
-   budgets and fold the answer. Read-only entry points refuse writes.
-4. Writes go through the row and cell stores one row at a time, guarded by
-   table versions. Stale versions, changed bindings, and trashed parents
-   reject the write.
-5. Successful commits publish their versions and change notifications.
+1. Rows are read as Soup items, scoped to the databases the caller can reach as
+   `entity_access` answers it.
+2. Every data write is a batch of typed ops (`models_databases::DatabaseOp`,
+   `POST /databases/{id}/ops`), checked against the receipt's database and
+   applied in one transaction, all or nothing.
+3. Schema changes are structured calls; a column type change follows one cast
+   rule for the type menu, the agent tool and `ALTER COLUMN`.
+4. Successful commits publish their versions and change notifications.
+
+SQL lives outside this crate. The browser compiles statements with the
+`database_sql` engine and posts the ops it emits; agents run the same engine
+through the `databases_sql` adapter, which reads through Soup and writes
+through `apply_ops`.
 
 ## Review map
 
 | Concern | Implementation |
 | --- | --- |
 | Domain contracts and orchestration | `src/domain/models.rs`, `ports.rs`, `service.rs` |
-| Catalog and the SQL pipeline | `src/domain/catalog.rs`, `src/domain/service/query.rs`, the `database_sql` crate |
+| Catalog entries | `src/domain/catalog.rs` |
+| Typed ops | `src/domain/service/ops.rs`, `models_databases` |
 | Rows, cells, and column definitions | `src/outbound/pg_databases_repo.rs`, `pg_cell_store.rs`, `pg_definition_store.rs` |
 | Column casts and inference | `src/domain/service/columns.rs`, `column_types.rs`, `infer_column_type.rs` |
 | Saved queries, views, sharing, imports, starter data | Corresponding modules under `src/domain/` |
@@ -36,9 +37,8 @@ Authorization and business policy live in domain services. HTTP adapters obtain
 typed access receipts and pass requests inward. Persistence adapters implement
 domain ports, including transaction and locking requirements.
 
-The document storage service exposes schema operations and the SQL-first
-`/databases/query` and `/databases/exec` endpoints. The SDK provides database,
-table, and column handles, queries, mutations, imports, and snapshot downloads.
+The document storage service exposes the schema operations, `/databases/{id}/ops`
+and the saved-query routes.
 
 ## Validation
 
@@ -49,7 +49,7 @@ and `SQLX_OFFLINE` unset:
 cargo test -p databases --features postgres,inbound,ai_tools,gateway,entity_mutation
 ```
 
-The suite covers permission scoping, read-only enforcement, query budgets,
-typed round trips, relations, safe casts, rollback, stale/concurrent writes,
-sharing, saved views, and retry-safe import/starter provisioning. SQLx tests
+The suite covers permission scoping, typed round trips, relations, safe casts,
+rollback, stale/concurrent writes, sharing, saved views, and retry-safe
+import/starter provisioning. SQLx tests
 create isolated databases using the repository migrator.

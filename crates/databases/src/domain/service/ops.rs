@@ -37,23 +37,9 @@ where
     ) -> Result<Vec<OpResult>, DatabaseError> {
         let database_id = receipt_database_id(&receipt)?;
         let grant = receipt_grant(&receipt, AccessLevel::Edit);
-        self.apply_ops_with_grant(database_id, grant, viewer, ops)
-            .await
-    }
-
-    /// Apply ops as a viewer already known to hold `grant` on the database:
-    /// the receipt's, or the one a SQL statement's catalog was built with.
-    pub(super) async fn apply_ops_with_grant(
-        &self,
-        database_id: DatabaseId,
-        grant: AccessLevel,
-        viewer: Viewer,
-        ops: Vec<DatabaseOp>,
-    ) -> Result<Vec<OpResult>, DatabaseError> {
         let entries = self
             .entries_for(&HashMap::from([(database_id, grant)]))
-            .await
-            .map_err(|error| DatabaseError::Repo(rootcause::Report::new(error).into_dynamic()))?;
+            .await?;
         if entries.is_empty() {
             return Err(DatabaseError::NotFound);
         }

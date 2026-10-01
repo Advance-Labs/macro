@@ -21,9 +21,6 @@ pub mod sharing;
 #[cfg(feature = "ports")]
 pub mod views;
 
-#[cfg(test)]
-pub mod test_support;
-
 #[cfg(feature = "ports")]
 pub mod transfer;
 

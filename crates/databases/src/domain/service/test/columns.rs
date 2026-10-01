@@ -63,18 +63,6 @@ async fn number_text_conversion_writes_converted_cells_through_the_cell_store() 
         assert_eq!(w.published.last(), Some(&(table_id, TableVersion(2))));
         column.property_definition_id
     };
-    let read = svc
-        .query_sql(viewer(OWNER), "SELECT \"Plus ones\" FROM guests".into())
-        .await
-        .unwrap();
-    assert_eq!(
-        read.results[0].rows,
-        vec![vec![
-            SqlValue::Text(row_id.to_string()),
-            SqlValue::Text("2".into())
-        ]]
-    );
-
     svc.change_column_type(
         receipt(db, OWNER, AccessLevel::Edit),
         viewer(OWNER),
@@ -201,16 +189,6 @@ async fn selecting_text_preserves_option_labels_and_select_preserves_unused_opti
             PropertyValue::SelectOption(vec![going])
         );
     }
-    let read = svc
-        .query_sql(viewer(OWNER), "SELECT status FROM guests".into())
-        .await
-        .unwrap();
-    assert_eq!(
-        read.results[0].rows[0][1],
-        SqlValue::Text("[\"Going\"]".into()),
-        "a multi-select reads as a JSON array of labels"
-    );
-
     svc.change_column_type(
         receipt(db, OWNER, AccessLevel::Edit),
         viewer(OWNER),
@@ -314,17 +292,20 @@ async fn reorder_validates_complete_ids_and_delete_preserves_definitions() {
         assert_eq!(w.definitions.len(), 3);
         assert_eq!(w.published.last(), Some(&(table_id, TableVersion(3))));
     }
-    let answer = svc
-        .query_sql(viewer(OWNER), "SELECT * FROM guests".into())
+    let detail = svc
+        .get_database(
+            receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::Owner),
+            viewer(OWNER),
+        )
         .await
         .unwrap();
     assert_eq!(
-        answer.results[0]
+        detail.tables[0]
             .columns
             .iter()
-            .map(|column| column.name.as_str())
+            .map(|column| column.column.id)
             .collect::<Vec<_>>(),
-        vec!["row_id", "Plus ones", "Status"]
+        vec![ids[2], ids[1]]
     );
 }
 

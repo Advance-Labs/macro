@@ -21,17 +21,16 @@ use models_properties::service::property_value::PropertyValue;
 
 use crate::domain::models::{
     AddColumnOptions, Awareness, Column, ColumnBinding, ColumnDetail, ColumnId, CreateColumn,
-    CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId, ExecOutcome,
-    ExecRequest, InferColumnType, InferColumnTypeOutcome, ListedDatabase, PropertyDefinitionId,
-    QueryError, RenameColumnOutcome, RowId, RowRef, Table, TableId, TableMutationOutcome,
-    TableVersion, Viewer,
+    CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId,
+    InferColumnType, InferColumnTypeOutcome, ListedDatabase, PropertyDefinitionId,
+    RenameColumnOutcome, RowId, RowRef, Table, TableId, TableMutationOutcome, TableVersion, Viewer,
 };
 use crate::domain::models::{
     ChangeColumnType, ColumnCast, ColumnReplacement, ColumnSchemaOutcome, ColumnTypeChangeOutcome,
 };
 use crate::domain::models::{
-    QueryDefinition, QueryId, RowWrites, RowWritesOutcome, SavedQuery, TableDeletion,
-    TableOrderOutcome,
+    QueryDefinition, QueryId, RowWrites, RowWritesOutcome, SavedQuery, SavedQueryError,
+    TableDeletion, TableOrderOutcome,
 };
 use models_databases::{DatabaseOp, OpResult};
 
@@ -273,10 +272,10 @@ pub trait CellStore: Send + Sync + 'static {
     ) -> impl Future<Output = Result<RowWritesOutcome, Self::Err>> + Send;
 }
 
-/// Which databases a viewer can reach, as `entity_access` answers it. The
-/// domain treats it as the authorization boundary for SQL (the catalog is
-/// built from it). Trash is not its concern: a trashed database's grants are
-/// still answered, and the service drops them.
+/// Which databases a viewer can reach, as `entity_access` answers it: the
+/// boundary of what a listing, and so the SQL adapter's catalog, can see.
+/// Trash is not its concern: a trashed database's grants are still answered,
+/// and the service drops them.
 pub trait AccessDirectory: Send + Sync + 'static {
     /// The error type returned by directory operations.
     type Err: std::error::Error + Send + Sync + 'static;
@@ -376,6 +375,13 @@ pub trait DatabasesService: Send + Sync + 'static {
         &self,
         viewer: Viewer,
     ) -> impl Future<Output = Result<Vec<ListedDatabase>, DatabaseError>> + Send;
+
+    /// Every database [`Self::list_databases`] answers, each with its tables
+    /// and columns, read in one batch.
+    fn database_details(
+        &self,
+        viewer: Viewer,
+    ) -> impl Future<Output = Result<Vec<DatabaseDetail>, DatabaseError>> + Send;
 
     /// A database with its tables and columns.
     fn get_database(
@@ -523,13 +529,6 @@ pub trait DatabasesService: Send + Sync + 'static {
         ops: Vec<DatabaseOp>,
     ) -> impl Future<Output = Result<Vec<OpResult>, DatabaseError>> + Send;
 
-    /// Run one statement, reads or writes.
-    fn exec_sql(
-        &self,
-        viewer: Viewer,
-        req: ExecRequest,
-    ) -> impl Future<Output = Result<ExecOutcome, QueryError>> + Send;
-
     /// Tell the database's other viewers where this viewer is. Best effort:
     /// a relay failure is logged, never surfaced.
     fn share_awareness(
@@ -539,37 +538,22 @@ pub trait DatabasesService: Send + Sync + 'static {
         state: Awareness,
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send;
 
-    /// Run one read-only statement.
-    fn query_sql(
-        &self,
-        viewer: Viewer,
-        sql: String,
-    ) -> impl Future<Output = Result<ExecOutcome, QueryError>> + Send;
-
-    /// Save a read-only query. It must compile as a SELECT against the
-    /// viewer's catalog, scoped to `database_id`, which the viewer must be
-    /// able to see.
+    /// Save a question, scoped to `database_id`, which the viewer must be
+    /// able to see. Whether its SQL compiles is the SQL adapter's to check:
+    /// the domain stores the definition as it is given.
     fn save_query(
         &self,
         viewer: Viewer,
         database_id: Option<DatabaseId>,
         definition: QueryDefinition,
-    ) -> impl Future<Output = Result<SavedQuery, QueryError>> + Send;
+    ) -> impl Future<Output = Result<SavedQuery, SavedQueryError>> + Send;
 
     /// A saved query's definition, readable by its creator and by anyone who
     /// can view the live database it is scoped to. Anyone else gets
-    /// [`QueryError::NotFound`], so query ids cannot be probed.
+    /// [`SavedQueryError::NotFound`], so query ids cannot be probed.
     fn get_query(
         &self,
         viewer: Viewer,
         id: QueryId,
-    ) -> impl Future<Output = Result<SavedQuery, QueryError>> + Send;
-
-    /// Run a saved query as the viewer, under the same read rule as
-    /// [`Self::get_query`]; what it returns is permission-filtered.
-    fn run_query(
-        &self,
-        viewer: Viewer,
-        id: QueryId,
-    ) -> impl Future<Output = Result<ExecOutcome, QueryError>> + Send;
+    ) -> impl Future<Output = Result<SavedQuery, SavedQueryError>> + Send;
 }

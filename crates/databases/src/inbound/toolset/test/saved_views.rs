@@ -137,7 +137,6 @@ async fn view_only_user_can_save_and_update_their_own_board_without_changing_rec
     let own = views.iter().find(|view| view.id == saved.view_id).unwrap();
     assert_eq!(own.user_id, USER);
     assert_eq!(own.config["view"]["search"], "Ada");
-    assert!(calls.lock().unwrap().executed.is_empty());
     assert!(calls.lock().unwrap().created_columns.is_empty());
 }
 

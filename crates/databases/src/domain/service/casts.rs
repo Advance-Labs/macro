@@ -37,10 +37,7 @@ where
             return Ok(targets.map(|target| never(target, reason)).collect());
         }
 
-        let rows = self
-            .rows_with_cells(table_id)
-            .await
-            .map_err(|error| DatabaseError::Repo(rootcause::Report::new(error).into_dynamic()))?;
+        let rows = self.rows_with_cells(table_id).await?;
         let definition_id = detail.definition.definition.id;
         let contents = if rows.iter().any(|(_, cells)| {
             cells

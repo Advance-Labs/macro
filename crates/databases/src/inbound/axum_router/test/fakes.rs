@@ -26,9 +26,9 @@ use uuid::Uuid;
 use crate::domain::models::{
     AddColumnOptions, Awareness, ChangeColumnType, ColumnCast, ColumnDetail, ColumnId,
     ColumnSchemaOutcome, ColumnTypeChangeOutcome, CreateColumn, CreateDatabase, CreateTable,
-    Database, DatabaseDetail, DatabaseError, DatabaseId, ExecOutcome, ExecRequest, InferColumnType,
-    InferColumnTypeOutcome, ListedDatabase, QueryDefinition, QueryError, QueryId,
-    RenameColumnOutcome, SavedQuery, Table, TableId, TableVersion, Viewer,
+    Database, DatabaseDetail, DatabaseError, DatabaseId, InferColumnType, InferColumnTypeOutcome,
+    ListedDatabase, QueryDefinition, QueryId, RenameColumnOutcome, SavedQuery, SavedQueryError,
+    Table, TableId, TableVersion, Viewer,
 };
 use crate::domain::ports::DatabasesService;
 use crate::inbound::axum_router::DatabasesRouterState;
@@ -215,6 +215,9 @@ impl DatabasesService for RecordingService {
     async fn list_databases(&self, _: Viewer) -> Result<Vec<ListedDatabase>, DatabaseError> {
         unimplemented!("{ONLY_OPS}")
     }
+    async fn database_details(&self, _: Viewer) -> Result<Vec<DatabaseDetail>, DatabaseError> {
+        unimplemented!("{ONLY_OPS}")
+    }
     async fn get_database(
         &self,
         _: EntityAccessReceipt<ViewAccessLevel>,
@@ -346,9 +349,6 @@ impl DatabasesService for RecordingService {
     ) -> Result<ColumnDetail, DatabaseError> {
         unimplemented!("{ONLY_OPS}")
     }
-    async fn exec_sql(&self, _: Viewer, _: ExecRequest) -> Result<ExecOutcome, QueryError> {
-        unimplemented!("{ONLY_OPS}")
-    }
     async fn share_awareness(
         &self,
         _: EntityAccessReceipt<ViewAccessLevel>,
@@ -357,21 +357,15 @@ impl DatabasesService for RecordingService {
     ) -> Result<(), DatabaseError> {
         unimplemented!("{ONLY_OPS}")
     }
-    async fn query_sql(&self, _: Viewer, _: String) -> Result<ExecOutcome, QueryError> {
-        unimplemented!("{ONLY_OPS}")
-    }
     async fn save_query(
         &self,
         _: Viewer,
         _: Option<DatabaseId>,
         _: QueryDefinition,
-    ) -> Result<SavedQuery, QueryError> {
+    ) -> Result<SavedQuery, SavedQueryError> {
         unimplemented!("{ONLY_OPS}")
     }
-    async fn get_query(&self, _: Viewer, _: QueryId) -> Result<SavedQuery, QueryError> {
-        unimplemented!("{ONLY_OPS}")
-    }
-    async fn run_query(&self, _: Viewer, _: QueryId) -> Result<ExecOutcome, QueryError> {
+    async fn get_query(&self, _: Viewer, _: QueryId) -> Result<SavedQuery, SavedQueryError> {
         unimplemented!("{ONLY_OPS}")
     }
 }

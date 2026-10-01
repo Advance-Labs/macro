@@ -91,22 +91,31 @@ async fn number_inference_preserves_label_old_definition_and_accepts_first_write
         Some(&(table_id, TableVersion(2)))
     );
 
-    let outcome = svc
-        .exec_sql(
+    let written = svc
+        .apply_ops(
+            receipt(db, OWNER, AccessLevel::Edit),
             viewer(OWNER),
-            ExecRequest {
-                scope: None,
-                sql: "INSERT INTO guests (hours) VALUES (12)".into(),
-                base_versions: None,
-            },
+            vec![DatabaseOp::InsertRows {
+                table: table_id,
+                rows: vec![vec![CellWrite {
+                    column: column_id,
+                    value: CellValue::Number(12.0),
+                }]],
+                create_missing_options: false,
+            }],
         )
         .await
         .unwrap();
-    assert_eq!(outcome.inserted_row_ids.len(), 1);
+    let [OpResult::RowsWritten { inserted, .. }] = written.as_slice() else {
+        panic!("expected one insert, got {written:?}");
+    };
     assert_eq!(
-        world.lock().unwrap().cells[&outcome.inserted_row_ids[0]]
-            [&response.column.column.property_definition_id],
-        PropertyValue::Num(12.0)
+        cell(
+            &world,
+            inserted[0],
+            response.column.column.property_definition_id
+        ),
+        Some(PropertyValue::Num(12.0))
     );
     let detail = svc
         .get_database(receipt(db, OWNER, AccessLevel::View), viewer(OWNER))
@@ -409,7 +418,7 @@ async fn inference_flag_is_rejected_for_shared_or_explicitly_typed_creation() {
 }
 
 #[tokio::test]
-async fn sql_first_value_settles_text_type_and_later_inference_cannot_retype() {
+async fn a_first_written_value_settles_text_type_and_later_inference_cannot_retype() {
     let EmptyColumn { seeded, column_id } = empty_column().await;
     let (world, svc, db, table_id) = (
         seeded.world,
@@ -425,18 +434,20 @@ async fn sql_first_value_settles_text_type_and_later_inference_cannot_retype() {
         .find(|c| c.id == column_id)
         .unwrap()
         .property_definition_id;
-    let response = svc
-        .exec_sql(
-            viewer(OWNER),
-            ExecRequest {
-                scope: None,
-                sql: "INSERT INTO guests (estimate) VALUES ('first text')".into(),
-                base_versions: None,
-            },
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.inserted_row_ids.len(), 1);
+    svc.apply_ops(
+        receipt(db, OWNER, AccessLevel::Edit),
+        viewer(OWNER),
+        vec![DatabaseOp::InsertRows {
+            table: table_id,
+            rows: vec![vec![CellWrite {
+                column: column_id,
+                value: CellValue::Text("first text".into()),
+            }]],
+            create_missing_options: false,
+        }],
+    )
+    .await
+    .unwrap();
     {
         let w = world.lock().unwrap();
         assert_eq!(w.settled.last(), Some(&(table_id, vec![definition])));

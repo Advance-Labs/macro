@@ -31,7 +31,7 @@ fn a_query_definition_is_stored_as_versioned_json() {
 }
 
 #[tokio::test]
-async fn a_viewer_of_its_database_reads_and_runs_a_saved_query() {
+async fn a_viewer_of_its_database_reads_a_saved_query() {
     let seeded = seeded().await;
     let (world, svc, db) = (seeded.world, seeded.service, seeded.database_id);
     let saved = svc
@@ -58,10 +58,6 @@ async fn a_viewer_of_its_database_reads_and_runs_a_saved_query() {
         svc.get_query(viewer(VIEWER), saved.id).await.unwrap(),
         saved
     );
-    let shared = svc.run_query(viewer(VIEWER), saved.id).await.unwrap();
-    assert_eq!(shared.results[0].columns[0].name, "guests");
-    assert_eq!(shared.results[0].rows, vec![vec![SqlValue::Real(1.0)]]);
-    assert_eq!(shared.changes_applied, 0);
 }
 
 #[tokio::test]
@@ -80,9 +76,7 @@ async fn a_stranger_cannot_tell_a_saved_query_exists() {
         .unwrap();
 
     let read = svc.get_query(viewer(STRANGER), saved.id).await.unwrap_err();
-    assert!(matches!(read, QueryError::NotFound), "{read:?}");
-    let run = svc.run_query(viewer(STRANGER), saved.id).await.unwrap_err();
-    assert!(matches!(run, QueryError::NotFound), "{run:?}");
+    assert!(matches!(read, SavedQueryError::NotFound), "{read:?}");
 }
 
 #[tokio::test]
@@ -105,100 +99,93 @@ async fn an_unscoped_saved_query_is_its_creators_alone() {
         svc.get_query(viewer(VIEWER), saved.id).await.unwrap(),
         saved
     );
-    let answer = svc.run_query(viewer(VIEWER), saved.id).await.unwrap();
-    assert_eq!(answer.results[0].rows, vec![vec![SqlValue::Real(1.0)]]);
-
     // The database's owner can see the table, but not this viewer's query.
     let read = svc.get_query(viewer(OWNER), saved.id).await.unwrap_err();
-    assert!(matches!(read, QueryError::NotFound), "{read:?}");
-    let run = svc.run_query(viewer(OWNER), saved.id).await.unwrap_err();
-    assert!(matches!(run, QueryError::NotFound), "{run:?}");
+    assert!(matches!(read, SavedQueryError::NotFound), "{read:?}");
 }
 
 #[tokio::test]
-async fn a_saved_query_resolves_names_in_its_own_database() {
+async fn a_saved_query_scoped_to_a_trashed_database_reads_only_for_its_creator() {
     let seeded = seeded().await;
     let (world, svc, db) = (seeded.world, seeded.service, seeded.database_id);
-    let twin = svc
-        .create_database(CreateDatabase {
-            name: "Offsite".into(),
-            owner_id: user(OWNER),
-            acting_bot: None,
-        })
-        .await
-        .unwrap();
-    {
-        let mut w = world.lock().unwrap();
-        let starter = w
-            .tables
-            .iter_mut()
-            .find(|table| table.database_id == twin.id)
-            .unwrap();
-        starter.name = "Guests".into();
-    }
-    let in_twin = svc
-        .save_query(
-            viewer(OWNER),
-            Some(twin.id),
-            QueryDefinition::V1 {
-                query: "SELECT COUNT(*) FROM \"Offsite\".\"Guests\"".into(),
-            },
-        )
-        .await
-        .unwrap();
-    let in_original = svc
+    let saved = svc
         .save_query(
             viewer(OWNER),
             Some(db),
             QueryDefinition::V1 {
-                query: "SELECT COUNT(*) FROM \"Offsite\".\"Guests\"".into(),
+                query: "SELECT COUNT(*) AS guests FROM \"Guests\"".into(),
+            },
+        )
+        .await
+        .unwrap();
+    world.lock().unwrap().databases[0].trashed_at = Some(Utc::now());
+
+    assert_eq!(svc.get_query(viewer(OWNER), saved.id).await.unwrap(), saved);
+    let read = svc.get_query(viewer(VIEWER), saved.id).await.unwrap_err();
+    assert!(matches!(read, SavedQueryError::NotFound), "{read:?}");
+}
+
+/// Whether the SQL compiles is the SQL adapter's to check: the domain keeps
+/// what it is given, even a statement no engine would run.
+#[tokio::test]
+async fn a_saved_query_is_stored_as_given() {
+    let seeded = seeded().await;
+    let (world, svc, db) = (seeded.world, seeded.service, seeded.database_id);
+
+    let saved = svc
+        .save_query(
+            viewer(OWNER),
+            Some(db),
+            QueryDefinition::V1 {
+                query: "SELECT statuz FROM nowhere WHERE".into(),
             },
         )
         .await
         .unwrap();
 
-    let twin_answer = svc.run_query(viewer(OWNER), in_twin.id).await.unwrap();
-    assert_eq!(twin_answer.results[0].rows, vec![vec![SqlValue::Real(0.0)]]);
-    assert_eq!(twin_answer.read_database_ids, vec![twin.id]);
-    let original_answer = svc.run_query(viewer(OWNER), in_original.id).await.unwrap();
     assert_eq!(
-        original_answer.results[0].rows,
-        vec![vec![SqlValue::Real(1.0)]]
+        saved.definition,
+        QueryDefinition::V1 {
+            query: "SELECT statuz FROM nowhere WHERE".into()
+        }
     );
-    assert_eq!(original_answer.read_database_ids, vec![db]);
+    assert_eq!(world.lock().unwrap().queries, vec![saved]);
 }
 
 #[tokio::test]
-async fn only_a_compiling_select_over_a_visible_database_is_saved() {
+async fn a_query_longer_than_the_limit_is_refused() {
+    let seeded = seeded().await;
+    let (world, svc) = (seeded.world, seeded.service);
+
+    let longest = svc
+        .save_query(
+            viewer(OWNER),
+            None,
+            QueryDefinition::V1 {
+                query: "x".repeat(MAX_QUERY_LEN),
+            },
+        )
+        .await;
+    assert!(longest.is_ok(), "{longest:?}");
+    let too_long = svc
+        .save_query(
+            viewer(OWNER),
+            None,
+            QueryDefinition::V1 {
+                query: "x".repeat(MAX_QUERY_LEN + 1),
+            },
+        )
+        .await
+        .unwrap_err();
+
+    assert!(matches!(too_long, SavedQueryError::TooLong), "{too_long:?}");
+    assert_eq!(world.lock().unwrap().queries.len(), 1);
+}
+
+#[tokio::test]
+async fn a_query_is_saved_only_into_a_visible_live_database() {
     let seeded = seeded().await;
     let (world, svc, db) = (seeded.world, seeded.service, seeded.database_id);
-
-    let write = svc
-        .save_query(
-            viewer(OWNER),
-            Some(db),
-            QueryDefinition::V1 {
-                query: "INSERT INTO \"Guests\" (\"Name\") VALUES ('Ada')".into(),
-            },
-        )
-        .await
-        .unwrap_err();
-    assert!(matches!(write, QueryError::ReadOnly(_)), "{write:?}");
-
-    let misspelled = svc
-        .save_query(
-            viewer(OWNER),
-            Some(db),
-            QueryDefinition::V1 {
-                query: "SELECT statuz FROM \"Guests\"".into(),
-            },
-        )
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(&misspelled, QueryError::Sql(message) if message.contains("statuz")),
-        "{misspelled:?}"
-    );
 
     let invisible = svc
         .save_query(
@@ -210,7 +197,22 @@ async fn only_a_compiling_select_over_a_visible_database_is_saved() {
         )
         .await
         .unwrap_err();
-    assert!(matches!(invisible, QueryError::NotFound), "{invisible:?}");
+    assert!(
+        matches!(invisible, SavedQueryError::NotFound),
+        "{invisible:?}"
+    );
+
+    let missing = svc
+        .save_query(
+            viewer(OWNER),
+            Some(Uuid::new_v4()),
+            QueryDefinition::V1 {
+                query: "SELECT COUNT(*) FROM \"Guests\"".into(),
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(missing, SavedQueryError::NotFound), "{missing:?}");
 
     world.lock().unwrap().databases[0].trashed_at = Some(Utc::now());
     let trashed = svc
@@ -223,24 +225,18 @@ async fn only_a_compiling_select_over_a_visible_database_is_saved() {
         )
         .await
         .unwrap_err();
-    assert!(matches!(trashed, QueryError::NotFound), "{trashed:?}");
+    assert!(matches!(trashed, SavedQueryError::NotFound), "{trashed:?}");
 
     assert!(world.lock().unwrap().queries.is_empty());
 }
 
 #[tokio::test]
-async fn running_an_unknown_saved_query_is_not_found() {
+async fn reading_an_unknown_saved_query_is_not_found() {
     let seeded = seeded().await;
     let missing = seeded
-        .service
-        .run_query(viewer(OWNER), Uuid::nil())
-        .await
-        .unwrap_err();
-    assert!(matches!(missing, QueryError::NotFound), "{missing:?}");
-    let unread = seeded
         .service
         .get_query(viewer(OWNER), Uuid::nil())
         .await
         .unwrap_err();
-    assert!(matches!(unread, QueryError::NotFound), "{unread:?}");
+    assert!(matches!(missing, SavedQueryError::NotFound), "{missing:?}");
 }

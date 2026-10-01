@@ -1,54 +1,10 @@
 //! Typed ops over the fakes: what each op writes, what refuses a batch, and
 //! that a refused batch writes nothing.
 
-use models_databases::{
-    CellValue, CellWrite, ColumnKind, DatabaseOp, OpResult, OptionRef, RowChange, RowChanges,
-};
+use models_databases::{ColumnKind, RowChange};
 use models_properties::shared::EntityReference;
 
 use super::*;
-use crate::domain::models::OpRefusal;
-
-fn edit(database_id: DatabaseId) -> EntityAccessReceipt<EditAccessLevel> {
-    receipt::<EditAccessLevel>(database_id, OWNER, AccessLevel::Owner)
-}
-
-fn table_version(world: &Shared, table_id: TableId) -> TableVersion {
-    world
-        .lock()
-        .unwrap()
-        .tables
-        .iter()
-        .find(|table| table.id == table_id)
-        .unwrap()
-        .version
-}
-
-fn option_id(world: &Shared, definition_id: PropertyDefinitionId, label: &str) -> Uuid {
-    world.lock().unwrap().definitions[&definition_id]
-        .property_options
-        .iter()
-        .find(|option| option.value == PropertyOptionValue::String(label.into()))
-        .unwrap()
-        .id
-}
-
-fn row_ids(world: &Shared, table_id: TableId) -> Vec<RowId> {
-    world.lock().unwrap().rows[&table_id]
-        .iter()
-        .map(|row| row.id)
-        .collect()
-}
-
-fn cell(world: &Shared, row: RowId, definition_id: PropertyDefinitionId) -> Option<PropertyValue> {
-    world
-        .lock()
-        .unwrap()
-        .cells
-        .get(&row)
-        .and_then(|cells| cells.get(&definition_id))
-        .cloned()
-}
 
 #[tokio::test]
 async fn an_insert_of_two_rows_mints_them_in_order_with_their_cells() {
@@ -150,18 +106,7 @@ async fn an_insert_of_two_rows_mints_them_in_order_with_their_cells() {
 #[tokio::test]
 async fn a_uniform_update_gives_three_rows_the_same_cells() {
     let seeded = seeded().await;
-    seeded
-        .service
-        .exec_sql(
-            viewer(OWNER),
-            ExecRequest {
-                scope: None,
-                sql: "INSERT INTO guests (name) VALUES ('Alex'), ('Robin')".into(),
-                base_versions: None,
-            },
-        )
-        .await
-        .unwrap();
+    insert_names(&seeded, &["Alex", "Robin"]).await;
     let rows = row_ids(&seeded.world, seeded.table_id);
     let declined = option_id(
         &seeded.world,
@@ -235,18 +180,7 @@ async fn a_uniform_update_gives_three_rows_the_same_cells() {
 #[tokio::test]
 async fn a_per_row_update_gives_each_row_its_own_cells() {
     let seeded = seeded().await;
-    seeded
-        .service
-        .exec_sql(
-            viewer(OWNER),
-            ExecRequest {
-                scope: None,
-                sql: "INSERT INTO guests (name) VALUES ('Alex')".into(),
-                base_versions: None,
-            },
-        )
-        .await
-        .unwrap();
+    insert_names(&seeded, &["Alex"]).await;
     let rows = row_ids(&seeded.world, seeded.table_id);
 
     let results = seeded
@@ -778,18 +712,7 @@ async fn a_type_change_through_ops_matches_change_column_type() {
     let through_ops = seeded().await;
     let direct = seeded().await;
     for seeded in [&through_ops, &direct] {
-        seeded
-            .service
-            .exec_sql(
-                viewer(OWNER),
-                ExecRequest {
-                    scope: None,
-                    sql: "INSERT INTO guests (name) VALUES ('12')".into(),
-                    base_versions: None,
-                },
-            )
-            .await
-            .unwrap();
+        insert_names(seeded, &["12"]).await;
     }
 
     let results = through_ops

@@ -9,7 +9,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use super::{DatabasesToolContext, ToolDatabaseSchema, database_error, sql_guide};
+use super::{DatabasesToolContext, ToolDatabaseSchema, database_error};
 use crate::domain::ports::DatabasesService;
 
 /// Read one database's schema.
@@ -17,20 +17,15 @@ use crate::domain::ports::DatabasesService;
 #[serde(rename_all = "camelCase")]
 #[schemars(
     title = "DescribeDatabase",
-    description = concat!(
-        "\
+    description = "\
 Read one database's schema: its tables with their quoted `sqlName` and version, and each \
 table's columns with their SQL names, value types, whether they hold multiple values, the \
 exact labels a select column accepts, and the target table of a relation column.\n\
 \n\
 **Call this before writing SQL for a database you have not already described in this \
 conversation.** Guessing table or column names is the single most common way a query fails, \
-and the schema is small. Get the `databaseId` from ListDatabases.\n\
-\n\
-## Writing SQL against it\n\
-\n",
-        sql_guide!(),
-    )
+and the schema is small. Get the `databaseId` from ListDatabases. QueryDatabase describes the \
+SQL dialect."
 )]
 pub struct DescribeDatabase {
     /// The database to describe.

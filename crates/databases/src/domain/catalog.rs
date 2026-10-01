@@ -1,17 +1,12 @@
 //! The viewer's catalog: every table they can see, with its columns bound to
-//! their definitions, and the same catalog in the shape the SQL engine
-//! reads.
-//!
-//! Names are the display names. A statement writes `crm.deals` and `"Due
-//! Date"`; the engine matches them case-insensitively and suggests the
-//! closest name on a miss, so there is no separate SQL-name layer any more.
+//! their definitions.
 
 use std::collections::HashMap;
 
 use database_sql::cast::{Cast, ColumnType, Contents, TARGETS, cast};
 use database_sql::catalog::{
-    Catalog, ColumnKind, ColumnSchema, DataType as StoredDataType, DatabaseSchema, EntityKind,
-    OptionSchema, OptionValue, PropertyType as StoredType, Schema, TableSchema,
+    ColumnKind, ColumnSchema, DataType as StoredDataType, EntityKind, OptionSchema, OptionValue,
+    PropertyType as StoredType,
 };
 use models_permissions::share_permission::access_level::AccessLevel;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
@@ -23,11 +18,8 @@ use crate::domain::models::{
     Column, ColumnConfig, Database, DatabaseId, PropertyDefinitionId, Table, TableId,
 };
 
-#[cfg(test)]
-mod test;
-
-/// One table the viewer can see, with what the service needs to run SQL
-/// against it and to describe it.
+/// One table the viewer can see, with what the service needs to write and
+/// describe it.
 #[derive(Debug, Clone)]
 pub struct TableEntry {
     /// The database the table belongs to.
@@ -48,7 +40,7 @@ pub struct ColumnEntry {
     pub column: Column,
     /// The definition behind it.
     pub definition: PropertyDefinitionWithOptions,
-    /// Whether SQL may write this column.
+    /// Whether the viewer may write this column.
     pub writable: bool,
 }
 
@@ -127,36 +119,6 @@ pub fn build_entries(
             })
         })
         .collect()
-}
-
-/// The entries as the schema the engine builds its catalog from, tables in
-/// their order.
-pub fn schema(entries: &[TableEntry]) -> Schema {
-    let mut databases: Vec<DatabaseSchema> = Vec::new();
-    for entry in entries {
-        let table = TableSchema {
-            id: entry.table.id,
-            name: entry.table.name.clone(),
-            columns: entry.columns.iter().map(column_schema).collect(),
-        };
-        match databases.last_mut() {
-            Some(database) if database.id == entry.database.id => database.tables.push(table),
-            _ => databases.push(DatabaseSchema {
-                id: entry.database.id,
-                name: entry.database.name.clone(),
-                tables: vec![table],
-            }),
-        }
-    }
-    Schema {
-        databases,
-        platform: Vec::new(),
-    }
-}
-
-/// The catalog a statement run from `scope` sees.
-pub fn engine_catalog(entries: &[TableEntry], scope: Option<DatabaseId>) -> Catalog {
-    database_sql::catalog::build(&schema(entries), scope)
 }
 
 /// One column as the schema describes it.

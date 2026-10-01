@@ -1,10 +1,7 @@
 //! Databases service implementation.
 //!
 //! All authorization policy (beyond receipt minting at the edge) and all
-//! use-case orchestration live here, behind fake-able ports. The SQL surface
-//! is authorized by construction: the catalog handed to the engine is built
-//! from the viewer's grants, so an unreadable table does not exist and a
-//! write to an unwritable one is refused before it runs.
+//! use-case orchestration live here, behind fake-able ports.
 
 mod casts;
 mod column_types;
@@ -12,7 +9,6 @@ mod columns;
 mod delete_table;
 mod infer_column_type;
 mod ops;
-mod query;
 mod rename_column;
 mod reorder_tables;
 mod saved_queries;
@@ -31,6 +27,7 @@ use entity_access::domain::models::{
 };
 use macro_event_broker::MacroEventBroker;
 use models_properties::service::property_option::PropertyOptionValue;
+use models_properties::service::property_value::PropertyValue;
 use models_properties::shared::DataType;
 use uuid::Uuid;
 
@@ -42,14 +39,15 @@ use crate::domain::events::{
 };
 use crate::domain::models::{
     AddColumnOptions, Awareness, ColumnBinding, ColumnConfig, ColumnDetail, ColumnId, CreateColumn,
-    CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId, ExecOutcome,
-    ExecRequest, InferColumnType, InferColumnTypeOutcome, ListedDatabase, QueryError,
-    RenameColumnOutcome, Table, TableDetail, TableId, TableMutationOutcome, TableVersion, Viewer,
+    CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId,
+    InferColumnType, InferColumnTypeOutcome, ListedDatabase, PropertyDefinitionId,
+    RenameColumnOutcome, RowId, RowRef, Table, TableDetail, TableId, TableMutationOutcome,
+    TableVersion, Viewer,
 };
 use crate::domain::models::{
     ChangeColumnType, ColumnCast, ColumnReplacement, ColumnSchemaOutcome, ColumnTypeChangeOutcome,
 };
-use crate::domain::models::{QueryDefinition, QueryId, SavedQuery};
+use crate::domain::models::{QueryDefinition, QueryId, SavedQuery, SavedQueryError};
 use crate::domain::ports::{
     AccessDirectory, CellStore, ColumnDefinitionStore, DatabasesRepo, DatabasesService,
     TableEventPublisher,
@@ -61,8 +59,8 @@ const STARTER_TABLE_NAME: &str = "Table 1";
 const MAX_NAME_LEN: usize = 200;
 /// Longest accepted select-option label.
 const MAX_OPTION_LABEL_LEN: usize = 200;
-/// Longest accepted statement text.
-const MAX_SQL_LEN: usize = 256 * 1024;
+/// Longest accepted saved query text.
+const MAX_QUERY_LEN: usize = 256 * 1024;
 /// Most rows a schema operation converts in one go.
 const MAX_CONVERTED_ROWS: usize = 200_000;
 
@@ -79,10 +77,6 @@ pub struct DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker> {
     events: Events,
     access: Access,
     broker: Broker,
-}
-
-fn infra<E: std::error::Error + Send + Sync + 'static>(e: E) -> QueryError {
-    QueryError::Infrastructure(rootcause::Report::new(e).into_dynamic())
 }
 
 fn repo_err<E: std::error::Error + Send + Sync + 'static>(e: E) -> DatabaseError {
@@ -248,26 +242,26 @@ where
     pub(super) async fn entries_for(
         &self,
         grants: &HashMap<DatabaseId, AccessLevel>,
-    ) -> Result<Vec<TableEntry>, QueryError> {
+    ) -> Result<Vec<TableEntry>, DatabaseError> {
         let database_ids: Vec<DatabaseId> = grants.keys().copied().collect();
         let mut databases = self
             .repo
             .databases_by_ids(&database_ids)
             .await
-            .map_err(infra)?;
+            .map_err(repo_err)?;
         databases.retain(|d| d.trashed_at.is_none());
         let live_ids: Vec<DatabaseId> = databases.iter().map(|d| d.id).collect();
         let tables = self
             .repo
             .tables_for_databases(&live_ids)
             .await
-            .map_err(infra)?;
+            .map_err(repo_err)?;
         let table_ids: Vec<TableId> = tables.iter().map(|t| t.id).collect();
         let columns = self
             .repo
             .columns_for_tables(&table_ids)
             .await
-            .map_err(infra)?;
+            .map_err(repo_err)?;
         let definition_ids: Vec<Uuid> = columns
             .iter()
             .map(|c| c.property_definition_id)
@@ -278,7 +272,7 @@ where
             .definitions
             .definitions(&definition_ids)
             .await
-            .map_err(infra)?
+            .map_err(repo_err)?
             .into_iter()
             .map(|d| (d.definition.id, d))
             .collect();
@@ -440,10 +434,7 @@ where
             .viewer_grants(viewer, database_id, grant)
             .await
             .map_err(repo_err)?;
-        let entries = self
-            .entries_for(&grants)
-            .await
-            .map_err(|e| DatabaseError::Repo(rootcause::Report::new(e).into_dynamic()))?;
+        let entries = self.entries_for(&grants).await?;
         Self::entries_of(entries, database_id)
             .into_iter()
             .map(Self::table_detail)
@@ -471,6 +462,23 @@ where
             .map_err(repo_err)?
             .ok_or(DatabaseError::NotFound)?;
         Ok(database)
+    }
+
+    /// A table's rows with their cells, in position order.
+    async fn rows_with_cells(
+        &self,
+        table_id: TableId,
+    ) -> Result<Vec<(RowRef, HashMap<PropertyDefinitionId, PropertyValue>)>, DatabaseError> {
+        let refs = self.repo.row_refs(table_id).await.map_err(repo_err)?;
+        let ids: Vec<RowId> = refs.iter().map(|row| row.id).collect();
+        let mut cells = self.cells.cells(&ids).await.map_err(repo_err)?;
+        Ok(refs
+            .into_iter()
+            .map(|row| {
+                let row_cells = cells.remove(&row.id).unwrap_or_default();
+                (row, row_cells)
+            })
+            .collect())
     }
 }
 
@@ -628,6 +636,38 @@ where
             .collect())
     }
 
+    #[tracing::instrument(skip(self), err)]
+    async fn database_details(&self, viewer: Viewer) -> Result<Vec<DatabaseDetail>, DatabaseError> {
+        let grants: HashMap<DatabaseId, AccessLevel> = self
+            .access
+            .accessible_databases(&viewer)
+            .await
+            .map_err(repo_err)?
+            .into_iter()
+            .collect();
+        let mut entries_by_database: HashMap<DatabaseId, Vec<TableEntry>> = HashMap::new();
+        let mut databases: Vec<Database> = Vec::new();
+        for entry in self.entries_for(&grants).await? {
+            if !entries_by_database.contains_key(&entry.database.id) {
+                databases.push(entry.database.clone());
+            }
+            entries_by_database
+                .entry(entry.database.id)
+                .or_default()
+                .push(entry);
+        }
+        databases.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        Ok(databases
+            .into_iter()
+            .filter_map(|database| {
+                let grant = *grants.get(&database.id)?;
+                let mut entries = entries_by_database.remove(&database.id)?;
+                entries.sort_by(|left, right| left.table.position.cmp(&right.table.position));
+                Some(Self::detail(database, grant, entries))
+            })
+            .collect())
+    }
+
     #[tracing::instrument(skip(self, receipt), err)]
     async fn get_database(
         &self,
@@ -649,10 +689,7 @@ where
             .viewer_grants(&viewer, database_id, grant)
             .await
             .map_err(repo_err)?;
-        let entries = self
-            .entries_for(&grants)
-            .await
-            .map_err(|e| DatabaseError::Repo(rootcause::Report::new(e).into_dynamic()))?;
+        let entries = self.entries_for(&grants).await?;
         Ok(Self::detail(
             database,
             grant,
@@ -1082,11 +1119,6 @@ where
         self.apply_database_ops(receipt, viewer, ops).await
     }
 
-    #[tracing::instrument(skip(self, req), err)]
-    async fn exec_sql(&self, viewer: Viewer, req: ExecRequest) -> Result<ExecOutcome, QueryError> {
-        self.run_sql(viewer, req, query::QueryMode::ReadWrite).await
-    }
-
     #[tracing::instrument(skip(self, receipt), err)]
     async fn share_awareness(
         &self,
@@ -1105,37 +1137,18 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(skip(self, sql), err)]
-    async fn query_sql(&self, viewer: Viewer, sql: String) -> Result<ExecOutcome, QueryError> {
-        self.run_sql(
-            viewer,
-            ExecRequest {
-                scope: None,
-                sql,
-                base_versions: None,
-            },
-            query::QueryMode::ReadOnly,
-        )
-        .await
-    }
-
     #[tracing::instrument(skip(self, definition), err)]
     async fn save_query(
         &self,
         viewer: Viewer,
         database_id: Option<DatabaseId>,
         definition: QueryDefinition,
-    ) -> Result<SavedQuery, QueryError> {
+    ) -> Result<SavedQuery, SavedQueryError> {
         self.store_query(viewer, database_id, definition).await
     }
 
     #[tracing::instrument(skip(self), err)]
-    async fn get_query(&self, viewer: Viewer, id: QueryId) -> Result<SavedQuery, QueryError> {
+    async fn get_query(&self, viewer: Viewer, id: QueryId) -> Result<SavedQuery, SavedQueryError> {
         self.readable_query(&viewer, id).await
-    }
-
-    #[tracing::instrument(skip(self), err)]
-    async fn run_query(&self, viewer: Viewer, id: QueryId) -> Result<ExecOutcome, QueryError> {
-        self.run_saved_query(viewer, id).await
     }
 }

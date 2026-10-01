@@ -126,21 +126,12 @@ async fn writes_reach_the_service_as_the_contexts_agent_for_the_user() {
         database_id: DATABASE_ID,
         name: "Party Planning".to_string(),
     }
-    .call(ServiceContext(context.clone()), request_context())
-    .await
-    .unwrap();
-    QueryDatabase {
-        database_id: None,
-        sql: "INSERT INTO guests (name) VALUES ('Ada')".to_string(),
-        base_versions: None,
-        display: None,
-    }
     .call(ServiceContext(context), request_context())
     .await
     .unwrap();
 
     assert_eq!(
         calls.lock().unwrap().acting_bots,
-        [Some(agent), Some(agent), Some(agent)]
+        [Some(agent), Some(agent)]
     );
 }

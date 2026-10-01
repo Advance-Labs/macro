@@ -5,23 +5,6 @@ fn version(world: &Shared) -> TableVersion {
     world.lock().unwrap().tables[0].version
 }
 
-async fn insert_names(seeded: &Seeded, names: &[&str]) -> Vec<RowId> {
-    let values: Vec<String> = names.iter().map(|name| format!("('{name}')")).collect();
-    seeded
-        .service
-        .exec_sql(
-            viewer(OWNER),
-            ExecRequest {
-                scope: None,
-                sql: format!("INSERT INTO guests (name) VALUES {}", values.join(", ")),
-                base_versions: None,
-            },
-        )
-        .await
-        .unwrap()
-        .inserted_row_ids
-}
-
 fn to(data_type: DataType, seeded: &Seeded, column_id: ColumnId) -> ChangeColumnType {
     ChangeColumnType {
         table_id: seeded.table_id,
@@ -184,16 +167,23 @@ async fn clearing_a_cell_with_several_values_keeps_its_first() {
         )
         .await
         .unwrap();
-    svc.exec_sql(
+    svc.apply_ops(
+        receipt(seeded.database_id, OWNER, AccessLevel::Edit),
         viewer(OWNER),
-        ExecRequest {
-            scope: None,
-            sql: format!(
-                "UPDATE guests SET diet = ['Vegan', 'Nut-free'] WHERE row_id = '{}'",
-                seeded.row_id
-            ),
-            base_versions: None,
-        },
+        vec![DatabaseOp::UpdateRows {
+            table: seeded.table_id,
+            changes: RowChanges::Uniform {
+                rows: vec![seeded.row_id],
+                cells: vec![CellWrite {
+                    column: tags,
+                    value: CellValue::Options(vec![
+                        OptionRef::Label("Vegan".into()),
+                        OptionRef::Label("Nut-free".into()),
+                    ]),
+                }],
+            },
+            create_missing_options: false,
+        }],
     )
     .await
     .unwrap();
@@ -225,11 +215,20 @@ async fn clearing_a_cell_with_several_values_keeps_its_first() {
 
     assert_eq!(outcome.cleared_cells, 0);
     assert_eq!(outcome.trimmed_cells, 1);
-    let read = svc
-        .query_sql(viewer(OWNER), "SELECT diet FROM guests".into())
-        .await
-        .unwrap();
-    assert_eq!(read.results[0].rows[0][1], SqlValue::Text("Vegan".into()));
+    let diet = seeded
+        .world
+        .lock()
+        .unwrap()
+        .columns
+        .iter()
+        .find(|column| column.id == tags)
+        .unwrap()
+        .property_definition_id;
+    let vegan = option_id(&seeded.world, diet, "Vegan");
+    assert_eq!(
+        cell(&seeded.world, seeded.row_id, diet),
+        Some(PropertyValue::SelectOption(vec![vegan]))
+    );
 }
 
 #[tokio::test]
@@ -254,19 +253,32 @@ async fn a_date_becomes_its_calendar_day_as_text_unless_it_has_a_time() {
         )
         .await
         .unwrap();
+    let midnight = "2026-09-30T00:00:00Z".parse().unwrap();
+    let afternoon = "2026-09-30T14:05:00Z".parse().unwrap();
     let inserted = svc
-        .exec_sql(
+        .apply_ops(
+            receipt(seeded.database_id, OWNER, AccessLevel::Edit),
             viewer(OWNER),
-            ExecRequest {
-                scope: None,
-                sql: "INSERT INTO guests (arrives) VALUES ('2026-09-30'), ('2026-09-30T14:05:00Z')"
-                    .into(),
-                base_versions: None,
-            },
+            vec![DatabaseOp::InsertRows {
+                table: seeded.table_id,
+                rows: vec![
+                    vec![CellWrite {
+                        column: arrives,
+                        value: CellValue::Date(midnight),
+                    }],
+                    vec![CellWrite {
+                        column: arrives,
+                        value: CellValue::Date(afternoon),
+                    }],
+                ],
+                create_missing_options: false,
+            }],
         )
         .await
-        .unwrap()
-        .inserted_row_ids;
+        .unwrap();
+    let [OpResult::RowsWritten { inserted, .. }] = inserted.as_slice() else {
+        panic!("expected one insert, got {inserted:?}");
+    };
 
     svc.change_column_type(
         receipt(seeded.database_id, OWNER, AccessLevel::Edit),
