@@ -2,33 +2,31 @@ import { queryClient } from '@queries/client';
 import { invalidateDatabase } from '@queries/storage/databases';
 import { databasesKeys } from '@queries/storage/keys';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
-import type { RenameEntitiesMutationVariables } from '@service-storage/graphql/generated/graphql';
-import type { Client } from '@urql/core';
+import {
+  RenameDatabaseDocument,
+  type RenameDatabaseMutation,
+  type RenameDatabaseMutationVariables,
+} from '@service-storage/graphql/generated/graphql';
+import type { CombinedError } from '@urql/core';
 import { err, errAsync, ok, type Result, ResultAsync } from 'neverthrow';
+import { match } from 'ts-pattern';
 import type { DatabaseEntityFailure } from '../core/write-failure';
 
-type RenameDatabaseResult = {
-  renameEntities: {
-    results: (
-      | { __typename: 'GraphqlMutationSuccess' }
-      | { __typename: 'GraphqlMutationError'; message: string }
-    )[];
+/** The slice of the GraphQL client a database rename sends through. */
+export type RenameDatabaseClient = {
+  mutation(
+    document: typeof RenameDatabaseDocument,
+    variables: RenameDatabaseMutationVariables
+  ): {
+    toPromise(): Promise<{
+      data?: RenameDatabaseMutation;
+      error?: CombinedError;
+    }>;
   };
 };
 
-// Databases are not Soup entities. Request the mutation result without the
-// generic rename fragment's Soup effects, whose hydration would fail.
-const RENAME_DATABASE = `mutation RenameDatabase($inputs: [RenameEntityInput!]!) {
-  renameEntities(inputs: $inputs) {
-    results {
-      __typename
-      ... on GraphqlMutationError { message }
-    }
-  }
-}`;
-
 export function renameDatabase(
-  client: Pick<Client, 'mutation'>,
+  client: RenameDatabaseClient,
   databaseId: string,
   name: string
 ): ResultAsync<void, DatabaseEntityFailure> {
@@ -36,36 +34,37 @@ export function renameDatabase(
   if (!displayName) return errAsync({ kind: 'empty-name' });
   const renamed = async (): Promise<Result<void, DatabaseEntityFailure>> => {
     const response = await client
-      .mutation<RenameDatabaseResult, RenameEntitiesMutationVariables>(
-        RENAME_DATABASE,
-        {
-          inputs: [
-            { entity: { type: 'DATABASE', id: databaseId }, displayName },
-          ],
-        }
-      )
+      .mutation(RenameDatabaseDocument, { id: databaseId, displayName })
       .toPromise();
     const result = response.data?.renameEntities.results[0];
     if (response.error || !result) return err({ kind: 'unreachable' });
-    if (result.__typename === 'GraphqlMutationError')
-      return err({ kind: 'refused', message: result.message });
-    queryClient.setQueryData(
-      databasesKeys.detail(databaseId).queryKey,
-      (previous: DatabaseDetail | undefined) =>
-        previous
-          ? {
+    return match(result)
+      .returnType<Promise<Result<void, DatabaseEntityFailure>>>()
+      .with({ __typename: 'GraphqlMutationError' }, async (refusal) =>
+        err({
+          kind: 'refused',
+          errorCode: refusal.errorCode,
+          message: refusal.message,
+        })
+      )
+      .with({ __typename: 'GraphqlMutationSuccess' }, async () => {
+        queryClient.setQueryData(
+          databasesKeys.detail(databaseId).queryKey,
+          (previous: DatabaseDetail | undefined) =>
+            previous && {
               ...previous,
               database: { ...previous.database, name: displayName },
             }
-          : previous
-    );
-    void queryClient.invalidateQueries({
-      queryKey: databasesKeys.list.queryKey,
-    });
-    // Qualified SQL names include the database name; open reads rerun against
-    // the reloaded catalog.
-    await invalidateDatabase(databaseId);
-    return ok(undefined);
+        );
+        void queryClient.invalidateQueries({
+          queryKey: databasesKeys.list.queryKey,
+        });
+        // Qualified SQL names include the database name; open reads rerun
+        // against the reloaded catalog.
+        await invalidateDatabase(databaseId);
+        return ok(undefined);
+      })
+      .exhaustive();
   };
   return new ResultAsync(renamed());
 }

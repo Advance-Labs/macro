@@ -4,6 +4,7 @@ import type {
   DatabaseOpsError,
   DatabaseSchemaErrorCode,
 } from '@service-storage/databases';
+import type { GraphqlEntityMutationErrorCode } from '@service-storage/graphql/generated/graphql';
 import { match } from 'ts-pattern';
 
 /** A grid value the column it is written to cannot take. */
@@ -11,7 +12,13 @@ export type DatabaseCellFailure =
   | { kind: 'read-only-column' }
   | { kind: 'not-a-number' }
   /** A relation's cells are rows, edited as a relation. */
-  | { kind: 'relation-as-entity' };
+  | { kind: 'relation-as-entity' }
+  /** A multi-valued cell that is not the grid's JSON array of values. */
+  | { kind: 'malformed-list' }
+  /** An entity column that names no kind of entity, so a bare id cannot be written to it. */
+  | { kind: 'untyped-entity' }
+  /** The cell holds an option its column's catalog lacks. */
+  | { kind: 'unavailable-option' };
 
 /** Why a grid write did not land, or may not have. */
 export type DatabaseWriteFailure =
@@ -89,6 +96,20 @@ export function databaseWriteMessage(failure: DatabaseWriteFailure): string {
       () => 'This column holds related records; edit it as a relation.'
     )
     .with(
+      { kind: 'malformed-list' },
+      () => 'This value could not be read. Refresh and try again.'
+    )
+    .with(
+      { kind: 'untyped-entity' },
+      () =>
+        'This column does not say what it links to. Choose a mention instead.'
+    )
+    .with(
+      { kind: 'unavailable-option' },
+      () =>
+        'This cell has an option that is no longer available. Refresh and try again.'
+    )
+    .with(
       { kind: 'needs-refresh' },
       () => 'Refresh this table before entering its first value.'
     )
@@ -151,7 +172,11 @@ export function databaseReadMessage(failure: DatabaseReadFailure): string {
 export type DatabaseEntityFailure =
   | { kind: 'empty-name' }
   /** The service refused, in its own words. */
-  | { kind: 'refused'; message: string }
+  | {
+      kind: 'refused';
+      errorCode: GraphqlEntityMutationErrorCode;
+      message: string;
+    }
   | { kind: 'unreachable' };
 
 export function databaseEntityMessage(
@@ -159,12 +184,22 @@ export function databaseEntityMessage(
   action: 'rename' | 'delete'
 ): string {
   return match(failure)
+    .returnType<string>()
     .with({ kind: 'empty-name' }, () => 'Give your database a name.')
+    .with(
+      { kind: 'refused', errorCode: 'FORBIDDEN' },
+      () => `You can’t ${action} this database.`
+    )
+    .with(
+      { kind: 'refused', errorCode: 'NOT_FOUND' },
+      () => 'This database is no longer available.'
+    )
     .with({ kind: 'refused' }, ({ message }) => message)
     .with({ kind: 'unreachable' }, () =>
-      action === 'rename'
-        ? 'Could not rename this database.'
-        : 'Could not delete this database. Try again.'
+      match(action)
+        .with('rename', () => 'Could not rename this database.')
+        .with('delete', () => 'Could not delete this database. Try again.')
+        .exhaustive()
     )
     .exhaustive();
 }
