@@ -84,8 +84,8 @@ export class DatabaseTable {
   }
 
   /** Add a column to this table. See {@link Database.addColumn}. */
-  addColumn(opts: AddColumnOptions): Promise<DatabaseColumn> {
-    return this.database.addColumn(this, opts);
+  addColumn(options: AddColumnOptions): Promise<DatabaseColumn> {
+    return this.database.addColumn(this, options);
   }
 
   /** Persist every column ID exactly once in the requested order. */

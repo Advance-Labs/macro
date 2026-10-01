@@ -62,8 +62,8 @@ export class DatabaseColumn {
   }
 
   /** Settle the type of an empty column created with inferType enabled. */
-  async inferType(opts: InferColumnTypeOptions): Promise<DatabaseColumn> {
-    await this.table.database.inferColumnType(this, opts);
+  async inferType(options: InferColumnTypeOptions): Promise<DatabaseColumn> {
+    await this.table.database.inferColumnType(this, options);
     return this;
   }
 
@@ -129,12 +129,8 @@ export class DatabaseColumn {
   }
 
   /**
-   * Add select options to the column — the labels SQL will accept for it.
-   * Labels the column already has are ignored, so the call is safe to
-   * repeat. Only select and tag columns accept options.
-   *
-   * Returns this handle; the owning database's cached schema is dropped, so
-   * the next read sees the new options.
+   * Add select options to the column. Labels it already has are ignored, so
+   * the call is safe to repeat. Only select and tag columns accept options.
    */
   async addOptions(labels: string[]): Promise<DatabaseColumn> {
     await this.table.database.addColumnOptions(this, labels);

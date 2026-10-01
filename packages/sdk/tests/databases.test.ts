@@ -201,12 +201,10 @@ describe('Database', () => {
     };
     expect((await database.importTable(request)).id).toBe(tableId);
     expect((await database.importTable(request)).id).toBe(tableId);
-    expect(writes.slice(0, 2)).toEqual(
-      [0, 1].map(() => ({
-        url: `${host}/databases/${databaseId}/import`,
-        body: request,
-      })),
-    );
+    expect(writes.slice(0, 2)).toEqual([
+      { url: `${host}/databases/${databaseId}/import`, body: request },
+      { url: `${host}/databases/${databaseId}/import`, body: request },
+    ]);
     expect(await database.sharePermissions()).toEqual(permissions);
     const grants = {
       channelSharePermissions: [

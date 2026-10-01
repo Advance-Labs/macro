@@ -149,8 +149,8 @@ a database, not entities of their own, so they come back as handles that
 resolve through the database's schema.
 
 ```ts
-const db = await macro.databases.create({ name: 'Events' });
-const guests = await db.createTable({ name: 'Guests' });
+const database = await macro.databases.create({ name: 'Events' });
+const guests = await database.createTable({ name: 'Guests' });
 const email = await guests.addColumn({ name: 'Email', dataType: 'STRING' });
 
 // A select column only accepts labels you give it, at creation or later.
@@ -169,16 +169,16 @@ const casts = await rsvp.casts();
 
 // Tabs: a new database starts with a "Table 1". Reorder by naming every
 // table once, or delete one; a database keeps at least one.
-const tables = await db.tables();
-await db.reorderTables(tables.toReversed());
-await (await db.table('Table 1'))?.delete();
+const tables = await database.tables();
+await database.reorderTables(tables.toReversed());
+await (await database.table('Table 1'))?.delete();
 ```
 
 Rows, select options, views, and board cards change through ops, applied as
 one batch: a refused op leaves the whole batch unwritten.
 
 ```ts
-const [result] = await db.applyOps([
+const [result] = await database.applyOps([
   {
     kind: 'insert_rows',
     table: guests.id,

@@ -14,8 +14,8 @@ export class DatabaseNamespace {
   }
 
   /** Create a database owned by the caller. */
-  create(opts: { name: string }): Promise<Database> {
-    return Database.create(this.client, opts);
+  create(options: { name: string }): Promise<Database> {
+    return Database.create(this.client, options);
   }
 
   /** The databases the caller can see. */
