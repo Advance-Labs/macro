@@ -1,7 +1,8 @@
 /** Gateway liveness for databases, apart from `./databases` to keep the websocket out of startup. */
 import { useUserId } from '@core/context/user';
+import { Telemetry } from '@macro-inc/observability';
 import { createConnectionWebsocketEffect } from '@service-connection/websocket';
-import { databasesClient } from '@service-storage/databases';
+import { storageServiceClient } from '@service-storage/client';
 import type { Awareness } from '@service-storage/generated/schemas/awareness';
 import { ReactiveMap } from '@solid-primitives/map';
 import { debounce } from '@solid-primitives/scheduled';
@@ -108,7 +109,14 @@ export function useDatabaseAwareness(
 
   let announced: { databaseId: string; state: Awareness } | undefined;
   const send = (id: string, state: Awareness) => {
-    void databasesClient.shareAwareness(id, state);
+    void storageServiceClient.databases
+      .shareAwareness({ id, state })
+      .mapErr((errors) =>
+        Telemetry.warn('database awareness was not shared', {
+          databaseId: id,
+          errors: JSON.stringify(errors),
+        })
+      );
   };
   const leave = () => {
     if (!announced) return;

@@ -1,3 +1,5 @@
+import type { ResultError } from '@core/util/result';
+import { errAsync, okAsync } from 'neverthrow';
 import { createRoot, createSignal } from 'solid-js';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import {
@@ -9,7 +11,11 @@ const mock = vi.hoisted(() => ({
   event: undefined as
     | ((message: { type: string; data: unknown }) => void)
     | undefined,
-  shareAwareness: vi.fn(async () => ({ isOk: () => true })),
+  shareAwareness: vi.fn(
+    (_request: { id: string; state: Record<string, unknown> }) =>
+      okAsync<Record<string, never>, ResultError[]>({})
+  ),
+  warn: vi.fn(),
 }));
 vi.mock('@service-connection/websocket', () => ({
   createConnectionWebsocketEffect: (handler: typeof mock.event) => {
@@ -17,8 +23,11 @@ vi.mock('@service-connection/websocket', () => ({
   },
 }));
 vi.mock('@core/context/user', () => ({ useUserId: () => () => 'me' }));
-vi.mock('@service-storage/databases', () => ({
-  databasesClient: { shareAwareness: mock.shareAwareness },
+vi.mock('@service-storage/client', () => ({
+  storageServiceClient: { databases: { shareAwareness: mock.shareAwareness } },
+}));
+vi.mock('@macro-inc/observability', () => ({
+  Telemetry: { warn: mock.warn },
 }));
 vi.mock('./databases', () => ({
   invalidateDatabase: vi.fn(),
@@ -43,6 +52,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   mock.shareAwareness.mockClear();
+  mock.warn.mockClear();
 });
 
 it('sends the local state debounced, heartbeats it, and announces leaving on dispose', () => {
@@ -65,29 +75,41 @@ it('sends the local state debounced, heartbeats it, and announces leaving on dis
   });
   vi.advanceTimersByTime(150);
   expect(mock.shareAwareness).toHaveBeenCalledTimes(1);
-  expect(mock.shareAwareness).toHaveBeenCalledWith('db', {
-    tableId: 'tasks',
-    rowId: 'row-1',
-    columnId: 'notes',
-    editing: true,
+  expect(mock.shareAwareness).toHaveBeenCalledWith({
+    id: 'db',
+    state: {
+      tableId: 'tasks',
+      rowId: 'row-1',
+      columnId: 'notes',
+      editing: true,
+    },
   });
   vi.advanceTimersByTime(20_000);
   expect(mock.shareAwareness).toHaveBeenCalledTimes(2);
-  expect(mock.shareAwareness).toHaveBeenLastCalledWith('db', {
-    tableId: 'tasks',
-    rowId: 'row-1',
-    columnId: 'notes',
-    editing: true,
+  expect(mock.shareAwareness).toHaveBeenLastCalledWith({
+    id: 'db',
+    state: {
+      tableId: 'tasks',
+      rowId: 'row-1',
+      columnId: 'notes',
+      editing: true,
+    },
   });
   setLocal({ tableId: 'tasks' });
   vi.advanceTimersByTime(150);
-  expect(mock.shareAwareness).toHaveBeenLastCalledWith('db', {
-    tableId: 'tasks',
+  expect(mock.shareAwareness).toHaveBeenLastCalledWith({
+    id: 'db',
+    state: {
+      tableId: 'tasks',
+    },
   });
   dispose();
-  expect(mock.shareAwareness).toHaveBeenLastCalledWith('db', {
-    tableId: 'tasks',
-    left: true,
+  expect(mock.shareAwareness).toHaveBeenLastCalledWith({
+    id: 'db',
+    state: {
+      tableId: 'tasks',
+      left: true,
+    },
   });
   expect(mock.shareAwareness).toHaveBeenCalledTimes(4);
 });
@@ -135,5 +157,29 @@ it('merges remote states per user, drops stale relays, itself, other databases, 
   vi.advanceTimersByTime(20_000);
   // Alex went quiet for 50 s; Sam refreshed 20 s ago.
   expect(remote().map((user) => user.userId)).toEqual(['sam']);
+  dispose();
+});
+
+it('reports an awareness update the service refused', async () => {
+  mock.shareAwareness.mockReturnValueOnce(
+    errAsync([{ code: 'FORBIDDEN', message: 'no access' } as ResultError])
+  );
+  const dispose = createRoot((dispose) => {
+    useDatabaseAwareness(
+      () => 'db',
+      () => ({ tableId: 'tasks' })
+    );
+    return dispose;
+  });
+  vi.advanceTimersByTime(150);
+  await vi.waitFor(() =>
+    expect(mock.warn).toHaveBeenCalledWith(
+      'database awareness was not shared',
+      {
+        databaseId: 'db',
+        errors: JSON.stringify([{ code: 'FORBIDDEN', message: 'no access' }]),
+      }
+    )
+  );
   dispose();
 });
