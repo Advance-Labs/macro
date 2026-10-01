@@ -300,6 +300,56 @@ async fn an_entity_column_without_its_kind_is_refused_before_the_service() {
     assert!(calls.lock().unwrap().applied.is_empty());
 }
 
+#[tokio::test]
+async fn an_entity_kind_on_another_type_is_refused_before_the_service() {
+    let (context, calls) = context(FakeAccess::granting(AccessLevel::Edit));
+    let error = AddColumn {
+        database_id: DATABASE_ID,
+        table_id: TABLE_ID,
+        name: "Host".to_string(),
+        data_type: ColumnType::Text,
+        is_multi_select: false,
+        options: None,
+        specific_entity_type: Some(ToolEntityType::User),
+        link_to_table_id: None,
+    }
+    .call(ServiceContext(context), request_context())
+    .await
+    .expect_err("only an entity column references an entity kind");
+
+    assert_eq!(
+        error.description,
+        "specificEntityType is only for dataType entity; for a person column pass dataType \
+         entity with specificEntityType USER, or leave specificEntityType out."
+    );
+    assert!(calls.lock().unwrap().applied.is_empty());
+}
+
+#[tokio::test]
+async fn an_entity_kind_on_a_relation_is_refused_before_the_service() {
+    let (context, calls) = context(FakeAccess::granting(AccessLevel::Edit));
+    let parties = TableId::from_uuid(Uuid::from_u128(0x7ab1_0000_0000_0000_0000_0000_0000_0002));
+    let error = AddColumn {
+        database_id: DATABASE_ID,
+        table_id: TABLE_ID,
+        name: "Party".to_string(),
+        data_type: ColumnType::Entity,
+        is_multi_select: false,
+        options: None,
+        specific_entity_type: Some(ToolEntityType::User),
+        link_to_table_id: Some(parties),
+    }
+    .call(ServiceContext(context), request_context())
+    .await
+    .expect_err("a relation references rows, not an entity kind");
+
+    assert_eq!(
+        error.description,
+        "A relation column references rows of linkToTableId; leave specificEntityType out."
+    );
+    assert!(calls.lock().unwrap().applied.is_empty());
+}
+
 /// A relation is an entity column with a target table, in this database.
 #[tokio::test]
 async fn adding_a_relation_column_targets_this_database() {

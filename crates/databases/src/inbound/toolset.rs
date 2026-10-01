@@ -438,6 +438,14 @@ pub(crate) fn column_kind(
     relation: Option<(DatabaseId, TableId)>,
 ) -> Result<ColumnKind, ToolCallError> {
     if let Some((database, table)) = relation {
+        if specific_entity_type.is_some() {
+            return Err(ToolCallError {
+                description: "A relation column references rows of linkToTableId; leave \
+                              specificEntityType out."
+                    .into(),
+                internal_error: anyhow::anyhow!("a relation asked for an entity kind"),
+            });
+        }
         if data_type != ColumnType::Entity {
             return Err(ToolCallError {
                 description: "A relation column's type is entity; pass dataType entity with \
@@ -447,6 +455,15 @@ pub(crate) fn column_kind(
             });
         }
         return Ok(ColumnKind::Relation { database, table });
+    }
+    if specific_entity_type.is_some() && data_type != ColumnType::Entity {
+        return Err(ToolCallError {
+            description: "specificEntityType is only for dataType entity; for a person column \
+                          pass dataType entity with specificEntityType USER, or leave \
+                          specificEntityType out."
+                .into(),
+            internal_error: anyhow::anyhow!("a non-entity column asked for an entity kind"),
+        });
     }
     let multi = is_multi_select;
     Ok(match data_type {

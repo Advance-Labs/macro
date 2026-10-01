@@ -97,8 +97,9 @@ pub struct AddColumn {
 
     /// What an entity column's ids reference.
     #[schemars(
-        description = "Required for dataType entity without linkToTableId: what the ids \
-                       reference, e.g. USER for people or DOCUMENT."
+        description = "Required for dataType entity without linkToTableId, and refused \
+                       otherwise: what the ids reference, e.g. USER for a person column or \
+                       DOCUMENT."
     )]
     #[serde(default)]
     pub specific_entity_type: Option<ToolEntityType>,
