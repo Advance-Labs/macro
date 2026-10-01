@@ -256,6 +256,8 @@ export function createDatabaseRowsSource(props: {
   const [readVersion, setReadVersion] = createSignal(
     untrack(() => (currentTable() ?? props.table()).table.version)
   );
+  // The newest version this writer's row writes made; it reads them back itself.
+  let writtenVersion = 0;
 
   function rowsOf(query: DatabaseSqlQuery): DatabaseRow[] | undefined {
     const outcome = query.outcome();
@@ -308,7 +310,7 @@ export function createDatabaseRowsSource(props: {
   }
   // Another viewer's edit. This writer's own edits read their version back.
   props.onTableChanged((version) => {
-    if (version <= readVersion()) return;
+    if (version <= Math.max(readVersion(), writtenVersion)) return;
     refreshInBackground({
       refresh: () =>
         readAgain(Math.max(version, currentTable()?.table.version ?? version)),
@@ -473,6 +475,7 @@ export function createDatabaseRowsSource(props: {
     const [written] = applied.value;
     if (written?.kind !== 'rows_written')
       return err({ kind: 'unexpected-result' });
+    writtenVersion = Math.max(writtenVersion, written.tableVersion);
     props.applyVersions({ [tableId]: written.tableVersion });
     // New options live in the schema; read it again in the background
     // so they show as options without suspending the grid.

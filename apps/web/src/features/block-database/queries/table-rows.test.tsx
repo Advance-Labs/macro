@@ -461,6 +461,24 @@ describe('database view reads', () => {
     expect(reads).toHaveLength(afterOwnWrite + 1);
   });
 
+  it("does not read again when this writer's own change is announced before its read-back lands", async () => {
+    const { read, reads } = engine(() =>
+      guests([{ id: 'record', name: 'Ada' }])
+    );
+    const applyOps = vi.fn<ApplyOps>(() => okAsync(written));
+    const { source, tableChanged } = setup(detail(), applyOps, { read });
+    await waitFor(() => expect(source.snapshot()?.version).toBe(5));
+    const beforeWrite = reads.length;
+
+    await source.write(edit, 5, false);
+    // The gateway announces version 6, the write's own, before the writer reads it back.
+    tableChanged(6);
+    await source.refresh();
+
+    expect(source.snapshot()?.version).toBe(6);
+    expect(reads).toHaveLength(beforeWrite + 1);
+  });
+
   it('shows a failed read as the grid error and keeps the rows it had', async () => {
     let offline = false;
     const { read } = engine(
