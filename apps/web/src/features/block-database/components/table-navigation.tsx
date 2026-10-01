@@ -11,14 +11,7 @@ import PlusIcon from '@phosphor/plus.svg';
 import TableIcon from '@phosphor/table.svg';
 import { Key } from '@solid-primitives/keyed';
 import { createResizeObserver } from '@solid-primitives/resize-observer';
-import {
-  createDraggable,
-  createDroppable,
-  DragDropProvider,
-  DragDropSensors,
-  DragOverlay,
-  useDragDropContext,
-} from '@thisbeyond/solid-dnd';
+import { DragDropProvider, DragOverlay } from '@thisbeyond/solid-dnd';
 import { Button } from '@ui/components/Button';
 import { Tooltip } from '@ui/components/Tooltip';
 import {
@@ -27,10 +20,14 @@ import {
   createUniqueId,
   type JSX,
   on,
-  onCleanup,
   Show,
 } from 'solid-js';
-import { createDragAutoScroll } from '../../../components/drag-drop/create-drag-auto-scroll';
+import {
+  createHorizontalReorder,
+  createReorderItem,
+} from '../../../components/drag-drop/create-horizontal-reorder';
+import { DragSessionSensors } from '../../../components/drag-drop/drag-session-sensors';
+import { InsertionLine } from '../../../components/drag-drop/insertion-line';
 import {
   type DatabaseSchemaChange,
   tableRenameMessage,
@@ -75,13 +72,6 @@ export function TableNavigation(props: {
   const canRename = () => props.canCreate && !!props.onRename;
   const canReorder = () =>
     props.canCreate && !!props.onReorder && props.tables.length > 1;
-  const [tabDrop, setTabDrop] = createSignal<{
-    targetId: string;
-    edge: 'before' | 'after';
-    left: number;
-  }>();
-  const [tabPreview, setTabPreview] = createSignal<HTMLElement>();
-  let pointerOrigin: { x: number; y: number } | undefined;
   const moveTable = (
     tableId: string,
     targetId: string,
@@ -95,6 +85,16 @@ export function TableNavigation(props: {
     if (remaining.join() === order.join()) return;
     props.onReorder?.(remaining);
   };
+  const tabReorder = createHorizontalReorder({
+    order: () => props.tables.map((table) => table.id),
+    getViewport: tabRail,
+    enabled: canReorder,
+    verticalSlack: DROP_SLACK_PX,
+    previewMarker: 'data-tab-drag-preview',
+    indicatorLeft: (boundary, rail) =>
+      boundary - rail.getBoundingClientRect().left + rail.scrollLeft,
+    onDrop: moveTable,
+  });
   const neighbour = (tableId: string | undefined, direction: -1 | 1) => {
     const index = props.tables.findIndex((table) => table.id === tableId);
     return index < 0 ? undefined : props.tables[index + direction];
@@ -229,92 +229,14 @@ export function TableNavigation(props: {
           }
         >
           <DragDropProvider
-            collisionDetector={(draggable, droppables) => {
-              const rail = tabRail();
-              if (!pointerOrigin || !rail || !canReorder()) {
-                setTabDrop(undefined);
-                return null;
-              }
-              const x = pointerOrigin.x + draggable.transform.x;
-              const y = pointerOrigin.y + draggable.transform.y;
-              const viewport = rail.getBoundingClientRect();
-              if (
-                x < viewport.left ||
-                x > viewport.right ||
-                y < viewport.top - DROP_SLACK_PX ||
-                y > viewport.bottom + DROP_SLACK_PX
-              ) {
-                setTabDrop(undefined);
-                return null;
-              }
-              const tabs = droppables
-                .map((droppable) => ({
-                  droppable,
-                  bounds: droppable.node.getBoundingClientRect(),
-                }))
-                .sort((a, b) => a.bounds.left - b.bounds.left);
-              const target = (
-                tabs.find(({ bounds }) => x <= bounds.right) ?? tabs.at(-1)
-              )?.droppable;
-              if (!target) {
-                setTabDrop(undefined);
-                return null;
-              }
-              const bounds = target.node.getBoundingClientRect();
-              const edge =
-                x < bounds.left + bounds.width / 2 ? 'before' : 'after';
-              const from = props.tables.findIndex(
-                (table) => table.id === String(draggable.id)
-              );
-              const to = props.tables.findIndex(
-                (table) => table.id === String(target.id)
-              );
-              const insertion = to + Number(edge === 'after');
-              if (
-                from < 0 ||
-                to < 0 ||
-                insertion === from ||
-                insertion === from + 1
-              ) {
-                setTabDrop(undefined);
-                return null;
-              }
-              setTabDrop({
-                targetId: String(target.id),
-                edge,
-                left:
-                  (edge === 'before' ? bounds.left : bounds.right) -
-                  viewport.left +
-                  rail.scrollLeft,
-              });
-              return target;
-            }}
-            onDragStart={({ draggable }) => {
-              const bounds = draggable.node.getBoundingClientRect();
-              const copy = draggable.node.cloneNode(true) as HTMLElement;
-              copy.removeAttribute('id');
-              copy
-                .querySelectorAll('[id]')
-                .forEach((node) => node.removeAttribute('id'));
-              copy.style.width = `${bounds.width}px`;
-              copy.style.height = `${bounds.height}px`;
-              copy.inert = true;
-              copy.setAttribute('aria-hidden', 'true');
-              copy.setAttribute('data-tab-drag-preview', '');
-              setTabPreview(copy);
-            }}
-            onDragEnd={({ draggable }) => {
-              const drop = tabDrop();
-              setTabDrop(undefined);
-              setTabPreview(undefined);
-              pointerOrigin = undefined;
-              if (canReorder() && drop)
-                moveTable(String(draggable.id), drop.targetId, drop.edge);
-            }}
+            collisionDetector={tabReorder.collisionDetector}
+            onDragStart={tabReorder.onDragStart}
+            onDragEnd={tabReorder.onDragEnd}
           >
-            <TabDragSensors
-              onCancel={() => setTabDrop(undefined)}
-              rail={tabRail}
+            <DragSessionSensors
+              getViewport={tabRail}
+              axis="x"
+              onCancel={tabReorder.cancel}
             />
             <Tabs
               value={props.activeTableId ?? ''}
@@ -332,9 +254,7 @@ export function TableNavigation(props: {
                     <DraggableTab
                       id={table().id}
                       canDrag={canReorder() && renaming()?.id !== table().id}
-                      onDragPointerDown={(event) => {
-                        pointerOrigin = { x: event.clientX, y: event.clientY };
-                      }}
+                      onDragStart={tabReorder.start}
                       style={{
                         width:
                           renaming()?.id === table().id
@@ -437,15 +357,12 @@ export function TableNavigation(props: {
                     </DraggableTab>
                   )}
                 </Key>
-                <Show when={tabDrop()}>
+                <Show when={tabReorder.drop()}>
                   {(drop) => (
-                    <div
-                      aria-hidden="true"
+                    <InsertionLine
+                      drop={drop()}
+                      class="inset-y-1"
                       data-tab-drop-indicator
-                      data-drop-target={drop().targetId}
-                      data-drop-edge={drop().edge}
-                      class="pointer-events-none absolute inset-y-1 z-2 w-0.5 -translate-x-1/2 bg-accent"
-                      style={{ left: `${drop().left}px` }}
                     />
                   )}
                 </Show>
@@ -455,7 +372,7 @@ export function TableNavigation(props: {
               class="pointer-events-none select-none rounded-md bg-panel shadow-md"
               style={{ 'z-index': 1000 }}
             >
-              {tabPreview()}
+              {tabReorder.preview()}
             </DragOverlay>
           </DragDropProvider>
         </Show>
@@ -540,61 +457,24 @@ const DROP_SLACK_PX = 24;
 function DraggableTab(props: {
   id: string;
   canDrag: boolean;
-  onDragPointerDown: (event: MouseEvent) => void;
+  onDragStart: (event: MouseEvent) => void;
   style: JSX.CSSProperties;
   children: JSX.Element;
 }) {
-  const draggable = createDraggable(props.id);
-  const droppable = createDroppable(props.id);
+  const item = createReorderItem(props.id, {
+    canDrag: () => props.canDrag,
+    ignore: 'input',
+    start: (event) => props.onDragStart(event),
+  });
   return (
     <div
-      ref={(element) => {
-        draggable.ref(element);
-        droppable.ref(element);
-      }}
+      ref={item.ref}
       class="flex shrink-0 items-center"
-      classList={{ 'opacity-40': draggable.isActiveDraggable }}
+      classList={{ 'opacity-40': item.dragging() }}
       style={props.style}
-      onMouseDown={(event) => {
-        if (
-          !props.canDrag ||
-          event.button !== 0 ||
-          (event.target instanceof Element && event.target.closest('input'))
-        )
-          return;
-        props.onDragPointerDown(event);
-        draggable.dragActivators.onmousedown?.(event);
-      }}
+      onMouseDown={item.onMouseDown}
     >
       {props.children}
     </div>
   );
-}
-
-function TabDragSensors(props: {
-  onCancel: () => void;
-  rail: () => HTMLElement | undefined;
-}) {
-  const context = useDragDropContext();
-  if (!context) throw new Error('TabDragSensors requires DragDropProvider');
-  const [state, actions] = context;
-  createDragAutoScroll({ getViewport: props.rail, axis: 'x' });
-  const cancelDrag = () => {
-    if (!state.active.draggable) return;
-    props.onCancel();
-    actions.dragEnd();
-  };
-  const cancel = (event: KeyboardEvent) => {
-    if (event.key !== 'Escape' || !state.active.draggable) return;
-    event.preventDefault();
-    event.stopPropagation();
-    cancelDrag();
-  };
-  document.addEventListener('keydown', cancel, true);
-  window.addEventListener('blur', cancelDrag);
-  onCleanup(() => {
-    document.removeEventListener('keydown', cancel, true);
-    window.removeEventListener('blur', cancelDrag);
-  });
-  return <DragDropSensors />;
 }

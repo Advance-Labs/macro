@@ -3,9 +3,7 @@ import {
   createDraggable,
   createDroppable,
   DragDropProvider,
-  DragDropSensors,
   DragOverlay,
-  useDragDropContext,
 } from '@thisbeyond/solid-dnd';
 import {
   createContext,
@@ -15,7 +13,8 @@ import {
   Show,
   useContext,
 } from 'solid-js';
-import { createDragAutoScroll } from '../drag-drop/create-drag-auto-scroll';
+import { cloneDragPreview } from '../drag-drop/drag-preview';
+import { DragSessionSensors } from '../drag-drop/drag-session-sensors';
 
 export type KanbanDrop = {
   id: string;
@@ -158,23 +157,7 @@ export function Kanban(props: {
       collisionDetector={collisionDetector}
       onDragStart={({ draggable }) => {
         suppressClick = true;
-        const bounds = draggable.node.getBoundingClientRect();
-        const copy = draggable.node.cloneNode(true);
-        if (!(copy instanceof HTMLElement)) return;
-        copy.removeAttribute('id');
-        copy
-          .querySelectorAll('[id]')
-          .forEach((node) => node.removeAttribute('id'));
-        copy.style.width = `${bounds.width}px`;
-        copy.style.height = `${bounds.height}px`;
-        copy.style.margin = '0';
-        copy.style.opacity = '1';
-        copy.style.transform = 'none';
-        copy.style.boxSizing = 'border-box';
-        copy.inert = true;
-        copy.setAttribute('aria-hidden', 'true');
-        copy.setAttribute('data-kanban-preview', '');
-        setPreview(copy);
+        setPreview(cloneDragPreview(draggable.node, 'data-kanban-preview'));
       }}
       onDragEnd={() => {
         const drop = target();
@@ -184,9 +167,9 @@ export function Kanban(props: {
         if (drop && !cancelled) props.onDrop(drop);
       }}
     >
-      <DragDropSensors />
-      <DragSession
-        getViewport={props.getViewport}
+      <DragSessionSensors
+        getViewport={() => props.getViewport?.()}
+        axis="both"
         onCancel={() => {
           cancelled = true;
           setTarget(undefined);
@@ -214,44 +197,6 @@ export function Kanban(props: {
       </DragOverlay>
     </DragDropProvider>
   );
-}
-
-function DragSession(props: {
-  onCancel: () => void;
-  getViewport?: () => HTMLElement | undefined;
-}) {
-  const context = useDragDropContext();
-  if (!context) throw new Error('DragSession requires DragDropProvider');
-  const [state, actions] = context;
-  createDragAutoScroll({
-    getViewport: () => props.getViewport?.(),
-    axis: 'both',
-  });
-  const cancel = (event: KeyboardEvent) => {
-    if (event.key !== 'Escape' || !state.active.draggable) return;
-    event.preventDefault();
-    event.stopPropagation();
-    props.onCancel();
-    actions.dragEnd();
-  };
-  const updateDrop = (event: Event) => {
-    if (event.target === props.getViewport?.() && state.active.draggable)
-      actions.detectCollisions();
-  };
-  const cancelOnBlur = () => {
-    if (!state.active.draggable) return;
-    props.onCancel();
-    actions.dragEnd();
-  };
-  document.addEventListener('keydown', cancel, true);
-  document.addEventListener('scroll', updateDrop, true);
-  window.addEventListener('blur', cancelOnBlur);
-  onCleanup(() => {
-    document.removeEventListener('keydown', cancel, true);
-    document.removeEventListener('scroll', updateDrop, true);
-    window.removeEventListener('blur', cancelOnBlur);
-  });
-  return null;
 }
 
 /** Place at the end of a relatively positioned card list; cards provide their own leading marker. */
