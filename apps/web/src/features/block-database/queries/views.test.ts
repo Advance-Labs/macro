@@ -2,7 +2,7 @@ import { queryClient } from '@queries/client';
 import { databasesKeys } from '@queries/storage/keys';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import type { OpResult } from '@service-storage/generated/schemas/opResult';
-import { errAsync, okAsync, ResultAsync } from 'neverthrow';
+import { errAsync, ResultAsync } from 'neverthrow';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { reorderDatabaseViews, updateDatabaseView } from './views';
 

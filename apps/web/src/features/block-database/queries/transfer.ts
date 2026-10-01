@@ -11,8 +11,15 @@ import type { Table } from '@service-storage/generated/schemas/table';
 import type { TableDetail } from '@service-storage/generated/schemas/tableDetail';
 import { err, ok, type ResultAsync } from 'neverthrow';
 import { encodeDatabaseCsv } from '../core/csv';
+import { relatedRowIds } from '../core/database-relations';
+import type {
+  DatabaseCellValue,
+  DatabaseViewColumn,
+} from '../core/database-view';
 import { gridRows } from '../core/grid-cells';
+import { formatCellValue } from '../core/table';
 import { tableRowsStatement } from '../sql';
+import { isGridColumn, toViewColumn } from './table-rows';
 
 /** Request IDs survive a transport error; retrying resolves the original import. */
 export function importDatabaseTable(
@@ -30,14 +37,27 @@ export function importDatabaseTable(
 /** The table's rows could not be read, or not all of them. */
 type DatabaseExportFailure = DatabaseSqlFailure | { kind: 'too-large' };
 
+/**
+ * A cell as the grid shows it. Relation cells have no row names loaded
+ * here, so they keep the related rows' ids rather than claiming those rows
+ * are unavailable.
+ */
+function exportedValue(
+  column: DatabaseViewColumn,
+  value: DatabaseCellValue
+): string {
+  return column.relation
+    ? relatedRowIds(value).join(', ')
+    : formatCellValue(column, value);
+}
+
 /** Never silently export a partial read. */
 export function exportDatabaseTableCsv(
   database: DatabaseDetail,
   table: TableDetail
 ): ResultAsync<Blob, DatabaseExportFailure> {
-  const columns = table.columns.filter(
-    (column) => column.column.config?.kind !== 'lookup'
-  );
+  const columns = table.columns.filter(isGridColumn);
+  const viewColumns = columns.map(toViewColumn);
   return readDatabaseSql({
     schema: databaseSqlSchema([{ ...database, tables: [table] }]),
     scope: database.database.id,
@@ -45,17 +65,15 @@ export function exportDatabaseTableCsv(
   }).andThen(({ catalog, outcome }) => {
     if (outcome.truncated) return err({ kind: 'too-large' as const });
     const rows = gridRows(outcome, catalog, columns).map((row) =>
-      columns.map((column) => row.cells[column.column.id] ?? null)
+      viewColumns.map((column) =>
+        exportedValue(column, row.cells[column.id] ?? null)
+      )
     );
     return ok(
       new Blob(
         [
           encodeDatabaseCsv(
-            columns.map(
-              (column) =>
-                column.column.display_name ??
-                column.definition.definition.display_name
-            ),
+            viewColumns.map((column) => column.name),
             rows
           ),
         ],

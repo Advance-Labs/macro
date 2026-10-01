@@ -20,7 +20,10 @@ export type DatabaseCsvFailure =
   | { kind: 'long-column-name'; column: number }
   | { kind: 'long-row'; row: number };
 
-export const MAX_CSV_BYTES = 8 * 1024 * 1024;
+// The import limits of `crates/databases/src/domain/service/transfer.rs`
+// (and `MAX_NAME_LEN` in `service.rs`), checked here before sending.
+const MEBIBYTE = 1024 * 1024;
+export const MAX_CSV_BYTES = 16 * MEBIBYTE;
 const MAX_CSV_ROWS = 10_000;
 const MAX_CSV_COLUMNS = 100;
 const MAX_COLUMN_NAME = 200;
@@ -74,7 +77,10 @@ export function parseDatabaseCsv(
 
 export function databaseCsvMessage(failure: DatabaseCsvFailure): string {
   return match(failure)
-    .with({ kind: 'too-large' }, () => 'Choose a CSV smaller than 8 MB.')
+    .with(
+      { kind: 'too-large' },
+      () => `Choose a CSV smaller than ${MAX_CSV_BYTES / MEBIBYTE} MB.`
+    )
     .with(
       { kind: 'malformed' },
       ({ row, message }) => `CSV row ${row}: ${message}`
@@ -82,11 +88,12 @@ export function databaseCsvMessage(failure: DatabaseCsvFailure): string {
     .with({ kind: 'no-header' }, () => 'The CSV needs a header row.')
     .with(
       { kind: 'too-many-columns' },
-      () => 'A CSV can contain up to 100 columns.'
+      () => `A CSV can contain up to ${MAX_CSV_COLUMNS} columns.`
     )
     .with(
       { kind: 'too-many-rows' },
-      () => 'A CSV can contain up to 10,000 rows.'
+      () =>
+        `A CSV can contain up to ${MAX_CSV_ROWS.toLocaleString('en-US')} rows.`
     )
     .with(
       { kind: 'long-column-name' },

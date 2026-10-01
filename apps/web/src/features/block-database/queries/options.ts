@@ -1,9 +1,9 @@
 /** Relabelling, recolouring and removing a select column's options, shown at once wherever its definition is bound. */
 import { TAG_COLOR_OPTIONS } from '@property/tags/tagColors';
-import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
-import type { PropertyOption } from '@service-storage/generated/schemas/propertyOption';
 import { queryClient } from '@queries/client';
 import { databasesKeys } from '@queries/storage/keys';
+import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
+import type { PropertyOption } from '@service-storage/generated/schemas/propertyOption';
 import { err, errAsync, ok, type Result, ResultAsync } from 'neverthrow';
 import type { OptionChange } from '../context/option-editing';
 import { inferDatabaseNumber } from '../core/column-inference';
@@ -98,13 +98,14 @@ export function updateDatabaseOption(
   change: OptionChange
 ): ResultAsync<void, DatabaseOpFailure> {
   const option = cachedOption(target);
-  const shown = option ? changed(option, change) : undefined;
-  if (shown?.isErr()) return errAsync(shown.error);
+  const shown = option ? changed(option, change) : ok(undefined);
+  if (shown.isErr()) return errAsync(shown.error);
+  const patched = shown.value;
   return ResultAsync.fromSafePromise(
-    shown
+    patched
       ? patchOptions(target, (options) =>
           options.map((existing) =>
-            existing.id === target.optionId ? shown.value : existing
+            existing.id === target.optionId ? patched : existing
           )
         )
       : Promise.resolve()

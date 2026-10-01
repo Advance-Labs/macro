@@ -52,4 +52,16 @@ describe('database CSV files', () => {
       )
     ).toBe('Name,Amount\n"\'=SUM(A1)",-12\n"Doe, Jo",');
   });
+
+  it('names the import limits the service holds a CSV to', () => {
+    expect(databaseCsvMessage({ kind: 'too-large' })).toBe(
+      'Choose a CSV smaller than 16 MB.'
+    );
+    expect(databaseCsvMessage({ kind: 'too-many-rows' })).toBe(
+      'A CSV can contain up to 10,000 rows.'
+    );
+    expect(databaseCsvMessage({ kind: 'too-many-columns' })).toBe(
+      'A CSV can contain up to 100 columns.'
+    );
+  });
 });

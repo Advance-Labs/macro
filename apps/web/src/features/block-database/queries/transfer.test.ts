@@ -1,4 +1,5 @@
-import type { Catalog, Outcome } from '@core/database-sql/generated/types';
+import { databaseSqlSchema } from '@core/database-sql/catalog';
+import type { Catalog } from '@core/database-sql/generated/types';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import type { TableDetail } from '@service-storage/generated/schemas/tableDetail';
 import { errAsync, ok, okAsync } from 'neverthrow';
@@ -19,31 +20,137 @@ vi.mock('@queries/storage/databases', () => ({
 vi.mock('@service-storage/client', () => ({
   storageServiceClient: { databases: { importTable: mocks.import } },
 }));
-const table = {
-  table: { id: 'table', database_id: 'database', name: 'Contacts' },
+const table: TableDetail = {
+  table: {
+    id: 'table',
+    database_id: 'database',
+    name: 'Contacts',
+    position: 'a',
+    version: 1,
+  },
   sql_name: '"CRM"."Contacts"',
+  read_sql_name: '"CRM"."Contacts"',
+  views: [],
   columns: [
     {
-      column: { id: 'name', display_name: 'Customer' },
+      shared_outside_database: false,
+      column: {
+        id: 'name',
+        table_id: 'table',
+        property_definition_id: 'name-definition',
+        position: 'a',
+        config: null,
+        display_name: 'Customer',
+        infer_type: false,
+      },
       sql_name: '"Customer"',
+      writable: true,
       definition: {
         definition: {
           id: 'name-definition',
+          owner: { scope: 'database', database_id: 'database' },
           display_name: 'Name',
           data_type: 'STRING',
           is_multi_select: false,
           specific_entity_type: null,
+          created_at: '',
+          updated_at: '',
+          is_system: false,
+          is_metadata: false,
+        },
+        property_options: [],
+      },
+    },
+    {
+      shared_outside_database: false,
+      column: {
+        id: 'tags',
+        table_id: 'table',
+        property_definition_id: 'tags-definition',
+        position: 'b',
+        config: null,
+        display_name: null,
+        infer_type: false,
+      },
+      sql_name: '"Tags"',
+      writable: true,
+      definition: {
+        definition: {
+          id: 'tags-definition',
+          owner: { scope: 'database', database_id: 'database' },
+          display_name: 'Tags',
+          data_type: 'TAG',
+          is_multi_select: true,
+          specific_entity_type: null,
+          created_at: '',
+          updated_at: '',
+          is_system: false,
+          is_metadata: false,
+        },
+        property_options: [
+          {
+            id: 'vip',
+            property_definition_id: 'tags-definition',
+            display_order: 0,
+            value: { type: 'string', value: 'VIP' },
+            color: '#889096',
+            created_at: '',
+            updated_at: '',
+          },
+          {
+            id: 'lead',
+            property_definition_id: 'tags-definition',
+            display_order: 1,
+            value: { type: 'string', value: 'Lead' },
+            color: '#889096',
+            created_at: '',
+            updated_at: '',
+          },
+        ],
+      },
+    },
+    {
+      shared_outside_database: false,
+      column: {
+        id: 'active',
+        table_id: 'table',
+        property_definition_id: 'active-definition',
+        position: 'c',
+        config: null,
+        display_name: null,
+        infer_type: false,
+      },
+      sql_name: '"Active"',
+      writable: true,
+      definition: {
+        definition: {
+          id: 'active-definition',
+          owner: { scope: 'database', database_id: 'database' },
+          display_name: 'Active',
+          data_type: 'BOOLEAN',
+          is_multi_select: false,
+          specific_entity_type: null,
+          created_at: '',
+          updated_at: '',
+          is_system: false,
+          is_metadata: false,
         },
         property_options: [],
       },
     },
   ],
-} as unknown as TableDetail;
-const database = {
-  database: { id: 'database', name: 'CRM' },
+};
+const database: DatabaseDetail = {
+  database: {
+    id: 'database',
+    name: 'CRM',
+    owner_id: 'owner',
+    created_at: '',
+    trashed_at: null,
+  },
   grant: 'view',
   tables: [table],
-} as unknown as DatabaseDetail;
+};
 /** The catalog the engine builds of `database`. */
 const catalog: Catalog = {
   tables: [
@@ -60,28 +167,61 @@ const catalog: Catalog = {
           name: 'Customer',
           kind: { kind: 'text' },
         },
+        {
+          id: 'tags-definition',
+          placement: 'tags',
+          name: 'Tags',
+          kind: {
+            kind: 'select',
+            multi: true,
+            options: [
+              { id: 'vip', label: 'VIP' },
+              { id: 'lead', label: 'Lead' },
+            ],
+          },
+        },
+        {
+          id: 'active-definition',
+          placement: 'active',
+          name: 'Active',
+          kind: { kind: 'boolean' },
+        },
       ],
     },
   ],
 };
-function read(names: string[], truncated = false) {
-  return { catalog, outcome: outcome(names, truncated) };
-}
-function outcome(names: string[], truncated = false): Outcome {
-  return {
-    columns: [{ name: 'Customer', column: 'name-definition', kind: 'text' }],
-    rows: names.map((name) => [{ type: 'text', value: name }]),
-    rowIds: names.map((_, index) => `id-${index}`),
-    readTables: ['table'],
-    truncated,
-    insertedRowIds: [],
-    changesApplied: 0,
-  };
-}
 
 describe('CSV transfers', () => {
-  it('exports user-facing headers, quotes values, and excludes internal row IDs, in table order', async () => {
-    mocks.read.mockReturnValueOnce(okAsync(read(['00123', 'a,b'])));
+  it('exports user-facing headers and values as the grid shows them, quoted, without row ids, in table order', async () => {
+    mocks.read.mockReturnValueOnce(
+      okAsync({
+        catalog,
+        outcome: {
+          columns: [
+            { name: 'Customer', column: 'name-definition', kind: 'text' },
+            { name: 'Tags', column: 'tags-definition', kind: 'select' },
+            { name: 'Active', column: 'active-definition', kind: 'boolean' },
+          ],
+          rows: [
+            [
+              { type: 'text', value: '00123' },
+              { type: 'options', value: ['vip', 'lead'] },
+              { type: 'bool', value: true },
+            ],
+            [
+              { type: 'text', value: 'a,b' },
+              null,
+              { type: 'bool', value: false },
+            ],
+          ],
+          rowIds: ['id-0', 'id-1'],
+          readTables: ['table'],
+          truncated: false,
+          insertedRowIds: [],
+          changesApplied: 0,
+        },
+      })
+    );
     const blob = (
       await exportDatabaseTableCsv(database, table)
     )._unsafeUnwrap();
@@ -91,43 +231,30 @@ describe('CSV transfers', () => {
       reader.onerror = reject;
       reader.readAsText(blob);
     });
-    expect(text).toBe('Customer\n00123\n"a,b"');
+    expect(text).toBe(
+      'Customer,Tags,Active\n00123,"VIP, Lead",True\n"a,b",,False'
+    );
     expect(mocks.read).toHaveBeenCalledExactlyOnceWith({
-      schema: {
-        databases: [
-          {
-            id: 'database',
-            name: 'CRM',
-            tables: [
-              {
-                id: 'table',
-                name: 'Contacts',
-                columns: [
-                  {
-                    id: 'name',
-                    definition: 'name-definition',
-                    name: 'Customer',
-                    property: {
-                      dataType: 'STRING',
-                      multi: false,
-                      entityType: null,
-                      relation: false,
-                    },
-                    options: [],
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-        platform: [],
-      },
+      schema: databaseSqlSchema([database]),
       scope: 'database',
       sql: 'SELECT * FROM "CRM"."Contacts" ORDER BY row_position',
     });
   });
   it('refuses a truncated read instead of downloading partial CSV', async () => {
-    mocks.read.mockReturnValueOnce(okAsync(read([], true)));
+    mocks.read.mockReturnValueOnce(
+      okAsync({
+        catalog,
+        outcome: {
+          columns: [],
+          rows: [],
+          rowIds: [],
+          readTables: ['table'],
+          truncated: true,
+          insertedRowIds: [],
+          changesApplied: 0,
+        },
+      })
+    );
     expect(await exportDatabaseTableCsv(database, table)).toMatchObject({
       error: { kind: 'too-large' },
     });

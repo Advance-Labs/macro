@@ -1,8 +1,8 @@
+import type { ResultError } from '@core/util/result';
 import { queryClient } from '@queries/client';
 import { databasesKeys } from '@queries/storage/keys';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import type { Table } from '@service-storage/generated/schemas/table';
-import type { ResultError } from '@core/util/result';
 import { err, type Result, ResultAsync } from 'neverthrow';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { reorderDatabaseTables } from './reorder-tables';
@@ -91,11 +91,7 @@ describe('reordering tables', () => {
           }
         : current
     );
-    answer(
-      err([
-        { name: 'Error', code: 'FORBIDDEN', message: 'Owner access required' },
-      ])
-    );
+    answer(err([{ code: 'FORBIDDEN', message: 'Owner access required' }]));
 
     expect((await reordered).isErr()).toBe(true);
     expect(

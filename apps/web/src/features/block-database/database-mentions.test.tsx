@@ -22,6 +22,8 @@ const nativeMenu = vi.hoisted(() =>
   vi.fn<(props: ComponentProps<typeof MentionsMenu>) => void>()
 );
 const displayHook = vi.hoisted(() => vi.fn());
+const toast = vi.hoisted(() => ({ failure: vi.fn() }));
+vi.mock('@core/component/Toast/Toast', () => ({ toast }));
 vi.mock(
   '@core/component/LexicalMarkdown/component/menu/MentionsMenu/utils/entityUtils',
   () => ({ getBlockNameFromEntity: () => 'md' })
@@ -142,6 +144,9 @@ describe('native database mention adapter', () => {
     );
     menu.onPick?.(task);
     expect(select).not.toHaveBeenCalled();
+    expect(toast.failure).toHaveBeenCalledExactlyOnceWith(
+      'This column holds another kind of mention. Choose one it lists.'
+    );
     menu.onPick?.(ada);
     expect(select).toHaveBeenCalledExactlyOnceWith({
       id: 'macro|ada@example.com',

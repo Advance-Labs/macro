@@ -7,6 +7,7 @@ import {
   type MenuOperations,
 } from '@core/component/LexicalMarkdown/shared/inlineMenu';
 import type { MentionItem } from '@core/component/LexicalMarkdown/utils/mentionsUtils';
+import { toast } from '@core/component/Toast/Toast';
 import { UserIcon } from '@core/component/UserIcon';
 import { encodeCellMention } from '@macro-inc/spreadsheet/cell-mentions';
 import { usePropertyEntityDisplay } from '@property/hooks/usePropertyEntityDisplay';
@@ -56,8 +57,15 @@ export function DatabaseMentionPicker(props: DatabaseMentionPickerProps) {
               mention &&
               (!props.specificEntityType ||
                 mention.entityType === props.specificEntityType)
-            )
+            ) {
               props.onSelect(mention);
+              return;
+            }
+            toast.failure(
+              mention
+                ? 'This column holds another kind of mention. Choose one it lists.'
+                : 'This mention cannot go in a database cell.'
+            );
           }}
         />
       )}
