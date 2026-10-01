@@ -1,13 +1,14 @@
 import type {
   CardPosition,
-  ChangeColumnTypeRequest,
   ColumnCast,
   ColumnDetail,
   ColumnSchemaOutcome,
+  ColumnTypeChangeOutcome,
   CreateColumnRequest,
   DatabaseDetail,
   DatabaseOp,
   DataType,
+  EntityType,
   ImportTable,
   InferColumnTypeOutcome,
   InferColumnTypeRequest,
@@ -54,6 +55,23 @@ export type AddColumnOptions = ColumnBinding & {
    * target may live in any database the caller can reach.
    */
   linkTo?: DatabaseTable;
+};
+
+/** Options for {@link Database.changeColumnType}. */
+export type ChangeColumnTypeOptions = {
+  /** The type to change the column to. */
+  dataType: DataType;
+  /** Whether select, link, or entity values may hold multiple items. */
+  isMultiSelect?: boolean;
+  /** For an entity column, the kind of entity it holds. */
+  specificEntityType?: EntityType;
+  /** For a link column, the table its rows point at, in any reachable database. */
+  linkTo?: DatabaseTable;
+  /**
+   * Empty the values that do not fit the new type instead of refusing the
+   * change; a cell with several values keeps its first.
+   */
+  clearInvalid?: boolean;
 };
 
 /** Settle an empty inferred column using the table version the caller read. */
@@ -106,7 +124,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
 
   /**
    * The full schema: the database record, the caller's access, and every
-   * table with its columns and SQL names. Cached until the next write.
+   * table with its columns and views. Cached until the next write.
    */
   schema(): Promise<DatabaseDetail> {
     return this.detail.get();
@@ -261,26 +279,47 @@ export class Database extends MacroEntity<DatabaseDetail> {
     );
   }
 
-  /** Change one placement's type only when all existing values convert safely. */
+  /**
+   * Change a column's type at the table version last read. Values that do not
+   * convert refuse the change unless `clearInvalid` empties them; the outcome
+   * counts the cells it cleared and the multi-value cells it trimmed.
+   */
   async changeColumnType(
     column: DatabaseColumn,
-    request: ChangeColumnTypeRequest,
-  ): Promise<ColumnSchemaOutcome> {
+    options: ChangeColumnTypeOptions,
+  ): Promise<ColumnTypeChangeOutcome> {
     this.assertOwns(`column ${column.id}`, column.table.database);
+    const baseVersion = await column.table.version();
     return this.mutate((client) =>
       client.storage.changeDatabaseColumnType({
         path: { id: this.id, table_id: column.table.id, column_id: column.id },
-        body: request,
+        body: {
+          baseVersion,
+          dataType: options.dataType,
+          ...(options.isMultiSelect !== undefined
+            ? { isMultiSelect: options.isMultiSelect }
+            : {}),
+          ...(options.specificEntityType !== undefined
+            ? { specificEntityType: options.specificEntityType }
+            : {}),
+          ...(options.linkTo !== undefined
+            ? {
+                linkToTableId: options.linkTo.id,
+                linkToDatabaseId: options.linkTo.database.id,
+              }
+            : {}),
+          ...(options.clearInvalid !== undefined
+            ? { clearInvalid: options.clearInvalid }
+            : {}),
+        },
       }),
     );
   }
 
-  /** Remove a column and its cells, guarded by the table version last read. */
-  async deleteColumn(
-    column: DatabaseColumn,
-    baseVersion: TableVersion,
-  ): Promise<ColumnSchemaOutcome> {
+  /** Remove a column and its cells at the table version last read. */
+  async deleteColumn(column: DatabaseColumn): Promise<ColumnSchemaOutcome> {
     this.assertOwns(`column ${column.id}`, column.table.database);
+    const baseVersion = await column.table.version();
     return this.mutate((client) =>
       client.storage.deleteDatabaseColumn({
         path: { id: this.id, table_id: column.table.id, column_id: column.id },
@@ -289,17 +328,25 @@ export class Database extends MacroEntity<DatabaseDetail> {
     );
   }
 
-  /** Persist a complete column order, including currently hidden columns. */
+  /**
+   * Persist a complete column order, including currently hidden columns, at
+   * the table version last read. Pass every column of the table exactly once.
+   */
   async reorderColumns(
     table: DatabaseTable,
-    columnIds: string[],
-    baseVersion: TableVersion,
+    columns: DatabaseColumn[],
   ): Promise<ColumnSchemaOutcome> {
     this.assertOwns(`table ${table.id}`, table.database);
+    for (const column of columns)
+      if (column.table.id !== table.id)
+        throw new MacroError(
+          `column ${column.id} does not belong to table ${table.id}`,
+        );
+    const baseVersion = await table.version();
     return this.mutate((client) =>
       client.storage.reorderDatabaseColumns({
         path: { id: this.id, table_id: table.id },
-        body: { columnIds, baseVersion },
+        body: { columnIds: columns.map((column) => column.id), baseVersion },
       }),
     );
   }
@@ -316,7 +363,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
     );
   }
 
-  /** Rename this column placement without changing shared definitions or SQL names. */
+  /** Rename this column placement without changing its shared property definition. */
   async renameColumn(column: DatabaseColumn, name: string): Promise<void> {
     this.assertOwns(`column ${column.id}`, column.table.database);
     const previousName = await column.name();

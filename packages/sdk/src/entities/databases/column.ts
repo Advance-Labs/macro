@@ -1,19 +1,21 @@
 import type {
-  ChangeColumnTypeRequest,
   ColumnCast,
   ColumnConfig,
   ColumnDetail,
+  ColumnTypeChangeOutcome,
   DataType,
   PropertyDefinitionWithOptions,
-  TableVersion,
 } from '../../../generated/storage/types.gen';
 import { MacroNotFoundError } from '../../utils';
-import type { InferColumnTypeOptions } from './database';
+import type {
+  ChangeColumnTypeOptions,
+  InferColumnTypeOptions,
+} from './database';
 import type { DatabaseTable } from './table';
 
 /**
  * One column of a {@link DatabaseTable}: the placement of a property
- * definition on the table, plus the name the SQL surface exposes it under.
+ * definition on the table.
  *
  * A column is not an entity of its own — it has no permissions and no
  * endpoint to read it directly. The handle resolves through the owning
@@ -33,8 +35,8 @@ export class DatabaseColumn {
   }
 
   /**
-   * The column's record as the API returns it: the placement, the bound
-   * property definition, its SQL name, and whether SQL may write it.
+   * The column's record as the API returns it: the placement and the bound
+   * property definition.
    */
   async detail(): Promise<ColumnDetail> {
     const { columns } = await this.table.detail();
@@ -55,7 +57,7 @@ export class DatabaseColumn {
     );
   }
 
-  /** Rename this placement without changing its stable SQL column name. */
+  /** Rename this placement without changing its shared property definition. */
   async rename(name: string): Promise<DatabaseColumn> {
     await this.table.database.renameColumn(this, name);
     return this;
@@ -67,10 +69,11 @@ export class DatabaseColumn {
     return this;
   }
 
-  /** Convert every existing cell safely, preserving this column's identity. */
-  async changeType(request: ChangeColumnTypeRequest): Promise<DatabaseColumn> {
-    await this.table.database.changeColumnType(this, request);
-    return this;
+  /** Change this column's type. See {@link Database.changeColumnType}. */
+  changeType(
+    options: ChangeColumnTypeOptions,
+  ): Promise<ColumnTypeChangeOutcome> {
+    return this.table.database.changeColumnType(this, options);
   }
 
   /**
@@ -83,13 +86,8 @@ export class DatabaseColumn {
   }
 
   /** Delete this placement and its cells at the table version last read. */
-  async delete(baseVersion: TableVersion): Promise<void> {
-    await this.table.database.deleteColumn(this, baseVersion);
-  }
-
-  /** The name to use for this column in SQL. */
-  async sqlName(): Promise<string> {
-    return (await this.detail()).sql_name;
+  async delete(): Promise<void> {
+    await this.table.database.deleteColumn(this);
   }
 
   /** The value type the column holds. */
@@ -100,11 +98,6 @@ export class DatabaseColumn {
   /** Whether the column holds multiple values. */
   async isMultiSelect(): Promise<boolean> {
     return (await this.detail()).definition.definition.is_multi_select;
-  }
-
-  /** Whether SQL statements may write this column. */
-  async writable(): Promise<boolean> {
-    return (await this.detail()).writable;
   }
 
   /** The column's fractional index within the table's column order. */

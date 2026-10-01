@@ -1,35 +1,80 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { ColumnCast } from '../generated/storage/types.gen';
+import type {
+  ColumnCast,
+  DatabaseDetail,
+  Table,
+} from '../generated/storage/types.gen';
 import { Macro } from '../src/macro';
 
 const originalFetch = globalThis.fetch;
 const databaseId = '0198a4cc-e138-7670-a308-a6b766602700';
 const tableId = '0198a4cc-e138-7670-a308-a6b766602701';
 const columnId = '0198a4cc-e138-7670-a308-a6b766602702';
+const definitionId = '0198a4cc-e138-7670-a308-a6b766602709';
 const host = 'https://storage.example.test';
 
 function client() {
   return new Macro({ token: 'user-token', hosts: { storage: host } });
 }
 
-function schema(name = 'Tickets', columnName: string | null = 'Summary') {
-  return {
-    database: { id: databaseId, name: 'Support' },
-    tables: [
-      {
-        table: { id: tableId, name, version: 7 },
-        sql_name: 'tickets',
-        read_sql_name: '_macro_table_stable',
-        columns: [
-          {
-            column: { id: columnId, display_name: columnName },
-            definition: { definition: { display_name: 'Name' } },
+const ticketsTable: Table = {
+  id: tableId,
+  database_id: databaseId,
+  name: 'Tickets',
+  position: 'a0',
+  version: 7,
+};
+
+/** One table, Tickets, whose one column is bound to the "Name" definition. */
+const support: DatabaseDetail = {
+  database: {
+    id: databaseId,
+    name: 'Support',
+    owner_id: 'owner',
+    created_at: '2026-10-01T00:00:00Z',
+    trashed_at: null,
+  },
+  grant: 'owner',
+  tables: [
+    {
+      table: ticketsTable,
+      sql_name: 'tickets',
+      read_sql_name: 'tickets',
+      views: [],
+      columns: [
+        {
+          column: {
+            id: columnId,
+            table_id: tableId,
+            property_definition_id: definitionId,
+            display_name: null,
+            position: 'a0',
+            infer_type: false,
+            config: null,
           },
-        ],
-      },
-    ],
-  };
-}
+          definition: {
+            definition: {
+              id: definitionId,
+              display_name: 'Name',
+              data_type: 'STRING',
+              is_multi_select: false,
+              specific_entity_type: null,
+              is_metadata: false,
+              is_system: false,
+              owner: { scope: 'database', database_id: databaseId },
+              created_at: '2026-10-01T00:00:00Z',
+              updated_at: '2026-10-01T00:00:00Z',
+            },
+            property_options: [],
+          },
+          shared_outside_database: false,
+          sql_name: 'name',
+          writable: true,
+        },
+      ],
+    },
+  ],
+};
 
 function intercept(
   respond: (request: Request) => Response | Promise<Response>,
@@ -45,8 +90,8 @@ afterEach(() => {
 });
 
 describe('Database', () => {
-  test('renames with the previously read table name, invalidates schema, and keeps stable read names', async () => {
-    let currentName = 'Tickets';
+  test('renames with the previously read table name and reloads the schema', async () => {
+    let current = support;
     let reads = 0;
     let renameBody: unknown;
     intercept(async (request) => {
@@ -55,24 +100,26 @@ describe('Database', () => {
           `${host}/databases/${databaseId}/tables/${tableId}`,
         );
         renameBody = await request.json();
-        currentName = 'Issues';
-        return Response.json(schema(currentName).tables[0]?.table);
+        const renamed: Table = { ...ticketsTable, name: 'Issues', version: 8 };
+        current = {
+          ...support,
+          tables: support.tables.map((table) => ({ ...table, table: renamed })),
+        };
+        return Response.json(renamed);
       }
       reads++;
-      return Response.json(schema(currentName));
+      return Response.json(current);
     });
     const table = await client().databases.byId(databaseId).table('Tickets');
     expect(table).toBeDefined();
-    await expect(table?.readSqlName()).resolves.toBe('_macro_table_stable');
     await table?.rename('Issues');
     expect(renameBody).toEqual({ name: 'Issues', previousName: 'Tickets' });
     await expect(table?.name()).resolves.toBe('Issues');
-    await expect(table?.readSqlName()).resolves.toBe('_macro_table_stable');
     expect(reads).toBe(2);
   });
 
   test('column rename uses its placement name and then reloads the placement', async () => {
-    let currentName: string | null = null;
+    let current = support;
     let renameBody: unknown;
     intercept(async (request) => {
       if (request.method === 'PATCH') {
@@ -80,10 +127,19 @@ describe('Database', () => {
           `${host}/databases/${databaseId}/tables/${tableId}/columns/${columnId}`,
         );
         renameBody = await request.json();
-        currentName = 'Summary';
-        return Response.json({});
+        current = {
+          ...support,
+          tables: support.tables.map((table) => ({
+            ...table,
+            columns: table.columns.map((column) => ({
+              ...column,
+              column: { ...column.column, display_name: 'Summary' },
+            })),
+          })),
+        };
+        return Response.json({ table_versions: { [tableId]: 8 } });
       }
-      return Response.json(schema('Tickets', currentName));
+      return Response.json(current);
     });
     const table = await client().databases.byId(databaseId).table('Tickets');
     const column = (await table?.columns())?.[0];
@@ -97,9 +153,7 @@ describe('Database', () => {
     const requests: Request[] = [];
     intercept((request) => {
       requests.push(request);
-      return Response.json(
-        request.method === 'GET' ? schema() : { version: 8 },
-      );
+      return Response.json(request.method === 'GET' ? support : { version: 8 });
     });
     const macro = client();
     const database = macro.databases.byId(databaseId);
@@ -127,53 +181,74 @@ describe('Database', () => {
     expect(requests).toHaveLength(2);
   });
 
-  test('guards type, ordering and deletion writes with explicit table versions', async () => {
+  test('guards type, ordering and deletion writes with the table version last read', async () => {
     const writes: { url: string; method: string; body: unknown }[] = [];
     let reads = 0;
     intercept(async (request) => {
       if (request.method === 'GET') {
         reads++;
-        return Response.json(schema());
+        return Response.json(support);
       }
       writes.push({
         url: request.url,
         method: request.method,
         body: await request.json(),
       });
-      return Response.json({ version: 8 });
+      return Response.json(
+        request.url.endsWith('/type')
+          ? {
+              cleared_cells: 2,
+              trimmed_cells: 1,
+              table_versions: { [tableId]: 8 },
+            }
+          : { table_versions: { [tableId]: 8 } },
+      );
     });
     const database = client().databases.byId(databaseId);
     const table = await database.table('Tickets');
     const column = (await table?.columns())?.[0];
     if (!table || !column) throw new Error('Missing fixture column');
-    await column.changeType({
-      dataType: 'STRING',
-      isMultiSelect: false,
-      baseVersion: 7,
+    const outcome = await column.changeType({
+      dataType: 'ENTITY',
+      isMultiSelect: true,
+      linkTo: table,
+      clearInvalid: true,
     });
-    await table.reorderColumns([column.id], 8);
-    await column.delete(9);
+    expect(outcome).toEqual({
+      cleared_cells: 2,
+      trimmed_cells: 1,
+      table_versions: { [tableId]: 8 },
+    });
+    await table.reorderColumns([column]);
+    await column.delete();
     expect(writes).toEqual([
       {
         method: 'PATCH',
         url: `${host}/databases/${databaseId}/tables/${tableId}/columns/${columnId}/type`,
-        body: { dataType: 'STRING', isMultiSelect: false, baseVersion: 7 },
+        body: {
+          baseVersion: 7,
+          dataType: 'ENTITY',
+          isMultiSelect: true,
+          linkToTableId: tableId,
+          linkToDatabaseId: databaseId,
+          clearInvalid: true,
+        },
       },
       {
         method: 'PATCH',
         url: `${host}/databases/${databaseId}/tables/${tableId}/columns/order`,
-        body: { columnIds: [columnId], baseVersion: 8 },
+        body: { columnIds: [columnId], baseVersion: 7 },
       },
       {
         method: 'DELETE',
         url: `${host}/databases/${databaseId}/tables/${tableId}/columns/${columnId}`,
-        body: { baseVersion: 9 },
+        body: { baseVersion: 7 },
       },
     ]);
     await database.schema();
-    expect(reads).toBe(2);
+    expect(reads).toBe(4);
     await expect(
-      client().databases.byId('other').deleteColumn(column, 9),
+      client().databases.byId('other').deleteColumn(column),
     ).rejects.toThrow('does not belong');
     expect(writes).toHaveLength(3);
   });
@@ -364,9 +439,7 @@ describe('Database', () => {
     const urls: string[] = [];
     intercept((request) => {
       urls.push(request.url);
-      return Response.json(
-        request.url.endsWith('/casts') ? casts : schema('Tickets', 'Summary'),
-      );
+      return Response.json(request.url.endsWith('/casts') ? casts : support);
     });
     const table = await client().databases.byId(databaseId).table('Tickets');
     const column = (await table?.columns())?.[0];

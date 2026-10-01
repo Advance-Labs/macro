@@ -28,8 +28,8 @@ export class DatabaseTable {
   }
 
   /**
-   * The table's record as the API returns it: the table, its columns, and the
-   * name the SQL surface exposes it under.
+   * The table's record as the API returns it: the table, its columns, and
+   * its views.
    */
   async detail(): Promise<TableDetail> {
     const { tables } = await this.database.schema();
@@ -47,16 +47,6 @@ export class DatabaseTable {
     return (await this.detail()).table.name;
   }
 
-  /** The name to use for this table in SQL (`FROM guests`). */
-  async sqlName(): Promise<string> {
-    return (await this.detail()).sql_name;
-  }
-
-  /** Stable read-only SQL alias that survives table renames. */
-  async readSqlName(): Promise<string> {
-    return (await this.detail()).read_sql_name;
-  }
-
   /** Rename only if the last-read display name is still current. */
   async rename(name: string): Promise<DatabaseTable> {
     await this.database.renameTable(this, name);
@@ -65,7 +55,7 @@ export class DatabaseTable {
 
   /**
    * The table's current version, bumped by every committed change to its
-   * schema or rows. Schema edits such as {@link reorderColumns} take it as
+   * schema or rows. Schema edits such as {@link reorderColumns} send it as
    * the version they were made against.
    */
   async version(): Promise<TableVersion> {
@@ -88,12 +78,9 @@ export class DatabaseTable {
     return this.database.addColumn(this, options);
   }
 
-  /** Persist every column ID exactly once in the requested order. */
-  async reorderColumns(
-    columnIds: string[],
-    baseVersion: TableVersion,
-  ): Promise<DatabaseTable> {
-    await this.database.reorderColumns(this, columnIds, baseVersion);
+  /** Persist a new column order. See {@link Database.reorderColumns}. */
+  async reorderColumns(columns: DatabaseColumn[]): Promise<DatabaseTable> {
+    await this.database.reorderColumns(this, columns);
     return this;
   }
 
