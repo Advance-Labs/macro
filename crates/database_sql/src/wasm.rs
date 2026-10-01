@@ -35,6 +35,16 @@ pub struct Query {
     first: Option<Step>,
 }
 
+impl Query {
+    /// A statement whose first step is waiting to be taken.
+    fn held((engine, first): (Engine, Step)) -> Query {
+        Query {
+            engine,
+            first: Some(first),
+        }
+    }
+}
+
 #[wasm_bindgen]
 impl Query {
     /// Compile `sql` against `catalog` (a `Catalog` as JSON).
@@ -46,11 +56,9 @@ impl Query {
     #[wasm_bindgen(constructor)]
     pub fn new(catalog: JsValue, sql: &str) -> Result<Query, JsValue> {
         let catalog: Catalog = read(Input::Catalog, catalog)?;
-        let (engine, first) = Engine::start(&catalog, sql).map_err(thrown)?;
-        Ok(Self {
-            engine,
-            first: Some(first),
-        })
+        Engine::start(&catalog, sql)
+            .map(Query::held)
+            .map_err(thrown)
     }
 
     /// The first step. Taken once; a second call is an error.
@@ -114,11 +122,7 @@ pub fn run_view(catalog: JsValue, view: JsValue) -> Result<Query, JsValue> {
     let catalog: Catalog = read(Input::Catalog, catalog)?;
     let view: DatabaseView = read(Input::View, view)?;
     let select = view::compile_view(&view, &catalog).map_err(|problem| thrown(problem.into()))?;
-    let (engine, first) = Engine::from_select(&catalog, select);
-    Ok(Query {
-        engine,
-        first: Some(first),
-    })
+    Ok(Query::held(Engine::from_select(&catalog, select)))
 }
 
 /// `view` as the SQL statement it runs.
@@ -183,7 +187,7 @@ fn read<Value: DeserializeOwned>(what: Input, value: JsValue) -> Result<Value, J
 fn thrown(error: RunError) -> JsValue {
     EngineError::from(error)
         .serialize(&Serializer::json_compatible())
-        .unwrap_or_else(|error| JsValue::from_str(&error.to_string()))
+        .expect("an EngineError is strings, numbers and ids, which always serialize")
 }
 
 /// Plain objects and arrays, as JSON would give them: maps become objects
