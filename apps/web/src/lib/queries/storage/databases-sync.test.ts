@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import {
   type LocalDatabaseAwareness,
   useDatabaseAwareness,
+  useDatabaseTableChanges,
 } from './databases-sync';
 
 const mock = vi.hoisted(() => ({
@@ -36,12 +37,12 @@ vi.mock('./databases', () => ({
 function relay(
   userId: string,
   state: Record<string, unknown>,
-  ts: number,
+  relayedAt: number,
   databaseId = 'db'
 ) {
   mock.event?.({
     type: 'database_awareness',
-    data: JSON.stringify({ databaseId, userId, state, ts }),
+    data: JSON.stringify({ databaseId, userId, state, relayedAt }),
   });
 }
 
@@ -180,6 +181,78 @@ it('reports an awareness update the service refused', async () => {
         errors: JSON.stringify([{ code: 'FORBIDDEN', message: 'no access' }]),
       }
     )
+  );
+  dispose();
+});
+
+it('reports table changes the gateway announces and drops a payload that does not fit', () => {
+  const onChange = vi.fn();
+  const dispose = createRoot((dispose) => {
+    useDatabaseTableChanges(onChange);
+    return dispose;
+  });
+  mock.event?.({
+    type: 'database_table_changed',
+    data: JSON.stringify({ databaseId: 'db', tableId: 'tasks', version: 7 }),
+  });
+  expect(onChange).toHaveBeenCalledExactlyOnceWith({
+    databaseId: 'db',
+    tableId: 'tasks',
+    version: 7,
+  });
+  mock.event?.({
+    type: 'database_table_changed',
+    data: { databaseId: 'db', tableId: 'tasks', version: '8' },
+  });
+  expect(onChange).toHaveBeenCalledTimes(1);
+  expect(mock.warn).toHaveBeenCalledWith(
+    'gateway payload did not match its schema',
+    {
+      type: 'database_table_changed',
+      issues: JSON.stringify([
+        {
+          expected: 'number',
+          code: 'invalid_type',
+          path: ['version'],
+          message: 'Invalid input: expected number, received string',
+        },
+      ]),
+    }
+  );
+  dispose();
+});
+
+it('drops an awareness relay without its relay time', () => {
+  const { remote, dispose } = createRoot((dispose) => ({
+    remote: useDatabaseAwareness(
+      () => 'db',
+      () => ({ tableId: 'tasks' })
+    ).remote,
+    dispose,
+  }));
+  mock.event?.({
+    type: 'database_awareness',
+    data: JSON.stringify({
+      databaseId: 'db',
+      userId: 'alex',
+      state: { tableId: 'tasks' },
+      ts: 100,
+    }),
+  });
+  expect(remote()).toEqual([]);
+  expect(mock.warn).toHaveBeenCalledWith(
+    'gateway payload did not match its schema',
+    {
+      type: 'database_awareness',
+      issues: JSON.stringify([
+        {
+          expected: 'number',
+          code: 'invalid_type',
+          path: ['relayedAt'],
+          message: 'Invalid input: expected number, received undefined',
+        },
+      ]),
+    }
   );
   dispose();
 });

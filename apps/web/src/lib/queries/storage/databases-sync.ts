@@ -4,9 +4,12 @@ import { Telemetry } from '@macro-inc/observability';
 import { createConnectionWebsocketEffect } from '@service-connection/websocket';
 import { storageServiceClient } from '@service-storage/client';
 import type { Awareness } from '@service-storage/generated/schemas/awareness';
+import type { AwarenessRelay } from '@service-storage/generated/schemas/awarenessRelay';
+import type { TableChanged } from '@service-storage/generated/schemas/tableChanged';
 import { ReactiveMap } from '@solid-primitives/map';
 import { debounce } from '@solid-primitives/scheduled';
 import { type Accessor, createEffect, on, onCleanup, untrack } from 'solid-js';
+import { z } from 'zod';
 import { invalidateDatabase } from './databases';
 
 /** Gateway message type published by `crates/databases` on every write. */
@@ -20,45 +23,59 @@ const AWARENESS_HEARTBEAT_MS = 20_000;
 const AWARENESS_EXPIRY_MS = 45_000;
 const AWARENESS_SWEEP_MS = 5_000;
 
-/** One table's new version, as the gateway announces it. */
-type DatabaseTableChange = {
-  databaseId: string;
-  tableId: string;
-  version: number;
-};
+const awarenessSchema: z.ZodType<Awareness> = z.object({
+  tableId: z.string(),
+  rowId: z.string().optional(),
+  columnId: z.string().optional(),
+  editing: z.boolean().optional(),
+  left: z.boolean().optional(),
+});
 
-function parseMessageData<Data>(message: {
-  type: string;
-  data: unknown;
-}): Data | undefined {
+const tableChangedSchema: z.ZodType<TableChanged> = z.object({
+  databaseId: z.string(),
+  tableId: z.string(),
+  version: z.number(),
+});
+
+const awarenessRelaySchema: z.ZodType<AwarenessRelay> = z.object({
+  databaseId: z.string(),
+  userId: z.string(),
+  state: awarenessSchema,
+  relayedAt: z.number(),
+});
+
+/** A gateway payload read against its schema; one that does not fit is reported and dropped. */
+function parseMessageData<Data>(
+  message: { type: string; data: unknown },
+  schema: z.ZodType<Data>
+): Data | undefined {
+  let raw: unknown;
   try {
-    return typeof message.data === 'string'
-      ? JSON.parse(message.data)
-      : (message.data as Data);
+    raw =
+      typeof message.data === 'string'
+        ? JSON.parse(message.data)
+        : message.data;
   } catch {
-    console.error(`unparsable ${message.type} payload`, message);
+    Telemetry.warn('unparsable gateway payload', { type: message.type });
     return undefined;
   }
+  const parsed = schema.safeParse(raw);
+  if (parsed.success) return parsed.data;
+  Telemetry.warn('gateway payload did not match its schema', {
+    type: message.type,
+    issues: JSON.stringify(parsed.error.issues),
+  });
+  return undefined;
 }
 
 /** Every table change the gateway reports; it carries only the new version, never rows. */
 export function useDatabaseTableChanges(
-  onChange: (change: DatabaseTableChange) => void
+  onChange: (change: TableChanged) => void
 ) {
   createConnectionWebsocketEffect((message) => {
     if (message.type !== TABLE_CHANGED_MESSAGE_TYPE) return;
-    const data = parseMessageData<Partial<DatabaseTableChange>>(message);
-    if (
-      typeof data?.databaseId !== 'string' ||
-      typeof data.tableId !== 'string' ||
-      typeof data.version !== 'number'
-    )
-      return;
-    onChange({
-      databaseId: data.databaseId,
-      tableId: data.tableId,
-      version: data.version,
-    });
+    const change = parseMessageData(message, tableChangedSchema);
+    if (change) onChange(change);
   });
 }
 
@@ -81,17 +98,10 @@ type RemoteDatabaseAwareness = Omit<Awareness, 'left' | 'editing'> & {
   editing: boolean;
 };
 
-type AwarenessMessage = {
-  databaseId: string;
-  userId: string;
-  state: Awareness;
-  ts: number;
-};
-
 type HeldAwareness = {
   state: Awareness;
-  /** Server timestamp, orders messages from the same viewer. */
-  serverTimestamp: number;
+  /** Server relay time, orders messages from the same viewer. */
+  relayedAt: number;
   /** Local clock, decides expiry so clock skew cannot drop live viewers. */
   receivedAt: number;
 };
@@ -164,19 +174,18 @@ export function useDatabaseAwareness(
 
   createConnectionWebsocketEffect((message) => {
     if (message.type !== AWARENESS_MESSAGE_TYPE) return;
-    const data = parseMessageData<AwarenessMessage>(message);
-    if (!data?.databaseId || data.databaseId !== databaseId()) return;
-    if (!data.userId || data.userId === userId()) return;
-    const current = held.get(data.userId);
-    if (current && current.serverTimestamp > data.ts) return;
-    if (data.state?.left) {
-      held.delete(data.userId);
+    const relay = parseMessageData(message, awarenessRelaySchema);
+    if (!relay || relay.databaseId !== databaseId()) return;
+    if (relay.userId === userId()) return;
+    const current = held.get(relay.userId);
+    if (current && current.relayedAt > relay.relayedAt) return;
+    if (relay.state.left) {
+      held.delete(relay.userId);
       return;
     }
-    if (!data.state?.tableId) return;
-    held.set(data.userId, {
-      state: data.state,
-      serverTimestamp: data.ts,
+    held.set(relay.userId, {
+      state: relay.state,
+      relayedAt: relay.relayedAt,
       receivedAt: Date.now(),
     });
   });
