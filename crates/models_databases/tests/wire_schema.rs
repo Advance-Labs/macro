@@ -10,8 +10,8 @@ use models_databases::views::{
     SortDirection, SortKey, TextOperator, ViewColumn, ViewLayout, ViewPosition, ViewQuery,
 };
 use models_databases::{
-    CellValue, CellWrite, ColumnKind, DatabaseOp, EntityKind, EntityRef, OpResult, OptionColor,
-    OptionRef, RowChange, RowChanges, TableVersion,
+    CellValue, CellWrite, ColumnKind, DatabaseOp, EntityKind, EntityRef, OpResult, OptionRef,
+    RowChange, RowChanges, TableVersion,
 };
 use serde_json::{Map, Value};
 use utoipa::OpenApi;
@@ -164,7 +164,7 @@ fn ops() -> Vec<DatabaseOp> {
             column: STATUS,
             option: DONE,
             label: Some("Done".into()),
-            color: Some(Some(OptionColor::Blue)),
+            color: Some(Some("#0091FF".into())),
         },
         DatabaseOp::UpdateOption {
             table: TABLE,

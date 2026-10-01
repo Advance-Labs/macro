@@ -24,7 +24,6 @@ macro_user_id = { path = "../macro_user_id" }
 mcp_select = { path = "../mcp_select" }
 model-entity = { path = "../model-entity" }
 models_properties = { path = "../models_properties" }
-option_palette = { path = "../option_palette" }
 properties = { path = "../properties", default-features = false, features = [
   "ports",
 ] }

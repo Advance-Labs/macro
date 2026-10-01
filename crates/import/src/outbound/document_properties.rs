@@ -15,9 +15,8 @@ use models_properties::api::{
 use models_properties::service::property_definition::PropertyDefinition;
 use models_properties::service::property_option::{PropertyOption, PropertyOptionValue};
 use models_properties::{DataType, EntityType};
-use option_palette::OptionColor;
 use properties::domain::model::TagScope;
-use properties::{EditReceipt, PropertiesService};
+use properties::{EditReceipt, PropertiesService, TagColor};
 use uuid::Uuid;
 
 use crate::domain::ports::{
@@ -96,7 +95,7 @@ impl<P: PropertiesService> DocumentPropertiesApplicator<P> {
                     &definition,
                     &mut options,
                     label,
-                    Some(OptionColor::for_position(index).hex()),
+                    Some(TagColor::for_position(index).hex()),
                 )
                 .await;
             let Some(option_id) = option_id else {

@@ -9,12 +9,12 @@ use entity_access::domain::ports::EntityAccessService;
 use models_properties::api::{AddPropertyOptionRequest, AddStringOptionRequest};
 use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::service::tag_sets::TagScope;
-use option_palette::OptionColor;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::{PropertiesToolContext, caller_team_receipt_opt};
+use crate::TagColor;
 
 fn default_tag_scope() -> TagScope {
     TagScope::Personal
@@ -34,7 +34,7 @@ pub struct CreateTag {
     #[schemars(
         description = "The tag's color, chosen from the fixed tag palette. Pick a distinct, sensible color for the label."
     )]
-    pub color: OptionColor,
+    pub color: TagColor,
 
     #[schemars(
         description = "Which set to add the tag to: \"personal\" for the user's own private tags (the default), or \"team\" for their team's shared tags. \"team\" requires the user to belong to a team."

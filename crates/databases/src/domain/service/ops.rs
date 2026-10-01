@@ -7,6 +7,7 @@ mod views;
 use cells::column_kind_name;
 
 use models_databases::{CellWrite, ColumnKind, DatabaseOp, OpResult, RowChanges};
+use models_properties::api::is_valid_hex_color;
 
 use super::*;
 use crate::domain::catalog::{ColumnEntry, PropertyType};
@@ -689,7 +690,12 @@ impl Planner<'_> {
                             place.refuse("a tag option always has a colour; pick another instead")
                         );
                     }
-                    Some(color) => Some(*color),
+                    Some(Some(color)) if !is_valid_hex_color(color) => {
+                        return Err(place.refuse(format!(
+                            "{color} is not a colour; give a hex string like #RRGGBB"
+                        )));
+                    }
+                    Some(color) => Some(color.clone()),
                     None => None,
                 };
                 Ok(Write::UpdateOption {

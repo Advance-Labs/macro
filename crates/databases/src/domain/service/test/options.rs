@@ -2,7 +2,7 @@
 //! column's options, what each one checks, and who may change an option of a
 //! property shared beyond the database.
 
-use models_databases::OptionColor;
+use properties::TagColor;
 
 use super::*;
 
@@ -102,7 +102,7 @@ async fn an_option_takes_a_palette_colour_and_loses_it_again() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![recolour(Some(Some(OptionColor::Teal)))],
+            vec![recolour(Some(Some(TagColor::Teal.hex().into())))],
         )
         .await
         .unwrap();
@@ -127,6 +127,47 @@ async fn an_option_takes_a_palette_colour_and_loses_it_again() {
     assert_eq!(
         options(&seeded.world, status)[0],
         (going, PropertyOptionValue::String("Going".into()), None)
+    );
+}
+
+#[tokio::test]
+async fn a_colour_that_is_not_hex_is_refused() {
+    let seeded = seeded().await;
+    let status = seeded.status_column.property_definition_id;
+    let going = option_id(&seeded.world, status, "Going");
+
+    let error = seeded
+        .service
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            vec![DatabaseOp::UpdateOption {
+                table: seeded.table_id,
+                column: seeded.status_column.id,
+                option: going,
+                label: None,
+                color: Some(Some("teal".into())),
+            }],
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        refusal(error),
+        OpRefusal {
+            op: 0,
+            row: None,
+            column: Some(seeded.status_column.id),
+            reason: "teal is not a colour; give a hex string like #RRGGBB".into(),
+        }
+    );
+    assert_eq!(
+        options(&seeded.world, status)[0],
+        (
+            going,
+            PropertyOptionValue::String("Going".into()),
+            Some("#0091FF".into())
+        )
     );
 }
 

@@ -356,7 +356,7 @@ where
                             match color {
                                 None => ColorChange::Keep,
                                 Some(None) => ColorChange::Clear,
-                                Some(Some(color)) => ColorChange::Set(*color),
+                                Some(Some(color)) => ColorChange::Set(color.clone()),
                             },
                         )
                         .await

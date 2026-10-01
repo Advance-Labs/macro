@@ -1,11 +1,11 @@
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
-use option_palette::OptionColor;
 use sqlx::{Postgres, Transaction};
 
 use super::properties_pg_repo::PropertiesPgRepo;
 use super::property_definition_queries;
 use super::property_option_queries;
 use super::query_error::PropertyQueryError;
+use crate::TagColor;
 use crate::domain::database_definition_writer::{DatabaseDefinitionWriter, NewDatabaseDefinition};
 
 impl DatabaseDefinitionWriter for PropertiesPgRepo {
@@ -35,7 +35,7 @@ impl DatabaseDefinitionWriter for PropertiesPgRepo {
                     definition.id,
                     display_order(position)?,
                     value.clone(),
-                    Some(OptionColor::for_position(position).hex().to_owned()),
+                    Some(TagColor::for_position(position).hex().to_owned()),
                 )
                 .await?,
             );

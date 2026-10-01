@@ -5156,7 +5156,11 @@ export type DatabaseOp = {
      */
     to: ColumnKind;
 } | {
-    color?: null | OptionColor;
+    /**
+     * Its new colour, a hex string like `#RRGGBB`, or `null` to clear
+     * it; left out, it keeps its own. A tag option always has one.
+     */
+    color?: string | null;
     /**
      * The select or tag column.
      */
@@ -8744,12 +8748,6 @@ export type OpResult = {
      */
     tableVersion: TableVersion;
 };
-
-/**
- * A colour select and tag options take, from the palette the tag picker
- * renders.
- */
-export type OptionColor = 'red' | 'tomato' | 'orange' | 'amber' | 'yellow' | 'green' | 'teal' | 'blue' | 'indigo' | 'purple' | 'pink' | 'gray';
 
 /**
  * A select option, by its id or by its label.

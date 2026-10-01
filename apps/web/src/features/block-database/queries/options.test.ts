@@ -112,7 +112,7 @@ describe('changing an option', () => {
 
     const updated = await updateDatabaseOption(target, {
       label: ' 3 ',
-      color: 'blue',
+      color: '#0091FF',
     });
 
     expect(updated.isOk()).toBe(true);
@@ -132,7 +132,7 @@ describe('changing an option', () => {
         column: 'guests',
         option: 'two',
         label: ' 3 ',
-        color: 'blue',
+        color: '#0091FF',
       },
     ]);
   });

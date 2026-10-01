@@ -161,9 +161,8 @@ use models_databases::views::{
 use models_databases::{
     CellValue as DatabaseCellValue, CellWrite as DatabaseCellWrite,
     ColumnKind as DatabaseColumnKind, DatabaseOp, EntityKind as DatabaseEntityKind,
-    EntityRef as DatabaseEntityRef, OpResult as DatabaseOpResult, OptionColor,
-    OptionRef as DatabaseOptionRef, RowChange as DatabaseRowChange,
-    RowChanges as DatabaseRowChanges,
+    EntityRef as DatabaseEntityRef, OpResult as DatabaseOpResult, OptionRef as DatabaseOptionRef,
+    RowChange as DatabaseRowChange, RowChanges as DatabaseRowChanges,
 };
 use models_permissions::share_permission::channel_share_permission::UpdateOperation;
 use models_soup::call_record::{SoupCallRecord, SoupCallRecordParticipant};
@@ -657,7 +656,6 @@ use utoipa::OpenApi;
             DatabaseRowChanges,
             DatabaseRowChange,
             DatabaseOptionRef,
-            OptionColor,
             DatabaseEntityRef,
             DatabaseEntityKind,
             DatabaseColumnKind,

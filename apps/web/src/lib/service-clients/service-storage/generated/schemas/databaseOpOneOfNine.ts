@@ -14,6 +14,8 @@ database changes wherever that property is used, so it takes the
 right to edit that property.
  */
 export type DatabaseOpOneOfNine = {
+  /** Its new colour, a hex string like `#RRGGBB`, or `null` to clear
+it; left out, it keeps its own. A tag option always has one. */
   color?: DatabaseOpOneOfNineColor;
   /** The select or tag column. */
   column: string;

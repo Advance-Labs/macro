@@ -296,10 +296,10 @@ export type DatabaseOp =
        */
       label?: string | null;
       /**
-       *  Its new colour, or `null` to clear it; left out, it keeps its own.
-       *  A tag option always has one.
+       *  Its new colour, a hex string like `#RRGGBB`, or `null` to clear
+       *  it; left out, it keeps its own. A tag option always has one.
        */
-      color?: OptionColor | null;
+      color?: string | null;
     }
   /**
    *  Remove one option of a select or tag column, and take it out of every
@@ -832,36 +832,6 @@ export type OpResultKind =
   | 'viewsReordered'
   /**  [`OpResult::CardMoved`]. */
   | 'cardMoved';
-
-/**
- *  A colour select and tag options take, from the palette the tag picker
- *  renders.
- */
-export type OptionColor =
-  /**  Red. */
-  | 'red'
-  /**  Tomato. */
-  | 'tomato'
-  /**  Orange. */
-  | 'orange'
-  /**  Amber. */
-  | 'amber'
-  /**  Yellow. */
-  | 'yellow'
-  /**  Green. */
-  | 'green'
-  /**  Teal. */
-  | 'teal'
-  /**  Blue. */
-  | 'blue'
-  /**  Indigo. */
-  | 'indigo'
-  /**  Purple. */
-  | 'purple'
-  /**  Pink. */
-  | 'pink'
-  /**  Gray. */
-  | 'gray';
 
 /**  A select option, by its id or by its label. */
 export type OptionRef =

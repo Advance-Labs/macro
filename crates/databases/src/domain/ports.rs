@@ -296,7 +296,7 @@ pub trait ColumnDefinitionStore: Send + Sync + 'static {
 
     /// Create a definition owned by the database with its first options, in
     /// display order, together. Each option takes the palette colour of its
-    /// position ([`option_palette::OptionColor::for_position`]).
+    /// position (`properties::TagColor::for_position`).
     fn create_typed_definition(
         &self,
         database_id: DatabaseId,

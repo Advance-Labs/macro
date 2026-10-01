@@ -7893,28 +7893,11 @@ export const applyDatabaseOpsBody = zod
             zod
               .object({
                 color: zod
-                  .union([
-                    zod.null(),
-                    zod
-                      .enum([
-                        'red',
-                        'tomato',
-                        'orange',
-                        'amber',
-                        'yellow',
-                        'green',
-                        'teal',
-                        'blue',
-                        'indigo',
-                        'purple',
-                        'pink',
-                        'gray',
-                      ])
-                      .describe(
-                        'A colour select and tag options take, from the palette the tag picker\nrenders.'
-                      ),
-                  ])
-                  .optional(),
+                  .string()
+                  .nullish()
+                  .describe(
+                    'Its new colour, a hex string like `#RRGGBB`, or `null` to clear\nit; left out, it keeps its own. A tag option always has one.'
+                  ),
                 column: zod.uuid().describe('The select or tag column.'),
                 kind: zod.enum(['update_option']),
                 label: zod

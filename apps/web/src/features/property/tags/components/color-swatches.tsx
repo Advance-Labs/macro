@@ -14,7 +14,7 @@ export function ColorSwatches(props: {
   size?: 'sm' | 'md';
   disabled?: boolean;
 }) {
-  const selected = () => optionColorOf(props.value)?.value;
+  const selected = () => optionColorOf(props.value)?.color;
   return (
     <div
       role="radiogroup"
@@ -32,13 +32,13 @@ export function ColorSwatches(props: {
               type="button"
               role="radio"
               aria-label={option.name}
-              aria-checked={selected() === option.value}
+              aria-checked={selected() === option.color}
               disabled={props.disabled}
               onClick={() => props.onChange(option)}
               class={cn(
                 'flex items-center justify-center rounded-md border outline-none hover:bg-hover focus-visible:border-accent disabled:opacity-50',
                 props.size === 'sm' ? 'size-6' : 'size-7',
-                selected() === option.value
+                selected() === option.color
                   ? 'border-accent bg-accent-bg'
                   : 'border-edge-muted'
               )}

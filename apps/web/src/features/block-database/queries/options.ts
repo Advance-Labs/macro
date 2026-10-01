@@ -1,5 +1,5 @@
 /** Relabelling, recolouring and removing a select column's options, shown at once wherever its definition is bound. */
-import { TAG_COLOR_OPTIONS } from '@property/tags/tagColors';
+import { optionColorOf } from '@property/tags/tagColors';
 import { queryClient } from '@queries/client';
 import { databasesKeys } from '@queries/storage/keys';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
@@ -60,9 +60,7 @@ function changed(
   change: OptionChange
 ): Result<PropertyOption, DatabaseOpFailure> {
   const swatch =
-    change.color === undefined
-      ? undefined
-      : TAG_COLOR_OPTIONS.find((entry) => entry.value === change.color);
+    change.color === undefined ? undefined : optionColorOf(change.color);
   if (change.color !== undefined && !swatch)
     return err({ kind: 'unknown-color' });
   const color = swatch?.color ?? option.color;

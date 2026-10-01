@@ -7,12 +7,12 @@ use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
 use models_properties::api::UpdatePropertyOptionRequest;
 use models_properties::service::property_option::PropertyOptionValue;
-use option_palette::OptionColor;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::{PropertiesToolContext, caller_team_receipt_opt};
+use crate::TagColor;
 
 /// Rename or recolor an existing tag.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -38,7 +38,7 @@ pub struct EditTag {
         description = "A new color for the tag, chosen from the fixed tag palette. Omit to keep the current color."
     )]
     #[serde(default)]
-    pub color: Option<OptionColor>,
+    pub color: Option<TagColor>,
 }
 
 /// Response from the [`EditTag`] tool.

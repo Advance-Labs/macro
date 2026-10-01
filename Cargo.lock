@@ -5400,7 +5400,6 @@ dependencies = [
  "models_databases",
  "models_permissions",
  "models_properties",
- "option_palette",
  "properties",
  "rootcause",
  "schemars 1.2.1",
@@ -9664,7 +9663,6 @@ dependencies = [
  "mcp_select",
  "model-entity",
  "models_properties",
- "option_palette",
  "properties",
  "regex",
  "rootcause",
@@ -12124,7 +12122,6 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "fractional_index",
- "option_palette",
  "schemars 1.2.1",
  "serde",
  "serde_json",
@@ -13340,18 +13337,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "option_palette"
-version = "0.1.0"
-dependencies = [
- "schemars 1.2.1",
- "serde",
- "serde_json",
- "specta",
- "strum 0.27.2",
- "utoipa",
-]
-
-[[package]]
 name = "opus-pure"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -14558,7 +14543,6 @@ dependencies = [
  "models_permissions",
  "models_properties",
  "notification",
- "option_palette",
  "rootcause",
  "schemars 1.2.1",
  "serde",

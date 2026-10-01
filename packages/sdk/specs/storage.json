@@ -25124,15 +25124,8 @@
             "required": ["table", "column", "option", "kind"],
             "properties": {
               "color": {
-                "oneOf": [
-                  {
-                    "type": "null"
-                  },
-                  {
-                    "$ref": "#/components/schemas/OptionColor",
-                    "description": "Its new colour, or `null` to clear it; left out, it keeps its own.\nA tag option always has one."
-                  }
-                ]
+                "type": ["string", "null"],
+                "description": "Its new colour, a hex string like `#RRGGBB`, or `null` to clear\nit; left out, it keeps its own. A tag option always has one."
               },
               "column": {
                 "type": "string",
@@ -31271,24 +31264,6 @@
           }
         ],
         "description": "What one op did, in the order the ops were sent."
-      },
-      "OptionColor": {
-        "type": "string",
-        "description": "A colour select and tag options take, from the palette the tag picker\nrenders.",
-        "enum": [
-          "red",
-          "tomato",
-          "orange",
-          "amber",
-          "yellow",
-          "green",
-          "teal",
-          "blue",
-          "indigo",
-          "purple",
-          "pink",
-          "gray"
-        ]
       },
       "OptionRef": {
         "oneOf": [

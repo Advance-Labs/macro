@@ -8,12 +8,10 @@ import {
 describe('option colours', () => {
   it('names the palette colour an option stores, in any case', () => {
     expect(optionColorOf('#0091FF')).toEqual({
-      value: 'blue',
       name: 'Blue',
       color: '#0091FF',
     });
     expect(optionColorOf('#e93d82')).toEqual({
-      value: 'pink',
       name: 'Pink',
       color: '#E93D82',
     });

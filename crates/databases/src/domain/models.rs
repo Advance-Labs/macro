@@ -10,7 +10,6 @@ use models_permissions::share_permission::access_level::AccessLevel;
 use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::service::property_value::PropertyValue;
 use models_properties::shared::DataType;
-use option_palette::OptionColor;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -436,8 +435,8 @@ pub enum Write {
         option_id: Uuid,
         /// Its new value, when its label changes.
         value: Option<PropertyOptionValue>,
-        /// Its new colour, or `None` to clear it; when it changes.
-        color: Option<Option<OptionColor>>,
+        /// Its new hex colour, or `None` to clear it; when it changes.
+        color: Option<Option<String>>,
     },
     /// Remove one option of a definition and take it out of every cell
     /// holding it, emptying the cells left with nothing, out of the views

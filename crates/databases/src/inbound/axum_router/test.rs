@@ -290,7 +290,7 @@ async fn view_access_cannot_change_an_option() {
             "column": Uuid::from_u128(0xc01a),
             "option": Uuid::from_u128(0x0b7),
             "label": "Maybe",
-            "color": "teal",
+            "color": "#12A594",
         }],
     })
     .to_string();

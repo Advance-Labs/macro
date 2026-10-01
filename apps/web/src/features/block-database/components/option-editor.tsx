@@ -118,7 +118,7 @@ export function OptionEditor(props: {
             onChange={(color) =>
               void settle(
                 props.editing.update(props.column.id, props.option.id, {
-                  color: color.value,
+                  color: color.color,
                 })
               )
             }

@@ -4,7 +4,6 @@
 mod test;
 
 use chrono::{DateTime, Utc};
-use option_palette::OptionColor;
 use serde::{Deserialize, Deserializer, Serialize};
 use uuid::Uuid;
 
@@ -93,16 +92,16 @@ pub enum DatabaseOp {
         #[schema(nullable = false)]
         #[specta(optional)]
         label: Option<String>,
-        /// Its new colour, or `null` to clear it; left out, it keeps its own.
-        /// A tag option always has one.
+        /// Its new colour, a hex string like `#RRGGBB`, or `null` to clear
+        /// it; left out, it keeps its own. A tag option always has one.
         #[serde(
             default,
             deserialize_with = "present",
             skip_serializing_if = "Option::is_none"
         )]
-        #[schema(value_type = Option<OptionColor>)]
-        #[specta(type = Option<OptionColor>, optional)]
-        color: Option<Option<OptionColor>>,
+        #[schema(value_type = Option<String>)]
+        #[specta(type = Option<String>, optional)]
+        color: Option<Option<String>>,
     },
     /// Remove one option of a select or tag column, and take it out of every
     /// cell holding it: a single-valued cell is emptied, a multi-valued one

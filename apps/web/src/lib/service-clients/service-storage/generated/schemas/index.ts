@@ -1191,7 +1191,6 @@ export * from './opResultOneOfSeven';
 export * from './opResultOneOfSevenKind';
 export * from './opResultOneOfThree';
 export * from './opResultOneOfThreeKind';
-export * from './optionColor';
 export * from './optionRef';
 export * from './optionRefOneOf';
 export * from './optionRefOneOfTwo';

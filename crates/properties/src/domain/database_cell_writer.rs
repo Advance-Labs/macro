@@ -4,7 +4,6 @@
 use models_properties::EntityReference;
 use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::service::property_value::PropertyValue;
-use option_palette::OptionColor;
 use uuid::Uuid;
 
 use super::model::UpdatePropertyOptionOutcome;
@@ -16,8 +15,8 @@ pub enum ColorChange {
     Keep,
     /// Remove the colour.
     Clear,
-    /// Store this colour.
-    Set(OptionColor),
+    /// Store this hex colour.
+    Set(String),
 }
 
 /// Lets a composition root write entity properties and select options within
@@ -32,7 +31,7 @@ pub trait DatabaseCellWriter: Send + Sync + 'static {
     /// Append options, under the ids given, after a definition's existing
     /// ones, holding the definition's lock so concurrent appends take
     /// distinct places. Each takes the palette colour of its position
-    /// ([`OptionColor::for_position`]).
+    /// ([`crate::TagColor::for_position`]).
     fn add_options_in(
         &self,
         transaction: &mut Self::Transaction,

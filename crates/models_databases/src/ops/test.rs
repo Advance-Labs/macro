@@ -275,14 +275,14 @@ fn an_option_update_tells_a_missing_colour_from_a_cleared_one() {
             "table": TABLE,
             "column": STATUS,
             "option": option,
-            "color": "teal",
+            "color": "#12A594",
         })),
         DatabaseOp::UpdateOption {
             table: TABLE,
             column: STATUS,
             option,
             label: None,
-            color: Some(Some(OptionColor::Teal)),
+            color: Some(Some("#12A594".into())),
         }
     );
     assert_eq!(

@@ -141,7 +141,7 @@ describe('option editor', () => {
     ).toBe('true');
     await userEvent.click(screen.getByRole('radio', { name: 'Blue' }));
     expect(editing.update).toHaveBeenCalledExactlyOnceWith('status', 'done', {
-      color: 'blue',
+      color: '#0091FF',
     });
   });
 

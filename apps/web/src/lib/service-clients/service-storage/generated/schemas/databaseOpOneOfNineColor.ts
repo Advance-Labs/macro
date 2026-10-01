@@ -4,6 +4,9 @@
  * document_storage_service
  * OpenAPI spec version: 0.1.0
  */
-import type { OptionColor } from './optionColor';
 
-export type DatabaseOpOneOfNineColor = null | OptionColor;
+/**
+ * Its new colour, a hex string like `#RRGGBB`, or `null` to clear
+it; left out, it keeps its own. A tag option always has one.
+ */
+export type DatabaseOpOneOfNineColor = string | null;

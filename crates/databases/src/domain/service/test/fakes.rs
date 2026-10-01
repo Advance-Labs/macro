@@ -3,7 +3,7 @@
 mod apply_writes;
 
 use models_databases::position::{key_between, keys_between};
-use option_palette::OptionColor;
+use properties::TagColor;
 
 use super::*;
 use apply_writes::apply_in_world;
@@ -783,7 +783,7 @@ impl ColumnDefinitionStore for FakeDefinitions {
                 property_definition_id: created.definition.id,
                 display_order: i32::try_from(position).unwrap(),
                 value: value.clone(),
-                color: Some(OptionColor::for_position(position).hex().to_string()),
+                color: Some(TagColor::for_position(position).hex().to_string()),
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
             })

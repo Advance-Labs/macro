@@ -153,7 +153,7 @@ pub(super) fn apply_in_world(
                     option.value = value.clone();
                 }
                 if let Some(color) = color {
-                    option.color = color.map(|color| color.hex().to_string());
+                    option.color.clone_from(color);
                 }
                 inserted.push(Vec::new());
             }
