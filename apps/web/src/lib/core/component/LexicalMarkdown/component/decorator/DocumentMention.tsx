@@ -387,23 +387,20 @@ export function DocumentMention(props: DocumentMentionDecoratorProps) {
   // Only skill mentions need to distinguish built-ins from stored documents.
   // Ordinary mentions must not wait for a once-per-session skills request.
   return (
-    <Show
-      when={props.blockName === 'database'}
+    <Switch
       fallback={
-        <Show
-          when={props.blockName === 'skill'}
-          fallback={
-            <Suspense fallback={<DocumentMentionStatic {...props} />}>
-              <DocumentMentionInner {...props} />
-            </Suspense>
-          }
-        >
-          <SkillDocumentMention {...props} />
-        </Show>
+        <Suspense fallback={<DocumentMentionStatic {...props} />}>
+          <DocumentMentionInner {...props} />
+        </Suspense>
       }
     >
-      <DatabaseMention {...props} />
-    </Show>
+      <Match when={props.blockName === 'database'}>
+        <DatabaseMention {...props} />
+      </Match>
+      <Match when={props.blockName === 'skill'}>
+        <SkillDocumentMention {...props} />
+      </Match>
+    </Switch>
   );
 }
 

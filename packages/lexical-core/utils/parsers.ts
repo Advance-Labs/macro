@@ -1,4 +1,5 @@
 import { isAgentContextData } from '../nodes/AgentContextNode';
+import { parseDatabaseQueryJson } from '../nodes/DatabaseQueryNode';
 
 export function parseUserMentions(text: string): string {
   return text.replace(/<m-user-mention>(.*?)<\/m-user-mention>/g, (_, json) => {
@@ -104,16 +105,8 @@ export function parseConnectApps(text: string): string {
 
 export function parseDatabaseQueries(text: string): string {
   return text.replace(/<m-db-query>(.*?)<\/m-db-query>/g, (_, json) => {
-    try {
-      const data = JSON.parse(json);
-      return typeof data.title === 'string' && data.title
-        ? data.title
-        : typeof data.prompt === 'string' && data.prompt
-          ? data.prompt
-          : 'Live database answer';
-    } catch {
-      return 'Live database answer';
-    }
+    const data = parseDatabaseQueryJson(json);
+    return data?.title || data?.prompt || 'Live database answer';
   });
 }
 

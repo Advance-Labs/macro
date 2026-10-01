@@ -8,7 +8,7 @@ import {
   $isDatabaseQueryNode,
   DatabaseQueryNode,
   databaseQueryMarkdown,
-  parseDatabaseQueryData,
+  parseDatabaseQueryJson,
 } from '../nodes/DatabaseQueryNode';
 import {
   replaceElementWithUnknownMention,
@@ -25,18 +25,15 @@ export const I_DATABASE_QUERY_BLOCK: ElementTransformer = {
       ? databaseQueryMarkdown(node.exportComponentProps())
       : null,
   replace: (parent, _, match) => {
-    try {
-      const data = parseDatabaseQueryData(JSON.parse(match[1]));
-      if (!data) throw new Error('Invalid query');
-      const node = $createDatabaseQueryNode(data);
-      parent.replace(
-        data.displayMode !== 'scalar'
-          ? node
-          : $createParagraphNode().append(node)
-      );
-    } catch {
+    const data = parseDatabaseQueryJson(match[1]);
+    if (!data) {
       replaceElementWithUnknownMention(parent, 'Unavailable database question');
+      return;
     }
+    const node = $createDatabaseQueryNode(data);
+    parent.replace(
+      data.displayMode !== 'scalar' ? node : $createParagraphNode().append(node)
+    );
   },
 };
 
@@ -50,15 +47,12 @@ export const I_DATABASE_QUERY: TextMatchTransformer = {
       ? databaseQueryMarkdown(node.exportComponentProps())
       : null,
   replace: (node, match) => {
-    try {
-      const data = parseDatabaseQueryData(JSON.parse(match[1]));
-      if (!data) throw new Error('Invalid query');
-      // A block answer embedded in a sentence remains a scalar affordance until edited.
-      node.replace(
-        $createDatabaseQueryNode({ ...data, displayMode: 'scalar' })
-      );
-    } catch {
+    const data = parseDatabaseQueryJson(match[1]);
+    if (!data) {
       replaceTextWithUnknownMention(node, 'Unavailable database question');
+      return;
     }
+    // A block answer embedded in a sentence remains a scalar affordance until edited.
+    node.replace($createDatabaseQueryNode({ ...data, displayMode: 'scalar' }));
   },
 };

@@ -14,7 +14,7 @@ import { type DecoratorComponent, getDecorator } from '../decoratorRegistry';
 import { $applyIdFromSerialized } from '../plugins/nodeIdPlugin';
 import { $createUnknownMentionNode } from './UnknownMentionNode';
 
-export const DATABASE_QUERY_TAG = 'm-db-query';
+const DATABASE_QUERY_TAG = 'm-db-query';
 const DISPLAY_MODES = [
   'scalar',
   'table',
@@ -24,6 +24,7 @@ const DISPLAY_MODES = [
   'scatter',
   'pie',
 ] as const;
+const MAX_Y_COLUMNS = 5;
 export type DatabaseQueryDisplayMode = (typeof DISPLAY_MODES)[number];
 /** Column aliases and plain choices; never renderer options. */
 export type DatabaseQueryChart = {
@@ -55,63 +56,88 @@ export type SerializedDatabaseQueryNode = Spread<
   SerializedLexicalNode
 >;
 
+const isOptionalString = (value: unknown): value is string | undefined =>
+  value === undefined || typeof value === 'string';
+
+const isNonEmptyName = (name: unknown): name is string =>
+  typeof name === 'string' && !!name.trim();
+
+const isDisplayMode = (value: unknown): value is DatabaseQueryDisplayMode =>
+  DISPLAY_MODES.some((mode) => mode === value);
+
+export function parseDatabaseQueryChart(
+  value: unknown
+): DatabaseQueryChart | undefined {
+  if (!value || typeof value !== 'object') return;
+  const { x, y, title, color, stack } = value as Record<string, unknown>;
+  if (
+    !isNonEmptyName(x) ||
+    !Array.isArray(y) ||
+    !y.length ||
+    y.length > MAX_Y_COLUMNS ||
+    !y.every(isNonEmptyName) ||
+    new Set(y).size !== y.length ||
+    y.includes(x) ||
+    !isOptionalString(title)
+  )
+    return;
+  if (
+    color !== undefined &&
+    (!isNonEmptyName(color) ||
+      color === x ||
+      y.length !== 1 ||
+      y.includes(color))
+  )
+    return;
+  if (stack !== undefined && typeof stack !== 'boolean') return;
+  return {
+    x,
+    y: [...y],
+    ...(title ? { title } : {}),
+    ...(color ? { color } : {}),
+    ...(stack ? { stack: true } : {}),
+  };
+}
+
 /** Only query source is serialized. Results belong to the current viewer. */
 export function parseDatabaseQueryData(
   value: unknown
 ): DatabaseQueryData | undefined {
   if (!value || typeof value !== 'object') return;
-  const record = value as Record<string, unknown>;
+  const { queryId, databaseId, tableId, prompt, title, displayMode, chart } =
+    value as Record<string, unknown>;
   if (
-    typeof record.queryId !== 'string' ||
-    typeof record.prompt !== 'string' ||
-    (record.databaseId !== undefined &&
-      typeof record.databaseId !== 'string') ||
-    (record.tableId !== undefined && typeof record.tableId !== 'string') ||
-    (record.title !== undefined && typeof record.title !== 'string') ||
-    !DISPLAY_MODES.some((mode) => mode === record.displayMode)
+    typeof queryId !== 'string' ||
+    typeof prompt !== 'string' ||
+    !isOptionalString(databaseId) ||
+    !isOptionalString(tableId) ||
+    !isOptionalString(title) ||
+    !isDisplayMode(displayMode)
   )
     return;
-  let chart: DatabaseQueryChart | undefined;
-  if (record.chart !== undefined) {
-    if (!record.chart || typeof record.chart !== 'object') return;
-    const config = record.chart as Record<string, unknown>;
-    if (
-      (config.color !== undefined &&
-        (typeof config.color !== 'string' ||
-          !config.color.trim() ||
-          config.color === config.x ||
-          !Array.isArray(config.y) ||
-          config.y.length !== 1 ||
-          config.y.includes(config.color))) ||
-      (config.stack !== undefined && typeof config.stack !== 'boolean') ||
-      typeof config.x !== 'string' ||
-      !config.x.trim() ||
-      !Array.isArray(config.y) ||
-      !config.y.length ||
-      config.y.length > 5 ||
-      !config.y.every((name) => typeof name === 'string' && name.trim()) ||
-      new Set(config.y).size !== config.y.length ||
-      config.y.includes(config.x) ||
-      (config.title !== undefined && typeof config.title !== 'string')
-    )
-      return;
-    chart = {
-      x: config.x,
-      y: [...config.y],
-      ...(config.title ? { title: config.title as string } : {}),
-      ...(config.color ? { color: config.color as string } : {}),
-      ...(config.stack ? { stack: true } : {}),
-    };
-  }
+  const parsedChart =
+    chart === undefined ? undefined : parseDatabaseQueryChart(chart);
+  if (chart !== undefined && !parsedChart) return;
   return {
-    queryId: record.queryId,
-    ...(record.databaseId ? { databaseId: record.databaseId as string } : {}),
-    ...(record.tableId ? { tableId: record.tableId as string } : {}),
-    ...(record.title ? { title: record.title as string } : {}),
-    prompt: record.prompt,
-    displayMode: record.displayMode as DatabaseQueryDisplayMode,
-    ...(chart ? { chart } : {}),
+    queryId,
+    ...(databaseId ? { databaseId } : {}),
+    ...(tableId ? { tableId } : {}),
+    ...(title ? { title } : {}),
+    prompt,
+    displayMode,
+    ...(parsedChart ? { chart: parsedChart } : {}),
   };
+}
+
+/** An `<m-db-query>` tag's payload; `undefined` when malformed. */
+export function parseDatabaseQueryJson(
+  json: string
+): DatabaseQueryData | undefined {
+  try {
+    return parseDatabaseQueryData(JSON.parse(json));
+  } catch {
+    return;
+  }
 }
 
 export function databaseQueryMarkdown(data: DatabaseQueryData): string {
@@ -157,8 +183,7 @@ export class DatabaseQueryNode extends DecoratorNode<
   }
   static importJSON(serialized: SerializedDatabaseQueryNode): LexicalNode {
     const data = parseDatabaseQueryData(serialized);
-    // Older inline-SQL answers degrade like their markdown form instead of
-    // failing the whole document.
+    // An unreadable answer degrades like its markdown form instead of failing the document.
     if (!data) {
       const fallback = $createUnknownMentionNode({
         name: 'Unavailable database question',
