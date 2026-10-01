@@ -100,7 +100,8 @@ const getEntityRenameData = (
   // Reminders aren't either — the entity-mutation router rejects them, and a
   // reminder's name is its description, edited through the reminders API.
   // Calendar event titles are edited through the calendar mutation API.
-  // Databases are not storage items; their name lives in the databases API.
+  // Databases are renamed by the database block's `renameDatabase`, which owns
+  // the schema cache it updates.
   if (
     entity.type === 'crm_company' ||
     entity.type === 'crm_contact' ||
