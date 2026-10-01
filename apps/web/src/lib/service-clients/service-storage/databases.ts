@@ -1,8 +1,4 @@
-/**
- * Macro Databases client: the `/databases` routes of `crates/databases`,
- * mounted by the document storage service. Bodies are the orval schemas
- * generated from its OpenAPI spec.
- */
+/** The `/databases` routes of `crates/databases`, mounted by the document storage service. */
 import { SERVER_HOSTS } from '@core/constant/servers';
 import type { DatabaseOp } from '@core/database-sql/generated/types';
 import {
@@ -14,8 +10,8 @@ import type { ObjectLike, ResultError } from '@core/util/result';
 import { ResultAsync } from 'neverthrow';
 import { match, P } from 'ts-pattern';
 import type { AddColumnOptionsRequest } from './generated/schemas/addColumnOptionsRequest';
+import type { ApplyOpsResponse } from './generated/schemas/applyOpsResponse';
 import type { Awareness } from './generated/schemas/awareness';
-import type { CardPosition } from './generated/schemas/cardPosition';
 import type { ChangeColumnTypeRequest } from './generated/schemas/changeColumnTypeRequest';
 import type { ColumnCast } from './generated/schemas/columnCast';
 import type { ColumnDetail } from './generated/schemas/columnDetail';
@@ -32,7 +28,6 @@ import type { InferColumnTypeOutcome } from './generated/schemas/inferColumnType
 import type { InferColumnTypeRequest } from './generated/schemas/inferColumnTypeRequest';
 import type { ListedDatabase } from './generated/schemas/listedDatabase';
 import type { OpRefusalResponse } from './generated/schemas/opRefusalResponse';
-import type { OpResult } from './generated/schemas/opResult';
 import type { RenameColumnOutcome } from './generated/schemas/renameColumnOutcome';
 import type { RenameColumnRequest } from './generated/schemas/renameColumnRequest';
 import type { RenameTableRequest } from './generated/schemas/renameTableRequest';
@@ -41,29 +36,22 @@ import type { SharePermissionV2 } from './generated/schemas/sharePermissionV2';
 import type { StarterDatabase } from './generated/schemas/starterDatabase';
 import type { Table } from './generated/schemas/table';
 import type { UpdateChannelSharePermission } from './generated/schemas/updateChannelSharePermission';
-
-/** Every route can fail in transport, or be refused as missing or forbidden. */
-export type DatabaseReadErrorCode = FetchWithTokenErrorCode;
+import type { ViewPositionsResponse } from './generated/schemas/viewPositionsResponse';
 
 /** A schema change the service refused as invalid (400), e.g. a taken name. */
 export type DatabaseSchemaErrorCode =
   | FetchWithTokenErrorCode
   | 'INVALID_SCHEMA';
 
-/** A sharing change the service refused as invalid (400). */
-export type DatabaseSharingErrorCode =
-  | FetchWithTokenErrorCode
-  | 'INVALID_SHARING';
-
 /** A batch of `/ops` the service refused (400); nothing of it was written. */
-export type DatabaseOpsErrorCode = FetchWithTokenErrorCode | 'INVALID_OP';
+type DatabaseOpsErrorCode = FetchWithTokenErrorCode | 'INVALID_OP';
 
 /** An `/ops` failure; an `INVALID_OP` names the op, row and column it refused. */
 export type DatabaseOpsError = ResultError<DatabaseOpsErrorCode> & {
   refusal: OpRefusalResponse | null;
 };
 
-const dssHost = SERVER_HOSTS['document-storage-service'];
+const documentStorageHost = SERVER_HOSTS['document-storage-service'];
 
 function isErrorResponse(body: unknown): body is ErrorResponse {
   return (
@@ -79,7 +67,7 @@ function isOpRefusal(body: unknown): body is OpRefusalResponse {
 }
 
 /** A failed response's body, and the message it gives. */
-async function errorBody(
+export async function errorBody(
   response: Response
 ): Promise<{ body: unknown; message: string }> {
   const text = await response.text();
@@ -126,7 +114,7 @@ function databasesFetch<T extends ObjectLike, Invalid extends string = never>(
 ): ResultAsync<T, ResultError<FetchWithTokenErrorCode | Invalid>[]> {
   const { invalid, ...request } = init;
   return new ResultAsync(
-    fetchWithToken<T, Invalid>(`${dssHost}${path}`, {
+    fetchWithToken<T, Invalid>(`${documentStorageHost}${path}`, {
       ...request,
       errorResponseHandler: async (response) => ({
         code: statusCode<Invalid | 'HTTP_ERROR'>(
@@ -341,21 +329,18 @@ export const databasesClient = {
     );
   },
 
-  /**
-   * Apply a batch of typed ops to a database, together or not at all. The ops
-   * and their results are the engine's own types, which it also emits.
-   */
+  /** Apply a batch of the engine's typed ops to a database, together or not at all. */
   applyOps({
     id,
     request,
   }: {
     id: string;
     request: { ops: DatabaseOp[] };
-  }): ResultAsync<{ results: OpResult[] }, DatabaseOpsError[]> {
+  }): ResultAsync<ApplyOpsResponse, DatabaseOpsError[]> {
     let refusal: OpRefusalResponse | null = null;
     return new ResultAsync(
-      fetchWithToken<{ results: OpResult[] }, 'INVALID_OP'>(
-        `${dssHost}/databases/${id}/ops`,
+      fetchWithToken<ApplyOpsResponse, 'INVALID_OP'>(
+        `${documentStorageHost}/databases/${id}/ops`,
         {
           method: 'POST',
           body: json(request),
@@ -376,7 +361,7 @@ export const databasesClient = {
 
   /** Where a board's cards sit: each placed card's lane and key there. */
   viewPositions({ id, viewId }: { id: string; viewId: string }) {
-    return databasesFetch<{ positions: CardPosition[] }>(
+    return databasesFetch<ViewPositionsResponse>(
       `/databases/${id}/views/${viewId}/positions`
     );
   },

@@ -1,10 +1,4 @@
-/**
- * Server state for Macro Databases.
- *
- * Schema reads go through `GET /databases/{id}`; row writes are typed ops
- * through `POST /databases/{id}/ops`. Row reads run in the browser's SQL
- * engine over Soup (`@queries/database-sql`).
- */
+/** Database schemas and typed row ops; row reads run in `@queries/database-sql`. */
 import { analytics } from '@app/lib/analytics';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { enableDatabases, isFeatureEnabled } from '@core/constant/featureFlags';
@@ -65,10 +59,7 @@ function liveDatabaseIds(listed: readonly ListedDatabase[]): string[] {
     .map((entry) => entry.database.id);
 }
 
-/**
- * Every database the viewer can reach, in detail: what the server builds a
- * statement's catalog from when it may read any of them.
- */
+/** Every database the viewer can reach, in detail, for a statement that may read any of them. */
 export function useViewerDatabases(): {
   databases: Accessor<DatabaseDetail[] | undefined>;
   error: Accessor<unknown>;
@@ -112,10 +103,7 @@ function firstOpsError(errors: DatabaseOpsError[]): DatabaseOpsError {
   );
 }
 
-/**
- * Apply ops to one database's rows as the current viewer, together or not at
- * all: the browser's `OpsSink.apply`.
- */
+/** Apply ops to one database's rows as the current viewer, together or not at all. */
 export function applyDatabaseOps(
   databaseId: string,
   ops: DatabaseOp[]
@@ -126,10 +114,7 @@ export function applyDatabaseOps(
     .mapErr(firstOpsError);
 }
 
-/**
- * Re-read one database's schema. Open reads rerun when the catalog they are
- * built from changes, so a version-only change reruns nothing.
- */
+/** Re-read one database's schema; open reads rerun only when their catalog changes. */
 export function invalidateDatabase(databaseId: string) {
   return queryClient.invalidateQueries({
     queryKey: databasesKeys.detail(databaseId).queryKey,
@@ -137,12 +122,8 @@ export function invalidateDatabase(databaseId: string) {
 }
 
 /**
- * Fold the versions a write reported straight into the cached schema.
- *
- * The version is the only part of the detail response a write moves, so
- * patching it in place spares the grid a schema refetch it would otherwise
- * make on every cell edit. Delayed write responses cannot move the schema
- * version behind a newer refresh or acknowledged schema change.
+ * Fold the versions a write reported into the cached schema, sparing a refetch per cell edit.
+ * A delayed response never moves a version backwards.
  */
 export function applyDatabaseTableVersions(
   databaseId: string,
@@ -186,13 +167,7 @@ export function createDatabaseColumn(params: {
     });
 }
 
-/**
- * Add select option labels to a column and return the column as it now stands.
- *
- * The updated column is folded into the cached schema rather than refetched,
- * so the dropdown that asked for the option can offer it on the very next
- * open; open reads rerun with the new option in their catalog.
- */
+/** Add select option labels to a column, folding the updated column into the cached schema. */
 export function addDatabaseColumnOptions(params: {
   databaseId: string;
   tableId: string;
@@ -229,11 +204,8 @@ export function addDatabaseColumnOptions(params: {
 }
 
 /**
- * Create a database and return its id.
- *
- * The service seeds a starter table. Give it a Name column so the first row is
- * ready to edit. If setup fails, still open the created database: its empty
- * state lets the user add a column without creating another database.
+ * Create a database and return its id, giving the seeded starter table a Name column.
+ * If that setup fails the database still opens; its empty state offers adding a column.
  */
 export async function createDatabase(params: {
   name: string;
@@ -263,7 +235,6 @@ export async function createDatabase(params: {
               })
             : okAsync(undefined);
         })
-        // The database exists: its empty state lets the user add a column.
         .orElse(() => okAsync(undefined))
         .map(() => id)
     );

@@ -1,11 +1,5 @@
-/**
- * Server state for saved database queries.
- *
- * A saved query never changes, so its definition is cached forever; its
- * answer is viewer-specific and kept live by the caller's table liveness.
- */
+/** A saved query never changes, so its definition is cached forever. */
 import { type ResultError, throwOnErr } from '@core/util/result';
-import { createQueryKeys } from '@lukemorales/query-key-factory';
 import {
   getDatabaseQuery,
   type SavedQueryErrorCode,
@@ -17,10 +11,7 @@ import { useQuery } from '@tanstack/solid-query';
 import type { ResultAsync } from 'neverthrow';
 import type { Accessor } from 'solid-js';
 import { queryClient } from '../client';
-
-export const savedDatabaseQueryKeys = createQueryKeys('saved-database-query', {
-  definition: (queryId: string) => ({ queryKey: [queryId] }),
-});
+import { savedDatabaseQueryKeys } from './keys';
 
 /** Save SQL as a new immutable query and seed its definition cache. */
 export function createSavedDatabaseQuery(

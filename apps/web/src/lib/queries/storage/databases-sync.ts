@@ -1,10 +1,4 @@
-/**
- * Gateway liveness for Macro Databases.
- *
- * Kept apart from `./databases` so the query module — which eager modules such
- * as the launcher import — does not pull the connection-gateway websocket into
- * the startup import graph.
- */
+/** Gateway liveness for databases, apart from `./databases` to keep the websocket out of startup. */
 import { useUserId } from '@core/context/user';
 import { createConnectionWebsocketEffect } from '@service-connection/websocket';
 import { databasesClient } from '@service-storage/databases';
@@ -26,7 +20,7 @@ const AWARENESS_EXPIRY_MS = 45_000;
 const AWARENESS_SWEEP_MS = 5_000;
 
 /** One table's new version, as the gateway announces it. */
-export type DatabaseTableChange = {
+type DatabaseTableChange = {
   databaseId: string;
   tableId: string;
   version: number;
@@ -46,11 +40,7 @@ function parseMessageData<Data>(message: {
   }
 }
 
-/**
- * Every table change the gateway reports, for the databases this client
- * tracks. Results are never pushed — the message carries only the table's
- * new version, and every viewer re-reads its own statements as itself.
- */
+/** Every table change the gateway reports; it carries only the new version, never rows. */
 export function useDatabaseTableChanges(
   onChange: (change: DatabaseTableChange) => void
 ) {
@@ -82,19 +72,11 @@ export function useDatabaseTableChangedSync(
 }
 
 /** Where this client is inside a database. */
-export type LocalDatabaseAwareness = {
-  tableId: string;
-  rowId?: string;
-  columnId?: string;
-  editing?: boolean;
-};
+export type LocalDatabaseAwareness = Omit<Awareness, 'left'>;
 
 /** Where another viewer is inside the database. */
-export type RemoteDatabaseAwareness = {
+type RemoteDatabaseAwareness = Omit<Awareness, 'left' | 'editing'> & {
   userId: string;
-  tableId: string;
-  rowId?: string;
-  columnId?: string;
   editing: boolean;
 };
 
@@ -108,18 +90,14 @@ type AwarenessMessage = {
 type HeldAwareness = {
   state: Awareness;
   /** Server timestamp, orders messages from the same viewer. */
-  ts: number;
+  serverTimestamp: number;
   /** Local clock, decides expiry so clock skew cannot drop live viewers. */
   receivedAt: number;
 };
 
 /**
- * Share where this client is and follow where everyone else is.
- *
- * The local state goes out debounced and as a 20 s heartbeat; leaving the
- * database tells the others to drop it. Remote states are held per user,
- * ignoring stale relays (including this client's own) and viewers silent for
- * longer than the heartbeat allows.
+ * Share where this client is, debounced and on a heartbeat, and follow everyone else,
+ * dropping stale relays, this client's own, and viewers silent past the expiry.
  */
 export function useDatabaseAwareness(
   databaseId: () => string | undefined,
@@ -182,7 +160,7 @@ export function useDatabaseAwareness(
     if (!data?.databaseId || data.databaseId !== databaseId()) return;
     if (!data.userId || data.userId === userId()) return;
     const current = held.get(data.userId);
-    if (current && current.ts > data.ts) return;
+    if (current && current.serverTimestamp > data.ts) return;
     if (data.state?.left) {
       held.delete(data.userId);
       return;
@@ -190,7 +168,7 @@ export function useDatabaseAwareness(
     if (!data.state?.tableId) return;
     held.set(data.userId, {
       state: data.state,
-      ts: data.ts,
+      serverTimestamp: data.ts,
       receivedAt: Date.now(),
     });
   });

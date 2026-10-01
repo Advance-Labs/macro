@@ -1,9 +1,6 @@
 /**
- * A live SQL statement: the engine builds the statement's catalog from its
- * schema, runs in the browser over the GraphQL row source, and runs again
- * whenever the normalized cache changes, reading the cache the second time. Cell edits reach the result through the cached
- * rows; rows the cache learns about through the local filter index. A
- * changed statement keeps the last answer until its own arrives.
+ * A live SQL statement run in the browser over the GraphQL row source, rerun from the
+ * cache whenever it changes; a changed statement keeps the last answer until its own arrives.
  */
 
 import {
@@ -70,7 +67,7 @@ export function sameDatabaseSqlStatement(
 }
 
 /** Builds a statement's catalog; the wasm engine unless a test says otherwise. */
-export type BuildCatalog = (schema: Schema, scope?: string) => Promise<Catalog>;
+type BuildCatalog = (schema: Schema, scope?: string) => Promise<Catalog>;
 
 export interface DatabaseSqlQueryCapabilities {
   client: () => Client;
@@ -82,6 +79,19 @@ export interface DatabaseSqlQueryCapabilities {
   open?: OpenEngine;
   openView?: OpenView;
   catalog?: BuildCatalog;
+}
+
+function statementCatalog(
+  statement: DatabaseSqlStatement,
+  capabilities: Pick<DatabaseSqlQueryCapabilities, 'catalog'>
+): ResultAsync<Catalog, DatabaseSqlFailure> {
+  return ResultAsync.fromPromise(
+    (capabilities.catalog ?? buildDatabaseSqlCatalog)(
+      statement.schema,
+      statement.scope
+    ),
+    engineFailure
+  );
 }
 
 /** Run a statement, or a view's compiled query, over `source`. */
@@ -115,7 +125,7 @@ export interface DatabaseSqlQuery {
 }
 
 /** The app's GraphQL client and cache, and the contacts query for people. */
-export function productionDatabaseSqlCapabilities(): DatabaseSqlQueryCapabilities {
+function productionDatabaseSqlCapabilities(): DatabaseSqlQueryCapabilities {
   return {
     client: getGraphqlSoupClient,
     cacheHost: getGraphqlSoupCacheHost,
@@ -151,16 +161,10 @@ export function createDatabaseSqlQuery(
     requestPolicy: RequestPolicy,
     reconcile: boolean
   ): ResultAsync<void, DatabaseSqlFailure> => {
-    const run = ++latest;
+    const generation = ++latest;
     const host = capabilities.cacheHost();
     setLoading(true);
-    const answered = ResultAsync.fromPromise(
-      (capabilities.catalog ?? buildDatabaseSqlCatalog)(
-        current.schema,
-        current.scope
-      ),
-      engineFailure
-    )
+    const answered = statementCatalog(current, capabilities)
       .andThen((built) =>
         runStatement(
           built,
@@ -174,7 +178,7 @@ export function createDatabaseSqlQuery(
           }),
           capabilities
         ).map((answer) => {
-          if (run !== latest) return;
+          if (generation !== latest) return;
           // A cache change that left the answer alone keeps the same outcome.
           batch(() => {
             if (JSON.stringify(untrack(catalog)) !== JSON.stringify(built))
@@ -186,13 +190,13 @@ export function createDatabaseSqlQuery(
         })
       )
       .orElse((failure) => {
-        if (run !== latest) return okAsync(undefined);
+        if (generation !== latest) return okAsync(undefined);
         setError(failure);
         return errAsync(failure);
       });
     const settle = async () => {
       const result = await answered;
-      if (run === latest) setLoading(false);
+      if (generation === latest) setLoading(false);
       return result;
     };
     return new ResultAsync(settle());
@@ -268,13 +272,7 @@ export function readDatabaseSql(
   statement: DatabaseSqlStatement,
   capabilities: DatabaseSqlQueryCapabilities = productionDatabaseSqlCapabilities()
 ): ResultAsync<{ catalog: Catalog; outcome: Outcome }, DatabaseSqlFailure> {
-  return ResultAsync.fromPromise(
-    (capabilities.catalog ?? buildDatabaseSqlCatalog)(
-      statement.schema,
-      statement.scope
-    ),
-    engineFailure
-  ).andThen((catalog) =>
+  return statementCatalog(statement, capabilities).andThen((catalog) =>
     runStatement(
       catalog,
       statement,
@@ -291,16 +289,13 @@ export function readDatabaseSql(
 
 /** Compile and plan a statement against its catalog, reading nothing; a write is refused. */
 export function checkDatabaseSql(
-  { schema, scope, sql }: Extract<DatabaseSqlStatement, { sql: string }>,
+  statement: Extract<DatabaseSqlStatement, { sql: string }>,
   capabilities: Pick<DatabaseSqlQueryCapabilities, 'open' | 'catalog'> = {}
 ): ResultAsync<void, DatabaseSqlFailure> {
-  return ResultAsync.fromPromise(
-    (capabilities.catalog ?? buildDatabaseSqlCatalog)(schema, scope),
-    engineFailure
-  ).andThen((catalog) =>
+  return statementCatalog(statement, capabilities).andThen((catalog) =>
     checkReadStatement(
       catalog,
-      sql,
+      statement.sql,
       capabilities.open ? { open: capabilities.open } : {}
     )
   );

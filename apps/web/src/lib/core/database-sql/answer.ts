@@ -1,8 +1,4 @@
-/**
- * The engine's outcome as an answer: its typed cells, and for each result
- * column what renders them — the options, entity target and relation of the
- * table column the values were read from.
- */
+/** The engine's outcome as an answer: typed cells, and what renders each result column. */
 
 import type { ColumnDetail } from '@service-storage/generated/schemas/columnDetail';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';

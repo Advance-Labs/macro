@@ -1,9 +1,4 @@
-/**
- * Runs one statement through the SQL engine: the engine says what to fetch
- * or write, a `RowSource` fetches it, an `OpsSink` applies the writes, and
- * the driver feeds each answer back until the engine has the outcome. The
- * driver knows nothing about GraphQL or HTTP; the source and the sink do.
- */
+/** Feeds the engine what a `RowSource` reads and an `OpsSink` writes until it has the outcome. */
 
 import type { DatabaseOpsError } from '@service-storage/databases';
 import { err, errAsync, ok, okAsync, Result, ResultAsync } from 'neverthrow';
@@ -166,11 +161,7 @@ function drive(
   );
 }
 
-/**
- * Run a read-only statement to its outcome; a write is refused. The wasm
- * engine loads on first use; it is freed when the statement finishes or
- * fails.
- */
+/** Run a read-only statement to its outcome; a write is refused. */
 export function runDatabaseSql(
   catalog: Catalog,
   sql: string,
@@ -215,11 +206,7 @@ const NO_ROWS: RowSource = {
   bins: () => okAsync([]),
 };
 
-/**
- * Compile and plan a statement against `catalog` without reading anything:
- * every fetch answers with no rows. A statement that writes, or answers with
- * no columns as a write does, is refused as read-only.
- */
+/** Compile and plan a statement with every fetch answering no rows; a write is refused. */
 export function checkReadStatement(
   catalog: Catalog,
   sql: string,

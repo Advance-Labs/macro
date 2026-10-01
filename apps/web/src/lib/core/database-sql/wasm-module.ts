@@ -1,12 +1,6 @@
 /**
- * Typed surface of the generated wasm package (`database_sql`), loaded
- * dynamically so the repo type-checks without the generated artifacts and
- * the engine never slows app startup.
- *
- * Build the package with:
- *   just build-database-sql-wasm
- * which runs wasm-pack over crates/database_sql into
- * src/lib/core/database-sql/wasm/ (gitignored).
+ * Typed surface of the `database_sql` wasm package, loaded on first use.
+ * `just build-database-sql-wasm` builds it into the gitignored `./wasm/`.
  */
 
 import type {
@@ -23,10 +17,8 @@ import type {
 } from './generated/types';
 
 /**
- * One statement in flight. Mirrors `database_sql::wasm::Query`, whose
- * methods cross as untyped `JsValue`s: read the first step once, then feed
- * each request's answer back until `done`. Every method throws an
- * `EngineError`.
+ * One statement in flight, mirroring `database_sql::wasm::Query`: start once, then feed
+ * each request's answer back until `done`. Every method throws an `EngineError`.
  */
 export interface DatabaseSqlQuery {
   start: () => Step;
@@ -48,8 +40,6 @@ interface DatabaseSqlWasmModule {
   buildCatalog: (schema: Schema, scope: string | undefined) => Catalog;
   /** The rows a view shows, as a query to drive. Throws an `EngineError`. */
   runView: (catalog: Catalog, view: DatabaseView) => DatabaseSqlQuery;
-  /** A view as the SQL it runs, for display. Throws an `EngineError`. */
-  viewAsSql: (catalog: Catalog, view: DatabaseView) => string;
   /** A board view's lanes and cards. Throws an `EngineError`. */
   board: (
     catalog: Catalog,
@@ -68,16 +58,14 @@ export function loadDatabaseSqlWasm(): Promise<DatabaseSqlWasmModule> {
   if (!modulePromise) {
     modulePromise = (async () => {
       const url = new URL('./wasm/database_sql.js', import.meta.url).href;
-      const mod = (await import(
+      const wasm = (await import(
         /* @vite-ignore */ url
       )) as DatabaseSqlWasmModule;
-      // Resolve the wasm binary explicitly: vite copies the generated JS as
-      // an opaque asset, so its internal relative URL would 404 in
-      // production. `new URL` is statically analyzable, so vite emits the
-      // binary as an asset and rewrites it.
+      // The generated JS's own relative wasm URL 404s in production; a static
+      // `new URL` makes vite emit and rewrite the binary.
       const wasmUrl = new URL('./wasm/database_sql_bg.wasm', import.meta.url);
-      await mod.default({ module_or_path: wasmUrl });
-      return mod;
+      await wasm.default({ module_or_path: wasmUrl });
+      return wasm;
     })();
   }
   return modulePromise;

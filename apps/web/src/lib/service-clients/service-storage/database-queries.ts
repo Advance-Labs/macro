@@ -7,7 +7,7 @@ import {
 import type { ObjectLike, ResultError } from '@core/util/result';
 import { ResultAsync } from 'neverthrow';
 import { match, P } from 'ts-pattern';
-import type { ErrorResponse } from './generated/schemas/errorResponse';
+import { errorBody } from './databases';
 import type { SavedQuery } from './generated/schemas/savedQuery';
 import type { SaveQueryRequest } from './generated/schemas/saveQueryRequest';
 
@@ -21,28 +21,12 @@ export type SavedQueryErrorCode =
   | 'READ_ONLY'
   | 'BUDGET_EXCEEDED';
 
-const dssHost = SERVER_HOSTS['document-storage-service'];
-
-function isErrorResponse(body: unknown): body is ErrorResponse {
-  return (
-    !!body &&
-    typeof body === 'object' &&
-    'message' in body &&
-    typeof body.message === 'string'
-  );
-}
+const documentStorageHost = SERVER_HOSTS['document-storage-service'];
 
 /** The body's `message` is the compiler's, verbatim. */
 async function errorResponseHandler(
   response: Response
 ): Promise<ResultError<SavedQueryErrorCode>> {
-  const text = await response.text();
-  let body: unknown;
-  try {
-    body = JSON.parse(text);
-  } catch {
-    // A proxy's plain-text body is the message.
-  }
   return {
     code: match(response.status)
       .returnType<SavedQueryErrorCode>()
@@ -53,10 +37,7 @@ async function errorResponseHandler(
       .with(422, () => 'BUDGET_EXCEEDED')
       .with(P.number.gte(500), () => 'SERVER_ERROR')
       .otherwise(() => 'HTTP_ERROR'),
-    message:
-      isErrorResponse(body) && body.message
-        ? body.message
-        : text || `HTTP error! status: ${response.status}`,
+    message: (await errorBody(response)).message,
   };
 }
 
@@ -65,7 +46,7 @@ function savedQueriesFetch<T extends ObjectLike>(
   init?: RequestInit
 ): ResultAsync<T, ResultError<SavedQueryErrorCode>[]> {
   return new ResultAsync(
-    fetchWithToken<T, SavedQueryErrorCode>(`${dssHost}${path}`, {
+    fetchWithToken<T, SavedQueryErrorCode>(`${documentStorageHost}${path}`, {
       ...init,
       errorResponseHandler,
     })

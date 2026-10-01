@@ -1,10 +1,4 @@
-/**
- * The databases the viewer has open, as the schema the engine builds its
- * catalog from (`database_sql::catalog::build`, exposed by the wasm module as
- * `buildCatalog`). The server maps its own entries onto the same schema, so a
- * statement names the same tables and columns in the browser as it does for
- * agents.
- */
+/** Open databases as the schema the engine's `buildCatalog` reads, as the server maps its own. */
 
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import type { Schema } from './generated/types';

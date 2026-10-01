@@ -107,6 +107,10 @@ export const databasesKeys = createQueryKeys('databases', {
   }),
 });
 
+export const savedDatabaseQueryKeys = createQueryKeys('saved-database-query', {
+  definition: (queryId: string) => ({ queryKey: [queryId] }),
+});
+
 export const instructionsMdKeys = createQueryKeys('instructionsMd', {
   id: null,
   text: (id: string) => ({
