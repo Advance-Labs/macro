@@ -587,7 +587,6 @@ pub struct ToolTable {
     pub columns: Vec<ToolColumn>,
     /// The table's saved views, in their order. SaveDatabaseView under one
     /// of these names replaces that view.
-    #[schemars(with = "Vec<serde_json::Value>")]
     pub views: Vec<DatabaseView>,
 }
 
