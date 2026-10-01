@@ -45,7 +45,10 @@ fn same(left: &str, right: &str) -> bool {
 }
 
 /// The catalog table a statement names.
-pub fn table<'c>(catalog: &'c Catalog, name: &TableName) -> Result<&'c Table, ResolveError> {
+pub fn table<'catalog>(
+    catalog: &'catalog Catalog,
+    name: &TableName,
+) -> Result<&'catalog Table, ResolveError> {
     let matches: Vec<&Table> = catalog
         .tables
         .iter()
@@ -99,7 +102,10 @@ pub fn qualified(table: &Table) -> String {
 }
 
 /// The column a statement names in one table.
-pub fn column<'t>(table: &'t Table, name: &Identifier) -> Result<&'t Column, ResolveError> {
+pub fn column<'table>(
+    table: &'table Table,
+    name: &Identifier,
+) -> Result<&'table Column, ResolveError> {
     table
         .columns
         .iter()
@@ -113,18 +119,18 @@ pub fn column<'t>(table: &'t Table, name: &Identifier) -> Result<&'t Column, Res
 }
 
 /// One relation of a `SELECT`: a table and the alias qualifying its columns.
-pub struct ScopeRelation<'c> {
+pub struct ScopeRelation<'catalog> {
     /// The alias: the one written, else the table name.
     pub alias: String,
     /// The table.
-    pub table: &'c Table,
+    pub table: &'catalog Table,
 }
 
 /// The relations a `SELECT` reads, and every key handed out for their
 /// columns.
-pub struct Scope<'c> {
+pub struct Scope<'catalog> {
     /// The relations, `FROM` first.
-    pub relations: Vec<ScopeRelation<'c>>,
+    pub relations: Vec<ScopeRelation<'catalog>>,
     /// Every column bound so far, first use first.
     pub bindings: Vec<Binding>,
 }
@@ -143,9 +149,9 @@ pub struct Bound {
     pub definition: Option<Uuid>,
 }
 
-impl<'c> Scope<'c> {
+impl<'catalog> Scope<'catalog> {
     /// A scope with only the `FROM` table.
-    pub fn new(catalog: &'c Catalog, from: &FromItem) -> Result<Self, ResolveError> {
+    pub fn new(catalog: &'catalog Catalog, from: &FromItem) -> Result<Self, ResolveError> {
         let mut scope = Scope {
             relations: Vec::new(),
             bindings: Vec::new(),
@@ -155,7 +161,11 @@ impl<'c> Scope<'c> {
     }
 
     /// Bring one more table into scope; answers its relation index.
-    pub fn add(&mut self, catalog: &'c Catalog, item: &FromItem) -> Result<usize, ResolveError> {
+    pub fn add(
+        &mut self,
+        catalog: &'catalog Catalog,
+        item: &FromItem,
+    ) -> Result<usize, ResolveError> {
         let table = table(catalog, &item.table)?;
         let alias = item
             .alias
