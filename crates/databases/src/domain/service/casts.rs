@@ -20,14 +20,13 @@ where
     pub(super) async fn preview_casts(
         &self,
         receipt: EntityAccessReceipt<ViewAccessLevel>,
-        viewer: Viewer,
         table_id: TableId,
         column_id: ColumnId,
     ) -> Result<Vec<ColumnCast>, DatabaseError> {
         let database_id = receipt_database_id(&receipt)?;
         let grant = receipt_grant(&receipt, AccessLevel::View);
         let detail = self
-            .column_detail(&viewer, database_id, grant, table_id, column_id)
+            .column_detail(database_id, grant, table_id, column_id)
             .await?;
         let targets = TARGETS
             .into_iter()

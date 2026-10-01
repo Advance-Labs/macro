@@ -66,10 +66,7 @@ impl ColumnEntry {
 
     /// Whether the column's cells are drawn from its options.
     pub fn takes_options(&self) -> bool {
-        matches!(
-            self.definition.definition.data_type,
-            DataType::SelectString | DataType::SelectNumber | DataType::Tag
-        )
+        takes_options(self.definition.definition.data_type)
     }
 
     /// The kind of value the column holds, as a view's filters test it.
@@ -101,6 +98,14 @@ impl TableEntry {
             .iter()
             .find(|column| column.definition.definition.id == definition)
     }
+}
+
+/// Whether a data type's cells are drawn from an explicit set of options.
+pub fn takes_options(data_type: DataType) -> bool {
+    matches!(
+        data_type,
+        DataType::SelectString | DataType::SelectNumber | DataType::Tag
+    )
 }
 
 /// A table's columns as a view's checks see them.

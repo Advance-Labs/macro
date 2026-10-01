@@ -15,7 +15,7 @@ use models_properties::service::property_value::PropertyValue;
 use super::{Planner, refuse};
 use crate::domain::catalog::{ColumnEntry, TableEntry, schema_columns};
 use crate::domain::models::{DatabaseError, PropertyDefinitionId, RowId, TableId, Write};
-use crate::domain::service::validate_name;
+use crate::domain::service::{same_name, validate_name};
 
 /// Where one board's cards are: each row of its table with its lane (the
 /// option its grouping cell holds) and, when it was placed in that lane, its
@@ -345,7 +345,7 @@ impl Planner<'_> {
         if self
             .views_of(entry)
             .iter()
-            .any(|other| Some(other.id) != view && other.name.eq_ignore_ascii_case(&name))
+            .any(|other| Some(other.id) != view && same_name(&other.name, &name))
         {
             return Err(refuse(
                 index,

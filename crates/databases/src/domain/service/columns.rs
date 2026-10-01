@@ -89,13 +89,7 @@ where
             return Err(DatabaseError::from(SchemaError::RelatedTableInaccessible));
         }
         let detail = self
-            .column_detail(
-                viewer,
-                database.id,
-                AccessLevel::Edit,
-                table.id,
-                cmd.column_id,
-            )
+            .column_detail(database.id, AccessLevel::Edit, table.id, cmd.column_id)
             .await?;
         if let Some(blocker) = self.retype_blocker(table.id, &detail).await? {
             return Err(blocker.into());

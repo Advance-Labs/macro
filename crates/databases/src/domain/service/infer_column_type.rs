@@ -14,7 +14,6 @@ where
     pub(super) async fn settle_column_type(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
-        viewer: Viewer,
         cmd: InferColumnType,
     ) -> Result<InferColumnTypeOutcome, DatabaseError> {
         let (database, tables) = self.database_for_edit(&receipt).await?;
@@ -35,13 +34,7 @@ where
         // Resolve the complete response before committing. A later refresh
         // failure must never turn a committed schema operation into a failure.
         let mut detail = self
-            .column_detail(
-                &viewer,
-                database.id,
-                AccessLevel::Edit,
-                table.id,
-                cmd.column_id,
-            )
+            .column_detail(database.id, AccessLevel::Edit, table.id, cmd.column_id)
             .await?;
         let definition = &detail.definition.definition;
         if !detail.column.infer_type

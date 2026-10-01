@@ -252,10 +252,11 @@ impl<'a> Converter<'a> {
         {
             return Err(Misfit::NotOption);
         }
-        let taken = self
-            .labels
-            .iter()
-            .any(|existing| existing != &label && option_key(existing) == option_key(&label));
+        let taken = self.labels.iter().any(|existing| {
+            existing != &label
+                && option_label_key(self.target.data_type, existing)
+                    == option_label_key(self.target.data_type, &label)
+        });
         if taken {
             return Err(Misfit::OptionInOtherCase);
         }

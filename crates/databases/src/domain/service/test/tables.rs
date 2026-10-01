@@ -45,11 +45,51 @@ async fn create_table_announces_only_the_committed_table() {
         )
         .await
         .unwrap_err();
-    assert!(matches!(error, DatabaseError::InvalidSchemaOperation(_)));
+    assert!(
+        matches!(
+            &error,
+            DatabaseError::InvalidSchemaOperation(SchemaError::TableNameTaken { name }) if name == "tickets"
+        ),
+        "{error:?}"
+    );
     let w = world.lock().unwrap();
     assert_eq!(w.published.len(), 1);
     assert_eq!(w.broker_events.len(), 1);
     assert_eq!(w.tables.len(), 2);
+}
+
+/// Names compare as the SQL engine matches them, case-folded beyond ASCII.
+#[tokio::test]
+async fn a_table_name_differing_only_in_non_ascii_case_is_taken() {
+    let seeded = seeded().await;
+    let (svc, db) = (seeded.service, seeded.database_id);
+    svc.create_table(
+        receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
+        CreateTable {
+            database_id: db,
+            name: "Ärger".into(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let error = svc
+        .create_table(
+            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
+            CreateTable {
+                database_id: db,
+                name: "ärger".into(),
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            DatabaseError::InvalidSchemaOperation(SchemaError::TableNameTaken { name }) if name == "ärger"
+        ),
+        "{error:?}"
+    );
 }
 
 #[tokio::test]

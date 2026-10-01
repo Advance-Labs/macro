@@ -13,7 +13,7 @@ fn validate_import(request: &mut ImportTable) -> Result<ImportFingerprint, Datab
     let mut names = HashSet::new();
     for name in &mut request.columns {
         *name = validate_name(name)?;
-        if !names.insert(name.to_lowercase()) {
+        if !names.insert(name_key(name)) {
             return Err(DatabaseError::from(SchemaError::DuplicateImportColumn));
         }
     }

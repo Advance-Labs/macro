@@ -987,11 +987,11 @@ impl Planner<'_> {
             }
             OptionRef::Label(label) => label,
         };
-        let key = label_key(data_type, label);
+        let key = option_label_key(data_type, label);
         if let Some((id, _)) = self
             .labels_of(definition)
             .iter()
-            .find(|(_, existing)| label_key(data_type, existing) == key)
+            .find(|(_, existing)| option_label_key(data_type, existing) == key)
         {
             return Ok(*id);
         }
@@ -1031,17 +1031,6 @@ impl Planner<'_> {
         self.labels
             .entry(definition.definition.id)
             .or_insert_with(|| catalog::option_labels(definition))
-    }
-}
-
-/// What labels match on: case-insensitive text, or for a numeric select the
-/// number as its label shows it, so `2.0` names the option `2`.
-fn label_key(data_type: DataType, label: &str) -> String {
-    match label.trim().parse::<f64>() {
-        Ok(number) if data_type == DataType::SelectNumber && number.is_finite() => {
-            models_databases::cast::number_label(number)
-        }
-        _ => option_key(label),
     }
 }
 

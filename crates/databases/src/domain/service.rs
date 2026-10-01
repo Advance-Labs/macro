@@ -32,7 +32,7 @@ use models_properties::service::property_value::PropertyValue;
 use models_properties::shared::DataType;
 use uuid::Uuid;
 
-use crate::domain::catalog::{self, TableEntry};
+use crate::domain::catalog::{self, TableEntry, takes_options};
 use crate::domain::events::{
     self, DatabaseCreatedMetadata, DatabaseMacroEvent, DatabasePurgedMetadata,
     DatabaseRenamedMetadata, DatabaseRestoredMetadata, DatabaseTablesChangedMetadata,
@@ -131,16 +131,25 @@ fn validate_name(name: &str) -> Result<String, DatabaseError> {
     Ok(trimmed.to_string())
 }
 
-fn same_name(a: &str, b: &str) -> bool {
-    a.trim().eq_ignore_ascii_case(b.trim())
+/// What names are compared on: trimmed and case-folded as the SQL engine
+/// matches them, so two names a statement cannot tell apart never coexist.
+fn name_key(name: &str) -> String {
+    name.trim().to_lowercase()
 }
 
-/// Whether a data type's cells are drawn from an explicit set of options.
-fn takes_options(data_type: DataType) -> bool {
-    matches!(
-        data_type,
-        DataType::SelectString | DataType::SelectNumber | DataType::Tag
-    )
+fn same_name(left: &str, right: &str) -> bool {
+    name_key(left) == name_key(right)
+}
+
+/// What option labels are compared on: their name key, or for a numeric
+/// select the number as its label shows it, so `2.0` names the option `2`.
+fn option_label_key(data_type: DataType, label: &str) -> String {
+    match label.trim().parse::<f64>() {
+        Ok(number) if data_type == DataType::SelectNumber && number.is_finite() => {
+            models_databases::cast::number_label(number)
+        }
+        _ => name_key(label),
+    }
 }
 
 /// The value the properties system stores for one display label.
@@ -172,7 +181,10 @@ fn validate_option_labels(
     labels: &[String],
     existing: &[String],
 ) -> Result<Vec<PropertyOptionValue>, DatabaseError> {
-    let mut taken: HashSet<String> = existing.iter().map(|label| option_key(label)).collect();
+    let mut taken: HashSet<String> = existing
+        .iter()
+        .map(|label| option_label_key(data_type, label))
+        .collect();
     let mut values = Vec::new();
     for label in labels {
         let trimmed = label.trim();
@@ -186,18 +198,11 @@ fn validate_option_labels(
             .into());
         }
         let value = option_value(data_type, trimmed)?;
-        // Compare on the label SQL will see: `2.0` and `2` are one numeric
-        // option, and `Main` and `main` would be indistinguishable labels in
-        // the catalog.
-        if taken.insert(option_key(&catalog::option_display(&value))) {
+        if taken.insert(option_label_key(data_type, trimmed)) {
             values.push(value);
         }
     }
     Ok(values)
-}
-
-fn option_key(label: &str) -> String {
-    label.trim().to_lowercase()
 }
 
 impl<Repo, Defs, Cells, Events, Access, Broker>
@@ -298,24 +303,6 @@ where
         ))
     }
 
-    /// Every grant the viewer holds, with `grant` on `database_id` (the one a
-    /// receipt just proved) taking precedence.
-    async fn viewer_grants(
-        &self,
-        viewer: &Viewer,
-        database_id: DatabaseId,
-        grant: AccessLevel,
-    ) -> Result<HashMap<DatabaseId, AccessLevel>, Access::Err> {
-        let mut grants: HashMap<DatabaseId, AccessLevel> = self
-            .access
-            .accessible_databases(viewer)
-            .await?
-            .into_iter()
-            .collect();
-        grants.insert(database_id, grant);
-        Ok(grants)
-    }
-
     /// The viewer's grant on one live database; `None` when they hold none or
     /// it is trashed, which callers treat as missing.
     pub(super) async fn live_database_grant(
@@ -339,14 +326,6 @@ where
             .iter()
             .any(|database| database.trashed_at.is_none());
         Ok(live.then_some(grant))
-    }
-
-    /// The catalog entries that belong to one database, catalog names intact.
-    fn entries_of(entries: Vec<TableEntry>, database_id: DatabaseId) -> Vec<TableEntry> {
-        entries
-            .into_iter()
-            .filter(|entry| entry.table.database_id == database_id)
-            .collect()
     }
 
     fn detail(database: Database, grant: AccessLevel, entries: Vec<TableEntry>) -> DatabaseDetail {
@@ -436,18 +415,13 @@ where
     /// One column as the client sees it.
     async fn column_detail(
         &self,
-        viewer: &Viewer,
         database_id: DatabaseId,
         grant: AccessLevel,
         table_id: TableId,
         column_id: ColumnId,
     ) -> Result<ColumnDetail, DatabaseError> {
-        let grants = self
-            .viewer_grants(viewer, database_id, grant)
-            .await
-            .map_err(repo_err)?;
-        let entries = self.entries_for(&grants).await?;
-        Self::entries_of(entries, database_id)
+        self.entries_for(&HashMap::from([(database_id, grant)]))
+            .await?
             .into_iter()
             .map(Self::table_detail)
             .find(|entry| entry.table.id == table_id)
@@ -680,11 +654,11 @@ where
             .collect())
     }
 
-    #[tracing::instrument(skip(self, receipt), err)]
+    #[tracing::instrument(skip(self, receipt, _viewer), err)]
     async fn get_database(
         &self,
         receipt: EntityAccessReceipt<ViewAccessLevel>,
-        viewer: Viewer,
+        _viewer: Viewer,
     ) -> Result<DatabaseDetail, DatabaseError> {
         let database_id = receipt_database_id(&receipt)?;
         let grant = receipt_grant(&receipt, AccessLevel::View);
@@ -697,16 +671,10 @@ where
         if database.trashed_at.is_some() {
             return Err(DatabaseError::NotFound);
         }
-        let grants = self
-            .viewer_grants(&viewer, database_id, grant)
-            .await
-            .map_err(repo_err)?;
-        let entries = self.entries_for(&grants).await?;
-        Ok(Self::detail(
-            database,
-            grant,
-            Self::entries_of(entries, database_id),
-        ))
+        let entries = self
+            .entries_for(&HashMap::from([(database_id, grant)]))
+            .await?;
+        Ok(Self::detail(database, grant, entries))
     }
 
     #[tracing::instrument(skip(self, receipt), err)]
@@ -876,8 +844,7 @@ where
             return Err(DatabaseError::from(SchemaError::InferenceNeedsPlainText));
         }
 
-        // Effective display labels are unique per table (case-insensitive).
-        // Renamed placements keep their original definition and SQL name.
+        // Effective display labels are unique per table, compared as names.
         let existing = self
             .repo
             .columns_for_tables(&[cmd.table_id])
@@ -982,14 +949,14 @@ where
         Ok(column_id)
     }
 
-    #[tracing::instrument(skip(self, receipt, viewer), err)]
+    #[tracing::instrument(skip(self, receipt, _viewer), err)]
     async fn infer_column_type(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
-        viewer: Viewer,
+        _viewer: Viewer,
         cmd: InferColumnType,
     ) -> Result<InferColumnTypeOutcome, DatabaseError> {
-        self.settle_column_type(receipt, viewer, cmd).await
+        self.settle_column_type(receipt, cmd).await
     }
 
     #[tracing::instrument(skip(self, receipt, viewer), err)]
@@ -1002,16 +969,15 @@ where
         self.change_placement_type(receipt, viewer, cmd).await
     }
 
-    #[tracing::instrument(skip(self, receipt, viewer), err)]
+    #[tracing::instrument(skip(self, receipt, _viewer), err)]
     async fn column_casts(
         &self,
         receipt: EntityAccessReceipt<ViewAccessLevel>,
-        viewer: Viewer,
+        _viewer: Viewer,
         table_id: TableId,
         column_id: ColumnId,
     ) -> Result<Vec<ColumnCast>, DatabaseError> {
-        self.preview_casts(receipt, viewer, table_id, column_id)
-            .await
+        self.preview_casts(receipt, table_id, column_id).await
     }
 
     #[tracing::instrument(skip(self, receipt), err)]
@@ -1125,7 +1091,6 @@ where
         }
 
         self.column_detail(
-            &viewer,
             database.id,
             receipt_grant(&receipt, AccessLevel::Edit),
             cmd.table_id,
