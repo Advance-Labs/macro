@@ -5345,8 +5345,6 @@ dependencies = [
  "entity_access",
  "entity_access_db_utils",
  "entity_mutation",
- "filter_ast",
- "item_filters",
  "macro_authorization",
  "macro_db_migrator",
  "macro_event_broker",
