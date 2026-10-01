@@ -135,7 +135,8 @@ fn seed() -> Vec<Row> {
         position: None,
         cells: cells.into_iter().collect(),
     };
-    let date = |y, m, d| Cell::Date(Utc.with_ymd_and_hms(y, m, d, 0, 0, 0).unwrap());
+    let date =
+        |year, month, day| Cell::Date(Utc.with_ymd_and_hms(year, month, day, 0, 0, 0).unwrap());
     vec![
         row(
             0xa1,
@@ -205,9 +206,9 @@ impl Memory {
         use filter_ast::Expr;
         use item_filters::ast::properties::PropertyMatchValue;
         match expr {
-            Expr::And(a, b) => Self::matches(a, row) && Self::matches(b, row),
-            Expr::Or(a, b) => Self::matches(a, row) || Self::matches(b, row),
-            Expr::Not(a) => !Self::matches(a, row),
+            Expr::And(left, right) => Self::matches(left, row) && Self::matches(right, row),
+            Expr::Or(left, right) => Self::matches(left, row) || Self::matches(right, row),
+            Expr::Not(inner) => !Self::matches(inner, row),
             Expr::Literal(literal) => match (
                 row.cells.get(&literal.property_definition_id),
                 &literal.value,
@@ -297,9 +298,9 @@ impl Memory {
         Ok(match value {
             CellValue::Clear => None,
             CellValue::Text(text) => Some(Cell::Text(text)),
-            CellValue::Number(n) => Some(Cell::Number(n)),
-            CellValue::Boolean(b) => Some(Cell::Bool(b)),
-            CellValue::Date(d) => Some(Cell::Date(d)),
+            CellValue::Number(number) => Some(Cell::Number(number)),
+            CellValue::Boolean(checked) => Some(Cell::Bool(checked)),
+            CellValue::Date(date) => Some(Cell::Date(date)),
             CellValue::Link(urls) => Some(Cell::Text(urls.join(" "))),
             CellValue::Options(refs) => Some(Cell::Options(
                 refs.into_iter()

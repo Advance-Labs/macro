@@ -26,15 +26,15 @@ pub fn show(catalog: &Catalog, value: Option<&Cell>) -> String {
     match value {
         None => "—".into(),
         Some(Cell::Text(text)) => text.clone(),
-        Some(Cell::Number(n)) => {
-            if n.fract() == 0.0 {
-                format!("{}", *n as i64)
+        Some(Cell::Number(number)) => {
+            if number.fract() == 0.0 {
+                format!("{}", *number as i64)
             } else {
-                format!("{n}")
+                format!("{number}")
             }
         }
-        Some(Cell::Bool(b)) => if *b { "☑" } else { "☐" }.into(),
-        Some(Cell::Date(d)) => d.format("%Y-%m-%d").to_string(),
+        Some(Cell::Bool(checked)) => if *checked { "☑" } else { "☐" }.into(),
+        Some(Cell::Date(date)) => date.format("%Y-%m-%d").to_string(),
         Some(Cell::Options(ids)) => ids.iter().map(label).collect::<Vec<_>>().join(", "),
         Some(Cell::Entities(ids)) => ids.join(", "),
     }
@@ -145,18 +145,20 @@ pub fn print_plan(catalog: &Catalog, sql: &str) {
         let alias = &relation.relation.alias;
         match &relation.query {
             GqlQuery::Soup {
-                property_filter: p, ..
+                property_filter: filter,
+                ..
             } => {
                 println!(
                     "  gql [{alias}]: soup, property_filter = {}",
-                    property_filter(p)
+                    property_filter(filter)
                 )
             }
             GqlQuery::GroupSoup {
-                property_filter: p, ..
+                property_filter: filter,
+                ..
             } => println!(
                 "  gql [{alias}]: groupSoup (bins only, no rows fetched), property_filter = {}",
-                property_filter(p)
+                property_filter(filter)
             ),
             GqlQuery::People { .. } => println!("  gql [{alias}]: people"),
         }

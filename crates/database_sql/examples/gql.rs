@@ -25,8 +25,10 @@ use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 
 use chrono::DateTime;
+use clap::Parser;
 use database_sql::catalog::{
-    Catalog, Column, ColumnKind, EntityKind, SelectOption, Table, TableSource,
+    Catalog, ColumnKind, ColumnSchema, DataType, DatabaseSchema, EntityKind, OptionSchema,
+    OptionValue, PropertyType, Schema, SelectOption, TableSchema, build,
 };
 use database_sql::fold::{Bin, Cell, Row};
 use database_sql::run::{OpsSink, Page, RowSource, SourceError, WriteError, run};
@@ -36,6 +38,7 @@ use item_filters::ast::properties::{PropertiesLiteral, PropertyMatchValue};
 use models_databases::{
     CellValue, CellWrite, DatabaseOp, OpResult, OptionRef, RowChanges, TableVersion,
 };
+use serde::Deserialize;
 use serde_json::{Value as Json, json};
 use uuid::Uuid;
 
@@ -59,6 +62,64 @@ fragment SoupPropertyFields on GraphqlProperty {
   }
 }"#;
 
+/// The engine over a running stack's GraphQL API, with your tasks as
+/// `macro.tasks`.
+#[derive(Parser)]
+struct Arguments {
+    /// The stack's API base URL.
+    #[arg(long, default_value = "http://localhost:32015")]
+    url: String,
+    /// A file holding a user JWT.
+    #[arg(long, default_value = "databases-demo-token")]
+    token_file: String,
+}
+
+/// Why the API did not answer.
+#[derive(Debug, thiserror::Error)]
+enum ApiError {
+    #[error(transparent)]
+    Http(#[from] reqwest::Error),
+    #[error("the API answered with errors: {0}")]
+    Graphql(Json),
+    #[error("{status}: {body}")]
+    Status {
+        status: reqwest::StatusCode,
+        body: Json,
+    },
+    #[error("unexpected response: {0}")]
+    Shape(#[from] serde_json::Error),
+    #[error("option {0} has neither a text nor a number value")]
+    OptionValue(Uuid),
+}
+
+/// One property definition as `propertyDefinitions` lists it.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Definition {
+    id: Uuid,
+    display_name: String,
+    data_type: DataType,
+    is_multi_select: bool,
+    specific_entity_type: Option<EntityKind>,
+    is_metadata: bool,
+    options: Vec<DefinitionOption>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DefinitionOption {
+    id: Uuid,
+    display_order: i32,
+    value: DefinitionOptionValue,
+}
+
+/// `s` for a text option, `n` for a numeric one, as the query aliases them.
+#[derive(Deserialize)]
+struct DefinitionOptionValue {
+    s: Option<String>,
+    n: Option<f64>,
+}
+
 struct Api {
     base: String,
     token: String,
@@ -70,28 +131,28 @@ struct Api {
 }
 
 impl Api {
-    async fn gql(&self, query: &str, variables: Json) -> Result<Json, String> {
+    async fn gql(&self, query: &str, variables: Json) -> Result<Json, ApiError> {
         let response = self
             .http
             .post(format!("{}/items/soup/graphql", self.base))
             .bearer_auth(&self.token)
             .json(&json!({ "query": query, "variables": variables }))
             .send()
-            .await
-            .map_err(|e| e.to_string())?;
+            .await?;
         let status = response.status();
-        let body: Json = response.json().await.map_err(|e| e.to_string())?;
+        let body: Json = response.json().await?;
         if let Some(errors) = body.get("errors") {
-            return Err(errors.to_string());
+            return Err(ApiError::Graphql(errors.clone()));
         }
         if !status.is_success() {
-            return Err(format!("{status}: {body}"));
+            return Err(ApiError::Status { status, body });
         }
         Ok(body["data"].clone())
     }
 
-    /// Every task property definition as a column, plus the title.
-    async fn catalog(&mut self) -> Result<Catalog, String> {
+    /// Every task property definition as a column, plus the title, built
+    /// into a catalog the way the server builds one.
+    async fn catalog(&mut self) -> Result<Catalog, ApiError> {
         let data = self
             .gql(
                 r#"query { user { propertyDefinitions(scope: ALL, forEntityType: TASK) {
@@ -103,87 +164,87 @@ impl Api {
                 json!({}),
             )
             .await?;
-        let mut columns = vec![Column {
+        let definitions: Vec<Definition> =
+            serde_json::from_value(data["user"]["propertyDefinitions"].clone())?;
+        let mut columns = vec![ColumnSchema {
             id: NAME,
-            placement: NAME,
+            definition: NAME,
             name: "name".into(),
-            kind: ColumnKind::Text,
+            property: PropertyType {
+                data_type: DataType::String,
+                multi: false,
+                entity_type: None,
+                relation: false,
+            },
+            options: Vec::new(),
         }];
-        for definition in data["user"]["propertyDefinitions"]
-            .as_array()
-            .unwrap_or(&vec![])
+        for definition in definitions
+            .into_iter()
+            .filter(|definition| !definition.is_metadata)
         {
-            if definition["isMetadata"].as_bool().unwrap_or(false) {
-                continue;
-            }
-            let id: Uuid = definition["id"].as_str().unwrap().parse().unwrap();
-            let multi = definition["isMultiSelect"].as_bool().unwrap_or(false);
-            let entity_type = definition["specificEntityType"]
-                .as_str()
-                .unwrap_or("USER")
-                .to_owned();
-            self.definitions.insert(id, (multi, entity_type.clone()));
-            let mut options: Vec<(i64, SelectOption)> = definition["options"]
-                .as_array()
-                .unwrap_or(&vec![])
-                .iter()
+            let entity_type = definition.specific_entity_type.unwrap_or(EntityKind::User);
+            self.definitions.insert(
+                definition.id,
+                (
+                    definition.is_multi_select,
+                    entity_type.sql_name().to_owned(),
+                ),
+            );
+            let options = definition
+                .options
+                .into_iter()
                 .map(|option| {
-                    let label = option["value"]["s"]
-                        .as_str()
-                        .map(str::to_owned)
-                        .or_else(|| option["value"]["n"].as_f64().map(|n| n.to_string()))
-                        .unwrap_or_default();
-                    (
-                        option["displayOrder"].as_i64().unwrap_or(0),
-                        SelectOption {
-                            id: option["id"].as_str().unwrap().parse().unwrap(),
-                            label,
-                        },
-                    )
+                    let value = match (option.value.s, option.value.n) {
+                        (Some(text), _) => OptionValue::String(text),
+                        (None, Some(number)) => OptionValue::Number(number),
+                        (None, None) => return Err(ApiError::OptionValue(option.id)),
+                    };
+                    Ok(OptionSchema {
+                        id: option.id,
+                        value,
+                        order: option.display_order,
+                    })
                 })
-                .collect();
-            options.sort_by_key(|(order, _)| *order);
-            let kind = match definition["dataType"].as_str().unwrap_or("") {
-                "BOOLEAN" => ColumnKind::Boolean,
-                "DATE" => ColumnKind::Date,
-                "NUMBER" => ColumnKind::Number,
-                "STRING" => ColumnKind::Text,
-                "LINK" => ColumnKind::Link,
-                "ENTITY" => ColumnKind::Entity {
-                    multi,
-                    target: entity_type.parse().unwrap_or(EntityKind::User),
+                .collect::<Result<_, _>>()?;
+            columns.push(ColumnSchema {
+                id: definition.id,
+                definition: definition.id,
+                name: definition.display_name,
+                property: PropertyType {
+                    data_type: definition.data_type,
+                    multi: definition.is_multi_select,
+                    entity_type: definition.specific_entity_type,
+                    relation: false,
                 },
-                _ => ColumnKind::Select {
-                    multi,
-                    options: options.into_iter().map(|(_, option)| option).collect(),
-                },
-            };
-            columns.push(Column {
-                id,
-                placement: id,
-                name: definition["displayName"].as_str().unwrap().to_owned(),
-                kind,
+                options,
             });
         }
-        Ok(Catalog {
-            tables: vec![Table {
+        let schema = Schema {
+            databases: vec![DatabaseSchema {
                 id: TASKS,
-                database_id: TASKS,
-                database: "macro".into(),
-                name: "tasks".into(),
-                columns,
-                source: TableSource::Database,
+                name: "macro".into(),
+                tables: vec![TableSchema {
+                    id: TASKS,
+                    name: "tasks".into(),
+                    columns,
+                }],
             }],
-        })
+            platform: Vec::new(),
+        };
+        Ok(build(&schema, Some(TASKS)))
     }
 }
 
 /// The Soup `propf` input, from the plan's expression.
-fn propf_input(expr: &Expr<PropertiesLiteral>) -> Json {
+fn property_filter_input(expr: &Expr<PropertiesLiteral>) -> Json {
     match expr {
-        Expr::And(a, b) => json!({ "and": { "left": propf_input(a), "right": propf_input(b) } }),
-        Expr::Or(a, b) => json!({ "or": { "left": propf_input(a), "right": propf_input(b) } }),
-        Expr::Not(a) => json!({ "not": propf_input(a) }),
+        Expr::And(left, right) => {
+            json!({ "and": { "left": property_filter_input(left), "right": property_filter_input(right) } })
+        }
+        Expr::Or(left, right) => {
+            json!({ "or": { "left": property_filter_input(left), "right": property_filter_input(right) } })
+        }
+        Expr::Not(inner) => json!({ "not": property_filter_input(inner) }),
         Expr::Literal(literal) => {
             let value = match &literal.value {
                 PropertyMatchValue::SelectOption(id) => json!({ "selectOption": id }),
@@ -210,7 +271,7 @@ fn filters(property_filter: &Option<Expr<PropertiesLiteral>>) -> Json {
         "calendarEventFilter": { "literal": { "id": NIL } },
     });
     if let Some(expr) = property_filter {
-        filters["propertiesFilter"] = propf_input(expr);
+        filters["propertiesFilter"] = property_filter_input(expr);
     }
     filters
 }
@@ -246,7 +307,7 @@ fn row_from_item(item: &Json) -> Row {
                 .map(|s| Cell::Text(s.to_owned())),
             "GraphqlDatePropertyValue" => value["dateValue"]
                 .as_str()
-                .and_then(|d| DateTime::parse_from_rfc3339(d).ok())
+                .and_then(|date| DateTime::parse_from_rfc3339(date).ok())
                 .map(|d| Cell::Date(d.to_utc())),
             "GraphqlSelectOptionPropertyValue" => Some(Cell::Options(
                 value["optionIds"]
@@ -315,7 +376,7 @@ impl RowSource for Api {
                 json!({ "input": input }),
             )
             .await
-            .map_err(SourceError)?;
+            .map_err(|error| SourceError(error.to_string()))?;
         let soup = &data["user"]["soup"];
         Ok(Page {
             rows: soup["items"]
@@ -347,7 +408,7 @@ impl RowSource for Api {
                 } } }),
             )
             .await
-            .map_err(SourceError)?;
+            .map_err(|error| SourceError(error.to_string()))?;
         Ok(data["user"]["groupSoup"]["bins"]
             .as_array()
             .unwrap_or(&vec![])
@@ -410,9 +471,9 @@ impl Api {
             CellValue::Clear => Json::Null,
             CellValue::Text(text) => json!({ "string": text }),
             CellValue::Link(urls) => json!({ "string": urls.join(" ") }),
-            CellValue::Number(n) => json!({ "number": n }),
-            CellValue::Boolean(b) => json!({ "boolean": b }),
-            CellValue::Date(d) => json!({ "date": d.to_rfc3339() }),
+            CellValue::Number(number) => json!({ "number": number }),
+            CellValue::Boolean(checked) => json!({ "boolean": checked }),
+            CellValue::Date(date) => json!({ "date": date.to_rfc3339() }),
             CellValue::Options(options) => {
                 let ids = self.option_ids(column, options)?;
                 if multi {
@@ -454,7 +515,7 @@ impl Api {
         )
         .await
         .map(|_| ())
-        .map_err(WriteError)
+        .map_err(|error| WriteError(error.to_string()))
     }
 
     async fn create(&self, cells: Vec<CellWrite>) -> Result<Uuid, WriteError> {
@@ -472,12 +533,12 @@ impl Api {
             .json(&json!({ "taskName": name, "markdown": null, "shareWithTeam": true }))
             .send()
             .await
-            .map_err(|e| WriteError(e.to_string()))?;
+            .map_err(|error| WriteError(error.to_string()))?;
         let status = response.status();
         let body: Json = response
             .json()
             .await
-            .map_err(|e| WriteError(e.to_string()))?;
+            .map_err(|error| WriteError(error.to_string()))?;
         if !status.is_success() {
             return Err(WriteError(format!("create_task {status}: {body}")));
         }
@@ -552,22 +613,19 @@ impl OpsSink for Api {
 
 #[tokio::main]
 async fn main() {
-    let mut args = std::env::args().skip(1);
-    let mut base = "http://localhost:32015".to_owned();
-    let mut token_file = "databases-demo-token".to_owned();
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--url" => base = args.next().expect("--url <base>"),
-            "--token-file" => token_file = args.next().expect("--token-file <path>"),
-            other => panic!("unknown argument {other}"),
+    let arguments = Arguments::parse();
+    let token = match std::fs::read_to_string(&arguments.token_file) {
+        Ok(token) => token.trim().to_owned(),
+        Err(error) => {
+            eprintln!(
+                "could not read the token file {}: {error}",
+                arguments.token_file
+            );
+            std::process::exit(1);
         }
-    }
-    let token = std::fs::read_to_string(&token_file)
-        .unwrap_or_else(|e| panic!("token file {token_file}: {e}"))
-        .trim()
-        .to_owned();
+    };
     let mut api = Api {
-        base,
+        base: arguments.url,
         token,
         http: reqwest::Client::new(),
         definitions: HashMap::new(),
