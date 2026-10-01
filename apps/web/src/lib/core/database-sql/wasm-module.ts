@@ -51,19 +51,24 @@ interface DatabaseSqlWasmModule {
 
 let modulePromise: Promise<DatabaseSqlWasmModule> | undefined;
 
-/** Loads and initializes the wasm module exactly once per context. */
+/** Loads and initializes the wasm module once per context; a failed load is tried again. */
 export function loadDatabaseSqlWasm(): Promise<DatabaseSqlWasmModule> {
   if (!modulePromise) {
     modulePromise = (async () => {
-      const url = new URL('./wasm/database_sql.js', import.meta.url).href;
-      const wasm = (await import(
-        /* @vite-ignore */ url
-      )) as DatabaseSqlWasmModule;
-      // The generated JS's own relative wasm URL 404s in production; a static
-      // `new URL` makes vite emit and rewrite the binary.
-      const wasmUrl = new URL('./wasm/database_sql_bg.wasm', import.meta.url);
-      await wasm.default({ module_or_path: wasmUrl });
-      return wasm;
+      try {
+        const url = new URL('./wasm/database_sql.js', import.meta.url).href;
+        const wasm = (await import(
+          /* @vite-ignore */ url
+        )) as DatabaseSqlWasmModule;
+        // The generated JS's own relative wasm URL 404s in production; a static
+        // `new URL` makes vite emit and rewrite the binary.
+        const wasmUrl = new URL('./wasm/database_sql_bg.wasm', import.meta.url);
+        await wasm.default({ module_or_path: wasmUrl });
+        return wasm;
+      } catch (error) {
+        modulePromise = undefined;
+        throw error;
+      }
     })();
   }
   return modulePromise;
