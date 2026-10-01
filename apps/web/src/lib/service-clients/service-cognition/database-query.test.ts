@@ -50,6 +50,52 @@ describe('database AI transport boundaries', () => {
     expect(result.displayMode).toBe('bar');
   });
 
+  it('asks for every chart mark and keeps the strict schema’s color and stack', async () => {
+    complete.mockResolvedValue(
+      ok({
+        result: {
+          ...proposal,
+          sql: 'SELECT month, team, COUNT(*) AS total FROM tickets GROUP BY month, team',
+          displayMode: 'area',
+          chart: {
+            x: 'month',
+            y: ['total'],
+            title: 'Tickets',
+            color: 'team',
+            stack: true,
+          },
+        },
+        toolActivity: [],
+      })
+    );
+    const result = await generateDatabaseQuery(input);
+    const schema = complete.mock.calls[0][0].output_schema.schema;
+    expect(schema.properties.displayMode.enum).toEqual([
+      'scalar',
+      'table',
+      'bar',
+      'line',
+      'area',
+      'scatter',
+      'pie',
+    ]);
+    expect(schema.properties.chart.anyOf[1].required).toEqual([
+      'x',
+      'y',
+      'title',
+      'color',
+      'stack',
+    ]);
+    expect(result.displayMode).toBe('area');
+    expect(result.chart).toEqual({
+      x: 'month',
+      y: ['total'],
+      title: 'Tickets',
+      color: 'team',
+      stack: true,
+    });
+  });
+
   it('only attaches completed changes from server receipts to the scoped assistant', async () => {
     complete.mockResolvedValue(
       ok({
