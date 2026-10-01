@@ -46,24 +46,6 @@ fn guests() -> Vec<SchemaColumn> {
     ]
 }
 
-fn table() -> ViewLayout {
-    ViewLayout::Table { columns: vec![] }
-}
-
-fn filtered(conditions: Vec<FilterNode>) -> ViewQuery {
-    ViewQuery {
-        filter: Some(FilterGroup {
-            conjunction: Conjunction::And,
-            conditions,
-        }),
-        sort: vec![],
-    }
-}
-
-fn condition(column: ColumnId, test: FilterTest) -> FilterNode {
-    FilterNode::Condition(FilterCondition { column, test })
-}
-
 #[test]
 fn a_view_reads_from_json_with_its_filter_tree_and_layout() {
     let view: NewView = serde_json::from_value(json!({
@@ -108,22 +90,22 @@ fn a_view_reads_from_json_with_its_filter_tree_and_layout() {
                 filter: Some(FilterGroup {
                     conjunction: Conjunction::Or,
                     conditions: vec![
-                        condition(
-                            STATUS,
-                            FilterTest::Options {
+                        FilterNode::Condition(FilterCondition {
+                            column: STATUS,
+                            test: FilterTest::Options {
                                 operator: SetOperator::IsAnyOf,
                                 options: vec![GOING],
                             }
-                        ),
+                        }),
                         FilterNode::Group(FilterGroup {
                             conjunction: Conjunction::And,
-                            conditions: vec![condition(
-                                PLUS_ONES,
-                                FilterTest::Number {
+                            conditions: vec![FilterNode::Condition(FilterCondition {
+                                column: PLUS_ONES,
+                                test: FilterTest::Number {
                                     operator: NumberOperator::GreaterThan,
                                     value: 1.0,
                                 }
-                            )],
+                            })],
                         }),
                     ],
                 }),
@@ -157,26 +139,26 @@ fn a_view_that_fits_its_table_passes() {
         filter: Some(FilterGroup {
             conjunction: Conjunction::And,
             conditions: vec![
-                condition(
-                    NAME,
-                    FilterTest::Text {
+                FilterNode::Condition(FilterCondition {
+                    column: NAME,
+                    test: FilterTest::Text {
                         operator: TextOperator::Contains,
                         value: "sam".into(),
                     },
-                ),
-                condition(
-                    DIET,
-                    FilterTest::Options {
+                }),
+                FilterNode::Condition(FilterCondition {
+                    column: DIET,
+                    test: FilterTest::Options {
                         operator: SetOperator::HasNone,
                         options: vec![VEGAN],
                     },
-                ),
-                condition(
-                    PLUS_ONES,
-                    FilterTest::Presence {
+                }),
+                FilterNode::Condition(FilterCondition {
+                    column: PLUS_ONES,
+                    test: FilterTest::Presence {
                         operator: PresenceOperator::IsNotEmpty,
                     },
-                ),
+                }),
             ],
         }),
         sort: vec![SortKey {
@@ -208,25 +190,37 @@ fn a_view_that_does_not_fit_its_table_says_why() {
     let ghost = Uuid::from_u128(0x6057);
     let cases = [
         (
-            filtered(vec![condition(
-                ghost,
-                FilterTest::Presence {
-                    operator: PresenceOperator::IsEmpty,
-                },
-            )]),
-            table(),
+            ViewQuery {
+                filter: Some(FilterGroup {
+                    conjunction: Conjunction::And,
+                    conditions: vec![FilterNode::Condition(FilterCondition {
+                        column: ghost,
+                        test: FilterTest::Presence {
+                            operator: PresenceOperator::IsEmpty,
+                        },
+                    })],
+                }),
+                sort: vec![],
+            },
+            ViewLayout::Table { columns: vec![] },
             ViewProblem::UnknownColumn { column: ghost },
             "no column 00000000-0000-0000-0000-000000006057 in this table",
         ),
         (
-            filtered(vec![condition(
-                PLUS_ONES,
-                FilterTest::Text {
-                    operator: TextOperator::Is,
-                    value: "two".into(),
-                },
-            )]),
-            table(),
+            ViewQuery {
+                filter: Some(FilterGroup {
+                    conjunction: Conjunction::And,
+                    conditions: vec![FilterNode::Condition(FilterCondition {
+                        column: PLUS_ONES,
+                        test: FilterTest::Text {
+                            operator: TextOperator::Is,
+                            value: "two".into(),
+                        },
+                    })],
+                }),
+                sort: vec![],
+            },
+            ViewLayout::Table { columns: vec![] },
             ViewProblem::TestDoesNotFit {
                 column: "Plus ones".into(),
                 holds: ValueKind::Number,
@@ -235,14 +229,20 @@ fn a_view_that_does_not_fit_its_table_says_why() {
             "\"Plus ones\" holds number values; a text test does not fit it",
         ),
         (
-            filtered(vec![condition(
-                DIET,
-                FilterTest::Options {
-                    operator: SetOperator::IsAnyOf,
-                    options: vec![VEGAN],
-                },
-            )]),
-            table(),
+            ViewQuery {
+                filter: Some(FilterGroup {
+                    conjunction: Conjunction::And,
+                    conditions: vec![FilterNode::Condition(FilterCondition {
+                        column: DIET,
+                        test: FilterTest::Options {
+                            operator: SetOperator::IsAnyOf,
+                            options: vec![VEGAN],
+                        },
+                    })],
+                }),
+                sort: vec![],
+            },
+            ViewLayout::Table { columns: vec![] },
             ViewProblem::OperatorDoesNotFit {
                 column: "Diet".into(),
                 multi: true,
@@ -250,14 +250,20 @@ fn a_view_that_does_not_fit_its_table_says_why() {
             "\"Diet\" holds several values; test it with hasAny, hasAll or hasNone",
         ),
         (
-            filtered(vec![condition(
-                STATUS,
-                FilterTest::Options {
-                    operator: SetOperator::HasAll,
-                    options: vec![GOING],
-                },
-            )]),
-            table(),
+            ViewQuery {
+                filter: Some(FilterGroup {
+                    conjunction: Conjunction::And,
+                    conditions: vec![FilterNode::Condition(FilterCondition {
+                        column: STATUS,
+                        test: FilterTest::Options {
+                            operator: SetOperator::HasAll,
+                            options: vec![GOING],
+                        },
+                    })],
+                }),
+                sort: vec![],
+            },
+            ViewLayout::Table { columns: vec![] },
             ViewProblem::OperatorDoesNotFit {
                 column: "Status".into(),
                 multi: false,
@@ -265,28 +271,40 @@ fn a_view_that_does_not_fit_its_table_says_why() {
             "\"Status\" holds one value; test it with isAnyOf or isNoneOf",
         ),
         (
-            filtered(vec![condition(
-                STATUS,
-                FilterTest::Options {
-                    operator: SetOperator::IsNoneOf,
-                    options: vec![],
-                },
-            )]),
-            table(),
+            ViewQuery {
+                filter: Some(FilterGroup {
+                    conjunction: Conjunction::And,
+                    conditions: vec![FilterNode::Condition(FilterCondition {
+                        column: STATUS,
+                        test: FilterTest::Options {
+                            operator: SetOperator::IsNoneOf,
+                            options: vec![],
+                        },
+                    })],
+                }),
+                sort: vec![],
+            },
+            ViewLayout::Table { columns: vec![] },
             ViewProblem::NothingToMatch {
                 column: "Status".into(),
             },
             "a test of \"Status\" names nothing to match",
         ),
         (
-            filtered(vec![condition(
-                STATUS,
-                FilterTest::Options {
-                    operator: SetOperator::IsAnyOf,
-                    options: vec![VEGAN],
-                },
-            )]),
-            table(),
+            ViewQuery {
+                filter: Some(FilterGroup {
+                    conjunction: Conjunction::And,
+                    conditions: vec![FilterNode::Condition(FilterCondition {
+                        column: STATUS,
+                        test: FilterTest::Options {
+                            operator: SetOperator::IsAnyOf,
+                            options: vec![VEGAN],
+                        },
+                    })],
+                }),
+                sort: vec![],
+            },
+            ViewLayout::Table { columns: vec![] },
             ViewProblem::UnknownOption {
                 column: "Status".into(),
                 option: VEGAN,
@@ -294,14 +312,20 @@ fn a_view_that_does_not_fit_its_table_says_why() {
             "no option 00000000-0000-0000-0000-0000000000b3 on \"Status\"",
         ),
         (
-            filtered(vec![condition(
-                PLUS_ONES,
-                FilterTest::Number {
-                    operator: NumberOperator::LessThan,
-                    value: f64::INFINITY,
-                },
-            )]),
-            table(),
+            ViewQuery {
+                filter: Some(FilterGroup {
+                    conjunction: Conjunction::And,
+                    conditions: vec![FilterNode::Condition(FilterCondition {
+                        column: PLUS_ONES,
+                        test: FilterTest::Number {
+                            operator: NumberOperator::LessThan,
+                            value: f64::INFINITY,
+                        },
+                    })],
+                }),
+                sort: vec![],
+            },
+            ViewLayout::Table { columns: vec![] },
             ViewProblem::NotFinite {
                 column: "Plus ones".into(),
             },
@@ -321,7 +345,7 @@ fn a_view_that_does_not_fit_its_table_says_why() {
                     },
                 ],
             },
-            table(),
+            ViewLayout::Table { columns: vec![] },
             ViewProblem::RepeatedColumn {
                 column: "Name".into(),
             },
@@ -392,22 +416,22 @@ fn removing_a_column_drops_its_conditions_sort_and_fields() {
         filter: Some(FilterGroup {
             conjunction: Conjunction::Or,
             conditions: vec![
-                condition(
-                    NAME,
-                    FilterTest::Text {
+                FilterNode::Condition(FilterCondition {
+                    column: NAME,
+                    test: FilterTest::Text {
                         operator: TextOperator::StartsWith,
                         value: "S".into(),
                     },
-                ),
+                }),
                 FilterNode::Group(FilterGroup {
                     conjunction: Conjunction::And,
-                    conditions: vec![condition(
-                        PLUS_ONES,
-                        FilterTest::Number {
+                    conditions: vec![FilterNode::Condition(FilterCondition {
+                        column: PLUS_ONES,
+                        test: FilterTest::Number {
                             operator: NumberOperator::Is,
                             value: 2.0,
                         },
-                    )],
+                    })],
                 }),
             ],
         }),
@@ -428,13 +452,13 @@ fn removing_a_column_drops_its_conditions_sort_and_fields() {
         ViewQuery {
             filter: Some(FilterGroup {
                 conjunction: Conjunction::Or,
-                conditions: vec![condition(
-                    NAME,
-                    FilterTest::Text {
+                conditions: vec![FilterNode::Condition(FilterCondition {
+                    column: NAME,
+                    test: FilterTest::Text {
                         operator: TextOperator::StartsWith,
                         value: "S".into(),
-                    },
-                )],
+                    }
+                })],
             }),
             sort: vec![SortKey {
                 column: NAME,
@@ -494,32 +518,44 @@ fn removing_a_column_drops_its_conditions_sort_and_fields() {
 
 #[test]
 fn removing_an_option_drops_it_from_tests_and_lanes() {
-    let query = filtered(vec![
-        condition(
-            STATUS,
-            FilterTest::Options {
-                operator: SetOperator::IsNoneOf,
-                options: vec![GOING, DECLINED],
-            },
-        ),
-        condition(
-            STATUS,
-            FilterTest::Options {
-                operator: SetOperator::IsAnyOf,
-                options: vec![GOING],
-            },
-        ),
-    ]);
+    let query = ViewQuery {
+        filter: Some(FilterGroup {
+            conjunction: Conjunction::And,
+            conditions: vec![
+                FilterNode::Condition(FilterCondition {
+                    column: STATUS,
+                    test: FilterTest::Options {
+                        operator: SetOperator::IsNoneOf,
+                        options: vec![GOING, DECLINED],
+                    },
+                }),
+                FilterNode::Condition(FilterCondition {
+                    column: STATUS,
+                    test: FilterTest::Options {
+                        operator: SetOperator::IsAnyOf,
+                        options: vec![GOING],
+                    },
+                }),
+            ],
+        }),
+        sort: vec![],
+    };
 
     assert_eq!(
         query.without_option(STATUS, GOING),
-        filtered(vec![condition(
-            STATUS,
-            FilterTest::Options {
-                operator: SetOperator::IsNoneOf,
-                options: vec![DECLINED],
-            },
-        )])
+        ViewQuery {
+            filter: Some(FilterGroup {
+                conjunction: Conjunction::And,
+                conditions: vec![FilterNode::Condition(FilterCondition {
+                    column: STATUS,
+                    test: FilterTest::Options {
+                        operator: SetOperator::IsNoneOf,
+                        options: vec![DECLINED],
+                    }
+                })]
+            }),
+            sort: vec![]
+        }
     );
     assert_eq!(query.without_option(DIET, GOING), query);
 
@@ -651,7 +687,7 @@ fn a_stored_view_crosses_the_wire_in_camel_case() {
         name: "All".into(),
         position: "80".into(),
         query: ViewQuery::default(),
-        layout: table(),
+        layout: ViewLayout::Table { columns: vec![] },
         created_at: created,
         updated_at: created,
     };
