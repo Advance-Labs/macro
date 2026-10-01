@@ -3,7 +3,8 @@
 
 use std::collections::HashMap;
 
-use models_databases::cast::{Cast, CastKind, Contents, TARGETS, cast, number_label};
+use models_databases::cast::{Cast, CastKind, Contents, TARGETS, cast};
+use models_databases::property::{DataType as StoredDataType, OptionValue, stored_cast_kind};
 use models_databases::views::{SchemaColumn, ValueKind};
 use models_databases::{ColumnKind, EntityKind};
 use models_permissions::share_permission::access_level::AccessLevel;
@@ -13,7 +14,7 @@ use models_properties::shared::{DataType, PropertyOwner};
 use uuid::Uuid;
 
 use crate::domain::models::{
-    Column, ColumnConfig, Database, DatabaseId, DatabaseView, PropertyDefinitionId, Table, TableId,
+    Column, Database, DatabaseId, DatabaseView, PropertyDefinitionId, Table, TableId,
 };
 
 /// One table the viewer can see, with what the service needs to write and
@@ -48,15 +49,12 @@ impl ColumnEntry {
     /// The name the column goes by: the placement's own, else the
     /// definition's.
     pub fn name(&self) -> &str {
-        self.column
-            .display_name
-            .as_deref()
-            .unwrap_or(&self.definition.definition.display_name)
+        self.column.name(&self.definition)
     }
 
     /// Whether the column is a relation to rows of another table.
     pub fn is_relation(&self) -> bool {
-        matches!(self.column.config, Some(ColumnConfig::Link { .. }))
+        self.column.is_relation()
     }
 
     /// Whether a cell holds several values.
@@ -71,14 +69,9 @@ impl ColumnEntry {
 
     /// The kind of value the column holds, as a view's filters test it.
     pub fn value_kind(&self) -> ValueKind {
-        match self.definition.definition.data_type {
-            DataType::String | DataType::Link => ValueKind::Text,
-            DataType::Number => ValueKind::Number,
-            DataType::Date => ValueKind::Date,
-            DataType::Boolean => ValueKind::Checkbox,
-            DataType::SelectString | DataType::SelectNumber | DataType::Tag => ValueKind::Options,
-            DataType::Entity => ValueKind::Entities,
-        }
+        PropertyType::of(&self.column, &self.definition)
+            .cast_kind()
+            .value_kind()
     }
 
     /// Whether the definition belongs to something beyond `database_id`, so
@@ -102,10 +95,22 @@ impl TableEntry {
 
 /// Whether a data type's cells are drawn from an explicit set of options.
 pub fn takes_options(data_type: DataType) -> bool {
-    matches!(
-        data_type,
-        DataType::SelectString | DataType::SelectNumber | DataType::Tag
-    )
+    stored_data_type(data_type).takes_options()
+}
+
+/// A property type in the terms the cast rule and the engine's schema take.
+pub fn stored_data_type(data_type: DataType) -> StoredDataType {
+    match data_type {
+        DataType::String => StoredDataType::String,
+        DataType::Number => StoredDataType::Number,
+        DataType::Boolean => StoredDataType::Boolean,
+        DataType::Date => StoredDataType::Date,
+        DataType::Link => StoredDataType::Link,
+        DataType::SelectString => StoredDataType::SelectString,
+        DataType::SelectNumber => StoredDataType::SelectNumber,
+        DataType::Tag => StoredDataType::Tag,
+        DataType::Entity => StoredDataType::Entity,
+    }
 }
 
 /// A table's columns as a view's checks see them.
@@ -113,19 +118,17 @@ pub fn schema_columns(entry: &TableEntry) -> Vec<SchemaColumn> {
     entry
         .columns
         .iter()
-        .map(|column| SchemaColumn {
-            id: column.column.id,
-            name: column.name().to_string(),
-            values: column.value_kind(),
-            multi: column.is_multi(),
-            options: if column.takes_options() {
+        .map(|column| {
+            SchemaColumn::new(
+                column.column.id,
+                column.name().to_string(),
+                PropertyType::of(&column.column, &column.definition).cast_kind(),
+                column.is_multi(),
                 option_labels(&column.definition)
                     .into_iter()
                     .map(|(id, _)| id)
-                    .collect()
-            } else {
-                Vec::new()
-            },
+                    .collect(),
+            )
         })
         .collect()
 }
@@ -160,7 +163,7 @@ pub fn build_entries(
                 .get(&table.id)
                 .into_iter()
                 .flatten()
-                .filter(|column| !matches!(column.config, Some(ColumnConfig::Lookup { .. })))
+                .filter(|column| !column.is_lookup())
                 .filter_map(|column| {
                     let definition = definitions.get(&column.property_definition_id)?.clone();
                     Some(ColumnEntry {
@@ -212,7 +215,7 @@ impl PropertyType {
 
     /// The type of a column placement bound to `definition`.
     pub fn of(column: &Column, definition: &PropertyDefinitionWithOptions) -> Self {
-        let relation = matches!(column.config, Some(ColumnConfig::Link { .. }));
+        let relation = column.is_relation();
         let definition = &definition.definition;
         PropertyType {
             data_type: definition.data_type,
@@ -249,26 +252,13 @@ impl PropertyType {
 
     /// A column of this type's values, as the cast rule reads them.
     pub fn cast_kind(&self) -> CastKind {
-        if self.relation {
-            return CastKind::Relation;
-        }
-        match self.data_type {
-            DataType::String => CastKind::Text,
-            DataType::Number => CastKind::Number,
-            DataType::Boolean => CastKind::Boolean,
-            DataType::Date => CastKind::Date,
-            DataType::Link => CastKind::Link,
-            DataType::SelectString | DataType::SelectNumber | DataType::Tag => CastKind::Select {
-                multi: self.is_multi_select,
-            },
-            DataType::Entity => match self.specific_entity_type.map(entity_kind) {
-                Some(None) => CastKind::Relation,
-                target => CastKind::Entity {
-                    target: target.flatten().unwrap_or(EntityKind::User),
-                    multi: self.is_multi_select,
-                },
-            },
-        }
+        let target = self.specific_entity_type.map(entity_kind);
+        stored_cast_kind(
+            stored_data_type(self.data_type),
+            self.is_multi_select,
+            target.flatten(),
+            self.relation || target == Some(None),
+        )
     }
 }
 
@@ -348,9 +338,14 @@ pub fn sql_table_name(database: &str, table: &str) -> String {
 
 /// An option's label as users write it.
 pub fn option_display(value: &PropertyOptionValue) -> String {
+    option_value(value).label()
+}
+
+/// An option's value in the terms the engine's schema takes.
+pub fn option_value(value: &PropertyOptionValue) -> OptionValue {
     match value {
-        PropertyOptionValue::String(text) => text.clone(),
-        PropertyOptionValue::Number(number) => number_label(*number),
+        PropertyOptionValue::String(text) => OptionValue::String(text.clone()),
+        PropertyOptionValue::Number(number) => OptionValue::Number(*number),
     }
 }
 

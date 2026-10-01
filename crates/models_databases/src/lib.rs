@@ -6,6 +6,7 @@ pub mod cast;
 mod ids;
 mod ops;
 pub mod position;
+pub mod property;
 pub mod views;
 
 pub use ids::{ColumnId, DatabaseId, OptionId, RowId, TableId, TableVersion};

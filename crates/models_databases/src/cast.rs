@@ -7,6 +7,7 @@ mod test;
 use std::fmt;
 
 use crate::ops::{ColumnKind, EntityKind};
+use crate::views::ValueKind;
 
 /// Whether a column has any values. Emptiness is a fact about the data, not
 /// the type: an empty column can take any type.
@@ -100,24 +101,82 @@ pub const TARGETS: [ColumnKind; 10] = [
     },
 ];
 
-/// A type as the type menu, the agent tools and `ALTER COLUMN` spell it:
-/// `text`, `select[]`, `entity(USER)`.
+/// A column type's name as the type menu, the agent tools and `ALTER COLUMN`
+/// spell it; `entity` is followed by its kind, `entity(USER)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumString, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case", ascii_case_insensitive)]
+pub enum ColumnTypeName {
+    /// `text`.
+    Text,
+    /// `number`.
+    Number,
+    /// `boolean`.
+    Boolean,
+    /// `date`.
+    Date,
+    /// `link`.
+    Link,
+    /// `select`.
+    Select,
+    /// `select_number`.
+    SelectNumber,
+    /// `tag`.
+    Tag,
+    /// `entity(KIND)`.
+    Entity,
+    /// `relation`.
+    Relation,
+}
+
+impl ColumnKind {
+    /// The name of the column's type.
+    pub fn type_name(&self) -> ColumnTypeName {
+        match self {
+            ColumnKind::Text => ColumnTypeName::Text,
+            ColumnKind::Number => ColumnTypeName::Number,
+            ColumnKind::Boolean => ColumnTypeName::Boolean,
+            ColumnKind::Date => ColumnTypeName::Date,
+            ColumnKind::Link => ColumnTypeName::Link,
+            ColumnKind::Select { .. } => ColumnTypeName::Select,
+            ColumnKind::SelectNumber { .. } => ColumnTypeName::SelectNumber,
+            ColumnKind::Tag => ColumnTypeName::Tag,
+            ColumnKind::Entity { .. } => ColumnTypeName::Entity,
+            ColumnKind::Relation { .. } => ColumnTypeName::Relation,
+        }
+    }
+}
+
+/// A type as [`ColumnTypeName`] spells it, with `[]` when a select or
+/// reference column holds several values: `text`, `select[]`, `entity(USER)`.
 impl fmt::Display for ColumnKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let several = |multi: bool| if multi { "[]" } else { "" };
-        match self {
-            ColumnKind::Text => f.write_str("text"),
-            ColumnKind::Number => f.write_str("number"),
-            ColumnKind::Boolean => f.write_str("boolean"),
-            ColumnKind::Date => f.write_str("date"),
-            ColumnKind::Link => f.write_str("link"),
-            ColumnKind::Select { multi } => write!(f, "select{}", several(*multi)),
-            ColumnKind::SelectNumber { multi } => write!(f, "select_number{}", several(*multi)),
-            ColumnKind::Tag => f.write_str("tag"),
+        let name: &'static str = self.type_name().into();
+        f.write_str(name)?;
+        let multi = match self {
+            ColumnKind::Select { multi } | ColumnKind::SelectNumber { multi } => *multi,
             ColumnKind::Entity { target, multi } => {
-                write!(f, "entity({}){}", target.name(), several(*multi))
+                write!(f, "({})", target.name())?;
+                *multi
             }
-            ColumnKind::Relation { .. } => f.write_str("relation"),
+            _ => false,
+        };
+        if multi {
+            f.write_str("[]")?;
+        }
+        Ok(())
+    }
+}
+
+impl CastKind {
+    /// The kind of value the column holds, as a view's filters test it.
+    pub fn value_kind(self) -> ValueKind {
+        match self {
+            CastKind::Text | CastKind::Link => ValueKind::Text,
+            CastKind::Number => ValueKind::Number,
+            CastKind::Date => ValueKind::Date,
+            CastKind::Boolean => ValueKind::Checkbox,
+            CastKind::Select { .. } => ValueKind::Options,
+            CastKind::Entity { .. } | CastKind::Relation => ValueKind::Entities,
         }
     }
 }

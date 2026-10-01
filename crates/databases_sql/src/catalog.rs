@@ -5,14 +5,13 @@
 mod test;
 
 use database_sql::catalog::{
-    Catalog, Column, ColumnSchema, DataType as SchemaDataType, DatabaseSchema, EntityKind,
-    OptionSchema, OptionValue, PlatformTable, PropertyType, Schema, TableSchema,
+    Catalog, Column, ColumnSchema, DatabaseSchema, EntityKind, OptionSchema, PlatformTable,
+    PropertyType, Schema, TableSchema,
 };
+use databases::domain::catalog;
 use databases::domain::models::{
     ColumnConfig, ColumnDetail, DatabaseDetail, DatabaseId, TableDetail, TableId,
 };
-use models_properties::service::property_option::PropertyOptionValue;
-use models_properties::shared::DataType;
 use uuid::Uuid;
 
 /// What one statement can see: the viewer's databases in detail, and the
@@ -96,9 +95,7 @@ pub(crate) fn schema(databases: &[DatabaseDetail]) -> Schema {
                             .columns
                             .iter()
                             // Lookups are derived and have no cells.
-                            .filter(|column| {
-                                !matches!(column.column.config, Some(ColumnConfig::Lookup { .. }))
-                            })
+                            .filter(|column| !column.column.is_lookup())
                             .map(column_schema)
                             .collect(),
                     })
@@ -114,16 +111,14 @@ fn column_schema(column: &ColumnDetail) -> ColumnSchema {
     ColumnSchema {
         id: column.column.id,
         definition: definition.id,
-        name: column
-            .column
-            .display_name
-            .clone()
-            .unwrap_or_else(|| definition.display_name.clone()),
+        name: column.name().to_string(),
         property: PropertyType {
-            data_type: data_type(definition.data_type),
+            data_type: catalog::stored_data_type(definition.data_type),
             multi: definition.is_multi_select,
-            entity_type: definition.specific_entity_type.map(entity_kind),
-            relation: matches!(column.column.config, Some(ColumnConfig::Link { .. })),
+            entity_type: definition.specific_entity_type.map(|stored| {
+                catalog::entity_kind(stored).map_or(EntityKind::Row, EntityKind::from)
+            }),
+            relation: column.column.is_relation(),
         },
         options: column
             .definition
@@ -131,44 +126,9 @@ fn column_schema(column: &ColumnDetail) -> ColumnSchema {
             .iter()
             .map(|option| OptionSchema {
                 id: option.id,
-                value: match &option.value {
-                    PropertyOptionValue::String(text) => OptionValue::String(text.clone()),
-                    PropertyOptionValue::Number(number) => OptionValue::Number(*number),
-                },
+                value: catalog::option_value(&option.value),
                 order: option.display_order,
             })
             .collect(),
-    }
-}
-
-fn data_type(data_type: DataType) -> SchemaDataType {
-    match data_type {
-        DataType::String => SchemaDataType::String,
-        DataType::Number => SchemaDataType::Number,
-        DataType::Boolean => SchemaDataType::Boolean,
-        DataType::Date => SchemaDataType::Date,
-        DataType::Link => SchemaDataType::Link,
-        DataType::SelectString => SchemaDataType::SelectString,
-        DataType::SelectNumber => SchemaDataType::SelectNumber,
-        DataType::Tag => SchemaDataType::Tag,
-        DataType::Entity => SchemaDataType::Entity,
-    }
-}
-
-fn entity_kind(entity_type: models_properties::EntityType) -> EntityKind {
-    use models_properties::EntityType as Stored;
-    match entity_type {
-        Stored::User => EntityKind::User,
-        Stored::Document => EntityKind::Document,
-        Stored::Task => EntityKind::Task,
-        Stored::Company => EntityKind::Company,
-        Stored::CallRecord => EntityKind::CallRecord,
-        Stored::Channel => EntityKind::Channel,
-        Stored::Chat => EntityKind::Chat,
-        Stored::Project => EntityKind::Project,
-        Stored::Thread => EntityKind::Thread,
-        Stored::CalendarEvent => EntityKind::CalendarEvent,
-        Stored::Initiative => EntityKind::Initiative,
-        Stored::DatabaseRow => EntityKind::Row,
     }
 }

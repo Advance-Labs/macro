@@ -6,12 +6,16 @@
 #[cfg(test)]
 mod test;
 
-use models_databases::cast::number_label;
+use models_databases::EntityKind as OpEntityKind;
+use models_databases::property::stored_cast_kind;
+pub use models_databases::property::{DataType, OptionValue};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use uuid::Uuid;
 
-use super::{Catalog, Column, ColumnKind, EntityKind, SelectOption, Table, TableSource};
+use super::{
+    Catalog, Column, ColumnKind, EntityKind, RelationTarget, SelectOption, Table, TableSource,
+};
 
 /// What a catalog is built from: the viewer's databases, and the platform
 /// tables to add.
@@ -80,30 +84,6 @@ pub struct PropertyType {
     pub relation: bool,
 }
 
-/// The property types, spelled as the properties system spells them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum DataType {
-    /// Free text.
-    String,
-    /// A number.
-    Number,
-    /// A checkbox.
-    Boolean,
-    /// A date-time.
-    Date,
-    /// A URL.
-    Link,
-    /// Text options.
-    SelectString,
-    /// Numeric options.
-    SelectNumber,
-    /// Colored labels.
-    Tag,
-    /// References to entities.
-    Entity,
-}
-
 /// One option of a select definition.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -114,16 +94,6 @@ pub struct OptionSchema {
     pub value: OptionValue,
     /// Where it sorts among the definition's options.
     pub order: i32,
-}
-
-/// An option's value.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
-#[serde(tag = "type", content = "value", rename_all = "camelCase")]
-pub enum OptionValue {
-    /// A text option.
-    String(String),
-    /// A numeric option.
-    Number(f64),
 }
 
 /// A table every viewer has, whatever databases they can see.
@@ -137,27 +107,15 @@ pub enum PlatformTable {
 impl PropertyType {
     /// The engine's kind for a column of this type, with these options.
     pub fn kind(&self, options: Vec<SelectOption>) -> ColumnKind {
-        if self.relation {
-            return ColumnKind::Entity {
-                multi: true,
-                target: EntityKind::Row,
-            };
-        }
-        match self.data_type {
-            DataType::String => ColumnKind::Text,
-            DataType::Number => ColumnKind::Number,
-            DataType::Boolean => ColumnKind::Boolean,
-            DataType::Date => ColumnKind::Date,
-            DataType::Link => ColumnKind::Link,
-            DataType::SelectString | DataType::SelectNumber | DataType::Tag => ColumnKind::Select {
-                multi: self.multi,
-                options,
-            },
-            DataType::Entity => ColumnKind::Entity {
-                multi: self.multi,
-                target: self.entity_type.unwrap_or(EntityKind::User),
-            },
-        }
+        let target = self.entity_type.map(OpEntityKind::try_from);
+        let relation = self.relation || matches!(target, Some(Err(RelationTarget)));
+        let cast = stored_cast_kind(
+            self.data_type,
+            self.multi,
+            target.and_then(Result::ok),
+            relation,
+        );
+        ColumnKind::of(cast, options)
     }
 }
 
@@ -175,16 +133,6 @@ impl ColumnSchema {
                 })
                 .collect(),
         )
-    }
-}
-
-impl OptionValue {
-    /// The label users write for the option.
-    pub fn label(&self) -> String {
-        match self {
-            OptionValue::String(text) => text.clone(),
-            OptionValue::Number(number) => number_label(*number),
-        }
     }
 }
 

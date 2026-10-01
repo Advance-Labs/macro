@@ -5,6 +5,8 @@ use std::collections::HashSet;
 
 use serde::Serialize;
 
+use crate::cast::CastKind;
+
 use super::{FilterTest, SetOperator, ViewLayout, ViewQuery};
 use crate::ids::{ColumnId, OptionId, TableId};
 
@@ -21,6 +23,32 @@ pub struct SchemaColumn {
     pub multi: bool,
     /// Its options, for a select or tag column.
     pub options: Vec<OptionId>,
+}
+
+impl SchemaColumn {
+    /// A column holding values of `kind`, several per cell when `multi`;
+    /// `options` are kept only for a select, the one kind whose tests name
+    /// options.
+    pub fn new(
+        id: ColumnId,
+        name: String,
+        kind: CastKind,
+        multi: bool,
+        options: Vec<OptionId>,
+    ) -> Self {
+        let values = kind.value_kind();
+        SchemaColumn {
+            id,
+            name,
+            values,
+            multi,
+            options: if values == ValueKind::Options {
+                options
+            } else {
+                Vec::new()
+            },
+        }
+    }
 }
 
 /// The kind of value a column holds, as filter tests tell them apart.

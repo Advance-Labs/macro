@@ -88,6 +88,28 @@ pub struct Column {
     pub infer_type: bool,
 }
 
+impl Column {
+    /// The name the placement goes by: its own, else its definition's.
+    pub fn name<'a>(
+        &'a self,
+        definition: &'a models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions,
+    ) -> &'a str {
+        self.display_name
+            .as_deref()
+            .unwrap_or(&definition.definition.display_name)
+    }
+
+    /// Whether the placement relates rows of another table.
+    pub fn is_relation(&self) -> bool {
+        matches!(self.config, Some(ColumnConfig::Link { .. }))
+    }
+
+    /// Whether the placement is a lookup: derived, with no cells of its own.
+    pub fn is_lookup(&self) -> bool {
+        matches!(self.config, Some(ColumnConfig::Lookup { .. }))
+    }
+}
+
 /// A renamed placement and its table's version after the atomic update.
 #[derive(utoipa::ToSchema, Debug, Clone, Serialize, Deserialize)]
 pub struct RenameColumnOutcome {
@@ -797,6 +819,14 @@ pub struct ColumnDetail {
     /// person's, a team's or a system property), so changing its options
     /// changes them everywhere that property is used.
     pub shared_outside_database: bool,
+}
+
+impl ColumnDetail {
+    /// The name the column goes by: the placement's own, else the
+    /// definition's.
+    pub fn name(&self) -> &str {
+        self.column.name(&self.definition)
+    }
 }
 
 /// Where one viewer is inside a database right now: ephemeral, relayed to

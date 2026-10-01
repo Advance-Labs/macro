@@ -6,26 +6,13 @@ use nom::combinator::{cut, not, opt};
 use nom::sequence::{preceded, terminated};
 use strum::IntoEnumIterator;
 
+use models_databases::cast::ColumnTypeName;
 use models_databases::{ColumnKind as OpColumnKind, EntityKind as OpEntityKind};
 
 use super::super::ast::AlterColumnType;
 use super::super::lexer::TokenKind;
 use super::{ParseResult, Tokens, identifier, keyword, message_at, next_token, table, token, word};
 use crate::catalog::EntityKind;
-
-/// The column types other than `entity(…)`, as written.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumString, strum::IntoStaticStr)]
-#[strum(serialize_all = "snake_case", ascii_case_insensitive)]
-enum TypeName {
-    Text,
-    Number,
-    Boolean,
-    Date,
-    Link,
-    Select,
-    SelectNumber,
-    Tag,
-}
 
 const COLUMN_TYPES: &str = "text, number, boolean, date, link, select, select_number, tag or \
                             entity(<KIND>) such as entity(USER); add [] after select, \
@@ -94,12 +81,13 @@ fn plain_type(input: Tokens<'_>) -> ParseResult<'_, OpColumnKind> {
         },
     ))
     .parse(input)?;
-    let type_name: TypeName = name.parse().map_err(|_| {
+    let unknown = || {
         nom::Err::Failure(message_at(
             input,
             &format!("unknown column type \"{name}\"; the types are {COLUMN_TYPES}"),
         ))
-    })?;
+    };
+    let type_name: ColumnTypeName = name.parse().map_err(|_| unknown())?;
     let (end, multi) = several(rest)?;
     let single = |to: OpColumnKind| {
         if multi {
@@ -113,20 +101,23 @@ fn plain_type(input: Tokens<'_>) -> ParseResult<'_, OpColumnKind> {
         }
     };
     let to = match type_name {
-        TypeName::Text => single(OpColumnKind::Text)?,
-        TypeName::Number => single(OpColumnKind::Number)?,
-        TypeName::Boolean => single(OpColumnKind::Boolean)?,
-        TypeName::Date => single(OpColumnKind::Date)?,
-        TypeName::Link => single(OpColumnKind::Link)?,
-        TypeName::Select => OpColumnKind::Select { multi },
-        TypeName::SelectNumber => OpColumnKind::SelectNumber { multi },
-        TypeName::Tag if multi => {
+        ColumnTypeName::Text => single(OpColumnKind::Text)?,
+        ColumnTypeName::Number => single(OpColumnKind::Number)?,
+        ColumnTypeName::Boolean => single(OpColumnKind::Boolean)?,
+        ColumnTypeName::Date => single(OpColumnKind::Date)?,
+        ColumnTypeName::Link => single(OpColumnKind::Link)?,
+        ColumnTypeName::Select => OpColumnKind::Select { multi },
+        ColumnTypeName::SelectNumber => OpColumnKind::SelectNumber { multi },
+        ColumnTypeName::Tag if multi => {
             return Err(nom::Err::Failure(message_at(
                 rest,
                 "tag always holds several values; write tag",
             )));
         }
-        TypeName::Tag => OpColumnKind::Tag,
+        ColumnTypeName::Tag => OpColumnKind::Tag,
+        // `entity` is only a type with its kind, and a relation is made
+        // with the ChangeColumnType tool, not by name.
+        ColumnTypeName::Entity | ColumnTypeName::Relation => return Err(unknown()),
     };
     Ok((end, to))
 }

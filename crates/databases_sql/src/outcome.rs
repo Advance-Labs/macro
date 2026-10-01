@@ -56,7 +56,8 @@ pub struct ResultColumn {
     /// What its cells hold.
     pub kind: OutcomeKind,
     /// For a select column, its options: its cells hold their ids.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    // `default` is what marks the field optional in the tool's JSON Schema.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<SelectOption>,
     /// For an entity column, what its ids point at; `DATABASE_ROW` for a
     /// relation, whose ids are rows of another table.
@@ -125,11 +126,7 @@ pub(crate) fn shape(
             Some(AlteredColumn {
                 table_id: altered.table,
                 column_id: column.column.id,
-                name: column
-                    .column
-                    .display_name
-                    .clone()
-                    .unwrap_or_else(|| column.definition.definition.display_name.clone()),
+                name: column.name().to_string(),
                 to: altered.to.clone(),
                 cleared_cells: altered.cleared_cells,
                 trimmed_cells: altered.trimmed_cells,

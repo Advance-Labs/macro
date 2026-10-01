@@ -248,7 +248,46 @@ pub struct SelectOption {
     pub label: String,
 }
 
+impl From<OpEntityKind> for EntityKind {
+    fn from(kind: OpEntityKind) -> Self {
+        match kind {
+            OpEntityKind::User => EntityKind::User,
+            OpEntityKind::Document => EntityKind::Document,
+            OpEntityKind::Task => EntityKind::Task,
+            OpEntityKind::Company => EntityKind::Company,
+            OpEntityKind::CallRecord => EntityKind::CallRecord,
+            OpEntityKind::Channel => EntityKind::Channel,
+            OpEntityKind::Chat => EntityKind::Chat,
+            OpEntityKind::Project => EntityKind::Project,
+            OpEntityKind::Thread => EntityKind::Thread,
+            OpEntityKind::CalendarEvent => EntityKind::CalendarEvent,
+            OpEntityKind::Initiative => EntityKind::Initiative,
+        }
+    }
+}
+
 impl ColumnKind {
+    /// The engine's kind for a column holding values of `kind`; `options`
+    /// are kept only for a select.
+    pub fn of(kind: CastKind, options: Vec<SelectOption>) -> ColumnKind {
+        match kind {
+            CastKind::Text => ColumnKind::Text,
+            CastKind::Number => ColumnKind::Number,
+            CastKind::Boolean => ColumnKind::Boolean,
+            CastKind::Date => ColumnKind::Date,
+            CastKind::Link => ColumnKind::Link,
+            CastKind::Select { multi } => ColumnKind::Select { multi, options },
+            CastKind::Entity { target, multi } => ColumnKind::Entity {
+                multi,
+                target: target.into(),
+            },
+            CastKind::Relation => ColumnKind::Entity {
+                multi: true,
+                target: EntityKind::Row,
+            },
+        }
+    }
+
     /// The column's values as the cast rule reads them.
     pub fn cast_kind(&self) -> CastKind {
         match self {

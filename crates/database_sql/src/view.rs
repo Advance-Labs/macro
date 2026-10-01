@@ -6,7 +6,7 @@ mod board;
 mod compile;
 mod sql;
 
-use models_databases::views::{DatabaseView, SchemaColumn, ValueKind, ViewProblem, check};
+use models_databases::views::{DatabaseView, SchemaColumn, ViewProblem, check};
 
 use crate::catalog::{Catalog, Column, ColumnKind, Table};
 
@@ -32,24 +32,17 @@ fn checked_table<'catalog>(
 }
 
 fn schema_column(column: &Column) -> SchemaColumn {
-    let (values, options) = match &column.kind {
-        ColumnKind::Text | ColumnKind::Link => (ValueKind::Text, Vec::new()),
-        ColumnKind::Number => (ValueKind::Number, Vec::new()),
-        ColumnKind::Date => (ValueKind::Date, Vec::new()),
-        ColumnKind::Boolean => (ValueKind::Checkbox, Vec::new()),
-        ColumnKind::Select { options, .. } => (
-            ValueKind::Options,
-            options.iter().map(|option| option.id).collect(),
-        ),
-        ColumnKind::Entity { .. } => (ValueKind::Entities, Vec::new()),
+    let options = match &column.kind {
+        ColumnKind::Select { options, .. } => options.iter().map(|option| option.id).collect(),
+        _ => Vec::new(),
     };
-    SchemaColumn {
-        id: column.placement,
-        name: column.name.clone(),
-        values,
-        multi: column.kind.is_multi(),
+    SchemaColumn::new(
+        column.placement,
+        column.name.clone(),
+        column.kind.cast_kind(),
+        column.kind.is_multi(),
         options,
-    }
+    )
 }
 
 /// The column a checked view names by placement.
