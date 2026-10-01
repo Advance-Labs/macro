@@ -237,7 +237,7 @@ export function queryErrorMessage(failure: QueryFailure): string {
     )
     .with({ kind: 'crash' }, () => `${UNCOMPUTED}. Try asking again.`)
     .with({ kind: 'fetch' }, () => OFFLINE)
-    .with({ kind: 'ops' }, { kind: 'read-only' }, () =>
+    .with({ kind: 'read-only' }, () =>
       showSql
         ? 'Questions only read your data. Start with SELECT, or ask a question above.'
         : 'Questions only read your data. Ask a question about it above.'
@@ -295,7 +295,6 @@ export function queryFailureDetail(failure: QueryFailure): string | undefined {
       { kind: P.union('engine', 'crash', 'fetch') },
       ({ message }) => message
     )
-    .with({ kind: 'ops' }, ({ error }) => error.message)
     .with(
       { kind: P.union('question', 'databases') },
       ({ error }) => error.message

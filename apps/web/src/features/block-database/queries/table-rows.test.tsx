@@ -171,9 +171,6 @@ function engine(
     feed_bins: () => {
       throw 'no bins';
     },
-    feed_ops: () => {
-      throw 'no writes';
-    },
     free: () => {},
   });
   const exchange: Exchange = () => (incoming) =>

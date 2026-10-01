@@ -619,8 +619,6 @@ export type Input =
   | 'page'
   /**  The bins of a grouped read. */
   | 'bins'
-  /**  The results of a write's ops. */
-  | 'results'
   /**  A view. */
   | 'view'
   /**  What a view's read produced. */

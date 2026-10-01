@@ -147,9 +147,6 @@ function engine(names: () => string[]) {
         feed_bins: () => {
           throw 'no bins';
         },
-        feed_ops: () => {
-          throw 'no writes';
-        },
         free: () => {},
       };
     },

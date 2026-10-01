@@ -1,16 +1,13 @@
-/** Feeds the engine what a `RowSource` reads and an `OpsSink` writes until it has the outcome. */
+/** Feeds the engine what a `RowSource` reads until it has the outcome; a write is refused. */
 
-import type { DatabaseOpsError } from '@service-storage/databases';
 import { err, errAsync, ok, okAsync, Result, ResultAsync } from 'neverthrow';
 import { match } from 'ts-pattern';
 import type {
   Bin,
   Catalog,
-  DatabaseOp,
   DatabaseView,
   EngineError,
   GqlQuery,
-  OpResult,
   Outcome,
   Page,
   RunError,
@@ -30,8 +27,6 @@ export type DatabaseSqlFailure =
   | { kind: 'crash'; message: string }
   /** The row source could not read what the engine asked for. */
   | { kind: 'fetch'; message: string }
-  /** The sink refused the statement's writes; none of them landed. */
-  | { kind: 'ops'; error: DatabaseOpsError }
   /** The statement writes, and only reads run here. */
   | { kind: 'read-only' };
 
@@ -55,15 +50,6 @@ export interface RowSource {
   ) => ResultAsync<Page, DatabaseSqlFetchFailure>;
   /** The bins of a `groupSoup` query. */
   bins: (query: GqlQuery) => ResultAsync<Bin[], DatabaseSqlFetchFailure>;
-}
-
-/** Where writes go. Mirrors `database_sql::run::OpsSink`. */
-export interface OpsSink {
-  /** Apply `ops` to `database` together; one result per op, in order. */
-  apply: (
-    database: string,
-    ops: DatabaseOp[]
-  ) => ResultAsync<OpResult[], DatabaseOpsError>;
 }
 
 /** Opens the engine for one statement; the wasm module unless a test says otherwise. */
@@ -105,8 +91,7 @@ function feed(next: () => Step): Result<Step, DatabaseSqlFailure> {
 function nextStep(
   query: DatabaseSqlQuery,
   step: Exclude<Step, { step: 'done' }>,
-  source: RowSource,
-  ops: OpsSink | undefined
+  source: RowSource
 ): ResultAsync<Step, DatabaseSqlFailure> {
   return match(step)
     .returnType<ResultAsync<Step, DatabaseSqlFailure>>()
@@ -120,23 +105,15 @@ function nextStep(
         .bins(request.query)
         .andThen((bins) => feed(() => query.feed_bins(request.id, bins)))
     )
-    .with({ step: 'ops' }, (request) =>
-      ops
-        ? ops
-            .apply(request.database, request.ops)
-            .mapErr((error): DatabaseSqlFailure => ({ kind: 'ops', error }))
-            .andThen((results) =>
-              feed(() => query.feed_ops(request.id, results))
-            )
-        : errAsync<Step, DatabaseSqlFailure>({ kind: 'read-only' })
+    .with({ step: 'ops' }, () =>
+      errAsync<Step, DatabaseSqlFailure>({ kind: 'read-only' })
     )
     .exhaustive();
 }
 
 async function steps(
   query: DatabaseSqlQuery,
-  source: RowSource,
-  ops: OpsSink | undefined
+  source: RowSource
 ): Promise<Result<Outcome, DatabaseSqlFailure>> {
   let step = feed(() => query.start());
   while (step.isOk()) {
@@ -145,19 +122,17 @@ async function steps(
       const { step: _done, ...outcome } = current;
       return ok(outcome);
     }
-    step = await nextStep(query, current, source, ops);
+    step = await nextStep(query, current, source);
   }
   return err(step.error);
 }
 
 function drive(
   opened: Promise<DatabaseSqlQuery>,
-  source: RowSource,
-  ops?: OpsSink
+  source: RowSource
 ): ResultAsync<Outcome, DatabaseSqlFailure> {
   return ResultAsync.fromPromise(opened, engineFailure).andThen(
-    (query) =>
-      new ResultAsync(steps(query, source, ops).finally(() => query.free()))
+    (query) => new ResultAsync(steps(query, source).finally(() => query.free()))
   );
 }
 
@@ -183,22 +158,6 @@ export function runDatabaseView(
   }: { source: RowSource; open?: OpenView }
 ): ResultAsync<Outcome, DatabaseSqlFailure> {
   return drive(open(catalog, view), source);
-}
-
-/**
- * Run any statement to its outcome: reads through `source`, and a write's
- * ops, once the engine has found the rows it changes, through `ops`.
- */
-export function runDatabaseSqlStatement(
-  catalog: Catalog,
-  sql: string,
-  {
-    source,
-    ops,
-    open = openDatabaseSqlQuery,
-  }: { source: RowSource; ops: OpsSink; open?: OpenEngine }
-): ResultAsync<Outcome, DatabaseSqlFailure> {
-  return drive(open(catalog, sql), source, ops);
 }
 
 const NO_ROWS: RowSource = {

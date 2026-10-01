@@ -202,8 +202,6 @@ pub enum Input {
     Page,
     /// The bins of a grouped read.
     Bins,
-    /// The results of a write's ops.
-    Results,
     /// A view.
     View,
     /// What a view's read produced.

@@ -115,9 +115,6 @@ const names: OpenEngine = async () => {
     feed_bins: () => {
       throw 'no bins';
     },
-    feed_ops: () => {
-      throw 'no writes';
-    },
     free: () => {},
   };
 };
@@ -254,9 +251,6 @@ describe('createDatabaseSqlQuery', () => {
         start: () => answered(sql),
         feed_page: () => answered(sql),
         feed_bins: () => answered(sql),
-        feed_ops: () => {
-          throw 'no writes';
-        },
         free: () => {},
       };
     };

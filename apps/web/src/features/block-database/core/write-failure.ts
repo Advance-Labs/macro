@@ -139,11 +139,7 @@ export function databaseReadMessage(failure: DatabaseReadFailure): string {
       { kind: 'fetch' },
       () => 'The rows could not be loaded. Check your connection.'
     )
-    .with(
-      { kind: 'ops' },
-      { kind: 'read-only' },
-      () => 'Try refreshing the table.'
-    )
+    .with({ kind: 'read-only' }, () => 'Try refreshing the table.')
     .with(
       { kind: 'table-unavailable' },
       () => 'This table is no longer available.'

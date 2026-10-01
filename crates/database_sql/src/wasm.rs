@@ -13,7 +13,6 @@
 //!
 //! Only the wasm-bindgen glue lives here; the engine knows nothing of it.
 
-use models_databases::OpResult;
 use models_databases::position;
 use models_databases::views::{CardPosition, DatabaseView};
 use serde::Serialize;
@@ -74,12 +73,6 @@ impl Query {
     pub fn feed_page(&mut self, request_id: u32, page: JsValue) -> Result<JsValue, JsValue> {
         let page: Page = read(Input::Page, page)?;
         to_js(&self.engine.feed_page(request_id, page).map_err(thrown)?)
-    }
-
-    /// Feed the results (`[{kind, …}]`, one per op) of the outstanding ops.
-    pub fn feed_ops(&mut self, request_id: u32, results: JsValue) -> Result<JsValue, JsValue> {
-        let results: Vec<OpResult> = read(Input::Results, results)?;
-        to_js(&self.engine.feed_ops(request_id, results).map_err(thrown)?)
     }
 
     /// Feed the bins (`[{key, count}]`) of the outstanding request.

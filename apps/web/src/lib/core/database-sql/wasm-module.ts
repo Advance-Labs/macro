@@ -9,7 +9,6 @@ import type {
   CardPosition,
   Catalog,
   DatabaseView,
-  OpResult,
   Outcome,
   Page,
   Schema,
@@ -24,7 +23,6 @@ export interface DatabaseSqlQuery {
   start: () => Step;
   feed_page: (requestId: number, page: Page) => Step;
   feed_bins: (requestId: number, bins: Bin[]) => Step;
-  feed_ops: (requestId: number, results: OpResult[]) => Step;
   /** Releases the engine's wasm memory. */
   free: () => void;
 }

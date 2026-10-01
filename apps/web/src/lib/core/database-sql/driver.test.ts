@@ -1,17 +1,7 @@
 import { errAsync, okAsync } from 'neverthrow';
 import { describe, expect, it, vi } from 'vitest';
-import {
-  checkReadStatement,
-  runDatabaseSql,
-  runDatabaseSqlStatement,
-} from './driver';
-import type {
-  Bin,
-  DatabaseOp,
-  GqlQuery,
-  OpResult,
-  Page,
-} from './generated/types';
+import { checkReadStatement, runDatabaseSql } from './driver';
+import type { Bin, GqlQuery, Page } from './generated/types';
 import { readTranscript, replay } from './tests/transcript';
 
 describe('runDatabaseSql', () => {
@@ -157,27 +147,6 @@ describe('runDatabaseSql', () => {
     expect(free).toHaveBeenCalledTimes(1);
   });
 
-  it('reads the rows an UPDATE matches, then sends its one op to the sink', async () => {
-    const update = readTranscript('update-uniform');
-    const [read, write] = update.exchanges;
-    if (!('page' in read) || !('results' in write) || write.step.step !== 'ops')
-      throw new Error('recorded a read, then a write');
-    const recorded = write.step;
-    const apply = vi.fn((_database: string, _ops: DatabaseOp[]) =>
-      okAsync<OpResult[]>(write.results)
-    );
-
-    const outcome = await runDatabaseSqlStatement(update.catalog, update.sql, {
-      source: { page: () => okAsync(read.page), bins: vi.fn() },
-      ops: { apply },
-      open: replay(update),
-    });
-
-    expect(outcome._unsafeUnwrap()).toEqual(update.outcome);
-    expect(outcome._unsafeUnwrap().changesApplied).toBe(2);
-    expect(apply.mock.calls).toEqual([[recorded.database, recorded.ops]]);
-  });
-
   it('refuses a write where only reads run, sending nothing', async () => {
     const insert = readTranscript('insert-two-rows');
 
@@ -187,30 +156,6 @@ describe('runDatabaseSql', () => {
     });
 
     expect(outcome._unsafeUnwrapErr()).toEqual({ kind: 'read-only' });
-  });
-
-  it('reports the sink refusing a write as an ops failure carrying the refusal', async () => {
-    const update = readTranscript('update-uniform');
-    const [read] = update.exchanges;
-    if (!('page' in read)) throw new Error('recorded a read first');
-    const refusal = {
-      code: 'INVALID_OP' as const,
-      message: 'op 0, row 1: "Done" is not an option of "Status"',
-      refusal: {
-        message: 'op 0, row 1: "Done" is not an option of "Status"',
-        op: 0,
-        row: 1,
-        column: null,
-      },
-    };
-
-    const outcome = await runDatabaseSqlStatement(update.catalog, update.sql, {
-      source: { page: () => okAsync(read.page), bins: vi.fn() },
-      ops: { apply: () => errAsync(refusal) },
-      open: replay(update),
-    });
-
-    expect(outcome._unsafeUnwrapErr()).toEqual({ kind: 'ops', error: refusal });
   });
 });
 
@@ -241,7 +186,6 @@ describe('checkReadStatement', () => {
             changesApplied: 0,
           }),
           feed_bins: vi.fn(),
-          feed_ops: vi.fn(),
           free,
         }),
       }
@@ -279,7 +223,6 @@ describe('checkReadStatement', () => {
           }),
           feed_page: vi.fn(),
           feed_bins: vi.fn(),
-          feed_ops: vi.fn(),
           free: vi.fn(),
         }),
       }

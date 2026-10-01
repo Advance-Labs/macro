@@ -1,8 +1,8 @@
 /**
  * The engine's transcripts from `crates/database_sql/fixtures/transcripts`:
  * every step it took answering a statement and what was fed back. A replay
- * stands in for the wasm engine, and refuses any page, bins or op results
- * other than the recorded ones, so a test proves the TypeScript side feeds
+ * stands in for the wasm engine, and refuses any page or bins other than
+ * the recorded ones, so a test proves the TypeScript side feeds
  * the engine exactly what the Rust side recorded.
  */
 
@@ -57,7 +57,7 @@ export function replay(transcript: Transcript): OpenEngine {
       position < transcript.exchanges.length
         ? transcript.exchanges[position].step
         : { step: 'done', ...transcript.outcome };
-    const expect = (requestId: number, fed: Page | Bin[] | OpResult[]) => {
+    const expect = (requestId: number, fed: Page | Bin[]) => {
       const exchange = transcript.exchanges[position];
       const recorded =
         'page' in exchange
@@ -74,7 +74,6 @@ export function replay(transcript: Transcript): OpenEngine {
       start: next,
       feed_page: expect,
       feed_bins: expect,
-      feed_ops: expect,
       free: () => {},
     };
   };
