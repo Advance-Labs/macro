@@ -17,6 +17,7 @@ vi.mock('@service-storage/client', () => ({
   storageServiceClient: { databases: transport },
 }));
 const nameColumn: ColumnDetail = {
+  shared_outside_database: false,
   column: {
     id: 'name',
     table_id: 'customers',
@@ -55,6 +56,7 @@ const detail: DatabaseDetail = {
   grant: 'owner',
   tables: [
     {
+      views: [],
       table: {
         id: 'customers',
         database_id: 'db',

@@ -46,6 +46,7 @@ const detail: DatabaseDetail = {
   grant: 'owner',
   tables: [
     {
+      views: [],
       table: {
         id: 'guests',
         database_id: 'db',
@@ -58,6 +59,7 @@ const detail: DatabaseDetail = {
       columns: [],
     },
     {
+      views: [],
       table: {
         id: 'budget',
         database_id: 'db',
@@ -70,6 +72,7 @@ const detail: DatabaseDetail = {
       columns: [],
     },
     {
+      views: [],
       table: {
         id: 'venues',
         database_id: 'db',

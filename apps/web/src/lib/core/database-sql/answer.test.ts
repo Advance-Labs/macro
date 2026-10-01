@@ -19,6 +19,7 @@ const party: DatabaseDetail = {
   grant: 'edit',
   tables: [
     {
+      views: [],
       table: {
         id: 'table-guests',
         database_id: 'db-party',
@@ -30,6 +31,7 @@ const party: DatabaseDetail = {
       read_sql_name: '"Party Planner"."Guests"',
       columns: [
         {
+          shared_outside_database: false,
           column: {
             id: 'column-name',
             table_id: 'table-guests',
@@ -57,6 +59,7 @@ const party: DatabaseDetail = {
           },
         },
         {
+          shared_outside_database: false,
           column: {
             id: 'column-rsvp',
             table_id: 'table-guests',
@@ -93,6 +96,7 @@ const party: DatabaseDetail = {
           },
         },
         {
+          shared_outside_database: false,
           column: {
             id: 'column-diet',
             table_id: 'table-guests',
@@ -137,6 +141,7 @@ const party: DatabaseDetail = {
           },
         },
         {
+          shared_outside_database: false,
           column: {
             id: 'column-parties',
             table_id: 'table-guests',
@@ -168,6 +173,7 @@ const party: DatabaseDetail = {
           },
         },
         {
+          shared_outside_database: false,
           column: {
             id: 'column-host',
             table_id: 'table-guests',
@@ -195,6 +201,7 @@ const party: DatabaseDetail = {
           },
         },
         {
+          shared_outside_database: false,
           column: {
             id: 'column-arrives',
             table_id: 'table-guests',
@@ -222,6 +229,7 @@ const party: DatabaseDetail = {
           },
         },
         {
+          shared_outside_database: false,
           column: {
             id: 'column-plus-one',
             table_id: 'table-guests',

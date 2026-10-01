@@ -11,10 +11,14 @@ import {
   type DatabaseSqlFailure,
   engineFailure,
   type OpenEngine,
+  type OpenView,
+  type RowSource,
   runDatabaseSql,
+  runDatabaseView,
 } from '@core/database-sql/driver';
 import type {
   Catalog,
+  DatabaseView,
   Outcome,
   Schema,
 } from '@core/database-sql/generated/types';
@@ -45,13 +49,12 @@ import {
   type Person,
 } from './graphql-source';
 
-/** A statement and the databases its catalog is built from. */
-export interface DatabaseSqlStatement {
+/** A statement, or a view's rows, and the databases its catalog is built from. */
+export type DatabaseSqlStatement = {
   schema: Schema;
   /** The database the statement is written from: its tables win name ties. */
   scope?: string;
-  sql: string;
-}
+} & ({ sql: string; view?: never } | { view: DatabaseView; sql?: never });
 
 /** Equal statements answer alike, so a rebuilt but unchanged one need not rerun. */
 export function sameDatabaseSqlStatement(
@@ -61,6 +64,7 @@ export function sameDatabaseSqlStatement(
   return (
     left?.sql === right?.sql &&
     left?.scope === right?.scope &&
+    JSON.stringify(left?.view) === JSON.stringify(right?.view) &&
     JSON.stringify(left?.schema) === JSON.stringify(right?.schema)
   );
 }
@@ -76,7 +80,26 @@ export interface DatabaseSqlQueryCapabilities {
   people: () => Promise<Person[]>;
   /** The engine; the wasm module unless a test says otherwise. */
   open?: OpenEngine;
+  openView?: OpenView;
   catalog?: BuildCatalog;
+}
+
+/** Run a statement, or a view's compiled query, over `source`. */
+function runStatement(
+  catalog: Catalog,
+  statement: DatabaseSqlStatement,
+  source: RowSource,
+  capabilities: Pick<DatabaseSqlQueryCapabilities, 'open' | 'openView'>
+): ResultAsync<Outcome, DatabaseSqlFailure> {
+  if (statement.view)
+    return runDatabaseView(catalog, statement.view, {
+      source,
+      ...(capabilities.openView ? { open: capabilities.openView } : {}),
+    });
+  return runDatabaseSql(catalog, statement.sql, {
+    source,
+    ...(capabilities.open ? { open: capabilities.open } : {}),
+  });
 }
 
 export interface DatabaseSqlQuery {
@@ -139,16 +162,18 @@ export function createDatabaseSqlQuery(
       engineFailure
     )
       .andThen((built) =>
-        runDatabaseSql(built, current.sql, {
-          source: createGraphqlRowSource({
+        runStatement(
+          built,
+          current,
+          createGraphqlRowSource({
             client: capabilities.client(),
             catalog: built,
             requestPolicy,
             people: capabilities.people,
             membership: host ? { host, baselines, reconcile } : undefined,
           }),
-          ...(capabilities.open ? { open: capabilities.open } : {}),
-        }).map((answer) => {
+          capabilities
+        ).map((answer) => {
           if (run !== latest) return;
           // A cache change that left the answer alone keeps the same outcome.
           batch(() => {
@@ -240,28 +265,33 @@ export function refreshInBackground(reader: {
 
 /** One read of a statement from the network, for an answer nothing keeps live. */
 export function readDatabaseSql(
-  { schema, scope, sql }: DatabaseSqlStatement,
+  statement: DatabaseSqlStatement,
   capabilities: DatabaseSqlQueryCapabilities = productionDatabaseSqlCapabilities()
 ): ResultAsync<{ catalog: Catalog; outcome: Outcome }, DatabaseSqlFailure> {
   return ResultAsync.fromPromise(
-    (capabilities.catalog ?? buildDatabaseSqlCatalog)(schema, scope),
+    (capabilities.catalog ?? buildDatabaseSqlCatalog)(
+      statement.schema,
+      statement.scope
+    ),
     engineFailure
   ).andThen((catalog) =>
-    runDatabaseSql(catalog, sql, {
-      source: createGraphqlRowSource({
+    runStatement(
+      catalog,
+      statement,
+      createGraphqlRowSource({
         client: capabilities.client(),
         catalog,
         requestPolicy: 'network-only',
         people: capabilities.people,
       }),
-      ...(capabilities.open ? { open: capabilities.open } : {}),
-    }).map((outcome) => ({ catalog, outcome }))
+      capabilities
+    ).map((outcome) => ({ catalog, outcome }))
   );
 }
 
 /** Compile and plan a statement against its catalog, reading nothing; a write is refused. */
 export function checkDatabaseSql(
-  { schema, scope, sql }: DatabaseSqlStatement,
+  { schema, scope, sql }: Extract<DatabaseSqlStatement, { sql: string }>,
   capabilities: Pick<DatabaseSqlQueryCapabilities, 'open' | 'catalog'> = {}
 ): ResultAsync<void, DatabaseSqlFailure> {
   return ResultAsync.fromPromise(

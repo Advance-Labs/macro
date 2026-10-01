@@ -11,8 +11,12 @@
 
 import type {
   Bin,
+  Board,
+  CardPosition,
   Catalog,
+  DatabaseView,
   OpResult,
+  Outcome,
   Page,
   Schema,
   Step,
@@ -42,6 +46,19 @@ interface DatabaseSqlWasmModule {
   ) => DatabaseSqlQuery;
   /** The catalog a statement run from `scope` sees. Throws an `EngineError`. */
   buildCatalog: (schema: Schema, scope: string | undefined) => Catalog;
+  /** The rows a view shows, as a query to drive. Throws an `EngineError`. */
+  runView: (catalog: Catalog, view: DatabaseView) => DatabaseSqlQuery;
+  /** A view as the SQL it runs, for display. Throws an `EngineError`. */
+  viewAsSql: (catalog: Catalog, view: DatabaseView) => string;
+  /** A board view's lanes and cards. Throws an `EngineError`. */
+  board: (
+    catalog: Catalog,
+    view: DatabaseView,
+    outcome: Outcome,
+    positions: CardPosition[]
+  ) => Board;
+  /** A position key between two others; `null` leaves that side open. Throws an `Error`. */
+  keyBetween: (before: string | null, after: string | null) => string;
 }
 
 let modulePromise: Promise<DatabaseSqlWasmModule> | undefined;
@@ -73,6 +90,15 @@ export async function openDatabaseSqlQuery(
 ): Promise<DatabaseSqlQuery> {
   const { Query } = await loadDatabaseSqlWasm();
   return new Query(catalog, sql);
+}
+
+/** Open `view`'s rows as a query against `catalog`, loading the engine on first use. */
+export async function openDatabaseViewQuery(
+  catalog: Catalog,
+  view: DatabaseView
+): Promise<DatabaseSqlQuery> {
+  const { runView } = await loadDatabaseSqlWasm();
+  return runView(catalog, view);
 }
 
 /** The catalog a statement run from `scope` sees, built by the engine. */

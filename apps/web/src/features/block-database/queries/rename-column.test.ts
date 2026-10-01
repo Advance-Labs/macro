@@ -30,6 +30,7 @@ vi.mock('@queries/client', async () => {
   };
 });
 const column: ColumnDetail = {
+  shared_outside_database: false,
   column: {
     id: 'title',
     table_id: 'tasks',
@@ -68,6 +69,7 @@ const detail: DatabaseDetail = {
   grant: 'owner',
   tables: [
     {
+      views: [],
       table: {
         id: 'tasks',
         database_id: 'db',

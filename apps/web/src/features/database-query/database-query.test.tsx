@@ -291,6 +291,7 @@ describe('database question production wiring', () => {
           ...detail,
           tables: [
             {
+              views: [],
               table: {
                 id: 'first',
                 database_id: 'source',
@@ -303,6 +304,7 @@ describe('database question production wiring', () => {
               columns: [],
             },
             {
+              views: [],
               table: {
                 id: 'second',
                 database_id: 'source',

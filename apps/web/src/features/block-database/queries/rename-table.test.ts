@@ -40,12 +40,14 @@ const detail: DatabaseDetail = {
   grant: 'owner',
   tables: [
     {
+      views: [],
       table: original,
       sql_name: 'guests',
       read_sql_name: 'guests',
       columns: [],
     },
     {
+      views: [],
       table: { ...original, id: 'other', name: 'Other' },
       sql_name: 'other',
       read_sql_name: 'other',

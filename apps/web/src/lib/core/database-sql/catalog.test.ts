@@ -73,6 +73,7 @@ const crm: DatabaseDetail = {
   grant: 'edit',
   tables: [
     {
+      views: [],
       table: {
         id: DEALS,
         database_id: CRM,
@@ -84,6 +85,7 @@ const crm: DatabaseDetail = {
       read_sql_name: '"Deals"',
       columns: [
         {
+          shared_outside_database: false,
           column: {
             id: NAME_COLUMN,
             table_id: DEALS,
@@ -101,6 +103,7 @@ const crm: DatabaseDetail = {
           writable: true,
         },
         {
+          shared_outside_database: false,
           column: {
             id: STAGE_COLUMN,
             table_id: DEALS,
@@ -121,6 +124,7 @@ const crm: DatabaseDetail = {
           writable: true,
         },
         {
+          shared_outside_database: false,
           column: {
             id: TIER_COLUMN,
             table_id: DEALS,
@@ -141,6 +145,7 @@ const crm: DatabaseDetail = {
           writable: true,
         },
         {
+          shared_outside_database: false,
           column: {
             id: CONTACT_COLUMN,
             table_id: DEALS,
@@ -162,6 +167,7 @@ const crm: DatabaseDetail = {
           writable: true,
         },
         {
+          shared_outside_database: false,
           column: {
             id: CONTACT_EMAIL_COLUMN,
             table_id: DEALS,
@@ -185,6 +191,7 @@ const crm: DatabaseDetail = {
       ],
     },
     {
+      views: [],
       table: {
         id: CONTACTS,
         database_id: CRM,
@@ -196,6 +203,7 @@ const crm: DatabaseDetail = {
       read_sql_name: '"Contacts"',
       columns: [
         {
+          shared_outside_database: false,
           column: {
             id: EMAIL_COLUMN,
             table_id: CONTACTS,
@@ -213,6 +221,7 @@ const crm: DatabaseDetail = {
           writable: true,
         },
         {
+          shared_outside_database: false,
           column: {
             id: OWNER_COLUMN,
             table_id: CONTACTS,

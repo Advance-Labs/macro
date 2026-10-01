@@ -3,7 +3,6 @@
  * (`crates/databases/src/inbound/toolset`).
  */
 
-import { databaseViewKeys } from '@app/features/block-database/queries/keys';
 import { ToolQueryResults } from '@app/features/database-query/components/tool-query-results';
 import { toolAnswers } from '@app/features/database-query/core/tool-answer';
 import { globalSplitManager } from '@app/signal/splitLayout';
@@ -15,8 +14,10 @@ import {
 import { isFeatureEnabled, showDatabaseSql } from '@core/constant/featureFlags';
 import DatabaseIcon from '@phosphor/database.svg';
 import TableIcon from '@phosphor/table.svg';
-import { queryClient } from '@queries/client';
-import { useDatabaseDetailQuery } from '@queries/storage/databases';
+import {
+  invalidateDatabase,
+  useDatabaseDetailQuery,
+} from '@queries/storage/databases';
 import type { NamedTool } from '@service-cognition/generated/tools/tool';
 import { createSignal, For, Show } from 'solid-js';
 import { match } from 'ts-pattern';
@@ -334,16 +335,15 @@ export const addColumnOptionsHandler = createToolRenderer({
 
 export const saveDatabaseViewHandler = createToolRenderer({
   name: 'SaveDatabaseView',
-  handleResponse: async () => {
-    await queryClient.invalidateQueries({
-      queryKey: databaseViewKeys.saved.queryKey,
-    });
+  handleResponse: async (ctx) => {
+    const databaseId = ctx.tool.data.view.databaseId;
+    if (typeof databaseId === 'string') await invalidateDatabase(databaseId);
   },
   render: (ctx) => {
     const orchestrator = useGlobalBlockOrchestrator();
     async function openView() {
-      const result = ctx.response?.data;
-      if (!result) return;
+      const viewId = ctx.response?.data.view.id;
+      if (typeof viewId !== 'string') return;
       globalSplitManager()?.openWithSplit(
         { type: 'database', id: ctx.tool.data.databaseId },
         { activate: true }
@@ -354,7 +354,7 @@ export const saveDatabaseViewHandler = createToolRenderer({
       );
       await handle?.goToLocationFromParams({
         tableId: ctx.tool.data.tableId,
-        viewId: result.viewId,
+        viewId,
       });
     }
     return (
@@ -362,10 +362,8 @@ export const saveDatabaseViewHandler = createToolRenderer({
         <div class="flex min-w-0 flex-1 items-center justify-between gap-3">
           <span class="min-w-0 truncate">
             {ctx.response ? 'Saved' : 'Save'}{' '}
-            {ctx.tool.data.view.layout === 'board' ? 'board' : 'view'}{' '}
-            <span class="text-ink">
-              {ctx.response?.data.name ?? ctx.tool.data.name}
-            </span>
+            {ctx.tool.data.layout.kind === 'board' ? 'board' : 'view'}{' '}
+            <span class="text-ink">{ctx.tool.data.name}</span>
           </span>
           <Show when={ctx.response}>
             <button

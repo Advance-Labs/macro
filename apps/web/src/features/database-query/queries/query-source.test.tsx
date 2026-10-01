@@ -36,6 +36,7 @@ describe('query schema', () => {
       grant: 'owner',
       tables: [
         {
+          views: [],
           table: {
             id: 'legacy',
             database_id: 'db',
@@ -48,6 +49,7 @@ describe('query schema', () => {
           columns: [],
         },
         {
+          views: [],
           table: {
             id: 'contacts',
             database_id: 'db',
@@ -62,6 +64,7 @@ describe('query schema', () => {
       ],
     };
     detail.tables[1].columns.push({
+      shared_outside_database: false,
       column: {
         id: 'relation-column',
         table_id: 'contacts',
@@ -239,6 +242,7 @@ const workspace: DatabaseDetail = {
   grant: 'edit',
   tables: [
     {
+      views: [],
       table: {
         id: 'projects-table',
         database_id: 'db-work',

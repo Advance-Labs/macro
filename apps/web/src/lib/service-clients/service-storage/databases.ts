@@ -4,6 +4,11 @@
  * generated from its OpenAPI spec.
  */
 import { SERVER_HOSTS } from '@core/constant/servers';
+import type {
+  CardPosition,
+  DatabaseOp,
+  OpResult,
+} from '@core/database-sql/generated/types';
 import {
   type FetchWithTokenErrorCode,
   type FetchWithTokenInit,
@@ -13,8 +18,6 @@ import type { ObjectLike, ResultError } from '@core/util/result';
 import { ResultAsync } from 'neverthrow';
 import { match, P } from 'ts-pattern';
 import type { AddColumnOptionsRequest } from './generated/schemas/addColumnOptionsRequest';
-import type { ApplyOpsRequest } from './generated/schemas/applyOpsRequest';
-import type { ApplyOpsResponse } from './generated/schemas/applyOpsResponse';
 import type { Awareness } from './generated/schemas/awareness';
 import type { ChangeColumnTypeRequest } from './generated/schemas/changeColumnTypeRequest';
 import type { ColumnCast } from './generated/schemas/columnCast';
@@ -340,17 +343,20 @@ export const databasesClient = {
     );
   },
 
-  /** Apply a batch of typed ops to a database's rows, together or not at all. */
+  /**
+   * Apply a batch of typed ops to a database, together or not at all. The ops
+   * and their results are the engine's own types, which it also emits.
+   */
   applyOps({
     id,
     request,
   }: {
     id: string;
-    request: ApplyOpsRequest;
-  }): ResultAsync<ApplyOpsResponse, DatabaseOpsError[]> {
+    request: { ops: DatabaseOp[] };
+  }): ResultAsync<{ results: OpResult[] }, DatabaseOpsError[]> {
     let refusal: OpRefusalResponse | null = null;
     return new ResultAsync(
-      fetchWithToken<ApplyOpsResponse, 'INVALID_OP'>(
+      fetchWithToken<{ results: OpResult[] }, 'INVALID_OP'>(
         `${dssHost}/databases/${id}/ops`,
         {
           method: 'POST',
@@ -367,6 +373,13 @@ export const databasesClient = {
         ...error,
         refusal: error.code === 'INVALID_OP' ? refusal : null,
       }))
+    );
+  },
+
+  /** Where a board's cards sit: each placed card's lane and key there. */
+  viewPositions({ id, viewId }: { id: string; viewId: string }) {
+    return databasesFetch<{ positions: CardPosition[] }>(
+      `/databases/${id}/views/${viewId}/positions`
     );
   },
 

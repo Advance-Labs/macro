@@ -24,6 +24,7 @@ vi.mock('@queries/client', async () => {
 });
 
 const name: ColumnDetail = {
+  shared_outside_database: false,
   column: {
     id: 'name',
     table_id: 'projects',
@@ -63,6 +64,7 @@ function detail(columns: ColumnDetail[]): DatabaseDetail {
     grant: 'owner',
     tables: [
       {
+        views: [],
         table: {
           id: 'projects',
           database_id: 'db',

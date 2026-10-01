@@ -12,6 +12,7 @@ import type {
   Bin,
   Catalog,
   DatabaseOp,
+  DatabaseView,
   EngineError,
   GqlQuery,
   OpResult,
@@ -20,7 +21,11 @@ import type {
   RunError,
   Step,
 } from './generated/types';
-import { type DatabaseSqlQuery, openDatabaseSqlQuery } from './wasm-module';
+import {
+  type DatabaseSqlQuery,
+  openDatabaseSqlQuery,
+  openDatabaseViewQuery,
+} from './wasm-module';
 
 /** Why a statement has no outcome. */
 export type DatabaseSqlFailure =
@@ -70,6 +75,12 @@ export interface OpsSink {
 export type OpenEngine = (
   catalog: Catalog,
   sql: string
+) => Promise<DatabaseSqlQuery>;
+
+/** Opens the engine for one view's rows; the wasm module unless a test says otherwise. */
+export type OpenView = (
+  catalog: Catalog,
+  view: DatabaseView
 ) => Promise<DatabaseSqlQuery>;
 
 function isEngineError(thrown: unknown): thrown is EngineError {
@@ -145,15 +156,11 @@ async function steps(
 }
 
 function drive(
-  catalog: Catalog,
-  sql: string,
-  {
-    source,
-    ops,
-    open = openDatabaseSqlQuery,
-  }: { source: RowSource; ops?: OpsSink; open?: OpenEngine }
+  opened: Promise<DatabaseSqlQuery>,
+  source: RowSource,
+  ops?: OpsSink
 ): ResultAsync<Outcome, DatabaseSqlFailure> {
-  return ResultAsync.fromPromise(open(catalog, sql), engineFailure).andThen(
+  return ResultAsync.fromPromise(opened, engineFailure).andThen(
     (query) =>
       new ResultAsync(steps(query, source, ops).finally(() => query.free()))
   );
@@ -167,9 +174,24 @@ function drive(
 export function runDatabaseSql(
   catalog: Catalog,
   sql: string,
-  options: { source: RowSource; open?: OpenEngine }
+  {
+    source,
+    open = openDatabaseSqlQuery,
+  }: { source: RowSource; open?: OpenEngine }
 ): ResultAsync<Outcome, DatabaseSqlFailure> {
-  return drive(catalog, sql, options);
+  return drive(open(catalog, sql), source);
+}
+
+/** Read the rows a view shows, as its compiled query finds them. */
+export function runDatabaseView(
+  catalog: Catalog,
+  view: DatabaseView,
+  {
+    source,
+    open = openDatabaseViewQuery,
+  }: { source: RowSource; open?: OpenView }
+): ResultAsync<Outcome, DatabaseSqlFailure> {
+  return drive(open(catalog, view), source);
 }
 
 /**
@@ -179,9 +201,13 @@ export function runDatabaseSql(
 export function runDatabaseSqlStatement(
   catalog: Catalog,
   sql: string,
-  options: { source: RowSource; ops: OpsSink; open?: OpenEngine }
+  {
+    source,
+    ops,
+    open = openDatabaseSqlQuery,
+  }: { source: RowSource; ops: OpsSink; open?: OpenEngine }
 ): ResultAsync<Outcome, DatabaseSqlFailure> {
-  return drive(catalog, sql, options);
+  return drive(open(catalog, sql), source, ops);
 }
 
 const NO_ROWS: RowSource = {
@@ -197,12 +223,11 @@ const NO_ROWS: RowSource = {
 export function checkReadStatement(
   catalog: Catalog,
   sql: string,
-  options: { open?: OpenEngine } = {}
+  { open = openDatabaseSqlQuery }: { open?: OpenEngine } = {}
 ): ResultAsync<void, DatabaseSqlFailure> {
-  return drive(catalog, sql, { source: NO_ROWS, ...options }).andThen(
-    (outcome) =>
-      outcome.columns.length > 0
-        ? okAsync(undefined)
-        : errAsync<void, DatabaseSqlFailure>({ kind: 'read-only' })
+  return drive(open(catalog, sql), NO_ROWS).andThen((outcome) =>
+    outcome.columns.length > 0
+      ? okAsync(undefined)
+      : errAsync<void, DatabaseSqlFailure>({ kind: 'read-only' })
   );
 }

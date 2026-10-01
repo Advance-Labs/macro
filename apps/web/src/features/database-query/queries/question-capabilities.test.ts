@@ -20,6 +20,7 @@ const detail: DatabaseDetail = {
   },
   grant: 'view',
   tables: ['Tickets', 'Customers'].map((name) => ({
+    views: [],
     table: {
       id: name,
       database_id: 'support',

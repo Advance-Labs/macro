@@ -12,6 +12,7 @@ function column(
   } = {}
 ): ColumnDetail {
   return {
+    shared_outside_database: false,
     column: {
       id: 'column',
       table_id: 'table',
@@ -140,6 +141,7 @@ describe('grid values as cell values', () => {
 describe('grid values a column cannot take', () => {
   it('refuses references to rows outside a relation column', () => {
     const rows: ColumnDetail = {
+      shared_outside_database: false,
       column: {
         id: 'column',
         table_id: 'table',

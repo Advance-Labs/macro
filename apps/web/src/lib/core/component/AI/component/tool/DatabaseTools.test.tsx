@@ -1,4 +1,3 @@
-import { databaseViewKeys } from '@app/features/block-database/queries/keys';
 import { showDatabaseSql } from '@core/constant/featureFlags';
 import type {
   NamedTool,
@@ -28,10 +27,7 @@ vi.mock('@app/signal/splitLayout', () => ({ globalSplitManager: () => null }));
 vi.mock('@components/app/GlobalAppState', () => ({
   useGlobalBlockOrchestrator: () => ({}),
 }));
-const invalidateQueries = vi.hoisted(() => vi.fn());
-vi.mock('@queries/client', () => ({
-  queryClient: { invalidateQueries },
-}));
+const invalidateDatabase = vi.hoisted(() => vi.fn());
 vi.mock(
   '@core/component/LexicalMarkdown/component/core/StaticMarkdown',
   () => ({
@@ -42,6 +38,7 @@ vi.mock(
   })
 );
 vi.mock('@queries/storage/databases', () => ({
+  invalidateDatabase,
   useDatabaseDetailQuery: (databaseId: () => string | undefined) => ({
     get isSuccess() {
       return !!databaseId();
@@ -73,6 +70,7 @@ const database: NamedTool<'DescribeDatabase', 'response'>['data'] = {
   grant: 'edit',
   tables: [
     {
+      views: [],
       id: tableId,
       name: 'Tickets',
       sqlName: 'Tickets',
@@ -264,18 +262,26 @@ describe('SaveDatabaseQuery', () => {
 });
 
 describe('SaveDatabaseView', () => {
-  it('refreshes saved views when the save responds, not on each render', async () => {
+  it('rereads the database once the view is saved, not on each render', async () => {
     renderTool(saveDatabaseViewHandler, 'SaveDatabaseView', {
       databaseId,
       tableId,
       name: 'Open',
-      view: { layout: 'table' },
+      layout: { kind: 'table', columns: [] },
     });
-    expect(invalidateQueries).not.toHaveBeenCalled();
-    await saveDatabaseViewHandler.handleResponse?.({} as never);
-    expect(invalidateQueries).toHaveBeenCalledExactlyOnceWith({
-      queryKey: databaseViewKeys.saved.queryKey,
+    expect(invalidateDatabase).not.toHaveBeenCalled();
+    await saveDatabaseViewHandler.handleResponse?.({
+      tool: {
+        id: 'tool-1',
+        name: 'SaveDatabaseView',
+        data: { view: { id: 'view-1', databaseId }, created: true },
+      },
+      chat_id: 'chat-1',
+      message_id: 'message-1',
+      part_index: 0,
+      isComplete: true,
     });
+    expect(invalidateDatabase).toHaveBeenCalledExactlyOnceWith(databaseId);
   });
 });
 
