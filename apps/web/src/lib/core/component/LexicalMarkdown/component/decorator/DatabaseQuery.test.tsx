@@ -193,6 +193,35 @@ function renderBlock(test: ReturnType<typeof createTestEditor>) {
   ));
 }
 
+describe('database answer while databases are off', () => {
+  it('renders the placeholder in a live editor and leaves the node as saved', () => {
+    const test = createTestEditor();
+    const saved = test.editor.getEditorState().toJSON();
+    control.enabled = () => false;
+    control.mounts = 0;
+    const rendered = render(() => (
+      <LexicalWrapperContext.Provider value={test.wrapper}>
+        <DatabaseQuery
+          key={test.blockKey}
+          theme={{}}
+          queryId="query"
+          prompt="RSVP counts"
+          title="RSVP counts placeholder"
+          displayMode="table"
+        />
+      </LexicalWrapperContext.Provider>
+    ));
+    expect(rendered.getByText('RSVP counts placeholder')).toBeTruthy();
+    expect(control.mounts).toBe(0);
+    fireEvent.mouseDown(rendered.getByText('RSVP counts placeholder'), {
+      button: 0,
+    });
+    expect(test.editor.getEditorState().toJSON()).toEqual(saved);
+    rendered.unmount();
+    test.root.remove();
+  });
+});
+
 describe('pressing a database answer block', () => {
   it('selects the block on the press itself, without placing a caret first', async () => {
     const test = createTestEditor();

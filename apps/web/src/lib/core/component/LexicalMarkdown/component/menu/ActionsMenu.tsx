@@ -26,6 +26,7 @@ import {
   REMOVE_ACTION_SEARCH_COMMAND,
 } from '../../plugins';
 import { ACTIONS } from '../../plugins/actions/actions';
+import { availableActions } from '../../plugins/actions/available-actions';
 import type { Action, ActionContext } from '../../plugins/actions/types';
 import type { MenuOperations } from '../../shared/inlineMenu';
 import { useMenuKeyboardNavigation } from './useMenuKeyboardNavigation';
@@ -168,13 +169,10 @@ export function ActionMenu(props: {
   }
   const databasesEnabled = useFeatureFlag(enableDatabases);
   const validActions = () =>
-    merged.filter((action) => {
-      if (action.id === 'database-query' && !databasesEnabled().enabled)
-        return false;
-      if (props.ignoreActionIds?.includes(action.id)) return false;
-      const { dependencies } = action;
-      if (dependencies === undefined || dependencies.length === 0) return true;
-      return props.editor.hasNodes(dependencies);
+    availableActions(merged, {
+      databasesEnabled: databasesEnabled().enabled,
+      ignoreActionIds: props.ignoreActionIds,
+      hasNodes: (dependencies) => props.editor.hasNodes(dependencies),
     });
 
   createEffect(() => {
