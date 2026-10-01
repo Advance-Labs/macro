@@ -508,7 +508,9 @@ export function DatabaseTable(props: {
                     data-grid-row-id={row().rowId}
                     data-highlighted={highlighted() ? '' : undefined}
                     aria-rowindex={index() + 2}
-                    class="group grid min-h-10 border-b border-edge-muted/60 transition-colors duration-700 hover:bg-hover/50"
+                    // Off-screen rows skip style, layout and paint; they stay
+                    // in the DOM, the accessibility tree and find-in-page.
+                    class="group grid min-h-10 border-b border-edge-muted/60 transition-colors duration-700 [contain-intrinsic-size:auto_41px] [content-visibility:auto] hover:bg-hover/50"
                     classList={{ 'bg-accent/15': highlighted() }}
                     style={{ 'grid-template-columns': template() }}
                   >
