@@ -87,6 +87,13 @@ export function OptionEditor(props: {
         <Popover.Content
           class="z-action-menu flex w-56 flex-col gap-2.5 rounded-lg border border-edge bg-menu p-2.5 text-xs text-ink shadow-menu outline-none"
           onClick={(event: MouseEvent) => event.stopPropagation()}
+          on:keydown={(event) => {
+            // Natively, so the popover or menu around it never hears this Escape.
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            event.stopPropagation();
+            setOpen(false);
+          }}
         >
           <input
             aria-label="Option name"

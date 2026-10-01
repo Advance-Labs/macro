@@ -10,6 +10,7 @@ import {
 import { err, errAsync, okAsync, type Result, ResultAsync } from 'neverthrow';
 import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { OptionEditingContext } from '../context/option-editing';
 import type { DatabaseViewColumn } from '../core/database-view';
 import { DatabaseColumnHeader } from './database-column-header';
 
@@ -35,7 +36,8 @@ beforeEach(() => {
   );
   // Match the browser's computed animation default so closed menus unmount.
   menuStyles = document.createElement('style');
-  menuStyles.textContent = '[role=menu] { animation-name: none; }';
+  menuStyles.textContent =
+    '[role=menu], [role=dialog] { animation-name: none; }';
   document.head.append(menuStyles);
 });
 afterEach(() => {
@@ -327,4 +329,56 @@ it('uses the type submenu and surfaces lossless conversion failures without chan
     'Some text cannot become a number'
   );
   expect(screen.getByRole('columnheader', { name: 'Name' })).toBeTruthy();
+});
+
+describe('column header options', () => {
+  it('closes the option editor with one Escape, then the options with the next', async () => {
+    render(() => (
+      <OptionEditingContext.Provider
+        value={{
+          update: vi.fn(() => okAsync(undefined)),
+          remove: vi.fn(() => okAsync(undefined)),
+        }}
+      >
+        <DatabaseColumnHeader
+          column={{
+            id: 'rsvp',
+            name: 'RSVP',
+            dataType: 'SELECT_STRING',
+            isMultiSelect: false,
+            options: [{ id: 'yes', label: 'Yes', color: null }],
+            writable: true,
+          }}
+          canRename
+          onRename={vi.fn(() => okAsync(undefined))}
+          onSort={vi.fn()}
+        />
+      </OptionEditingContext.Provider>
+    ));
+    fireEvent.contextMenu(screen.getByRole('columnheader', { name: 'RSVP' }), {
+      clientX: 40,
+      clientY: 20,
+    });
+    fireEvent(
+      await screen.findByRole('menuitem', { name: 'Edit options' }),
+      new MouseEvent('pointerup', { button: 0, bubbles: true })
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Yes' }));
+    const name = await screen.findByRole('textbox', { name: 'Option name' });
+    await waitFor(() => expect(document.activeElement).toBe(name));
+    expect(screen.getByRole('dialog', { name: 'Options' })).toBeTruthy();
+
+    fireEvent.keyDown(name, { key: 'Escape' });
+    await waitFor(() =>
+      expect(screen.queryByRole('textbox', { name: 'Option name' })).toBeNull()
+    );
+    expect(screen.getByRole('dialog', { name: 'Options' })).toBeTruthy();
+
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: 'Escape',
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Options' })).toBeNull()
+    );
+  });
 });
