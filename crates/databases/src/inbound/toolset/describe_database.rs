@@ -18,9 +18,10 @@ use crate::domain::ports::DatabasesService;
 #[schemars(
     title = "DescribeDatabase",
     description = "\
-Read one database's schema: its tables with their quoted `sqlName` and version, and each \
-table's columns with their SQL names, value types, whether they hold multiple values, the \
-exact labels a select column accepts, and the target table of a relation column.\n\
+Read one database's schema: its tables with their quoted `sqlName`, version and saved views, \
+and each table's columns with their SQL names, types (with the kind of an entity column, \
+`USER` for a person column), whether they hold several values, the labels a select column \
+accepts, the target table of a relation, and the types the column can change to.\n\
 \n\
 **Call this before writing SQL for a database you have not already described in this \
 conversation.** Guessing table or column names is the single most common way a query fails, \

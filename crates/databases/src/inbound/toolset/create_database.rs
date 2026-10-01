@@ -22,8 +22,8 @@ use crate::domain::ports::DatabasesService;
     title = "CreateDatabase",
     description = "\
 Create a new Macro database owned by the current user — the thing they see as a table. It \
-starts with one table, \"Table 1\", with no rows and one text column, \"Name\", for each row's \
-title, beside the implicit `row_id`.\n\
+starts with one table, \"Table 1\", with no rows and one text column, \"Name\", which is each \
+row's title, beside the implicit `row_id`.\n\
 \n\
 Use this when the user asks for a new tracker, list, or table (\"make me a table of \
 applicants\"). Check ListDatabases first if there is any chance one already exists under that \
@@ -34,8 +34,8 @@ including the starter table's id. If `database` is null, creation still succeede
 warning and call DescribeDatabase with the returned id; never repeat CreateDatabase just \
 because schema refresh failed. The usual shape of the work is: \
 CreateDatabase, RenameTable on the starter table when the user named their table, one \
-AddColumn per further column the user described (use Name for each row's title rather than \
-adding another), then QueryDatabase with INSERTs for the rows. For more tables, CreateTable only after the starter table is used."
+AddColumn per further column the user described, typed by what it holds (use Name for each \
+row's title rather than adding another), then QueryDatabase with INSERTs for the rows. For more tables, CreateTable only after the starter table is used."
 )]
 pub struct CreateDatabase {
     /// Display name of the new database.

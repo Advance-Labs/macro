@@ -26,8 +26,8 @@ Add allowed labels to a select, select_number, or tag column. A select column's 
 explicit schema: SQL accepts exactly the labels the column carries and rejects everything else, \
 so a value that does not exist yet has to be added here before it can be written.\n\
 \n\
-Use this when an INSERT or UPDATE was rejected for an unknown option, or when the user names a \
-new status, stage, or category. Labels the column already has are ignored, so it is safe to \
+Use this when the user names a new status, stage, or category, or when a write they asked for \
+was refused for an unknown option. Labels the column already has are ignored, so it is safe to \
 send the whole set. A select_number column's labels must be numbers.\n\
 \n\
 This is add-only — options are never renamed or removed here, because both would change what \

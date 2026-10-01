@@ -542,9 +542,9 @@ pub struct ToolColumn {
     /// Types ChangeColumnType converts every value to, spelled as SQL types
     /// (`select[]` is a multi-valued select, `entity(USER)` a person).
     pub safe_types: Vec<SpelledColumnType>,
-    /// Types whose conversion checks each value first and refuses, or with
-    /// `clearInvalid` empties, the ones that do not fit. Any type in neither
-    /// list is refused while the column holds values.
+    /// Types whose conversion checks each value first and refuses if any does
+    /// not fit. Any type in neither list is refused while the column holds
+    /// values.
     pub checked_types: Vec<SpelledColumnType>,
 }
 

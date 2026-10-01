@@ -22,12 +22,13 @@ use crate::domain::ports::DatabasesService;
     title = "CreateTable",
     description = "\
 Add a table — what the user sees as a tab — to an existing database. The new table starts \
-empty, with no columns of its own beyond the implicit `row_id`.\n\
+empty, with no columns beyond the implicit `row_id`; the first column you add is each row's \
+title.\n\
 \n\
 Use this for a genuinely separate list that belongs with the others (\"add a Sessions tab to \
-the offsite tracker\"), not for more columns on an existing one — that is AddColumn. Two \
-tables in the same database can be joined in one query, and a link column between them \
-(AddColumn with `linkToTableId`) is how rows on one side point at rows on the other.\n\
+the offsite tracker\"), not for more columns on an existing one — that is AddColumn. Tables \
+of one database can be joined in one query, and a relation (AddColumn with \
+`linkToTableId`) is how rows of one point at rows of the other.\n\
 \n\
 Requires edit access to the database. The response is the database's refreshed schema, so the \
 new table's `id` and its exact `sqlName` are there without a second call — SQL names are \

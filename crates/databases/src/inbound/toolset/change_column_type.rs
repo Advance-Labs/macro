@@ -26,21 +26,18 @@ use crate::domain::ports::DatabasesService;
 Change a column's type, converting every existing value. The column keeps its id and name.\n\
 \n\
 DescribeDatabase lists each column's `safeTypes` (every value converts) and `checkedTypes` \
-(each value is checked first); any other type is refused while the column holds values, so \
-add a new column instead. An empty column takes any type.\n\
+(each value is checked first). Any other type is refused while the column holds values; an \
+empty column takes any type. If a value does not fit (\"soon\" as a number), or a \
+multi-valued cell would lose values to a single-valued type, nothing changes and the error \
+counts the misfits and quotes a few: fix them with UPDATE and retry, or add a new column. \
+Clear values only when the user asked for that.\n\
 \n\
-Conversion is all or nothing by default: if any value cannot become the new type without \
-losing information (\"soon\" as a number), nothing changes and the error counts the values \
-and quotes a few. Fix them with UPDATE and retry, or pass `clearInvalid: true` to empty \
-them instead; a cell with several values going to a single-valued type then keeps its \
-first. Only clear when the user accepts losing those values. Converting to `select` or \
-`tag` turns the distinct existing values into the column's options; pass `options` to add \
-labels no row has yet.\n\
-\n\
-- `entity` needs `specificEntityType` (e.g. `USER` for people, `DOCUMENT`).\n\
-- `linkToTableId` makes it a relation to rows of another table of this database; pass \
-`dataType: entity` with it. Relations are always multi-valued, and the column must be empty.\n\
-- `tag` columns are always multi-valued.\n\
+- `entity` needs `specificEntityType`: `USER` makes a person column; `DOCUMENT`, `TASK` \
+and the rest reference other Macro items.\n\
+- `linkToTableId` (with `dataType: entity`) makes a relation to rows of another table of \
+this database. Relations are always multi-valued, and the column must be empty.\n\
+- Converting to `select` or `tag` turns the distinct existing values into options; `options` \
+adds labels no row has yet. `tag` columns are always multi-valued.\n\
 \n\
 Requires edit access. The response is the schema after the change."
 )]
