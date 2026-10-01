@@ -1,7 +1,6 @@
 import type { CellTextEditorProps } from '@app/components/cell-text-editor/types';
+import { Popover } from '@kobalte/core/popover';
 import CaretDownIcon from '@phosphor/caret-down.svg';
-import CheckIcon from '@phosphor/check.svg';
-import PlusIcon from '@phosphor/plus.svg';
 import { PropertyDateSelector } from '@property/editors/selectors/PropertyDateSelector';
 import { Dropdown } from '@ui/components/Dropdown';
 import {
@@ -13,6 +12,7 @@ import {
   Show,
 } from 'solid-js';
 import { focusAdjacent } from '../components/cell-focus';
+import { OptionPicker } from '../components/option-picker';
 import { SelectPill } from '../components/select-pill';
 import type {
   GridCellControl,
@@ -24,6 +24,7 @@ export type {
   GridCellEditorOptions,
 } from '../core/grid-cell-editor';
 
+import { useOptionEditing } from '../context/option-editing';
 import { fromCellDate, toCellDate } from '../core/cell-date';
 import type {
   DatabaseEntityType,
@@ -654,15 +655,10 @@ function InlineEditor(props: {
 function SelectCell(props: GridCellProps) {
   const [open, setOpen] = createSignal(false);
   const [search, setSearch] = createSignal('');
-  const [searching, setSearching] = createSignal(false);
-  const [adding, setAdding] = createSignal(false);
-  const [draft, setDraft] = createSignal('');
-  const [pending, setPending] = createSignal(false);
   const [error, setError] = createSignal('');
+  const editing = useOptionEditing();
   let trigger: HTMLButtonElement | undefined;
   let searchInput: HTMLInputElement | undefined;
-  let menu: HTMLElement | undefined;
-  let optionEditor: HTMLDivElement | undefined;
   let navigating: 1 | -1 | undefined;
   const selected = () =>
     databaseCellValues(props.value, props.column)
@@ -681,15 +677,9 @@ function SelectCell(props: GridCellProps) {
         )
       : null;
   };
-  const choose = (option: string, checked = true) =>
-    props.onWrite(withOption(option, checked));
-  const options = () =>
-    props.column.options.filter((option) =>
-      String(option).toLocaleLowerCase().includes(search().toLocaleLowerCase())
-    );
   const edit = (seed?: string) => {
     setSearch(seed ?? '');
-    setSearching(true);
+    setError('');
     setOpen(true);
   };
   function openWithKeyboard(event: KeyboardEvent) {
@@ -704,342 +694,138 @@ function SelectCell(props: GridCellProps) {
       return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    // Kobalte's trigger scroll helper loops on nested scroll containers when
-    // the document cannot scroll. Focus already reveals the selected cell.
     edit();
   }
   onMount(() => props.onReady?.({ focus: () => trigger?.focus(), edit }));
   onCleanup(() => props.onReady?.(undefined));
-  function navigate(event: KeyboardEvent) {
-    if (
-      event.key !== 'Tab' ||
-      !props.onNavigate ||
-      event.isComposing ||
-      event.keyCode === 229
-    )
-      return;
-    event.preventDefault();
-    event.stopPropagation();
-    const selected =
-      event.target instanceof HTMLElement
-        ? event.target.closest<HTMLElement>('[data-option-value]')?.dataset
-            .optionValue
-        : undefined;
-    const matched =
-      event.target === searchInput && search().trim()
-        ? options()[0]
-        : undefined;
-    const value = selected ?? matched;
-    if (open() && value !== undefined && String(value) !== label())
-      void choose(String(value));
-    const direction = event.shiftKey ? -1 : 1;
-    if (open()) {
-      navigating = direction;
-      setOpen(false);
-    } else {
-      moveToCell(direction);
-    }
-  }
   function moveToCell(direction: 1 | -1) {
     if (!props.onNavigate?.(direction)) focusAdjacent(trigger, direction);
   }
-  function menuKeyDown(event: KeyboardEvent) {
-    if (event.isComposing || event.keyCode === 229) return;
-    navigate(event);
-    if (
-      event.defaultPrevented ||
-      event.target === searchInput ||
-      event.ctrlKey ||
-      event.metaKey ||
-      event.altKey ||
-      event.key.length !== 1 ||
-      event.key === ' '
-    )
-      return;
+  function tabAway(event: KeyboardEvent, chosen: string | undefined) {
+    if (event.key !== 'Tab' || !props.onNavigate) return;
     event.preventDefault();
     event.stopPropagation();
-    setSearch(event.key);
-    setSearching(true);
-    queueMicrotask(() => searchInput?.focus());
+    if (chosen !== undefined && chosen !== label())
+      void props.onWrite(withOption(chosen));
+    navigating = event.shiftKey ? -1 : 1;
+    setOpen(false);
   }
-  function closeOptionEditor() {
-    const restoreFocus = optionEditor?.contains(document.activeElement);
-    setAdding(false);
-    if (restoreFocus) queueMicrotask(() => trigger?.focus());
-  }
-  async function add() {
-    const entered = draft().trim();
-    if (!entered || pending()) return;
-    if (
-      props.column.dataType === 'SELECT_NUMBER' &&
-      !Number.isFinite(Number(entered))
-    ) {
-      setError('Enter a number');
-      return;
+  function pick(option: string) {
+    if (props.column.isMultiSelect)
+      void props.onWrite(withOption(option, !selected().includes(option)));
+    else {
+      void props.onWrite(option);
+      setOpen(false);
     }
-    const value =
-      props.column.dataType === 'SELECT_NUMBER'
-        ? String(Number(entered))
-        : entered;
-    const existing = props.column.options.find(
-      (option) => String(option).toLowerCase() === value.toLowerCase()
-    );
-    setPending(true);
-    const saved =
-      existing !== undefined
-        ? await choose(String(existing))
-        : props.column.isMultiSelect
-          ? await props.onAddOption(value, withOption(value))
-          : await props.onAddOption(value);
-    setPending(false);
-    if (saved) closeOptionEditor();
-    else setError('Could not save. Try again.');
+  }
+  async function create(value: string) {
+    setError('');
+    const saved = props.column.isMultiSelect
+      ? await props.onAddOption(value, withOption(value))
+      : await props.onAddOption(value);
+    if (!saved) setError('Could not save. Try again.');
+    else if (props.column.isMultiSelect) {
+      setSearch('');
+      searchInput?.focus();
+    } else setOpen(false);
   }
   return (
-    <Show
-      when={adding()}
-      fallback={
-        <Dropdown
-          open={open()}
-          onOpenChange={(value) => {
-            setOpen(value);
-            if (!value) {
-              setSearch('');
-              setSearching(false);
-            }
-          }}
-        >
-          <Dropdown.Trigger
-            ref={(element: HTMLButtonElement) => {
-              trigger = element;
-              element.addEventListener('keydown', openWithKeyboard, true);
-              onCleanup(() =>
-                element.removeEventListener('keydown', openWithKeyboard, true)
-              );
-            }}
-            variant="plain"
-            class="group h-auto min-h-9 w-full min-w-0 justify-between rounded px-2.5 py-1 text-left outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50"
-            aria-label={`${props.column.name}: ${label() || 'Empty'}`}
-            onKeyDown={(event: KeyboardEvent) => {
-              if (event.isComposing || event.keyCode === 229) {
-                edit('');
-                return;
-              }
-              navigate(event);
-              if (
-                !event.defaultPrevented &&
-                event.key.length === 1 &&
-                !event.ctrlKey &&
-                !event.metaKey &&
-                !event.altKey &&
-                event.key !== ' '
-              ) {
-                event.preventDefault();
-                edit(event.key);
-              }
-            }}
-          >
-            <Show
-              when={label()}
-              fallback={
-                <span class="text-xs text-ink-placeholder opacity-40">—</span>
-              }
-            >
-              <span class="flex min-w-0 flex-wrap gap-1">
-                <For each={selected()}>
-                  {(value) => (
-                    <SelectPill label={value} column={props.column} />
-                  )}
-                </For>
-              </span>
-            </Show>
-            <CaretDownIcon class="ml-1 size-3 shrink-0 text-ink-muted opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" />
-          </Dropdown.Trigger>
-          <Dropdown.Content
-            ref={(element: HTMLElement) => {
-              menu = element;
-              element.addEventListener('keydown', menuKeyDown, true);
-              onCleanup(() =>
-                element.removeEventListener('keydown', menuKeyDown, true)
-              );
-            }}
-            class="min-w-48 max-w-72"
-            // A menu's closing animation must not delay Tab into the next cell.
-            style={{ animation: 'none' }}
-            onOpenAutoFocus={(event) => {
-              if (searching()) {
-                event.preventDefault();
-                queueMicrotask(() => searchInput?.focus());
-              }
-            }}
-            onFocusIn={(event) => {
-              // Kobalte also focuses the menu after its deferred collection
-              // setup. A typed search owns focus until the user chooses a row.
-              if (searching() && event.target === menu) searchInput?.focus();
-            }}
-            onCloseAutoFocus={(event) => {
-              if (navigating) {
-                event.preventDefault();
-                const direction = navigating;
-                navigating = undefined;
-                // Wait until the menu releases its focus trap and restores its
-                // trigger before mounting the next cell's editor.
-                queueMicrotask(() => moveToCell(direction));
-              }
-            }}
-          >
-            <Show when={searching()}>
-              <input
-                ref={searchInput}
-                aria-label={`Search ${props.column.name} options`}
-                value={search()}
-                onInput={(event) => setSearch(event.currentTarget.value)}
-                on:focusin={(event) => event.stopPropagation()}
-                on:keydown={(event) => {
-                  event.stopPropagation();
-                  if (event.isComposing || event.keyCode === 229) return;
-                  navigate(event);
-                  if (event.key === 'Enter' && options()[0] !== undefined) {
-                    event.preventDefault();
-                    void choose(String(options()[0]));
-                    if (!props.column.isMultiSelect) setOpen(false);
-                  } else if (event.key === 'ArrowDown') {
-                    event.preventDefault();
-                    menu
-                      ?.querySelector<HTMLElement>('[data-option-value]')
-                      ?.focus();
-                  } else if (event.key === 'Escape') {
-                    event.preventDefault();
-                    setOpen(false);
-                  }
-                }}
-                class="mb-1 h-8 w-full rounded border border-edge-muted bg-input px-2 text-xs outline-none focus:border-ink/50"
-              />
-            </Show>
-            <Dropdown.Group>
-              <Dropdown.GroupLabel>{props.column.name}</Dropdown.GroupLabel>
-              <Dropdown.Item onSelect={() => void props.onWrite(null)}>
-                <span class="flex-1 text-ink-muted">Clear value</span>
-                <Show when={props.value === null}>
-                  <CheckIcon class="size-3.5" />
-                </Show>
-              </Dropdown.Item>
-              <For each={options()}>
-                {(option) => (
-                  <Show
-                    when={props.column.isMultiSelect}
-                    fallback={
-                      <Dropdown.Item
-                        data-option-value={String(option)}
-                        onSelect={() => void props.onWrite(String(option))}
-                      >
-                        <span class="min-w-0 flex-1">
-                          <SelectPill
-                            label={String(option)}
-                            column={props.column}
-                          />
-                        </span>
-                        <Show when={String(option) === label()}>
-                          <CheckIcon class="size-3.5 text-ink-muted" />
-                        </Show>
-                      </Dropdown.Item>
-                    }
-                  >
-                    <Dropdown.CheckboxItem
-                      data-option-value={String(option)}
-                      checked={selected().includes(String(option))}
-                      closeOnSelect={false}
-                      onChange={(checked) =>
-                        void choose(String(option), checked)
-                      }
-                    >
-                      <SelectPill
-                        label={String(option)}
-                        column={props.column}
-                      />
-                    </Dropdown.CheckboxItem>
-                  </Show>
-                )}
-              </For>
-            </Dropdown.Group>
-            <Dropdown.Group>
-              <Dropdown.Item
-                onSelect={() => {
-                  setDraft('');
-                  setError('');
-                  setAdding(true);
-                }}
-              >
-                <PlusIcon class="size-3.5" />
-                Add option
-              </Dropdown.Item>
-            </Dropdown.Group>
-          </Dropdown.Content>
-        </Dropdown>
-      }
+    <Popover
+      open={open()}
+      onOpenChange={(value) => {
+        setOpen(value);
+        if (!value) setSearch('');
+      }}
+      placement="bottom-start"
+      gutter={4}
     >
-      <div ref={optionEditor} class="p-1">
-        <NewOptionInput
-          value={draft()}
-          pending={pending()}
-          onInput={setDraft}
-          onSave={() => void add()}
-          onCancel={closeOptionEditor}
-        />
-        <Show when={error()}>
-          <p role="alert" class="px-1 text-xs text-failure-ink">
-            {error()}
-          </p>
-        </Show>
-      </div>
-    </Show>
-  );
-}
-
-function NewOptionInput(props: {
-  value: string;
-  pending: boolean;
-  onInput: (value: string) => void;
-  onSave: () => void;
-  onCancel: () => void;
-}) {
-  let input: HTMLInputElement | undefined;
-  // Wait for the closing menu to restore focus before focusing its replacement.
-  onMount(() => queueMicrotask(() => input?.focus()));
-  return (
-    <div class="flex items-center gap-1">
-      <input
-        ref={input}
-        aria-label="New option"
-        maxlength={200}
-        placeholder="New option…"
-        value={props.value}
-        readOnly={props.pending}
-        class="min-h-8 w-full min-w-0 rounded border border-ink/40 bg-input px-2 text-xs outline-none"
-        onInput={(event) => props.onInput(event.currentTarget.value)}
-        onKeyDown={(event) => {
-          event.stopPropagation();
-          if (event.isComposing || event.keyCode === 229) return;
-          if (event.key === 'Enter') {
-            event.preventDefault();
-            props.onSave();
+      <Popover.Trigger
+        ref={(element: HTMLButtonElement) => {
+          trigger = element;
+          element.addEventListener('keydown', openWithKeyboard, true);
+          onCleanup(() =>
+            element.removeEventListener('keydown', openWithKeyboard, true)
+          );
+        }}
+        class="group flex h-auto min-h-9 w-full min-w-0 items-center justify-between rounded px-2.5 py-1 text-left outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50"
+        aria-label={`${props.column.name}: ${label() || 'Empty'}`}
+        aria-haspopup="listbox"
+        onKeyDown={(event: KeyboardEvent) => {
+          if (event.isComposing || event.keyCode === 229) {
+            edit('');
+            return;
           }
-          if (event.key === 'Escape') {
+          if (event.key === 'Tab' && props.onNavigate) {
             event.preventDefault();
-            props.onCancel();
+            event.stopPropagation();
+            moveToCell(event.shiftKey ? -1 : 1);
+          } else if (
+            event.key.length === 1 &&
+            !event.ctrlKey &&
+            !event.metaKey &&
+            !event.altKey &&
+            event.key !== ' '
+          ) {
+            event.preventDefault();
+            edit(event.key);
           }
         }}
-      />
-      <button
-        type="button"
-        aria-label="Save option"
-        disabled={props.pending || !props.value.trim()}
-        class="rounded p-1.5 text-accent hover:bg-hover disabled:opacity-40"
-        onClick={props.onSave}
       >
-        <CheckIcon class="size-3.5" />
-      </button>
-    </div>
+        <Show
+          when={label()}
+          fallback={
+            <span class="text-xs text-ink-placeholder opacity-40">—</span>
+          }
+        >
+          <span class="flex min-w-0 flex-wrap gap-1">
+            <For each={selected()}>
+              {(value) => <SelectPill label={value} column={props.column} />}
+            </For>
+          </span>
+        </Show>
+        <CaretDownIcon class="ml-1 size-3 shrink-0 text-ink-muted opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          class="z-action-menu rounded-lg border border-edge bg-menu p-1 text-ink shadow-menu outline-none"
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            searchInput?.focus();
+          }}
+          onCloseAutoFocus={(event) => {
+            if (!navigating) return;
+            event.preventDefault();
+            const direction = navigating;
+            navigating = undefined;
+            // Wait until the popover restores its trigger before mounting the
+            // next cell's editor.
+            queueMicrotask(() => moveToCell(direction));
+          }}
+        >
+          <OptionPicker
+            column={props.column}
+            selected={selected()}
+            search={search()}
+            onSearch={(value) => {
+              setSearch(value);
+              setError('');
+            }}
+            onPick={pick}
+            onClear={() => {
+              void props.onWrite(null);
+              setOpen(false);
+            }}
+            onCreate={(value) => void create(value)}
+            onKeyDown={tabAway}
+            editing={editing}
+            inputRef={(element) => {
+              searchInput = element;
+            }}
+            error={error()}
+          />
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover>
   );
 }
 

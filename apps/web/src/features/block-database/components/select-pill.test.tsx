@@ -7,23 +7,22 @@ afterEach(cleanup);
 
 const column = (
   dataType: string,
-  optionColors: Record<string, string> = {}
+  blocked: string | null = null
 ): DatabaseViewColumn => ({
   id: 'status',
   name: 'Status',
   dataType,
   isMultiSelect: false,
-  options: ['Done', 'Blocked'],
-  optionColors,
+  options: [
+    { id: 'done', label: 'Done', color: null },
+    { id: 'blocked', label: 'Blocked', color: blocked },
+  ],
   writable: true,
 });
 
 it('draws a stored option colour instead of guessing one from the label', () => {
   render(() => (
-    <SelectPill
-      label="Blocked"
-      column={column('SELECT_STRING', { Blocked: '#123456' })}
-    />
+    <SelectPill label="Blocked" column={column('SELECT_STRING', '#123456')} />
   ));
   const dot = screen
     .getByTitle('Blocked')

@@ -38,7 +38,8 @@ const column: DatabaseViewColumn = {
 };
 beforeEach(() => {
   const style = document.createElement('style');
-  style.textContent = '[role="menu"] { animation-name: none; }';
+  style.textContent =
+    '[role="menu"], [role="dialog"] { animation-name: none; }';
   document.head.append(style);
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
 });
@@ -91,7 +92,14 @@ describe('grid cell', () => {
         <>
           <button type="button">Before grid</button>
           <GridCell
-            column={{ ...column, dataType, options: ['Original', 'Done'] }}
+            column={{
+              ...column,
+              dataType,
+              options: [
+                { id: 'original', label: 'Original', color: null },
+                { id: 'done', label: 'Done', color: null },
+              ],
+            }}
             value="Original"
             canEdit
             onWrite={vi.fn(async () => true)}
@@ -105,18 +113,30 @@ describe('grid cell', () => {
         </>
       ));
       control?.edit();
-      if (dataType === 'SELECT_STRING')
-        (await screen.findByRole('menuitem', { name: 'Done' })).focus();
+      if (dataType === 'SELECT_STRING') {
+        const search = await screen.findByRole('combobox', {
+          name: 'Search Name options',
+        });
+        await waitFor(() => expect(document.activeElement).toBe(search));
+      }
       await userEvent.tab();
-      expect(document.activeElement).toBe(
-        screen.getByRole('button', { name: 'After grid' })
+      await waitFor(() =>
+        expect(document.activeElement).toBe(
+          screen.getByRole('button', { name: 'After grid' })
+        )
       );
       control?.edit();
-      if (dataType === 'SELECT_STRING')
-        (await screen.findByRole('menuitem', { name: 'Done' })).focus();
+      if (dataType === 'SELECT_STRING') {
+        const search = await screen.findByRole('combobox', {
+          name: 'Search Name options',
+        });
+        await waitFor(() => expect(document.activeElement).toBe(search));
+      }
       await userEvent.tab({ shift: true });
-      expect(document.activeElement).toBe(
-        screen.getByRole('button', { name: 'Before grid' })
+      await waitFor(() =>
+        expect(document.activeElement).toBe(
+          screen.getByRole('button', { name: 'Before grid' })
+        )
       );
     }
   );
@@ -255,7 +275,10 @@ describe('grid cell', () => {
             name: 'Labels',
             dataType: 'SELECT_STRING',
             isMultiSelect: true,
-            options: ['Alpha', 'Beta'],
+            options: [
+              { id: 'alpha', label: 'Alpha', color: null },
+              { id: 'beta', label: 'Beta', color: null },
+            ],
           }}
           value={value()}
           canEdit
@@ -270,20 +293,30 @@ describe('grid cell', () => {
     await userEvent.click(
       screen.getByRole('button', { name: /Labels: Alpha/ })
     );
-    await userEvent.click(
-      await screen.findByRole('menuitemcheckbox', { name: 'Beta' })
-    );
+    expect(
+      screen
+        .getByRole('listbox', { name: 'Labels options' })
+        .getAttribute('aria-multiselectable')
+    ).toBe('true');
+    await userEvent.click(await screen.findByRole('option', { name: 'Beta' }));
     await waitFor(() =>
       expect(write).toHaveBeenLastCalledWith('["Alpha","Beta"]')
     );
-    await userEvent.click(
-      screen.getByRole('menuitemcheckbox', { name: 'Alpha' })
-    );
+    expect(
+      screen.getByRole('option', { name: 'Beta' }).getAttribute('aria-selected')
+    ).toBe('true');
+    await userEvent.click(screen.getByRole('option', { name: 'Alpha' }));
     await waitFor(() => expect(write).toHaveBeenLastCalledWith('["Beta"]'));
-    await userEvent.click(
-      screen.getByRole('menuitemcheckbox', { name: 'Beta' })
-    );
+    expect(
+      screen
+        .getByRole('option', { name: 'Alpha' })
+        .getAttribute('aria-selected')
+    ).toBe('false');
+    await userEvent.click(screen.getByRole('option', { name: 'Beta' }));
     await waitFor(() => expect(write).toHaveBeenLastCalledWith(null));
+    expect(
+      screen.getByRole('listbox', { name: 'Labels options' })
+    ).toBeTruthy();
   });
 
   it('keeps explicit text columns as literal text when @ is typed', async () => {
@@ -732,7 +765,10 @@ describe('grid cell', () => {
             id: 'status',
             name: 'Status',
             dataType: 'SELECT_STRING',
-            options: ['To do', 'Done'],
+            options: [
+              { id: 'to-do', label: 'To do', color: null },
+              { id: 'done', label: 'Done', color: null },
+            ],
           }}
           value="To do"
           canEdit
@@ -759,14 +795,15 @@ describe('grid cell', () => {
       </>
     ));
     select?.edit();
-    const option = await screen.findByRole('menuitem', { name: 'Done' });
-    await waitFor(() =>
-      expect(document.activeElement).toBe(
-        screen.getByRole('textbox', { name: 'Search Status options' })
-      )
-    );
-    await userEvent.keyboard('{ArrowDown}{ArrowDown}');
-    expect(document.activeElement).toBe(option);
+    const option = await screen.findByRole('option', { name: 'Done' });
+    const search = screen.getByRole('combobox', {
+      name: 'Search Status options',
+    });
+    await waitFor(() => expect(document.activeElement).toBe(search));
+    // The rows are Clear value, To do, then Done.
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}{ArrowDown}');
+    expect(search.getAttribute('aria-activedescendant')).toBe(option.id);
+    expect(document.activeElement).toBe(search);
     await userEvent.tab();
     const input = await screen.findByRole('textbox', { name: 'Edit Name' });
     await waitFor(() => expect(document.activeElement).toBe(input));
@@ -786,7 +823,10 @@ describe('grid cell', () => {
           column={{
             ...column,
             dataType: 'SELECT_STRING',
-            options: ['To do', 'Done'],
+            options: [
+              { id: 'to-do', label: 'To do', color: null },
+              { id: 'done', label: 'Done', color: null },
+            ],
           }}
           value="To do"
           canEdit
@@ -799,21 +839,23 @@ describe('grid cell', () => {
     ));
     screen.getByRole('button', { name: 'Name: To do' }).focus();
     await userEvent.keyboard('Done');
-    expect(
-      (
-        screen.getByRole('textbox', {
-          name: 'Search Name options',
-        }) as HTMLInputElement
-      ).value
-    ).toBe('Done');
+    const search = screen.getByRole('combobox', {
+      name: 'Search Name options',
+    }) as HTMLInputElement;
+    expect(search.value).toBe('Done');
+    expect(screen.getAllByRole('option').map((row) => row.textContent)).toEqual(
+      ['Done']
+    );
     await userEvent.keyboard('{ArrowDown}');
-    expect(document.activeElement).toBe(
-      screen.getByRole('menuitem', { name: 'Done' })
+    expect(search.getAttribute('aria-activedescendant')).toBe(
+      screen.getByRole('option', { name: 'Done' }).id
     );
     await userEvent.keyboard('{Escape}Done{Tab}');
     expect(onWrite).toHaveBeenCalledExactlyOnceWith('Done');
-    expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: 'After grid' })
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'After grid' })
+      )
     );
   });
 
@@ -825,7 +867,10 @@ describe('grid cell', () => {
           ...column,
           name: 'Status',
           dataType: 'SELECT_STRING',
-          options: ['To do', 'Done'],
+          options: [
+            { id: 'to-do', label: 'To do', color: null },
+            { id: 'done', label: 'Done', color: null },
+          ],
         }}
         value="To do"
         canEdit
@@ -836,7 +881,7 @@ describe('grid cell', () => {
     fireEvent.keyDown(screen.getByRole('button', { name: 'Status: To do' }), {
       key: 'D',
     });
-    const input = (await screen.findByRole('textbox', {
+    const input = (await screen.findByRole('combobox', {
       name: 'Search Status options',
     })) as HTMLInputElement;
     expect(input.value).toBe('D');
@@ -851,7 +896,11 @@ describe('grid cell', () => {
     const onAddOption = vi.fn(async () => true);
     render(() => (
       <GridCell
-        column={{ ...column, dataType: 'SELECT_NUMBER', options: ['2'] }}
+        column={{
+          ...column,
+          dataType: 'SELECT_NUMBER',
+          options: [{ id: 'two', label: '2', color: null }],
+        }}
         value="2"
         canEdit
         onWrite={vi.fn(async () => true)}
@@ -861,28 +910,28 @@ describe('grid cell', () => {
     const trigger = screen.getByRole('button', { name: 'Name: 2' });
     trigger.focus();
     fireEvent.keyDown(trigger, { key: 'Enter' });
-    fireEvent.keyDown(
-      await screen.findByRole('menuitem', { name: 'Add option' }),
-      { key: 'Enter' }
-    );
-    fireEvent.input(
-      await screen.findByRole('textbox', { name: 'New option' }),
-      { target: { value: '1.0' } }
-    );
-    fireEvent.keyDown(screen.getByRole('textbox', { name: 'New option' }), {
-      key: 'Enter',
+    const search = await screen.findByRole('combobox', {
+      name: 'Search Name options',
     });
-    await waitFor(() => expect(onAddOption).toHaveBeenCalledWith('1'));
+    fireEvent.input(search, { target: { value: '1.0' } });
+    expect(screen.getByRole('option', { name: 'Create “1”' })).toBeTruthy();
+    fireEvent.keyDown(search, { key: 'Enter' });
+    await waitFor(() =>
+      expect(onAddOption).toHaveBeenCalledExactlyOnceWith('1')
+    );
   });
 
-  it('focuses a new select option after closing the menu and saves through the option action', async () => {
+  it('creates a typed select option, closes the popover and returns focus to the cell', async () => {
     const onAddOption = vi.fn(async () => true);
     render(() => (
       <GridCell
         column={{
           ...column,
           dataType: 'SELECT_STRING',
-          options: ['To do', 'Done'],
+          options: [
+            { id: 'to-do', label: 'To do', color: null },
+            { id: 'done', label: 'Done', color: null },
+          ],
         }}
         value="To do"
         canEdit
@@ -893,21 +942,23 @@ describe('grid cell', () => {
     const trigger = screen.getByRole('button', { name: 'Name: To do' });
     trigger.focus();
     fireEvent.keyDown(trigger, { key: 'Enter' });
-    fireEvent.keyDown(
-      await screen.findByRole('menuitem', { name: 'Add option' }),
-      { key: 'Enter' }
+    const search = await screen.findByRole('combobox', {
+      name: 'Search Name options',
+    });
+    await waitFor(() => expect(document.activeElement).toBe(search));
+    await userEvent.keyboard('In review');
+    await userEvent.click(
+      screen.getByRole('option', { name: 'Create “In review”' })
     );
-    const input = await screen.findByRole('textbox', { name: 'New option' });
-    await waitFor(() => expect(document.activeElement).toBe(input));
-    fireEvent.input(input, { target: { value: 'In review' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-    await waitFor(() => expect(onAddOption).toHaveBeenCalledWith('In review'));
+    await waitFor(() =>
+      expect(onAddOption).toHaveBeenCalledExactlyOnceWith('In review')
+    );
     await waitFor(() =>
       expect(document.activeElement).toBe(
         screen.getByRole('button', { name: 'Name: To do' })
       )
     );
-    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.queryByRole('listbox')).toBeNull();
   });
 
   it('edits with Enter, restores focus, and saves the exact text', async () => {

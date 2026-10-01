@@ -4,6 +4,7 @@ import {
   MenuSeparator,
 } from '@core/component/ContextMenu';
 import { ContextMenu } from '@kobalte/core/context-menu';
+import { Popover } from '@kobalte/core/popover';
 import ArrowDownIcon from '@phosphor/arrow-down.svg';
 import ArrowLeftIcon from '@phosphor/arrow-left.svg';
 import ArrowRightIcon from '@phosphor/arrow-right.svg';
@@ -12,14 +13,17 @@ import CaretDownIcon from '@phosphor/caret-down.svg';
 import ColumnsPlusLeftIcon from '@phosphor/columns-plus-left.svg';
 import ColumnsPlusRightIcon from '@phosphor/columns-plus-right.svg';
 import EyeSlashIcon from '@phosphor/eye-slash.svg';
+import ListBulletsIcon from '@phosphor/list-bullets.svg';
 import PencilIcon from '@phosphor/pencil-simple.svg';
 import TrashIcon from '@phosphor/trash.svg';
 import XIcon from '@phosphor/x.svg';
+import { Key } from '@solid-primitives/keyed';
 import { ConfirmDialog } from '@ui/components/ConfirmDialog';
 import { DeleteDialog } from '@ui/components/DeleteDialog';
 import { Dropdown } from '@ui/components/Dropdown';
 import type { JSX } from 'solid-js';
 import { createSignal, createUniqueId, For, onCleanup, Show } from 'solid-js';
+import { useOptionEditing } from '../context/option-editing';
 import {
   columnSchemaMessage,
   type DatabaseColumnCastsSource,
@@ -31,7 +35,9 @@ import {
   ColumnTypeMenu,
   type DatabaseColumnClearingChoice,
 } from './column-type-menu';
+import { OptionEditor } from './option-editor';
 import { PropertyIcon } from './property-icon';
+import { OptionPill } from './select-pill';
 
 export type DatabaseColumnHeaderProps = {
   column: DatabaseViewColumn;
@@ -61,6 +67,8 @@ export type DatabaseColumnHeaderProps = {
   onInsert?: (columnId: string, side: 'left' | 'right') => void;
   canMoveLeft?: boolean;
   canMoveRight?: boolean;
+  /** Drawn on the header's right edge. */
+  resizeHandle?: JSX.Element;
 };
 
 /** Header interactions stay local; the host supplies the persisted rename. */
@@ -75,6 +83,19 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [deleteOpen, setDeleteOpen] = createSignal(false);
   const [clearing, setClearing] = createSignal<DatabaseColumnClearingChoice>();
+  const [optionsOpen, setOptionsOpen] = createSignal(false);
+  /** The options open once the menu has closed, instead of the menu giving focus back. */
+  let optionsRequested = false;
+  const openRequestedOptions = (event: Event) => {
+    if (!optionsRequested) return;
+    optionsRequested = false;
+    event.preventDefault();
+    setOptionsOpen(true);
+  };
+  const editing = useOptionEditing();
+  const hasOptions = () =>
+    !props.column.relation &&
+    ['SELECT_STRING', 'SELECT_NUMBER', 'TAG'].includes(props.column.dataType);
   const errorId = createUniqueId();
   let header!: HTMLDivElement;
   let input: HTMLInputElement | undefined;
@@ -180,6 +201,18 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
             icon: ColumnsPlusRightIcon,
             group: 'edit',
             run: () => props.onInsert?.(props.column.id, 'right'),
+          },
+        ]
+      : []),
+    ...(canRename() && editing && hasOptions()
+      ? [
+          {
+            label: 'Edit options',
+            icon: ListBulletsIcon,
+            group: 'edit',
+            run: () => {
+              optionsRequested = true;
+            },
           },
         ]
       : []),
@@ -348,6 +381,7 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
                     class="min-w-44"
                     onCloseAutoFocus={(event) => {
                       if (draft()) event.preventDefault();
+                      openRequestedOptions(event);
                     }}
                   >
                     <For each={['edit', 'view', 'delete']}>
@@ -455,6 +489,7 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
               </div>
             )}
           </Show>
+          {props.resizeHandle}
           <Show when={error() && !deleteOpen()}>
             <p
               id={errorId}
@@ -470,6 +505,7 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
             class="min-w-44"
             onCloseAutoFocus={(event) => {
               if (draft()) event.preventDefault();
+              openRequestedOptions(event);
             }}
           >
             <For each={actions()}>
@@ -496,6 +532,60 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
           </ContextMenuContent>
         </ContextMenu.Portal>
       </ContextMenu>
+      <Show when={editing}>
+        {(optionEditing) => (
+          <Popover
+            open={optionsOpen()}
+            onOpenChange={setOptionsOpen}
+            anchorRef={() => header}
+            placement="bottom-start"
+            gutter={4}
+          >
+            <Popover.Portal>
+              <Popover.Content
+                aria-label={`${props.column.name} options`}
+                // Opened as the column menu closes, so focus is still settling.
+                onFocusOutside={(event) => event.preventDefault()}
+                onCloseAutoFocus={(event) => {
+                  event.preventDefault();
+                  restoreFocus();
+                }}
+                class="z-action-menu flex w-60 flex-col gap-1 rounded-lg border border-edge bg-menu p-2 text-xs text-ink shadow-menu outline-none"
+              >
+                <Popover.Title class="px-1 pb-1 font-medium">
+                  Options
+                </Popover.Title>
+                <Key each={props.column.options} by="id">
+                  {(option) => (
+                    <div class="flex h-7 items-center gap-1.5 rounded px-1 hover:bg-hover">
+                      <span class="min-w-0 flex-1">
+                        <OptionPill
+                          label={option().label}
+                          color={option().color}
+                          tag={props.column.dataType === 'TAG'}
+                        />
+                      </span>
+                      <OptionEditor
+                        column={props.column}
+                        option={option()}
+                        editing={optionEditing()}
+                      />
+                    </div>
+                  )}
+                </Key>
+                <Show when={!props.column.options.length}>
+                  <p class="px-1 text-ink-placeholder">No options yet</p>
+                </Show>
+                <Show when={props.column.sharedOutsideDatabase}>
+                  <p class="px-1 pt-1 text-ink-muted">
+                    Changes everywhere this property is used.
+                  </p>
+                </Show>
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover>
+        )}
+      </Show>
       <ConfirmDialog
         open={!!clearing()}
         onOpenChange={(open) => {

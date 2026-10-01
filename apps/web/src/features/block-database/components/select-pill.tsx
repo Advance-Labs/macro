@@ -1,7 +1,7 @@
 import { TagDot } from '@property/tags/TagDot';
 import { Badge } from '@ui';
 import { Show } from 'solid-js';
-import type { DatabaseViewColumn } from '../core/database-view';
+import { type DatabaseViewColumn, optionOf } from '../core/database-view';
 
 /** An option value drawn like a task's: tags and coloured options carry a dot. */
 export function OptionPill(props: {
@@ -35,7 +35,7 @@ export function SelectPill(props: {
   return (
     <OptionPill
       label={props.label}
-      color={props.column?.optionColors?.[props.label]}
+      color={props.column && optionOf(props.column, props.label)?.color}
       tag={props.column?.dataType === 'TAG'}
       empty={props.empty}
     />
