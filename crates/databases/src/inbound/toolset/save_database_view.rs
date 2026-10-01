@@ -88,17 +88,18 @@ impl ToolAnnotated for SaveDatabaseView {
 }
 
 #[async_trait]
-impl<S, E> AsyncTool<DatabasesToolContext<S, E>> for SaveDatabaseView
+impl<Service, EntityAccess> AsyncTool<DatabasesToolContext<Service, EntityAccess>>
+    for SaveDatabaseView
 where
-    S: DatabasesService,
-    E: EntityAccessService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
 {
     type Output = SavedDatabaseView;
 
     #[tracing::instrument(skip_all, fields(user_id = ?request_context.user_id, database_id = %self.database_id, table_id = %self.table_id), err)]
     async fn call(
         &self,
-        service_context: ServiceContext<DatabasesToolContext<S, E>>,
+        service_context: ServiceContext<DatabasesToolContext<Service, EntityAccess>>,
         request_context: RequestContext,
     ) -> ToolResult<Self::Output> {
         let user_id = &request_context.user_id;
@@ -106,9 +107,7 @@ where
             .current_schema(user_id, self.database_id)
             .await?;
         let existing = table_of(&schema, self.table_id)?
-            .views
-            .iter()
-            .find(|view| view.name.trim().eq_ignore_ascii_case(self.name.trim()))
+            .view_named(&self.name)
             .map(|view| view.id);
         let op = match existing {
             Some(view) => DatabaseOp::UpdateView {

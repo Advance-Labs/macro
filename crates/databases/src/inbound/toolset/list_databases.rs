@@ -50,21 +50,19 @@ pub struct ListDatabasesResponse {
 }
 
 #[async_trait]
-impl<S, E> AsyncTool<DatabasesToolContext<S, E>> for ListDatabases
+impl<Service, EntityAccess> AsyncTool<DatabasesToolContext<Service, EntityAccess>> for ListDatabases
 where
-    S: DatabasesService,
-    E: EntityAccessService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
 {
     type Output = ListDatabasesResponse;
 
     #[tracing::instrument(skip_all, fields(user_id = ?request_context.user_id), err)]
     async fn call(
         &self,
-        service_context: ServiceContext<DatabasesToolContext<S, E>>,
+        service_context: ServiceContext<DatabasesToolContext<Service, EntityAccess>>,
         request_context: RequestContext,
     ) -> ToolResult<Self::Output> {
-        tracing::info!("List databases");
-
         let databases = service_context
             .service
             .list_databases(service_context.viewer(&request_context.user_id))

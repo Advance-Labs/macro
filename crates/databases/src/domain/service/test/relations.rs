@@ -222,3 +222,50 @@ async fn changing_a_linked_columns_type_requires_clearing_its_relations_first() 
         relation_column.property_definition_id
     );
 }
+
+#[tokio::test]
+async fn a_relation_with_a_type_other_than_entity_is_refused() {
+    let Linked {
+        seeded,
+        sessions_table,
+        relation_column,
+        ..
+    } = linked().await;
+    let version = seeded
+        .world
+        .lock()
+        .unwrap()
+        .tables
+        .iter()
+        .find(|table| table.id == seeded.table_id)
+        .unwrap()
+        .version;
+
+    let result = seeded
+        .service
+        .change_column_type(
+            receipt(seeded.database_id, OWNER, AccessLevel::Edit),
+            viewer(OWNER),
+            ChangeColumnType {
+                table_id: seeded.table_id,
+                column_id: relation_column.id,
+                data_type: DataType::String,
+                is_multi_select: true,
+                specific_entity_type: None,
+                relation: Some((seeded.database_id, sessions_table)),
+                base_version: version,
+                clear_invalid: false,
+            },
+        )
+        .await;
+
+    assert!(
+        matches!(
+            result,
+            Err(DatabaseError::InvalidSchemaOperation(
+                SchemaError::RelationNotEntity
+            ))
+        ),
+        "{result:?}"
+    );
+}

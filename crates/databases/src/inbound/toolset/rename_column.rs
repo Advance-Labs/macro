@@ -1,7 +1,8 @@
 //! RenameColumn tool: relabel a column, keeping its values and id.
 
 use ai_toolset::{
-    AsyncTool, RequestContext, ServiceContext, ToolAnnotated, ToolAnnotations, ToolResult,
+    AsyncTool, RequestContext, ServiceContext, ToolAnnotated, ToolAnnotations, ToolCallError,
+    ToolResult,
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
@@ -10,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::{
-    DatabasesToolContext, ToolDatabaseSchema, column_label, column_of, database_error, table_of,
+    DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, column_of,
+    database_error, table_of,
 };
 use crate::domain::ports::DatabasesService;
 
@@ -62,14 +64,15 @@ pub struct RenameColumnResponse {
     pub database: Option<ToolDatabaseSchema>,
     /// A failed follow-up read does not undo the committed rename.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub warning: Option<String>,
+    #[schemars(with = "Option<String>")]
+    pub warning: Option<WriteWarnings>,
 }
 
 #[async_trait]
-impl<S, E> AsyncTool<DatabasesToolContext<S, E>> for RenameColumn
+impl<Service, EntityAccess> AsyncTool<DatabasesToolContext<Service, EntityAccess>> for RenameColumn
 where
-    S: DatabasesService,
-    E: EntityAccessService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
 {
     type Output = RenameColumnResponse;
 
@@ -81,7 +84,7 @@ where
     ), err)]
     async fn call(
         &self,
-        service_context: ServiceContext<DatabasesToolContext<S, E>>,
+        service_context: ServiceContext<DatabasesToolContext<Service, EntityAccess>>,
         request_context: RequestContext,
     ) -> ToolResult<Self::Output> {
         let user_id = &request_context.user_id;
@@ -89,10 +92,9 @@ where
         let detail = service_context
             .current_schema(user_id, self.database_id)
             .await?;
-        let previous_name = column_label(column_of(
-            table_of(&detail, self.table_id)?,
-            self.column_id,
-        )?);
+        let previous_name = column_of(table_of(&detail, self.table_id)?, self.column_id)?
+            .name()
+            .to_string();
 
         let receipt = service_context
             .edit_receipt(user_id, self.database_id)
@@ -109,15 +111,23 @@ where
             .await
             .map_err(database_error)?;
 
-        let (database, warning) = service_context
+        // A rename always stores the placement's own label.
+        let Some(renamed_name) = outcome.column.display_name else {
+            return Err(ToolCallError {
+                description: "The column was renamed, but the service did not answer its new \
+                              name. Call DescribeDatabase before continuing."
+                    .into(),
+                internal_error: anyhow::anyhow!("a renamed column came back without a label"),
+            });
+        };
+        let SchemaAfterWrite { database, warning } = service_context
             .schema_after_write(user_id, self.database_id)
             .await;
         Ok(RenameColumnResponse {
             database_id: self.database_id,
             table_id: self.table_id,
             column_id: outcome.column.id,
-            // The service stores the name trimmed.
-            name: self.name.trim().to_string(),
+            name: renamed_name,
             database,
             warning,
         })

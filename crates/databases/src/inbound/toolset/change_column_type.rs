@@ -1,8 +1,7 @@
 //! ChangeColumnType tool: retype a column, converting its values.
 
 use ai_toolset::{
-    AsyncTool, RequestContext, ServiceContext, ToolAnnotated, ToolAnnotations, ToolCallError,
-    ToolResult,
+    AsyncTool, RequestContext, ServiceContext, ToolAnnotated, ToolAnnotations, ToolResult,
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
@@ -12,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::{
-    ColumnType, DatabasesToolContext, ToolDatabaseSchema, ToolEntityType, column_of,
-    database_error, table_of,
+    ColumnType, DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, ToolEntityType,
+    WriteWarning, WriteWarnings, column_of, database_error, table_of,
 };
 use crate::domain::models::{AddColumnOptions, ChangeColumnType as ChangeColumnTypeCommand};
 use crate::domain::ports::DatabasesService;
@@ -122,14 +121,16 @@ pub struct ChangeColumnTypeResponse {
     pub database: Option<ToolDatabaseSchema>,
     /// Follow-up guidance if part of the change or the schema refresh failed.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub warning: Option<String>,
+    #[schemars(with = "Option<String>")]
+    pub warning: Option<WriteWarnings>,
 }
 
 #[async_trait]
-impl<S, E> AsyncTool<DatabasesToolContext<S, E>> for ChangeColumnType
+impl<Service, EntityAccess> AsyncTool<DatabasesToolContext<Service, EntityAccess>>
+    for ChangeColumnType
 where
-    S: DatabasesService,
-    E: EntityAccessService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
 {
     type Output = ChangeColumnTypeResponse;
 
@@ -142,17 +143,9 @@ where
     ), err)]
     async fn call(
         &self,
-        service_context: ServiceContext<DatabasesToolContext<S, E>>,
+        service_context: ServiceContext<DatabasesToolContext<Service, EntityAccess>>,
         request_context: RequestContext,
     ) -> ToolResult<Self::Output> {
-        if self.link_to_table_id.is_some() && self.data_type != ColumnType::Entity {
-            return Err(ToolCallError {
-                description: "A relation column has dataType `entity`; pass it with \
-                              linkToTableId."
-                    .into(),
-                internal_error: anyhow::anyhow!("relation requested with a non-entity type"),
-            });
-        }
         let user_id = &request_context.user_id;
         let detail = service_context
             .current_schema(user_id, self.database_id)
@@ -174,9 +167,7 @@ where
                     table_id: self.table_id,
                     column_id: self.column_id,
                     data_type,
-                    is_multi_select: self.is_multi_select
-                        || self.link_to_table_id.is_some()
-                        || data_type == DataType::Tag,
+                    is_multi_select: self.is_multi_select,
                     specific_entity_type: self.specific_entity_type.map(Into::into),
                     relation: self
                         .link_to_table_id
@@ -212,18 +203,19 @@ where
             }
             .await;
             if let Err(error) = added {
-                warnings.push(format!(
-                    "The type changed, but the extra options were not added: {} Retry them \
-                     with AddColumnOptions.",
-                    error.description
-                ));
+                warnings.push(WriteWarning::OptionsNotAdded {
+                    cause: error.description,
+                });
             }
         }
 
-        let (database, refresh_warning) = service_context
+        let SchemaAfterWrite {
+            database,
+            warning: refresh_warning,
+        } = service_context
             .schema_after_write(user_id, self.database_id)
             .await;
-        warnings.extend(refresh_warning);
+        warnings.extend(refresh_warning.into_iter().flat_map(|refresh| refresh.0));
         Ok(ChangeColumnTypeResponse {
             database_id: self.database_id,
             table_id: self.table_id,
@@ -231,7 +223,7 @@ where
             cleared_cells: changed.cleared_cells,
             trimmed_cells: changed.trimmed_cells,
             database,
-            warning: (!warnings.is_empty()).then(|| warnings.join(" ")),
+            warning: (!warnings.is_empty()).then_some(WriteWarnings(warnings)),
         })
     }
 }

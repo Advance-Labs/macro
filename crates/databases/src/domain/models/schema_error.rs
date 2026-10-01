@@ -134,6 +134,9 @@ pub enum SchemaError {
     /// A lookup reads through the column being retyped.
     #[error("Remove the lookup that uses this column before changing its type.")]
     LookupBlocksRetype,
+    /// A relation was asked for with a type other than entity.
+    #[error("A relation column's type is entity.")]
+    RelationNotEntity,
     /// The requested type is not one a column can have.
     #[error("Choose a supported column type and its reference target.")]
     UnsupportedColumnType,

@@ -52,13 +52,18 @@ where
         if table.version != command.base_version {
             return Err(DatabaseError::VersionConflict);
         }
+        if command.relation.is_some() && command.data_type != DataType::Entity {
+            return Err(DatabaseError::from(SchemaError::RelationNotEntity));
+        }
+        let command = ChangeColumnType {
+            is_multi_select: command.is_multi_valued(),
+            ..command
+        };
         if (command.specific_entity_type.is_some()
             && (command.data_type != DataType::Entity || command.relation.is_some()))
             || (command.data_type == DataType::Entity
                 && command.relation.is_none()
                 && command.specific_entity_type.is_none())
-            || (command.relation.is_some()
-                && (command.data_type != DataType::Entity || !command.is_multi_select))
             || (command.is_multi_select
                 && !matches!(
                     command.data_type,
@@ -68,7 +73,6 @@ where
                         | DataType::Entity
                         | DataType::Link
                 ))
-            || (command.data_type == DataType::Tag && !command.is_multi_select)
         {
             return Err(DatabaseError::from(SchemaError::UnsupportedColumnType));
         }

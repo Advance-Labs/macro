@@ -15,10 +15,8 @@ use databases::domain::models::{
     Viewer,
 };
 use databases::domain::ports::DatabasesService;
-use entity_access::domain::models::{
-    AccessError, BotAccessScope, EditAccessLevel, EntityAccessReceipt, EntityType,
-    RequiredPermission,
-};
+use databases::domain::receipt::database_receipt;
+use entity_access::domain::models::{AccessError, EditAccessLevel};
 use entity_access::domain::ports::EntityAccessService;
 use models_databases::MAX_STATEMENT_LENGTH;
 use soup::domain::ports::SoupService;
@@ -210,7 +208,7 @@ where
             let (database, detail) = catalog
                 .table(table)
                 .ok_or(SqlError::WrittenTableNotInCatalog { table_id: table })?;
-            let receipt = receipt::<EditAccessLevel, _>(
+            let receipt = database_receipt::<EditAccessLevel, _>(
                 self.entity_access.as_ref(),
                 &viewer,
                 database.database.id,
@@ -287,42 +285,5 @@ fn written_table(query: &Query) -> Option<TableId> {
         Query::Update(update) => Some(update.table),
         Query::Delete(delete) => Some(delete.table),
         Query::AlterColumnType(alter) => Some(alter.table),
-    }
-}
-
-/// A receipt for `database_id` at level `Level`, minted for the viewer the
-/// way the HTTP routes and the agent tools mint it: for the acting agent on
-/// the user's behalf, or for the user.
-async fn receipt<Level, Access>(
-    entity_access: &Access,
-    viewer: &Viewer,
-    database_id: DatabaseId,
-) -> Result<EntityAccessReceipt<Level>, AccessError>
-where
-    Level: RequiredPermission,
-    Access: EntityAccessService,
-{
-    let database_id = database_id.to_string();
-    match viewer.acting_bot {
-        Some(bot) => {
-            entity_access
-                .generate_bot_entity_access_receipt::<Level>(
-                    bot,
-                    BotAccessScope::user(viewer.user_id.clone()),
-                    &database_id,
-                    EntityType::Database,
-                )
-                .await
-        }
-        None => {
-            entity_access
-                .generate_entity_access_receipt::<Level>(
-                    &viewer.user_id,
-                    None,
-                    &database_id,
-                    EntityType::Database,
-                )
-                .await
-        }
     }
 }

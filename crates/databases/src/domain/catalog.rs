@@ -14,7 +14,7 @@ use models_properties::shared::{DataType, PropertyOwner};
 use uuid::Uuid;
 
 use crate::domain::models::{
-    Column, Database, DatabaseId, DatabaseView, PropertyDefinitionId, Table, TableId,
+    Column, Database, DatabaseId, DatabaseView, PropertyDefinitionId, Table, TableId, grant_writes,
 };
 
 /// One table the viewer can see, with what the service needs to write and
@@ -158,7 +158,7 @@ pub fn build_entries(
         .filter_map(|table| {
             let grant = *grants.get(&table.database_id)?;
             let database = *databases_by_id.get(&table.database_id)?;
-            let writable = grant >= AccessLevel::Edit;
+            let writable = grant_writes(grant);
             let columns = columns_by_table
                 .get(&table.id)
                 .into_iter()
@@ -269,6 +269,10 @@ pub fn cast_targets(
     column: &Column,
     definition: &PropertyDefinitionWithOptions,
 ) -> (Vec<ColumnKind>, Vec<ColumnKind>) {
+    // A lookup's type is its source's, so it changes to nothing.
+    if column.is_lookup() {
+        return (Vec::new(), Vec::new());
+    }
     let current = PropertyType::of(column, definition);
     let from = current.cast_kind();
     let mut safe = Vec::new();

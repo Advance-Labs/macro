@@ -1,8 +1,7 @@
 //! RenameTable tool: retitle a tab without touching its records or columns.
 
 use ai_toolset::{
-    AsyncTool, RequestContext, ServiceContext, ToolAnnotated, ToolAnnotations, ToolCallError,
-    ToolResult,
+    AsyncTool, RequestContext, ServiceContext, ToolAnnotated, ToolAnnotations, ToolResult,
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
@@ -10,7 +9,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{DatabasesToolContext, ToolDatabaseSchema, database_error};
+use super::{
+    DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, database_error,
+    table_of,
+};
 use crate::domain::ports::DatabasesService;
 
 /// Rename a table.
@@ -64,14 +66,15 @@ pub struct RenameTableResponse {
     pub database: Option<ToolDatabaseSchema>,
     /// A failed follow-up read does not undo the committed rename.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub warning: Option<String>,
+    #[schemars(with = "Option<String>")]
+    pub warning: Option<WriteWarnings>,
 }
 
 #[async_trait]
-impl<S, E> AsyncTool<DatabasesToolContext<S, E>> for RenameTable
+impl<Service, EntityAccess> AsyncTool<DatabasesToolContext<Service, EntityAccess>> for RenameTable
 where
-    S: DatabasesService,
-    E: EntityAccessService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
 {
     type Output = RenameTableResponse;
 
@@ -82,35 +85,17 @@ where
     ), err)]
     async fn call(
         &self,
-        service_context: ServiceContext<DatabasesToolContext<S, E>>,
+        service_context: ServiceContext<DatabasesToolContext<Service, EntityAccess>>,
         request_context: RequestContext,
     ) -> ToolResult<Self::Output> {
-        tracing::info!("Rename table");
-
         let user_id = &request_context.user_id;
 
         // The service renames only if the name it is replacing is still
         // current; read that name as the caller sees it now.
-        let view_receipt = service_context
-            .view_receipt(user_id, self.database_id)
-            .await?;
         let detail = service_context
-            .service
-            .get_database(view_receipt, service_context.viewer(user_id))
-            .await
-            .map_err(database_error)?;
-        let previous_name = detail
-            .tables
-            .iter()
-            .find(|table| table.table.id == self.table_id)
-            .map(|table| table.table.name.clone())
-            .ok_or_else(|| ToolCallError {
-                description: format!(
-                    "Database {} has no table with id {}. Call DescribeDatabase for its tables.",
-                    self.database_id, self.table_id
-                ),
-                internal_error: anyhow::anyhow!("rename target table not found"),
-            })?;
+            .current_schema(user_id, self.database_id)
+            .await?;
+        let previous_name = table_of(&detail, self.table_id)?.table.name.clone();
 
         let receipt = service_context
             .edit_receipt(user_id, self.database_id)
@@ -121,7 +106,7 @@ where
             .await
             .map_err(database_error)?;
 
-        let (database, warning) = service_context
+        let SchemaAfterWrite { database, warning } = service_context
             .schema_after_write(user_id, self.database_id)
             .await;
 

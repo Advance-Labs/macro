@@ -13,6 +13,9 @@ pub mod entity_mutation;
 pub mod ports;
 
 #[cfg(feature = "ports")]
+pub mod receipt;
+
+#[cfg(feature = "ports")]
 pub mod service;
 
 #[cfg(feature = "ports")]

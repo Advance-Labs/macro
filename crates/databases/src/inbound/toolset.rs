@@ -23,6 +23,7 @@ mod rename_table;
 mod reorder_columns;
 mod reorder_tables;
 mod save_database_view;
+mod write_warning;
 
 #[cfg(test)]
 mod test;
@@ -33,13 +34,12 @@ use ai_toolset::{AsyncToolCollection, ToolCallError};
 use bot_id::BotId;
 use entity_access::domain::{
     models::{
-        AccessError, AccessLevel, BotAccessScope, EditAccessLevel, EntityAccessReceipt,
+        AccessError, AccessLevel, EditAccessLevel, EntityAccessReceipt, RequiredPermission,
         ViewAccessLevel,
     },
     ports::EntityAccessService,
 };
 use macro_user_id::user_id::MacroUserIdStr;
-use model_entity::EntityType;
 use models_properties::shared::DataType;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -51,6 +51,15 @@ use crate::domain::models::{
     TableDetail, Viewer,
 };
 use crate::domain::ports::DatabasesService;
+use crate::domain::receipt::database_receipt;
+
+/// A committed write's schema read-back: the schema, or why it is missing.
+pub(crate) struct SchemaAfterWrite {
+    /// The database's schema after the write, when it could be read.
+    pub(crate) database: Option<ToolDatabaseSchema>,
+    /// Why it could not be.
+    pub(crate) warning: Option<WriteWarnings>,
+}
 
 pub use add_column::{AddColumn, AddColumnResponse};
 pub use add_column_options::{AddColumnOptions, AddColumnOptionsResponse};
@@ -67,18 +76,21 @@ pub use rename_table::{RenameTable, RenameTableResponse};
 pub use reorder_columns::{ReorderColumns, ReorderColumnsResponse};
 pub use reorder_tables::{ReorderTables, ReorderTablesResponse};
 pub use save_database_view::{SaveDatabaseView, SavedDatabaseView};
+pub use write_warning::{WriteWarning, WriteWarnings};
 
 /// Service context for the databases AI tools.
-pub struct DatabasesToolContext<S: DatabasesService, E: EntityAccessService> {
+pub struct DatabasesToolContext<Service: DatabasesService, EntityAccess: EntityAccessService> {
     /// The databases service instance.
-    pub service: Arc<S>,
+    pub service: Arc<Service>,
     /// Mints the access receipts the schema operations are gated on.
-    pub entity_access_service: Arc<E>,
+    pub entity_access_service: Arc<EntityAccess>,
     /// The agent the tools act as, for the requesting user.
     pub actor: BotId,
 }
 
-impl<S: DatabasesService, E: EntityAccessService> Clone for DatabasesToolContext<S, E> {
+impl<Service: DatabasesService, EntityAccess: EntityAccessService> Clone
+    for DatabasesToolContext<Service, EntityAccess>
+{
     fn clone(&self) -> Self {
         Self {
             service: self.service.clone(),
@@ -88,9 +100,11 @@ impl<S: DatabasesService, E: EntityAccessService> Clone for DatabasesToolContext
     }
 }
 
-impl<S: DatabasesService, E: EntityAccessService> DatabasesToolContext<S, E> {
+impl<Service: DatabasesService, EntityAccess: EntityAccessService>
+    DatabasesToolContext<Service, EntityAccess>
+{
     /// Create a new databases tool context.
-    pub fn new(service: S, entity_access_service: Arc<E>) -> Self {
+    pub fn new(service: Service, entity_access_service: Arc<EntityAccess>) -> Self {
         Self {
             service: Arc::new(service),
             entity_access_service,
@@ -140,25 +154,19 @@ impl<S: DatabasesService, E: EntityAccessService> DatabasesToolContext<S, E> {
         &self,
         user_id: &MacroUserIdStr<'static>,
         database_id: Uuid,
-    ) -> (Option<ToolDatabaseSchema>, Option<String>) {
-        let refreshed = async {
-            let receipt = self.view_receipt(user_id, database_id).await?;
-            self.service
-                .get_database(receipt, self.viewer(user_id))
-                .await
-                .map(ToolDatabaseSchema::from)
-                .map_err(database_error)
-        }
-        .await;
-        match refreshed {
-            Ok(schema) => (Some(schema), None),
-            Err(error) => (
-                None,
-                Some(format!(
-                    "The change was saved, but its schema could not be refreshed: {} Call DescribeDatabase with databaseId {database_id} before continuing; do not repeat this successful mutation.",
-                    error.description
-                )),
-            ),
+    ) -> SchemaAfterWrite {
+        match self.current_schema(user_id, database_id).await {
+            Ok(detail) => SchemaAfterWrite {
+                database: Some(detail.into()),
+                warning: None,
+            },
+            Err(error) => SchemaAfterWrite {
+                database: None,
+                warning: Some(WriteWarnings(vec![WriteWarning::SchemaNotRefreshed {
+                    database_id,
+                    cause: error.description,
+                }])),
+            },
         }
     }
 
@@ -176,76 +184,81 @@ impl<S: DatabasesService, E: EntityAccessService> DatabasesToolContext<S, E> {
             .map_err(database_error)
     }
 
-    /// Mint a receipt, saying what actually went wrong.
-    ///
-    /// Collapsing "no such database" into "no access" sends a model with a
-    /// wrong id looking in the wrong place, so the two stay distinct.
-    async fn receipt<T: entity_access::domain::models::RequiredPermission>(
+    /// Mint a receipt, saying what actually went wrong: a wrong id, a
+    /// missing grant, and a failed check each send the model somewhere else.
+    async fn receipt<Permission: RequiredPermission>(
         &self,
         user_id: &MacroUserIdStr<'static>,
         database_id: Uuid,
         verb: &str,
-    ) -> Result<EntityAccessReceipt<T>, ToolCallError> {
-        self.entity_access_service
-            .generate_bot_entity_access_receipt::<T>(
-                self.actor,
-                BotAccessScope::user(user_id.clone()),
-                &database_id.to_string(),
-                EntityType::Database,
-            )
-            .await
-            .map_err(|e| {
-                let description = match &e {
-                    AccessError::NotFound(_) => format!(
-                        "No database with id {database_id} exists. Call ListDatabases to see \
-                         the user's databases and their ids."
-                    ),
-                    AccessError::BadRequest(message) => message.to_string(),
-                    _ => format!(
-                        "The user does not have permission to {verb} database {database_id}."
-                    ),
-                };
-                ToolCallError {
-                    description,
-                    internal_error: e.into(),
+    ) -> Result<EntityAccessReceipt<Permission>, ToolCallError> {
+        database_receipt::<Permission, _>(
+            self.entity_access_service.as_ref(),
+            &self.viewer(user_id),
+            database_id,
+        )
+        .await
+        .map_err(|error| {
+            let description = match &error {
+                AccessError::NotFound(_) => format!(
+                    "No database with id {database_id} exists. Call ListDatabases to see \
+                     the user's databases and their ids."
+                ),
+                AccessError::BadRequest(message) => message.to_string(),
+                AccessError::Unauthorized | AccessError::UnauthorizedWithMessage(_) => {
+                    format!("The user does not have permission to {verb} database {database_id}.")
                 }
-            })
+                AccessError::Unavailable(_) => format!(
+                    "Access to database {database_id} could not be checked right now. Retry \
+                     the call."
+                ),
+                AccessError::Internal(_) => {
+                    format!("Access to database {database_id} could not be checked.")
+                }
+            };
+            ToolCallError {
+                description,
+                internal_error: error.into(),
+            }
+        })
     }
 }
 
 /// Create the databases toolset.
-pub fn databases_toolset<S, E>() -> AsyncToolCollection<DatabasesToolContext<S, E>>
+pub fn databases_toolset<Service, EntityAccess>()
+-> AsyncToolCollection<DatabasesToolContext<Service, EntityAccess>>
 where
-    S: DatabasesService,
-    E: EntityAccessService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
 {
     AsyncToolCollection::new()
-        .add_tool::<ListDatabases, DatabasesToolContext<S, E>>()
-        .add_tool::<DescribeDatabase, DatabasesToolContext<S, E>>()
-        .add_tool::<CreateDatabase, DatabasesToolContext<S, E>>()
-        .add_tool::<CreateTable, DatabasesToolContext<S, E>>()
-        .add_tool::<RenameDatabase, DatabasesToolContext<S, E>>()
-        .add_tool::<RenameTable, DatabasesToolContext<S, E>>()
-        .add_tool::<ReorderTables, DatabasesToolContext<S, E>>()
-        .add_tool::<DeleteTable, DatabasesToolContext<S, E>>()
-        .add_tool::<AddColumn, DatabasesToolContext<S, E>>()
-        .add_tool::<AddColumnOptions, DatabasesToolContext<S, E>>()
-        .add_tool::<RenameColumn, DatabasesToolContext<S, E>>()
-        .add_tool::<ChangeColumnType, DatabasesToolContext<S, E>>()
-        .add_tool::<DeleteColumn, DatabasesToolContext<S, E>>()
-        .add_tool::<ReorderColumns, DatabasesToolContext<S, E>>()
-        .add_tool::<SaveDatabaseView, DatabasesToolContext<S, E>>()
+        .add_tool::<ListDatabases, DatabasesToolContext<Service, EntityAccess>>()
+        .add_tool::<DescribeDatabase, DatabasesToolContext<Service, EntityAccess>>()
+        .add_tool::<CreateDatabase, DatabasesToolContext<Service, EntityAccess>>()
+        .add_tool::<CreateTable, DatabasesToolContext<Service, EntityAccess>>()
+        .add_tool::<RenameDatabase, DatabasesToolContext<Service, EntityAccess>>()
+        .add_tool::<RenameTable, DatabasesToolContext<Service, EntityAccess>>()
+        .add_tool::<ReorderTables, DatabasesToolContext<Service, EntityAccess>>()
+        .add_tool::<DeleteTable, DatabasesToolContext<Service, EntityAccess>>()
+        .add_tool::<AddColumn, DatabasesToolContext<Service, EntityAccess>>()
+        .add_tool::<AddColumnOptions, DatabasesToolContext<Service, EntityAccess>>()
+        .add_tool::<RenameColumn, DatabasesToolContext<Service, EntityAccess>>()
+        .add_tool::<ChangeColumnType, DatabasesToolContext<Service, EntityAccess>>()
+        .add_tool::<DeleteColumn, DatabasesToolContext<Service, EntityAccess>>()
+        .add_tool::<ReorderColumns, DatabasesToolContext<Service, EntityAccess>>()
+        .add_tool::<SaveDatabaseView, DatabasesToolContext<Service, EntityAccess>>()
 }
 
 /// Discovery for live document answers. No mutation tools.
-pub fn databases_read_only_toolset<S, E>() -> AsyncToolCollection<DatabasesToolContext<S, E>>
+pub fn databases_read_only_toolset<Service, EntityAccess>()
+-> AsyncToolCollection<DatabasesToolContext<Service, EntityAccess>>
 where
-    S: DatabasesService,
-    E: EntityAccessService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
 {
     AsyncToolCollection::new()
-        .add_tool::<ListDatabases, DatabasesToolContext<S, E>>()
-        .add_tool::<DescribeDatabase, DatabasesToolContext<S, E>>()
+        .add_tool::<ListDatabases, DatabasesToolContext<Service, EntityAccess>>()
+        .add_tool::<DescribeDatabase, DatabasesToolContext<Service, EntityAccess>>()
 }
 
 /// One table of a described database, or an error pointing at DescribeDatabase.
@@ -282,15 +295,6 @@ pub(crate) fn column_of(
             ),
             internal_error: anyhow::anyhow!("column not found in table"),
         })
-}
-
-/// The label a column goes by: its placement's own, else its definition's.
-pub(crate) fn column_label(column: &ColumnDetail) -> String {
-    column
-        .column
-        .display_name
-        .clone()
-        .unwrap_or_else(|| column.definition.definition.display_name.clone())
 }
 
 /// Turn a schema/persistence error into something the model can act on.
@@ -607,7 +611,7 @@ pub struct ToolDatabaseSchema {
 
 impl From<DatabaseDetail> for ToolDatabaseSchema {
     fn from(detail: DatabaseDetail) -> Self {
-        let writable = detail.grant >= AccessLevel::Edit;
+        let writable = detail.writable();
         Self {
             id: detail.database.id,
             name: detail.database.name,
@@ -621,68 +625,45 @@ impl From<DatabaseDetail> for ToolDatabaseSchema {
                     version: table.table.version.0,
                     name: table.table.name,
                     writable,
-                    columns: table
-                        .columns
-                        .into_iter()
-                        .map(|column| {
-                            let (safe_types, checked_types) = if matches!(
-                                column.column.config,
-                                Some(ColumnConfig::Lookup { .. })
-                            ) {
-                                (Vec::new(), Vec::new())
-                            } else {
-                                cast_targets(&column.column, &column.definition)
-                            };
-                            let names = |types: Vec<_>| {
-                                types.iter().map(ToString::to_string).collect::<Vec<_>>()
-                            };
-                            ToolColumn {
-                                safe_types: names(safe_types),
-                                checked_types: names(checked_types),
-                                id: column.column.id,
-                                sql_name: column.sql_name,
-                                // The catalog's labels, not the raw option text:
-                                // duplicates are disambiguated there, and a label
-                                // that does not round-trip is one SQL rejects.
-                                options: option_labels(&column.definition)
-                                    .into_iter()
-                                    .map(|(id, label)| ToolOption { id, label })
-                                    .collect(),
-                                name: column
-                                    .column
-                                    .display_name
-                                    .unwrap_or(column.definition.definition.display_name),
-                                data_type: column.definition.definition.data_type.into(),
-                                specific_entity_type: if matches!(
-                                    column.column.config,
-                                    Some(ColumnConfig::Link { .. })
-                                ) {
-                                    None
-                                } else {
-                                    column.definition.definition.specific_entity_type
-                                },
-                                is_multi_select: column.definition.definition.is_multi_select
-                                    || matches!(
-                                        column.column.config,
-                                        Some(ColumnConfig::Link { .. })
-                                    ),
-                                writable: column.writable,
-                                relation: match column.column.config {
-                                    Some(ColumnConfig::Link {
-                                        database_id,
-                                        table_id,
-                                    }) => Some(ToolRelation {
-                                        database_id,
-                                        table_id,
-                                    }),
-                                    _ => None,
-                                },
-                            }
-                        })
-                        .collect(),
+                    columns: table.columns.into_iter().map(ToolColumn::from).collect(),
                     views: table.views,
                 })
                 .collect(),
+        }
+    }
+}
+
+impl From<ColumnDetail> for ToolColumn {
+    fn from(column: ColumnDetail) -> Self {
+        let (safe_types, checked_types) = cast_targets(&column.column, &column.definition);
+        let names = |types: Vec<_>| types.iter().map(ToString::to_string).collect::<Vec<_>>();
+        Self {
+            safe_types: names(safe_types),
+            checked_types: names(checked_types),
+            id: column.column.id,
+            name: column.name().to_string(),
+            data_type: column.definition.definition.data_type.into(),
+            specific_entity_type: column.entity_type(),
+            is_multi_select: column.is_multi_valued(),
+            writable: column.writable,
+            // The catalog's labels, not the raw option text: duplicates are
+            // disambiguated there, and a label that does not round-trip is
+            // one SQL rejects.
+            options: option_labels(&column.definition)
+                .into_iter()
+                .map(|(id, label)| ToolOption { id, label })
+                .collect(),
+            relation: match column.column.config {
+                Some(ColumnConfig::Link {
+                    database_id,
+                    table_id,
+                }) => Some(ToolRelation {
+                    database_id,
+                    table_id,
+                }),
+                _ => None,
+            },
+            sql_name: column.sql_name,
         }
     }
 }

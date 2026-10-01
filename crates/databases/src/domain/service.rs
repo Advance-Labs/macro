@@ -139,6 +139,13 @@ fn same_name(left: &str, right: &str) -> bool {
     name_key(left) == name_key(right)
 }
 
+impl TableDetail {
+    /// The table's view going by `name`, compared as every name is.
+    pub fn view_named(&self, name: &str) -> Option<&crate::domain::models::DatabaseView> {
+        self.views.iter().find(|view| same_name(&view.name, name))
+    }
+}
+
 /// What option labels are compared on: their name key, or for a numeric
 /// select the number as its label shows it, so `2.0` names the option `2`.
 fn option_label_key(data_type: DataType, label: &str) -> String {

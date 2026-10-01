@@ -90,7 +90,7 @@ async fn changing_a_column_type_uses_the_current_version_and_adds_extra_options(
 }
 
 #[tokio::test]
-async fn changing_a_column_to_a_relation_targets_this_database_and_holds_many_rows() {
+async fn changing_a_column_to_a_relation_targets_this_database() {
     let (context, calls) = context(FakeAccess::granting(AccessLevel::Edit));
     let parties = Uuid::from_u128(0x7ab1_0000_0000_0000_0000_0000_0000_0002);
     ChangeColumnType {
@@ -111,37 +111,9 @@ async fn changing_a_column_to_a_relation_targets_this_database_and_holds_many_ro
     let calls = calls.lock().unwrap();
     let change = &calls.changed_column_types[0];
     assert_eq!(change.data_type, DataType::Entity);
-    assert!(change.is_multi_select);
+    assert!(change.is_multi_valued());
     assert_eq!(change.relation, Some((DATABASE_ID, parties)));
     assert!(calls.added_options.is_empty());
-}
-
-#[tokio::test]
-async fn a_relation_with_another_type_is_refused_before_the_service() {
-    let (context, calls) = context(FakeAccess::granting(AccessLevel::Edit));
-    let error = ChangeColumnType {
-        database_id: DATABASE_ID,
-        table_id: TABLE_ID,
-        column_id: COLUMN_ID,
-        data_type: ColumnType::Text,
-        is_multi_select: false,
-        options: None,
-        specific_entity_type: None,
-        link_to_table_id: Some(TABLE_ID),
-        clear_invalid: false,
-    }
-    .call(ServiceContext(context), request_context())
-    .await
-    .expect_err("a relation holds row ids, not text");
-
-    assert!(
-        error.description.contains("entity"),
-        "{}",
-        error.description
-    );
-    let calls = calls.lock().unwrap();
-    assert!(calls.changed_column_types.is_empty());
-    assert_eq!(calls.described, 0);
 }
 
 #[test]

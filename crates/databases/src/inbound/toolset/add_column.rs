@@ -9,7 +9,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{ColumnType, DatabasesToolContext, ToolDatabaseSchema, database_error};
+use super::{
+    ColumnType, DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings,
+    database_error,
+};
 use crate::domain::models::{ColumnBinding, ColumnConfig, CreateColumn};
 use crate::domain::ports::DatabasesService;
 
@@ -120,14 +123,15 @@ pub struct AddColumnResponse {
     pub database: Option<ToolDatabaseSchema>,
     /// Follow-up guidance if schema refresh failed after the column was saved.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub warning: Option<String>,
+    #[schemars(with = "Option<String>")]
+    pub warning: Option<WriteWarnings>,
 }
 
 #[async_trait]
-impl<S, E> AsyncTool<DatabasesToolContext<S, E>> for AddColumn
+impl<Service, EntityAccess> AsyncTool<DatabasesToolContext<Service, EntityAccess>> for AddColumn
 where
-    S: DatabasesService,
-    E: EntityAccessService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
 {
     type Output = AddColumnResponse;
 
@@ -139,11 +143,9 @@ where
     ), err)]
     async fn call(
         &self,
-        service_context: ServiceContext<DatabasesToolContext<S, E>>,
+        service_context: ServiceContext<DatabasesToolContext<Service, EntityAccess>>,
         request_context: RequestContext,
     ) -> ToolResult<Self::Output> {
-        tracing::info!("Add column");
-
         let user_id = &request_context.user_id;
         let receipt = service_context
             .edit_receipt(user_id, self.database_id)
@@ -177,7 +179,7 @@ where
             .await
             .map_err(database_error)?;
 
-        let (database, warning) = service_context
+        let SchemaAfterWrite { database, warning } = service_context
             .schema_after_write(user_id, self.database_id)
             .await;
 

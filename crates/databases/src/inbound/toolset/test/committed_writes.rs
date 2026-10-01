@@ -12,8 +12,10 @@ fn failed_refresh() -> (Context, Arc<Mutex<Calls>>) {
     )
 }
 
-fn assert_warning(warning: Option<String>) {
-    let warning = warning.expect("a committed write explains the failed refresh");
+fn assert_warning(warning: Option<WriteWarnings>) {
+    let warning = warning
+        .expect("a committed write explains the failed refresh")
+        .to_string();
     assert!(warning.contains("change was saved"));
     assert!(warning.contains("DescribeDatabase"));
     assert!(warning.contains(&DATABASE_ID.to_string()));

@@ -9,7 +9,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{DatabasesToolContext, ToolDatabaseSchema, column_of, database_error, table_of};
+use super::{
+    DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, column_of,
+    database_error, table_of,
+};
 use crate::domain::ports::DatabasesService;
 
 /// Delete a column.
@@ -54,14 +57,15 @@ pub struct DeleteColumnResponse {
     pub database: Option<ToolDatabaseSchema>,
     /// A failed follow-up read does not undo the committed delete.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub warning: Option<String>,
+    #[schemars(with = "Option<String>")]
+    pub warning: Option<WriteWarnings>,
 }
 
 #[async_trait]
-impl<S, E> AsyncTool<DatabasesToolContext<S, E>> for DeleteColumn
+impl<Service, EntityAccess> AsyncTool<DatabasesToolContext<Service, EntityAccess>> for DeleteColumn
 where
-    S: DatabasesService,
-    E: EntityAccessService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
 {
     type Output = DeleteColumnResponse;
 
@@ -73,7 +77,7 @@ where
     ), err)]
     async fn call(
         &self,
-        service_context: ServiceContext<DatabasesToolContext<S, E>>,
+        service_context: ServiceContext<DatabasesToolContext<Service, EntityAccess>>,
         request_context: RequestContext,
     ) -> ToolResult<Self::Output> {
         let user_id = &request_context.user_id;
@@ -93,7 +97,7 @@ where
             .await
             .map_err(database_error)?;
 
-        let (database, warning) = service_context
+        let SchemaAfterWrite { database, warning } = service_context
             .schema_after_write(user_id, self.database_id)
             .await;
         Ok(DeleteColumnResponse {

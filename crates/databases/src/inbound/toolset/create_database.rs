@@ -9,7 +9,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{DatabasesToolContext, ToolDatabaseSchema, database_error};
+use super::{
+    DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, database_error,
+};
 use crate::domain::models::CreateDatabase as CreateDatabaseCommand;
 use crate::domain::ports::DatabasesService;
 
@@ -60,25 +62,25 @@ pub struct CreateDatabaseResponse {
     pub database: Option<ToolDatabaseSchema>,
     /// Follow-up instructions if the change committed but schema refresh failed.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub warning: Option<String>,
+    #[schemars(with = "Option<String>")]
+    pub warning: Option<WriteWarnings>,
 }
 
 #[async_trait]
-impl<S, E> AsyncTool<DatabasesToolContext<S, E>> for CreateDatabase
+impl<Service, EntityAccess> AsyncTool<DatabasesToolContext<Service, EntityAccess>>
+    for CreateDatabase
 where
-    S: DatabasesService,
-    E: EntityAccessService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
 {
     type Output = CreateDatabaseResponse;
 
     #[tracing::instrument(skip_all, fields(user_id = ?request_context.user_id), err)]
     async fn call(
         &self,
-        service_context: ServiceContext<DatabasesToolContext<S, E>>,
+        service_context: ServiceContext<DatabasesToolContext<Service, EntityAccess>>,
         request_context: RequestContext,
     ) -> ToolResult<Self::Output> {
-        tracing::info!("Create database");
-
         let user_id = &request_context.user_id;
         let database = service_context
             .service
@@ -93,7 +95,10 @@ where
         // Read it straight back rather than reporting only the id: the model's
         // next call is almost always AddColumn, which needs the starter
         // table's id, and that is not in the create response.
-        let (schema, warning) = service_context
+        let SchemaAfterWrite {
+            database: schema,
+            warning,
+        } = service_context
             .schema_after_write(user_id, database.id)
             .await;
         Ok(CreateDatabaseResponse {

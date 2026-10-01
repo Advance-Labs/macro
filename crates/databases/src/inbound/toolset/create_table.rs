@@ -9,7 +9,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{DatabasesToolContext, ToolDatabaseSchema, database_error};
+use super::{
+    DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, database_error,
+};
 use crate::domain::models::CreateTable as CreateTableCommand;
 use crate::domain::ports::DatabasesService;
 
@@ -62,14 +64,15 @@ pub struct CreateTableResponse {
     pub database: Option<ToolDatabaseSchema>,
     /// A failed follow-up read does not undo the committed table.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub warning: Option<String>,
+    #[schemars(with = "Option<String>")]
+    pub warning: Option<WriteWarnings>,
 }
 
 #[async_trait]
-impl<S, E> AsyncTool<DatabasesToolContext<S, E>> for CreateTable
+impl<Service, EntityAccess> AsyncTool<DatabasesToolContext<Service, EntityAccess>> for CreateTable
 where
-    S: DatabasesService,
-    E: EntityAccessService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
 {
     type Output = CreateTableResponse;
 
@@ -79,11 +82,9 @@ where
     ), err)]
     async fn call(
         &self,
-        service_context: ServiceContext<DatabasesToolContext<S, E>>,
+        service_context: ServiceContext<DatabasesToolContext<Service, EntityAccess>>,
         request_context: RequestContext,
     ) -> ToolResult<Self::Output> {
-        tracing::info!("Create table");
-
         let user_id = &request_context.user_id;
         let receipt = service_context
             .edit_receipt(user_id, self.database_id)
@@ -104,7 +105,7 @@ where
         // Read the schema back rather than deriving the SQL name here: the
         // catalog disambiguates names against the ones already taken, so a
         // locally computed one would be wrong exactly when it matters.
-        let (database, warning) = service_context
+        let SchemaAfterWrite { database, warning } = service_context
             .schema_after_write(user_id, self.database_id)
             .await;
 

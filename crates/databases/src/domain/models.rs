@@ -142,6 +142,14 @@ pub struct ChangeColumnType {
     pub clear_invalid: bool,
 }
 
+impl ChangeColumnType {
+    /// Whether the target holds several values: as asked, and always for a
+    /// relation or a tag.
+    pub fn is_multi_valued(&self) -> bool {
+        self.is_multi_select || self.relation.is_some() || self.data_type == DataType::Tag
+    }
+}
+
 /// What a column type change did.
 #[derive(utoipa::ToSchema, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ColumnTypeChangeOutcome {
@@ -827,6 +835,32 @@ impl ColumnDetail {
     pub fn name(&self) -> &str {
         self.column.name(&self.definition)
     }
+
+    /// Whether a cell holds several values: a relation always does.
+    pub fn is_multi_valued(&self) -> bool {
+        self.definition.definition.is_multi_select || self.column.is_relation()
+    }
+
+    /// The Macro entity kind the column references; a relation references
+    /// rows of a table instead.
+    pub fn entity_type(&self) -> Option<models_properties::EntityType> {
+        if self.column.is_relation() {
+            return None;
+        }
+        self.definition.definition.specific_entity_type
+    }
+}
+
+impl DatabaseDetail {
+    /// Whether the viewer may write the database's rows and schema.
+    pub fn writable(&self) -> bool {
+        grant_writes(self.grant)
+    }
+}
+
+/// Whether a grant lets its holder write rows and change the schema.
+pub fn grant_writes(grant: AccessLevel) -> bool {
+    grant >= AccessLevel::Edit
 }
 
 /// Where one viewer is inside a database right now: ephemeral, relayed to
