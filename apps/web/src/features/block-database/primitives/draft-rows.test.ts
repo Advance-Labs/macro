@@ -313,6 +313,19 @@ describe('editable blank row', () => {
     });
   });
 
+  it('names a row to the server by its saved id, and an unsaved draft not at all', async () => {
+    const { drafts } = fixture();
+    const id = drafts.blankId();
+
+    expect(drafts.savedRowId(id)).toBeUndefined();
+    expect(drafts.savedRowId('server-7')).toBe('server-7');
+
+    await drafts.write(id, 'name', 'Ada');
+
+    expect(drafts.savedRowId(id)).toBe('server-1');
+    expect(drafts.savedRowId(drafts.blankId())).toBeUndefined();
+  });
+
   it('keeps one empty row local without creating records for empty commits', async () => {
     const { source, controller, drafts } = fixture();
     const id = drafts.blankId();

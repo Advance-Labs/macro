@@ -202,6 +202,12 @@ export function createDraftRows(writer: Writer) {
     setActive: (id: string | undefined) => setActiveId(id),
     has: (id: string) => !!entry(id),
     serverId,
+    /**
+     * The id the server knows a grid row by: a saved draft's row, any other
+     * row's own id, nothing for a draft not saved yet.
+     */
+    savedRowId: (id: string): string | undefined =>
+      entry(id) ? serverId(id) : id,
     /** Saved drafts stay on screen while being typed into, even outside the view. */
     serverIds: () =>
       entries().flatMap((row) => {
