@@ -146,7 +146,7 @@ describe('queryErrorMessage with SQL hidden', () => {
             span: { start: 14, end: 14 },
             message: 'expected FROM, found end of input',
           },
-          message: 'expected FROM, found end of input at 14..14',
+          message: 'expected FROM, found end of input at byte 14',
         },
         false
       )
@@ -178,11 +178,11 @@ describe('queryErrorMessage with SQL hidden', () => {
             span: { start: 14, end: 14 },
             message: 'expected FROM, found end of input',
           },
-          message: 'expected FROM, found end of input at 14..14',
+          message: 'expected FROM, found end of input at byte 14',
         },
         true
       )
-    ).toBe('expected FROM, found end of input at 14..14');
+    ).toBe('expected FROM, found end of input at byte 14');
     expect(
       queryErrorMessage(
         {
