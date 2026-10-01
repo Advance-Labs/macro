@@ -59,9 +59,9 @@ export function QueryEditor(props: {
       : props.sourcePicker;
   const promptId = createUniqueId();
   let promptInput: HTMLTextAreaElement | undefined;
+  const showSql = isFeatureEnabled(showDatabaseSql);
   const [sqlOpen, setSqlOpen] = createSignal(false);
   const displayMode = (): QueryDisplayMode =>
-  const showSql = isFeatureEnabled(showDatabaseSql);
     composer.presentation().displayMode === 'scalar' &&
     composer.preview() &&
     !isScalarAnswer(composer.preview()!.answer)
