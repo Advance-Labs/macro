@@ -33,6 +33,7 @@ import {
   $createSearchMatchNode,
   SearchMatchNode,
 } from '../nodes/SearchMatchNode';
+import { HTML_ENTITIES } from '../utils/html-entities';
 import {
   replaceTextWithUnknownMention,
   UnknownMentionNode,
@@ -143,44 +144,9 @@ function createEntityToUnicodeTransformer(
   };
 }
 
-export const AMP_ENTITY_TRANSFORMER = createEntityToUnicodeTransformer(
-  '&amp;',
-  '&'
+export const HTML_ENTITY_TRANSFORMERS = Object.entries(HTML_ENTITIES).map(
+  ([entity, character]) => createEntityToUnicodeTransformer(entity, character)
 );
-export const NBSP_ENTITY_TRANSFORMER = createEntityToUnicodeTransformer(
-  '&nbsp;',
-  '\u00A0'
-);
-export const LT_ENTITY_TRANSFORMER = createEntityToUnicodeTransformer(
-  '&lt;',
-  '<'
-);
-export const GT_ENTITY_TRANSFORMER = createEntityToUnicodeTransformer(
-  '&gt;',
-  '>'
-);
-export const COPY_ENTITY_TRANSFORMER = createEntityToUnicodeTransformer(
-  '&copy;',
-  '©'
-);
-export const REG_ENTITY_TRANSFORMER = createEntityToUnicodeTransformer(
-  '&reg;',
-  '®'
-);
-export const TRADE_ENTITY_TRANSFORMER = createEntityToUnicodeTransformer(
-  '&trade;',
-  '™'
-);
-
-export const HTML_ENTITY_TRANSFORMERS = [
-  AMP_ENTITY_TRANSFORMER,
-  NBSP_ENTITY_TRANSFORMER,
-  LT_ENTITY_TRANSFORMER,
-  GT_ENTITY_TRANSFORMER,
-  COPY_ENTITY_TRANSFORMER,
-  REG_ENTITY_TRANSFORMER,
-  TRADE_ENTITY_TRANSFORMER,
-];
 
 function escapeUrl(url: string): string {
   return url.replace(/\(/g, '%28').replace(/\)/g, '%29');

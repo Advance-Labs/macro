@@ -3,6 +3,8 @@
  * reader of documents. Free of Lexical so services can parse it too.
  */
 
+import { decodeHtmlEntities } from '../utils/html-entities';
+
 export const DATABASE_QUERY_CHART_MODES = [
   'bar',
   'line',
@@ -126,12 +128,13 @@ export function parseDatabaseQueryData(
   const parsedChart =
     chart === undefined ? undefined : parseDatabaseQueryChart(chart);
   if (chart !== undefined && !parsedChart) return;
+  // Models write `&` in a title as `&amp;`, as they do in prose, which reads it as `&`.
   return {
     queryId,
     ...(databaseId ? { databaseId } : {}),
     ...(tableId ? { tableId } : {}),
-    ...(title ? { title } : {}),
-    prompt,
+    ...(title ? { title: decodeHtmlEntities(title) } : {}),
+    prompt: decodeHtmlEntities(prompt),
     displayMode,
     ...(parsedChart ? { chart: parsedChart } : {}),
   };
