@@ -16,9 +16,19 @@ class CallService : Service() {
     companion object {
         const val NOTIFICATION_ID = 7404
         private const val CHANNEL = "macro_calls"
+        internal var instance: CallService? = null
+            private set
         fun start(ctx: Context, media: Boolean = false, camera: Boolean = false) {
+            instance?.let { it.updateForeground(media, camera); return }
             ContextCompat.startForegroundService(ctx, Intent(ctx, CallService::class.java)
                 .putExtra("media", media).putExtra("camera", camera))
+        }
+        fun stop() {
+            // A queued start must promote before stopping, even if the call ended.
+            val service = instance ?: return
+            instance = null
+            service.stopForeground(STOP_FOREGROUND_REMOVE)
+            service.stopSelf()
         }
         fun action(ctx: Context, name: String, id: String): PendingIntent = PendingIntent.getBroadcast(
             ctx, name.hashCode(), Intent(ctx, CallReceiver::class.java).setAction(name).putExtra("callId", id),
@@ -27,10 +37,14 @@ class CallService : Service() {
         fun screen(ctx: Context): PendingIntent = PendingIntent.getActivity(ctx, 0,
             Intent(ctx, CallActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
+    private var foregroundTypes = 0
     private var callId: String? = null
     private var mediaSession: android.media.session.MediaSession? = null
     override fun onCreate() {
         super.onCreate()
+        // Satisfy startForegroundService before consulting mutable call state.
+        try { updateForeground(); instance = this }
+        catch (_: Exception) { Calls.end(this); stopSelf(); return }
         mediaSession = android.media.session.MediaSession(this, "Macro call").apply {
             setCallback(object : android.media.session.MediaSession.Callback() {
                 override fun onStop() { callId?.let { Calls.end(this@CallService, it) } }
@@ -59,37 +73,57 @@ class CallService : Service() {
         }
     }
     override fun onBind(intent: Intent?): IBinder? = null
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val call = Calls.offer ?: run { stopSelf(); return START_NOT_STICKY }
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = handleStart(intent)
+    internal fun handleStart(intent: Intent?, promote: (Notification, Int) -> Unit = ::promoteForeground): Int {
+        val call = Calls.offer ?: run { stop(); return START_NOT_STICKY }
         callId = call.callId
+        try {
+            updateForeground(Calls.room != null || intent?.getBooleanExtra("media", false) == true,
+                intent?.getBooleanExtra("camera", false) == true, promote)
+        } catch (_: Exception) {
+            if (foregroundTypes and ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE != 0 && Calls.room != null) {
+                Calls.error = "Could not update call capture. Please try again."
+                val media = Calls.room
+                Calls.scope.launch { runCatching { Calls.camera(this@CallService, false, media) }; Calls.publish() }
+            } else { Calls.end(this, call.callId); stop() }
+        }
+        return START_NOT_STICKY
+    }
+    private fun promoteForeground(notification: Notification, types: Int) {
+        if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIFICATION_ID, notification, types)
+        else startForeground(NOTIFICATION_ID, notification)
+    }
+    private fun updateForeground(media: Boolean = false, camera: Boolean = false,
+        promote: (Notification, Int) -> Unit = ::promoteForeground) {
+        val call = Calls.offer
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "Calls", NotificationManager.IMPORTANCE_HIGH).apply {
             setSound(android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE),
                 android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE).build())
             enableVibration(true)
         })
-        val person = Person.Builder().setName((Calls.title ?: call.title).ifBlank { "Macro call" }).setImportant(true).build()
-        val ringing = Calls.room == null
-        val notification = NotificationCompat.Builder(this, CHANNEL)
-            .setSmallIcon(android.R.drawable.sym_call_incoming).setContentTitle(Calls.title ?: call.title)
+        val ringing = call != null && Calls.room == null
+        val builder = NotificationCompat.Builder(this, CHANNEL)
+            .setSmallIcon(android.R.drawable.sym_call_incoming).setContentTitle(Calls.title ?: call?.title ?: "Macro call")
             .setCategory(NotificationCompat.CATEGORY_CALL).setOngoing(true).setOnlyAlertOnce(true)
             .setSilent(!ringing)
             .setContentIntent(screen(this)).setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-            .setStyle(if (ringing) NotificationCompat.CallStyle.forIncomingCall(person,
+            .setFullScreenIntent(if (ringing) screen(this) else null, ringing)
+        if (call != null) {
+            val person = Person.Builder().setName((Calls.title ?: call.title).ifBlank { "Macro call" }).setImportant(true).build()
+            builder.setStyle(if (ringing) NotificationCompat.CallStyle.forIncomingCall(person,
                 action(this, "end", call.callId), action(this, "answer", call.callId))
                 else NotificationCompat.CallStyle.forOngoingCall(person, action(this, "end", call.callId)))
-            .setFullScreenIntent(if (ringing) screen(this) else null, ringing)
-            .build().apply { if (ringing) this.flags = this.flags or Notification.FLAG_INSISTENT }
+        }
+        val notification = builder.build().apply { if (ringing) this.flags = this.flags or Notification.FLAG_INSISTENT }
         var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
-        if (intent?.getBooleanExtra("media", false) == true) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-        if (intent?.getBooleanExtra("camera", false) == true) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
-        try {
-            if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIFICATION_ID, notification, types)
-            else startForeground(NOTIFICATION_ID, notification)
-        } catch (_: Exception) { Calls.end(this, call.callId); stopSelf() }
-        return START_NOT_STICKY
+        if (media) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        if (camera) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+        promote(notification, types)
+        foregroundTypes = types
     }
     override fun onDestroy() {
+        if (instance === this) instance = null
         mediaSession?.release(); mediaSession = null
         callId?.let { Calls.end(this, it) }
         super.onDestroy()

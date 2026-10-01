@@ -75,6 +75,29 @@ class IncomingCallTest {
         }
     }
 
+    @Test fun endingBeforeServiceStartDoesNotCrashOrLeaveANotification() {
+        val id = UUID.randomUUID().toString()
+        instrumentation.runOnMainSync {
+            Calls.receive(context, data(id), System.currentTimeMillis())
+            // Queue the foreground service and decline in the same main-thread turn,
+            // before Android can create/promote the service.
+            CallService.start(context)
+            Calls.end(context, id)
+        }
+        // Stay alive beyond Android's foreground-service deadline.
+        Thread.sleep(12_000)
+        instrumentation.runOnMainSync {
+            assertNull(Calls.offer)
+            assertNull(CallService.instance)
+            assertFalse(context.getSystemService(NotificationManager::class.java)
+                .activeNotifications.any { it.id == CallService.NOTIFICATION_ID })
+            val next = UUID.randomUUID().toString()
+            Calls.receive(context, data(next), System.currentTimeMillis())
+            assertEquals("The process must still accept subsequent calls", next, Calls.offer?.callId)
+            Calls.end(context, next)
+        }
+    }
+
     @Test fun telecomTeardownFailureStillRemovesNotificationAndAllowsAnotherCall() {
         val id = UUID.randomUUID().toString()
         val manager = context.getSystemService(NotificationManager::class.java)

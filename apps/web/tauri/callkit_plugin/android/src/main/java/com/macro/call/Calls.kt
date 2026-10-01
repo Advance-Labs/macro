@@ -389,7 +389,7 @@ internal object Calls {
         runCatching { media?.release() }
         runCatching { telecomConnection?.let(disconnectConnection) }
         runCatching { telecomConnection?.destroy() }
-        runCatching { ctx.stopService(Intent(ctx, CallService::class.java)) }
+        runCatching { CallService.stop() }
         runCatching { ctx.getSystemService(android.app.NotificationManager::class.java).cancel(CallService.NOTIFICATION_ID) }
         runCatching { publish() }
         runCatching { emit("ended", JSObject().apply { put("callId", next.callId) }) }

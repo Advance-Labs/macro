@@ -68,6 +68,25 @@ class MediaLifecycleTest {
             awaitCondition("Native room did not connect") { Calls.state == "connected" }
             instrumentation.runOnMainSync { Calls.scope.launch { observer.connect(url, token("media-observer")) } }
             awaitCondition("Remote participant did not join") { Calls.room?.remoteParticipants?.isNotEmpty() == true }
+            awaitCondition("Audio foreground service did not start") { CallService.instance != null }
+            instrumentation.runOnMainSync {
+                val room = Calls.room
+                var injected = false
+                CallService.instance!!.handleStart(Intent().putExtra("media", true).putExtra("camera", true)) { _, types ->
+                    assertTrue(types and android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA != 0)
+                    injected = true
+                    throw SecurityException("Simulated camera promotion denial")
+                }
+                assertTrue("Failure must occur at the foreground promotion boundary", injected)
+                assertSame("Camera promotion failure must retain the audio room", room, Calls.room)
+                assertEquals("connected", Calls.state)
+                assertEquals(offer.callId, Calls.offer?.callId)
+                assertNotNull(CallService.instance)
+            }
+            awaitCondition("Failed camera promotion must preserve the ongoing notification") {
+                context.getSystemService(android.app.NotificationManager::class.java)
+                    .activeNotifications.any { it.id == CallService.NOTIFICATION_ID }
+            }
             instrumentation.runOnMainSync {
                 val room = Calls.room
                 assertNotNull(room)
