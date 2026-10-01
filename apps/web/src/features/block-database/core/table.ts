@@ -121,6 +121,7 @@ export function optimisticRows(
       if (mutation.kind === 'delete') return [];
       cells = { ...cells, [mutation.columnId]: mutation.value };
     }
-    return [{ ...row, cells }];
+    // An untouched row stays the same object, so the grid leaves it alone.
+    return [cells === row.cells ? row : { ...row, cells }];
   });
 }

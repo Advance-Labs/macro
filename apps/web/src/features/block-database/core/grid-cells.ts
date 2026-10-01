@@ -84,3 +84,26 @@ export function gridRows(
     ),
   }));
 }
+
+/** `next`, with each row whose cells read exactly as in `previous` kept as that row. */
+export function keepUnchangedRows(
+  previous: readonly DatabaseRow[],
+  next: DatabaseRow[]
+): DatabaseRow[] {
+  const shown = new Map(previous.map((row) => [row.rowId, row]));
+  return next.map((row) => {
+    const before = shown.get(row.rowId);
+    return before && sameCells(before.cells, row.cells) ? before : row;
+  });
+}
+
+function sameCells(
+  left: DatabaseRow['cells'],
+  right: DatabaseRow['cells']
+): boolean {
+  const keys = Object.keys(left);
+  return (
+    keys.length === Object.keys(right).length &&
+    keys.every((key) => key in right && left[key] === right[key])
+  );
+}

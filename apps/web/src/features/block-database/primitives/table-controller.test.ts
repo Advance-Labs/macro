@@ -313,6 +313,46 @@ describe('table controller', () => {
     dispose();
   });
 
+  it('redraws only the rows a new read or a pending edit changed', async () => {
+    const { controller, source, setSnapshot, dispose } = setup();
+    setSnapshot({
+      version: 2,
+      rows: [
+        { rowId: 'record', cells: { status: 'To do', title: 'Plan launch' } },
+        { rowId: 'other', cells: { status: 'Done', title: 'Hire' } },
+      ],
+    });
+    const [record, other] = controller.rows();
+
+    setSnapshot({
+      version: 3,
+      rows: [
+        { rowId: 'record', cells: { status: 'To do', title: 'Plan launch' } },
+        { rowId: 'other', cells: { status: 'Done', title: 'Hire a designer' } },
+      ],
+    });
+    expect(controller.rows()[0]).toBe(record);
+    expect(controller.rows()[1]).not.toBe(other);
+    expect(controller.rows()[1]).toEqual({
+      rowId: 'other',
+      cells: { status: 'Done', title: 'Hire a designer' },
+    });
+
+    const reread = controller.rows()[1];
+    const written = deferred<WriteOutcome>();
+    vi.mocked(source.write).mockImplementation(
+      () => new ResultAsync(written.promise)
+    );
+    const saving = controller.save(move);
+    await vi.waitFor(() =>
+      expect(controller.rows()[0].cells.status).toBe('Done')
+    );
+    expect(controller.rows()[1]).toBe(reread);
+    written.resolve(ok({ insertedRowIds: [], version: 4 }));
+    await saving;
+    dispose();
+  });
+
   it('creates a new option with the write that first selects it', async () => {
     const { controller, source, dispose } = setup();
     await controller.save(move, { label: 'Status', option: 'Done' });
