@@ -8,13 +8,12 @@ mod test;
 pub mod channel_share;
 pub mod team_share;
 
+pub use channel_share::get_direct_channel_grants;
 use macro_user_id::user_id::MacroUserIdStr;
 pub use model_entity::EntityType;
 use model_owner::Owner;
 pub use models_entity_access_management::EntityAccessSourceType;
 pub use models_permissions::share_permission::access_level::AccessLevel;
-mod channel_grants;
-pub use channel_grants::{get_direct_channel_grants, insert_direct_channel_grant_if_absent};
 use models_permissions::share_permission::channel_share_permission::{
     UpdateChannelSharePermission, UpdateOperation,
 };

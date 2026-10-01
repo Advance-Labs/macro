@@ -82,26 +82,13 @@ async fn ensure_referenced_item_visible_to_channel(
             .context("failed to insert thread share permissions")?;
     }
 
-    // Database mentions grant view access without downgrading a recipient
-    // whose edit/comment grant was explicitly selected by the owner.
-    if item.entity_type() == ReferencedShareItemType::Database {
-        entity_access_db_utils::insert_direct_channel_grant_if_absent(
-            db,
-            &entity_id,
-            entity_access_db_utils::EntityType::Database,
-            &channel_id,
-            level,
-        )
-        .await?;
-        return Ok(());
-    }
-
-    // Session and calendar event channel grants are canonical entity-access
-    // rows. A reference must preserve explicit sharing and the originating
-    // channel's control grant. Calendar events carry no SharePermission row.
+    // Session, calendar event and database channel grants are canonical
+    // entity-access rows, and a reference keeps any grant the owner already chose.
     if matches!(
         item.entity_type(),
-        ReferencedShareItemType::AgentSession | ReferencedShareItemType::CalendarEvent
+        ReferencedShareItemType::AgentSession
+            | ReferencedShareItemType::CalendarEvent
+            | ReferencedShareItemType::Database
     ) {
         let mut transaction = db.begin().await?;
         entity_access_db_utils::channel_share::insert_if_absent(
