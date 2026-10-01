@@ -176,25 +176,27 @@ export function CellMentionEditor(
           props.onBlur();
         }}
       />
-      <Show when={anchor() && menu.isOpen()}>
-        <div
-          class="contents"
-          onPointerDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          onMouseDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          {props.renderMenu(menu, anchor()!, (value) => {
-            if (search && !props.readonly)
-              replace(value + ' ', search.start, search.end);
-            menu.closeMenu();
-          })}
-        </div>
+      <Show when={menu.isOpen() && anchor()}>
+        {(menuAnchor) => (
+          <div
+            class="contents"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {props.renderMenu(menu, menuAnchor(), (value) => {
+              if (search && !props.readonly)
+                replace(value + ' ', search.start, search.end);
+              menu.closeMenu();
+            })}
+          </div>
+        )}
       </Show>
     </>
   );
