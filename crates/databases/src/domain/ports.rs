@@ -534,8 +534,8 @@ pub trait DatabasesService: Send + Sync + 'static {
         view_id: ViewId,
     ) -> impl Future<Output = Result<Vec<CardPosition>, DatabaseError>> + Send;
 
-    /// Tell the database's other viewers where this viewer is. Best effort:
-    /// a relay failure is logged, never surfaced.
+    /// Tell the database's other viewers where this viewer is; a relay
+    /// failure is the caller's error.
     fn share_awareness(
         &self,
         receipt: EntityAccessReceipt<ViewAccessLevel>,

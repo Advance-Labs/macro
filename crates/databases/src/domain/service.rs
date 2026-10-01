@@ -922,14 +922,10 @@ where
         state: Awareness,
     ) -> Result<(), DatabaseError> {
         let database_id = receipt_database_id(&receipt)?;
-        if let Err(error) = self
-            .events
+        self.events
             .awareness(database_id, &viewer.user_id, &state)
             .await
-        {
-            tracing::warn!(error = ?error, %database_id, "failed to relay awareness");
-        }
-        Ok(())
+            .map_err(repository_error)
     }
 
     #[tracing::instrument(skip(self, definition), err)]

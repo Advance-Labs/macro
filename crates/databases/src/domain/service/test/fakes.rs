@@ -26,6 +26,8 @@ pub(super) struct World {
     pub(super) published: Vec<(TableId, TableVersion)>,
     /// Every awareness relay the service asked for.
     pub(super) awareness: Vec<(DatabaseId, String, Awareness)>,
+    /// Simulate the gateway refusing an awareness relay.
+    pub(super) awareness_relay_fails: bool,
     pub(super) share_updates: Vec<Vec<models_permissions::share_permission::channel_share_permission::UpdateChannelSharePermission>>,
     /// Every `macro.databases` envelope the service handed the broker.
     pub(super) broker_events: Vec<serde_json::Value>,
@@ -874,11 +876,13 @@ impl TableEventPublisher for FakeEvents {
         user_id: &MacroUserIdStr<'_>,
         state: &Awareness,
     ) -> Result<(), FakeError> {
-        self.0.lock().unwrap().awareness.push((
-            database_id,
-            user_id.as_ref().to_string(),
-            state.clone(),
-        ));
+        let mut world = self.0.lock().unwrap();
+        if world.awareness_relay_fails {
+            return Err(FakeError);
+        }
+        world
+            .awareness
+            .push((database_id, user_id.as_ref().to_string(), state.clone()));
         Ok(())
     }
 }

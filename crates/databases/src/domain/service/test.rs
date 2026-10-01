@@ -27,6 +27,7 @@ use crate::domain::models::{
     Write, Writes, WritesOutcome,
 };
 
+mod awareness;
 mod casts;
 mod columns;
 mod delete_table;
@@ -1558,7 +1559,18 @@ async fn an_agent_is_attributed_as_acting_for_the_user() {
     .await
     .unwrap();
     svc.apply_ops(
-        receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
+        EntityAccessReceipt::try_new_bot(
+            agent.into_storage_id(),
+            (&entity_access::domain::models::BotAccessScope::user(user(OWNER))).into(),
+            Entity {
+                entity_id: db.to_string(),
+                entity_type: EntityType::Database,
+            },
+            EntityPermission::AccessLevel {
+                access_level: AccessLevel::Owner,
+            },
+        )
+        .unwrap(),
         Viewer {
             user_id: user(OWNER),
             acting_bot: Some(agent),

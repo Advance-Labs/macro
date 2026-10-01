@@ -43,29 +43,8 @@ where
         if entries.is_empty() {
             return Err(DatabaseError::NotFound);
         }
-        for (index, op) in ops.iter().enumerate() {
-            let table = op.table();
-            if !entries.iter().any(|entry| entry.table.id == table) {
-                return Err(refuse(
-                    index,
-                    None,
-                    None,
-                    format!("table {table} is not in this database"),
-                ));
-            }
-            if let DatabaseOp::ChangeColumnType { column, .. } = op
-                && ops.len() > 1
-            {
-                return Err(refuse(
-                    index,
-                    None,
-                    Some(*column),
-                    "a column type change is applied on its own; send it as the only op of its \
-                     request",
-                ));
-            }
-        }
-        let attribution = events::Attribution::acting(viewer.user_id.clone(), viewer.acting_bot);
+        refuse_foreign_tables(&entries, &ops)?;
+        let attribution = receipt_attribution(&receipt);
         if let [
             DatabaseOp::ChangeColumnType {
                 table,
@@ -75,34 +54,11 @@ where
             },
         ] = ops.as_slice()
         {
-            let changed = self
-                .retype_column(
-                    database_id,
-                    Some(attribution),
-                    &viewer,
-                    change_column_type(&entries, *table, *column, *to, *clear_invalid)?,
-                )
+            let change = change_column_type(&entries, *table, *column, *to, *clear_invalid)?;
+            return self
+                .apply_type_change_op(database_id, attribution, &viewer, change)
                 .await
-                .map_err(|error| match error {
-                    DatabaseError::InvalidSchemaOperation(reason) => {
-                        refuse(0, None, Some(*column), reason.to_string())
-                    }
-                    DatabaseError::NotFound => {
-                        refuse(0, None, Some(*column), "no such column in this table")
-                    }
-                    other => other,
-                })?;
-            let table_version = changed.table_versions.get(table).copied().ok_or_else(|| {
-                DatabaseError::Repo(
-                    rootcause::report!("a type change did not answer its table's version")
-                        .into_dynamic(),
-                )
-            })?;
-            return Ok(vec![OpResult::ColumnTyped {
-                table_version,
-                cleared_cells: count(changed.cleared_cells),
-                trimmed_cells: count(changed.trimmed_cells),
-            }]);
+                .map(|result| vec![result]);
         }
 
         let editable = self
@@ -136,124 +92,57 @@ where
                 .map(|related| (related.table, related.row))
                 .collect(),
         };
-        let (inserted, table_versions) = match self
+        let outcome = self
             .cells
             .apply_writes(&row_writes)
             .await
-            .map_err(repository_error)?
-        {
-            WritesOutcome::Applied {
-                inserted,
-                table_versions,
-            } => (inserted, table_versions),
-            WritesOutcome::TableNotFound(_) => return Err(DatabaseError::NotFound),
-            WritesOutcome::MissingOption { write } => {
-                return Err(refuse(
-                    write,
-                    None,
-                    option_column(&ops[write]),
-                    "the option was removed by someone else; refresh and try again",
-                ));
-            }
-            WritesOutcome::OptionLabelTaken { write } => {
-                return Err(refuse(
-                    write,
-                    None,
-                    option_column(&ops[write]),
-                    "another option took that label first; refresh and try again",
-                ));
-            }
-            WritesOutcome::MissingView { write } => {
-                return Err(refuse(
-                    write,
-                    None,
-                    None,
-                    "the view was removed by someone else; refresh and try again",
-                ));
-            }
-            WritesOutcome::ViewNameTaken { write } => {
-                return Err(refuse(
-                    write,
-                    None,
-                    None,
-                    "another view took that name first; refresh and try again",
-                ));
-            }
-            WritesOutcome::MissingRow { write, row } => {
-                return Err(refuse(
-                    write,
-                    row_index(&ops[write], row),
-                    None,
-                    format!("no row {row} in this table"),
-                ));
-            }
-            WritesOutcome::MissingRelatedRow(row) => {
-                let origin = planner
-                    .related
-                    .iter()
-                    .find(|related| related.row == row)
-                    .ok_or_else(|| {
-                        DatabaseError::Repo(
-                            rootcause::report!("the cell store reported a row no op named")
-                                .into_dynamic(),
-                        )
-                    })?;
-                return Err(refuse(
-                    origin.op,
-                    origin.row_index,
-                    Some(origin.column),
-                    format!("row {row} is not a row of the related table"),
-                ));
-            }
-        };
+            .map_err(repository_error)?;
+        let (inserted, table_versions) = applied(outcome, &ops, &planner.related)?;
 
         self.publish(
-            Some(attribution),
+            attribution,
             &table_versions
                 .iter()
                 .map(|(table, version)| (database_id, *table, *version))
                 .collect::<Vec<_>>(),
         )
         .await;
-        row_writes
-            .writes
-            .iter()
-            .zip(inserted)
-            .map(|(write, inserted)| {
-                // A write that changed nothing leaves its table where it was.
-                let table_version = match table_versions.get(&write.table_id()) {
-                    Some(version) => *version,
-                    None => current_version(&entries, write.table_id())?,
-                };
-                Ok(match write {
-                    Write::InsertRows { .. }
-                    | Write::UpdateRows { .. }
-                    | Write::DeleteRows { .. } => OpResult::RowsWritten {
-                        table_version,
-                        inserted,
-                        affected: count(write.affected()),
-                    },
-                    Write::UpdateOption { .. } | Write::DeleteOption { .. } => {
-                        OpResult::OptionChanged { table_version }
-                    }
-                    Write::CreateView { view } | Write::UpdateView { view, .. } => {
-                        OpResult::ViewWritten {
-                            table_version,
-                            view: Box::new(view.clone()),
-                        }
-                    }
-                    Write::DeleteView { .. } => OpResult::ViewDeleted { table_version },
-                    Write::OrderViews { positions, .. } => OpResult::ViewsReordered {
-                        table_version,
-                        positions: positions.clone(),
-                    },
-                    Write::MoveCard { positions, .. } => OpResult::CardMoved {
-                        table_version,
-                        positions: positions.clone(),
-                    },
-                })
-            })
-            .collect()
+        op_results(&entries, &row_writes, inserted, &table_versions)
+    }
+
+    /// A batch's only op, a column type change, applied as
+    /// `change_column_type` applies it.
+    async fn apply_type_change_op(
+        &self,
+        database_id: DatabaseId,
+        attribution: Option<events::Attribution>,
+        viewer: &Viewer,
+        change: ChangeColumnType,
+    ) -> Result<OpResult, DatabaseError> {
+        let (table, column) = (change.table_id, change.column_id);
+        let changed = self
+            .retype_column(database_id, attribution, viewer, change)
+            .await
+            .map_err(|error| match error {
+                DatabaseError::InvalidSchemaOperation(reason) => {
+                    refuse(0, None, Some(column), reason.to_string())
+                }
+                DatabaseError::NotFound => {
+                    refuse(0, None, Some(column), "no such column in this table")
+                }
+                other => other,
+            })?;
+        let table_version = changed.table_versions.get(&table).copied().ok_or_else(|| {
+            DatabaseError::Repo(
+                rootcause::report!("a type change did not answer its table's version")
+                    .into_dynamic(),
+            )
+        })?;
+        Ok(OpResult::ColumnTyped {
+            table_version,
+            cleared_cells: count(changed.cleared_cells),
+            trimmed_cells: count(changed.trimmed_cells),
+        })
     }
 
     /// Where the cards of every board a `MoveCard` of the batch names are
@@ -380,6 +269,132 @@ fn option_columns(op: &DatabaseOp) -> Option<(TableId, Vec<ColumnId>)> {
         )),
         _ => None,
     }
+}
+
+/// Refuse a batch naming a table outside the receipt's database.
+fn refuse_foreign_tables(entries: &[TableEntry], ops: &[DatabaseOp]) -> Result<(), DatabaseError> {
+    for (index, op) in ops.iter().enumerate() {
+        let table = op.table();
+        if !entries.iter().any(|entry| entry.table.id == table) {
+            return Err(refuse(
+                index,
+                None,
+                None,
+                format!("table {table} is not in this database"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// What the cell store committed, or the op its refusal points at.
+fn applied(
+    outcome: WritesOutcome,
+    ops: &[DatabaseOp],
+    related: &[RelatedRow],
+) -> Result<(Vec<Vec<RowId>>, HashMap<TableId, TableVersion>), DatabaseError> {
+    match outcome {
+        WritesOutcome::Applied {
+            inserted,
+            table_versions,
+        } => Ok((inserted, table_versions)),
+        WritesOutcome::TableNotFound(_) => Err(DatabaseError::NotFound),
+        WritesOutcome::MissingOption { write } => Err(refuse(
+            write,
+            None,
+            option_column(&ops[write]),
+            "the option was removed by someone else; refresh and try again",
+        )),
+        WritesOutcome::OptionLabelTaken { write } => Err(refuse(
+            write,
+            None,
+            option_column(&ops[write]),
+            "another option took that label first; refresh and try again",
+        )),
+        WritesOutcome::MissingView { write } => Err(refuse(
+            write,
+            None,
+            None,
+            "the view was removed by someone else; refresh and try again",
+        )),
+        WritesOutcome::ViewNameTaken { write } => Err(refuse(
+            write,
+            None,
+            None,
+            "another view took that name first; refresh and try again",
+        )),
+        WritesOutcome::MissingRow { write, row } => Err(refuse(
+            write,
+            row_index(&ops[write], row),
+            None,
+            format!("no row {row} in this table"),
+        )),
+        WritesOutcome::MissingRelatedRow(row) => {
+            let origin = related
+                .iter()
+                .find(|related| related.row == row)
+                .ok_or_else(|| {
+                    DatabaseError::Repo(
+                        rootcause::report!("the cell store reported a row no op named")
+                            .into_dynamic(),
+                    )
+                })?;
+            Err(refuse(
+                origin.op,
+                origin.row_index,
+                Some(origin.column),
+                format!("row {row} is not a row of the related table"),
+            ))
+        }
+    }
+}
+
+/// One result per op, in order, from what its write committed.
+fn op_results(
+    entries: &[TableEntry],
+    row_writes: &Writes,
+    inserted: Vec<Vec<RowId>>,
+    table_versions: &HashMap<TableId, TableVersion>,
+) -> Result<Vec<OpResult>, DatabaseError> {
+    row_writes
+        .writes
+        .iter()
+        .zip(inserted)
+        .map(|(write, inserted)| {
+            // A write that changed nothing leaves its table where it was.
+            let table_version = match table_versions.get(&write.table_id()) {
+                Some(version) => *version,
+                None => current_version(entries, write.table_id())?,
+            };
+            Ok(match write {
+                Write::InsertRows { .. } | Write::UpdateRows { .. } | Write::DeleteRows { .. } => {
+                    OpResult::RowsWritten {
+                        table_version,
+                        inserted,
+                        affected: count(write.affected()),
+                    }
+                }
+                Write::UpdateOption { .. } | Write::DeleteOption { .. } => {
+                    OpResult::OptionChanged { table_version }
+                }
+                Write::CreateView { view } | Write::UpdateView { view, .. } => {
+                    OpResult::ViewWritten {
+                        table_version,
+                        view: Box::new(view.clone()),
+                    }
+                }
+                Write::DeleteView { .. } => OpResult::ViewDeleted { table_version },
+                Write::OrderViews { positions, .. } => OpResult::ViewsReordered {
+                    table_version,
+                    positions: positions.clone(),
+                },
+                Write::MoveCard { positions, .. } => OpResult::CardMoved {
+                    table_version,
+                    positions: positions.clone(),
+                },
+            })
+        })
+        .collect()
 }
 
 fn refuse(
@@ -630,11 +645,13 @@ impl Planner<'_> {
                     rows: rows.clone(),
                 })
             }
+            // A batch of one type change never reaches the planner.
             DatabaseOp::ChangeColumnType { column, .. } => Err(refuse(
                 index,
                 None,
                 Some(*column),
-                "a column type change is applied on its own",
+                "a column type change is applied on its own; send it as the only op of its \
+                 request",
             )),
             DatabaseOp::UpdateOption {
                 column,

@@ -447,7 +447,7 @@ where
     params(("id" = Uuid, Path, description = "Database id")),
     request_body = Awareness,
     responses(
-        (status = 204, description = "Relayed"),
+        (status = 204, description = "Relayed to the database's other viewers"),
         (status = 401, description = "Missing or invalid credentials", body = ErrorResponse),
         (status = 403, description = "No access to the database", body = ErrorResponse),
         (status = 500, body = ErrorResponse),
