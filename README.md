@@ -25,7 +25,9 @@
 
 <br />
 
-Macro is the all-in-one workspace for you and your team. It unifies email + messages + docs + tasks + agents + CRM into a single fast interface with shared team-level memory. Everything in your workspace is @linked and searchable so your team (and your agents) never have to switch tools. 
+Macro is the all-in-one workspace for you and your team. It unifies email + messages + docs + tasks + agents + CRM into a single fast interface with shared team-level memory. Everything in your workspace is @linked and searchable so your team (and your agents) never have to switch tools.
+
+This "merge mansion" is a sprawling monorepo where 42 Rust services, 167 crates, and a SolidJS frontend come together in one interconnected system, all sharing the same database and bidirectional graph.
  
 <br />
 
