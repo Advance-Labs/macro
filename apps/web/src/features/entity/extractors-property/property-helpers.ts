@@ -322,7 +322,7 @@ export function buildCompanyDefaultProperties(): Property[] {
         is_multi_select: false,
         is_system: true,
         owner: { scope: 'system' },
-        specific_entity_type: def.specificEntityType,
+        specific_entity_type: def.specificEntityType ?? null,
         created_at: EPOCH_ZERO.toISOString(),
         updated_at: EPOCH_ZERO.toISOString(),
       },
