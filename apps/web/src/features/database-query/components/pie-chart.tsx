@@ -92,7 +92,11 @@ export function PieChart(props: {
           </For>
           <g
             text-anchor="middle"
-            class="pointer-events-none fill-white [paint-order:stroke] [stroke:rgb(0_0_0/0.25)] [stroke-width:2px]"
+            // Ink on a panel halo, as Plot draws text, reads on every hue in both themes.
+            class="pointer-events-none fill-ink stroke-panel [paint-order:stroke]"
+            stroke-width="3"
+            stroke-linejoin="round"
+            stroke-opacity="0.85"
           >
             <For
               each={slices().filter(
