@@ -68,8 +68,9 @@ async fn sharing_a_reference_does_not_downgrade_existing_channel_access(pool: Pg
     )
     .await
     .unwrap();
-    entity_access_db_utils::insert_direct_channel_grant_if_absent(
-        &pool,
+    let mut transaction = pool.begin().await.unwrap();
+    entity_access_db_utils::channel_share::insert_if_absent(
+        &mut transaction,
         &table.database_id,
         EntityType::Database,
         &channel_id,
@@ -77,6 +78,7 @@ async fn sharing_a_reference_does_not_downgrade_existing_channel_access(pool: Pg
     )
     .await
     .unwrap();
+    transaction.commit().await.unwrap();
     assert_eq!(
         repo.channel_grants(table.database_id).await.unwrap()[0].access_level,
         AccessLevel::Edit
