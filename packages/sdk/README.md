@@ -144,14 +144,14 @@ const props = await doc.properties();
 
 ### Databases
 
-Databases are collections of tables. Tables and columns are parts of a
-database, not entities of their own, so they come back as handles that resolve
-through the database's schema.
+Databases are collections of tables. Tables, columns, and views are parts of
+a database, not entities of their own, so they come back as handles that
+resolve through the database's schema.
 
 ```ts
 const db = await macro.databases.create({ name: 'Events' });
 const guests = await db.createTable({ name: 'Guests' });
-await guests.addColumn({ name: 'Email', dataType: 'STRING' });
+const email = await guests.addColumn({ name: 'Email', dataType: 'STRING' });
 
 // A select column only accepts labels you give it, at creation or later.
 const rsvp = await guests.addColumn({
@@ -163,6 +163,39 @@ await rsvp.addOptions(['Maybe']);
 
 await guests.rename('Attendees');
 await rsvp.rename('Response');
+
+// See what each type change would do to the existing values first.
+const casts = await rsvp.casts();
+
+// Tabs: a new database starts with a "Table 1". Reorder by naming every
+// table once, or delete one; a database keeps at least one.
+const tables = await db.tables();
+await db.reorderTables(tables.toReversed());
+await (await db.table('Table 1'))?.delete();
+```
+
+Rows, select options, views, and board cards change through ops, applied as
+one batch: a refused op leaves the whole batch unwritten.
+
+```ts
+const [result] = await db.applyOps([
+  {
+    kind: 'insert_rows',
+    table: guests.id,
+    rows: [
+      [{ column: email.id, value: { type: 'text', value: 'ada@example.com' } }],
+    ],
+  },
+]);
+```
+
+A table's views are handles too. A board view reads where its cards sit:
+
+```ts
+for (const view of await guests.views()) {
+  const layout = await view.layout();
+  if (layout.kind === 'board') console.log(await view.positions());
+}
 ```
 
 ### Rich message helper
