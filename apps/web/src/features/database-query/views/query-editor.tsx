@@ -1,4 +1,10 @@
 import { isFeatureEnabled, showDatabaseSql } from '@core/constant/featureFlags';
+import {
+  DATABASE_QUERY_CHART_MODES,
+  type DatabaseQueryDisplayMode,
+  isDatabaseQueryChartMode,
+  isDatabaseQueryDisplayMode,
+} from '@macro-inc/lexical-core/nodes/databaseQueryData';
 import ArrowClockwiseIcon from '@phosphor/arrow-clockwise.svg';
 import ArrowUpIcon from '@phosphor/arrow-up.svg';
 import CodeIcon from '@phosphor/code.svg';
@@ -15,24 +21,23 @@ import {
   onMount,
   Show,
 } from 'solid-js';
+import { match, P } from 'ts-pattern';
 import { QueryResults } from '../components/query-results';
 import { QuestionExamples } from '../components/question-examples';
 import { SqlEditor } from '../components/sql-editor';
+import { useAnswerDisplay } from '../context/answer-display';
 import type { QueryCapabilities } from '../context/query-context';
+import { unknownNames } from '../core/answer-cell';
 import {
   isScalarAnswer,
-  type QueryAnswer,
   type QueryDefinition,
   type QuerySchema,
   queryFocusTable,
 } from '../core/query';
 import {
+  availableDisplayModes,
   chartModeLabel,
-  isChartMode,
-  isDisplayMode,
   prepareQueryChart,
-  QUERY_CHART_MODES,
-  type QueryDisplayMode,
 } from '../core/query-chart';
 import { questionExamples } from '../core/question-examples';
 import { createQueryComposer } from '../primitives/query-composer';
@@ -43,14 +48,17 @@ export function QueryEditor(props: {
   capabilities: QueryCapabilities;
   sourceAvailable?: boolean;
   sourcePicker?: JSX.Element | ((schema: Accessor<QuerySchema>) => JSX.Element);
-  onSave?: (definition: QueryDefinition, answer: QueryAnswer) => void;
+  onSave?: (definition: QueryDefinition) => void;
   saveLabel?: string;
   autoFocus?: boolean;
 }) {
+  const showSql = isFeatureEnabled(showDatabaseSql);
+  const display = useAnswerDisplay();
   const composer = createQueryComposer({
     ...props.capabilities,
     initial: props.initial,
     schema: () => props.schema,
+    showSql,
   });
   // Build the picker once; reactive schema reads belong inside its props.
   // Recreating it on source changes removes the trigger before focus restores.
@@ -60,9 +68,8 @@ export function QueryEditor(props: {
       : props.sourcePicker;
   const promptId = createUniqueId();
   let promptInput: HTMLTextAreaElement | undefined;
-  const showSql = isFeatureEnabled(showDatabaseSql);
   const [sqlOpen, setSqlOpen] = createSignal(false);
-  const displayMode = (): QueryDisplayMode => {
+  const displayMode = (): DatabaseQueryDisplayMode => {
     const preview = composer.preview();
     return composer.presentation().displayMode === 'scalar' &&
       preview &&
@@ -73,30 +80,33 @@ export function QueryEditor(props: {
   const displayOptions = () => {
     const current = composer.preview()?.answer;
     if (!current) return [];
-    return [
-      ...(isScalarAnswer(current)
-        ? [{ value: 'scalar' as const, label: 'Inline answer' }]
-        : []),
-      { value: 'table' as const, label: 'Result table' },
-      ...QUERY_CHART_MODES.filter(
-        (mode) =>
-          mode === displayMode() ||
-          !!prepareQueryChart(current, mode, composer.presentation().chart)
-            .data ||
-          !!prepareQueryChart(current, mode).data
-      ).map((value) => ({ value, label: chartModeLabel(value) })),
-    ];
+    return availableDisplayModes(current, {
+      displayMode: displayMode(),
+      chart: composer.presentation().chart,
+    }).map((value) => ({
+      value,
+      label: match(value)
+        .with('scalar', () => 'Inline answer')
+        .with('table', () => 'Result table')
+        .with(P.union(...DATABASE_QUERY_CHART_MODES), chartModeLabel)
+        .exhaustive(),
+    }));
   };
   const savedChart = () => {
     const current = composer.preview()?.answer;
     const mode = displayMode();
-    return current && isChartMode(mode)
-      ? prepareQueryChart(current, mode, composer.presentation().chart).data
-          ?.config
+    return current && isDatabaseQueryChartMode(mode)
+      ? prepareQueryChart(
+          current,
+          mode,
+          composer.presentation().chart,
+          unknownNames
+        ).data?.config
       : undefined;
   };
   const answer = () =>
     composer.isCurrentPreview() ? composer.preview()?.answer : undefined;
+  const names = display.names(() => composer.preview()?.answer);
   const busy = () => composer.phase() !== 'idle';
   const focusTable = () => queryFocusTable(composer.schema());
   const sourceAvailable = () => props.sourceAvailable !== false;
@@ -113,21 +123,19 @@ export function QueryEditor(props: {
   // A current answer is accepted with Enter; changing the prompt asks again.
   const canAccept = () => !!answer() && !!props.onSave;
   const accept = () => {
-    const current = answer();
-    if (!current || !props.onSave) return;
-    props.onSave(
-      {
-        databaseId: composer.answerDatabaseId(),
-        ...(composer.tableId() ? { tableId: composer.tableId() } : {}),
-        sql: composer.sql().trim(),
-        prompt: composer.prompt().trim(),
-        title: composer.presentation().title,
-        displayMode:
-          isChartMode(displayMode()) && !savedChart() ? 'table' : displayMode(),
-        ...(savedChart() ? { chart: savedChart() } : {}),
-      },
-      current
-    );
+    if (!answer() || !props.onSave) return;
+    props.onSave({
+      databaseId: composer.answerDatabaseId(),
+      ...(composer.tableId() ? { tableId: composer.tableId() } : {}),
+      sql: composer.sql().trim(),
+      prompt: composer.prompt().trim(),
+      title: composer.presentation().title,
+      displayMode:
+        isDatabaseQueryChartMode(displayMode()) && !savedChart()
+          ? 'table'
+          : displayMode(),
+      ...(savedChart() ? { chart: savedChart() } : {}),
+    });
   };
   const editPrompt = () => {
     if (!promptInput) return;
@@ -338,7 +346,8 @@ export function QueryEditor(props: {
                   disabled={busy()}
                   onChange={(event) => {
                     const mode = event.currentTarget.value;
-                    if (isDisplayMode(mode)) composer.setDisplayMode(mode);
+                    if (isDatabaseQueryDisplayMode(mode))
+                      composer.setDisplayMode(mode);
                   }}
                   class="h-7 min-w-0 rounded-md border border-transparent bg-transparent px-1 text-xs font-medium text-ink outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/25"
                 >
@@ -387,6 +396,8 @@ export function QueryEditor(props: {
                 answer={preview().answer}
                 displayMode={displayMode()}
                 chart={composer.presentation().chart}
+                names={names()}
+                display={display}
               />
             </div>
             <Show when={canAccept()}>

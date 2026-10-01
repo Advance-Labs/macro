@@ -1,3 +1,4 @@
+import { isFeatureEnabled, showDatabaseSql } from '@core/constant/featureFlags';
 import { refreshInBackground } from '@queries/database-sql/create-database-sql-query';
 import { useDatabaseQueryDefinition } from '@queries/storage/database-queries';
 import {
@@ -121,7 +122,7 @@ function AskQuestion(props: {
     });
     setSaving(false);
     saved.match(props.onSave, (failure) =>
-      setError(queryErrorMessage(failure))
+      setError(queryErrorMessage(failure, isFeatureEnabled(showDatabaseSql)))
     );
   };
   return (
@@ -144,6 +145,12 @@ function AskQuestion(props: {
   );
 }
 
+/** Refreshes on every change to one database while mounted; draws nothing. */
+function TrackDatabase(props: { id: string; onChange: () => void }) {
+  trackQueryDatabase(props.id, props.onChange);
+  return null;
+}
+
 /** Production wiring is loaded only when a document query enters the viewport. */
 export function DatabaseLiveQuestion(props: {
   source: SavedQuestion;
@@ -164,12 +171,14 @@ export function DatabaseLiveQuestion(props: {
   return (
     <AppAnswerDisplay>
       <For each={trackingIds()}>
-        {(id) => {
-          trackQueryDatabase(id, () => {
-            if (props.source.queryId) refresh();
-          });
-          return null;
-        }}
+        {(id) => (
+          <TrackDatabase
+            id={id}
+            onChange={() => {
+              if (props.source.queryId) refresh();
+            }}
+          />
+        )}
       </For>
       <LiveQuestion
         source={props.source}

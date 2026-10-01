@@ -1,26 +1,25 @@
 import { OptionPill } from '@app/features/block-database/components/select-pill';
 import { For, Match, Switch } from 'solid-js';
-import { useAnswerDisplay } from '../context/answer-display';
+import type { AnswerRenderers } from '../context/answer-display';
 import {
   type ReferenceNames,
   type ResultCell,
   resultCellText,
-  unknownNames,
 } from '../core/answer-cell';
 
 /** One result value, drawn with the same pieces as the database grid's cells. */
 export function ResultValue(props: {
   cell: ResultCell;
-  names?: ReferenceNames;
+  names: ReferenceNames;
+  display: AnswerRenderers;
 }) {
-  const display = useAnswerDisplay();
   return (
-    <Switch fallback={resultCellText(props.cell, props.names ?? unknownNames)}>
+    <Switch fallback={resultCellText(props.cell, props.names)}>
       <Match when={props.cell.kind === 'empty'}>
         <span class="opacity-40">—</span>
       </Match>
       <Match when={props.cell.kind === 'markdown' && props.cell}>
-        {(cell) => <>{display.text(cell().markdown)}</>}
+        {(cell) => <>{props.display.text(cell().markdown)}</>}
       </Match>
       <Match when={props.cell.kind === 'boolean' && props.cell}>
         {(cell) => (
@@ -52,7 +51,7 @@ export function ResultValue(props: {
         {(cell) => (
           <span class="inline-flex min-w-0 max-w-full flex-wrap gap-x-2 gap-y-1 align-middle">
             <For each={cell().ids}>
-              {(id) => display.mention(id, cell().entityType)}
+              {(id) => props.display.mention(id, cell().entityType)}
             </For>
           </span>
         )}

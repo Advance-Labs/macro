@@ -1,7 +1,8 @@
 import { render } from '@solidjs/testing-library';
 import { describe, expect, it, vi } from 'vitest';
-import { AnswerDisplayProvider } from '../context/answer-display';
+import { unknownNames } from '../core/answer-cell';
 import type { QueryAnswer } from '../core/query';
+import { plainAnswerRenderers } from '../tests/plain-answer-display';
 import { QueryResults } from './query-results';
 
 vi.mock('@solid-primitives/resize-observer', () => ({
@@ -38,6 +39,8 @@ describe('question result display', () => {
       };
       const result = render(() => (
         <QueryResults
+          names={unknownNames}
+          display={plainAnswerRenderers}
           answer={answer}
           displayMode={displayMode}
           chart={{ x: 'Status', y: ['Count'], title: 'Tasks by status' }}
@@ -58,6 +61,8 @@ describe('question result display', () => {
   it('explains invalid chart data and falls back to the actual table', () => {
     const result = render(() => (
       <QueryResults
+        names={unknownNames}
+        display={plainAnswerRenderers}
         answer={scalar}
         displayMode="bar"
         chart={{ x: 'Status', y: ['Count'] }}
@@ -70,7 +75,12 @@ describe('question result display', () => {
   });
   it('honors an explicit table choice for a one-cell answer', () => {
     const result = render(() => (
-      <QueryResults answer={scalar} displayMode="table" />
+      <QueryResults
+        names={unknownNames}
+        display={plainAnswerRenderers}
+        answer={scalar}
+        displayMode="table"
+      />
     ));
     expect(result.getByRole('table')).toBeTruthy();
     expect(result.getByRole('columnheader').textContent).toBe('Approved');
@@ -84,7 +94,12 @@ describe('question result display', () => {
       rows: [[{ type: 'text', value: 'Ready' }]],
     };
     const result = render(() => (
-      <QueryResults answer={answer} displayMode="scalar" />
+      <QueryResults
+        names={unknownNames}
+        display={plainAnswerRenderers}
+        answer={answer}
+        displayMode="scalar"
+      />
     ));
     expect(result.queryByRole('table')).toBeNull();
     expect(result.getByText('Ready')).toBeTruthy();
@@ -102,7 +117,12 @@ describe('question result display', () => {
       rowIds: ['0190a3c4-row-1', '0190a3c4-row-2'],
     };
     const result = render(() => (
-      <QueryResults answer={answer} displayMode="table" />
+      <QueryResults
+        names={unknownNames}
+        display={plainAnswerRenderers}
+        answer={answer}
+        displayMode="table"
+      />
     ));
     const table = result.getByRole('table');
     expect(
@@ -186,25 +206,23 @@ describe('question result display', () => {
       ['v4', 'Caterer'],
     ]);
     const result = render(() => (
-      <AnswerDisplayProvider
-        value={{
+      <QueryResults
+        answer={answer}
+        displayMode="table"
+        names={({ kind, id, table }) =>
+          kind === 'DATABASE_ROW' && table === 'vendors'
+            ? vendors.get(id)
+            : undefined
+        }
+        display={{
           mention: (id, entityType) => (
             <span
               data-testid={`${entityType}-mention`}
             >{`${entityType} ${id}`}</span>
           ),
           text: (markdown) => <span data-testid="markdown">{markdown}</span>,
-          names: (current) => () => {
-            expect(current()?.readDatabaseIds).toEqual(['party-planner']);
-            return ({ kind, id, table }) =>
-              kind === 'DATABASE_ROW' && table === 'vendors'
-                ? vendors.get(id)
-                : undefined;
-          },
         }}
-      >
-        <QueryResults answer={answer} displayMode="table" />
-      </AnswerDisplayProvider>
+      />
     ));
     const cells = Array.from(result.getByRole('table').querySelectorAll('td'));
     expect(cells.map((cell) => cell.textContent)).toEqual([
@@ -250,7 +268,12 @@ describe('question result display', () => {
       ],
     };
     const result = render(() => (
-      <QueryResults answer={answer} displayMode="table" />
+      <QueryResults
+        names={unknownNames}
+        display={plainAnswerRenderers}
+        answer={answer}
+        displayMode="table"
+      />
     ));
     const cells = Array.from(result.getByRole('table').querySelectorAll('td'));
     expect(cells.map((cell) => cell.textContent)).toEqual([
@@ -268,7 +291,12 @@ describe('question result display', () => {
       rows: [[{ type: 'date', value: '2025-12-31T00:00:00+00:00' }]],
     };
     const result = render(() => (
-      <QueryResults answer={answer} displayMode="scalar" />
+      <QueryResults
+        names={unknownNames}
+        display={plainAnswerRenderers}
+        answer={answer}
+        displayMode="scalar"
+      />
     ));
     expect(result.getByText('Dec 31, 2025')).toBeTruthy();
     expect(result.queryByText(/2025-12-31/)).toBeNull();

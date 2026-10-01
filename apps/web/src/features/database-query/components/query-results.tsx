@@ -1,32 +1,37 @@
-import { type Accessor, createMemo, For, Show } from 'solid-js';
-import { useAnswerNames } from '../context/answer-display';
+import {
+  type DatabaseQueryChart,
+  type DatabaseQueryDisplayMode,
+  isDatabaseQueryChartMode,
+} from '@macro-inc/lexical-core/nodes/databaseQueryData';
+import { createMemo, For, Show } from 'solid-js';
+import type { AnswerRenderers } from '../context/answer-display';
 import {
   type ReferenceNames,
   resultCell,
   resultCellText,
 } from '../core/answer-cell';
 import { isScalarAnswer, type QueryAnswer } from '../core/query';
-import {
-  isChartMode,
-  prepareQueryChart,
-  type QueryChartConfig,
-  type QueryDisplayMode,
-} from '../core/query-chart';
+import { prepareQueryChart } from '../core/query-chart';
 import { ResultValue } from './answer-value';
 import { QueryChart } from './query-chart';
 
 export function QueryResults(props: {
   answer: QueryAnswer;
   compact?: boolean;
-  displayMode?: QueryDisplayMode;
-  chart?: QueryChartConfig;
-  /** The names the answer references; read here when the caller has none. */
-  names?: Accessor<ReferenceNames>;
+  displayMode: DatabaseQueryDisplayMode;
+  chart?: DatabaseQueryChart;
+  /** The names the answer references. */
+  names: ReferenceNames;
+  display: AnswerRenderers;
 }) {
-  const names = props.names ?? useAnswerNames(() => props.answer);
   const chart = createMemo(() =>
-    isChartMode(props.displayMode)
-      ? prepareQueryChart(props.answer, props.displayMode, props.chart, names())
+    isDatabaseQueryChartMode(props.displayMode)
+      ? prepareQueryChart(
+          props.answer,
+          props.displayMode,
+          props.chart,
+          props.names
+        )
       : undefined
   );
   return (
@@ -47,12 +52,16 @@ export function QueryResults(props: {
         fallback={
           <Show
             when={
-              !isChartMode(props.displayMode) &&
+              !isDatabaseQueryChartMode(props.displayMode) &&
               props.displayMode !== 'table' &&
               isScalarAnswer(props.answer)
             }
             fallback={
-              <QueryResultTable answer={props.answer} names={names()} />
+              <QueryResultTable
+                answer={props.answer}
+                names={props.names}
+                display={props.display}
+              />
             }
           >
             <div class="rounded-lg border border-edge-muted bg-hover/40 px-4 py-4">
@@ -60,7 +69,11 @@ export function QueryResults(props: {
                 class="text-3xl font-medium tracking-tight tabular-nums text-ink"
                 classList={{ 'text-xl': props.compact }}
               >
-                <ScalarValue answer={props.answer} names={names()} />
+                <ScalarValue
+                  answer={props.answer}
+                  names={props.names}
+                  display={props.display}
+                />
               </div>
               <div class="mt-1 text-xs text-ink-muted">
                 {props.answer.columns[0]?.name.replaceAll('_', ' ')}
@@ -77,7 +90,11 @@ export function QueryResults(props: {
                 View data
               </summary>
               <div class="mt-2">
-                <QueryResultTable answer={props.answer} names={names()} />
+                <QueryResultTable
+                  answer={props.answer}
+                  names={props.names}
+                  display={props.display}
+                />
               </div>
             </details>
           </>
@@ -91,6 +108,7 @@ export function QueryResults(props: {
 export function ScalarValue(props: {
   answer: QueryAnswer;
   names: ReferenceNames;
+  display: AnswerRenderers;
 }) {
   return (
     <Show when={props.answer.columns[0]} fallback="—">
@@ -98,6 +116,7 @@ export function ScalarValue(props: {
         <ResultValue
           cell={resultCell(props.answer.rows[0]?.[0] ?? null, column())}
           names={props.names}
+          display={props.display}
         />
       )}
     </Show>
@@ -107,6 +126,7 @@ export function ScalarValue(props: {
 function QueryResultTable(props: {
   answer: QueryAnswer;
   names: ReferenceNames;
+  display: AnswerRenderers;
 }) {
   const rows = () => props.answer.rows;
   return (
@@ -139,7 +159,11 @@ function QueryResultTable(props: {
                             : resultCellText(cell(), props.names)
                         }
                       >
-                        <ResultValue cell={cell()} names={props.names} />
+                        <ResultValue
+                          cell={cell()}
+                          names={props.names}
+                          display={props.display}
+                        />
                       </td>
                     );
                   }}

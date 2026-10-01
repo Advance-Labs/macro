@@ -40,8 +40,9 @@ vi.mock('./queries/app-query-source', () => ({
   saveQuestionSql: adapters.saveQuestionSql,
   trackQueryDatabase: adapters.trackQueryDatabase,
 }));
-vi.mock('./answer-display', () => ({
-  AppAnswerDisplay: (props: { children: JSX.Element }) => props.children,
+vi.mock('./answer-display', async () => ({
+  AppAnswerDisplay: (await import('./tests/plain-answer-display'))
+    .PlainAnswerDisplay,
 }));
 vi.mock('./components/query-database-picker', async () => {
   const { For } = await import('solid-js');

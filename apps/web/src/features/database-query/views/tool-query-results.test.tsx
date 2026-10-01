@@ -1,15 +1,14 @@
-import { showDatabaseSql } from '@core/constant/featureFlags';
 import { fireEvent, render, screen } from '@solidjs/testing-library';
 import userEvent from '@testing-library/user-event';
-import { createSignal, type JSX } from 'solid-js';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createSignal } from 'solid-js';
+import { describe, expect, it, vi } from 'vitest';
 import type { QueryAnswer } from '../core/query';
+import { PlainAnswerDisplay } from '../tests/plain-answer-display';
 import { ToolQueryResults } from './tool-query-results';
 
 vi.mock('@solid-primitives/resize-observer', () => ({
   createElementSize: () => ({ width: 346, height: 300 }),
 }));
-const passThrough = (props: { children: JSX.Element }) => props.children;
 
 const answer: QueryAnswer = {
   columns: [
@@ -32,19 +31,17 @@ const answer: QueryAnswer = {
   truncatedTables: [],
 };
 
-afterEach(() => {
-  showDatabaseSql.enabled = false;
-});
-
 describe('native chat database answers', () => {
   it('opens the requested chart and lets the reader override it', async () => {
     const rendered = render(() => (
-      <ToolQueryResults
-        answerDisplay={passThrough}
-        answer={answer}
-        sql="SELECT team, count FROM tickets"
-        preferredDisplay="bar"
-      />
+      <PlainAnswerDisplay>
+        <ToolQueryResults
+          showSql={false}
+          answer={answer}
+          sql="SELECT team, count FROM tickets"
+          preferredDisplay="bar"
+        />
+      </PlainAnswerDisplay>
     ));
     expect(rendered.getByRole('img', { name: /Tickets by Team/ })).toBeTruthy();
     await fireEvent.keyDown(
@@ -68,12 +65,14 @@ describe('native chat database answers', () => {
       ],
     };
     const rendered = render(() => (
-      <ToolQueryResults
-        answerDisplay={passThrough}
-        answer={textOnly}
-        sql="SELECT name FROM customers"
-        preferredDisplay="bar"
-      />
+      <PlainAnswerDisplay>
+        <ToolQueryResults
+          showSql={false}
+          answer={textOnly}
+          sql="SELECT name FROM customers"
+          preferredDisplay="bar"
+        />
+      </PlainAnswerDisplay>
     ));
     expect(rendered.getByRole('table').textContent).toContain('Ada');
     expect(rendered.queryByRole('img')).toBeNull();
@@ -81,13 +80,14 @@ describe('native chat database answers', () => {
   });
 
   it('switches real query data between table and compatible charts', async () => {
-    showDatabaseSql.enabled = true;
     const rendered = render(() => (
-      <ToolQueryResults
-        answerDisplay={passThrough}
-        answer={answer}
-        sql="SELECT team, count(*) AS Tickets FROM tickets GROUP BY team"
-      />
+      <PlainAnswerDisplay>
+        <ToolQueryResults
+          showSql
+          answer={answer}
+          sql="SELECT team, count(*) AS Tickets FROM tickets GROUP BY team"
+        />
+      </PlainAnswerDisplay>
     ));
     expect(rendered.getByRole('table').textContent).toContain('Support12');
     await fireEvent.keyDown(
@@ -106,11 +106,13 @@ describe('native chat database answers', () => {
   it('only offers a table for text-only results and recovers when streamed result shape changes', async () => {
     const [value, setValue] = createSignal(answer);
     const rendered = render(() => (
-      <ToolQueryResults
-        answerDisplay={passThrough}
-        answer={value()}
-        sql="SELECT name FROM customers"
-      />
+      <PlainAnswerDisplay>
+        <ToolQueryResults
+          showSql={false}
+          answer={value()}
+          sql="SELECT name FROM customers"
+        />
+      </PlainAnswerDisplay>
     ));
     await fireEvent.keyDown(
       rendered.getByRole('button', { name: /Display database results/ }),
@@ -141,11 +143,13 @@ describe('native chat database answers', () => {
 describe('native chat database answers with SQL hidden', () => {
   it('shows the result without the statement', () => {
     const rendered = render(() => (
-      <ToolQueryResults
-        answerDisplay={passThrough}
-        answer={answer}
-        sql="SELECT team, count FROM tickets"
-      />
+      <PlainAnswerDisplay>
+        <ToolQueryResults
+          showSql={false}
+          answer={answer}
+          sql="SELECT team, count FROM tickets"
+        />
+      </PlainAnswerDisplay>
     ));
     expect(rendered.getByRole('table').textContent).toContain('Support12');
     expect(rendered.queryByText('View SQL')).toBeNull();

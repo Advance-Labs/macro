@@ -1,42 +1,31 @@
-import { DatabaseMentionPlaceholder } from '@app/features/block-database/components/database-mention-label';
 import type { DatabaseEntityType } from '@app/features/block-database/core/column-inference';
-import { markdownToPlainText } from '@macro-inc/lexical-core/utils/parsers';
 import { type Accessor, createContext, type JSX, useContext } from 'solid-js';
-import { type ReferenceNames, unknownNames } from '../core/answer-cell';
+import type { ReferenceNames } from '../core/answer-cell';
 import type { QueryAnswer } from '../core/query';
 
-/**
- * What an answer is drawn with. The app supplies the names of the people
- * and rows it references and the database grid's mention and text
- * renderers; without them values keep their plain form.
- */
-export type AnswerDisplay = {
-  /** Names what an answer references, as far as they are known. */
-  names: (
-    answer: Accessor<QueryAnswer | undefined>
-  ) => Accessor<ReferenceNames>;
+/** How a cell's mentions and markdown text are drawn. */
+export type AnswerRenderers = {
   mention: (id: string, entityType: DatabaseEntityType) => JSX.Element;
   text: (markdown: string) => JSX.Element;
 };
 
-const plainDisplay: AnswerDisplay = {
-  names: () => () => unknownNames,
-  mention: (_, entityType) => (
-    <DatabaseMentionPlaceholder entityType={entityType} />
-  ),
-  text: (markdown) => markdownToPlainText(markdown),
+/** What an answer is drawn with, and the names of what it references. */
+export type AnswerDisplay = AnswerRenderers & {
+  /** Names what an answer references, as far as they are known. */
+  names: (
+    answer: Accessor<QueryAnswer | undefined>
+  ) => Accessor<ReferenceNames>;
 };
 
-const AnswerDisplayContext = createContext<AnswerDisplay>(plainDisplay);
+const AnswerDisplayContext = createContext<AnswerDisplay>();
 
 export const AnswerDisplayProvider = AnswerDisplayContext.Provider;
 
 export function useAnswerDisplay(): AnswerDisplay {
-  return useContext(AnswerDisplayContext);
-}
-
-export function useAnswerNames(
-  answer: Accessor<QueryAnswer | undefined>
-): Accessor<ReferenceNames> {
-  return useAnswerDisplay().names(answer);
+  const display = useContext(AnswerDisplayContext);
+  if (!display)
+    throw new Error(
+      'useAnswerDisplay needs an AnswerDisplayProvider, such as AppAnswerDisplay.'
+    );
+  return display;
 }

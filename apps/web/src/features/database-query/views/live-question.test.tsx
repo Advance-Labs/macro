@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { QueryAnswer, QueryFailure } from '../core/query';
+import { PlainAnswerDisplay } from '../tests/plain-answer-display';
 import { LiveQuestion } from './live-question';
 
 vi.mock('@solid-primitives/resize-observer', () => ({
@@ -13,33 +14,35 @@ describe('live database charts', () => {
   it('hides cached chart data after a permission error and never labels an unavailable answer live', () => {
     const [error, setError] = createSignal<QueryFailure>();
     const rendered = render(() => (
-      <LiveQuestion
-        source={{
-          queryId: 'tasks-by-status',
-          prompt: 'Tasks by status',
-          displayMode: 'bar',
-          chart: { x: 'Status', y: ['Count'] },
-        }}
-        answer={{
-          columns: [
-            { name: 'Status', kind: 'text' },
-            { name: 'Count', kind: 'number' },
-          ],
-          rows: [
-            [
-              { type: 'text', value: 'Private work' },
-              { type: 'number', value: 5 },
+      <PlainAnswerDisplay>
+        <LiveQuestion
+          source={{
+            queryId: 'tasks-by-status',
+            prompt: 'Tasks by status',
+            displayMode: 'bar',
+            chart: { x: 'Status', y: ['Count'] },
+          }}
+          answer={{
+            columns: [
+              { name: 'Status', kind: 'text' },
+              { name: 'Count', kind: 'number' },
             ],
-          ],
-          rowIds: [],
-          readTables: [],
-          readDatabaseIds: [],
-          truncatedTables: [],
-        }}
-        error={error()}
-        loading={false}
-        onRefresh={vi.fn()}
-      />
+            rows: [
+              [
+                { type: 'text', value: 'Private work' },
+                { type: 'number', value: 5 },
+              ],
+            ],
+            rowIds: [],
+            readTables: [],
+            readDatabaseIds: [],
+            truncatedTables: [],
+          }}
+          error={error()}
+          loading={false}
+          onRefresh={vi.fn()}
+        />
+      </PlainAnswerDisplay>
     ));
     expect(rendered.getByRole('img')).toBeTruthy();
     setError({
@@ -71,17 +74,19 @@ describe('live database charts', () => {
     });
     const [answer, setAnswer] = createSignal(result(5));
     const rendered = render(() => (
-      <LiveQuestion
-        source={{
-          queryId: 'tasks-by-status',
-          prompt: 'Tasks by status',
-          displayMode: 'bar',
-          chart: { x: 'Status', y: ['Count'] },
-        }}
-        answer={answer()}
-        loading={false}
-        onRefresh={vi.fn()}
-      />
+      <PlainAnswerDisplay>
+        <LiveQuestion
+          source={{
+            queryId: 'tasks-by-status',
+            prompt: 'Tasks by status',
+            displayMode: 'bar',
+            chart: { x: 'Status', y: ['Count'] },
+          }}
+          answer={answer()}
+          loading={false}
+          onRefresh={vi.fn()}
+        />
+      </PlainAnswerDisplay>
     ));
     expect(
       rendered.getByRole('img', { name: 'Count by Status. Bar chart.' })
@@ -108,17 +113,19 @@ describe('answer titles', () => {
     async (displayMode) => {
       const onRename = vi.fn();
       const rendered = render(() => (
-        <LiveQuestion
-          source={{
-            queryId: 'twelve',
-            prompt: 'Please tell me how many tickets we have right now',
-            title: 'Open tickets',
-            displayMode,
-          }}
-          loading={false}
-          onRefresh={vi.fn()}
-          onRename={onRename}
-        />
+        <PlainAnswerDisplay>
+          <LiveQuestion
+            source={{
+              queryId: 'twelve',
+              prompt: 'Please tell me how many tickets we have right now',
+              title: 'Open tickets',
+              displayMode,
+            }}
+            loading={false}
+            onRefresh={vi.fn()}
+            onRename={onRename}
+          />
+        </PlainAnswerDisplay>
       ));
       // Lexical handles input at its editor root before Solid's document-level
       // delegated listener. Inline fields must still receive their own input.
@@ -138,17 +145,19 @@ describe('answer titles', () => {
   it('cancels a rename with Escape and keeps a reader-only title inert', async () => {
     const onRename = vi.fn();
     const rendered = render(() => (
-      <LiveQuestion
-        source={{
-          queryId: 'one',
-          prompt: 'Question',
-          title: 'Tickets',
-          displayMode: 'table',
-        }}
-        loading={false}
-        onRefresh={vi.fn()}
-        onRename={onRename}
-      />
+      <PlainAnswerDisplay>
+        <LiveQuestion
+          source={{
+            queryId: 'one',
+            prompt: 'Question',
+            title: 'Tickets',
+            displayMode: 'table',
+          }}
+          loading={false}
+          onRefresh={vi.fn()}
+          onRename={onRename}
+        />
+      </PlainAnswerDisplay>
     ));
     await fireEvent.dblClick(rendered.getByText('Tickets'));
     await fireEvent.input(rendered.getByRole('textbox'), {
@@ -158,16 +167,18 @@ describe('answer titles', () => {
     expect(onRename).not.toHaveBeenCalled();
     rendered.unmount();
     const reader = render(() => (
-      <LiveQuestion
-        source={{
-          queryId: 'one',
-          prompt: 'Question',
-          title: 'Tickets',
-          displayMode: 'table',
-        }}
-        loading={false}
-        onRefresh={vi.fn()}
-      />
+      <PlainAnswerDisplay>
+        <LiveQuestion
+          source={{
+            queryId: 'one',
+            prompt: 'Question',
+            title: 'Tickets',
+            displayMode: 'table',
+          }}
+          loading={false}
+          onRefresh={vi.fn()}
+        />
+      </PlainAnswerDisplay>
     ));
     await fireEvent.dblClick(reader.getByText('Tickets'));
     expect(reader.queryByRole('textbox')).toBeNull();
@@ -177,13 +188,15 @@ describe('answer titles', () => {
   it('discards a never-saved answer when its question editor is dismissed', async () => {
     const discard = vi.fn();
     const rendered = render(() => (
-      <LiveQuestion
-        source={{ queryId: '', prompt: '', displayMode: 'table' }}
-        loading={false}
-        onRefresh={vi.fn()}
-        onDiscard={discard}
-        editor={() => <textarea aria-label="Ask your database" />}
-      />
+      <PlainAnswerDisplay>
+        <LiveQuestion
+          source={{ queryId: '', prompt: '', displayMode: 'table' }}
+          loading={false}
+          onRefresh={vi.fn()}
+          onDiscard={discard}
+          editor={() => <textarea aria-label="Ask your database" />}
+        />
+      </PlainAnswerDisplay>
     ));
     const field = await screen.findByLabelText('Ask your database');
     await fireEvent.keyDown(field, { key: 'Escape' });
@@ -194,18 +207,20 @@ describe('answer titles', () => {
   it('keeps a saved answer when its question editor is dismissed', async () => {
     const discard = vi.fn();
     const rendered = render(() => (
-      <LiveQuestion
-        source={{
-          queryId: 'one',
-          prompt: 'How many RSVPs?',
-          title: 'RSVP Counts',
-          displayMode: 'table',
-        }}
-        loading={false}
-        onRefresh={vi.fn()}
-        onDiscard={discard}
-        editor={() => <textarea aria-label="Ask your database" />}
-      />
+      <PlainAnswerDisplay>
+        <LiveQuestion
+          source={{
+            queryId: 'one',
+            prompt: 'How many RSVPs?',
+            title: 'RSVP Counts',
+            displayMode: 'table',
+          }}
+          loading={false}
+          onRefresh={vi.fn()}
+          onDiscard={discard}
+          editor={() => <textarea aria-label="Ask your database" />}
+        />
+      </PlainAnswerDisplay>
     ));
     await fireEvent.click(rendered.getByRole('button', { name: 'Details' }));
     const refresh = await screen.findByRole('button', { name: 'Refresh' });
@@ -216,17 +231,19 @@ describe('answer titles', () => {
 
   it('offers a saved block only its details, never an editor', async () => {
     const rendered = render(() => (
-      <LiveQuestion
-        source={{
-          queryId: 'one',
-          prompt: 'How many RSVPs?',
-          title: 'RSVP Counts',
-          displayMode: 'table',
-        }}
-        loading={false}
-        onRefresh={vi.fn()}
-        editor={() => <textarea aria-label="Ask your database" />}
-      />
+      <PlainAnswerDisplay>
+        <LiveQuestion
+          source={{
+            queryId: 'one',
+            prompt: 'How many RSVPs?',
+            title: 'RSVP Counts',
+            displayMode: 'table',
+          }}
+          loading={false}
+          onRefresh={vi.fn()}
+          editor={() => <textarea aria-label="Ask your database" />}
+        />
+      </PlainAnswerDisplay>
     ));
     expect(
       rendered.queryByRole('button', { name: 'Edit question' })
@@ -240,25 +257,27 @@ describe('answer titles', () => {
 
   it('opens the answer details from an inline answer', async () => {
     const rendered = render(() => (
-      <LiveQuestion
-        source={{
-          queryId: 'one',
-          prompt: 'How many RSVPs?',
-          title: 'RSVPs',
-          displayMode: 'scalar',
-        }}
-        answer={{
-          columns: [{ name: 'count', kind: 'number' }],
-          rows: [[{ type: 'number', value: 6 }]],
-          rowIds: [],
-          readTables: [],
-          readDatabaseIds: [],
-          truncatedTables: [],
-        }}
-        loading={false}
-        onRefresh={vi.fn()}
-        editor={() => <textarea aria-label="Ask your database" />}
-      />
+      <PlainAnswerDisplay>
+        <LiveQuestion
+          source={{
+            queryId: 'one',
+            prompt: 'How many RSVPs?',
+            title: 'RSVPs',
+            displayMode: 'scalar',
+          }}
+          answer={{
+            columns: [{ name: 'count', kind: 'number' }],
+            rows: [[{ type: 'number', value: 6 }]],
+            rowIds: [],
+            readTables: [],
+            readDatabaseIds: [],
+            truncatedTables: [],
+          }}
+          loading={false}
+          onRefresh={vi.fn()}
+          editor={() => <textarea aria-label="Ask your database" />}
+        />
+      </PlainAnswerDisplay>
     ));
     await fireEvent.click(rendered.getByRole('button', { name: /RSVPs/ }));
     expect(await screen.findByRole('button', { name: 'Refresh' })).toBeTruthy();
@@ -273,24 +292,26 @@ describe('answer details', () => {
     showDatabaseSql.enabled = false;
   });
   const details = () => (
-    <LiveQuestion
-      source={{
-        queryId: 'open-tickets',
-        prompt: 'How many open tickets?',
-        displayMode: 'table',
-      }}
-      answer={{
-        columns: [{ name: 'Count', kind: 'number' }],
-        rows: [[{ type: 'number', value: 4 }]],
-        rowIds: [],
-        readTables: [],
-        readDatabaseIds: [],
-        truncatedTables: [],
-      }}
-      loading={false}
-      onRefresh={vi.fn()}
-      sql={() => 'SELECT COUNT(*) FROM "Tickets"'}
-    />
+    <PlainAnswerDisplay>
+      <LiveQuestion
+        source={{
+          queryId: 'open-tickets',
+          prompt: 'How many open tickets?',
+          displayMode: 'table',
+        }}
+        answer={{
+          columns: [{ name: 'Count', kind: 'number' }],
+          rows: [[{ type: 'number', value: 4 }]],
+          rowIds: [],
+          readTables: [],
+          readDatabaseIds: [],
+          truncatedTables: [],
+        }}
+        loading={false}
+        onRefresh={vi.fn()}
+        sql={() => 'SELECT COUNT(*) FROM "Tickets"'}
+      />
+    </PlainAnswerDisplay>
   );
 
   it('offers View SQL when SQL is shown', async () => {
@@ -313,26 +334,28 @@ describe('answer details', () => {
 
   it('words an unavailable answer plainly', async () => {
     const rendered = render(() => (
-      <LiveQuestion
-        source={{
-          queryId: 'prices',
-          prompt: 'Total price',
-          displayMode: 'table',
-        }}
-        error={{
-          kind: 'engine',
-          error: {
-            stage: 'resolve',
-            kind: 'unknownColumn',
-            name: 'Price',
-            table: 'Shop.Items',
-            suggestion: null,
-          },
-          message: 'unknown column "Price" in "Shop"."Items"',
-        }}
-        loading={false}
-        onRefresh={vi.fn()}
-      />
+      <PlainAnswerDisplay>
+        <LiveQuestion
+          source={{
+            queryId: 'prices',
+            prompt: 'Total price',
+            displayMode: 'table',
+          }}
+          error={{
+            kind: 'engine',
+            error: {
+              stage: 'resolve',
+              kind: 'unknownColumn',
+              name: 'Price',
+              table: 'Shop.Items',
+              suggestion: null,
+            },
+            message: 'unknown column "Price" in "Shop"."Items"',
+          }}
+          loading={false}
+          onRefresh={vi.fn()}
+        />
+      </PlainAnswerDisplay>
     ));
     fireEvent.click(rendered.getByRole('button', { name: 'Details' }));
     expect(

@@ -106,6 +106,33 @@ describe('result cells from the engine’s typed cells', () => {
     expect(resultCellText(cell)).toBe('Vegan, No nuts');
   });
 
+  it('shows an option id the column no longer has as an unknown option', () => {
+    const cell = resultCell(
+      { type: 'options', value: ['option-vegan', 'option-deleted'] },
+      {
+        name: 'Diet',
+        kind: 'select',
+        source: {
+          markdown: false,
+          options: [{ id: 'option-vegan', label: 'Vegan', color: '#2f9e44' }],
+          tag: false,
+          target: null,
+          relatedTable: null,
+        },
+      }
+    );
+
+    expect(cell).toEqual({
+      kind: 'options',
+      options: [
+        { id: 'option-vegan', label: 'Vegan', color: '#2f9e44' },
+        { id: 'option-deleted', label: 'Unknown option', color: null },
+      ],
+      tag: false,
+    });
+    expect(resultCellText(cell)).toBe('Vegan, Unknown option');
+  });
+
   it('reads booleans as checkboxes', () => {
     expect(
       resultCell(

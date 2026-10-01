@@ -1,8 +1,8 @@
 import { render } from '@solidjs/testing-library';
 import { describe, expect, it, vi } from 'vitest';
 import { AppAnswerDisplay } from './answer-display';
-import { QueryResults } from './components/query-results';
 import type { QueryAnswer } from './core/query';
+import { ToolQueryResults } from './views/tool-query-results';
 
 vi.mock('@property/hooks/usePropertyEntityDisplay', () => ({
   usePropertyEntityDisplay: (id: () => string, type: () => string) => ({
@@ -75,7 +75,12 @@ describe('answers in the app', () => {
     };
     const result = render(() => (
       <AppAnswerDisplay>
-        <QueryResults answer={answer} displayMode="table" />
+        <ToolQueryResults
+          answer={answer}
+          sql="SELECT owner, doc FROM launches"
+          preferredDisplay="table"
+          showSql={false}
+        />
       </AppAnswerDisplay>
     ));
     const cells = Array.from(result.getByRole('table').querySelectorAll('td'));

@@ -29,6 +29,8 @@ export type ReferenceNames = (reference: {
 
 export const unknownNames: ReferenceNames = () => undefined;
 
+const UNKNOWN_OPTION = 'Unknown option';
+
 /** A result value as the grid would show it, from the column it was read from. */
 export function resultCell(
   cell: Cell | null,
@@ -51,14 +53,23 @@ export function resultCell(
       checked: value,
     }))
     .with({ type: 'date' }, ({ value }) => dateCell(value))
-    .with({ type: 'options' }, ({ value }) => {
-      const options = value.flatMap(
-        (id) => source?.options.filter((option) => option.id === id) ?? []
-      );
-      return options.length
-        ? { kind: 'options', options, tag: source?.tag ?? false }
-        : { kind: 'empty' };
-    })
+    .with({ type: 'options' }, ({ value }) =>
+      value.length
+        ? {
+            kind: 'options',
+            // An option deleted since the answer was read still shows that it was there.
+            options: value.map(
+              (id) =>
+                source?.options.find((option) => option.id === id) ?? {
+                  id,
+                  label: UNKNOWN_OPTION,
+                  color: null,
+                }
+            ),
+            tag: source?.tag ?? false,
+          }
+        : { kind: 'empty' }
+    )
     .with({ type: 'entities' }, ({ value }) => {
       const target = source?.target;
       if (!value.length) return { kind: 'empty' };

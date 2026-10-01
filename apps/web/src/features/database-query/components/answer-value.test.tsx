@@ -1,12 +1,19 @@
 import { render } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { expect, it } from 'vitest';
-import type { ResultCell } from '../core/answer-cell';
+import { type ResultCell, unknownNames } from '../core/answer-cell';
+import { plainAnswerRenderers } from '../tests/plain-answer-display';
 import { ResultValue } from './answer-value';
 
 it('shows a live answer’s new value when its text or markdown cell changes', () => {
   const [cell, setCell] = createSignal<ResultCell>({ kind: 'text', text: '7' });
-  const result = render(() => <ResultValue cell={cell()} />);
+  const result = render(() => (
+    <ResultValue
+      cell={cell()}
+      names={unknownNames}
+      display={plainAnswerRenderers}
+    />
+  ));
   expect(result.container.textContent).toBe('7');
 
   setCell({ kind: 'text', text: '8' });

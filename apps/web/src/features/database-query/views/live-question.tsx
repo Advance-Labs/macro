@@ -6,7 +6,7 @@ import XIcon from '@phosphor/x.svg';
 import { Button } from '@ui';
 import { createSignal, type JSX, Show } from 'solid-js';
 import { QueryResults, ScalarValue } from '../components/query-results';
-import { useAnswerNames } from '../context/answer-display';
+import { useAnswerDisplay } from '../context/answer-display';
 import { resultCell, resultCellText } from '../core/answer-cell';
 import {
   isScalarAnswer,
@@ -81,7 +81,10 @@ export function LiveQuestion(props: {
       }}
     />
   );
-  const names = useAnswerNames(() => props.answer);
+  const display = useAnswerDisplay();
+  const names = display.names(() => props.answer);
+  const showSql = isFeatureEnabled(showDatabaseSql);
+  const block = () => props.source.displayMode !== 'scalar';
   const scalarAnswer = () =>
     props.source.queryId &&
     !props.error &&
@@ -98,7 +101,8 @@ export function LiveQuestion(props: {
         resultCell(props.answer.rows[0][0] ?? null, props.answer.columns[0]),
         names()
       );
-    return `${props.answer.rows.length} records`;
+    const count = props.answer.rows.length;
+    return `${count} ${count === 1 ? 'record' : 'records'}`;
   };
   return (
     <Popover
@@ -114,7 +118,7 @@ export function LiveQuestion(props: {
       overflowPadding={8}
     >
       <Show
-        when={props.source.displayMode !== 'scalar'}
+        when={block()}
         fallback={
           <Show
             when={!renaming()}
@@ -145,7 +149,11 @@ export function LiveQuestion(props: {
               <span class="truncate tabular-nums">
                 <Show when={scalarAnswer()} fallback={value()}>
                   {(answer) => (
-                    <ScalarValue answer={answer()} names={names()} />
+                    <ScalarValue
+                      answer={answer()}
+                      names={names()}
+                      display={display}
+                    />
                   )}
                 </Show>
               </span>
@@ -198,7 +206,8 @@ export function LiveQuestion(props: {
               {(answer) => (
                 <QueryResults
                   answer={answer()}
-                  names={names}
+                  names={names()}
+                  display={display}
                   compact
                   displayMode={props.source.displayMode}
                   chart={props.source.chart}
@@ -248,15 +257,17 @@ export function LiveQuestion(props: {
                 <Show when={props.error}>
                   {(error) => (
                     <p role="alert" class="text-sm text-failure-ink">
-                      {queryErrorMessage(error())}
+                      {queryErrorMessage(error(), showSql)}
                     </p>
                   )}
                 </Show>
-                <Show when={!props.error && props.answer}>
+                {/* A block already shows its answer; only an inline chip needs it here. */}
+                <Show when={!block() && !props.error && props.answer}>
                   {(answer) => (
                     <QueryResults
                       answer={answer()}
-                      names={names}
+                      names={names()}
+                      display={display}
                       displayMode={props.source.displayMode}
                       chart={props.source.chart}
                     />
@@ -267,7 +278,7 @@ export function LiveQuestion(props: {
                     Finding your answer…
                   </p>
                 </Show>
-                <Show when={isFeatureEnabled(showDatabaseSql)}>
+                <Show when={showSql}>
                   <details class="text-xs">
                     <summary class="text-ink-muted">View SQL</summary>
                     <pre class="mt-2 overflow-auto whitespace-pre-wrap rounded-md bg-input p-2">

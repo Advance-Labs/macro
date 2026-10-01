@@ -5,6 +5,7 @@ import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { QueryCapabilities } from '../context/query-context';
 import type { QueryAnswer, QueryDefinition, QuerySchema } from '../core/query';
+import { PlainAnswerDisplay } from '../tests/plain-answer-display';
 import { QueryEditor } from './query-editor';
 
 vi.mock('@solid-primitives/resize-observer', () => ({
@@ -34,14 +35,16 @@ describe('question editor', () => {
       tables: [],
     });
     const result = render(() => (
-      <QueryEditor
-        initial={{ sql: '', prompt: '', displayMode: 'scalar' }}
-        schema={schema()}
-        capabilities={{ generate: vi.fn(), read: vi.fn() }}
-        sourcePicker={(source) => (
-          <button type="button">{source().name}</button>
-        )}
-      />
+      <PlainAnswerDisplay>
+        <QueryEditor
+          initial={{ sql: '', prompt: '', displayMode: 'scalar' }}
+          schema={schema()}
+          capabilities={{ generate: vi.fn(), read: vi.fn() }}
+          sourcePicker={(source) => (
+            <button type="button">{source().name}</button>
+          )}
+        />
+      </PlainAnswerDisplay>
     ));
     const trigger = result.getByRole('button', { name: 'Automatic' });
     trigger.focus();
@@ -71,17 +74,19 @@ describe('question editor', () => {
     };
     const save = vi.fn();
     const result = render(() => (
-      <QueryEditor
-        initial={{
-          sql: 'SELECT stage AS Stage, COUNT(*) AS Total FROM projects GROUP BY stage',
-          prompt: 'Chart tasks',
-          displayMode: 'bar',
-          chart: { x: 'Status', y: ['Count'] },
-        }}
-        schema={{ databaseId: 'db', name: 'Projects', tables: [] }}
-        capabilities={{ generate: vi.fn(), read: () => okAsync(chartAnswer) }}
-        onSave={save}
-      />
+      <PlainAnswerDisplay>
+        <QueryEditor
+          initial={{
+            sql: 'SELECT stage AS Stage, COUNT(*) AS Total FROM projects GROUP BY stage',
+            prompt: 'Chart tasks',
+            displayMode: 'bar',
+            chart: { x: 'Status', y: ['Count'] },
+          }}
+          schema={{ databaseId: 'db', name: 'Projects', tables: [] }}
+          capabilities={{ generate: vi.fn(), read: () => okAsync(chartAnswer) }}
+          onSave={save}
+        />
+      </PlainAnswerDisplay>
     ));
     await result.findByText(/This chart’s columns are unavailable/);
     expect(result.getByRole('table')).toBeTruthy();
@@ -96,8 +101,7 @@ describe('question editor', () => {
       expect.objectContaining({
         displayMode: 'line',
         chart: { x: 'Stage', y: ['Total'] },
-      }),
-      chartAnswer
+      })
     );
     result.unmount();
   });
@@ -122,21 +126,23 @@ describe('question editor', () => {
     };
     const save = vi.fn();
     const result = render(() => (
-      <QueryEditor
-        initial={{ sql: '', prompt: '', displayMode: 'scalar' }}
-        schema={{ databaseId: 'db', name: 'Projects', tables: [] }}
-        capabilities={{
-          generate: () =>
-            okAsync({
-              sql: 'SELECT status AS Status, COUNT(*) AS Count FROM projects GROUP BY status',
-              explanation: 'Counts tasks in each status.',
-              displayMode: 'bar',
-              chart,
-            }),
-          read: () => okAsync(chartAnswer),
-        }}
-        onSave={save}
-      />
+      <PlainAnswerDisplay>
+        <QueryEditor
+          initial={{ sql: '', prompt: '', displayMode: 'scalar' }}
+          schema={{ databaseId: 'db', name: 'Projects', tables: [] }}
+          capabilities={{
+            generate: () =>
+              okAsync({
+                sql: 'SELECT status AS Status, COUNT(*) AS Count FROM projects GROUP BY status',
+                explanation: 'Counts tasks in each status.',
+                displayMode: 'bar',
+                chart,
+              }),
+            read: () => okAsync(chartAnswer),
+          }}
+          onSave={save}
+        />
+      </PlainAnswerDisplay>
     ));
     fireEvent.input(result.getByLabelText('Ask your database'), {
       target: { value: 'Chart tasks by status' },
@@ -151,8 +157,7 @@ describe('question editor', () => {
     ).toBe('bar');
     fireEvent.click(result.getByRole('button', { name: 'Insert' }));
     expect(save).toHaveBeenLastCalledWith(
-      expect.objectContaining({ displayMode: 'bar', chart }),
-      chartAnswer
+      expect.objectContaining({ displayMode: 'bar', chart })
     );
     fireEvent.change(result.getByLabelText('Display answer as'), {
       target: { value: 'line' },
@@ -162,8 +167,7 @@ describe('question editor', () => {
     ).toBeTruthy();
     fireEvent.click(result.getByRole('button', { name: 'Insert' }));
     expect(save).toHaveBeenLastCalledWith(
-      expect.objectContaining({ displayMode: 'line', chart }),
-      chartAnswer
+      expect.objectContaining({ displayMode: 'line', chart })
     );
     fireEvent.change(result.getByLabelText('Display answer as'), {
       target: { value: 'table' },
@@ -178,22 +182,24 @@ describe('question editor', () => {
       tables: [],
     });
     const result = render(() => (
-      <QueryEditor
-        autoFocus
-        initial={{
-          databaseId: 'db',
-          prompt: '',
-          sql: '',
-          displayMode: 'scalar',
-        }}
-        schema={schema()}
-        capabilities={{
-          generate: vi.fn<QueryCapabilities['generate']>(() =>
-            okAsync({ sql: 'SELECT 7', explanation: '' })
-          ),
-          read: vi.fn<QueryCapabilities['read']>(() => okAsync(answer)),
-        }}
-      />
+      <PlainAnswerDisplay>
+        <QueryEditor
+          autoFocus
+          initial={{
+            databaseId: 'db',
+            prompt: '',
+            sql: '',
+            displayMode: 'scalar',
+          }}
+          schema={schema()}
+          capabilities={{
+            generate: vi.fn<QueryCapabilities['generate']>(() =>
+              okAsync({ sql: 'SELECT 7', explanation: '' })
+            ),
+            read: vi.fn<QueryCapabilities['read']>(() => okAsync(answer)),
+          }}
+        />
+      </PlainAnswerDisplay>
     ));
     const prompt = result.getByLabelText(
       'Ask your database'
@@ -211,16 +217,18 @@ describe('question editor', () => {
     );
     const read = vi.fn<QueryCapabilities['read']>(() => okAsync(answer));
     const result = render(() => (
-      <QueryEditor
-        initial={{
-          databaseId: 'db',
-          prompt: '',
-          sql: '',
-          displayMode: 'scalar',
-        }}
-        schema={{ databaseId: 'db', name: 'Planning', tables: [] }}
-        capabilities={{ generate, read }}
-      />
+      <PlainAnswerDisplay>
+        <QueryEditor
+          initial={{
+            databaseId: 'db',
+            prompt: '',
+            sql: '',
+            displayMode: 'scalar',
+          }}
+          schema={{ databaseId: 'db', name: 'Planning', tables: [] }}
+          capabilities={{ generate, read }}
+        />
+      </PlainAnswerDisplay>
     ));
     const prompt = result.getByLabelText('Ask your database');
     fireEvent.input(prompt, { target: { value: '進行中' } });
@@ -282,16 +290,22 @@ describe('question editor', () => {
     );
     const save = vi.fn();
     const result = render(() => (
-      <QueryEditor
-        autoFocus
-        initial={{ sql: '', prompt: '', displayMode: 'scalar' }}
-        schema={{ name: 'Automatic', tables: [] }}
-        sourcePicker={(schema) => (
-          <button type="button">{schema().name}</button>
-        )}
-        capabilities={{ generate, read: () => okAsync(answer) }}
-        onSave={save}
-      />
+      <PlainAnswerDisplay>
+        <QueryEditor
+          autoFocus
+          initial={{ sql: '', prompt: '', displayMode: 'scalar' }}
+          schema={{ name: 'Automatic', tables: [] }}
+          sourcePicker={(schema) => (
+            <button type="button">{schema().name}</button>
+          )}
+          capabilities={{
+            generate,
+            read: (_sql, context) =>
+              okAsync({ ...answer, source: context?.source }),
+          }}
+          onSave={save}
+        />
+      </PlainAnswerDisplay>
     ));
     const prompt = result.getByLabelText('Ask your database');
     expect(document.activeElement).toBe(prompt);
@@ -309,8 +323,7 @@ describe('question editor', () => {
     expect(result.getByRole('button', { name: 'Support' })).toBeTruthy();
     fireEvent.click(result.getByRole('button', { name: 'Insert' }));
     expect(save).toHaveBeenCalledWith(
-      expect.objectContaining({ databaseId: 'support' }),
-      answer
+      expect.objectContaining({ databaseId: 'support' })
     );
     expect(save.mock.calls[0][0].tableId).toBeUndefined();
     result.unmount();
@@ -330,17 +343,19 @@ describe('question editor', () => {
     );
     const save = vi.fn();
     const result = render(() => (
-      <QueryEditor
-        initial={{
-          databaseId: 'support',
-          sql: 'SELECT 7',
-          prompt: 'How many records?',
-          displayMode: 'scalar',
-        }}
-        schema={schema()}
-        capabilities={{ generate, read: () => okAsync(answer) }}
-        onSave={save}
-      />
+      <PlainAnswerDisplay>
+        <QueryEditor
+          initial={{
+            databaseId: 'support',
+            sql: 'SELECT 7',
+            prompt: 'How many records?',
+            displayMode: 'scalar',
+          }}
+          schema={schema()}
+          capabilities={{ generate, read: () => okAsync(answer) }}
+          onSave={save}
+        />
+      </PlainAnswerDisplay>
     ));
     await result.findByRole('button', { name: 'Insert' });
     const prompt = result.getByLabelText(
@@ -359,8 +374,7 @@ describe('question editor', () => {
     expect(save).not.toHaveBeenCalled();
     fireEvent.click(result.getByRole('button', { name: 'Insert' }));
     expect(save).toHaveBeenCalledWith(
-      expect.objectContaining({ databaseId: 'sales' }),
-      answer
+      expect.objectContaining({ databaseId: 'sales' })
     );
     result.unmount();
   });
@@ -375,18 +389,20 @@ describe('question editor', () => {
     const read = vi.fn<QueryCapabilities['read']>(() => okAsync(answer));
     const save = vi.fn();
     const result = render(() => (
-      <QueryEditor
-        initial={{
-          databaseId: 'db',
-          prompt: 'How many projects?',
-          sql: 'SELECT COUNT(*) FROM projects',
-          displayMode: 'scalar',
-        }}
-        schema={{ databaseId: 'db', name: 'Planning', tables: [] }}
-        capabilities={{ generate, read }}
-        onSave={save}
-        saveLabel="Save live answer"
-      />
+      <PlainAnswerDisplay>
+        <QueryEditor
+          initial={{
+            databaseId: 'db',
+            prompt: 'How many projects?',
+            sql: 'SELECT COUNT(*) FROM projects',
+            displayMode: 'scalar',
+          }}
+          schema={{ databaseId: 'db', name: 'Planning', tables: [] }}
+          capabilities={{ generate, read }}
+          onSave={save}
+          saveLabel="Save live answer"
+        />
+      </PlainAnswerDisplay>
     ));
     await result.findByRole('button', { name: 'Save live answer' });
     fireEvent.input(result.getByLabelText('Ask your database'), {
@@ -409,8 +425,7 @@ describe('question editor', () => {
       expect.objectContaining({
         prompt: 'How many approved projects?',
         sql: 'SELECT COUNT(*) FROM projects WHERE approved = 1',
-      }),
-      answer
+      })
     );
     fireEvent.click(result.getByRole('button', { name: 'Refresh answer' }));
     await waitFor(() => expect(read).toHaveBeenCalledTimes(3));
@@ -434,25 +449,27 @@ describe('question editor', () => {
     const read = vi.fn<QueryCapabilities['read']>(() => okAsync(answer));
     const save = vi.fn();
     const result = render(() => (
-      <QueryEditor
-        initial={initial}
-        schema={{
-          databaseId: 'db',
-          name: 'Planning',
-          focusTableId: 'projects',
-          tables: [
-            {
-              id: 'projects',
-              name: 'Projects',
-              sqlName: 'projects',
-              columns: [],
-            },
-          ],
-        }}
-        capabilities={{ generate, read }}
-        onSave={save}
-        saveLabel="Save live answer"
-      />
+      <PlainAnswerDisplay>
+        <QueryEditor
+          initial={initial}
+          schema={{
+            databaseId: 'db',
+            name: 'Planning',
+            focusTableId: 'projects',
+            tables: [
+              {
+                id: 'projects',
+                name: 'Projects',
+                sqlName: 'projects',
+                columns: [],
+              },
+            ],
+          }}
+          capabilities={{ generate, read }}
+          onSave={save}
+          saveLabel="Save live answer"
+        />
+      </PlainAnswerDisplay>
     ));
     fireEvent.input(result.getByLabelText('Ask your database'), {
       target: { value: 'How many projects?' },
@@ -469,16 +486,13 @@ describe('question editor', () => {
     expect(result.queryByLabelText('Query SQL')).toBeNull();
     expect(result.queryByText('Counts every project in the table.')).toBeNull();
     fireEvent.click(result.getByRole('button', { name: 'Save live answer' }));
-    expect(save).toHaveBeenCalledWith(
-      {
-        databaseId: 'db',
-        tableId: 'projects',
-        prompt: 'How many projects?',
-        sql: 'SELECT COUNT(*) FROM projects',
-        displayMode: 'scalar',
-      },
-      answer
-    );
+    expect(save).toHaveBeenCalledWith({
+      databaseId: 'db',
+      tableId: 'projects',
+      prompt: 'How many projects?',
+      sql: 'SELECT COUNT(*) FROM projects',
+      displayMode: 'scalar',
+    });
     result.unmount();
   });
 
@@ -487,17 +501,19 @@ describe('question editor', () => {
     const generate = vi.fn();
     const save = vi.fn();
     const result = render(() => (
-      <QueryEditor
-        initial={{
-          databaseId: 'db',
-          prompt: 'How many projects?',
-          sql: 'SELECT COUNT(*) FROM projects',
-          displayMode: 'scalar',
-        }}
-        schema={{ databaseId: 'db', name: 'Planning', tables: [] }}
-        capabilities={{ read, generate }}
-        onSave={save}
-      />
+      <PlainAnswerDisplay>
+        <QueryEditor
+          initial={{
+            databaseId: 'db',
+            prompt: 'How many projects?',
+            sql: 'SELECT COUNT(*) FROM projects',
+            displayMode: 'scalar',
+          }}
+          schema={{ databaseId: 'db', name: 'Planning', tables: [] }}
+          capabilities={{ read, generate }}
+          onSave={save}
+        />
+      </PlainAnswerDisplay>
     ));
     await result.findByRole('button', { name: 'Insert' });
     expect(read).toHaveBeenCalledExactlyOnceWith(
@@ -522,16 +538,18 @@ describe('question editor', () => {
     const read = vi.fn<QueryCapabilities['read']>(() => okAsync(answer));
     const generate = vi.fn();
     const result = render(() => (
-      <QueryEditor
-        initial={{
-          databaseId: 'db',
-          prompt: '',
-          sql: 'SELECT 7',
-          displayMode: 'scalar',
-        }}
-        schema={{ databaseId: 'db', name: 'Planning', tables: [] }}
-        capabilities={{ read, generate }}
-      />
+      <PlainAnswerDisplay>
+        <QueryEditor
+          initial={{
+            databaseId: 'db',
+            prompt: '',
+            sql: 'SELECT 7',
+            displayMode: 'scalar',
+          }}
+          schema={{ databaseId: 'db', name: 'Planning', tables: [] }}
+          capabilities={{ read, generate }}
+        />
+      </PlainAnswerDisplay>
     ));
     await result.findByText('7');
     expect(result.queryByRole('button', { name: 'Run SQL' })).toBeNull();
@@ -566,17 +584,19 @@ describe('question editor', () => {
     );
     const save = vi.fn();
     const result = render(() => (
-      <QueryEditor
-        initial={{
-          databaseId: 'db',
-          prompt: 'Old question',
-          sql: 'SELECT 999',
-          displayMode: 'scalar',
-        }}
-        schema={{ databaseId: 'db', name: 'Planning', tables: [] }}
-        capabilities={{ read, generate }}
-        onSave={save}
-      />
+      <PlainAnswerDisplay>
+        <QueryEditor
+          initial={{
+            databaseId: 'db',
+            prompt: 'Old question',
+            sql: 'SELECT 999',
+            displayMode: 'scalar',
+          }}
+          schema={{ databaseId: 'db', name: 'Planning', tables: [] }}
+          capabilities={{ read, generate }}
+          onSave={save}
+        />
+      </PlainAnswerDisplay>
     ));
     await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
     fireEvent.input(result.getByLabelText('Ask your database'), {
@@ -592,8 +612,7 @@ describe('question editor', () => {
     expect(result.queryByText('999')).toBeNull();
     fireEvent.click(result.getByRole('button', { name: 'Insert' }));
     expect(save).toHaveBeenCalledWith(
-      expect.objectContaining({ prompt: 'New question', sql: 'SELECT 7' }),
-      answer
+      expect.objectContaining({ prompt: 'New question', sql: 'SELECT 7' })
     );
     result.unmount();
   });
@@ -601,22 +620,24 @@ describe('question editor', () => {
   it('keeps the optional source picker available while a selected database is unavailable', () => {
     const generate = vi.fn();
     const result = render(() => (
-      <QueryEditor
-        initial={{
-          databaseId: 'removed',
-          sql: '',
-          prompt: 'Count tickets',
-          displayMode: 'scalar',
-        }}
-        schema={{
-          databaseId: 'removed',
-          name: 'Database unavailable',
-          tables: [],
-        }}
-        sourceAvailable={false}
-        sourcePicker={<button type="button">Change database</button>}
-        capabilities={{ read: vi.fn(), generate }}
-      />
+      <PlainAnswerDisplay>
+        <QueryEditor
+          initial={{
+            databaseId: 'removed',
+            sql: '',
+            prompt: 'Count tickets',
+            displayMode: 'scalar',
+          }}
+          schema={{
+            databaseId: 'removed',
+            name: 'Database unavailable',
+            tables: [],
+          }}
+          sourceAvailable={false}
+          sourcePicker={<button type="button">Change database</button>}
+          capabilities={{ read: vi.fn(), generate }}
+        />
+      </PlainAnswerDisplay>
     ));
     expect(
       result.getByRole('button', { name: 'Change database' })
@@ -639,29 +660,30 @@ describe('question editor', () => {
     };
     const save = vi.fn();
     const result = render(() => (
-      <QueryEditor
-        initial={{
-          databaseId: 'db',
-          prompt: 'List projects',
-          sql: '',
-          displayMode: 'scalar',
-        }}
-        schema={{ databaseId: 'db', name: 'Planning', tables: [] }}
-        capabilities={{
-          read: () => okAsync(tableAnswer),
-          generate: () =>
-            okAsync({ sql: 'SELECT count FROM projects', explanation: '' }),
-        }}
-        onSave={save}
-      />
+      <PlainAnswerDisplay>
+        <QueryEditor
+          initial={{
+            databaseId: 'db',
+            prompt: 'List projects',
+            sql: '',
+            displayMode: 'scalar',
+          }}
+          schema={{ databaseId: 'db', name: 'Planning', tables: [] }}
+          capabilities={{
+            read: () => okAsync(tableAnswer),
+            generate: () =>
+              okAsync({ sql: 'SELECT count FROM projects', explanation: '' }),
+          }}
+          onSave={save}
+        />
+      </PlainAnswerDisplay>
     ));
     fireEvent.click(result.getByRole('button', { name: 'Ask' }));
     await result.findByRole('button', { name: 'Insert' });
     expect(result.queryByLabelText('Display answer as')).toBeNull();
     fireEvent.click(result.getByRole('button', { name: 'Insert' }));
     expect(save).toHaveBeenCalledWith(
-      expect.objectContaining({ displayMode: 'table' }),
-      tableAnswer
+      expect.objectContaining({ displayMode: 'table' })
     );
     result.unmount();
   });
@@ -670,17 +692,19 @@ describe('question editor', () => {
     const save = vi.fn();
     const read = vi.fn<QueryCapabilities['read']>(() => okAsync(answer));
     const result = render(() => (
-      <QueryEditor
-        initial={{
-          databaseId: 'db',
-          prompt: '',
-          sql: 'SELECT 7',
-          displayMode: 'table',
-        }}
-        schema={{ databaseId: 'db', name: 'Planning', tables: [] }}
-        capabilities={{ read, generate: vi.fn() }}
-        onSave={save}
-      />
+      <PlainAnswerDisplay>
+        <QueryEditor
+          initial={{
+            databaseId: 'db',
+            prompt: '',
+            sql: 'SELECT 7',
+            displayMode: 'table',
+          }}
+          schema={{ databaseId: 'db', name: 'Planning', tables: [] }}
+          capabilities={{ read, generate: vi.fn() }}
+          onSave={save}
+        />
+      </PlainAnswerDisplay>
     ));
     const format = (await result.findByRole('combobox', {
       name: 'Display answer as',
@@ -697,16 +721,14 @@ describe('question editor', () => {
     expect(refreshedFormat.selectedOptions[0]?.label).toBe('Result table');
     fireEvent.click(result.getByRole('button', { name: 'Insert' }));
     expect(save).toHaveBeenLastCalledWith(
-      expect.objectContaining({ displayMode: 'table' }),
-      answer
+      expect.objectContaining({ displayMode: 'table' })
     );
     fireEvent.change(refreshedFormat, { target: { value: 'scalar' } });
     expect(refreshedFormat.value).toBe('scalar');
     expect(refreshedFormat.selectedOptions[0]?.label).toBe('Inline answer');
     fireEvent.click(result.getByRole('button', { name: 'Insert' }));
     expect(save).toHaveBeenLastCalledWith(
-      expect.objectContaining({ displayMode: 'scalar' }),
-      answer
+      expect.objectContaining({ displayMode: 'scalar' })
     );
     result.unmount();
   });
@@ -720,15 +742,17 @@ describe('question editor', () => {
     );
     const save = vi.fn();
     const result = render(() => (
-      <QueryEditor
-        initial={{ sql: '', prompt: '', displayMode: 'scalar' }}
-        schema={{ databaseId: 'db', name: 'Projects', tables: [] }}
-        capabilities={{
-          generate,
-          read: vi.fn<QueryCapabilities['read']>(() => okAsync(answer)),
-        }}
-        onSave={save}
-      />
+      <PlainAnswerDisplay>
+        <QueryEditor
+          initial={{ sql: '', prompt: '', displayMode: 'scalar' }}
+          schema={{ databaseId: 'db', name: 'Projects', tables: [] }}
+          capabilities={{
+            generate,
+            read: vi.fn<QueryCapabilities['read']>(() => okAsync(answer)),
+          }}
+          onSave={save}
+        />
+      </PlainAnswerDisplay>
     ));
     const prompt = result.getByLabelText('Ask your database');
     fireEvent.input(prompt, { target: { value: 'How many projects?' } });
@@ -741,36 +765,35 @@ describe('question editor', () => {
     fireEvent.keyDown(prompt, { key: 'Enter' });
     expect(generate).toHaveBeenCalledTimes(1);
     expect(save).toHaveBeenCalledTimes(1);
-    expect(save).toHaveBeenLastCalledWith(
-      {
-        databaseId: 'db',
-        sql: 'SELECT COUNT(*) AS Count FROM projects',
-        prompt: 'How many projects?',
-        title: undefined,
-        displayMode: 'scalar',
-      },
-      answer
-    );
+    expect(save).toHaveBeenLastCalledWith({
+      databaseId: 'db',
+      sql: 'SELECT COUNT(*) AS Count FROM projects',
+      prompt: 'How many projects?',
+      title: undefined,
+      displayMode: 'scalar',
+    });
     result.unmount();
   });
 
   it('inserts with Enter pressed anywhere in the box, but not from its controls', async () => {
     const save = vi.fn();
     const result = render(() => (
-      <QueryEditor
-        initial={{
-          sql: 'SELECT COUNT(*) AS Count FROM projects',
-          prompt: 'How many projects?',
-          displayMode: 'scalar',
-        }}
-        schema={{ databaseId: 'db', name: 'Projects', tables: [] }}
-        capabilities={{
-          generate: vi.fn(),
-          read: vi.fn<QueryCapabilities['read']>(() => okAsync(answer)),
-        }}
-        onSave={save}
-        saveLabel="Save changes"
-      />
+      <PlainAnswerDisplay>
+        <QueryEditor
+          initial={{
+            sql: 'SELECT COUNT(*) AS Count FROM projects',
+            prompt: 'How many projects?',
+            displayMode: 'scalar',
+          }}
+          schema={{ databaseId: 'db', name: 'Projects', tables: [] }}
+          capabilities={{
+            generate: vi.fn(),
+            read: vi.fn<QueryCapabilities['read']>(() => okAsync(answer)),
+          }}
+          onSave={save}
+          saveLabel="Save changes"
+        />
+      </PlainAnswerDisplay>
     ));
     await result.findByRole('button', { name: 'Save changes' });
     fireEvent.keyDown(result.getByRole('button', { name: 'SQL' }), {
@@ -799,15 +822,17 @@ describe('question editor', () => {
       );
     const save = vi.fn();
     const result = render(() => (
-      <QueryEditor
-        initial={{ sql: '', prompt: '', displayMode: 'scalar' }}
-        schema={{ databaseId: 'db', name: 'Projects', tables: [] }}
-        capabilities={{
-          generate,
-          read: vi.fn<QueryCapabilities['read']>(() => okAsync(answer)),
-        }}
-        onSave={save}
-      />
+      <PlainAnswerDisplay>
+        <QueryEditor
+          initial={{ sql: '', prompt: '', displayMode: 'scalar' }}
+          schema={{ databaseId: 'db', name: 'Projects', tables: [] }}
+          capabilities={{
+            generate,
+            read: vi.fn<QueryCapabilities['read']>(() => okAsync(answer)),
+          }}
+          onSave={save}
+        />
+      </PlainAnswerDisplay>
     ));
     const prompt = result.getByLabelText(
       'Ask your database'
@@ -839,8 +864,7 @@ describe('question editor', () => {
       expect.objectContaining({
         prompt: 'How many projects are done?',
         sql: "SELECT COUNT(*) AS Count FROM projects WHERE stage = 'Done'",
-      }),
-      answer
+      })
     );
     result.unmount();
   });
@@ -856,12 +880,14 @@ describe('question editor with SQL hidden', () => {
       })
     );
     const result = render(() => (
-      <QueryEditor
-        initial={{ sql: '', prompt: '', displayMode: 'scalar' }}
-        schema={{ databaseId: 'db', name: 'Planning', tables: [] }}
-        capabilities={{ read, generate }}
-        onSave={vi.fn()}
-      />
+      <PlainAnswerDisplay>
+        <QueryEditor
+          initial={{ sql: '', prompt: '', displayMode: 'scalar' }}
+          schema={{ databaseId: 'db', name: 'Planning', tables: [] }}
+          capabilities={{ read, generate }}
+          onSave={vi.fn()}
+        />
+      </PlainAnswerDisplay>
     ));
     fireEvent.input(result.getByLabelText('Ask your database'), {
       target: { value: 'How many projects?' },
@@ -894,16 +920,18 @@ describe('question editor with SQL hidden', () => {
       })
     );
     const result = render(() => (
-      <QueryEditor
-        initial={{
-          databaseId: 'db',
-          prompt: 'Total price?',
-          sql: 'SELECT SUM("Price") FROM "Items"',
-          displayMode: 'scalar',
-        }}
-        schema={{ databaseId: 'db', name: 'Shop', tables: [] }}
-        capabilities={{ read, generate: vi.fn() }}
-      />
+      <PlainAnswerDisplay>
+        <QueryEditor
+          initial={{
+            databaseId: 'db',
+            prompt: 'Total price?',
+            sql: 'SELECT SUM("Price") FROM "Items"',
+            displayMode: 'scalar',
+          }}
+          schema={{ databaseId: 'db', name: 'Shop', tables: [] }}
+          capabilities={{ read, generate: vi.fn() }}
+        />
+      </PlainAnswerDisplay>
     ));
     expect((await result.findByRole('alert')).textContent).toBe(
       "This answer couldn't be computed: the column Price no longer exists."
