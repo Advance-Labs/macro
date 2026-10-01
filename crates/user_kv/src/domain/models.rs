@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Maximum length of a namespace or key.
-pub const MAX_SLUG_LEN: usize = 64;
+pub const MAX_SLUG_LEN: usize = 128;
 
 /// A JSON object stored under a key. Values are always objects so every use
 /// case can add fields later without changing the value's type.

@@ -259,13 +259,13 @@ async fn domain_errors_map_to_http_statuses() {
         (|| UserKvError::NotFound, StatusCode::NOT_FOUND),
         (
             || UserKvError::ValueTooLarge {
-                size: 20_000,
-                limit: 16_384,
+                size: 70_000,
+                limit: 65_536,
             },
             StatusCode::PAYLOAD_TOO_LARGE,
         ),
         (
-            || UserKvError::EntryLimitReached { limit: 1000 },
+            || UserKvError::EntryLimitReached { limit: 10_000 },
             StatusCode::BAD_REQUEST,
         ),
         (
