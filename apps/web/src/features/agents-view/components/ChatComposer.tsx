@@ -8,6 +8,7 @@ import { createComposerDictation } from '@app/features/dictation/composer-dictat
 import { InputProvider } from '@channel/Input/context';
 import { Input } from '@channel/Input/Input';
 import type { InputAttachmentData, InputCommands } from '@channel/Input/types';
+import { useMacroMentionLinkResolver } from '@components/app/split-layout/split-router/mention-links';
 import { buildConfig } from '@core/component/LexicalMarkdown/builder/MarkdownConfigBuilder';
 import { MarkdownShell } from '@core/component/LexicalMarkdown/builder/MarkdownShell';
 import { createComposerLayout } from '@core/component/LexicalMarkdown/utils/create-composer-layout';
@@ -84,6 +85,7 @@ export function ChatComposer(props: {
     props.session.onStop &&
     !disabled();
   const editor = buildConfig('chat')
+    .withAppLinkResolver(useMacroMentionLinkResolver())
     .namespace('agents-chat-composer')
     .withMentions({ showOpenTabs: true, block: 'agent' })
     .withEmojis()
@@ -99,6 +101,9 @@ export function ChatComposer(props: {
       },
     })
     .onEnter((_event, markdown) => {
+      // On a virtual keyboard Enter is a newline, as in channels; the send
+      // button is the only way to submit.
+      if (isTouchDevice()) return false;
       if (markdown.trim() || attachments().length > 0) send(markdown);
       else if (canSendNext()) sendNext();
       return true;

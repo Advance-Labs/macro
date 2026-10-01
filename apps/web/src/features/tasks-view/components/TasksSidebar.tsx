@@ -21,25 +21,29 @@ import CheckSquareIcon from '@phosphor/check-square.svg';
 import GitPullRequestIcon from '@phosphor/git-pull-request.svg';
 import ListChecksIcon from '@phosphor/list-checks.svg';
 import NoteIcon from '@phosphor/note-pencil.svg';
+import StackIcon from '@phosphor/stack.svg';
 import { SidebarTagsSection } from '@property/tags/SidebarTagsSection';
 import { useFavoritesData } from '@queries/favorites/favorites';
 import type { Favorite } from '@service-storage/generated/schemas/favorite';
+import { tourTarget } from '@ui/components/Tour';
 import { createMemo, For, Show } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { useTasksView } from '../tasks-view-context';
+import { TASKS_TOUR } from '../tour';
 import type { TasksTab } from '../types';
 
 const TASK_NAV_ITEMS = [
   { id: 'my-tasks', label: 'My Tasks', icon: CheckSquareIcon },
   { id: 'team-tasks', label: 'All Tasks', icon: ListChecksIcon },
   { id: 'created-by-me', label: 'Created by me', icon: NoteIcon },
+  { id: 'projects', label: 'Projects', icon: StackIcon },
 ] satisfies { id: TasksTab; label: string; icon: typeof NoteIcon }[];
 
 export function TasksNavigation(props: {
   reviewsEnabled: boolean;
   onNavigate?: () => void;
 }) {
-  const { state, setTab } = useTasksView();
+  const { state, setTab, projectsEnabled } = useTasksView();
   const navigate = useNavigate();
 
   return (
@@ -58,7 +62,11 @@ export function TasksNavigation(props: {
           <span class="truncate">Reviews</span>
         </ViewSidebar.Item>
       </Show>
-      <For each={TASK_NAV_ITEMS}>
+      <For
+        each={TASK_NAV_ITEMS.filter(
+          (item) => item.id !== 'projects' || projectsEnabled()
+        )}
+      >
         {(item) => (
           <ViewSidebar.Item
             active={state.tab === item.id}
@@ -163,6 +171,7 @@ export function TasksSidebar() {
   const reviewsEnabled = () => reviewsFlag().enabled;
   const {
     state,
+    projectsEnabled,
     setTab,
     setFacets,
     isSidebarSectionOpen,
@@ -172,10 +181,12 @@ export function TasksSidebar() {
   useViewTabHotkeys({
     scopeId: panel.splitHotkeyScope,
     enabled: panel.isPanelActive,
-    ids: () =>
-      reviewsEnabled()
-        ? ['reviews', ...TASK_NAV_ITEMS.map((tab) => tab.id)]
-        : TASK_NAV_ITEMS.map((tab) => tab.id),
+    ids: () => [
+      ...(reviewsEnabled() ? ['reviews'] : []),
+      ...TASK_NAV_ITEMS.filter(
+        (tab) => tab.id !== 'projects' || projectsEnabled()
+      ).map((tab) => tab.id),
+    ],
     activeId: () => state.tab,
     setActiveId: (id) => {
       if (id === 'reviews') navigate({ route: reviewsSplitRoute, params: {} });
@@ -187,9 +198,12 @@ export function TasksSidebar() {
     <ViewSidebar.Root aria-label="Tasks navigation">
       <SidebarCreateHeader
         title="Tasks"
-        label="New task"
+        label={state.tab === 'projects' ? 'New project' : 'New task'}
         onCreate={() =>
-          layout.popoverSplit({ type: 'component', id: 'task-compose' })
+          layout.popoverSplit({
+            type: 'component',
+            id: state.tab === 'projects' ? 'project-compose' : 'task-compose',
+          })
         }
       />
 
@@ -200,12 +214,16 @@ export function TasksSidebar() {
           open={isSidebarSectionOpen('favorites')}
           onOpenChange={(open) => setSidebarSectionOpen('favorites', open)}
         />
-        <SidebarTagsSection
-          activeIds={state.facets.tags ?? []}
-          onActiveIdsChange={(ids) => setFacets({ ...state.facets, tags: ids })}
-          open={isSidebarSectionOpen('tags')}
-          onOpenChange={(open) => setSidebarSectionOpen('tags', open)}
-        />
+        <div ref={tourTarget(TASKS_TOUR.tags)}>
+          <SidebarTagsSection
+            activeIds={state.facets.tags ?? []}
+            onActiveIdsChange={(ids) =>
+              setFacets({ ...state.facets, tags: ids })
+            }
+            open={isSidebarSectionOpen('tags')}
+            onOpenChange={(open) => setSidebarSectionOpen('tags', open)}
+          />
+        </div>
       </ViewSidebar.Content>
     </ViewSidebar.Root>
   );

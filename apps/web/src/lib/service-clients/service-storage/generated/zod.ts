@@ -1146,6 +1146,62 @@ export const getSelfBotResponse = zod
   .describe('Bot row.\n\nClients deserialize this, so both derives are used.');
 
 /**
+ * Returns display fields and the sponsor for each requested bot. Not a
+manageability check: any authenticated user or internal caller may look up
+ids they already have.
+ * @summary Handler for `GET /bots/profiles`.
+ */
+export const getBotOwnerProfilesQueryParams = zod.object({
+  ids: zod
+    .array(zod.string())
+    .optional()
+    .describe('Bot ids. Repeat the key: `?ids=<uuid>&ids=<uuid>`.'),
+});
+
+export const getBotOwnerProfilesResponseItem = zod
+  .object({
+    avatar_url: zod
+      .string()
+      .nullish()
+      .describe('Avatar URL. Registry system bots have none.'),
+    deleted_at: zod.iso
+      .datetime({})
+      .nullish()
+      .describe(
+        'Soft-delete time. Absent for an active bot and for a registry system bot.'
+      ),
+    id: zod.string(),
+    name: zod.string().describe('Display name.'),
+    owner: zod
+      .union([
+        zod.null(),
+        zod
+          .union([
+            zod
+              .object({
+                type: zod.enum(['user']),
+                user_id: zod.string().describe('Owner user id.'),
+              })
+              .describe('User-owned bot.'),
+            zod
+              .object({
+                team_id: zod.uuid().describe('Owner team id.'),
+                type: zod.enum(['team']),
+              })
+              .describe('Team-owned bot.'),
+          ])
+          .describe('Bot owner.'),
+      ])
+      .optional(),
+  })
+  .describe(
+    'Bot identity for rendering, including the sponsor and soft-delete time.\n\n`owner` is none only for a registry system bot. A persisted row always has\na sponsor.'
+  );
+export const getBotOwnerProfilesResponse = zod.array(
+  getBotOwnerProfilesResponseItem
+);
+
+/**
  * @summary Handler for `GET /bots/{bot_id}/channels`.
  */
 export const listBotChannelsParams = zod.object({
@@ -5256,8 +5312,8 @@ export const getChannelsResponse = zod
   .describe('A cursor-paginated channel list response.');
 
 /**
- * @summary Soft-delete a CRM comment, scoped to the requesting user's team. When it
-was the thread's last live comment, the thread is soft-deleted too
+ * @summary Delete a CRM comment, scoped to the requesting user's team. Deleting a
+thread's first comment deletes the whole discussion, as on documents
 (reported via `threadDeleted`).
  */
 export const deleteCrmCommentParams = zod.object({
@@ -5270,12 +5326,12 @@ export const deleteCrmCommentResponse = zod
     threadDeleted: zod
       .boolean()
       .describe(
-        'Whether the thread itself was soft-deleted because no live comments\nremained.'
+        'Whether the whole discussion was deleted because the comment was its\nfirst.'
       ),
     threadId: zod.uuid().describe('The thread the comment belonged to.'),
   })
   .describe(
-    'Outcome of soft-deleting a CRM comment: reports whether the parent thread\nwas soft-deleted too (it is when the deleted comment was its last live one).'
+    "Outcome of deleting a CRM comment: reports whether its discussion went with\nit (it does when the deleted comment was the discussion's first)."
   );
 
 /**
@@ -5439,7 +5495,7 @@ export const createCrmCommentBody = zod
     metadata: zod
       .unknown()
       .optional()
-      .describe('Arbitrary client metadata for the comment.'),
+      .describe('Ignored: messages keep no client metadata.'),
     text: zod.string().describe('The comment body (markdown).'),
     threadId: zod
       .uuid()
@@ -5450,9 +5506,7 @@ export const createCrmCommentBody = zod
     threadMetadata: zod
       .unknown()
       .optional()
-      .describe(
-        'Metadata to set on a newly created thread (ignored when replying\nwithout a value).'
-      ),
+      .describe('Ignored: discussions keep no thread metadata.'),
   })
   .describe(
     'Request body for `POST \/crm\/comments\/{entity_type}\/{entity_id}`.'
@@ -14346,6 +14400,11 @@ export const getItemsSoupResponse = zod
                         'The runtime snapshotted when the session was created.'
                       ),
                     id: zod.uuid().describe('The agent session uuid'),
+                    isArchived: zod
+                      .boolean()
+                      .describe(
+                        'Whether the session is archived and read-only.'
+                      ),
                     name: zod
                       .string()
                       .describe('The user-facing name of the session'),
@@ -18719,6 +18778,11 @@ export const postItemsSoupResponse = zod
                         'The runtime snapshotted when the session was created.'
                       ),
                     id: zod.uuid().describe('The agent session uuid'),
+                    isArchived: zod
+                      .boolean()
+                      .describe(
+                        'Whether the session is archived and read-only.'
+                      ),
                     name: zod
                       .string()
                       .describe('The user-facing name of the session'),
@@ -22500,6 +22564,11 @@ export const postItemsSoupAstResponse = zod
                         'The runtime snapshotted when the session was created.'
                       ),
                     id: zod.uuid().describe('The agent session uuid'),
+                    isArchived: zod
+                      .boolean()
+                      .describe(
+                        'Whether the session is archived and read-only.'
+                      ),
                     name: zod
                       .string()
                       .describe('The user-facing name of the session'),
@@ -26659,6 +26728,11 @@ export const postItemsSoupAstGroupedResponse = zod
                               'The runtime snapshotted when the session was created.'
                             ),
                           id: zod.uuid().describe('The agent session uuid'),
+                          isArchived: zod
+                            .boolean()
+                            .describe(
+                              'Whether the session is archived and read-only.'
+                            ),
                           name: zod
                             .string()
                             .describe('The user-facing name of the session'),
@@ -30444,6 +30518,11 @@ export const postItemsSoupAstGroupedResponse = zod
                               'The runtime snapshotted when the session was created.'
                             ),
                           id: zod.uuid().describe('The agent session uuid'),
+                          isArchived: zod
+                            .boolean()
+                            .describe(
+                              'Whether the session is archived and read-only.'
+                            ),
                           name: zod
                             .string()
                             .describe('The user-facing name of the session'),
@@ -30704,6 +30783,18 @@ export const messageTimelineResponse = zod
                   .describe(
                     'An initiative, presented as a project in the application.'
                   ),
+                zod
+                  .object({
+                    id: zod.uuid().describe('A CRM company.'),
+                    type: zod.enum(['crm_company']),
+                  })
+                  .describe('A CRM company.'),
+                zod
+                  .object({
+                    id: zod.uuid().describe('A CRM contact.'),
+                    type: zod.enum(['crm_contact']),
+                  })
+                  .describe('A CRM contact.'),
               ])
               .describe(
                 'The entity whose permissions and lifecycle govern a message.'
@@ -30789,9 +30880,31 @@ export const messageTimelineResponse = zod
                             .describe(
                               'A comment-only placeable PDF annotation. It marks a point on a page,\nnot a span of text, so it has no marked text.'
                             ),
+                          zod
+                            .object({
+                              range: zod
+                                .string()
+                                .describe(
+                                  'A1 cell or range, such as B4 or B4:C9.'
+                                ),
+                              sheetId: zod
+                                .string()
+                                .describe(
+                                  'Stable sheet identity within the workbook.'
+                                ),
+                              sheetName: zod
+                                .string()
+                                .describe(
+                                  'Sheet name when the discussion was created.'
+                                ),
+                              type: zod.enum(['spreadsheet']),
+                            })
+                            .describe(
+                              'A cell or rectangular range in a native spreadsheet.'
+                            ),
                         ])
                         .describe(
-                          "A thread's location within its document. Geometry remains annotation-owned."
+                          "A thread's location within its document. PDF geometry remains annotation-owned."
                         ),
                     ])
                     .optional(),
@@ -30967,6 +31080,18 @@ export const messageTimelineResponse = zod
                                 .describe(
                                   'An initiative, presented as a project in the application.'
                                 ),
+                              zod
+                                .object({
+                                  id: zod.uuid().describe('A CRM company.'),
+                                  type: zod.enum(['crm_company']),
+                                })
+                                .describe('A CRM company.'),
+                              zod
+                                .object({
+                                  id: zod.uuid().describe('A CRM contact.'),
+                                  type: zod.enum(['crm_contact']),
+                                })
+                                .describe('A CRM contact.'),
                             ])
                             .describe(
                               'The entity whose permissions and lifecycle govern a message.'
@@ -31124,6 +31249,20 @@ export const entityMessageCreateBody = zod
               .describe(
                 'Atomically create a placeable annotation with the root message.'
               ),
+            zod
+              .object({
+                range: zod
+                  .string()
+                  .describe('A1 cell or range, such as B4 or B4:C9.'),
+                sheetId: zod
+                  .string()
+                  .describe('Stable sheet identity within the workbook.'),
+                sheetName: zod
+                  .string()
+                  .describe('Sheet name when the discussion was created.'),
+                type: zod.enum(['spreadsheet']),
+              })
+              .describe('A cell or rectangular range in a native spreadsheet.'),
           ])
           .describe('Location supplied when creating a document discussion.'),
       ])
@@ -31270,6 +31409,18 @@ export const entityMessageCreateResponse = zod
           .describe(
             'An initiative, presented as a project in the application.'
           ),
+        zod
+          .object({
+            id: zod.uuid().describe('A CRM company.'),
+            type: zod.enum(['crm_company']),
+          })
+          .describe('A CRM company.'),
+        zod
+          .object({
+            id: zod.uuid().describe('A CRM contact.'),
+            type: zod.enum(['crm_contact']),
+          })
+          .describe('A CRM contact.'),
       ])
       .describe('The entity whose permissions and lifecycle govern a message.'),
     reactions: zod
@@ -31406,6 +31557,18 @@ export const entityMessageGetMessageResponse = zod
           .describe(
             'An initiative, presented as a project in the application.'
           ),
+        zod
+          .object({
+            id: zod.uuid().describe('A CRM company.'),
+            type: zod.enum(['crm_company']),
+          })
+          .describe('A CRM company.'),
+        zod
+          .object({
+            id: zod.uuid().describe('A CRM contact.'),
+            type: zod.enum(['crm_contact']),
+          })
+          .describe('A CRM contact.'),
       ])
       .describe('The entity whose permissions and lifecycle govern a message.'),
     reactions: zod
@@ -31546,6 +31709,18 @@ export const entityMessageDeleteMessageResponse = zod
           .describe(
             'An initiative, presented as a project in the application.'
           ),
+        zod
+          .object({
+            id: zod.uuid().describe('A CRM company.'),
+            type: zod.enum(['crm_company']),
+          })
+          .describe('A CRM company.'),
+        zod
+          .object({
+            id: zod.uuid().describe('A CRM contact.'),
+            type: zod.enum(['crm_contact']),
+          })
+          .describe('A CRM contact.'),
       ])
       .describe('The entity whose permissions and lifecycle govern a message.'),
     reactions: zod
@@ -31782,6 +31957,18 @@ export const entityMessageEditResponse = zod
           .describe(
             'An initiative, presented as a project in the application.'
           ),
+        zod
+          .object({
+            id: zod.uuid().describe('A CRM company.'),
+            type: zod.enum(['crm_company']),
+          })
+          .describe('A CRM company.'),
+        zod
+          .object({
+            id: zod.uuid().describe('A CRM contact.'),
+            type: zod.enum(['crm_contact']),
+          })
+          .describe('A CRM contact.'),
       ])
       .describe('The entity whose permissions and lifecycle govern a message.'),
     reactions: zod
@@ -31926,6 +32113,18 @@ export const entityMessageReactResponse = zod
           .describe(
             'An initiative, presented as a project in the application.'
           ),
+        zod
+          .object({
+            id: zod.uuid().describe('A CRM company.'),
+            type: zod.enum(['crm_company']),
+          })
+          .describe('A CRM company.'),
+        zod
+          .object({
+            id: zod.uuid().describe('A CRM contact.'),
+            type: zod.enum(['crm_contact']),
+          })
+          .describe('A CRM contact.'),
       ])
       .describe('The entity whose permissions and lifecycle govern a message.'),
     reactions: zod
@@ -32069,6 +32268,18 @@ export const entityMessageLegacyResponse = zod
           .describe(
             'An initiative, presented as a project in the application.'
           ),
+        zod
+          .object({
+            id: zod.uuid().describe('A CRM company.'),
+            type: zod.enum(['crm_company']),
+          })
+          .describe('A CRM company.'),
+        zod
+          .object({
+            id: zod.uuid().describe('A CRM contact.'),
+            type: zod.enum(['crm_contact']),
+          })
+          .describe('A CRM contact.'),
       ])
       .describe('The entity whose permissions and lifecycle govern a message.'),
     reactions: zod
@@ -32228,6 +32439,18 @@ export const entityMessageGetThreadResponse = zod
                   .describe(
                     'An initiative, presented as a project in the application.'
                   ),
+                zod
+                  .object({
+                    id: zod.uuid().describe('A CRM company.'),
+                    type: zod.enum(['crm_company']),
+                  })
+                  .describe('A CRM company.'),
+                zod
+                  .object({
+                    id: zod.uuid().describe('A CRM contact.'),
+                    type: zod.enum(['crm_contact']),
+                  })
+                  .describe('A CRM contact.'),
               ])
               .describe(
                 'The entity whose permissions and lifecycle govern a message.'
@@ -32369,6 +32592,18 @@ export const entityMessageGetThreadResponse = zod
               .describe(
                 'An initiative, presented as a project in the application.'
               ),
+            zod
+              .object({
+                id: zod.uuid().describe('A CRM company.'),
+                type: zod.enum(['crm_company']),
+              })
+              .describe('A CRM company.'),
+            zod
+              .object({
+                id: zod.uuid().describe('A CRM contact.'),
+                type: zod.enum(['crm_contact']),
+              })
+              .describe('A CRM contact.'),
           ])
           .describe(
             'The entity whose permissions and lifecycle govern a message.'
@@ -32446,9 +32681,25 @@ export const entityMessageGetThreadResponse = zod
                   .describe(
                     'A comment-only placeable PDF annotation. It marks a point on a page,\nnot a span of text, so it has no marked text.'
                   ),
+                zod
+                  .object({
+                    range: zod
+                      .string()
+                      .describe('A1 cell or range, such as B4 or B4:C9.'),
+                    sheetId: zod
+                      .string()
+                      .describe('Stable sheet identity within the workbook.'),
+                    sheetName: zod
+                      .string()
+                      .describe('Sheet name when the discussion was created.'),
+                    type: zod.enum(['spreadsheet']),
+                  })
+                  .describe(
+                    'A cell or rectangular range in a native spreadsheet.'
+                  ),
               ])
               .describe(
-                "A thread's location within its document. Geometry remains annotation-owned."
+                "A thread's location within its document. PDF geometry remains annotation-owned."
               ),
           ])
           .optional(),
@@ -32538,9 +32789,23 @@ export const entityMessageDeleteThreadResponse = zod
               .describe(
                 'A comment-only placeable PDF annotation. It marks a point on a page,\nnot a span of text, so it has no marked text.'
               ),
+            zod
+              .object({
+                range: zod
+                  .string()
+                  .describe('A1 cell or range, such as B4 or B4:C9.'),
+                sheetId: zod
+                  .string()
+                  .describe('Stable sheet identity within the workbook.'),
+                sheetName: zod
+                  .string()
+                  .describe('Sheet name when the discussion was created.'),
+                type: zod.enum(['spreadsheet']),
+              })
+              .describe('A cell or rectangular range in a native spreadsheet.'),
           ])
           .describe(
-            "A thread's location within its document. Geometry remains annotation-owned."
+            "A thread's location within its document. PDF geometry remains annotation-owned."
           ),
       ])
       .optional(),
@@ -32643,9 +32908,23 @@ export const entityMessagePatchThreadResponse = zod
               .describe(
                 'A comment-only placeable PDF annotation. It marks a point on a page,\nnot a span of text, so it has no marked text.'
               ),
+            zod
+              .object({
+                range: zod
+                  .string()
+                  .describe('A1 cell or range, such as B4 or B4:C9.'),
+                sheetId: zod
+                  .string()
+                  .describe('Stable sheet identity within the workbook.'),
+                sheetName: zod
+                  .string()
+                  .describe('Sheet name when the discussion was created.'),
+                type: zod.enum(['spreadsheet']),
+              })
+              .describe('A cell or rectangular range in a native spreadsheet.'),
           ])
           .describe(
-            "A thread's location within its document. Geometry remains annotation-owned."
+            "A thread's location within its document. PDF geometry remains annotation-owned."
           ),
       ])
       .optional(),

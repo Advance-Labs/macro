@@ -1,6 +1,7 @@
 import { useViewShell, ViewShell } from '@app/components/view-shell';
 import { calendarSearch } from '@app/features/calendar-view/calendar-url';
 import { CalendarView } from '@app/features/calendar-view/calendar-view';
+import { ViewTour } from '@app/features/tours/ViewTour';
 import { createSearchParams, SplitRouter } from '@app/lib/split-router';
 import { DebugSuspense } from '@channel/DebugSuspense';
 import { useGlobalBlockOrchestrator } from '@components/app/GlobalAppState';
@@ -11,15 +12,16 @@ import { SplitPanel } from '@components/app/split-panel';
 import { StaticMarkdownContext } from '@core/component/LexicalMarkdown/component/core/StaticMarkdown';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import { ListEntityMetadataQueryProvider } from '@entity';
-import SpinnerIcon from '@phosphor/spinner.svg';
 import { createEffect, onMount, Show } from 'solid-js';
 import { HomeChatStart } from './components/HomeChatStart';
 import { HomeList } from './components/HomeList';
 import { HomeListLayout } from './components/HomeListLayout';
+import { HomeListSkeleton } from './components/HomeListSkeleton';
 import { HomeReturnBreadcrumb } from './components/HomeReturnBreadcrumb';
 import { HomeTabs } from './components/HomeTabs';
 import { HomeViewProvider, useHomeView } from './home-view-context';
 import { homeCalendarRoute } from './route';
+import { homeTour } from './tour';
 import type { HomeViewStateOptions } from './types';
 
 export type HomeViewProps = {
@@ -28,9 +30,12 @@ export type HomeViewProps = {
 };
 
 function HomeFallback() {
+  const { state } = useHomeView();
   return (
-    <div class="grid min-h-0 min-w-0 flex-1 place-items-center text-ink-muted">
-      <SpinnerIcon aria-label="Loading Home" class="size-5 animate-spin" />
+    <div class="mt-3 min-h-0 min-w-0 flex-1 overflow-hidden touch:mt-0 touch:pt-(--mobile-content-inset-top)">
+      <HomeListSkeleton
+        grouped={state.groupBy === 'date' && !state.search.trim()}
+      />
     </div>
   );
 }
@@ -57,6 +62,7 @@ function HomeListPane(props: {
         showContent();
       }}
     >
+      <ViewTour tour={homeTour} />
       <DebugSuspense name="HomeView.list" fallback={<HomeFallback />}>
         <HomeList
           hasPreview={props.hasPreview}
@@ -75,6 +81,7 @@ function HomeViewRoot() {
     setTab,
     previewTarget,
     calendarOpen,
+    reminderOpen,
     openPreview,
     closePreview,
   } = useHomeView();
@@ -89,7 +96,7 @@ function HomeViewRoot() {
     else closePreview();
   };
 
-  // The touch nav item and legacy touch view both call this "Notifications".
+  // The touch nav item calls this "Notifications".
   onMount(() =>
     panel.handle.setDisplayName(isTouchDevice() ? 'Notifications' : 'Home')
   );
@@ -113,7 +120,9 @@ function HomeViewRoot() {
                       <DebugSuspense name="HomeView.list-pane">
                         <HomeListPane
                           hasPreview={
-                            previewTarget() !== undefined || calendarOpen()
+                            previewTarget() !== undefined ||
+                            calendarOpen() ||
+                            reminderOpen()
                           }
                           onPreviewEntityChange={onPreviewEntityChange}
                           onNewChat={newChat}
@@ -142,7 +151,9 @@ function HomeViewRoot() {
                   <DebugSuspense name="HomeView.list-pane">
                     <HomeListPane
                       hasPreview={
-                        previewTarget() !== undefined || calendarOpen()
+                        previewTarget() !== undefined ||
+                        calendarOpen() ||
+                        reminderOpen()
                       }
                       onPreviewEntityChange={onPreviewEntityChange}
                       onNewChat={newChat}
