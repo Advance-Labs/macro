@@ -27,4 +27,6 @@ export type QueryCapabilities = {
 export type QueryComposerOptions = QueryCapabilities & {
   initial: QueryDefinition;
   schema: () => QuerySchema;
+  /** Failures quote the engine's own words only where SQL is shown. */
+  showSql: boolean;
 };

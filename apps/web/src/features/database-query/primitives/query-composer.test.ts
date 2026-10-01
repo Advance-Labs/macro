@@ -34,6 +34,7 @@ function setup(overrides: Partial<QueryComposerOptions> = {}) {
         displayMode: 'scalar',
       },
       schema: () => ({ databaseId: 'db', name: 'Projects', tables: [] }),
+      showSql: false,
       generate,
       read,
       ...overrides,
@@ -75,6 +76,8 @@ describe('question composer', () => {
     const { controller } = setup({
       schema: () => ({ name: 'Automatic', tables: [] }),
       generate,
+      // As the production read does, the source it was asked with is verified and kept.
+      read: (_sql, context) => okAsync({ ...answer, source: context?.source }),
     });
     controller.setPrompt('Count tickets');
     await controller.generate();
@@ -102,7 +105,9 @@ describe('question composer', () => {
       .mockReturnValueOnce(
         errAsync({ kind: 'fetch', message: 'Temporary failure' })
       )
-      .mockReturnValue(okAsync(answer));
+      .mockImplementation((_sql, context) =>
+        okAsync({ ...answer, source: context?.source })
+      );
     const { controller } = setup({
       schema: () => ({ name: 'Automatic', tables: [] }),
       generate,

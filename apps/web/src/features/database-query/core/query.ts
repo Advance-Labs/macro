@@ -1,34 +1,28 @@
-import { isFeatureEnabled, showDatabaseSql } from '@core/constant/featureFlags';
 import type { DatabaseSqlAnswer } from '@core/database-sql/answer';
 import type { DatabaseSqlFailure } from '@core/database-sql/driver';
 import type { RunError } from '@core/database-sql/generated/types';
 import { type ResultError, ThrownResultError } from '@core/util/result';
+import {
+  type DatabaseQueryChart,
+  type DatabaseQueryData,
+  type DatabaseQueryDisplayMode,
+  isDatabaseQueryChartMode,
+  isDatabaseQueryDisplayMode,
+  parseDatabaseQueryChart,
+} from '@macro-inc/lexical-core/nodes/databaseQueryData';
 import { err, ok, type Result } from 'neverthrow';
 import { match, P } from 'ts-pattern';
-import {
-  isChartMode,
-  isDisplayMode,
-  parseQueryChart,
-  type QueryChartConfig,
-  type QueryDisplayMode,
-} from './query-chart';
-
-export type QueryDefinition = {
-  databaseId?: string;
-  /** Default subject for new questions; SQL remains the saved answer's source. */
-  tableId?: string;
-  sql: string;
-  prompt: string;
-  title?: string;
-  displayMode: QueryDisplayMode;
-  chart?: QueryChartConfig;
-};
 
 /**
  * What a document stores: a pointer to an immutable saved query plus its
  * presentation. An empty `queryId` is a draft that has not been saved yet.
  */
-export type SavedQuestion = Omit<QueryDefinition, 'sql'> & { queryId: string };
+export type SavedQuestion = DatabaseQueryData;
+
+/** A question being composed: its SQL in place of the saved query it becomes. */
+export type QueryDefinition = Omit<DatabaseQueryData, 'queryId'> & {
+  sql: string;
+};
 
 export type QuerySchema = {
   /** Undefined lets a document question discover its source automatically. */
@@ -39,6 +33,8 @@ export type QuerySchema = {
   tables: {
     id: string;
     name: string;
+    /** Every viewer has it, whatever database the schema describes. */
+    platform?: true;
     sqlName: string;
     primaryKey?: string;
     columns: {
@@ -60,15 +56,18 @@ export type QueryProposal = {
   title?: string;
   sql: string;
   explanation: string;
-  displayMode?: QueryDisplayMode;
-  chart?: QueryChartConfig;
+  displayMode?: DatabaseQueryDisplayMode;
+  chart?: DatabaseQueryChart;
   /** The model's chosen source; the query adapter verifies access before using it. */
   databaseId?: string;
   /** A verified complete schema, attached by the production query adapter. */
   source?: QuerySchema;
 };
 export type QueryAnswer = DatabaseSqlAnswer & {
-  /** Source metadata checked against the query's actual read dependencies by its adapter. */
+  /**
+   * Source metadata checked against the query's actual read dependencies by
+   * its adapter; absent when the answer reads no database and none was chosen.
+   */
   source?: QuerySchema;
 };
 
@@ -86,7 +85,9 @@ export type QueryFailure =
   /** The question needs a database other than the one chosen. */
   | { kind: 'other-database' }
   /** The answer's source could not be matched to a database the viewer reads. */
-  | { kind: 'unverified-source' };
+  | { kind: 'unverified-source' }
+  /** The answer reads several databases and names none of them as its own. */
+  | { kind: 'ambiguous-source' };
 
 /** A service's failure: the first of the errors it reported. */
 export function serviceError(errors: readonly ResultError[]): ResultError {
@@ -156,7 +157,7 @@ export function formatQueryValue(value: number | null | undefined): string {
   );
 }
 
-/** An early affordance, not a security boundary: the query endpoint enforces read-only SQL. */
+/** An early affordance, not a security boundary: the engine refuses a write when it runs. */
 export function looksLikeReadQuery(sql: string): boolean {
   const start = sql
     .replace(/^(?:\s|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)+/, '')
@@ -223,13 +224,14 @@ function engineErrorMessage(error: RunError): string {
 }
 
 /**
- * What to tell a person when a question fails. With SQL hidden
- * ({@link showDatabaseSql}) the engine's and compiler's own words, which
- * quote the statement, become a plain line; {@link queryFailureDetail}
- * keeps them for the agent and the SQL-visible UI.
+ * What to tell a person when a question fails. With SQL hidden the
+ * engine's own words, which quote the statement, become a plain line;
+ * {@link queryFailureDetail} keeps them for the agent and the SQL-visible UI.
  */
-export function queryErrorMessage(failure: QueryFailure): string {
-  const showSql = isFeatureEnabled(showDatabaseSql);
+export function queryErrorMessage(
+  failure: QueryFailure,
+  showSql: boolean
+): string {
   return match(failure)
     .returnType<string>()
     .with({ kind: 'engine' }, ({ error, message }) =>
@@ -245,18 +247,10 @@ export function queryErrorMessage(failure: QueryFailure): string {
     .with({ kind: 'question' }, ({ error }) =>
       match(error.code)
         .with('NOT_FOUND', () => 'This saved question no longer exists.')
-        .with('INVALID_QUERY', () =>
-          showSql ? error.message : `${UNCOMPUTED}. Try asking again.`
-        )
-        .with(
-          'READ_ONLY',
-          () =>
-            'Questions can only read data you have access to. Edit records in the table or board.'
-        )
-        .with('BUDGET_EXCEEDED', () =>
+        .with('QUERY_TOO_LONG', () =>
           showSql
-            ? 'This question needs less data. Try a narrower question or add a LIMIT in SQL.'
-            : 'This question needs less data. Try a narrower question.'
+            ? 'This question’s SQL is too long to save. Shorten it and try again.'
+            : 'This question is too long to save. Try a shorter question.'
         )
         .with('NETWORK_ERROR', () => OFFLINE)
         .otherwise(() => TRY_AGAIN)
@@ -284,6 +278,11 @@ export function queryErrorMessage(failure: QueryFailure): string {
     .with(
       { kind: 'unverified-source' },
       () => 'The answer’s source could not be verified. Try again.'
+    )
+    .with(
+      { kind: 'ambiguous-source' },
+      () =>
+        'This answer reads more than one database. Choose the database it belongs to, then ask again.'
     )
     .exhaustive();
 }
@@ -336,15 +335,18 @@ export function parseQueryProposal(
       )
     );
   const displayMode = record.displayMode;
-  if (displayMode !== undefined && !isDisplayMode(displayMode))
+  if (displayMode !== undefined && !isDatabaseQueryDisplayMode(displayMode))
     return err(
       generationFailure('AI returned an unsupported answer display. Try again.')
     );
   const chart =
     record.chart === undefined || record.chart === null
       ? undefined
-      : parseQueryChart(record.chart);
-  if ((record.chart != null && !chart) || (isChartMode(displayMode) && !chart))
+      : parseDatabaseQueryChart(record.chart);
+  if (
+    (record.chart != null && !chart) ||
+    (isDatabaseQueryChartMode(displayMode) && !chart)
+  )
     return err(
       generationFailure('AI returned incomplete chart settings. Try again.')
     );

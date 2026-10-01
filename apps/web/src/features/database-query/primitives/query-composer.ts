@@ -1,6 +1,12 @@
+import {
+  type DatabaseQueryChart,
+  type DatabaseQueryDisplayMode,
+  isDatabaseQueryChartMode,
+} from '@macro-inc/lexical-core/nodes/databaseQueryData';
 import { err, ok, type Result } from 'neverthrow';
 import { createSignal, onCleanup } from 'solid-js';
 import type { QueryComposerOptions } from '../context/query-context';
+import { unknownNames } from '../core/answer-cell';
 import {
   looksLikeReadQuery,
   type QueryAnswer,
@@ -9,17 +15,12 @@ import {
   queryErrorMessage,
   queryFailureDetail,
 } from '../core/query';
-import {
-  isChartMode,
-  prepareQueryChart,
-  type QueryChartConfig,
-  type QueryDisplayMode,
-} from '../core/query-chart';
+import { prepareQueryChart } from '../core/query-chart';
 
 type Presentation = {
   title?: string;
-  displayMode: QueryDisplayMode;
-  chart?: QueryChartConfig;
+  displayMode: DatabaseQueryDisplayMode;
+  chart?: DatabaseQueryChart;
 };
 
 type AnswerPreview = {
@@ -117,7 +118,7 @@ export function createQueryComposer(options: QueryComposerOptions) {
   const sourceChanged = () => !isCurrentContext(sqlContext());
   const needsGeneration = () => questionChanged() || sourceChanged();
   const reportFailure = (failure: QueryFailure) => {
-    setError(queryErrorMessage(failure));
+    setError(queryErrorMessage(failure, options.showSql));
     setErrorDetail(queryFailureDetail(failure));
   };
 
@@ -128,7 +129,6 @@ export function createQueryComposer(options: QueryComposerOptions) {
     source: QuestionContext,
     display = presentation()
   ): Promise<Result<void, QueryFailure>> {
-    const databaseId = schema().databaseId;
     setPhase('running');
     const read = await options.read(statement, {
       databaseId: source.databaseId,
@@ -138,8 +138,10 @@ export function createQueryComposer(options: QueryComposerOptions) {
     if (execution !== revision || !isCurrentContext(source))
       return ok(undefined);
     const answer = read.value;
-    if (answer.source)
-      setResolvedSource({ schema: answer.source, context: source });
+    // A read attaches its verified source; without one there is none to show.
+    setResolvedSource(
+      answer.source ? { schema: answer.source, context: source } : undefined
+    );
     setPreview({
       sql: statement,
       prompt: question,
@@ -150,7 +152,7 @@ export function createQueryComposer(options: QueryComposerOptions) {
         ? answer.source.databaseId
         : answer.readDatabaseIds.length === 1
           ? answer.readDatabaseIds[0]
-          : databaseId,
+          : source.databaseId,
     });
     setPresentation(display);
     accepted = { sql: statement, prompt: question, tableId: source.tableId };
@@ -178,7 +180,6 @@ export function createQueryComposer(options: QueryComposerOptions) {
     if (generation !== revision || !isCurrentContext(source))
       return ok(undefined);
     const statement = next.sql.trim();
-    if (!looksLikeReadQuery(statement)) return err({ kind: 'read-only' });
     setUndo({
       ...accepted,
       preview: preview(),
@@ -216,6 +217,7 @@ export function createQueryComposer(options: QueryComposerOptions) {
   const run = async () => {
     const statement = sql().trim();
     if (!statement || generationPending() || phase() !== 'idle') return;
+    // Typed SQL is checked here; generated SQL was checked when it was parsed.
     if (!looksLikeReadQuery(statement)) {
       reportFailure({ kind: 'read-only' });
       return;
@@ -241,13 +243,15 @@ export function createQueryComposer(options: QueryComposerOptions) {
     generationPending,
     preview,
     presentation,
-    setDisplayMode: (displayMode: QueryDisplayMode) =>
+    setDisplayMode: (displayMode: DatabaseQueryDisplayMode) =>
       setPresentation((current) => {
         const answer = preview()?.answer;
-        if (answer && isChartMode(displayMode)) {
+        if (answer && isDatabaseQueryChartMode(displayMode)) {
           const chart =
-            prepareQueryChart(answer, displayMode, current.chart).data
-              ?.config ?? prepareQueryChart(answer, displayMode).data?.config;
+            prepareQueryChart(answer, displayMode, current.chart, unknownNames)
+              .data?.config ??
+            prepareQueryChart(answer, displayMode, undefined, unknownNames).data
+              ?.config;
           return { ...current, displayMode, chart: chart ?? current.chart };
         }
         return { ...current, displayMode };
