@@ -82,10 +82,8 @@ where
         let version = match result {
             Ok(Some(version)) => version,
             Ok(None) => {
-                if replacement.is_some()
-                    && let Err(error) = self.definitions.delete_unused_definition(new_id).await
-                {
-                    tracing::warn!(error = ?error, %new_id, "failed to clean up unused inferred definition");
+                if replacement.is_some() {
+                    self.delete_unused_definition(new_id).await;
                 }
                 if self
                     .repo

@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 use super::*;
 use crate::domain::models::{
-    CardPosition, Column, ColumnBinding, ColumnConfig, DatabaseView, OpRefusal,
+    CardPosition, Column, ColumnBinding, ColumnConfig, DatabaseView, NewOption, OpRefusal,
     PropertyDefinitionId, RowId, RowRef, TableDeletion, TableOrderOutcome, TableVersion, ViewId,
     Write, Writes, WritesOutcome,
 };
@@ -333,7 +333,7 @@ impl DatabasesRepo for FakeRepo {
         table_id: TableId,
         property_definition_id: PropertyDefinitionId,
         cmd: &CreateColumn,
-    ) -> Result<ColumnId, FakeError> {
+    ) -> Result<(ColumnId, TableVersion), FakeError> {
         let mut w = self.0.lock().unwrap();
         let column = Column {
             infer_type: cmd.infer_type,
@@ -345,17 +345,15 @@ impl DatabasesRepo for FakeRepo {
             config: cmd.config.clone(),
         };
         w.columns.push(column.clone());
-        Ok(column.id)
-    }
-    async fn bump_table_version(&self, table_id: TableId) -> Result<TableVersion, FakeError> {
-        let mut w = self.0.lock().unwrap();
-        let table = w
+        // Unlike Postgres the fake leaves the version alone, so the seeded
+        // tests' versions count only data writes.
+        let version = w
             .tables
-            .iter_mut()
-            .find(|t| t.id == table_id)
-            .ok_or(FakeError)?;
-        table.version = TableVersion(table.version.0 + 1);
-        Ok(table.version)
+            .iter()
+            .find(|table| table.id == table_id)
+            .ok_or(FakeError)?
+            .version;
+        Ok((column.id, version))
     }
     async fn rename_column(
         &self,
@@ -418,36 +416,6 @@ impl DatabasesRepo for FakeRepo {
             return Ok(None);
         };
         w.columns[c].property_definition_id = definition_id;
-        w.columns[c].infer_type = false;
-        w.tables[t].version.0 += 1;
-        Ok(Some(w.tables[t].version))
-    }
-    async fn replace_column(
-        &self,
-        table: &Table,
-        replacement: &ColumnReplacement,
-        views: &[DatabaseView],
-    ) -> Result<Option<TableVersion>, FakeError> {
-        let mut w = self.0.lock().unwrap();
-        let Some(t) = w
-            .tables
-            .iter()
-            .position(|t| t.id == table.id && t.version == table.version)
-        else {
-            return Ok(None);
-        };
-        let Some(c) = w.columns.iter().position(|c| {
-            c.id == replacement.column.id
-                && c.table_id == table.id
-                && c.property_definition_id == replacement.column.property_definition_id
-        }) else {
-            return Ok(None);
-        };
-        if !rewrite_views(&mut w, views) {
-            return Ok(None);
-        }
-        w.columns[c].property_definition_id = replacement.definition_id;
-        w.columns[c].config = replacement.config.clone();
         w.columns[c].infer_type = false;
         w.tables[t].version.0 += 1;
         Ok(Some(w.tables[t].version))
@@ -527,71 +495,6 @@ impl DatabasesRepo for FakeRepo {
             .get(&table_id)
             .cloned()
             .unwrap_or_default())
-    }
-    async fn insert_rows(
-        &self,
-        table_id: TableId,
-        _created_by: &str,
-        count: usize,
-    ) -> Result<Option<Vec<RowRef>>, FakeError> {
-        let mut w = self.0.lock().unwrap();
-        let Some(table) = w.tables.iter().find(|t| t.id == table_id) else {
-            return Ok(None);
-        };
-        let database_id = table.database_id;
-        if w.databases
-            .iter()
-            .find(|d| d.id == database_id)
-            .is_none_or(|d| d.trashed_at.is_some())
-        {
-            return Ok(None);
-        }
-        let rows = w.rows.entry(table_id).or_default();
-        let created: Vec<RowRef> = (0..count)
-            .map(|offset| RowRef {
-                id: Uuid::now_v7(),
-                position: format!("{:04}", rows.len() + offset),
-            })
-            .collect();
-        rows.extend(created.iter().cloned());
-        Ok(Some(created))
-    }
-    async fn delete_row(&self, table_id: TableId, row_id: RowId) -> Result<bool, FakeError> {
-        let mut w = self.0.lock().unwrap();
-        let Some(rows) = w.rows.get_mut(&table_id) else {
-            return Ok(false);
-        };
-        let before = rows.len();
-        rows.retain(|row| row.id != row_id);
-        let deleted = rows.len() < before;
-        if deleted {
-            w.cells.remove(&row_id);
-        }
-        Ok(deleted)
-    }
-    async fn row_table(&self, row_id: RowId) -> Result<Option<TableId>, FakeError> {
-        Ok(self
-            .0
-            .lock()
-            .unwrap()
-            .rows
-            .iter()
-            .find(|(_, rows)| rows.iter().any(|row| row.id == row_id))
-            .map(|(table_id, _)| *table_id))
-    }
-    async fn settle_inference(
-        &self,
-        table_id: TableId,
-        definitions: &[PropertyDefinitionId],
-    ) -> Result<(), FakeError> {
-        let mut w = self.0.lock().unwrap();
-        for column in &mut w.columns {
-            if column.table_id == table_id && definitions.contains(&column.property_definition_id) {
-                column.infer_type = false;
-            }
-        }
-        w.settled.push((table_id, definitions.to_vec()));
-        Ok(())
     }
     async fn table_versions(
         &self,
@@ -722,24 +625,74 @@ impl CellStore for FakeCells {
             })
             .collect())
     }
-    async fn write(
+    async fn replace_column(
         &self,
-        row: RowId,
-        cells: &[(PropertyDefinitionId, Option<PropertyValue>)],
-    ) -> Result<(), FakeError> {
+        table: &Table,
+        replacement: &ColumnReplacement,
+        views: &[DatabaseView],
+    ) -> Result<Option<TableVersion>, FakeError> {
         let mut w = self.0.lock().unwrap();
-        let stored = w.cells.entry(row).or_default();
-        for (definition, value) in cells {
-            match value {
-                Some(value) => {
-                    stored.insert(*definition, value.clone());
-                }
-                None => {
-                    stored.remove(definition);
-                }
-            }
+        let Some(t) = w
+            .tables
+            .iter()
+            .position(|t| t.id == table.id && t.version == table.version)
+        else {
+            return Ok(None);
+        };
+        let Some(c) = w.columns.iter().position(|c| {
+            c.id == replacement.column.id
+                && c.table_id == table.id
+                && c.property_definition_id == replacement.column.property_definition_id
+        }) else {
+            return Ok(None);
+        };
+        if !rewrite_views(&mut w, views) {
+            return Ok(None);
         }
-        Ok(())
+        for (row, value) in &replacement.values {
+            w.cells
+                .entry(*row)
+                .or_default()
+                .insert(replacement.definition_id, value.clone());
+        }
+        w.columns[c].property_definition_id = replacement.definition_id;
+        w.columns[c].config = replacement.config.clone();
+        w.columns[c].infer_type = false;
+        w.tables[t].version.0 += 1;
+        Ok(Some(w.tables[t].version))
+    }
+    async fn add_options(
+        &self,
+        table_id: TableId,
+        options: &[NewOption],
+    ) -> Result<Option<TableVersion>, FakeError> {
+        let mut world = self.0.lock().unwrap();
+        let Some(table_index) = world.tables.iter().position(|table| table.id == table_id) else {
+            return Ok(None);
+        };
+        for option in options {
+            let definition = world
+                .definitions
+                .get_mut(&option.definition_id)
+                .ok_or(FakeError)?;
+            let display_order = definition
+                .property_options
+                .iter()
+                .map(|existing| existing.display_order)
+                .max()
+                .map_or(0, |highest| highest + 1);
+            definition.property_options.push(PropertyOption {
+                id: option.id,
+                property_definition_id: option.definition_id,
+                display_order,
+                value: option.value.clone(),
+                color: None,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            });
+        }
+        world.tables[table_index].version.0 += 1;
+        Ok(Some(world.tables[table_index].version))
     }
     async fn apply_writes(&self, writes: &Writes) -> Result<WritesOutcome, FakeError> {
         let mut w = self.0.lock().unwrap();
@@ -1061,15 +1014,15 @@ impl ColumnDefinitionStore for FakeDefs {
         database_id: DatabaseId,
         _viewer: &Viewer,
         binding: &ColumnBinding,
-    ) -> Result<PropertyDefinitionId, FakeError> {
+    ) -> Result<Option<PropertyDefinitionId>, FakeError> {
         match binding {
-            ColumnBinding::ExistingDefinition(id) => {
-                if self.0.lock().unwrap().definitions.contains_key(id) {
-                    Ok(*id)
-                } else {
-                    Err(FakeError)
-                }
-            }
+            ColumnBinding::ExistingDefinition(id) => Ok(self
+                .0
+                .lock()
+                .unwrap()
+                .definitions
+                .contains_key(id)
+                .then_some(*id)),
             ColumnBinding::NewDefinition {
                 name,
                 data_type,
@@ -1085,7 +1038,7 @@ impl ColumnDefinitionStore for FakeDefs {
                 );
                 let id = def.definition.id;
                 self.0.lock().unwrap().definitions.insert(id, def);
-                Ok(id)
+                Ok(Some(id))
             }
         }
     }

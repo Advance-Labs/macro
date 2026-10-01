@@ -102,7 +102,8 @@ async fn new_binding_creates_a_database_owned_definition(pool: PgPool) {
             &new_definition("Headcount", DataType::Number),
         )
         .await
-        .expect("definition should be created");
+        .expect("definition should be created")
+        .expect("a new definition always resolves");
 
     let definitions = store
         .definitions(&[definition_id])
@@ -156,7 +157,8 @@ async fn existing_binding_returns_the_definition_id(pool: PgPool) {
             &new_definition("Owner", DataType::String),
         )
         .await
-        .expect("definition should be created");
+        .expect("definition should be created")
+        .expect("a new definition always resolves");
 
     let resolved = store
         .resolve_binding(
@@ -167,7 +169,7 @@ async fn existing_binding_returns_the_definition_id(pool: PgPool) {
         .await
         .expect("an existing definition should resolve");
 
-    assert_eq!(resolved, created);
+    assert_eq!(resolved, Some(created));
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
@@ -178,19 +180,16 @@ async fn existing_binding_rejects_an_unknown_definition(pool: PgPool) {
     );
     let missing = macro_uuid::generate_uuid_v7();
 
-    let error = store
+    let resolved = store
         .resolve_binding(
             database_id,
             &viewer_for_tests(),
             &ColumnBinding::ExistingDefinition(missing),
         )
         .await
-        .expect_err("an unknown definition should not resolve");
+        .expect("an unknown definition is an answer, not a failure");
 
-    match error {
-        PgDefinitionStoreError::NotFound(id) => assert_eq!(id, missing),
-        other => panic!("expected NotFound, got {other:?}"),
-    }
+    assert_eq!(resolved, None);
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
@@ -207,7 +206,8 @@ async fn definitions_attaches_options_and_ignores_unknown_ids(pool: PgPool) {
             &new_definition("Stage", DataType::SelectString),
         )
         .await
-        .expect("definition should be created");
+        .expect("definition should be created")
+        .expect("a new definition always resolves");
     let plain_id = store
         .resolve_binding(
             database_id,
@@ -215,7 +215,8 @@ async fn definitions_attaches_options_and_ignores_unknown_ids(pool: PgPool) {
             &new_definition("Notes", DataType::String),
         )
         .await
-        .expect("definition should be created");
+        .expect("definition should be created")
+        .expect("a new definition always resolves");
     insert_option(&pool, select_id, Some("Draft"), None).await;
     insert_option(&pool, select_id, Some("Sent"), None).await;
 
@@ -273,7 +274,8 @@ async fn add_options_appends_to_the_definition(pool: PgPool) {
             &new_definition("Stage", DataType::SelectString),
         )
         .await
-        .expect("definition should be created");
+        .expect("definition should be created")
+        .expect("a new definition always resolves");
 
     let created = store
         .add_options(
@@ -330,7 +332,8 @@ async fn add_options_colours_each_new_option_after_the_ones_already_there(pool: 
             &new_definition("Stage", DataType::SelectString),
         )
         .await
-        .expect("definition should be created");
+        .expect("definition should be created")
+        .expect("a new definition always resolves");
 
     let created = store
         .add_options(
@@ -381,7 +384,8 @@ async fn add_options_stores_numbers_for_a_numeric_select(pool: PgPool) {
             &new_definition("Priority", DataType::SelectNumber),
         )
         .await
-        .expect("definition should be created");
+        .expect("definition should be created")
+        .expect("a new definition always resolves");
 
     store
         .add_options(definition_id, &[PropertyOptionValue::Number(2.0)])
@@ -411,7 +415,8 @@ async fn add_options_of_nothing_writes_nothing(pool: PgPool) {
             &new_definition("Stage", DataType::SelectString),
         )
         .await
-        .expect("definition should be created");
+        .expect("definition should be created")
+        .expect("a new definition always resolves");
 
     let created = store
         .add_options(definition_id, &[])

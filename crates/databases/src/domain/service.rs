@@ -41,7 +41,7 @@ use crate::domain::events::{
 use crate::domain::models::{
     AddColumnOptions, Awareness, ColumnBinding, ColumnConfig, ColumnDetail, ColumnId, CreateColumn,
     CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId,
-    InferColumnType, InferColumnTypeOutcome, ListedDatabase, PropertyDefinitionId,
+    InferColumnType, InferColumnTypeOutcome, ListedDatabase, NewOption, PropertyDefinitionId,
     RenameColumnOutcome, RowId, RowRef, Table, TableDetail, TableId, TableMutationOutcome,
     TableVersion, Viewer,
 };
@@ -238,6 +238,14 @@ where
     fn emit(&self, event: DatabaseMacroEvent) {
         if let Err(error) = self.broker.send_event(&event) {
             tracing::warn!(error = ?error, "failed to publish database event");
+        }
+    }
+
+    /// Remove a definition this call created and nothing binds; a failure
+    /// leaves it unbound, which is logged.
+    async fn delete_unused_definition(&self, id: PropertyDefinitionId) {
+        if let Err(error) = self.definitions.delete_unused_definition(id).await {
+            tracing::warn!(error = ?error, %id, "failed to clean up unused column definition");
         }
     }
 
@@ -922,8 +930,7 @@ where
                         "options are only valid on select, select_number, and tag columns".into(),
                     ));
                 }
-                // Validated before anything is written, so a bad label cannot
-                // leave a half-built column behind.
+                // Validated before anything is written.
                 let values = validate_option_labels(data_type, &options, &[])?;
                 (
                     ColumnBinding::NewDefinition {
@@ -956,36 +963,46 @@ where
             .definitions
             .resolve_binding(database.id, &viewer, &binding)
             .await
-            .map_err(|e| DatabaseError::InvalidSchemaOperation(e.to_string()))?;
-        if !option_values.is_empty() {
-            self.definitions
+            .map_err(repo_err)?;
+        let definition_id = match (definition_id, &binding) {
+            (Some(definition_id), _) => definition_id,
+            (None, ColumnBinding::ExistingDefinition(id)) => {
+                return Err(DatabaseError::InvalidSchemaOperation(format!(
+                    "property definition {id} not found"
+                )));
+            }
+            (None, ColumnBinding::NewDefinition { .. }) => {
+                return Err(DatabaseError::Repo(
+                    rootcause::report!("the definition store did not create a new definition")
+                        .into_dynamic(),
+                ));
+            }
+        };
+        let created = matches!(binding, ColumnBinding::NewDefinition { .. });
+        if !option_values.is_empty()
+            && let Err(error) = self
+                .definitions
                 .add_options(definition_id, &option_values)
                 .await
-                .map_err(repo_err)?;
+        {
+            // Nothing binds the new definition yet, so it goes with the failure.
+            if created {
+                self.delete_unused_definition(definition_id).await;
+            }
+            return Err(repo_err(error));
         }
         let cmd = CreateColumn { binding, ..cmd };
-        let column_id = self
+        let (column_id, version) = self
             .repo
             .create_column(cmd.table_id, definition_id, &cmd)
             .await
             .map_err(repo_err)?;
-        match self.repo.table_versions(&[cmd.table_id]).await {
-            Ok(versions) => {
-                self.publish(
-                    receipt_attribution(&receipt),
-                    &HashMap::from([(cmd.table_id, database.id)]),
-                    &versions,
-                )
-                .await;
-            }
-            Err(error) => {
-                tracing::error!(
-                    error = ?error,
-                    table_id = %cmd.table_id,
-                    "column saved but could not read its table version for publication"
-                );
-            }
-        }
+        self.publish(
+            receipt_attribution(&receipt),
+            &HashMap::from([(cmd.table_id, database.id)]),
+            &HashMap::from([(cmd.table_id, version)]),
+        )
+        .await;
         Ok(column_id)
     }
 
@@ -1109,17 +1126,22 @@ where
         // Every label was already there: nothing changed, so nothing is
         // written, versioned, or announced.
         if !values.is_empty() {
-            self.definitions
-                .add_options(definition.definition.id, &values)
-                .await
-                .map_err(repo_err)?;
+            let options: Vec<NewOption> = values
+                .into_iter()
+                .map(|value| NewOption {
+                    definition_id: definition.definition.id,
+                    id: macro_uuid::generate_uuid_v7(),
+                    value,
+                })
+                .collect();
             // Options are part of the column's catalog entry, so the table's
-            // shape moved.
+            // version moves with them.
             let version = self
-                .repo
-                .bump_table_version(cmd.table_id)
+                .cells
+                .add_options(cmd.table_id, &options)
                 .await
-                .map_err(repo_err)?;
+                .map_err(repo_err)?
+                .ok_or(DatabaseError::NotFound)?;
             self.publish(
                 receipt_attribution(&receipt),
                 &HashMap::from([(cmd.table_id, database.id)]),

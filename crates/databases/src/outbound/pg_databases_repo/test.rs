@@ -4,8 +4,10 @@ use macro_user_id::user_id::MacroUserIdStr;
 use sqlx::PgPool;
 
 use super::*;
-use crate::domain::models::ColumnBinding;
+use uuid::Uuid;
+
 use crate::domain::models::Viewer;
+use crate::domain::models::{ColumnBinding, RowId};
 
 #[cfg(feature = "gateway")]
 mod apply_ops;
@@ -19,6 +21,40 @@ mod transfer;
 mod views;
 
 const USER: &str = "macro|databases-a@macro.com";
+
+/// Row statements the repository tests drive directly; the service writes
+/// rows only through the cell store's batches.
+impl PgDatabasesRepo {
+    async fn insert_rows(
+        &self,
+        table_id: TableId,
+        created_by: &str,
+        count: usize,
+    ) -> Result<Option<Vec<RowRef>>, PgDatabasesRepoError> {
+        let mut transaction = self.pool.begin().await?;
+        let rows = rows::append_rows(&mut transaction, table_id, created_by, count).await?;
+        if rows.is_some() {
+            transaction.commit().await?;
+        }
+        Ok(rows)
+    }
+
+    async fn delete_row(
+        &self,
+        table_id: TableId,
+        row_id: RowId,
+    ) -> Result<bool, PgDatabasesRepoError> {
+        Ok(rows::delete_row(&self.pool, table_id, row_id).await?)
+    }
+
+    async fn row_table(&self, row_id: RowId) -> Result<Option<TableId>, PgDatabasesRepoError> {
+        Ok(
+            sqlx::query_scalar!("SELECT table_id FROM database_rows WHERE id = $1", row_id)
+                .fetch_optional(&self.pool)
+                .await?,
+        )
+    }
+}
 
 fn applied_table(outcome: TableMutationOutcome) -> Table {
     let TableMutationOutcome::Applied(table) = outcome else {

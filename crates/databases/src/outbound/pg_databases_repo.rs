@@ -5,7 +5,8 @@
 //! `database_rows`. Cells are not here: they are entity properties, written
 //! through the properties adapter.
 
-mod columns;
+/// Schema-change statements, shared with the cell store's column rebind.
+pub(crate) mod columns;
 mod delete_table;
 mod reorder_tables;
 /// Row identity statements, shared with the cell store's batches.
@@ -14,7 +15,6 @@ mod saved_queries;
 mod sharing;
 #[cfg(test)]
 mod test;
-mod transfer;
 /// View and card-place statements, shared with the cell store's batches.
 pub(crate) mod views;
 
@@ -23,7 +23,6 @@ use std::collections::HashMap;
 use models_databases::position::{PositionError, key_between, keys_between};
 
 use sqlx::PgPool;
-use uuid::Uuid;
 
 use entity_access_db_utils::{AccessLevel, EntityAccessSourceType};
 use model_entity::EntityType;
@@ -33,7 +32,7 @@ use crate::domain::models::{
 };
 use crate::domain::models::{
     Column, ColumnConfig, ColumnId, CreateColumn, CreateDatabase, CreateTable, Database,
-    DatabaseId, PropertyDefinitionId, RenameColumnOutcome, RowId, RowRef, Table, TableId,
+    DatabaseId, PropertyDefinitionId, RenameColumnOutcome, RowRef, Table, TableId,
     TableMutationOutcome, TableVersion,
 };
 use crate::domain::models::{
@@ -78,16 +77,6 @@ impl PgDatabasesRepo {
 
 impl DatabasesRepo for PgDatabasesRepo {
     type Err = PgDatabasesRepoError;
-
-    async fn replace_column(
-        &self,
-        table: &Table,
-        replacement: &ColumnReplacement,
-        views: &[DatabaseView],
-    ) -> Result<Option<TableVersion>, Self::Err> {
-        self.replace_column_placement(table, replacement, views)
-            .await
-    }
 
     async fn delete_column(
         &self,
@@ -434,7 +423,7 @@ impl DatabasesRepo for PgDatabasesRepo {
         table_id: TableId,
         property_definition_id: PropertyDefinitionId,
         cmd: &CreateColumn,
-    ) -> Result<ColumnId, Self::Err> {
+    ) -> Result<(ColumnId, TableVersion), Self::Err> {
         let config = cmd.config.as_ref().map(serde_json::to_value).transpose()?;
 
         let mut transaction = self.pool.begin().await?;
@@ -464,16 +453,9 @@ impl DatabasesRepo for PgDatabasesRepo {
         .await?;
 
         // A new column changes the table's shape.
-        sqlx::query!(
-            r#"UPDATE database_tables SET version = version + 1 WHERE id = $1"#,
-            table_id
-        )
-        .execute(&mut *transaction)
-        .await?;
-
+        let version = rows::bump_table_version(&mut *transaction, table_id).await?;
         transaction.commit().await?;
-
-        Ok(id)
+        Ok((id, version))
     }
 
     #[tracing::instrument(err, skip(self, table, column))]
@@ -587,44 +569,6 @@ impl DatabasesRepo for PgDatabasesRepo {
             .collect())
     }
 
-    #[tracing::instrument(err, skip(self))]
-    async fn insert_rows(
-        &self,
-        table_id: TableId,
-        created_by: &str,
-        count: usize,
-    ) -> Result<Option<Vec<RowRef>>, Self::Err> {
-        let mut transaction = self.pool.begin().await?;
-        let rows = rows::append_rows(&mut transaction, table_id, created_by, count).await?;
-        if rows.is_some() {
-            transaction.commit().await?;
-        }
-        Ok(rows)
-    }
-
-    #[tracing::instrument(err, skip(self))]
-    async fn delete_row(&self, table_id: TableId, row_id: RowId) -> Result<bool, Self::Err> {
-        Ok(rows::delete_row(&self.pool, table_id, row_id).await?)
-    }
-
-    #[tracing::instrument(err, skip(self))]
-    async fn row_table(&self, row_id: RowId) -> Result<Option<TableId>, Self::Err> {
-        Ok(
-            sqlx::query_scalar!("SELECT table_id FROM database_rows WHERE id = $1", row_id)
-                .fetch_optional(&self.pool)
-                .await?,
-        )
-    }
-
-    #[tracing::instrument(err, skip(self, definitions))]
-    async fn settle_inference(
-        &self,
-        table_id: TableId,
-        definitions: &[PropertyDefinitionId],
-    ) -> Result<(), Self::Err> {
-        Ok(rows::settle_inference(&self.pool, table_id, definitions).await?)
-    }
-
     #[tracing::instrument(skip(self), err)]
     async fn databases_by_ids(&self, ids: &[DatabaseId]) -> Result<Vec<Database>, Self::Err> {
         let rows = sqlx::query!(
@@ -704,11 +648,6 @@ impl DatabasesRepo for PgDatabasesRepo {
                 })
             })
             .collect()
-    }
-
-    #[tracing::instrument(err, skip(self))]
-    async fn bump_table_version(&self, table_id: TableId) -> Result<TableVersion, Self::Err> {
-        Ok(rows::bump_table_version(&self.pool, table_id).await?)
     }
 
     async fn table_versions(

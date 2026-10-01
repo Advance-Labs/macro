@@ -3,6 +3,8 @@
 //! batch of writes runs on one transaction that the row identities, the
 //! cells and the select options all share.
 
+mod transfer;
+
 use std::collections::HashMap;
 
 use models_properties::service::property_value::PropertyValue;
@@ -13,8 +15,12 @@ use properties::domain::ports::PropertiesRepo;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::domain::models::{PropertyDefinitionId, RowId, TableId, Write, Writes, WritesOutcome};
+use crate::domain::models::{
+    ColumnReplacement, DatabaseView, NewOption, PropertyDefinitionId, RowId, Table, TableId,
+    TableVersion, Write, Writes, WritesOutcome,
+};
 use crate::domain::ports::CellStore;
+use crate::outbound::pg_databases_repo::columns::{lock_column_tables, rebind_placement};
 use crate::outbound::pg_databases_repo::{PgDatabasesRepoError, rows, views};
 
 /// [`CellStore`] over the properties repository, with the pool its batches
@@ -56,6 +62,34 @@ pub enum PgCellStoreError {
     /// A view statement of a batch failed; nothing of it committed.
     #[error("row batch views: {0}")]
     Views(#[from] PgDatabasesRepoError),
+    /// An imported table carries its request key without the fingerprint
+    /// written with it.
+    #[error("imported table {0} has no import fingerprint")]
+    MissingImportFingerprint(TableId),
+}
+
+/// Group new options by the definition they join, keeping their order.
+fn options_by_definition(
+    options: &[NewOption],
+) -> Vec<(
+    PropertyDefinitionId,
+    Vec<(
+        Uuid,
+        models_properties::service::property_option::PropertyOptionValue,
+    )>,
+)> {
+    let mut grouped: Vec<(PropertyDefinitionId, Vec<_>)> = Vec::new();
+    for option in options {
+        let value = (option.id, option.value.clone());
+        match grouped
+            .iter_mut()
+            .find(|(definition, _)| *definition == option.definition_id)
+        {
+            Some((_, values)) => values.push(value),
+            None => grouped.push((option.definition_id, vec![value])),
+        }
+    }
+    grouped
 }
 
 /// Whether a view statement failed on the unique view name of its table.
@@ -138,24 +172,61 @@ where
             .collect())
     }
 
-    #[tracing::instrument(err, skip(self, cells), fields(cells = cells.len()))]
-    async fn write(
+    #[tracing::instrument(err, skip(self, replacement, views), fields(cells = replacement.values.len()))]
+    async fn replace_column(
         &self,
-        row: RowId,
-        cells: &[(PropertyDefinitionId, Option<PropertyValue>)],
-    ) -> Result<(), Self::Err> {
-        let entity_id = row.to_string();
-        for (definition, value) in cells {
-            self.properties
-                .upsert_entity_property(
-                    &entity_id,
-                    EntityType::DatabaseRow,
-                    *definition,
-                    value.clone(),
-                )
-                .await?;
+        table: &Table,
+        replacement: &ColumnReplacement,
+        views: &[DatabaseView],
+    ) -> Result<Option<TableVersion>, Self::Err> {
+        let Some(mut transaction) = lock_column_tables(&self.pool, table, &[table.id]).await?
+        else {
+            return Ok(None);
+        };
+        if !rebind_placement(&mut transaction, table, replacement, views).await? {
+            transaction.rollback().await?;
+            return Ok(None);
         }
-        Ok(())
+        // The schema dropped the old definition's cells with the rebind; the
+        // converted ones land in the same transaction.
+        for (row, value) in &replacement.values {
+            self.properties
+                .upsert_entity_property_in(
+                    &mut transaction,
+                    &row_entity(*row),
+                    replacement.definition_id,
+                    Some(value.clone()),
+                )
+                .await
+                .map_err(cells_error)?;
+        }
+        let version = rows::bump_table_version(&mut *transaction, table.id).await?;
+        transaction.commit().await?;
+        Ok(Some(version))
+    }
+
+    #[tracing::instrument(err, skip(self, options), fields(options = options.len()))]
+    async fn add_options(
+        &self,
+        table_id: TableId,
+        options: &[NewOption],
+    ) -> Result<Option<TableVersion>, Self::Err> {
+        let mut transaction = self.pool.begin().await?;
+        if rows::lock_live_tables(&mut *transaction, &[table_id])
+            .await?
+            .is_empty()
+        {
+            return Ok(None);
+        }
+        for (definition, values) in options_by_definition(options) {
+            self.properties
+                .add_options_in(&mut transaction, definition, &values)
+                .await
+                .map_err(cells_error)?;
+        }
+        let version = rows::bump_table_version(&mut *transaction, table_id).await?;
+        transaction.commit().await?;
+        Ok(Some(version))
     }
 
     #[tracing::instrument(err, skip(self, writes), fields(writes = writes.writes.len()))]
@@ -176,17 +247,7 @@ where
             return Ok(WritesOutcome::TableNotFound(*gone));
         }
 
-        let mut options: Vec<(PropertyDefinitionId, Vec<_>)> = Vec::new();
-        for option in &writes.options {
-            let value = (option.id, option.value.clone());
-            match options
-                .iter_mut()
-                .find(|(definition, _)| *definition == option.definition_id)
-            {
-                Some((_, values)) => values.push(value),
-                None => options.push((option.definition_id, vec![value])),
-            }
-        }
+        let options = options_by_definition(&writes.options);
         for (definition, values) in &options {
             self.properties
                 .add_options_in(&mut transaction, *definition, values)

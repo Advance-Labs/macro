@@ -177,7 +177,7 @@ where
             match self.definitions.add_options(new_id, &options).await {
                 Ok(options) => definition.property_options = options,
                 Err(error) => {
-                    let _ = self.definitions.delete_unused_definition(new_id).await;
+                    self.delete_unused_definition(new_id).await;
                     return Err(repo_err(error));
                 }
             }
@@ -219,22 +219,10 @@ where
             .await
             .map_err(repo_err)?;
         let views = views_without_tests_of(&table_views, replacement.column.id, written_at())?;
-        let version = match self.repo.replace_column(table, &replacement, &views).await {
-            Ok(Some(version)) => {
-                // The placement names the new definition, and the schema has
-                // dropped the old definition's cells; the converted ones follow.
-                for (row_id, value) in &replacement.values {
-                    self.cells
-                        .write(*row_id, &[(new_id, Some(value.clone()))])
-                        .await
-                        .map_err(repo_err)?;
-                }
-                version
-            }
+        let version = match self.cells.replace_column(table, &replacement, &views).await {
+            Ok(Some(version)) => version,
             Ok(None) => {
-                if let Err(error) = self.definitions.delete_unused_definition(new_id).await {
-                    tracing::warn!(error = ?error, %new_id, "failed to clean up unused column definition");
-                }
+                self.delete_unused_definition(new_id).await;
                 return Err(DatabaseError::VersionConflict);
             }
             // The commit could have succeeded before a transport error. Never

@@ -25,10 +25,6 @@ pub enum PgDefinitionStoreError {
     /// Failure from the owning properties domain.
     #[error("properties error: {0}")]
     Properties(#[source] anyhow::Error),
-    /// A binding referenced a property definition that does not exist, or
-    /// one the viewer may not bind.
-    #[error("property definition {0} not found")]
-    NotFound(PropertyDefinitionId),
 }
 
 /// [`ColumnDefinitionStore`] over the properties domain's repository, which
@@ -75,7 +71,7 @@ impl<P: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore for PgDefinit
         database_id: DatabaseId,
         viewer: &Viewer,
         binding: &ColumnBinding,
-    ) -> Result<PropertyDefinitionId, Self::Err> {
+    ) -> Result<Option<PropertyDefinitionId>, Self::Err> {
         match binding {
             // Options are attached separately, through
             // [`ColumnDefinitionStore::add_options`], once the definition exists.
@@ -84,17 +80,16 @@ impl<P: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore for PgDefinit
                 data_type,
                 is_multi_select,
                 options: _,
-            } => {
-                self.create_database_definition(database_id, name, *data_type, *is_multi_select)
-                    .await
-            }
-            ColumnBinding::ExistingDefinition(id) => self
+            } => self
+                .create_database_definition(database_id, name, *data_type, *is_multi_select)
+                .await
+                .map(Some),
+            ColumnBinding::ExistingDefinition(id) => Ok(self
                 .properties
                 .get_bindable_property_definition(*id, viewer.user_id.as_ref(), database_id)
                 .await
                 .map_err(PgDefinitionStoreError::Properties)?
-                .map(|definition| definition.id)
-                .ok_or(PgDefinitionStoreError::NotFound(*id)),
+                .map(|definition| definition.id)),
         }
     }
 

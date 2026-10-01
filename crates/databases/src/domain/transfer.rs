@@ -1,7 +1,8 @@
 //! Bounded, retry-safe table imports. CSV syntax is decoded by the client library.
 
-use super::models::{DatabaseError, DatabaseId, PropertyDefinitionId, RowId, Table, Viewer};
+use super::models::{DatabaseError, DatabaseId, PropertyDefinitionId, Table, Viewer};
 use entity_access::domain::models::{EditAccessLevel, EntityAccessReceipt};
+use models_properties::service::property_value::PropertyValue;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -19,17 +20,17 @@ pub struct ImportTable {
     pub rows: Vec<Vec<String>>,
 }
 
+/// The digest of an import's normalized contents, so a retry can be told
+/// from a reused request key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportFingerprint(pub String);
+
 /// Atomic persistence outcome; only a created result has consumed the definitions.
+#[derive(Debug)]
 pub enum ImportOutcome {
-    /// Created the table, its columns and its rows in one transaction. The
-    /// rows' cells are the service's to write next, in the order of
-    /// [`ImportTable::rows`].
-    Created {
-        /// The new table.
-        table: Table,
-        /// One row id per imported row, in request order.
-        rows: Vec<RowId>,
-    },
+    /// Created the table, its columns, its rows and their cells in one
+    /// transaction.
+    Created(Table),
     /// The same request already committed.
     Replayed(Table),
     /// A different request already used this table name.
@@ -49,16 +50,18 @@ pub trait DatabaseTransferRepo: Send + Sync + 'static {
         &self,
         database_id: DatabaseId,
         request_id: Uuid,
-    ) -> impl Future<Output = Result<Option<(Table, String)>, Self::Err>> + Send;
-    /// Create all placements and empty rows together, serializing on the
-    /// database.
+    ) -> impl Future<Output = Result<Option<(Table, ImportFingerprint)>, Self::Err>> + Send;
+    /// Create the table, its placements, its rows and their cells together,
+    /// serializing on the database. `cells` holds one entry per row of
+    /// [`ImportTable::rows`], in order.
     fn import_table(
         &self,
         database_id: DatabaseId,
         viewer: &Viewer,
         request: &ImportTable,
-        fingerprint: &str,
+        fingerprint: &ImportFingerprint,
         definitions: &[PropertyDefinitionId],
+        cells: &[Vec<(PropertyDefinitionId, PropertyValue)>],
     ) -> impl Future<Output = Result<ImportOutcome, Self::Err>> + Send;
 }
 

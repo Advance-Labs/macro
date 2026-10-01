@@ -26,7 +26,7 @@ use crate::domain::models::{
     RenameColumnOutcome, RowId, RowRef, Table, TableId, TableMutationOutcome, TableVersion, Viewer,
 };
 use crate::domain::models::{
-    CardPosition, DatabaseView, QueryDefinition, QueryId, SavedQuery, SavedQueryError,
+    CardPosition, DatabaseView, NewOption, QueryDefinition, QueryId, SavedQuery, SavedQueryError,
     TableDeletion, TableOrderOutcome, ViewId, Writes, WritesOutcome,
 };
 use crate::domain::models::{
@@ -106,13 +106,14 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         table: &Table,
     ) -> impl Future<Output = Result<TableDeletion, Self::Err>> + Send;
 
-    /// Bind a definition into a table as a new column placement.
+    /// Bind a definition into a table as a new column placement, answering
+    /// it with the table's new version.
     fn create_column(
         &self,
         table_id: TableId,
         property_definition_id: PropertyDefinitionId,
         cmd: &CreateColumn,
-    ) -> impl Future<Output = Result<ColumnId, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<(ColumnId, TableVersion), Self::Err>> + Send;
 
     /// Rename a column placement.
     fn rename_column(
@@ -131,17 +132,6 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         definition_id: PropertyDefinitionId,
     ) -> impl Future<Output = Result<Option<TableVersion>, Self::Err>> + Send;
 
-    /// Swap a placement onto a fresh definition, rewriting `views` (the
-    /// table's views whose filters tested the old values) in the same
-    /// transaction. The converted cells in the replacement are the service's
-    /// to write afterwards.
-    fn replace_column(
-        &self,
-        table: &Table,
-        replacement: &ColumnReplacement,
-        views: &[DatabaseView],
-    ) -> impl Future<Output = Result<Option<TableVersion>, Self::Err>> + Send;
-
     /// Remove a column placement, rewriting `views` (the table's views that
     /// referred to it, without it) in the same transaction.
     fn delete_column(
@@ -158,47 +148,11 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         column_ids: &[ColumnId],
     ) -> impl Future<Output = Result<Option<TableVersion>, Self::Err>> + Send;
 
-    /// Bump a table's version, answering the new one.
-    fn bump_table_version(
-        &self,
-        table_id: TableId,
-    ) -> impl Future<Output = Result<TableVersion, Self::Err>> + Send;
-
     /// Every row of a table, in position order.
     fn row_refs(
         &self,
         table_id: TableId,
     ) -> impl Future<Output = Result<Vec<RowRef>, Self::Err>> + Send;
-
-    /// Append `count` empty rows to a table, answering them in order. `None`
-    /// when the table is gone or its database is trashed.
-    fn insert_rows(
-        &self,
-        table_id: TableId,
-        created_by: &str,
-        count: usize,
-    ) -> impl Future<Output = Result<Option<Vec<RowRef>>, Self::Err>> + Send;
-
-    /// Remove one row of a table; `false` if it was not there.
-    fn delete_row(
-        &self,
-        table_id: TableId,
-        row_id: RowId,
-    ) -> impl Future<Output = Result<bool, Self::Err>> + Send;
-
-    /// The table a row belongs to, if the row exists.
-    fn row_table(
-        &self,
-        row_id: RowId,
-    ) -> impl Future<Output = Result<Option<TableId>, Self::Err>> + Send;
-
-    /// A first value landed in these columns: they no longer infer their
-    /// type from it.
-    fn settle_inference(
-        &self,
-        table_id: TableId,
-        definitions: &[PropertyDefinitionId],
-    ) -> impl Future<Output = Result<(), Self::Err>> + Send;
 
     /// Current versions for a set of tables.
     fn table_versions(
@@ -276,12 +230,25 @@ pub trait CellStore: Send + Sync + 'static {
         definition: PropertyDefinitionId,
     ) -> impl Future<Output = Result<HashMap<RowId, PropertyValue>, Self::Err>> + Send;
 
-    /// Set (or, with `None`, clear) cells on one row.
-    fn write(
+    /// Swap a placement onto a fresh definition in one transaction: rewrite
+    /// `views` (the table's views whose filters tested the old values) and
+    /// store the replacement's converted cells. `None` when the table moved
+    /// or the placement is no longer bound as the replacement expects.
+    fn replace_column(
         &self,
-        row: RowId,
-        cells: &[(PropertyDefinitionId, Option<PropertyValue>)],
-    ) -> impl Future<Output = Result<(), Self::Err>> + Send;
+        table: &Table,
+        replacement: &ColumnReplacement,
+        views: &[DatabaseView],
+    ) -> impl Future<Output = Result<Option<TableVersion>, Self::Err>> + Send;
+
+    /// Add options to a definition bound on `table_id` and bump the table's
+    /// version, in one transaction. `None` when the table is gone or its
+    /// database is trashed.
+    fn add_options(
+        &self,
+        table_id: TableId,
+        options: &[NewOption],
+    ) -> impl Future<Output = Result<Option<TableVersion>, Self::Err>> + Send;
 
     /// Apply a request's writes in one transaction, row identities, cells
     /// and options together: each written table is locked and checked live,
@@ -323,13 +290,15 @@ pub trait ColumnDefinitionStore: Send + Sync + 'static {
     /// The error type returned by the store.
     type Err: std::error::Error + Send + Sync + 'static;
 
-    /// The definition a column binding names, checked against the viewer.
+    /// The definition a column binding names, checked against the viewer:
+    /// a new database-owned one, or the existing one when the viewer may bind
+    /// it. `None` when an existing definition is missing or not theirs to bind.
     fn resolve_binding(
         &self,
         database_id: DatabaseId,
         viewer: &Viewer,
         binding: &ColumnBinding,
-    ) -> impl Future<Output = Result<PropertyDefinitionId, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Option<PropertyDefinitionId>, Self::Err>> + Send;
 
     /// Create a definition owned by the database.
     fn create_typed_definition(

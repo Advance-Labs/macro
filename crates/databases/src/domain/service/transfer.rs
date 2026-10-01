@@ -1,11 +1,11 @@
 use super::*;
 use crate::domain::transfer::{
-    DatabaseTransferRepo, DatabaseTransferService, ImportOutcome, ImportTable,
+    DatabaseTransferRepo, DatabaseTransferService, ImportFingerprint, ImportOutcome, ImportTable,
 };
 use models_properties::service::property_value::PropertyValue;
 use sha2::{Digest, Sha256};
 
-fn validate_import(request: &mut ImportTable) -> Result<String, DatabaseError> {
+fn validate_import(request: &mut ImportTable) -> Result<ImportFingerprint, DatabaseError> {
     request.name = validate_name(&request.name)?;
     if request.columns.is_empty() || request.columns.len() > 100 || request.rows.len() > 10_000 {
         return Err(DatabaseError::InvalidSchemaOperation(
@@ -46,15 +46,15 @@ fn validate_import(request: &mut ImportTable) -> Result<String, DatabaseError> {
             "The import is too large.".into(),
         ));
     }
-    Ok(format!("{:x}", Sha256::digest(encoded)))
+    Ok(ImportFingerprint(format!("{:x}", Sha256::digest(encoded))))
 }
 
 impl<Repo, Defs, Cells, Events, Access, Broker> DatabaseTransferService
     for DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
 where
-    Repo: DatabasesRepo + DatabaseTransferRepo,
+    Repo: DatabasesRepo,
     Defs: ColumnDefinitionStore,
-    Cells: CellStore,
+    Cells: CellStore + DatabaseTransferRepo,
     Events: TableEventPublisher,
     Access: AccessDirectory,
     Broker: MacroEventBroker,
@@ -69,7 +69,7 @@ where
         let fingerprint = validate_import(&mut request)?;
         let (database, tables) = self.database_for_edit(&receipt).await?;
         if let Some((table, previous)) = self
-            .repo
+            .cells
             .imported_table(database.id, request.request_id)
             .await
             .map_err(repo_err)?
@@ -100,15 +100,34 @@ where
                 Ok(definition) => definitions.push(definition.definition.id),
                 Err(error) => {
                     for id in &definitions {
-                        let _ = self.definitions.delete_unused_definition(*id).await;
+                        self.delete_unused_definition(*id).await;
                     }
                     return Err(repo_err(error));
                 }
             }
         }
+        let cells: Vec<Vec<(PropertyDefinitionId, PropertyValue)>> = request
+            .rows
+            .iter()
+            .map(|values| {
+                definitions
+                    .iter()
+                    .zip(values)
+                    .filter(|(_, value)| !value.is_empty())
+                    .map(|(definition, value)| (*definition, PropertyValue::Str(value.clone())))
+                    .collect()
+            })
+            .collect();
         let outcome = self
-            .repo
-            .import_table(database.id, &viewer, &request, &fingerprint, &definitions)
+            .cells
+            .import_table(
+                database.id,
+                &viewer,
+                &request,
+                &fingerprint,
+                &definitions,
+                &cells,
+            )
             .await;
         // Only definite rejections/replays leave this attempt's definitions
         // unused. A failed acknowledgement may follow a successful commit.
@@ -120,37 +139,11 @@ where
                 | ImportOutcome::NotFound)
         ) {
             for id in &definitions {
-                if let Err(error) = self.definitions.delete_unused_definition(*id).await {
-                    tracing::warn!(?error, %id, "could not clean up unused import definition");
-                }
+                self.delete_unused_definition(*id).await;
             }
         }
         match outcome.map_err(repo_err)? {
-            ImportOutcome::Created { table, rows } => {
-                // The values are text, one per header column, and land as the
-                // rows' cells now that their identities are committed.
-                for (row_id, values) in rows.iter().zip(&request.rows) {
-                    let cells: Vec<_> = definitions
-                        .iter()
-                        .zip(values)
-                        .filter(|(_, value)| !value.is_empty())
-                        .map(|(definition, value)| {
-                            (*definition, Some(PropertyValue::Str(value.clone())))
-                        })
-                        .collect();
-                    if !cells.is_empty() {
-                        self.cells.write(*row_id, &cells).await.map_err(repo_err)?;
-                    }
-                }
-                self.publish(
-                    receipt_attribution(&receipt),
-                    &HashMap::from([(table.id, database.id)]),
-                    &HashMap::from([(table.id, table.version)]),
-                )
-                .await;
-                Ok(table)
-            }
-            ImportOutcome::Replayed(table) => {
+            ImportOutcome::Created(table) | ImportOutcome::Replayed(table) => {
                 self.publish(
                     receipt_attribution(&receipt),
                     &HashMap::from([(table.id, database.id)]),
