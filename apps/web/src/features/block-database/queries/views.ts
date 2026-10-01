@@ -201,6 +201,9 @@ export function refreshCardPositions(databaseId: string, viewId: string) {
   });
 }
 
+/** The places a card move wrote and the table version it left. */
+export type CardMoved = { positions: CardPosition[]; tableVersion: number };
+
 /**
  * Move a board's card, which also sets its row's grouping cell. The places
  * the server wrote replace the ones shown ahead of its answer.
@@ -208,7 +211,7 @@ export function refreshCardPositions(databaseId: string, viewId: string) {
 export function moveDatabaseCard(
   view: DatabaseView,
   move: CardMove
-): ResultAsync<CardPosition[], DatabaseOpFailure> {
+): ResultAsync<CardMoved, DatabaseOpFailure> {
   return inOrder(view.id, () =>
     applyOp(
       view.databaseId,
@@ -225,7 +228,7 @@ export function moveDatabaseCard(
       'card_moved'
     )
   )
-    .map(({ positions }) => positions)
+    .map(({ positions, tableVersion }) => ({ positions, tableVersion }))
     .mapErr((failure) => {
       void refreshCardPositions(view.databaseId, view.id);
       return failure;

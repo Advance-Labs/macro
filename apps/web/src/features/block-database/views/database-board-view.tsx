@@ -1,6 +1,5 @@
 import { toast } from '@core/component/Toast/Toast';
 import { engineFailure } from '@core/database-sql/driver';
-import type { Outcome } from '@core/database-sql/generated/types';
 import type { ResultError } from '@core/util/result';
 import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
 import type { CardPosition } from '@service-storage/generated/schemas/cardPosition';
@@ -51,7 +50,7 @@ import {
   createBoardEngine,
 } from '../primitives/board-layout';
 import type { RecordCreation } from '../primitives/record-actions';
-import type { ViewChange } from '../queries/views';
+import type { CardMoved, ViewChange } from '../queries/views';
 
 type BoardLayout = Extract<ViewLayout, { kind: 'board' }>;
 
@@ -62,7 +61,7 @@ export type BoardPositions = {
   move: (
     view: DatabaseView,
     move: CardMove
-  ) => ResultAsync<CardPosition[], DatabaseOpFailure>;
+  ) => ResultAsync<CardMoved, DatabaseOpFailure>;
 };
 
 type DatabaseBoardViewProps = {
@@ -152,9 +151,9 @@ function GroupedBoard(
     return current.kind === 'failed' ? current : undefined;
   };
   const canEdit = () => props.canEdit && props.groupColumn.writable;
-  /** Moves shown ahead of the rows: until the first answer after the server took them. */
+  /** Moves shown ahead of the rows: until a read reaches the table version the server's move left. */
   const [moves, setMoves] = createSignal<
-    { move: CardMove; takenBefore?: Outcome }[]
+    { move: CardMove; tableVersion?: number }[]
   >([]);
   /** A drop on a sorted board, held until the sort goes: where in its lane it landed. */
   const [sortedDrop, setSortedDrop] = createSignal<{
@@ -179,45 +178,50 @@ function GroupedBoard(
   const board = () => {
     const result = laidOut();
     if (!result?.isOk()) return undefined;
-    const outcome = props.source.read()?.outcome;
+    const readVersion = props.source.snapshot()?.version;
     const pending = moves().flatMap((entry) =>
-      entry.takenBefore && entry.takenBefore !== outcome ? [] : [entry.move]
+      entry.tableVersion !== undefined &&
+      readVersion !== undefined &&
+      readVersion >= entry.tableVersion
+        ? []
+        : [entry.move]
     );
     return withMovedCards(result.value, pending);
   };
   function forget(move: CardMove) {
     setMoves((current) => current.filter((entry) => entry.move !== move));
   }
-  function taken(move: CardMove) {
-    const outcome = props.source.read()?.outcome;
+  function taken(move: CardMove, tableVersion: number) {
     setMoves((current) =>
       current.map((entry) =>
-        entry.move === move ? { ...entry, takenBefore: outcome } : entry
+        entry.move === move ? { ...entry, tableVersion } : entry
       )
     );
   }
   function write(move: CardMove) {
     const ready = state();
     const shown = board();
-    if (ready.kind === 'ready' && shown)
-      props.positions.setPositions((current) =>
-        withPositions(
-          current,
-          placeCard(
+    // A move the shown lane has no place for writes no early places; the server's answer settles them.
+    const placed =
+      ready.kind === 'ready' && shown
+        ? placeCard(
             laneCards(shown, ready.positions, move.lane, move.row),
             move,
             ready.engine.keyBetween
           )
-        )
+        : undefined;
+    if (placed?.isOk())
+      props.positions.setPositions((current) =>
+        withPositions(current, placed.value)
       );
     setMoves((current) => [...current, { move }]);
     void props.positions
       .move(props.view, move)
-      .map((placed) => {
+      .map(({ positions, tableVersion }) => {
         props.positions.setPositions((current) =>
-          withPositions(current, placed)
+          withPositions(current, positions)
         );
-        taken(move);
+        taken(move, tableVersion);
       })
       .mapErr((failure) => {
         forget(move);

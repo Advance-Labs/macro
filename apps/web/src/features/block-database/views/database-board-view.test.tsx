@@ -18,6 +18,7 @@ import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DatabaseOpFailure } from '../core/write-failure';
 import type { BoardPositionsState } from '../primitives/board-layout';
+import type { CardMoved } from '../queries/views';
 import { DatabaseBoardView } from './database-board-view';
 
 const engine = vi.hoisted(() => ({
@@ -123,12 +124,12 @@ describe('database board view', () => {
       { row: 'last', lane: 'done', position: 'a1' },
       { row: 'moving', lane: 'todo', position: 'a0' },
     ]);
-    let answer: (placed: CardPosition[]) => void = () => {};
+    let answer: (moved: CardMoved) => void = () => {};
     const move = vi.fn(
       () =>
-        new ResultAsync<CardPosition[], DatabaseOpFailure>(
+        new ResultAsync<CardMoved, DatabaseOpFailure>(
           new Promise((resolve) => {
-            answer = (placed) => resolve(ok(placed));
+            answer = (moved) => resolve(ok(moved));
           })
         )
     );
@@ -217,7 +218,10 @@ describe('database board view', () => {
     ]);
     expect(cardsIn('Done')).toEqual(['first', 'moving', 'last']);
     expect(cardsIn('To do')).toEqual([]);
-    answer([{ row: 'moving', lane: 'done', position: 'a0G' }]);
+    answer({
+      positions: [{ row: 'moving', lane: 'done', position: 'a0G' }],
+      tableVersion: 8,
+    });
     await waitFor(() =>
       expect(positions()).toEqual([
         { row: 'first', lane: 'done', position: 'a0' },
@@ -226,6 +230,161 @@ describe('database board view', () => {
       ])
     );
     expect(cardsIn('Done')).toEqual(['first', 'moving', 'last']);
+  });
+
+  it('keeps a moved card where it was dropped until a read reaches the version its move left', async () => {
+    const view: DatabaseView = {
+      id: 'view',
+      databaseId: 'database',
+      tableId: 'table',
+      name: 'Board',
+      position: 'a0',
+      query: { filter: null, sort: [] },
+      layout: {
+        kind: 'board',
+        groupBy: 'stage',
+        lanes: [],
+        cardFields: [],
+        hideEmptyLanes: false,
+      },
+      createdAt: '2026-09-01T00:00:00Z',
+      updatedAt: '2026-09-01T00:00:00Z',
+    };
+    const before: Outcome = {
+      columns: [],
+      rows: [],
+      rowIds: ['first', 'moving'],
+      readTables: ['table'],
+      truncated: false,
+      insertedRowIds: [],
+      changesApplied: 0,
+    };
+    const stale: Outcome = {
+      columns: [],
+      rows: [],
+      rowIds: ['moving', 'first'],
+      readTables: ['table'],
+      truncated: false,
+      insertedRowIds: [],
+      changesApplied: 0,
+    };
+    const fresh: Outcome = {
+      columns: [],
+      rows: [],
+      rowIds: ['first', 'moving'],
+      readTables: ['table'],
+      truncated: false,
+      insertedRowIds: [],
+      changesApplied: 0,
+    };
+    engine.board.mockImplementation((_catalog, _view, outcome) =>
+      outcome === fresh
+        ? {
+            lanes: [
+              { option: 'done', hidden: false, cards: ['moving', 'first'] },
+              { option: 'todo', hidden: false, cards: [] },
+            ],
+          }
+        : {
+            lanes: [
+              { option: 'done', hidden: false, cards: ['first'] },
+              { option: 'todo', hidden: false, cards: ['moving'] },
+            ],
+          }
+    );
+    engine.keyBetween.mockReturnValue('a1');
+    const [read, setRead] = createSignal<{ outcome: Outcome; version: number }>(
+      { outcome: before, version: 7 }
+    );
+    const [positions, setPositions] = createSignal<CardPosition[]>([
+      { row: 'first', lane: 'done', position: 'a0' },
+    ]);
+    const move = vi.fn(() =>
+      okAsync<CardMoved, DatabaseOpFailure>({
+        positions: [{ row: 'moving', lane: 'done', position: 'a1' }],
+        tableVersion: 8,
+      })
+    );
+    render(() => (
+      <DatabaseBoardView
+        view={view}
+        source={{
+          columns: () => [],
+          snapshot: () => ({ rows: [], retained: [], version: read().version }),
+          read: () => ({
+            outcome: read().outcome,
+            catalog: { tables: [] },
+            view,
+          }),
+          loading: () => false,
+          refreshing: () => false,
+          error: () => undefined,
+          refresh: () => okAsync(undefined),
+          write: () => okAsync({ insertedRowIds: [], version: undefined }),
+          addOption: () => okAsync(undefined),
+          retain: () => {},
+        }}
+        rows={[
+          { rowId: 'first', cells: { name: 'First card', stage: 'Done' } },
+          { rowId: 'moving', cells: { name: 'Moving card', stage: 'To do' } },
+        ]}
+        columns={[
+          {
+            id: 'name',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          {
+            id: 'stage',
+            name: 'Stage',
+            dataType: 'SELECT_STRING',
+            isMultiSelect: false,
+            options: [
+              { id: 'done', label: 'Done', color: null },
+              { id: 'todo', label: 'To do', color: null },
+            ],
+            writable: true,
+          },
+        ]}
+        positions={{
+          state: () => ({ kind: 'ready', positions: positions() }),
+          setPositions,
+          move,
+        }}
+        canEdit
+        onViewChange={vi.fn()}
+        rowPending={() => false}
+        createPending={() => false}
+        createComplete={() => false}
+        onOpen={vi.fn()}
+        onCreate={vi.fn(async () => true)}
+      />
+    ));
+    const trigger = await screen.findByRole('button', {
+      name: 'Move Moving card',
+    });
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    fireEvent.keyDown(await screen.findByRole('menuitem', { name: 'Done' }), {
+      key: 'Enter',
+    });
+    await waitFor(() =>
+      expect(positions()).toEqual([
+        { row: 'first', lane: 'done', position: 'a0' },
+        { row: 'moving', lane: 'done', position: 'a1' },
+      ])
+    );
+    expect(cardsIn('Done')).toEqual(['first', 'moving']);
+    // A read begun before the move lands after the server took it.
+    setRead({ outcome: stale, version: 7 });
+    expect(cardsIn('Done')).toEqual(['first', 'moving']);
+    expect(cardsIn('To do')).toEqual([]);
+    setRead({ outcome: fresh, version: 8 });
+    expect(cardsIn('Done')).toEqual(['moving', 'first']);
+    expect(cardsIn('To do')).toEqual([]);
   });
 
   it('puts a card back where it was when the move is refused', async () => {
@@ -266,7 +425,7 @@ describe('database board view', () => {
       { row: 'first', lane: 'done', position: 'a0' },
     ]);
     const move = vi.fn(() =>
-      errAsync<CardPosition[], DatabaseOpFailure>({
+      errAsync<CardMoved, DatabaseOpFailure>({
         kind: 'unexpected-result',
       })
     );
@@ -390,9 +549,10 @@ describe('database board view', () => {
       { row: 'first', lane: 'done', position: 'a0' },
     ]);
     const move = vi.fn(() =>
-      okAsync<CardPosition[], DatabaseOpFailure>([
-        { row: 'moving', lane: 'done', position: 'a1' },
-      ])
+      okAsync<CardMoved, DatabaseOpFailure>({
+        positions: [{ row: 'moving', lane: 'done', position: 'a1' }],
+        tableVersion: 4,
+      })
     );
     const onViewChange = vi.fn();
     render(() => (
@@ -523,9 +683,10 @@ describe('database board view', () => {
     ]);
     const setPositionsSpy = vi.fn(setPositions);
     const move = vi.fn(() =>
-      okAsync<CardPosition[], DatabaseOpFailure>([
-        { row: 'moving', lane: 'done', position: 'a1' },
-      ])
+      okAsync<CardMoved, DatabaseOpFailure>({
+        positions: [{ row: 'moving', lane: 'done', position: 'a1' }],
+        tableVersion: 4,
+      })
     );
     const onViewChange = vi.fn();
     render(() => (
@@ -669,7 +830,12 @@ describe('database board view', () => {
         positions={{
           state: () => ({ kind: 'ready', positions: [] }),
           setPositions: vi.fn(),
-          move: vi.fn(() => okAsync<CardPosition[], DatabaseOpFailure>([])),
+          move: vi.fn(() =>
+            okAsync<CardMoved, DatabaseOpFailure>({
+              positions: [],
+              tableVersion: 1,
+            })
+          ),
         }}
         canEdit
         rowPending={() => false}
@@ -770,7 +936,12 @@ describe('database board view', () => {
         positions={{
           state: places,
           setPositions: vi.fn(),
-          move: vi.fn(() => okAsync<CardPosition[], DatabaseOpFailure>([])),
+          move: vi.fn(() =>
+            okAsync<CardMoved, DatabaseOpFailure>({
+              positions: [],
+              tableVersion: 1,
+            })
+          ),
         }}
         canEdit
         rowPending={() => false}

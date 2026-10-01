@@ -4,6 +4,7 @@
  */
 import type { Board } from '@core/database-sql/generated/types';
 import type { CardPosition } from '@service-storage/generated/schemas/cardPosition';
+import { err, ok, Result } from 'neverthrow';
 
 /** A card's move: `before` is the card it lands right after, `after` the one right before it. */
 export type CardMove = {
@@ -60,6 +61,39 @@ export function laneCards(
     }));
 }
 
+/** Why a move has no place in the lane, as `PlacementError` says. */
+export type PlacementFailure =
+  /** A neighbour named is not a card of the lane. */
+  | { kind: 'not-in-lane'; row: string }
+  /** `after` is not the card right after `before`, so nothing sits between them. */
+  | { kind: 'not-adjacent'; before: string; after: string };
+
+/** Where `move` lands in `lane`, by its named neighbours. */
+function landingIndex(
+  lane: readonly LaneCard[],
+  move: CardMove
+): Result<number, PlacementFailure> {
+  const indexOf = (row: string): Result<number, PlacementFailure> => {
+    const index = lane.findIndex((card) => card.row === row);
+    return index < 0 ? err({ kind: 'not-in-lane', row }) : ok(index);
+  };
+  const { before, after } = move;
+  if (before !== null && after !== null)
+    return Result.combine([indexOf(before), indexOf(after)]).andThen(
+      ([upper, lower]) =>
+        lower === upper + 1
+          ? ok(lower)
+          : err<number, PlacementFailure>({
+              kind: 'not-adjacent',
+              before,
+              after,
+            })
+    );
+  if (before !== null) return indexOf(before).map((index) => index + 1);
+  if (after !== null) return indexOf(after);
+  return ok(lane.length);
+}
+
 /**
  * The places a move writes. Placed cards lead a lane and unplaced ones follow
  * in table order, so a card landing among the unplaced places those above it
@@ -69,30 +103,25 @@ export function placeCard(
   lane: readonly LaneCard[],
   move: CardMove,
   keyBetween: KeyBetween
-): CardPosition[] {
-  const indexOf = (row: string) => lane.findIndex((card) => card.row === row);
-  const index =
-    move.before !== null
-      ? indexOf(move.before) + 1
-      : move.after !== null
-        ? indexOf(move.after)
-        : lane.length;
-  const placedCount = lane.findIndex((card) => card.position === null);
-  const positioned = placedCount < 0 ? lane.length : placedCount;
-  if (index <= positioned) {
-    const lower = lane[index - 1]?.position ?? null;
-    const upper = index < positioned ? (lane[index]?.position ?? null) : null;
+): Result<CardPosition[], PlacementFailure> {
+  return landingIndex(lane, move).map((index) => {
+    const placedCount = lane.findIndex((card) => card.position === null);
+    const positioned = placedCount < 0 ? lane.length : placedCount;
+    if (index <= positioned) {
+      const lower = lane[index - 1]?.position ?? null;
+      const upper = index < positioned ? (lane[index]?.position ?? null) : null;
+      return [
+        { row: move.row, lane: move.lane, position: keyBetween(lower, upper) },
+      ];
+    }
+    let lower = lane[positioned - 1]?.position ?? null;
     return [
-      { row: move.row, lane: move.lane, position: keyBetween(lower, upper) },
-    ];
-  }
-  let lower = lane[positioned - 1]?.position ?? null;
-  return [
-    ...lane.slice(positioned, index).map((card) => card.row),
-    move.row,
-  ].map((row) => {
-    lower = keyBetween(lower, null);
-    return { row, lane: move.lane, position: lower };
+      ...lane.slice(positioned, index).map((card) => card.row),
+      move.row,
+    ].map((row) => {
+      lower = keyBetween(lower, null);
+      return { row, lane: move.lane, position: lower };
+    });
   });
 }
 

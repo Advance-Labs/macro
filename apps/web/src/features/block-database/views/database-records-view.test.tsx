@@ -112,7 +112,7 @@ const statusBoard: DatabaseView = {
 const unplacedCards: BoardPositions = {
   state: () => ({ kind: 'ready', positions: [] }),
   setPositions: () => {},
-  move: () => okAsync([]),
+  move: () => okAsync({ positions: [], tableVersion: 1 }),
 };
 
 const lostConnection: DatabaseWriteFailure = {

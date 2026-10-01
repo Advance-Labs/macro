@@ -1,3 +1,4 @@
+import { err, ok } from 'neverthrow';
 import { describe, expect, it } from 'vitest';
 import {
   cardMove,
@@ -88,7 +89,7 @@ describe('a moved card, placed before the server answers', () => {
         { row: 'dan', lane: 'yes', before: 'ann', after: 'bob' },
         keyBetween
       )
-    ).toEqual([{ row: 'dan', lane: 'yes', position: '(a0..a1)' }]);
+    ).toEqual(ok([{ row: 'dan', lane: 'yes', position: '(a0..a1)' }]));
   });
 
   it('takes a key before the first card, or after the last', () => {
@@ -98,14 +99,14 @@ describe('a moved card, placed before the server answers', () => {
         { row: 'dan', lane: 'yes', before: null, after: 'ann' },
         keyBetween
       )
-    ).toEqual([{ row: 'dan', lane: 'yes', position: '(-..a0)' }]);
+    ).toEqual(ok([{ row: 'dan', lane: 'yes', position: '(-..a0)' }]));
     expect(
       placeCard(
         [{ row: 'ann', position: 'a0' }],
         { row: 'dan', lane: 'yes', before: 'ann', after: null },
         keyBetween
       )
-    ).toEqual([{ row: 'dan', lane: 'yes', position: '(a0..-)' }]);
+    ).toEqual(ok([{ row: 'dan', lane: 'yes', position: '(a0..-)' }]));
   });
 
   it('places the unplaced cards above it first, in their order, as the server does', () => {
@@ -119,11 +120,54 @@ describe('a moved card, placed before the server answers', () => {
         { row: 'dan', lane: null, before: 'cat', after: null },
         keyBetween
       )
-    ).toEqual([
-      { row: 'bob', lane: null, position: '(a0..-)' },
-      { row: 'cat', lane: null, position: '((a0..-)..-)' },
-      { row: 'dan', lane: null, position: '(((a0..-)..-)..-)' },
-    ]);
+    ).toEqual(
+      ok([
+        { row: 'bob', lane: null, position: '(a0..-)' },
+        { row: 'cat', lane: null, position: '((a0..-)..-)' },
+        { row: 'dan', lane: null, position: '(((a0..-)..-)..-)' },
+      ])
+    );
+  });
+
+  it('refuses neighbours that are not next to each other, as the server does', () => {
+    expect(
+      placeCard(
+        [
+          { row: 'ann', position: 'a0' },
+          { row: 'bob', position: 'a1' },
+          { row: 'cat', position: 'a2' },
+        ],
+        { row: 'dan', lane: 'yes', before: 'ann', after: 'cat' },
+        keyBetween
+      )
+    ).toEqual(err({ kind: 'not-adjacent', before: 'ann', after: 'cat' }));
+    expect(
+      placeCard(
+        [
+          { row: 'ann', position: 'a0' },
+          { row: 'bob', position: 'a1' },
+        ],
+        { row: 'dan', lane: 'yes', before: 'bob', after: 'ann' },
+        keyBetween
+      )
+    ).toEqual(err({ kind: 'not-adjacent', before: 'bob', after: 'ann' }));
+  });
+
+  it('refuses a neighbour that is not in the lane', () => {
+    expect(
+      placeCard(
+        [{ row: 'ann', position: 'a0' }],
+        { row: 'dan', lane: 'yes', before: 'eve', after: null },
+        keyBetween
+      )
+    ).toEqual(err({ kind: 'not-in-lane', row: 'eve' }));
+    expect(
+      placeCard(
+        [{ row: 'ann', position: 'a0' }],
+        { row: 'dan', lane: 'yes', before: 'ann', after: 'eve' },
+        keyBetween
+      )
+    ).toEqual(err({ kind: 'not-in-lane', row: 'eve' }));
   });
 
   it('reads a lane in display order with the places stored for that lane only', () => {
