@@ -47,36 +47,41 @@ vi.mock('./queries/app-query-source', () => ({
 vi.mock('./answer-display', () => ({
   AppAnswerDisplay: (props: { children: JSX.Element }) => props.children,
 }));
-vi.mock('./components/query-database-picker', () => ({
-  QueryDatabasePicker: (props: {
-    databases: { id: string; name: string }[];
-    value?: string;
-    onChange: (id: string | undefined) => void;
-  }) => (
-    <select
-      aria-label="Question database"
-      value={props.value ?? ''}
-      onChange={(event) =>
-        props.onChange(event.currentTarget.value || undefined)
-      }
-    >
-      <option value="" selected={!props.value}>
-        Automatic
-      </option>
-      {props.value &&
-        !props.databases.some((database) => database.id === props.value) && (
-          <option value={props.value} selected>
-            Saved database
-          </option>
-        )}
-      {props.databases.map((database) => (
-        <option value={database.id} selected={database.id === props.value}>
-          {database.name}
+vi.mock('./components/query-database-picker', async () => {
+  const { For } = await import('solid-js');
+  return {
+    QueryDatabasePicker: (props: {
+      databases: { id: string; name: string }[];
+      value?: string;
+      onChange: (id: string | undefined) => void;
+    }) => (
+      <select
+        aria-label="Question database"
+        value={props.value ?? ''}
+        onChange={(event) =>
+          props.onChange(event.currentTarget.value || undefined)
+        }
+      >
+        <option value="" selected={!props.value}>
+          Automatic
         </option>
-      ))}
-    </select>
-  ),
-}));
+        {props.value &&
+          !props.databases.some((database) => database.id === props.value) && (
+            <option value={props.value} selected>
+              Saved database
+            </option>
+          )}
+        <For each={props.databases}>
+          {(database) => (
+            <option value={database.id} selected={database.id === props.value}>
+              {database.name}
+            </option>
+          )}
+        </For>
+      </select>
+    ),
+  };
+});
 vi.mock('./views/query-editor', () => ({
   QueryEditor: (props: {
     initial: QueryDefinition;
