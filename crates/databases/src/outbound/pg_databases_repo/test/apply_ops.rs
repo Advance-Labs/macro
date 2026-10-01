@@ -86,7 +86,7 @@ pub(super) struct Guests {
 
 pub(super) async fn guests(pool: &PgPool) -> Guests {
     insert_user(pool).await;
-    let service = service(&pool);
+    let service = service(pool);
     let database = service
         .create_database(CreateDatabase {
             name: "Offsite".into(),
