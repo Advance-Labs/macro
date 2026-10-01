@@ -745,9 +745,12 @@ function SelectCell(props: GridCellProps) {
         )
       : null;
   };
+  // The picker mounts on first use; until then the cell is a plain button.
+  const [mounted, setMounted] = createSignal(false);
   const edit = (seed?: string) => {
     setSearch(seed ?? '');
     setError('');
+    setMounted(true);
     setOpen(true);
   };
   const keys = createPopupCellKeys({
@@ -786,86 +789,107 @@ function SelectCell(props: GridCellProps) {
       searchInput?.focus();
     } else setOpen(false);
   }
-  return (
-    <Popover
-      open={open()}
-      onOpenChange={(value) => {
-        setOpen(value);
-        if (!value) setSearch('');
-      }}
-      placement="bottom-start"
-      gutter={4}
-    >
-      <Popover.Trigger
-        ref={keys.triggerRef}
-        class="group flex h-auto min-h-9 w-full min-w-0 items-center justify-between rounded px-2.5 py-1 text-left outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50"
-        aria-label={`${props.column.name}: ${label() || 'Empty'}`}
-        aria-haspopup="listbox"
-        onKeyDown={(event: KeyboardEvent) => {
-          if (isComposingKey(event)) {
-            edit('');
-            return;
-          }
-          if (keys.tabFromTrigger(event)) return;
-          if (
-            event.key.length === 1 &&
-            !event.ctrlKey &&
-            !event.metaKey &&
-            !event.altKey &&
-            event.key !== ' '
-          ) {
-            event.preventDefault();
-            edit(event.key);
-          }
-        }}
+  const trigger = {
+    ref: keys.triggerRef,
+    class:
+      'group flex h-auto min-h-9 w-full min-w-0 items-center justify-between rounded px-2.5 py-1 text-left outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50',
+    get 'aria-label'() {
+      return `${props.column.name}: ${label() || 'Empty'}`;
+    },
+    'aria-haspopup': 'listbox' as const,
+    onKeyDown: (event: KeyboardEvent) => {
+      if (isComposingKey(event)) {
+        edit('');
+        return;
+      }
+      if (keys.tabFromTrigger(event)) return;
+      if (
+        event.key.length === 1 &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        event.key !== ' '
+      ) {
+        event.preventDefault();
+        edit(event.key);
+      }
+    },
+  };
+  const shown = () => (
+    <>
+      <Show
+        when={label()}
+        fallback={
+          <span class="text-xs text-ink-placeholder opacity-40">—</span>
+        }
       >
-        <Show
-          when={label()}
-          fallback={
-            <span class="text-xs text-ink-placeholder opacity-40">—</span>
-          }
+        <span class="flex min-w-0 flex-wrap gap-1">
+          <For each={selected()}>
+            {(value) => <SelectPill label={value} column={props.column} />}
+          </For>
+        </span>
+      </Show>
+      <CaretDownIcon class="ml-1 size-3 shrink-0 text-ink-muted opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" />
+    </>
+  );
+  return (
+    <Show
+      when={mounted()}
+      fallback={
+        <button
+          type="button"
+          {...trigger}
+          aria-expanded="false"
+          onClick={() => edit()}
         >
-          <span class="flex min-w-0 flex-wrap gap-1">
-            <For each={selected()}>
-              {(value) => <SelectPill label={value} column={props.column} />}
-            </For>
-          </span>
-        </Show>
-        <CaretDownIcon class="ml-1 size-3 shrink-0 text-ink-muted opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" />
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          class="z-action-menu rounded-lg border border-edge bg-menu p-1 text-ink shadow-menu outline-none"
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            searchInput?.focus();
-          }}
-          onCloseAutoFocus={keys.onCloseAutoFocus}
-        >
-          <OptionPicker
-            column={props.column}
-            selected={selected()}
-            search={search()}
-            onSearch={(value) => {
-              setSearch(value);
-              setError('');
+          {shown()}
+        </button>
+      }
+    >
+      <Popover
+        open={open()}
+        onOpenChange={(value) => {
+          setOpen(value);
+          if (!value) setSearch('');
+        }}
+        placement="bottom-start"
+        gutter={4}
+      >
+        <Popover.Trigger {...trigger}>{shown()}</Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Content
+            class="z-action-menu rounded-lg border border-edge bg-menu p-1 text-ink shadow-menu outline-none"
+            onOpenAutoFocus={(event) => {
+              event.preventDefault();
+              searchInput?.focus();
             }}
-            onPick={pick}
-            onClear={() => {
-              void props.onWrite(null);
-              setOpen(false);
-            }}
-            onCreate={(value) => void create(value)}
-            onKeyDown={tabAway}
-            editing={editing}
-            inputRef={(element) => {
-              searchInput = element;
-            }}
-            error={error()}
-          />
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover>
+            onCloseAutoFocus={keys.onCloseAutoFocus}
+          >
+            <OptionPicker
+              column={props.column}
+              selected={selected()}
+              search={search()}
+              onSearch={(value) => {
+                setSearch(value);
+                setError('');
+              }}
+              onPick={pick}
+              onClear={() => {
+                void props.onWrite(null);
+                setOpen(false);
+              }}
+              onCreate={(value) => void create(value)}
+              onKeyDown={tabAway}
+              editing={editing}
+              inputRef={(element) => {
+                searchInput = element;
+              }}
+              error={error()}
+            />
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover>
+    </Show>
   );
 }
 
@@ -874,8 +898,11 @@ function DateCell(props: GridCellProps) {
   const [open, setOpen] = createSignal(false);
   const [query, setQuery] = createSignal('');
   const label = () => formatCellValue(props.column, props.value);
+  // The selector mounts on first use; until then the cell is a plain button.
+  const [mounted, setMounted] = createSignal(false);
   const edit = (seed?: string) => {
     setQuery(seed ?? '');
+    setMounted(true);
     setOpen(true);
   };
   const keys = createPopupCellKeys({
@@ -887,61 +914,83 @@ function DateCell(props: GridCellProps) {
   });
   onMount(() => props.onReady?.({ focus: keys.focus, edit }));
   onCleanup(() => props.onReady?.(undefined));
-  return (
-    <Dropdown open={open()} onOpenChange={setOpen}>
-      <Dropdown.Trigger
-        ref={keys.triggerRef}
-        variant="ghost"
-        class="h-auto min-h-9 w-full min-w-0 justify-start rounded px-2.5 py-1.5 text-left text-[13px] leading-5 font-normal outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50"
-        aria-label={`${props.column.name}: ${label() || props.emptyLabel || 'Empty'}. Click to edit`}
-        onKeyDown={(event: KeyboardEvent) => {
-          if (isComposingKey(event) || keys.tabFromTrigger(event)) return;
-          if (event.key === 'Backspace' || event.key === 'Delete') {
-            event.preventDefault();
-            event.stopPropagation();
-            void props.onWrite(null);
-          } else if (
-            event.key.length === 1 &&
-            !event.ctrlKey &&
-            !event.metaKey &&
-            !event.altKey
-          ) {
-            event.preventDefault();
-            event.stopPropagation();
-            edit(event.key);
-          }
-        }}
-      >
-        <span class="truncate">
-          {label() || (
-            <span class="text-ink-placeholder opacity-40">
-              {props.emptyLabel || '—'}
-            </span>
-          )}
+  const trigger = {
+    ref: keys.triggerRef,
+    // A ghost button's look, on a plain button the cell can afford a thousand of.
+    class:
+      'relative inline-flex h-auto min-h-9 w-full min-w-0 items-center justify-start rounded border border-transparent px-2.5 py-1.5 text-left text-[13px] leading-5 font-normal whitespace-nowrap text-ink-muted outline-none hover:bg-hover hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/50',
+    get 'aria-label'() {
+      return `${props.column.name}: ${label() || props.emptyLabel || 'Empty'}. Click to edit`;
+    },
+    onKeyDown: (event: KeyboardEvent) => {
+      if (isComposingKey(event) || keys.tabFromTrigger(event)) return;
+      if (event.key === 'Backspace' || event.key === 'Delete') {
+        event.preventDefault();
+        event.stopPropagation();
+        void props.onWrite(null);
+      } else if (
+        event.key.length === 1 &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        edit(event.key);
+      }
+    },
+  };
+  const shown = () => (
+    <span class="truncate">
+      {label() || (
+        <span class="text-ink-placeholder opacity-40">
+          {props.emptyLabel || '—'}
         </span>
-      </Dropdown.Trigger>
-      <Dropdown.Content
-        class="flex max-h-96 w-70 flex-col overflow-hidden p-0 text-sm"
-        // A menu's closing animation must not delay Tab into the next cell.
-        style={{ animation: 'none' }}
-        onKeyDown={(event: KeyboardEvent) => {
-          if (event.key !== 'Tab' || event.isComposing) return;
-          event.preventDefault();
-          keys.leave(event.shiftKey ? -1 : 1);
-        }}
-        onCloseAutoFocus={keys.onCloseAutoFocus}
-      >
-        <PropertyDateSelector
-          property={{ displayName: props.column.name }}
-          selectedDate={fromCellDate(props.value)}
-          initialQuery={query()}
-          onSelectDate={(date) =>
-            void props.onWrite(date ? toCellDate(date) : null)
-          }
-          onClose={() => setOpen(false)}
-        />
-      </Dropdown.Content>
-    </Dropdown>
+      )}
+    </span>
+  );
+  return (
+    <Show
+      when={mounted()}
+      fallback={
+        <button
+          type="button"
+          {...trigger}
+          aria-haspopup="true"
+          aria-expanded="false"
+          onClick={() => edit()}
+        >
+          {shown()}
+        </button>
+      }
+    >
+      <Dropdown open={open()} onOpenChange={setOpen}>
+        <Dropdown.Trigger as="button" {...trigger}>
+          {shown()}
+        </Dropdown.Trigger>
+        <Dropdown.Content
+          class="flex max-h-96 w-70 flex-col overflow-hidden p-0 text-sm"
+          // A menu's closing animation must not delay Tab into the next cell.
+          style={{ animation: 'none' }}
+          onKeyDown={(event: KeyboardEvent) => {
+            if (event.key !== 'Tab' || event.isComposing) return;
+            event.preventDefault();
+            keys.leave(event.shiftKey ? -1 : 1);
+          }}
+          onCloseAutoFocus={keys.onCloseAutoFocus}
+        >
+          <PropertyDateSelector
+            property={{ displayName: props.column.name }}
+            selectedDate={fromCellDate(props.value)}
+            initialQuery={query()}
+            onSelectDate={(date) =>
+              void props.onWrite(date ? toCellDate(date) : null)
+            }
+            onClose={() => setOpen(false)}
+          />
+        </Dropdown.Content>
+      </Dropdown>
+    </Show>
   );
 }
 
