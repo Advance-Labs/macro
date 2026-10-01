@@ -1,170 +1,446 @@
-import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
-import { createSignal } from 'solid-js';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import type {
-  DatabaseFilter,
-  DatabaseFilterConjunction,
-  DatabaseViewColumn,
-} from '../core/database-view';
-import { FilterPanel } from './database-view-filters';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@solidjs/testing-library';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FilterPanel, filterConditionCount } from './database-view-filters';
 
-afterEach(cleanup);
+vi.mock('@core/mobile/isMobile', () => ({ isMobile: () => false }));
 
-const columns: DatabaseViewColumn[] = [
-  {
-    id: 'name',
-    name: 'Name',
-    dataType: 'STRING',
-    options: [],
-    isMultiSelect: false,
-    writable: true,
-  },
-  {
-    id: 'status',
-    name: 'Status',
-    dataType: 'SELECT_STRING',
-    options: ['To do', 'Done'],
-    optionColors: { Done: '#16a34a' },
-    isMultiSelect: false,
-    writable: true,
-  },
-  {
-    id: 'amount',
-    name: 'Amount',
-    dataType: 'NUMBER',
-    options: [],
-    isMultiSelect: false,
-    writable: true,
-  },
-];
+beforeEach(() => {
+  vi.stubGlobal('scrollTo', vi.fn());
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
-describe('database filter controls', () => {
-  it('keeps text input mounted and focused through successive filter edits', () => {
-    const [filters, setFilters] = createSignal<DatabaseFilter[]>([]);
+describe('database filter panel', () => {
+  it('saves a condition once its value is typed', () => {
+    const change = vi.fn();
     render(() => (
       <FilterPanel
-        columns={columns}
-        filters={filters()}
-        conjunction="and"
-        onChange={setFilters}
-        onConjunctionChange={() => {}}
+        columns={[
+          {
+            id: 'name',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            writable: true,
+            options: [],
+          },
+        ]}
+        filter={null}
+        onChange={change}
       />
     ));
     fireEvent.click(screen.getByRole('button', { name: 'Add condition' }));
-    const input = screen.getByRole('textbox', { name: 'Filter value' });
-    input.focus();
-    fireEvent.input(input, { target: { value: 'P' } });
-    fireEvent.input(input, { target: { value: 'Priya' } });
-    expect(screen.getByRole('textbox', { name: 'Filter value' })).toBe(input);
-    expect(document.activeElement).toBe(input);
-    expect(filters()[0].value).toBe('Priya');
+    expect(change).not.toHaveBeenCalled();
+    const value = screen.getByRole('textbox', { name: 'Filter value' });
+    value.focus();
+    fireEvent.input(value, { target: { value: 'Plan' } });
+    expect(change).toHaveBeenCalledExactlyOnceWith({
+      conjunction: 'and',
+      conditions: [
+        {
+          kind: 'condition',
+          column: 'name',
+          test: { kind: 'text', operator: 'contains', value: 'Plan' },
+        },
+      ],
+    });
+    fireEvent.input(value, { target: { value: 'Planning' } });
+    expect(screen.getByRole('textbox', { name: 'Filter value' })).toBe(value);
+    expect(document.activeElement).toBe(value);
+    expect(change).toHaveBeenLastCalledWith({
+      conjunction: 'and',
+      conditions: [
+        {
+          kind: 'condition',
+          column: 'name',
+          test: { kind: 'text', operator: 'contains', value: 'Planning' },
+        },
+      ],
+    });
   });
 
-  it('switches to named choices for select properties and resets an incompatible value', async () => {
-    const [filters, setFilters] = createSignal<DatabaseFilter[]>([
-      { id: '1', columnId: 'name', operator: 'contains', value: 'draft' },
-    ]);
+  it('leaves an unfinished condition out of what it saves', () => {
+    const change = vi.fn();
     render(() => (
       <FilterPanel
-        columns={columns}
-        filters={filters()}
-        conjunction="and"
-        onChange={setFilters}
-        onConjunctionChange={() => {}}
-      />
-    ));
-    fireEvent.keyDown(
-      screen.getByRole('button', { name: /^Filter property/ }),
-      { key: 'Enter' }
-    );
-    fireEvent.keyDown(await screen.findByRole('option', { name: 'Status' }), {
-      key: 'Enter',
-    });
-    expect(filters()[0]).toMatchObject({
-      columnId: 'status',
-      operator: 'equals',
-      value: '',
-    });
-    fireEvent.keyDown(screen.getByRole('button', { name: /^Filter value/ }), {
-      key: 'Enter',
-    });
-    fireEvent.keyDown(await screen.findByRole('option', { name: 'Done' }), {
-      key: 'Enter',
-    });
-    expect(filters()[0].value).toBe('Done');
-    fireEvent.keyDown(
-      screen.getByRole('button', { name: /^Filter condition/ }),
-      { key: 'Enter' }
-    );
-    fireEvent.keyDown(await screen.findByRole('option', { name: 'is empty' }), {
-      key: 'Enter',
-    });
-    expect(screen.queryByRole('button', { name: /^Filter value/ })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Remove filter' }));
-    expect(filters()).toEqual([]);
-  });
-
-  it('reads Where on the first condition and shares one And/Or between the rest', async () => {
-    const [conjunction, setConjunction] =
-      createSignal<DatabaseFilterConjunction>('and');
-    const changeConjunction = vi.fn(setConjunction);
-    render(() => (
-      <FilterPanel
-        columns={columns}
-        filters={[
-          { id: '1', columnId: 'name', operator: 'contains', value: 'plan' },
-          { id: '2', columnId: 'status', operator: 'equals', value: 'Done' },
-          { id: '3', columnId: 'amount', operator: 'gt', value: '5' },
+        columns={[
+          {
+            id: 'name',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            writable: true,
+            options: [],
+          },
         ]}
-        conjunction={conjunction()}
-        onChange={() => {}}
-        onConjunctionChange={changeConjunction}
+        filter={{
+          conjunction: 'and',
+          conditions: [
+            {
+              kind: 'condition',
+              column: 'name',
+              test: { kind: 'text', operator: 'contains', value: 'Plan' },
+            },
+          ],
+        }}
+        onChange={change}
       />
     ));
-    expect(screen.queryByText('Match all conditions')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Add condition' }));
+    expect(
+      screen.getAllByRole('textbox', { name: 'Filter value' })
+    ).toHaveLength(2);
+    expect(change).not.toHaveBeenCalled();
+    fireEvent.input(
+      screen.getAllByRole('textbox', { name: 'Filter value' })[1],
+      { target: { value: '   ' } }
+    );
+    expect(change).not.toHaveBeenCalled();
+  });
+
+  it('switches the root group to Or', async () => {
+    const change = vi.fn();
+    render(() => (
+      <FilterPanel
+        columns={[
+          {
+            id: 'name',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            writable: true,
+            options: [],
+          },
+          {
+            id: 'amount',
+            name: 'Amount',
+            dataType: 'NUMBER',
+            isMultiSelect: false,
+            writable: true,
+            options: [],
+          },
+        ]}
+        filter={{
+          conjunction: 'and',
+          conditions: [
+            {
+              kind: 'condition',
+              column: 'name',
+              test: { kind: 'text', operator: 'contains', value: 'Plan' },
+            },
+            {
+              kind: 'condition',
+              column: 'amount',
+              test: { kind: 'number', operator: 'greaterThan', value: 5 },
+            },
+          ],
+        }}
+        onChange={change}
+      />
+    ));
     expect(screen.getByText('Where')).toBeTruthy();
-    const controls = screen.getAllByRole('button', {
+    const conjunction = screen.getByRole('button', {
       name: /^Match conditions with/,
     });
-    expect(controls.map((control) => control.textContent)).toEqual([
-      'And',
-      'And',
-    ]);
-    fireEvent.keyDown(controls[1], { key: 'Enter' });
+    expect(conjunction.textContent).toBe('And');
+    fireEvent.keyDown(conjunction, { key: 'Enter' });
     fireEvent.keyDown(await screen.findByRole('option', { name: 'Or' }), {
       key: 'Enter',
     });
-    expect(changeConjunction).toHaveBeenCalledExactlyOnceWith('or');
+    expect(change).toHaveBeenCalledExactlyOnceWith({
+      conjunction: 'or',
+      conditions: [
+        {
+          kind: 'condition',
+          column: 'name',
+          test: { kind: 'text', operator: 'contains', value: 'Plan' },
+        },
+        {
+          kind: 'condition',
+          column: 'amount',
+          test: { kind: 'number', operator: 'greaterThan', value: 5 },
+        },
+      ],
+    });
     expect(
-      screen
-        .getAllByRole('button', { name: /^Match conditions with/ })
-        .map((control) => control.textContent)
-    ).toEqual(['Or', 'Or']);
+      screen.getByRole('button', { name: /^Match conditions with/ }).textContent
+    ).toBe('Or');
   });
 
-  it('offers select values as the pills cells show, behind a short placeholder', async () => {
+  it('saves a nested Or group inside an And root', () => {
+    const change = vi.fn();
     render(() => (
       <FilterPanel
-        columns={columns}
-        filters={[
-          { id: '1', columnId: 'status', operator: 'equals', value: '' },
+        columns={[
+          {
+            id: 'name',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            writable: true,
+            options: [],
+          },
         ]}
-        conjunction="and"
-        onChange={() => {}}
-        onConjunctionChange={() => {}}
+        filter={{
+          conjunction: 'and',
+          conditions: [
+            {
+              kind: 'condition',
+              column: 'name',
+              test: { kind: 'text', operator: 'contains', value: 'Plan' },
+            },
+          ],
+        }}
+        onChange={change}
       />
     ));
+    fireEvent.click(screen.getByRole('button', { name: 'Add group' }));
+    const group = screen.getByRole('group', { name: 'Filter group' });
+    fireEvent.click(
+      within(group).getByRole('button', { name: 'Add condition' })
+    );
+    expect(change).not.toHaveBeenCalled();
+    expect(
+      within(group).getByRole('button', { name: /^Match conditions with/ })
+        .textContent
+    ).toBe('Or');
+    const [first, second] = within(group).getAllByRole('textbox', {
+      name: 'Filter value',
+    });
+    fireEvent.input(first, { target: { value: 'Launch' } });
+    fireEvent.input(second, { target: { value: 'Review' } });
+    expect(change).toHaveBeenLastCalledWith({
+      conjunction: 'and',
+      conditions: [
+        {
+          kind: 'condition',
+          column: 'name',
+          test: { kind: 'text', operator: 'contains', value: 'Plan' },
+        },
+        {
+          kind: 'group',
+          conjunction: 'or',
+          conditions: [
+            {
+              kind: 'condition',
+              column: 'name',
+              test: { kind: 'text', operator: 'contains', value: 'Launch' },
+            },
+            {
+              kind: 'condition',
+              column: 'name',
+              test: { kind: 'text', operator: 'contains', value: 'Review' },
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('saves the ids of the options an options test picks', async () => {
+    const change = vi.fn();
+    render(() => (
+      <FilterPanel
+        columns={[
+          {
+            id: 'status',
+            name: 'Status',
+            dataType: 'SELECT_STRING',
+            isMultiSelect: false,
+            writable: true,
+            options: [
+              { id: 'option-to-do', label: 'To do', color: null },
+              { id: 'option-done', label: 'Done', color: '#16a34a' },
+            ],
+          },
+        ]}
+        filter={null}
+        onChange={change}
+      />
+    ));
+    fireEvent.click(screen.getByRole('button', { name: 'Add condition' }));
     const value = screen.getByRole('button', { name: /^Filter value/ });
     expect(value.textContent).toBe('Choose');
-    fireEvent.keyDown(value, { key: 'Enter' });
-    const done = await screen.findByRole('option', { name: 'Done' });
-    expect(done.querySelector('[title="Done"]')).toBeTruthy();
+    await userEvent.click(value);
+    await userEvent.click(
+      await screen.findByRole('menuitemcheckbox', { name: 'Done' })
+    );
+    expect(change).toHaveBeenLastCalledWith({
+      conjunction: 'and',
+      conditions: [
+        {
+          kind: 'condition',
+          column: 'status',
+          test: {
+            kind: 'options',
+            operator: 'isAnyOf',
+            options: ['option-done'],
+          },
+        },
+      ],
+    });
+    await userEvent.click(
+      screen.getByRole('menuitemcheckbox', { name: 'To do' })
+    );
+    expect(change).toHaveBeenLastCalledWith({
+      conjunction: 'and',
+      conditions: [
+        {
+          kind: 'condition',
+          column: 'status',
+          test: {
+            kind: 'options',
+            operator: 'isAnyOf',
+            options: ['option-done', 'option-to-do'],
+          },
+        },
+      ],
+    });
+  });
+
+  it('removes a group along with its last condition', () => {
+    const change = vi.fn();
+    render(() => (
+      <FilterPanel
+        columns={[
+          {
+            id: 'name',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            writable: true,
+            options: [],
+          },
+          {
+            id: 'amount',
+            name: 'Amount',
+            dataType: 'NUMBER',
+            isMultiSelect: false,
+            writable: true,
+            options: [],
+          },
+        ]}
+        filter={{
+          conjunction: 'and',
+          conditions: [
+            {
+              kind: 'condition',
+              column: 'name',
+              test: { kind: 'text', operator: 'contains', value: 'Plan' },
+            },
+            {
+              kind: 'group',
+              conjunction: 'or',
+              conditions: [
+                {
+                  kind: 'condition',
+                  column: 'amount',
+                  test: { kind: 'number', operator: 'greaterThan', value: 5 },
+                },
+              ],
+            },
+          ],
+        }}
+        onChange={change}
+      />
+    ));
+    const group = screen.getByRole('group', { name: 'Filter group' });
+    fireEvent.click(
+      within(group).getByRole('button', { name: 'Remove filter' })
+    );
+    expect(screen.queryByRole('group', { name: 'Filter group' })).toBeNull();
+    expect(change).toHaveBeenCalledExactlyOnceWith({
+      conjunction: 'and',
+      conditions: [
+        {
+          kind: 'condition',
+          column: 'name',
+          test: { kind: 'text', operator: 'contains', value: 'Plan' },
+        },
+      ],
+    });
+  });
+
+  it('saves no filter once the filters are cleared', () => {
+    const change = vi.fn();
+    render(() => (
+      <FilterPanel
+        columns={[
+          {
+            id: 'name',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            writable: true,
+            options: [],
+          },
+        ]}
+        filter={{
+          conjunction: 'or',
+          conditions: [
+            {
+              kind: 'condition',
+              column: 'name',
+              test: { kind: 'text', operator: 'contains', value: 'Plan' },
+            },
+            {
+              kind: 'condition',
+              column: 'name',
+              test: { kind: 'presence', operator: 'isEmpty' },
+            },
+          ],
+        }}
+        onChange={change}
+      />
+    ));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(change).toHaveBeenCalledExactlyOnceWith(null);
+    expect(screen.queryAllByRole('button', { name: 'Remove filter' })).toEqual(
+      []
+    );
+    expect(screen.getByText('Choose which records to show.')).toBeTruthy();
+  });
+});
+
+describe('filter condition count', () => {
+  it('counts nested conditions', () => {
     expect(
-      done.querySelector<HTMLElement>('span[aria-hidden="true"]')?.style
-        .backgroundColor
-    ).toBe('rgb(22, 163, 74)');
-    const toDo = screen.getByRole('option', { name: 'To do' });
-    expect(toDo.querySelector('[title="To do"]')).toBeTruthy();
-    expect(toDo.querySelector('span[aria-hidden="true"]')).toBeNull();
+      filterConditionCount({
+        conjunction: 'and',
+        conditions: [
+          {
+            kind: 'condition',
+            column: 'name',
+            test: { kind: 'text', operator: 'contains', value: 'Plan' },
+          },
+          {
+            kind: 'group',
+            conjunction: 'or',
+            conditions: [
+              {
+                kind: 'condition',
+                column: 'amount',
+                test: { kind: 'number', operator: 'greaterThan', value: 5 },
+              },
+              {
+                kind: 'condition',
+                column: 'amount',
+                test: { kind: 'presence', operator: 'isEmpty' },
+              },
+            ],
+          },
+        ],
+      })
+    ).toBe(3);
+    expect(filterConditionCount(null)).toBe(0);
   });
 });

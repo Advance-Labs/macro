@@ -1,9 +1,11 @@
 import type {
   CellValue,
   DatabaseOp,
+  DatabaseView,
   OpResult,
   Outcome,
   Step,
+  ViewQuery,
 } from '@core/database-sql/generated/types';
 import type { DatabaseSqlQueryCapabilities } from '@queries/database-sql/create-database-sql-query';
 import { databasesKeys } from '@queries/storage/keys';
@@ -18,11 +20,8 @@ import { type Accessor, createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { empty, fromValue, mergeMap, pipe } from 'wonka';
 import type { DatabaseRowsSource } from '../context/table-source';
-import {
-  type DatabaseViewConfig,
-  defaultDatabaseView,
-} from '../core/database-view';
 import type { DatabaseRowMutation } from '../core/table';
+import { allRecordsView } from '../core/views';
 import { createDraftRows } from '../primitives/draft-rows';
 import { createTableController } from '../primitives/table-controller';
 import { createDatabaseRowsSource } from './table-rows';
@@ -47,6 +46,7 @@ function detail(sqlName = '"guests"'): DatabaseDetail {
     grant: 'owner',
     tables: [
       {
+        views: [],
         table: {
           id: 'guests-table',
           database_id: 'db',
@@ -58,6 +58,7 @@ function detail(sqlName = '"guests"'): DatabaseDetail {
         read_sql_name: sqlName,
         columns: [
           {
+            shared_outside_database: false,
             column: {
               id: 'name',
               table_id: 'guests-table',
@@ -150,16 +151,31 @@ const edit: DatabaseRowMutation = {
 };
 const clients: QueryClient[] = [];
 
+const allGuests = allRecordsView({ id: 'guests-table', database_id: 'db' });
+
 /**
- * The browser engine, answering each statement it compiles from `answer`
- * after one Soup page. Soup fails while `offline` says so; `answer` throws
- * a string the way the engine refuses a statement.
+ * The browser engine, answering each statement or view it compiles from
+ * `answer` after one Soup page: a statement as its SQL, a view as its query.
+ * Soup fails while `offline` says so; `answer` throws a string the way the
+ * engine refuses a statement.
  */
 function engine(
-  answer: (sql: string) => Outcome | Promise<Outcome> = () => guests(),
+  answer: (read: string | ViewQuery) => Outcome | Promise<Outcome> = () =>
+    guests(),
   offline: () => boolean = () => false
 ) {
-  const reads: string[] = [];
+  const reads: (string | ViewQuery)[] = [];
+  const query = (outcome: Outcome) => ({
+    start: () => fetch,
+    feed_page: () => ({ step: 'done' as const, ...outcome }),
+    feed_bins: () => {
+      throw 'no bins';
+    },
+    feed_ops: () => {
+      throw 'no writes';
+    },
+    free: () => {},
+  });
   const exchange: Exchange = () => (incoming) =>
     pipe(
       incoming,
@@ -225,18 +241,11 @@ function engine(
     }),
     open: async (_catalog, sql) => {
       reads.push(sql);
-      const outcome = await answer(sql);
-      return {
-        start: () => fetch,
-        feed_page: () => ({ step: 'done', ...outcome }),
-        feed_bins: () => {
-          throw 'no bins';
-        },
-        feed_ops: () => {
-          throw 'no writes';
-        },
-        free: () => {},
-      };
+      return query(await answer(sql));
+    },
+    openView: async (_catalog, view) => {
+      reads.push(view.query);
+      return query(await answer(view.query));
     },
   };
   return { read, reads };
@@ -249,7 +258,8 @@ function setup(
     read?: DatabaseSqlQueryCapabilities;
     addOption?: DatabaseRowsSource['addOption'];
     onSource?: (source: DatabaseRowsSource) => void;
-    view?: Accessor<DatabaseViewConfig>;
+    view?: Accessor<DatabaseView>;
+    search?: Accessor<string>;
   } = {}
 ) {
   const client = new QueryClient({
@@ -281,7 +291,8 @@ function setup(
       databaseId: 'db',
       // Deliberately retain old props: retries must use the refreshed cache.
       table: () => initialDetail.tables[0],
-      view: options.view ?? defaultDatabaseView,
+      view: options.view ?? (() => allGuests),
+      search: options.search ?? (() => ''),
       applyOps,
       read: options.read ?? engine().read,
       onTableChanged: (listener) => {
@@ -315,29 +326,45 @@ afterEach(() => {
 });
 
 describe('database view reads', () => {
-  it("runs the view's statement in the engine and keeps the previous rows while a changed view loads", async () => {
-    const [view, setView] = createSignal(defaultDatabaseView());
+  it('runs the view in the engine, its search folded in, and keeps the previous rows while a changed one loads', async () => {
+    const [search, setSearch] = createSignal('');
     let finishSearch!: (outcome: Outcome) => void;
-    const { read, reads } = engine((sql) =>
-      sql.includes('LIKE')
+    const { read, reads } = engine((request) =>
+      typeof request !== 'string' && request.filter
         ? new Promise((resolve) => {
             finishSearch = resolve;
           })
         : guests()
     );
     const applyOps = vi.fn<ApplyOps>();
-    const { source } = setup(detail(), applyOps, { read, view });
+    const { source } = setup(detail(), applyOps, { read, search });
     await waitFor(() =>
       expect(source.snapshot()?.rows).toEqual([
         { rowId: 'record', cells: { name: 'Ada' } },
       ])
     );
 
-    setView({ ...defaultDatabaseView(), search: 'grace' });
+    setSearch('grace');
     await waitFor(() =>
-      expect(reads.at(-1)).toBe(
-        'SELECT * FROM "guests" WHERE "Name" LIKE \'%grace%\' ORDER BY row_position'
-      )
+      expect(reads.at(-1)).toEqual({
+        filter: {
+          conjunction: 'and',
+          conditions: [
+            {
+              kind: 'group',
+              conjunction: 'or',
+              conditions: [
+                {
+                  kind: 'condition',
+                  column: 'name',
+                  test: { kind: 'text', operator: 'contains', value: 'grace' },
+                },
+              ],
+            },
+          ],
+        },
+        sort: [],
+      })
     );
     expect(source.loading()).toBe(false);
     expect(source.refreshing()).toBe(true);
@@ -351,25 +378,52 @@ describe('database view reads', () => {
         { rowId: 'other', cells: { name: 'Grace' } },
       ])
     );
-    expect(reads[0]).toBe('SELECT * FROM "guests" ORDER BY row_position');
+    expect(reads[0]).toEqual({ filter: null, sort: [] });
     expect(applyOps).not.toHaveBeenCalled();
   });
 
   it('reads the rows the view retains by id, apart from its statement', async () => {
-    const { read, reads } = engine((sql) =>
-      sql.includes('row_id IN')
+    const { read, reads } = engine((request) =>
+      typeof request === 'string' && request.includes('row_id IN')
         ? guests([{ id: 'kept', name: 'Hidden' }])
         : guests()
     );
     const { source } = setup(detail(), vi.fn(), {
       read,
-      view: () => ({ ...defaultDatabaseView(), search: 'ada' }),
+      view: () => ({
+        ...allGuests,
+        query: {
+          filter: {
+            conjunction: 'and',
+            conditions: [
+              {
+                kind: 'condition',
+                column: 'name',
+                test: { kind: 'text', operator: 'is', value: 'Ada' },
+              },
+            ],
+          },
+          sort: [],
+        },
+      }),
     });
     const [retained, setRetained] = createSignal<string[]>([]);
     source.retain(retained);
     await waitFor(() => expect(source.snapshot()?.retained).toEqual([]));
     expect(reads).toEqual([
-      'SELECT * FROM "guests" WHERE "Name" LIKE \'%ada%\' ORDER BY row_position',
+      {
+        filter: {
+          conjunction: 'and',
+          conditions: [
+            {
+              kind: 'condition',
+              column: 'name',
+              test: { kind: 'text', operator: 'is', value: 'Ada' },
+            },
+          ],
+        },
+        sort: [],
+      },
     ]);
 
     setRetained(['kept']);
@@ -567,7 +621,7 @@ describe('database rows SQL names', () => {
     ).toEqual(err({ kind: 'ops', error: refused }));
   });
 
-  it('reads through the quoted display name and matches result columns by display name', async () => {
+  it('reads a table under any name through its view, matching result columns by definition', async () => {
     const { read, reads } = engine();
     const { source } = setup(detail('"Guest List"'), vi.fn(), { read });
     await waitFor(() =>
@@ -575,7 +629,7 @@ describe('database rows SQL names', () => {
         { rowId: 'record', cells: { name: 'Ada' } },
       ])
     );
-    expect(reads).toEqual(['SELECT * FROM "Guest List" ORDER BY row_position']);
+    expect(reads).toEqual([{ filter: null, sort: [] }]);
   });
 
   it('refreshes only this database after a refused op and writes against the refreshed schema on retry', async () => {
@@ -664,7 +718,7 @@ describe('database rows SQL names', () => {
     );
   });
 
-  it('recovers a read of a stale table name through the refreshed schema', async () => {
+  it('recovers a read of a stale table through the refreshed schema', async () => {
     let refused = true;
     const { read, reads } = engine(() => {
       if (refused) {
@@ -701,10 +755,10 @@ describe('database rows SQL names', () => {
     await source.refresh();
     await waitFor(() => expect(source.error()).toBeUndefined());
     expect(transport.get).toHaveBeenCalledExactlyOnceWith({ id: 'db' });
-    expect(reads[0]).toBe('SELECT * FROM "guests" ORDER BY row_position');
-    expect(reads.at(-1)).toBe(
-      'SELECT * FROM "Personal Guests" ORDER BY row_position'
-    );
+    expect(reads).toEqual([
+      { filter: null, sort: [] },
+      { filter: null, sort: [] },
+    ]);
     expect(source.snapshot()?.rows).toEqual([
       { rowId: 'record', cells: { name: 'Ada' } },
     ]);

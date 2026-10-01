@@ -7,7 +7,7 @@ import { useDatabasesQuery } from '@queries/storage/databases';
 import { databasesKeys } from '@queries/storage/keys';
 import { storageServiceClient } from '@service-storage/client';
 import { useQuery, useQueryClient } from '@tanstack/solid-query';
-import { databaseViewKeys } from './keys';
+import type { DatabaseViewSelection } from '../core/view-selection';
 
 /** Mounted inside authenticated app chrome. Provisioning never suspends the app. */
 export function useStarterDatabase() {
@@ -48,19 +48,14 @@ export function useStarterDatabase() {
             JSON.stringify({
               tableId: result.tableId,
               views: { [result.tableId]: result.viewId },
-              drafts: {},
-            })
+            } satisfies DatabaseViewSelection)
           );
         }
       }
-      if (result.databaseId) {
-        await Promise.all([
-          client.invalidateQueries({ queryKey: databasesKeys.list.queryKey }),
-          client.invalidateQueries({
-            queryKey: databaseViewKeys.saved.queryKey,
-          }),
-        ]);
-      }
+      if (result.databaseId)
+        await client.invalidateQueries({
+          queryKey: databasesKeys.list.queryKey,
+        });
       return result;
     },
   }));

@@ -78,6 +78,7 @@ function fixture() {
     const source: DatabaseRowsSource = {
       columns: () => [],
       snapshot: () => ({ ...snapshot(), retained: [] }),
+      read: () => undefined,
       loading: () => false,
       refreshing: () => false,
       error: () => undefined,

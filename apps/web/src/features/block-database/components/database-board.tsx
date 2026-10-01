@@ -1,5 +1,7 @@
+import type { Board, ViewLayout } from '@core/database-sql/generated/types';
 import { isEditableInput } from '@core/util/isEditableInput';
 import type { ResultError } from '@core/util/result';
+import CaretDownIcon from '@phosphor/caret-down.svg';
 import CheckIcon from '@phosphor/check.svg';
 import GripIcon from '@phosphor/dots-six-vertical.svg';
 import DotsIcon from '@phosphor/dots-three.svg';
@@ -25,16 +27,12 @@ import {
   KanbanHandle,
   KanbanLane,
 } from '../../../components/kanban/kanban';
+import { useOptionEditing } from '../context/option-editing';
 import { columnSchemaMessage } from '../core/column-schema';
 import {
-  boardMoveValue,
-  type DatabaseCellValue,
+  type DatabaseOption,
   type DatabaseViewColumn,
   databaseCellValues,
-  groupDatabaseRows,
-  orderDatabaseCards,
-  orderDatabaseColumns,
-  orderDatabaseGroups,
 } from '../core/database-view';
 import {
   type DatabaseRow,
@@ -43,49 +41,51 @@ import {
   rowValue,
   titleColumn,
 } from '../core/table';
+import { OptionEditor } from './option-editor';
 import { PropertyIcon } from './property-icon';
 import { SelectPill } from './select-pill';
 
 /** A new board group's option, added or refused. */
 type DatabaseGroupAdded = Result<void, ResultError<DatabaseSchemaErrorCode>[]>;
 
-type BoardGroup = ReturnType<typeof groupDatabaseRows<DatabaseRow>>[number];
+type BoardLayout = Extract<ViewLayout, { kind: 'board' }>;
 
-export type DatabaseCardPlacement = {
-  rowId: string;
-  value: DatabaseCellValue;
-  beforeId?: string;
-  toLane: string;
-  fromLane: string;
+/** One lane as the board draws it: its option, or none for cards without one. */
+type BoardGroup = {
+  key: string;
+  option: DatabaseOption | null;
+  label: string;
+  rows: DatabaseRow[];
 };
 
-function canMoveTo(column: DatabaseViewColumn, value: DatabaseCellValue) {
-  return (
-    value === null ||
-    column.dataType === 'BOOLEAN' ||
-    column.options.some((option) => String(option) === String(value))
-  );
+const NO_OPTION_LANE = 'no-option';
+
+function laneKey(option: string | null): string {
+  return option === null ? NO_OPTION_LANE : `option:${option}`;
 }
 
 type DatabaseBoardProps = {
+  /** The view's rows, which the board's lanes name by id. */
   rows: DatabaseRow[];
   columns: DatabaseViewColumn[];
-  visibleColumnIds?: string[];
+  board: Board;
+  layout: BoardLayout;
   renderTextValue?: (value: string) => JSX.Element;
   groupColumn: DatabaseViewColumn;
-  groupOrder?: string[];
-  cardOrder?: Record<string, string[]>;
-  onGroupOrderChange?: (order: string[]) => void;
   canEdit: boolean;
   rowPending: (rowId: string) => boolean;
   createPending?: (intentId: string) => boolean;
   createComplete?: (intentId: string) => boolean;
   onOpen: (rowId: string) => void;
-  onMove: (rowId: string, value: DatabaseCellValue) => Promise<boolean>;
-  onPlace?: (placement: DatabaseCardPlacement) => Promise<boolean>;
+  /** A card dropped into `lane` in front of `next`, or last there without one. */
+  onMove: (rowId: string, lane: string | null, next?: string) => void;
+  /** The lanes, every one, in their new order. */
+  onLaneOrderChange?: (order: (string | null)[]) => void;
+  onHideLane?: (lane: string | null) => void;
+  onHideEmptyLanes?: (hide: boolean) => void;
   /** Resolves whether the record was saved. `open` asks to show it once it is. */
   onCreate: (
-    value: DatabaseCellValue,
+    lane: string | null,
     title: string,
     intentId: string,
     options?: { open: true }
@@ -113,21 +113,28 @@ type DraftSubmission = 'next' | 'open' | 'stay';
 
 export function DatabaseBoard(props: DatabaseBoardProps) {
   let viewport: HTMLDivElement | undefined;
-  const groups = createMemo(() =>
-    orderDatabaseGroups(
-      groupDatabaseRows(props.rows, props.groupColumn, rowValue).map(
-        (group) => ({
-          ...group,
-          rows: orderDatabaseCards(
-            group.rows,
-            props.cardOrder?.[group.key],
-            (row) => row.rowId
-          ),
-        })
-      ),
-      props.groupOrder
-    )
-  );
+  const lanes = createMemo((): BoardGroup[] => {
+    const rows = new Map(props.rows.map((row) => [row.rowId, row]));
+    return props.board.lanes
+      .filter((lane) => !lane.hidden)
+      .map((lane) => {
+        const option =
+          props.groupColumn.options.find((entry) => entry.id === lane.option) ??
+          null;
+        return {
+          key: laneKey(lane.option),
+          option,
+          label:
+            option?.label ?? `No ${props.groupColumn.name.toLocaleLowerCase()}`,
+          rows: lane.cards.flatMap((id) => {
+            const row = rows.get(id);
+            return row ? [row] : [];
+          }),
+        };
+      });
+  });
+  const optionOfLane = (key: string) =>
+    lanes().find((lane) => lane.key === key)?.option?.id ?? null;
   const [announcement, setAnnouncement] = createSignal('');
   const draftPrefix = createUniqueId();
   let draftSequence = 0;
@@ -136,8 +143,7 @@ export function DatabaseBoard(props: DatabaseBoardProps) {
   const newButtons = new Map<string, HTMLElement>();
   const titleField = () => titleColumn(props.columns);
   const canSetTitle = () => Boolean(titleField()?.writable);
-  const acceptsRecords = (group: BoardGroup) =>
-    props.canEdit && canMoveTo(props.groupColumn, group.value);
+  const canMove = () => props.canEdit && props.groupColumn.writable;
   const isSaving = (draft: CardDraft) =>
     draft.saving || Boolean(props.createPending?.(draft.id));
   const laneDrafts = (lane: string) =>
@@ -172,8 +178,7 @@ export function DatabaseBoard(props: DatabaseBoardProps) {
   }
   async function submitDraft(id: string, submission: DraftSubmission) {
     const draft = drafts().find((draft) => draft.id === id);
-    const group = groups().find((group) => group.key === draft?.lane);
-    if (!draft || !group || isSaving(draft)) return;
+    if (!draft || isSaving(draft)) return;
     const title = draft.title.trim();
     if (canSetTitle() && !title && submission !== 'open') {
       cancelDraft(id, submission === 'next');
@@ -182,7 +187,7 @@ export function DatabaseBoard(props: DatabaseBoardProps) {
     updateDraft(id, { saving: true });
     if (submission === 'next') startDraft(draft.lane);
     const saved = await props.onCreate(
-      group.value,
+      optionOfLane(draft.lane),
       title,
       id,
       ...(submission === 'open' ? [{ open: true } as const] : [])
@@ -196,44 +201,21 @@ export function DatabaseBoard(props: DatabaseBoardProps) {
   });
   props.controlsRef?.({
     addCard: () => {
-      const lane = disposed ? undefined : groups().find(acceptsRecords);
+      const lane = disposed || !props.canEdit ? undefined : lanes()[0];
       if (!lane) return false;
       startDraft(lane.key);
       return true;
     },
   });
-  async function move(
-    rowId: string,
-    value: DatabaseCellValue,
-    from?: DatabaseCellValue
-  ) {
+  function move(rowId: string, lane: BoardGroup, next?: string) {
     const row = props.rows.find((row) => row.rowId === rowId);
-    if (
-      !row ||
-      !props.canEdit ||
-      !props.groupColumn.writable ||
-      !canMoveTo(props.groupColumn, value) ||
-      rowValue(row, props.groupColumn.id) === value
-    )
-      return;
-    if (
-      await props.onMove(
-        rowId,
-        boardMoveValue(
-          props.groupColumn,
-          rowValue(row, props.groupColumn.id),
-          value,
-          from
-        )
-      )
-    )
-      setAnnouncement(
-        `${rowTitle(row, props.columns)} moved to ${value === null ? 'No ' + props.groupColumn.name : String(value)}.`
-      );
+    if (!row || !canMove()) return;
+    props.onMove(rowId, lane.option?.id ?? null, next);
+    setAnnouncement(`${rowTitle(row, props.columns)} moved to ${lane.label}.`);
   }
   function reorder(from: string, to: string, edge?: 'before' | 'after') {
-    if (from === to || !props.onGroupOrderChange) return;
-    const order = groups().map((group) => group.key);
+    if (from === to || !props.onLaneOrderChange) return;
+    const order = props.board.lanes.map((lane) => laneKey(lane.option));
     const source = order.indexOf(from);
     const target = order.indexOf(to);
     if (source < 0 || target < 0) return;
@@ -243,7 +225,13 @@ export function DatabaseBoard(props: DatabaseBoardProps) {
       ((edge ?? (source < target ? 'after' : 'before')) === 'after' ? 1 : 0);
     if (insertion === source) return;
     order.splice(insertion, 0, from);
-    props.onGroupOrderChange(order);
+    props.onLaneOrderChange(
+      order.map(
+        (key) =>
+          props.board.lanes.find((lane) => laneKey(lane.option) === key)
+            ?.option ?? null
+      )
+    );
   }
   return (
     <div
@@ -255,59 +243,35 @@ export function DatabaseBoard(props: DatabaseBoardProps) {
       </p>
       <Kanban
         getViewport={() => viewport}
-        canDropCard={(drop) => {
-          const target = groups().find((group) => group.key === drop.toLane);
-          return (
-            props.rows.some((row) => row.rowId === drop.id) &&
-            !!target &&
-            props.canEdit &&
-            props.groupColumn.writable &&
-            canMoveTo(props.groupColumn, target.value) &&
-            (drop.fromLane !== drop.toLane || !!props.onPlace)
-          );
-        }}
+        canDropCard={(drop) =>
+          props.rows.some((row) => row.rowId === drop.id) &&
+          lanes().some((lane) => lane.key === drop.toLane) &&
+          canMove()
+        }
         onDrop={(drop) => {
-          if (drop.kind === 'lane')
+          if (drop.kind === 'lane') {
             reorder(drop.fromLane, drop.toLane, drop.edge);
-          else {
-            const target = groups().find((group) => group.key === drop.toLane);
-            const source = groups().find(
-              (group) => group.key === drop.fromLane
-            );
-            const row = props.rows.find((row) => row.rowId === drop.id);
-            if (!target || !row) return;
-            if (props.onPlace)
-              void props.onPlace({
-                rowId: drop.id,
-                value: boardMoveValue(
-                  props.groupColumn,
-                  rowValue(row, props.groupColumn.id),
-                  target.value,
-                  source?.value
-                ),
-                beforeId: drop.beforeId,
-                toLane: drop.toLane,
-                fromLane: drop.fromLane,
-              });
-            else if (drop.fromLane !== drop.toLane)
-              void move(drop.id, target.value, source?.value);
+            return;
           }
+          const target = lanes().find((lane) => lane.key === drop.toLane);
+          if (target) move(drop.id, target, drop.beforeId);
         }}
       >
         <div
           class="flex min-h-full min-w-fit items-start gap-4 pb-4"
           aria-label={`Board grouped by ${props.groupColumn.name}`}
         >
-          <Key each={groups()} by="key">
+          <Key each={lanes()} by="key">
             {(group) => (
               <BoardLane
                 group={group()}
                 {...props}
-                groups={groups()}
+                groups={lanes()}
                 drafts={laneDrafts(group().key)}
                 canSetTitle={canSetTitle()}
                 titlePlaceholder={titleField()?.name ?? 'Record title'}
-                acceptsRecords={acceptsRecords(group())}
+                acceptsRecords={props.canEdit}
+                canMove={canMove()}
                 isSaving={isSaving}
                 onStartDraft={() => startDraft(group().key)}
                 onDraftInput={(id, title) => updateDraft(id, { title })}
@@ -317,15 +281,13 @@ export function DatabaseBoard(props: DatabaseBoardProps) {
                 onCancelDraft={cancelDraft}
                 draftRef={(id, element) => draftElements.set(id, element)}
                 newButtonRef={(element) => newButtons.set(group().key, element)}
-                onMove={(rowId, value) =>
-                  void move(rowId, value, group().value)
-                }
+                onMoveCard={(rowId, lane) => move(rowId, lane)}
                 onReorder={(direction) => {
-                  const index = groups().findIndex(
+                  const index = lanes().findIndex(
                     (item) => item.key === group().key
                   );
                   const target =
-                    groups()[index + (direction === 'left' ? -1 : 1)];
+                    lanes()[index + (direction === 'left' ? -1 : 1)];
                   if (target) reorder(group().key, target.key);
                 }}
               />
@@ -333,10 +295,7 @@ export function DatabaseBoard(props: DatabaseBoardProps) {
           </Key>
           <Show
             when={
-              props.canEdit &&
-              props.groupColumn.writable &&
-              props.groupColumn.dataType !== 'BOOLEAN' &&
-              props.onAddGroup
+              props.canEdit && props.groupColumn.writable && props.onAddGroup
             }
           >
             <NewBoardGroup
@@ -360,6 +319,7 @@ function BoardLane(
     canSetTitle: boolean;
     titlePlaceholder: string;
     acceptsRecords: boolean;
+    canMove: boolean;
     isSaving: (draft: CardDraft) => boolean;
     onStartDraft: () => void;
     onDraftInput: (id: string, title: string) => void;
@@ -368,9 +328,10 @@ function BoardLane(
     draftRef: (id: string, element: HTMLElement) => void;
     newButtonRef: (element: HTMLElement) => void;
     onReorder: (direction: 'left' | 'right') => void;
-    onMove: (rowId: string, value: DatabaseCellValue) => void;
+    onMoveCard: (rowId: string, lane: BoardGroup) => void;
   }
 ) {
+  const editing = useOptionEditing();
   const hasOpenDraft = () =>
     props.drafts.some((draft) => !props.isSaving(draft));
   const savingCount = () => props.drafts.filter(props.isSaving).length;
@@ -378,7 +339,7 @@ function BoardLane(
     <KanbanLane
       id={props.group.key}
       label={`${props.group.label} lane`}
-      canReorder={!!props.onGroupOrderChange}
+      canReorder={!!props.onLaneOrderChange}
       onKeyDown={(event) => {
         // "n" adds a card to the lane holding focus, as Enter does on its header.
         if (
@@ -399,17 +360,17 @@ function BoardLane(
     >
       <KanbanHandle
         label={
-          props.onGroupOrderChange
+          props.onLaneOrderChange
             ? `Reorder ${props.group.label} lane`
             : `${props.group.label} lane`
         }
-        class="mb-2 flex min-h-9 items-center gap-2 rounded px-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ink/50"
+        class="mb-2 flex min-h-9 items-center gap-1.5 rounded px-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ink/50"
         onKeyDown={
-          props.onGroupOrderChange || props.acceptsRecords
+          props.onLaneOrderChange || props.acceptsRecords
             ? (event) => {
                 if (event.target !== event.currentTarget) return;
                 if (
-                  props.onGroupOrderChange &&
+                  props.onLaneOrderChange &&
                   event.altKey &&
                   (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
                 ) {
@@ -427,24 +388,61 @@ function BoardLane(
         <SelectPill
           label={props.group.label}
           column={props.groupColumn}
-          empty={props.group.value === null}
+          empty={props.group.option === null}
         />
         <span class="text-xs tabular-nums text-ink-placeholder">
           {props.group.rows.length + savingCount()}
         </span>
-        <Show when={props.acceptsRecords}>
-          <Button
-            size="icon-sm"
-            label={`Add record to ${props.group.label}`}
-            tooltipDisabled
-            class="ml-auto"
-            title={`Add record to ${props.group.label}`}
-            data-kanban-no-drag
-            onClick={props.onStartDraft}
-          >
-            <PlusIcon class="size-3.5" />
-          </Button>
-        </Show>
+        <span class="ml-auto flex items-center" data-kanban-no-drag>
+          <Show when={props.group.option && editing && props.canEdit}>
+            <OptionEditor
+              column={props.groupColumn}
+              option={props.group.option!}
+              editing={editing!}
+            />
+          </Show>
+          <Show when={props.onHideLane || props.onHideEmptyLanes}>
+            <Dropdown>
+              <Dropdown.Trigger
+                variant="ghost"
+                size="icon-xs"
+                aria-label={`${props.group.label} lane menu`}
+              >
+                <CaretDownIcon class="size-3" />
+              </Dropdown.Trigger>
+              <Dropdown.Content class="min-w-44">
+                <Show when={props.onHideLane}>
+                  <Dropdown.Item
+                    onSelect={() =>
+                      props.onHideLane?.(props.group.option?.id ?? null)
+                    }
+                  >
+                    Hide lane
+                  </Dropdown.Item>
+                </Show>
+                <Show when={props.onHideEmptyLanes}>
+                  <Dropdown.CheckboxItem
+                    checked={props.layout.hideEmptyLanes}
+                    onChange={(checked) => props.onHideEmptyLanes?.(checked)}
+                  >
+                    Hide empty lanes
+                  </Dropdown.CheckboxItem>
+                </Show>
+              </Dropdown.Content>
+            </Dropdown>
+          </Show>
+          <Show when={props.acceptsRecords}>
+            <Button
+              size="icon-xs"
+              label={`Add record to ${props.group.label}`}
+              tooltipDisabled
+              title={`Add record to ${props.group.label}`}
+              onClick={props.onStartDraft}
+            >
+              <PlusIcon class="size-3.5" />
+            </Button>
+          </Show>
+        </span>
       </KanbanHandle>
       <div class="flex min-h-10 flex-col gap-2">
         <div class="relative flex flex-col gap-2">
@@ -454,14 +452,14 @@ function BoardLane(
                 row={row()}
                 laneId={props.group.key}
                 columns={props.columns}
-                visibleColumnIds={props.visibleColumnIds}
+                cardFields={props.layout.cardFields}
                 renderTextValue={props.renderTextValue}
                 groupColumn={props.groupColumn}
                 groups={props.groups}
-                canEdit={props.canEdit && props.groupColumn.writable}
+                canEdit={props.canMove}
                 pending={props.rowPending(row().rowId)}
                 onOpen={props.onOpen}
-                onMove={props.onMove}
+                onMove={props.onMoveCard}
               />
             )}
           </Key>
@@ -540,7 +538,7 @@ function NewBoardGroup(props: {
         : entered;
     if (
       props.column.options.some(
-        (option) => String(option).toLowerCase() === label.toLowerCase()
+        (option) => option.label.toLowerCase() === label.toLowerCase()
       )
     ) {
       setError('A group with this name already exists.');
@@ -634,27 +632,26 @@ function BoardCard(props: {
   row: DatabaseRow;
   laneId: string;
   columns: DatabaseViewColumn[];
-  visibleColumnIds?: string[];
+  /** The columns the card shows, in order, when they hold something. */
+  cardFields: string[];
   renderTextValue?: (value: string) => JSX.Element;
   groupColumn: DatabaseViewColumn;
   groups: BoardGroup[];
   canEdit: boolean;
   pending: boolean;
   onOpen: (rowId: string) => void;
-  onMove: (rowId: string, value: DatabaseCellValue) => void;
+  onMove: (rowId: string, lane: BoardGroup) => void;
 }) {
   const title = () => rowTitle(props.row, props.columns);
   const metadata = () =>
-    orderDatabaseColumns(props.columns, props.visibleColumnIds)
-      .filter(
-        (column) =>
-          column.id !== props.groupColumn.id &&
-          column.id !== titleColumn(props.columns)?.id &&
-          (props.visibleColumnIds === undefined ||
-            props.visibleColumnIds.includes(column.id)) &&
-          rowValue(props.row, column.id) !== null
-      )
-      .slice(0, 3);
+    props.cardFields.flatMap((id) => {
+      const column = props.columns.find((entry) => entry.id === id);
+      return column &&
+        column.id !== titleColumn(props.columns)?.id &&
+        rowValue(props.row, column.id) !== null
+        ? [column]
+        : [];
+    });
   return (
     <KanbanCard
       id={props.row.rowId}
@@ -762,16 +759,14 @@ function BoardCard(props: {
                 <For each={props.groups}>
                   {(group) => (
                     <Dropdown.Item
-                      disabled={!canMoveTo(props.groupColumn, group.value)}
-                      onSelect={() =>
-                        props.onMove(props.row.rowId, group.value)
-                      }
+                      disabled={group.key === props.laneId}
+                      onSelect={() => props.onMove(props.row.rowId, group)}
                     >
                       <span class="flex-1">
                         <SelectPill
                           label={group.label}
                           column={props.groupColumn}
-                          empty={group.value === null}
+                          empty={group.option === null}
                         />
                       </span>
                       <Show when={group.key === props.laneId}>

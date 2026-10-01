@@ -1,5 +1,9 @@
 import { databaseSqlSchema } from '@core/database-sql/catalog';
-import type { DatabaseOp, OpResult } from '@core/database-sql/generated/types';
+import type {
+  DatabaseOp,
+  DatabaseView,
+  OpResult,
+} from '@core/database-sql/generated/types';
 import { type ResultError, throwOnErr } from '@core/util/result';
 import {
   createDatabaseSqlQuery,
@@ -31,18 +35,16 @@ import {
   type DatabaseColumnType,
   inferDatabaseNumber,
 } from '../core/column-inference';
-import type {
-  DatabaseViewColumn,
-  DatabaseViewConfig,
-} from '../core/database-view';
+import type { DatabaseViewColumn } from '../core/database-view';
 import { gridRows } from '../core/grid-cells';
 import type { DatabaseRow, DatabaseRowMutation } from '../core/table';
+import { searchFilter } from '../core/view-query';
 import type {
   DatabaseCellFailure,
   DatabaseReadFailure,
   DatabaseWriteFailure,
 } from '../core/write-failure';
-import { rowsByIdStatement, viewSelectStatement } from '../sql';
+import { rowsByIdStatement } from '../sql';
 
 export function toViewColumn(column: ColumnDetail): DatabaseViewColumn {
   const relation =
@@ -53,15 +55,13 @@ export function toViewColumn(column: ColumnDetail): DatabaseViewColumn {
       column.column.display_name ?? column.definition.definition.display_name,
     dataType: column.definition.definition.data_type,
     isMultiSelect: !!relation || column.definition.definition.is_multi_select,
-    options: column.definition.property_options.map((option) =>
-      String(option.value.value)
-    ),
-    optionColors: Object.fromEntries(
-      column.definition.property_options.flatMap((option) =>
-        option.color ? [[String(option.value.value), option.color]] : []
-      )
-    ),
+    options: column.definition.property_options.map((option) => ({
+      id: option.id,
+      label: String(option.value.value),
+      color: option.color,
+    })),
     writable: column.writable,
+    sharedOutsideDatabase: column.shared_outside_database,
     ...(relation
       ? {
           relation: {
@@ -119,8 +119,10 @@ function sameIds(left: readonly string[], right: readonly string[]) {
 export function createDatabaseRowsSource(props: {
   databaseId: string;
   table: Accessor<TableDetail>;
-  /** The engine searches, filters and sorts the rows for this view. */
-  view: Accessor<DatabaseViewConfig>;
+  /** The view whose rows the engine reads, filtered and sorted as it says. */
+  view: Accessor<DatabaseView>;
+  /** Rows also hold this text, in a text cell or an option's label. */
+  search: Accessor<string>;
   /** Applies a write's ops to this database; reads run in the browser's SQL engine. */
   applyOps: (ops: DatabaseOp[]) => ResultAsync<OpResult[], DatabaseOpsError>;
   /** Where the engine reads rows from; the app's GraphQL client by default. */
@@ -176,8 +178,12 @@ export function createDatabaseRowsSource(props: {
   const columns = createMemo(() =>
     details().filter(isGridColumn).map(toViewColumn)
   );
-  /** A statement over this table alone, built from the cached schema. */
-  const tableStatement = (sql: (table: TableDetail) => string | undefined) =>
+  /** A read of this table alone, built from the cached schema. */
+  const tableStatement = (
+    read: (
+      table: TableDetail
+    ) => { sql: string } | { view: DatabaseView } | undefined
+  ) =>
     createMemo(
       (): DatabaseSqlStatement | undefined => {
         props.table();
@@ -185,27 +191,40 @@ export function createDatabaseRowsSource(props: {
         const detail = cachedDetail();
         if (!detail) return undefined;
         const table = currentTable();
-        const text = sql(table);
-        if (text === undefined) return undefined;
+        const statement = read(table);
+        if (statement === undefined) return undefined;
         return {
           schema: databaseSqlSchema([{ ...detail, tables: [table] }]),
           scope: props.databaseId,
-          sql: text,
+          ...statement,
         };
       },
       undefined,
       { equals: sameDatabaseSqlStatement }
     );
-  const viewStatement = tableStatement((table) =>
-    viewSelectStatement({
-      tableSqlName: table.sql_name,
-      columns: table.columns.filter(isGridColumn).map((column) => ({
-        column: toViewColumn(column),
-        sqlName: column.sql_name,
-      })),
-      view: props.view(),
-    })
-  );
+  const viewStatement = tableStatement((table) => {
+    const view = props.view();
+    const search = searchFilter(
+      props.search(),
+      table.columns.filter(isGridColumn).map(toViewColumn)
+    );
+    if (!search) return { view };
+    const filter = view.query.filter;
+    return {
+      view: {
+        ...view,
+        query: {
+          ...view.query,
+          filter: {
+            conjunction: 'and',
+            conditions: filter
+              ? [{ kind: 'group', ...filter }, search]
+              : [search],
+          },
+        },
+      },
+    };
+  });
   const rowsQuery = createDatabaseSqlQuery(viewStatement, props.read);
   const [retainedIds, setRetainedIds] = createSignal<
     Accessor<readonly string[]>
@@ -217,7 +236,7 @@ export function createDatabaseRowsSource(props: {
   );
   const retainedStatement = tableStatement((table) =>
     retainedRowIds().length
-      ? rowsByIdStatement(table.sql_name, retainedRowIds())
+      ? { sql: rowsByIdStatement(table.sql_name, retainedRowIds()) }
       : undefined
   );
   const retainedQuery = createDatabaseSqlQuery(retainedStatement, props.read);
@@ -457,6 +476,14 @@ export function createDatabaseRowsSource(props: {
   return {
     columns,
     snapshot,
+    read: () => {
+      const outcome = rowsQuery.outcome();
+      const catalog = rowsQuery.catalog();
+      const statement = viewStatement();
+      return outcome && catalog && statement?.view
+        ? { outcome, catalog, view: statement.view }
+        : undefined;
+    },
     loading: () => !rowsQuery.outcome() && rowsQuery.error() === undefined,
     refreshing: rowsQuery.loading,
     error: rowsQuery.error,

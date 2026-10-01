@@ -8,35 +8,13 @@ import {
   waitFor,
   within,
 } from '@solidjs/testing-library';
-import { err, ok, type Result } from 'neverthrow';
+import { err, ok, okAsync, type Result } from 'neverthrow';
 import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { OptionEditingContext } from '../context/option-editing';
 import type { DatabaseViewColumn } from '../core/database-view';
 import type { DatabaseRow } from '../core/table';
 import { DatabaseBoard } from './database-board';
-
-const columns: DatabaseViewColumn[] = [
-  {
-    id: 'title',
-    name: 'Name',
-    dataType: 'STRING',
-    isMultiSelect: false,
-    options: [],
-    writable: true,
-  },
-  {
-    id: 'status',
-    name: 'Status',
-    dataType: 'SELECT_STRING',
-    isMultiSelect: false,
-    options: ['To do', 'Done'],
-    writable: true,
-  },
-];
-const initialRows: DatabaseRow[] = [
-  { rowId: 'launch', cells: { title: 'Launch project', status: 'To do' } },
-  { rowId: 'unassigned', cells: { title: 'Unassigned record', status: null } },
-];
 
 beforeEach(() => {
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
@@ -47,32 +25,169 @@ afterEach(() => {
 });
 
 describe('database board', () => {
-  it('orders visible metadata without changing the record title or showing hidden fields', () => {
-    const details = [
-      { ...columns[0], id: 'owner', name: 'Owner' },
-      { ...columns[0], id: 'team', name: 'Team' },
-      { ...columns[0], id: 'notes', name: 'Notes' },
-    ];
+  it('draws the lanes the board lays out, in its order, and leaves hidden lanes out', () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [
+        { id: 'todo', label: 'To do', color: null },
+        { id: 'done', label: 'Done', color: null },
+        { id: 'archived', label: 'Archived', color: null },
+      ],
+      writable: true,
+    };
     render(() => (
       <DatabaseBoard
         rows={[
           {
-            ...initialRows[0],
-            cells: {
-              ...initialRows[0].cells,
-              owner: 'Ada',
-              team: 'Design',
-              notes: 'Bring draft',
-            },
+            rowId: 'launch',
+            cells: { title: 'Launch project', status: 'To do' },
           },
+          {
+            rowId: 'unassigned',
+            cells: { title: 'Unassigned record', status: null },
+          },
+          { rowId: 'old', cells: { title: 'Old record', status: 'Archived' } },
         ]}
-        columns={[...columns, ...details]}
-        visibleColumnIds={['notes', 'title', 'owner']}
-        groupColumn={columns[1]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+        ]}
+        board={{
+          lanes: [
+            { option: 'done', hidden: false, cards: [] },
+            { option: 'todo', hidden: false, cards: ['launch'] },
+            { option: 'archived', hidden: true, cards: ['old'] },
+            { option: null, hidden: false, cards: ['unassigned'] },
+          ],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
         canEdit
         rowPending={() => false}
         onOpen={vi.fn()}
-        onMove={vi.fn(async () => true)}
+        onMove={vi.fn()}
+        onCreate={vi.fn(async () => true)}
+      />
+    ));
+    expect(
+      screen
+        .getAllByRole('region')
+        .map((lane) => lane.getAttribute('aria-label'))
+    ).toEqual(['Done lane', 'To do lane', 'No status lane']);
+    expect(
+      within(screen.getByRole('region', { name: 'No status lane' })).getByRole(
+        'button',
+        { name: 'Open Unassigned record' }
+      )
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole('button', { name: 'Open Old record' })
+    ).toBeNull();
+    expect(
+      within(screen.getByRole('region', { name: 'Done lane' })).getByText(
+        'Drop a record here'
+      )
+    ).toBeTruthy();
+  });
+
+  it("shows the layout's card fields in order, skipping the title and empty fields", () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [{ id: 'todo', label: 'To do', color: null }],
+      writable: true,
+    };
+    render(() => (
+      <DatabaseBoard
+        rows={[
+          {
+            rowId: 'launch',
+            cells: {
+              title: 'Launch project',
+              status: 'To do',
+              owner: 'Ada',
+              team: 'Design',
+              notes: 'Bring draft',
+              due: null,
+            },
+          },
+        ]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+          {
+            id: 'owner',
+            name: 'Owner',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          {
+            id: 'team',
+            name: 'Team',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          {
+            id: 'notes',
+            name: 'Notes',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          {
+            id: 'due',
+            name: 'Due',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+        ]}
+        board={{
+          lanes: [{ option: 'todo', hidden: false, cards: ['launch'] }],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: ['notes', 'title', 'due', 'owner'],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={vi.fn()}
         onCreate={vi.fn(async () => true)}
       />
     ));
@@ -86,7 +201,440 @@ describe('database board', () => {
     ).toEqual(['Notes: Bring draft', 'Owner: Ada']);
   });
 
+  it("moves a card from its Move menu into the chosen lane's option", async () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [
+        { id: 'todo', label: 'To do', color: null },
+        { id: 'done', label: 'Done', color: null },
+      ],
+      writable: true,
+    };
+    const onMove = vi.fn();
+    render(() => (
+      <DatabaseBoard
+        rows={[
+          {
+            rowId: 'launch',
+            cells: { title: 'Launch project', status: 'To do' },
+          },
+        ]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+        ]}
+        board={{
+          lanes: [
+            { option: null, hidden: false, cards: [] },
+            { option: 'todo', hidden: false, cards: ['launch'] },
+            { option: 'done', hidden: false, cards: [] },
+          ],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={onMove}
+        onCreate={vi.fn(async () => true)}
+      />
+    ));
+    const trigger = screen.getByRole('button', { name: 'Move Launch project' });
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    fireEvent.keyDown(await screen.findByRole('menuitem', { name: 'Done' }), {
+      key: 'Enter',
+    });
+    await waitFor(() =>
+      expect(onMove).toHaveBeenCalledWith('launch', 'done', undefined)
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toBe(
+        'Launch project moved to Done.'
+      )
+    );
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    fireEvent.keyDown(
+      await screen.findByRole('menuitem', { name: 'No status' }),
+      { key: 'Enter' }
+    );
+    await waitFor(() =>
+      expect(onMove).toHaveBeenLastCalledWith('launch', null, undefined)
+    );
+  });
+
+  it('hides a lane from its lane menu, the lane without an option as null', async () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [{ id: 'todo', label: 'To do', color: null }],
+      writable: true,
+    };
+    const onHideLane = vi.fn();
+    render(() => (
+      <DatabaseBoard
+        rows={[]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+        ]}
+        board={{
+          lanes: [
+            { option: null, hidden: false, cards: [] },
+            { option: 'todo', hidden: false, cards: [] },
+          ],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={vi.fn()}
+        onHideLane={onHideLane}
+        onCreate={vi.fn(async () => true)}
+      />
+    ));
+    const todoMenu = screen.getByRole('button', { name: 'To do lane menu' });
+    todoMenu.focus();
+    fireEvent.keyDown(todoMenu, { key: 'Enter' });
+    fireEvent.keyDown(
+      await screen.findByRole('menuitem', { name: 'Hide lane' }),
+      { key: 'Enter' }
+    );
+    await waitFor(() => expect(onHideLane).toHaveBeenCalledWith('todo'));
+    expect(
+      screen.queryByRole('menuitemcheckbox', { name: 'Hide empty lanes' })
+    ).toBeNull();
+    const emptyMenu = await screen.findByRole('button', {
+      name: 'No status lane menu',
+    });
+    emptyMenu.focus();
+    fireEvent.keyDown(emptyMenu, { key: 'Enter' });
+    fireEvent.keyDown(
+      await screen.findByRole('menuitem', { name: 'Hide lane' }),
+      { key: 'Enter' }
+    );
+    await waitFor(() => expect(onHideLane).toHaveBeenLastCalledWith(null));
+  });
+
+  it('turns hiding empty lanes on from a lane menu, checked as the layout has it', async () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [{ id: 'todo', label: 'To do', color: null }],
+      writable: true,
+    };
+    const onHideEmptyLanes = vi.fn();
+    render(() => (
+      <DatabaseBoard
+        rows={[]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+        ]}
+        board={{
+          lanes: [{ option: 'todo', hidden: false, cards: [] }],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={vi.fn()}
+        onHideEmptyLanes={onHideEmptyLanes}
+        onCreate={vi.fn(async () => true)}
+      />
+    ));
+    const menu = screen.getByRole('button', { name: 'To do lane menu' });
+    menu.focus();
+    fireEvent.keyDown(menu, { key: 'Enter' });
+    const toggle = await screen.findByRole('menuitemcheckbox', {
+      name: 'Hide empty lanes',
+    });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(screen.queryByRole('menuitem', { name: 'Hide lane' })).toBeNull();
+    fireEvent.keyDown(toggle, { key: 'Enter' });
+    await waitFor(() => expect(onHideEmptyLanes).toHaveBeenCalledWith(true));
+  });
+
+  it('has no lane menu when the view cannot change', () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [{ id: 'todo', label: 'To do', color: null }],
+      writable: true,
+    };
+    render(() => (
+      <DatabaseBoard
+        rows={[]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+        ]}
+        board={{
+          lanes: [{ option: 'todo', hidden: false, cards: [] }],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={vi.fn()}
+        onCreate={vi.fn(async () => true)}
+      />
+    ));
+    expect(
+      screen.queryByRole('button', { name: 'To do lane menu' })
+    ).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Add record to To do' })
+    ).toBeTruthy();
+  });
+
+  it("offers an option's editor on its lane header only to editors with option editing", () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [{ id: 'todo', label: 'To do', color: null }],
+      writable: true,
+    };
+    const [canEdit, setCanEdit] = createSignal(true);
+    render(() => (
+      <OptionEditingContext.Provider
+        value={{
+          update: vi.fn(() => okAsync(undefined)),
+          remove: vi.fn(() => okAsync(undefined)),
+        }}
+      >
+        <DatabaseBoard
+          rows={[]}
+          columns={[
+            {
+              id: 'title',
+              name: 'Name',
+              dataType: 'STRING',
+              isMultiSelect: false,
+              options: [],
+              writable: true,
+            },
+            status,
+          ]}
+          board={{
+            lanes: [
+              { option: null, hidden: false, cards: [] },
+              { option: 'todo', hidden: false, cards: [] },
+            ],
+          }}
+          layout={{
+            kind: 'board',
+            groupBy: 'status',
+            lanes: [],
+            cardFields: [],
+            hideEmptyLanes: false,
+          }}
+          groupColumn={status}
+          canEdit={canEdit()}
+          rowPending={() => false}
+          onOpen={vi.fn()}
+          onMove={vi.fn()}
+          onCreate={vi.fn(async () => true)}
+        />
+      </OptionEditingContext.Provider>
+    ));
+    expect(
+      within(screen.getByRole('region', { name: 'To do lane' })).getByRole(
+        'button',
+        { name: 'Edit To do' }
+      )
+    ).toBeTruthy();
+    expect(
+      within(
+        screen.getByRole('region', { name: 'No status lane' })
+      ).queryByRole('button', { name: /^Edit / })
+    ).toBeNull();
+    setCanEdit(false);
+    expect(screen.queryByRole('button', { name: 'Edit To do' })).toBeNull();
+  });
+
+  it('has no option editor without option editing', () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [{ id: 'todo', label: 'To do', color: null }],
+      writable: true,
+    };
+    render(() => (
+      <DatabaseBoard
+        rows={[]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+        ]}
+        board={{
+          lanes: [{ option: 'todo', hidden: false, cards: [] }],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={vi.fn()}
+        onCreate={vi.fn(async () => true)}
+      />
+    ));
+    expect(screen.queryByRole('button', { name: 'Edit To do' })).toBeNull();
+  });
+
+  it('reorders lanes with Alt+Arrow, naming every lane in the new order', () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [
+        { id: 'todo', label: 'To do', color: null },
+        { id: 'done', label: 'Done', color: null },
+      ],
+      writable: true,
+    };
+    const onLaneOrderChange = vi.fn();
+    const onMove = vi.fn();
+    render(() => (
+      <DatabaseBoard
+        rows={[]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+        ]}
+        board={{
+          lanes: [
+            { option: 'done', hidden: false, cards: [] },
+            { option: 'todo', hidden: false, cards: [] },
+            { option: null, hidden: false, cards: [] },
+          ],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={onMove}
+        onLaneOrderChange={onLaneOrderChange}
+        onCreate={vi.fn(async () => true)}
+      />
+    ));
+    fireEvent.keyDown(
+      screen.getByRole('button', { name: 'Reorder Done lane' }),
+      {
+        key: 'ArrowRight',
+        altKey: true,
+      }
+    );
+    expect(onLaneOrderChange).toHaveBeenCalledWith(['todo', 'done', null]);
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
   it('keeps a failed new-group draft and lets the user retry it', async () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [{ id: 'todo', label: 'To do', color: null }],
+      writable: true,
+    };
     const onAddGroup = vi.fn(
       async (
         _label: string
@@ -98,13 +646,33 @@ describe('database board', () => {
     );
     render(() => (
       <DatabaseBoard
-        rows={initialRows}
-        columns={columns}
-        groupColumn={columns[1]}
+        rows={[]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+        ]}
+        board={{
+          lanes: [{ option: 'todo', hidden: false, cards: [] }],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
         canEdit
         rowPending={() => false}
         onOpen={vi.fn()}
-        onMove={vi.fn(async () => true)}
+        onMove={vi.fn()}
         onCreate={vi.fn(async () => true)}
         onAddGroup={onAddGroup}
       />
@@ -126,27 +694,112 @@ describe('database board', () => {
     expect(onAddGroup).toHaveBeenLastCalledWith('In review');
   });
 
-  it('validates numeric groups and sends their canonical SQL labels', async () => {
+  it('refuses a new group named like an existing option', () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [{ id: 'todo', label: 'To do', color: null }],
+      writable: true,
+    };
     const onAddGroup = vi.fn(
       async (
         _label: string
       ): Promise<Result<void, ResultError<DatabaseSchemaErrorCode>[]>> =>
         ok(undefined)
     );
-    const groupColumn = {
-      ...columns[1],
-      dataType: 'SELECT_NUMBER',
-      options: ['2'],
-    };
     render(() => (
       <DatabaseBoard
         rows={[]}
-        columns={[columns[0], groupColumn]}
-        groupColumn={groupColumn}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+        ]}
+        board={{
+          lanes: [{ option: 'todo', hidden: false, cards: [] }],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
         canEdit
         rowPending={() => false}
         onOpen={vi.fn()}
-        onMove={vi.fn(async () => true)}
+        onMove={vi.fn()}
+        onCreate={vi.fn(async () => true)}
+        onAddGroup={onAddGroup}
+      />
+    ));
+    fireEvent.click(screen.getByRole('button', { name: 'New group' }));
+    fireEvent.input(screen.getByRole('textbox', { name: 'New group name' }), {
+      target: { value: 'to DO' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add group' }));
+    expect(screen.getByRole('alert').textContent).toBe(
+      'A group with this name already exists.'
+    );
+    expect(onAddGroup).not.toHaveBeenCalled();
+  });
+
+  it('validates numeric groups and sends their canonical labels', async () => {
+    const amount: DatabaseViewColumn = {
+      id: 'amount',
+      name: 'Amount',
+      dataType: 'SELECT_NUMBER',
+      isMultiSelect: false,
+      options: [{ id: 'two', label: '2', color: null }],
+      writable: true,
+    };
+    const onAddGroup = vi.fn(
+      async (
+        _label: string
+      ): Promise<Result<void, ResultError<DatabaseSchemaErrorCode>[]>> =>
+        ok(undefined)
+    );
+    render(() => (
+      <DatabaseBoard
+        rows={[]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          amount,
+        ]}
+        board={{
+          lanes: [
+            { option: 'two', hidden: false, cards: [] },
+            { option: null, hidden: false, cards: [] },
+          ],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'amount',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={amount}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={vi.fn()}
         onCreate={vi.fn(async () => true)}
         onAddGroup={onAddGroup}
       />
@@ -165,164 +818,51 @@ describe('database board', () => {
     await waitFor(() => expect(onAddGroup).toHaveBeenCalledWith('1'));
   });
 
-  it('drags the entire card at its original size without opening the record on drop', async () => {
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
-      function (this: HTMLElement) {
-        if (this.classList.contains('overflow-auto'))
-          return new DOMRect(0, 0, 900, 500);
-        const label = this.getAttribute('aria-label');
-        const x =
-          label === 'Done lane' ? 300 : label?.startsWith('No ') ? 600 : 0;
-        const isCard = this.hasAttribute('data-row-id');
-        return new DOMRect(
-          x,
-          isCard ? 60 : 0,
-          isCard ? 250 : 280,
-          isCard ? 100 : 500
-        );
-      }
-    );
-    const onMove = vi.fn(async () => true);
-    const onOpen = vi.fn();
-    render(() => (
-      <DatabaseBoard
-        rows={initialRows}
-        columns={columns}
-        groupColumn={columns[1]}
-        canEdit
-        rowPending={() => false}
-        onOpen={onOpen}
-        onMove={onMove}
-        onCreate={vi.fn(async () => true)}
-      />
-    ));
-    fireEvent.mouseDown(
-      screen.getByRole('button', { name: 'Open Launch project' }),
-      { button: 0, clientX: 200, clientY: 80 }
-    );
-    fireEvent.mouseMove(document, { clientX: 510, clientY: 100 });
-    const preview = document.querySelector<HTMLElement>(
-      '[data-kanban-preview]'
-    )!;
-    expect(preview.style.width).toBe('250px');
-    expect(preview.style.height).toBe('100px');
-    expect(preview.style.transform).toBe('none');
-    expect(
-      screen
-        .getByRole('region', { name: 'Done lane' })
-        .querySelector('[data-kanban-insertion="card"]')
-    ).toBeTruthy();
-    fireEvent.mouseUp(document, { button: 0, clientX: 510, clientY: 100 });
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Open Launch project' })
-    );
-    expect(onOpen).not.toHaveBeenCalled();
-    await waitFor(() => expect(onMove).toHaveBeenCalledWith('launch', 'Done'));
-  });
-
-  it('renders empty configured groups and a group for unassigned records', () => {
-    render(() => (
-      <DatabaseBoard
-        rows={initialRows}
-        columns={columns}
-        groupColumn={columns[1]}
-        canEdit
-        rowPending={() => false}
-        onOpen={vi.fn()}
-        onMove={vi.fn(async () => true)}
-        onCreate={vi.fn(async () => true)}
-      />
-    ));
-    expect(screen.getByRole('region', { name: 'Done lane' })).toBeTruthy();
-    expect(
-      screen.getByRole('button', { name: 'Open Unassigned record' })
-    ).toBeTruthy();
-    expect(screen.getAllByRole('button', { name: 'New record' })).toHaveLength(
-      3
-    );
-  });
-
-  it('offers an accessible move menu that writes the target value', async () => {
-    const onMove = vi.fn(async () => true);
-    render(() => (
-      <DatabaseBoard
-        rows={initialRows}
-        columns={columns}
-        groupColumn={columns[1]}
-        canEdit
-        rowPending={() => false}
-        onOpen={vi.fn()}
-        onMove={onMove}
-        onCreate={vi.fn(async () => true)}
-      />
-    ));
-    const trigger = screen.getByRole('button', { name: 'Move Launch project' });
-    trigger.focus();
-    fireEvent.keyDown(trigger, { key: 'Enter' });
-    const done = await screen.findByRole('menuitem', { name: 'Done' });
-    fireEvent.keyDown(done, { key: 'Enter' });
-    await waitFor(() => expect(onMove).toHaveBeenCalledWith('launch', 'Done'));
-  });
-
-  it('keeps a new-card title after a failed write and unrelated row updates', async () => {
-    const [rows, setRows] = createSignal(initialRows);
-    const onCreate = vi.fn(async () => false);
-    render(() => (
-      <DatabaseBoard
-        rows={rows()}
-        columns={columns}
-        groupColumn={columns[1]}
-        canEdit
-        rowPending={() => false}
-        onOpen={vi.fn()}
-        onMove={vi.fn(async () => true)}
-        onCreate={onCreate}
-      />
-    ));
-    fireEvent.click(screen.getByRole('button', { name: 'Add record to Done' }));
-    const input = screen.getByRole('textbox', {
-      name: 'New record title',
-    }) as HTMLTextAreaElement;
-    fireEvent.input(input, { target: { value: 'Remember this draft' } });
-    setRows([
-      ...initialRows,
-      { rowId: 'other', cells: { title: 'Other record', status: 'Done' } },
-    ]);
-    expect(
-      (
-        screen.getByRole('textbox', {
-          name: 'New record title',
-        }) as HTMLTextAreaElement
-      ).value
-    ).toBe('Remember this draft');
-    fireEvent.keyDown(input, { key: 'Enter' });
-    await waitFor(() =>
-      expect(onCreate).toHaveBeenCalledWith(
-        'Done',
-        'Remember this draft',
-        expect.any(String)
-      )
-    );
-    await waitFor(() =>
-      expect(
-        screen
-          .getAllByRole('textbox', { name: 'New record title' })
-          .map((input) => (input as HTMLTextAreaElement).value)
-      ).toEqual(['Remember this draft', ''])
-    );
-  });
-
-  it('Enter saves a card into its lane and opens an empty card below it', async () => {
+  it("Enter saves a card into its lane's option and opens an empty card below it", () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [
+        { id: 'todo', label: 'To do', color: null },
+        { id: 'done', label: 'Done', color: null },
+      ],
+      writable: true,
+    };
     const onCreate = vi.fn(async () => true);
     render(() => (
       <DatabaseBoard
-        rows={initialRows}
-        columns={columns}
-        groupColumn={columns[1]}
+        rows={[]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+        ]}
+        board={{
+          lanes: [
+            { option: 'todo', hidden: false, cards: [] },
+            { option: 'done', hidden: false, cards: [] },
+          ],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
         canEdit
         rowPending={() => false}
         onOpen={vi.fn()}
-        onMove={vi.fn(async () => true)}
+        onMove={vi.fn()}
         onCreate={onCreate}
       />
     ));
@@ -332,11 +872,10 @@ describe('database board', () => {
       name: 'New record title',
     }) as HTMLTextAreaElement;
     expect(document.activeElement).toBe(first);
-    expect(screen.queryByRole('dialog')).toBeNull();
     fireEvent.input(first, { target: { value: 'First idea' } });
     fireEvent.keyDown(first, { key: 'Enter' });
     expect(onCreate).toHaveBeenCalledWith(
-      'Done',
+      'done',
       'First idea',
       expect.any(String)
     );
@@ -349,7 +888,7 @@ describe('database board', () => {
     fireEvent.input(next, { target: { value: 'Second idea' } });
     fireEvent.keyDown(next, { key: 'Enter' });
     expect(onCreate).toHaveBeenLastCalledWith(
-      'Done',
+      'done',
       'Second idea',
       expect.any(String)
     );
@@ -361,17 +900,161 @@ describe('database board', () => {
     ).toBeNull();
   });
 
-  it('Escape cancels a new card and returns focus to its lane', () => {
+  it('creates a card in the lane without an option with no option', () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [{ id: 'todo', label: 'To do', color: null }],
+      writable: true,
+    };
     const onCreate = vi.fn(async () => true);
     render(() => (
       <DatabaseBoard
-        rows={initialRows}
-        columns={columns}
-        groupColumn={columns[1]}
+        rows={[]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+        ]}
+        board={{
+          lanes: [
+            { option: null, hidden: false, cards: [] },
+            { option: 'todo', hidden: false, cards: [] },
+          ],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
         canEdit
         rowPending={() => false}
         onOpen={vi.fn()}
-        onMove={vi.fn(async () => true)}
+        onMove={vi.fn()}
+        onCreate={onCreate}
+      />
+    ));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Add record to No status' })
+    );
+    const input = within(
+      screen.getByRole('region', { name: 'No status lane' })
+    ).getByRole('textbox', { name: 'New record title' });
+    fireEvent.input(input, { target: { value: 'Loose idea' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onCreate).toHaveBeenCalledWith(
+      null,
+      'Loose idea',
+      expect.any(String)
+    );
+  });
+
+  it('Shift+Enter saves a card and asks to open its record', () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [{ id: 'done', label: 'Done', color: null }],
+      writable: true,
+    };
+    const onCreate = vi.fn(async () => true);
+    render(() => (
+      <DatabaseBoard
+        rows={[]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+        ]}
+        board={{
+          lanes: [{ option: 'done', hidden: false, cards: [] }],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={vi.fn()}
+        onCreate={onCreate}
+      />
+    ));
+    const lane = screen.getByRole('region', { name: 'Done lane' });
+    fireEvent.click(within(lane).getByRole('button', { name: 'New record' }));
+    const input = within(lane).getByRole('textbox');
+    fireEvent.input(input, { target: { value: 'Needs detail' } });
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+    expect(onCreate).toHaveBeenCalledWith(
+      'done',
+      'Needs detail',
+      expect.any(String),
+      { open: true }
+    );
+    expect(within(lane).queryByRole('textbox')).toBeNull();
+  });
+
+  it('Escape cancels a new card and returns focus to its lane', () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [{ id: 'done', label: 'Done', color: null }],
+      writable: true,
+    };
+    const onCreate = vi.fn(async () => true);
+    render(() => (
+      <DatabaseBoard
+        rows={[]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+        ]}
+        board={{
+          lanes: [{ option: 'done', hidden: false, cards: [] }],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={vi.fn()}
         onCreate={onCreate}
       />
     ));
@@ -390,16 +1073,44 @@ describe('database board', () => {
   });
 
   it('blurring a typed card saves it and blurring an empty card cancels it', () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [{ id: 'done', label: 'Done', color: null }],
+      writable: true,
+    };
     const onCreate = vi.fn(async () => true);
     render(() => (
       <DatabaseBoard
-        rows={initialRows}
-        columns={columns}
-        groupColumn={columns[1]}
+        rows={[]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+        ]}
+        board={{
+          lanes: [{ option: 'done', hidden: false, cards: [] }],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
         canEdit
         rowPending={() => false}
         onOpen={vi.fn()}
-        onMove={vi.fn(async () => true)}
+        onMove={vi.fn()}
         onCreate={onCreate}
       />
     ));
@@ -413,7 +1124,7 @@ describe('database board', () => {
     fireEvent.input(input, { target: { value: 'Typed then left' } });
     fireEvent.blur(input);
     expect(onCreate).toHaveBeenCalledWith(
-      'Done',
+      'done',
       'Typed then left',
       expect.any(String)
     );
@@ -421,15 +1132,54 @@ describe('database board', () => {
   });
 
   it('n on a focused card or Enter on a lane header adds a card to that lane', () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [
+        { id: 'todo', label: 'To do', color: null },
+        { id: 'done', label: 'Done', color: null },
+      ],
+      writable: true,
+    };
     render(() => (
       <DatabaseBoard
-        rows={initialRows}
-        columns={columns}
-        groupColumn={columns[1]}
+        rows={[
+          {
+            rowId: 'launch',
+            cells: { title: 'Launch project', status: 'To do' },
+          },
+        ]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+        ]}
+        board={{
+          lanes: [
+            { option: 'todo', hidden: false, cards: ['launch'] },
+            { option: 'done', hidden: false, cards: [] },
+          ],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
         canEdit
         rowPending={() => false}
         onOpen={vi.fn()}
-        onMove={vi.fn(async () => true)}
+        onMove={vi.fn()}
         onCreate={vi.fn(async () => true)}
       />
     ));
@@ -452,46 +1202,281 @@ describe('database board', () => {
     );
   });
 
-  it('Shift+Enter saves a card and asks to open its record', () => {
-    const onCreate = vi.fn(async () => true);
+  it('keeps a new-card title after a failed write and unrelated row updates', async () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [{ id: 'done', label: 'Done', color: null }],
+      writable: true,
+    };
+    const [rows, setRows] = createSignal<DatabaseRow[]>([]);
+    const [cards, setCards] = createSignal<string[]>([]);
+    const onCreate = vi.fn(async () => false);
     render(() => (
       <DatabaseBoard
-        rows={initialRows}
-        columns={columns}
-        groupColumn={columns[1]}
+        rows={rows()}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+        ]}
+        board={{
+          lanes: [{ option: 'done', hidden: false, cards: cards() }],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
         canEdit
         rowPending={() => false}
         onOpen={vi.fn()}
-        onMove={vi.fn(async () => true)}
+        onMove={vi.fn()}
+        onCreate={onCreate}
+      />
+    ));
+    fireEvent.click(screen.getByRole('button', { name: 'Add record to Done' }));
+    const input = screen.getByRole('textbox', {
+      name: 'New record title',
+    }) as HTMLTextAreaElement;
+    fireEvent.input(input, { target: { value: 'Remember this draft' } });
+    setRows([
+      { rowId: 'other', cells: { title: 'Other record', status: 'Done' } },
+    ]);
+    setCards(['other']);
+    expect(
+      screen.getByRole('button', { name: 'Open Other record' })
+    ).toBeTruthy();
+    expect(
+      (
+        screen.getByRole('textbox', {
+          name: 'New record title',
+        }) as HTMLTextAreaElement
+      ).value
+    ).toBe('Remember this draft');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() =>
+      expect(onCreate).toHaveBeenCalledWith(
+        'done',
+        'Remember this draft',
+        expect.any(String)
+      )
+    );
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByRole('textbox', { name: 'New record title' })
+          .map((field) => (field as HTMLTextAreaElement).value)
+      ).toEqual(['Remember this draft', ''])
+    );
+  });
+
+  it('shows a submitted card in place while it saves and keeps its title when the save fails', async () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [{ id: 'done', label: 'Done', color: null }],
+      writable: true,
+    };
+    const [pending, setPending] = createSignal(new Set<string>());
+    let complete: (saved: boolean) => void = () => {};
+    const onCreate = vi.fn(
+      (_lane: string | null, _title: string, intentId: string) => {
+        setPending((ids) => new Set(ids).add(intentId));
+        return new Promise<boolean>((resolve) => {
+          complete = (saved) => {
+            setPending(
+              (ids) => new Set([...ids].filter((id) => id !== intentId))
+            );
+            resolve(saved);
+          };
+        });
+      }
+    );
+    render(() => (
+      <DatabaseBoard
+        rows={[]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+        ]}
+        board={{
+          lanes: [{ option: 'done', hidden: false, cards: [] }],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
+        canEdit
+        rowPending={() => false}
+        createPending={(id) => pending().has(id)}
+        onOpen={vi.fn()}
+        onMove={vi.fn()}
         onCreate={onCreate}
       />
     ));
     const lane = screen.getByRole('region', { name: 'Done lane' });
     fireEvent.click(within(lane).getByRole('button', { name: 'New record' }));
-    const input = within(lane).getByRole('textbox');
-    fireEvent.input(input, { target: { value: 'Needs detail' } });
-    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
-    expect(onCreate).toHaveBeenCalledWith(
-      'Done',
-      'Needs detail',
-      expect.any(String),
-      { open: true }
+    const input = screen.getByRole('textbox', { name: 'New record title' });
+    fireEvent.input(input, { target: { value: 'First idea' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    const saving = within(lane).getByRole('status', {
+      name: 'Saving new record',
+    });
+    expect(saving.textContent).toContain('First idea');
+    const next = within(lane).getByRole('textbox', {
+      name: 'New record title',
+    });
+    expect(
+      saving.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(within(lane).getByText('1')).toBeTruthy();
+    complete(false);
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByRole('textbox', { name: 'New record title' })
+          .map((field) => (field as HTMLTextAreaElement).value)
+      ).toEqual(['First idea', ''])
     );
-    expect(within(lane).queryByRole('textbox')).toBeNull();
   });
 
-  it('opens records for viewers without exposing move or create actions', () => {
+  it('starts a card in the first lane from the host controls', () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [
+        { id: 'todo', label: 'To do', color: null },
+        { id: 'done', label: 'Done', color: null },
+      ],
+      writable: true,
+    };
+    let addCard: () => boolean = () => false;
+    render(() => (
+      <DatabaseBoard
+        rows={[]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+        ]}
+        board={{
+          lanes: [
+            { option: 'done', hidden: false, cards: [] },
+            { option: 'todo', hidden: false, cards: [] },
+          ],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={vi.fn()}
+        onCreate={vi.fn(async () => true)}
+        controlsRef={(controls) => {
+          addCard = controls.addCard;
+        }}
+      />
+    ));
+    expect(addCard()).toBe(true);
+    expect(
+      within(screen.getByRole('region', { name: 'Done lane' })).getByRole(
+        'textbox',
+        { name: 'New record title' }
+      )
+    ).toBeTruthy();
+  });
+
+  it('opens records for viewers without exposing move, create or lane controls', () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [
+        { id: 'todo', label: 'To do', color: null },
+        { id: 'done', label: 'Done', color: null },
+      ],
+      writable: true,
+    };
     const onOpen = vi.fn();
     render(() => (
       <DatabaseBoard
-        rows={initialRows}
-        columns={columns}
-        groupColumn={columns[1]}
+        rows={[
+          {
+            rowId: 'launch',
+            cells: { title: 'Launch project', status: 'To do' },
+          },
+        ]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+        ]}
+        board={{
+          lanes: [
+            { option: 'todo', hidden: false, cards: ['launch'] },
+            { option: 'done', hidden: false, cards: [] },
+          ],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
         canEdit={false}
         rowPending={() => false}
         onOpen={onOpen}
-        onMove={vi.fn(async () => true)}
+        onMove={vi.fn()}
         onCreate={vi.fn(async () => true)}
+        onAddGroup={vi.fn(async () => ok(undefined))}
       />
     ));
     fireEvent.click(
@@ -503,209 +1488,13 @@ describe('database board', () => {
     ).toBeNull();
     expect(screen.queryByRole('button', { name: 'New record' })).toBeNull();
     expect(
+      screen.queryByRole('button', { name: 'Add record to Done' })
+    ).toBeNull();
+    expect(screen.queryByRole('button', { name: 'New group' })).toBeNull();
+    expect(
       within(screen.getByRole('region', { name: 'Done lane' })).getByText(
         'No records'
       )
     ).toBeTruthy();
-  });
-});
-
-it('shows a submitted card in place while it saves and keeps its title when the save fails', async () => {
-  const [pending, setPending] = createSignal(new Set<string>());
-  let complete: (saved: boolean) => void = () => {};
-  const onCreate = vi.fn((_value: unknown, _title: string, intent: string) => {
-    setPending((ids) => new Set(ids).add(intent));
-    return new Promise<boolean>((resolve) => {
-      complete = (saved) => {
-        setPending((ids) => new Set([...ids].filter((id) => id !== intent)));
-        resolve(saved);
-      };
-    });
-  });
-  render(() => (
-    <DatabaseBoard
-      rows={[]}
-      columns={columns}
-      groupColumn={columns[1]}
-      canEdit
-      rowPending={() => false}
-      createPending={(id) => pending().has(id)}
-      onOpen={vi.fn()}
-      onMove={vi.fn(async () => true)}
-      onCreate={onCreate}
-    />
-  ));
-  const lane = screen.getByRole('region', { name: 'Done lane' });
-  fireEvent.click(within(lane).getByRole('button', { name: 'New record' }));
-  const input = screen.getByRole('textbox', { name: 'New record title' });
-  fireEvent.input(input, { target: { value: 'First idea' } });
-  fireEvent.keyDown(input, { key: 'Enter' });
-  const saving = within(lane).getByRole('status', {
-    name: 'Saving new record',
-  });
-  expect(saving.textContent).toContain('First idea');
-  const next = within(lane).getByRole('textbox', { name: 'New record title' });
-  expect(
-    saving.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING
-  ).toBeTruthy();
-  expect(within(lane).getByText('1')).toBeTruthy();
-  complete(false);
-  await waitFor(() =>
-    expect(
-      screen
-        .getAllByRole('textbox', { name: 'New record title' })
-        .map((input) => (input as HTMLTextAreaElement).value)
-    ).toEqual(['First idea', ''])
-  );
-});
-
-it('reorders lanes with the keyboard while leaving every card value unchanged', () => {
-  const [order, setOrder] = createSignal<string[]>();
-  const move = vi.fn(async () => true);
-  render(() => (
-    <DatabaseBoard
-      rows={initialRows}
-      columns={columns}
-      groupColumn={columns[1]}
-      groupOrder={order()}
-      onGroupOrderChange={setOrder}
-      canEdit
-      rowPending={() => false}
-      onOpen={vi.fn()}
-      onMove={move}
-      onCreate={vi.fn(async () => true)}
-    />
-  ));
-  fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder Done lane' }), {
-    key: 'ArrowRight',
-    altKey: true,
-  });
-  expect(
-    [...document.querySelectorAll('[data-kanban-lane]')].map((lane) =>
-      lane.getAttribute('aria-label')
-    )
-  ).toEqual(['To do lane', 'Done lane', 'No status lane']);
-  expect(move).not.toHaveBeenCalled();
-});
-
-describe('multi-select board', () => {
-  it('shows a record in the lane of each of its values and an untagged record in the empty lane', () => {
-    const tags: DatabaseViewColumn = {
-      id: 'tags',
-      name: 'Tags',
-      dataType: 'SELECT_STRING',
-      isMultiSelect: true,
-      options: ['Bug', 'Feature', 'Docs'],
-      writable: true,
-    };
-    render(() => (
-      <DatabaseBoard
-        rows={[
-          {
-            rowId: 'login',
-            cells: { title: 'Fix login', tags: '["Bug","Feature"]' },
-          },
-          { rowId: 'idea', cells: { title: 'Loose idea', tags: '[]' } },
-        ]}
-        columns={[columns[0], tags]}
-        groupColumn={tags}
-        canEdit
-        rowPending={() => false}
-        onOpen={vi.fn()}
-        onMove={vi.fn(async () => true)}
-        onCreate={vi.fn(async () => true)}
-      />
-    ));
-    const cardsIn = (lane: string) =>
-      [
-        ...screen
-          .getByRole('region', { name: `${lane} lane` })
-          .querySelectorAll('[data-row-id]'),
-      ].map((card) => card.getAttribute('data-row-id'));
-    expect(cardsIn('Bug')).toEqual(['login']);
-    expect(cardsIn('Feature')).toEqual(['login']);
-    expect(cardsIn('Docs')).toEqual([]);
-    expect(cardsIn('No tags')).toEqual(['idea']);
-  });
-
-  it("draws each of a card's multi-select values as a coloured pill", () => {
-    const tags: DatabaseViewColumn = {
-      id: 'tags',
-      name: 'Tags',
-      dataType: 'SELECT_STRING',
-      isMultiSelect: true,
-      options: ['Bug', 'Feature'],
-      optionColors: { Bug: '#E5484D', Feature: '#46A758' },
-      writable: true,
-    };
-    render(() => (
-      <DatabaseBoard
-        rows={[
-          {
-            rowId: 'login',
-            cells: {
-              title: 'Fix login',
-              status: 'To do',
-              tags: '["Bug","Feature"]',
-            },
-          },
-        ]}
-        columns={[...columns, tags]}
-        groupColumn={columns[1]}
-        canEdit
-        rowPending={() => false}
-        onOpen={vi.fn()}
-        onMove={vi.fn(async () => true)}
-        onCreate={vi.fn(async () => true)}
-      />
-    ));
-    const card = screen.getByRole('button', { name: 'Open Fix login' });
-    const dot = (label: string) =>
-      within(card)
-        .getByTitle(label)
-        .querySelector<HTMLElement>('[data-slot="tag-dot"]')?.style
-        .backgroundColor;
-    expect(dot('Bug')).toBe('rgb(229, 72, 77)');
-    expect(dot('Feature')).toBe('rgb(70, 167, 88)');
-  });
-
-  it('moving a card out of one value lane replaces only that value', async () => {
-    const tags: DatabaseViewColumn = {
-      id: 'tags',
-      name: 'Tags',
-      dataType: 'SELECT_STRING',
-      isMultiSelect: true,
-      options: ['Bug', 'Feature', 'Docs'],
-      writable: true,
-    };
-    const onMove = vi.fn(async () => true);
-    render(() => (
-      <DatabaseBoard
-        rows={[
-          {
-            rowId: 'login',
-            cells: { title: 'Fix login', tags: '["Bug","Feature"]' },
-          },
-        ]}
-        columns={[columns[0], tags]}
-        groupColumn={tags}
-        canEdit
-        rowPending={() => false}
-        onOpen={vi.fn()}
-        onMove={onMove}
-        onCreate={vi.fn(async () => true)}
-      />
-    ));
-    const trigger = within(
-      screen.getByRole('region', { name: 'Feature lane' })
-    ).getByRole('button', { name: 'Move Fix login' });
-    trigger.focus();
-    fireEvent.keyDown(trigger, { key: 'Enter' });
-    fireEvent.keyDown(await screen.findByRole('menuitem', { name: 'Docs' }), {
-      key: 'Enter',
-    });
-    await waitFor(() =>
-      expect(onMove).toHaveBeenCalledWith('login', '["Bug","Docs"]')
-    );
   });
 });

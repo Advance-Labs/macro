@@ -3,6 +3,7 @@ import {
   MenuItem,
   MenuSeparator,
 } from '@core/component/ContextMenu';
+import type { SortKey } from '@core/database-sql/generated/types';
 import {
   getDisplayNameParts,
   getInitials,
@@ -44,10 +45,7 @@ import type {
   DatabaseColumnTypeChange,
   DatabaseSchemaChange,
 } from '../core/column-schema';
-import type {
-  DatabaseViewColumn,
-  DatabaseViewConfig,
-} from '../core/database-view';
+import type { DatabaseViewColumn } from '../core/database-view';
 import { canEditCell, type DatabaseRow } from '../core/table';
 import type { DatabaseColumnHeaderProps } from './database-column-header';
 import { DatabaseColumnHeader } from './database-column-header';
@@ -84,7 +82,10 @@ export function DatabaseTable(props: {
   remoteUsers?: DatabaseCellPresence[];
   /** Scrolled into view and briefly tinted, e.g. the target of a relation. */
   highlightRowId?: string;
-  view: DatabaseViewConfig;
+  sort: readonly SortKey[];
+  /** Each column's width in pixels; unset ones take the default. */
+  widths: Record<string, number | null>;
+  onResizeColumn?: (columnId: string, width: number) => void;
   canEdit: boolean;
   canCreateRecord: boolean;
   pending: boolean;
@@ -247,8 +248,24 @@ export function DatabaseTable(props: {
     props.remoteUsers?.filter(
       (user) => user.rowId === rowId && user.columnId === columnId
     ) ?? [];
+  const [resizing, setResizing] = createSignal<{
+    columnId: string;
+    width: number;
+  }>();
+  const widthOf = (columnId: string) =>
+    resizing()?.columnId === columnId
+      ? resizing()?.width
+      : (props.widths[columnId] ?? undefined);
   const template = () =>
-    `2.75rem ${props.columns.map((_, index) => (index === 0 ? 'min(var(--database-title-column-width, 18rem), max(9rem, calc(100cqw - 11.5rem)))' : '12rem')).join(' ')} ${props.canEdit ? '8.75rem' : ''}`;
+    `2.75rem ${props.columns
+      .map((column, index) => {
+        const width = widthOf(column.id);
+        if (width !== undefined) return `${width}px`;
+        return index === 0
+          ? 'min(var(--database-title-column-width, 18rem), max(9rem, calc(100cqw - 11.5rem)))'
+          : '12rem';
+      })
+      .join(' ')} ${props.canEdit ? '8.75rem' : ''}`;
   function moveFocus(event: KeyboardEvent) {
     if (
       event.defaultPrevented ||
@@ -500,10 +517,20 @@ export function DatabaseTable(props: {
                   onChangeType={props.onChangeColumnType}
                   onDelete={props.onDeleteColumn}
                   column={column()}
-                  sortDirection={
-                    props.view.sorts.find(
-                      (sort) => sort.columnId === column().id
-                    )?.direction
+                  sortDirection={sortDirection(props.sort, column().id)}
+                  resizeHandle={
+                    props.onResizeColumn ? (
+                      <ColumnResizeHandle
+                        label={`Resize ${column().name}`}
+                        onPreview={(width) =>
+                          setResizing({ columnId: column().id, width })
+                        }
+                        onCommit={(width) => {
+                          setResizing(undefined);
+                          props.onResizeColumn?.(column().id, width);
+                        }}
+                      />
+                    ) : undefined
                   }
                   canRename={props.canEdit}
                   onRename={props.onRenameColumn}
@@ -847,6 +874,60 @@ function PresenceTag(props: { user: DatabaseCellPresence }) {
     >
       {presenceName(props.user.userId)}
     </span>
+  );
+}
+
+function sortDirection(
+  sort: readonly SortKey[],
+  columnId: string
+): 'asc' | 'desc' | undefined {
+  const key = sort.find((entry) => entry.column === columnId);
+  if (!key) return undefined;
+  return key.direction === 'ascending' ? 'asc' : 'desc';
+}
+
+const MIN_COLUMN_WIDTH = 80;
+
+/** A header's right edge: drag it to set the column's width. */
+function ColumnResizeHandle(props: {
+  label: string;
+  onPreview: (width: number) => void;
+  onCommit: (width: number) => void;
+}) {
+  let start: { x: number; width: number } | undefined;
+  const widthAt = (event: PointerEvent) =>
+    Math.max(
+      MIN_COLUMN_WIDTH,
+      Math.round((start?.width ?? 0) + event.clientX - (start?.x ?? 0))
+    );
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={props.label}
+      class="absolute top-0 right-0 z-1 h-full w-1.5 cursor-col-resize touch-none hover:bg-accent/40"
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const header = event.currentTarget.parentElement;
+        start = {
+          x: event.clientX,
+          width: header?.getBoundingClientRect().width ?? MIN_COLUMN_WIDTH,
+        };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }}
+      onPointerMove={(event) => {
+        if (start) props.onPreview(widthAt(event));
+      }}
+      onPointerUp={(event) => {
+        if (!start) return;
+        props.onCommit(widthAt(event));
+        start = undefined;
+      }}
+      onMouseDown={(event) => event.stopPropagation()}
+      onDblClick={(event) => event.stopPropagation()}
+    />
   );
 }
 

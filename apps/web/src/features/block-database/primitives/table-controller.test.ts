@@ -50,6 +50,7 @@ function setup(onSaved?: Parameters<typeof createTableController>[1]) {
   const source: DatabaseRowsSource = {
     columns: () => [],
     snapshot: () => ({ ...snapshot(), retained: [] }),
+    read: () => undefined,
     loading: () => false,
     refreshing: () => false,
     error: () => undefined,

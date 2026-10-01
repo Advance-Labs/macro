@@ -1,3 +1,8 @@
+import type {
+  Catalog,
+  DatabaseView,
+  Outcome,
+} from '@core/database-sql/generated/types';
 import type { ResultError } from '@core/util/result';
 import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
 import type { ResultAsync } from 'neverthrow';
@@ -25,6 +30,10 @@ export type DatabaseWriteResult = {
 export type DatabaseRowsSource = {
   columns: Accessor<DatabaseViewColumn[]>;
   snapshot: Accessor<DatabaseRowsSnapshot | undefined>;
+  /** The view's last read as the engine answered it, with the search folded into the view it ran. */
+  read: Accessor<
+    { outcome: Outcome; catalog: Catalog; view: DatabaseView } | undefined
+  >;
   loading: Accessor<boolean>;
   refreshing: Accessor<boolean>;
   error: Accessor<DatabaseReadFailure | undefined>;

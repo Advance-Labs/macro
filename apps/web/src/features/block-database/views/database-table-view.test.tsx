@@ -1,3 +1,9 @@
+import type {
+  Board,
+  Catalog,
+  DatabaseView,
+  Outcome,
+} from '@core/database-sql/generated/types';
 import type { ResultError } from '@core/util/result';
 import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
 import {
@@ -25,17 +31,48 @@ import type {
   DatabaseRowsSource,
   DatabaseWriteResult,
 } from '../context/table-source';
-import {
-  type DatabaseViewColumn,
-  type DatabaseViewConfig,
-  defaultDatabaseView,
-} from '../core/database-view';
+import type { DatabaseViewColumn } from '../core/database-view';
 import type { DatabaseRow } from '../core/table';
+import { allRecordsView } from '../core/views';
 import type { DatabaseWriteFailure } from '../core/write-failure';
+import type { ViewChange } from '../queries/views';
+import type { BoardPositions } from './database-board-view';
 import {
   type DatabaseTableActions,
   DatabaseTableView,
 } from './database-table-view';
+
+// The real date selector opens the app's websockets on import.
+vi.mock('@property/editors/selectors/PropertyDateSelector', () => ({
+  PropertyDateSelector: () => null,
+}));
+vi.mock('@core/database-sql/wasm-module', () => ({
+  // Stands in for the engine's board: the layout's listed lanes, each holding
+  // the answered rows whose group cell names its option.
+  loadDatabaseSqlWasm: () =>
+    Promise.resolve({
+      board: (_catalog: Catalog, view: DatabaseView, outcome: Outcome) => {
+        const layout = view.layout;
+        if (layout.kind !== 'board') throw new Error('Not a board');
+        const group = outcome.columns.findIndex(
+          (column) => column.column === layout.groupBy
+        );
+        const board: Board = {
+          lanes: layout.lanes.map((lane) => ({
+            option: lane.option,
+            hidden: !!lane.hidden,
+            cards: outcome.rowIds.filter((_rowId, index) => {
+              const cell = outcome.rows[index][group];
+              const option =
+                cell?.type === 'options' ? (cell.value[0] ?? null) : null;
+              return option === lane.option;
+            }),
+          })),
+        };
+        return board;
+      },
+    }),
+}));
 
 const columns: DatabaseViewColumn[] = [
   {
@@ -51,10 +88,36 @@ const columns: DatabaseViewColumn[] = [
     name: 'Status',
     dataType: 'SELECT_STRING',
     isMultiSelect: false,
-    options: ['To do', 'Done'],
+    options: [
+      { id: 'todo', label: 'To do', color: null },
+      { id: 'done', label: 'Done', color: null },
+    ],
     writable: true,
   },
 ];
+
+const allRecords = allRecordsView({ id: 'projects', database_id: 'work' });
+
+const statusBoard: DatabaseView = {
+  ...allRecords,
+  layout: {
+    kind: 'board',
+    groupBy: 'status',
+    lanes: [
+      { option: 'done', hidden: false },
+      { option: 'todo', hidden: false },
+    ],
+    cardFields: [],
+    hideEmptyLanes: false,
+  },
+};
+
+/** Cards with no stored places: each lane keeps the rows' order. */
+const unplacedCards: BoardPositions = {
+  positions: () => [],
+  setPositions: () => {},
+  move: () => okAsync([]),
+};
 
 const lostConnection: DatabaseWriteFailure = {
   kind: 'ops',
@@ -86,6 +149,33 @@ function sourceFixture() {
         retainedIds()().includes(row.rowId)
       ),
     }),
+    read: () => {
+      const answered = answerView()(table().rows);
+      return {
+        catalog: { tables: [] },
+        view: allRecords,
+        outcome: {
+          columns: viewColumns().map((column) => ({
+            name: column.name,
+            column: column.id,
+            kind: 'select' as const,
+          })),
+          rows: answered.map((row) =>
+            viewColumns().map((column) => ({
+              type: 'options' as const,
+              value: column.options
+                .filter((option) => option.label === row.cells[column.id])
+                .map((option) => option.id),
+            }))
+          ),
+          rowIds: answered.map((row) => row.rowId),
+          readTables: [],
+          truncated: false,
+          insertedRowIds: [],
+          changesApplied: 0,
+        },
+      };
+    },
     loading: () => false,
     refreshing: () => false,
     error: () => undefined,
@@ -143,26 +233,6 @@ function persistWrites({
   });
 }
 
-function deferWrites(source: DatabaseRowsSource) {
-  const writes: {
-    resolve: () => void;
-    reject: (failure: DatabaseWriteFailure) => void;
-  }[] = [];
-  vi.mocked(source.write).mockImplementation(
-    (_mutation, version) =>
-      new ResultAsync(
-        new Promise((resolve) => {
-          writes.push({
-            resolve: () =>
-              resolve(ok({ version: (version ?? 0) + 1, insertedRowIds: [] })),
-            reject: (failure) => resolve(err(failure)),
-          });
-        })
-      )
-  );
-  return writes;
-}
-
 function columnOrderFixture() {
   const { source, setColumns } = sourceFixture();
   setColumns([
@@ -170,11 +240,21 @@ function columnOrderFixture() {
     { ...columns[0], id: 'notes', name: 'Notes' },
     { ...columns[0], id: 'owner', name: 'Owner' },
   ]);
-  const [view, setView] = createSignal<DatabaseViewConfig>({
-    ...defaultDatabaseView(),
-    hiddenColumns: ['status'],
+  const [view, setView] = createSignal<DatabaseView>({
+    ...allRecords,
+    layout: {
+      kind: 'table',
+      columns: [
+        { column: 'title', width: null, hidden: false },
+        { column: 'status', width: null, hidden: true },
+        { column: 'notes', width: null, hidden: false },
+        { column: 'owner', width: null, hidden: false },
+      ],
+    },
   });
-  const changeView = vi.fn((value: DatabaseViewConfig) => setView(value));
+  const changeView = vi.fn((change: ViewChange) =>
+    setView((current) => ({ ...current, ...change }))
+  );
   const requests: {
     resolve: () => void;
     reject: (errors: ResultError<DatabaseSchemaErrorCode>[]) => void;
@@ -197,6 +277,8 @@ function columnOrderFixture() {
       source={source}
       canEdit
       view={view()}
+      stored={false}
+      search=""
       onViewChange={changeView}
       onReorderColumns={reorder}
       addColumn={() => null}
@@ -232,81 +314,6 @@ function columnOrderFixture() {
   };
 }
 
-function cardPlacementFixture(sorted = false) {
-  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
-    function (this: HTMLElement) {
-      const lane = this.closest<HTMLElement>('[data-kanban-lane]');
-      if (!lane) return new DOMRect(0, 0, 1000, 800);
-      const x =
-        lane.getAttribute('aria-label') === 'Done lane'
-          ? 0
-          : lane.getAttribute('aria-label') === 'To do lane'
-            ? 320
-            : 640;
-      if (this.hasAttribute('data-kanban-card')) {
-        const index = [...lane.querySelectorAll('[data-kanban-card]')].indexOf(
-          this
-        );
-        return new DOMRect(x + 10, 70 + index * 120, 270, 100);
-      }
-      return new DOMRect(x, 20, 290, 500);
-    }
-  );
-  const fixture = sourceFixture();
-  fixture.setSnapshot({
-    version: 1,
-    rows: [
-      { rowId: 'alpha', cells: { title: 'Alpha', status: 'Done' } },
-      { rowId: 'zeta', cells: { title: 'Zeta', status: 'Done' } },
-      { rowId: 'row', cells: { title: 'Middle', status: 'To do' } },
-    ],
-  });
-  const [view, setView] = createSignal<DatabaseViewConfig>({
-    ...defaultDatabaseView(),
-    layout: 'board',
-    groupBy: 'status',
-    sorts: sorted ? [{ columnId: 'title', direction: 'desc' }] : [],
-  });
-  fixture.setAnswerView(
-    () => (rows: DatabaseRow[]) =>
-      view().sorts.length
-        ? [...rows].sort((a, b) =>
-            String(b.cells.title).localeCompare(String(a.cells.title))
-          )
-        : rows
-  );
-  render(() => (
-    <DatabaseTableView
-      name="Projects"
-      source={fixture.source}
-      canEdit
-      view={view()}
-      onViewChange={setView}
-      addColumn={() => null}
-    />
-  ));
-  const drop = (rowId: string, x: number, y: number) => {
-    const card = document.querySelector<HTMLElement>(
-      `[data-kanban-card="${rowId}"]`
-    )!;
-    const bounds = card.getBoundingClientRect();
-    fireEvent.mouseDown(card.querySelector('button')!, {
-      button: 0,
-      clientX: bounds.left + 30,
-      clientY: bounds.top + 30,
-    });
-    fireEvent.mouseMove(document, { clientX: x, clientY: y });
-    fireEvent.mouseUp(document, { button: 0, clientX: x, clientY: y });
-  };
-  const cards = (lane = 'Done') =>
-    [
-      ...screen
-        .getByRole('region', { name: `${lane} lane` })
-        .querySelectorAll<HTMLElement>('[data-kanban-card]'),
-    ].map((card) => card.dataset.kanbanCard);
-  return { ...fixture, view, setView, drop, cards };
-}
-
 beforeEach(() => {
   const style = document.createElement('style');
   style.textContent =
@@ -331,209 +338,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('manual board placement', () => {
-  it('places in the pointer gap immediately and preserves that position while the group save finishes', async () => {
-    const { source, view, drop, cards } = cardPlacementFixture(true);
-    let finish!: () => void;
-    vi.mocked(source.write).mockImplementation(
-      () =>
-        new ResultAsync(
-          new Promise((resolve) => {
-            finish = () => resolve(ok({ version: 2, insertedRowIds: [] }));
-          })
-        )
-    );
-    expect(cards()).toEqual(['zeta', 'alpha']);
-    drop('row', 100, 200);
-    expect(cards()).toEqual(['zeta', 'row', 'alpha']);
-    expect(view().sorts).toEqual([]);
-    await waitFor(() => expect(source.write).toHaveBeenCalledOnce());
-    // The optimistic card can be moved again before its first write completes.
-    drop('row', 100, 75);
-    expect(cards()).toEqual(['row', 'zeta', 'alpha']);
-    finish();
-    await waitFor(() =>
-      expect(
-        document
-          .querySelector('[data-kanban-card="row"]')
-          ?.getAttribute('aria-busy')
-      ).toBe('false')
-    );
-    expect(cards()).toEqual(['row', 'zeta', 'alpha']);
-    expect(source.write).toHaveBeenCalledOnce();
-  });
-
-  it('reorders inside a lane without changing record values', () => {
-    const { source, view, drop, cards } = cardPlacementFixture();
-    drop('zeta', 100, 75);
-    expect(cards()).toEqual(['zeta', 'alpha']);
-    expect(view().cardOrder?.['value:"Done"']).toEqual(['zeta', 'alpha']);
-    expect(source.write).not.toHaveBeenCalled();
-  });
-
-  it('keeps the latest destination when the same pending card is dragged again', async () => {
-    const { source, drop, cards } = cardPlacementFixture();
-    const saves: (() => void)[] = [];
-    vi.mocked(source.write).mockImplementation(
-      (_mutation, version) =>
-        new ResultAsync(
-          new Promise((resolve) => {
-            saves.push(() =>
-              resolve(ok({ version: (version ?? 0) + 1, insertedRowIds: [] }))
-            );
-          })
-        )
-    );
-    drop('row', 100, 200);
-    await waitFor(() => expect(source.write).toHaveBeenCalledOnce());
-    drop('row', 400, 80);
-    expect(cards('To do')).toEqual(['row']);
-    expect(cards()).toEqual(['alpha', 'zeta']);
-    saves[0]();
-    await waitFor(() => expect(source.write).toHaveBeenCalledTimes(2));
-    expect(cards('To do')).toEqual(['row']);
-    saves[1]();
-    await waitFor(() =>
-      expect(
-        document
-          .querySelector('[data-kanban-card="row"]')
-          ?.getAttribute('aria-busy')
-      ).toBe('false')
-    );
-    expect(cards('To do')).toEqual(['row']);
-    expect(
-      vi
-        .mocked(source.write)
-        .mock.calls.map(([mutation, version]) => [
-          mutation.kind === 'cell' && mutation.value,
-          version,
-        ])
-    ).toEqual([
-      ['Done', 1],
-      ['To do', 2],
-    ]);
-  });
-
-  it('restores the original lane and ordering when a cross-lane write fails', async () => {
-    const { source, view, drop, cards } = cardPlacementFixture(true);
-    vi.mocked(source.write).mockReturnValue(errAsync(lostConnection));
-    drop('row', 100, 200);
-    expect(cards()).toEqual(['zeta', 'row', 'alpha']);
-    await screen.findByRole('alert');
-    await waitFor(() => expect(cards('To do')).toEqual(['row']));
-    expect(cards()).toEqual(['zeta', 'alpha']);
-    expect(view().sorts).toEqual([{ columnId: 'title', direction: 'desc' }]);
-    expect(view().cardOrder).toBeUndefined();
-  });
-
-  it('restores the original sort and stored positions when every queued move fails', async () => {
-    const { source, view, setView, drop, cards } = cardPlacementFixture(true);
-    const originalOrder = {
-      'value:"Done"': ['alpha', 'hidden', 'zeta'],
-      'value:"To do"': ['row'],
-    };
-    setView((view) => ({ ...view, cardOrder: originalOrder }));
-    const writes = deferWrites(source);
-    drop('row', 100, 200);
-    await waitFor(() => expect(writes).toHaveLength(1));
-    drop('row', 400, 80);
-    writes[0].reject(lostConnection);
-    await waitFor(() => expect(writes).toHaveLength(2));
-    expect(view().sorts).toEqual([]);
-    writes[1].reject(lostConnection);
-    await waitFor(() =>
-      expect(view().sorts).toEqual([{ columnId: 'title', direction: 'desc' }])
-    );
-    expect(view().cardOrder).toEqual(originalOrder);
-    expect(cards()).toEqual(['zeta', 'alpha']);
-    expect(cards('To do')).toEqual(['row']);
-  });
-
-  it('restores the last successful move when a later queued move fails', async () => {
-    const { source, view, drop, cards } = cardPlacementFixture(true);
-    const writes = deferWrites(source);
-    drop('row', 100, 200);
-    const savedOrder = view().cardOrder;
-    await waitFor(() => expect(writes).toHaveLength(1));
-    drop('row', 400, 80);
-    writes[0].resolve();
-    await waitFor(() => expect(writes).toHaveLength(2));
-    writes[1].reject(lostConnection);
-    await waitFor(() => expect(view().cardOrder).toBe(savedOrder));
-    expect(view().sorts).toEqual([]);
-    expect(cards()).toEqual(['zeta', 'row', 'alpha']);
-    expect(cards('To do')).toEqual([]);
-  });
-
-  it('keeps a newer same-lane placement after an older success and a later failed move', async () => {
-    const { source, view, drop, cards } = cardPlacementFixture(true);
-    const writes = deferWrites(source);
-    drop('row', 100, 200);
-    await waitFor(() => expect(writes).toHaveLength(1));
-    drop('row', 100, 75);
-    const manualOrder = view().cardOrder;
-    expect(cards()).toEqual(['row', 'zeta', 'alpha']);
-    drop('row', 400, 80);
-    writes[0].resolve();
-    await waitFor(() => expect(writes).toHaveLength(2));
-    writes[1].reject(lostConnection);
-    await waitFor(() => expect(view().cardOrder).toBe(manualOrder));
-    expect(view().sorts).toEqual([]);
-    expect(cards()).toEqual(['row', 'zeta', 'alpha']);
-  });
-
-  it('preserves grouping changed while queued moves fail', async () => {
-    const { source, view, setView, setColumns, drop } =
-      cardPlacementFixture(true);
-    setColumns([
-      ...columns,
-      { ...columns[1], id: 'priority', name: 'Priority' },
-    ]);
-    const writes = deferWrites(source);
-    drop('row', 100, 200);
-    await waitFor(() => expect(writes).toHaveLength(1));
-    drop('row', 400, 80);
-    setView((view) => ({ ...view, groupBy: 'priority', cardOrder: undefined }));
-    writes[0].reject(lostConnection);
-    await waitFor(() => expect(writes).toHaveLength(2));
-    writes[1].reject(lostConnection);
-    await waitFor(() =>
-      expect(
-        document
-          .querySelector('[data-kanban-card="row"]')
-          ?.getAttribute('aria-busy')
-      ).toBe('false')
-    );
-    expect(view().groupBy).toBe('priority');
-    expect(view().sorts).toEqual([]);
-    expect(view().cardOrder).toBeUndefined();
-  });
-
-  it('preserves a sort selected while an earlier card move fails', async () => {
-    const { source, view, setView, drop } = cardPlacementFixture();
-    let settle!: (
-      result: Result<DatabaseWriteResult, DatabaseWriteFailure>
-    ) => void;
-    vi.mocked(source.write).mockImplementation(
-      () =>
-        new ResultAsync(
-          new Promise((resolve) => {
-            settle = resolve;
-          })
-        )
-    );
-    drop('row', 100, 200);
-    await waitFor(() => expect(source.write).toHaveBeenCalledOnce());
-    setView((view) => ({
-      ...view,
-      sorts: [{ columnId: 'title', direction: 'asc' }],
-    }));
-    settle(err(lostConnection));
-    await screen.findByRole('alert');
-    expect(view().sorts).toEqual([{ columnId: 'title', direction: 'asc' }]);
-  });
-});
-
 describe('database table view', () => {
   it('offers refresh and draft recovery after a lost create response without a duplicate Retry', async () => {
     const fixture = sourceFixture();
@@ -554,7 +358,9 @@ describe('database table view', () => {
         name="Projects"
         source={fixture.source}
         canEdit
-        view={defaultDatabaseView()}
+        view={allRecords}
+        stored={false}
+        search=""
         addColumn={() => null}
       />
     ));
@@ -596,7 +402,9 @@ describe('database table view', () => {
         name="Projects"
         source={fixture.source}
         canEdit
-        view={defaultDatabaseView()}
+        view={allRecords}
+        stored={false}
+        search=""
         addColumn={() => null}
       />
     ));
@@ -613,7 +421,7 @@ describe('database table view', () => {
     expect(input.selectionEnd).toBe(input.value.length);
     fireEvent.input(input, { target: { value: 'Launch plan' } });
     fireEvent.keyDown(input, { key: 'Tab' });
-    await screen.findByRole('menuitem', { name: 'Done' });
+    await screen.findByRole('option', { name: 'Done' });
     await waitFor(() =>
       expect(fixture.source.write).toHaveBeenCalledWith(
         { kind: 'cell', rowId: 'row', columnId: 'title', value: 'Launch plan' },
@@ -635,7 +443,9 @@ describe('database table view', () => {
         name="Projects"
         source={source}
         canEdit
-        view={defaultDatabaseView()}
+        view={allRecords}
+        stored={false}
+        search=""
         addColumn={() => null}
       />
     ));
@@ -657,7 +467,9 @@ describe('database table view', () => {
         name="Projects"
         source={source}
         canEdit={false}
-        view={defaultDatabaseView()}
+        view={allRecords}
+        stored={false}
+        search=""
         addColumn={() => null}
       />
     ));
@@ -697,22 +509,20 @@ describe('database table view', () => {
           name="Projects"
           source={fixture.source}
           canEdit
-          view={defaultDatabaseView()}
+          view={allRecords}
+          stored={false}
+          search=""
           addColumn={() => null}
         />
       ));
       fireEvent.click(screen.getByRole('button', { name: 'Open Plan launch' }));
       const dialog = await screen.findByRole('dialog', { name: 'Plan launch' });
       if (kind === 'option') {
-        await userEvent.click(
+        fireEvent.click(
           within(dialog).getByRole('button', { name: 'Status: To do' })
         );
-        fireEvent.keyDown(
-          await screen.findByRole('menuitem', { name: 'Add option' }),
-          { key: 'Enter' }
-        );
-        const input = await screen.findByRole('textbox', {
-          name: 'New option',
+        const input = await screen.findByRole('combobox', {
+          name: 'Search Status options',
         });
         fireEvent.input(input, { target: { value: 'Unsubmitted option' } });
       } else {
@@ -733,7 +543,7 @@ describe('database table view', () => {
       );
       await screen.findByRole('dialog', { name: 'Next project' });
       expect(
-        within(dialog).queryByRole('textbox', { name: 'New option' })
+        screen.queryByRole('combobox', { name: 'Search Status options' })
       ).toBeNull();
       expect(
         within(dialog).queryByRole('textbox', { name: 'Edit Amount' })
@@ -765,7 +575,9 @@ describe('database table view', () => {
         name="Projects"
         source={fixture.source}
         canEdit
-        view={defaultDatabaseView()}
+        view={allRecords}
+        stored={false}
+        search=""
         addColumn={() => null}
       />
     ));
@@ -808,7 +620,9 @@ describe('database table view', () => {
           name="Projects"
           source={fixture.source}
           canEdit
-          view={defaultDatabaseView()}
+          view={allRecords}
+          stored={false}
+          search=""
           addColumn={() => null}
           renderToolbar={(ready) => {
             actions = ready;
@@ -835,7 +649,7 @@ describe('database table view', () => {
       columns[0],
       { ...columns[0], id: 'notes', name: 'Notes' },
     ]);
-    const [view, setView] = createSignal(defaultDatabaseView());
+    const [view, setView] = createSignal(allRecords);
     const reorder = vi.fn((_order: string[]) => okAsync(undefined));
     const createColumn = vi.fn(() => {
       fixture.setColumns([
@@ -851,7 +665,11 @@ describe('database table view', () => {
         source={fixture.source}
         canEdit
         view={view()}
-        onViewChange={setView}
+        stored={false}
+        search=""
+        onViewChange={(change) =>
+          setView((current) => ({ ...current, ...change }))
+        }
         onReorderColumns={reorder}
         onRenameColumn={vi.fn(() => okAsync(undefined))}
         createColumn={createColumn}
@@ -870,7 +688,14 @@ describe('database table view', () => {
       expect(reorder).toHaveBeenCalledWith(['title', 'added', 'notes'])
     );
     expect(createColumn).toHaveBeenCalledOnce();
-    expect(view().columnOrder).toEqual(['title', 'added', 'notes']);
+    expect(view().layout).toEqual({
+      kind: 'table',
+      columns: [
+        { column: 'title', width: null, hidden: false },
+        { column: 'added', width: null, hidden: false },
+        { column: 'notes', width: null, hidden: false },
+      ],
+    });
     const nameField = await screen.findByLabelText('Column name');
     expect((nameField as HTMLInputElement).value).toBe('Column 3');
   });
@@ -889,7 +714,9 @@ describe('database table view', () => {
         name="Projects"
         source={fixture.source}
         canEdit
-        view={defaultDatabaseView()}
+        view={allRecords}
+        stored={false}
+        search=""
         addColumn={() => null}
       />
     ));
@@ -924,7 +751,9 @@ describe('database table view', () => {
         name="Projects"
         source={fixture.source}
         canEdit
-        view={defaultDatabaseView()}
+        view={allRecords}
+        stored={false}
+        search=""
         addColumn={() => null}
         renderToolbar={(ready) => {
           actions = ready;
@@ -951,7 +780,9 @@ describe('database table view', () => {
         name="Projects"
         source={fixture.source}
         canEdit
-        view={{ ...defaultDatabaseView(), layout: 'board' }}
+        view={statusBoard}
+        stored
+        search=""
         addColumn={() => null}
         renderToolbar={(ready) => {
           actions = ready;
@@ -973,7 +804,9 @@ describe('database table view', () => {
         name="Projects"
         source={fixture.source}
         canEdit
-        view={defaultDatabaseView()}
+        view={allRecords}
+        stored={false}
+        search=""
         addColumn={() => null}
         renderToolbar={(ready) => {
           actions = ready;
@@ -1000,7 +833,9 @@ describe('database table view', () => {
         source={fixture.source}
         canEdit
         onRenameColumn={vi.fn(() => okAsync(undefined))}
-        view={defaultDatabaseView()}
+        view={allRecords}
+        stored={false}
+        search=""
         addColumn={() => null}
         renderToolbar={(value) => {
           actions = value;
@@ -1068,7 +903,9 @@ describe('database table view', () => {
         name="Projects"
         source={fixture.source}
         canEdit
-        view={defaultDatabaseView()}
+        view={allRecords}
+        stored={false}
+        search=""
         addColumn={() => null}
       />
     ));
@@ -1119,7 +956,9 @@ describe('database table view', () => {
         name="Projects"
         source={fixture.source}
         canEdit
-        view={defaultDatabaseView()}
+        view={allRecords}
+        stored={false}
+        search=""
         addColumn={() => null}
       />
     ));
@@ -1173,16 +1012,15 @@ describe('database table view', () => {
           name="Projects"
           source={fixture.source}
           canEdit
-          view={{
-            ...defaultDatabaseView(),
-            layout: 'board',
-            groupBy: 'status',
-          }}
+          view={statusBoard}
+          stored
+          search=""
+          boardPositions={unplacedCards}
           addColumn={() => <button type="button">Add column</button>}
         />
       ));
       fireEvent.click(
-        screen.getByRole('button', { name: 'Add record to Done' })
+        await screen.findByRole('button', { name: 'Add record to Done' })
       );
       const draft = screen.getByRole('textbox', { name: 'New record title' });
       fireEvent.input(draft, { target: { value: 'One new card' } });
@@ -1260,17 +1098,17 @@ describe('database table view', () => {
         name="Projects"
         source={fixture.source}
         canEdit
-        view={{
-          ...defaultDatabaseView(),
-          layout: 'board',
-          groupBy: 'status',
-          search: 'launch',
-        }}
+        view={statusBoard}
+        stored
+        search="launch"
+        boardPositions={unplacedCards}
         onViewChange={changeView}
         addColumn={() => <button type="button">Add column</button>}
       />
     ));
-    fireEvent.click(screen.getByRole('button', { name: 'Add record to Done' }));
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Add record to Done' })
+    );
     const draft = screen.getByRole('textbox', { name: 'New record title' });
     fireEvent.input(draft, { target: { value: 'Write announcement' } });
     fireEvent.keyDown(draft, { key: 'Enter' });
@@ -1304,65 +1142,6 @@ describe('database table view', () => {
     expect(fixture.source.write).toHaveBeenCalledTimes(1);
   });
 
-  it('explains a card moved outside filters and lets the user reopen it without clearing them', async () => {
-    const fixture = sourceFixture();
-    fixture.setAnswerView(
-      () => (rows: DatabaseRow[]) =>
-        rows.filter((row) => row.cells.status === 'To do')
-    );
-    persistWrites(fixture);
-    const changeView = vi.fn();
-    render(() => (
-      <DatabaseTableView
-        name="Projects"
-        source={fixture.source}
-        canEdit
-        view={{
-          ...defaultDatabaseView(),
-          layout: 'board',
-          groupBy: 'status',
-          filters: [
-            {
-              id: 'filter',
-              columnId: 'status',
-              operator: 'equals',
-              value: 'To do',
-            },
-          ],
-        }}
-        onViewChange={changeView}
-        addColumn={() => <button type="button">Add column</button>}
-      />
-    ));
-    fireEvent.keyDown(
-      screen.getByRole('button', { name: 'Move Plan launch' }),
-      { key: 'Enter' }
-    );
-    fireEvent.keyDown(await screen.findByRole('menuitem', { name: 'Done' }), {
-      key: 'Enter',
-    });
-    await screen.findByText('Record saved outside this view');
-    expect(
-      screen.queryByRole('button', { name: 'Open Plan launch' })
-    ).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Open record' }));
-    const dialog = await screen.findByRole('dialog');
-    expect(
-      within(dialog).getByRole('heading', { name: 'Plan launch' })
-    ).toBeTruthy();
-    expect(
-      within(dialog).getByText(
-        'This record doesn’t match your filters. You can keep editing it here.'
-      )
-    ).toBeTruthy();
-    expect(changeView).not.toHaveBeenCalled();
-    expect(fixture.source.write).toHaveBeenCalledExactlyOnceWith(
-      { kind: 'cell', rowId: 'row', columnId: 'status', value: 'Done' },
-      1,
-      false
-    );
-  });
-
   it('keeps editing a record that stops matching search and removes the explanation when it matches again', async () => {
     const fixture = sourceFixture();
     fixture.setAnswerView(() => titleContains('launch'));
@@ -1372,7 +1151,9 @@ describe('database table view', () => {
         name="Projects"
         source={fixture.source}
         canEdit
-        view={{ ...defaultDatabaseView(), search: 'launch' }}
+        view={allRecords}
+        stored={false}
+        search="launch"
         addColumn={() => <button type="button">Add column</button>}
       />
     ));
@@ -1418,7 +1199,9 @@ describe('database table view', () => {
         name="Projects"
         source={source}
         canEdit
-        view={{ ...defaultDatabaseView(), search: 'launch' }}
+        view={allRecords}
+        stored={false}
+        search="launch"
         addColumn={() => <button type="button">Add column</button>}
       />
     ));
@@ -1440,57 +1223,6 @@ describe('database table view', () => {
     expect(source.write).toHaveBeenCalledTimes(1);
   });
 
-  it('does not announce a failed move as saved and reveals it only after a successful Retry', async () => {
-    const fixture = sourceFixture();
-    fixture.setAnswerView(
-      () => (rows: DatabaseRow[]) =>
-        rows.filter((row) => row.cells.status === 'To do')
-    );
-    persistWrites(fixture);
-    vi.mocked(fixture.source.write).mockReturnValueOnce(
-      errAsync(lostConnection)
-    );
-    const changeView = vi.fn();
-    render(() => (
-      <DatabaseTableView
-        name="Projects"
-        source={fixture.source}
-        canEdit
-        view={{
-          ...defaultDatabaseView(),
-          layout: 'board',
-          groupBy: 'status',
-          filters: [
-            {
-              id: 'filter',
-              columnId: 'status',
-              operator: 'equals',
-              value: 'To do',
-            },
-          ],
-        }}
-        onViewChange={changeView}
-        addColumn={() => <button type="button">Add column</button>}
-      />
-    ));
-    fireEvent.keyDown(
-      screen.getByRole('button', { name: 'Move Plan launch' }),
-      { key: 'Enter' }
-    );
-    fireEvent.keyDown(await screen.findByRole('menuitem', { name: 'Done' }), {
-      key: 'Enter',
-    });
-    await screen.findByRole('alert');
-    expect(screen.queryByText('Record saved outside this view')).toBeNull();
-    expect(
-      await screen.findByRole('button', { name: 'Open Plan launch' })
-    ).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    await screen.findByText('Record saved outside this view');
-    expect(fixture.source.write).toHaveBeenCalledTimes(2);
-    expect(changeView).not.toHaveBeenCalled();
-  });
-
   it.each([
     { kind: 'editable title', schema: columns, editsTitle: true },
     {
@@ -1510,7 +1242,9 @@ describe('database table view', () => {
           name="Projects"
           source={fixture.source}
           canEdit
-          view={defaultDatabaseView()}
+          view={allRecords}
+          stored={false}
+          search=""
           addColumn={() => null}
           renderToolbar={(actions) => (
             <button type="button" onClick={() => void actions.createRecord()}>
@@ -1521,8 +1255,8 @@ describe('database table view', () => {
       ));
       fireEvent.click(screen.getByRole('button', { name: 'New record' }));
       expect(fixture.source.write).not.toHaveBeenCalled();
-      expect(screen.queryByRole('dialog')).toBeNull();
       if (editsTitle) {
+        expect(screen.queryByRole('dialog')).toBeNull();
         const name = await screen.findByRole('textbox', { name: 'Edit Name' });
         await waitFor(() => expect(document.activeElement).toBe(name));
         expect((name as HTMLInputElement).value).toBe('');
@@ -1531,10 +1265,12 @@ describe('database table view', () => {
         fireEvent.keyDown(name, { key: 'Enter' });
       } else {
         expect(screen.queryByRole('textbox', { name: /^Edit / })).toBeNull();
-        fireEvent.keyDown(
-          await screen.findByRole('menuitem', { name: 'Done' }),
-          { key: 'Enter' }
-        );
+        const picker = await screen.findByRole('combobox', {
+          name: 'Search Status options',
+        });
+        // The only dialog is the cell's option picker, not a record panel.
+        expect(screen.getByRole('dialog').contains(picker)).toBe(true);
+        fireEvent.click(screen.getByRole('option', { name: 'Done' }));
       }
       await waitFor(() =>
         expect(fixture.source.write).toHaveBeenCalledExactlyOnceWith(
@@ -1558,7 +1294,9 @@ describe('database table view', () => {
           name="Projects"
           source={source}
           canEdit
-          view={defaultDatabaseView()}
+          view={allRecords}
+          stored={false}
+          search=""
           addColumn={() => <button type="button">Add property</button>}
         />
       ));
@@ -1592,24 +1330,22 @@ describe('database table view', () => {
     }
   );
 
-  it('keeps the title property for card titles and new writes when it is hidden from metadata', async () => {
+  it('keeps the title property for card titles and new writes when cards show no other fields', async () => {
     const { source } = sourceFixture();
     render(() => (
       <DatabaseTableView
         name="Projects"
         source={source}
         canEdit
-        view={{
-          ...defaultDatabaseView(),
-          layout: 'board',
-          groupBy: 'status',
-          hiddenColumns: ['title'],
-        }}
+        view={statusBoard}
+        stored
+        search=""
+        boardPositions={unplacedCards}
         addColumn={() => <button type="button">Add property</button>}
       />
     ));
     expect(
-      screen.getByRole('button', { name: 'Open Plan launch' })
+      await screen.findByRole('button', { name: 'Open Plan launch' })
     ).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Add record to Done' }));
     const draft = screen.getByRole('textbox', { name: 'New record title' });
@@ -1628,34 +1364,23 @@ describe('database table view', () => {
     {
       dataType: 'SELECT_STRING',
       name: 'Status',
-      options: ['Done'],
-      lane: 'Done',
-      value: 'Done',
+      option: { id: 'done', label: 'Done', color: null },
     },
     {
       dataType: 'SELECT_NUMBER',
       name: 'Priority',
-      options: ['2'],
-      lane: '2',
-      value: '2',
-    },
-    {
-      dataType: 'BOOLEAN',
-      name: 'Complete',
-      options: [],
-      lane: 'Checked',
-      value: 1,
+      option: { id: 'two', label: '2', color: null },
     },
   ])(
     'creates a $dataType-only card without writing a title into its grouping field',
-    async ({ dataType, name, options, lane, value }) => {
+    async ({ dataType, name, option }) => {
       const { source, setColumns, setSnapshot } = sourceFixture();
       setColumns([
         {
           id: 'group',
           name,
           dataType,
-          options,
+          options: [option],
           isMultiSelect: false,
           writable: true,
         },
@@ -1666,12 +1391,26 @@ describe('database table view', () => {
           name="Projects"
           source={source}
           canEdit
-          view={{ ...defaultDatabaseView(), layout: 'board', groupBy: 'group' }}
+          view={{
+            ...allRecords,
+            layout: {
+              kind: 'board',
+              groupBy: 'group',
+              lanes: [{ option: option.id, hidden: false }],
+              cardFields: [],
+              hideEmptyLanes: false,
+            },
+          }}
+          stored
+          search=""
+          boardPositions={unplacedCards}
           addColumn={() => <button type="button">Add property</button>}
         />
       ));
       fireEvent.click(
-        screen.getByRole('button', { name: `Add record to ${lane}` })
+        await screen.findByRole('button', {
+          name: `Add record to ${option.label}`,
+        })
       );
       expect(
         screen.queryByRole('textbox', { name: 'New record title' })
@@ -1679,7 +1418,7 @@ describe('database table view', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Add record' }));
       await waitFor(() =>
         expect(source.write).toHaveBeenCalledWith(
-          { kind: 'create', values: { group: value } },
+          { kind: 'create', values: { group: option.label } },
           1,
           false
         )
@@ -1694,7 +1433,10 @@ describe('database table view', () => {
         name="Projects"
         source={source}
         canEdit
-        view={{ ...defaultDatabaseView(), layout: 'board', groupBy: 'status' }}
+        view={statusBoard}
+        stored
+        search=""
+        boardPositions={unplacedCards}
         addColumn={() => <button type="button">Add property</button>}
         renderToolbar={(actions) => (
           <button type="button" onClick={() => void actions.createRecord()}>
@@ -1703,6 +1445,7 @@ describe('database table view', () => {
         )}
       />
     ));
+    await screen.findByRole('region', { name: 'Done lane' });
     fireEvent.click(screen.getByText('New record', { selector: 'button' }));
     const lanes = screen.getAllByRole('region');
     expect(lanes[0].getAttribute('aria-label')).toBe('Done lane');
@@ -1735,11 +1478,16 @@ describe('database table view', () => {
         name="Projects"
         source={source}
         canEdit
-        view={{ ...defaultDatabaseView(), layout: 'board', groupBy: 'status' }}
+        view={statusBoard}
+        stored
+        search=""
+        boardPositions={unplacedCards}
         addColumn={() => <button type="button">Add property</button>}
       />
     ));
-    fireEvent.click(screen.getByRole('button', { name: 'Add record to Done' }));
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Add record to Done' })
+    );
     expect(
       screen.queryByRole('textbox', { name: 'New record title' })
     ).toBeNull();
@@ -1761,7 +1509,9 @@ describe('database table view', () => {
         name="Projects"
         source={source}
         canEdit
-        view={defaultDatabaseView()}
+        view={allRecords}
+        stored={false}
+        search=""
         addColumn={() => <button type="button">Add property</button>}
       />
     ));
@@ -1794,7 +1544,9 @@ describe('database table view', () => {
         name="Projects"
         source={source}
         canEdit
-        view={defaultDatabaseView()}
+        view={allRecords}
+        stored={false}
+        search=""
         addColumn={(label) => (
           <button type="button">{label ?? 'Add property'}</button>
         )}
@@ -1822,7 +1574,9 @@ describe('database table view', () => {
         name="Projects"
         source={source}
         canEdit
-        view={defaultDatabaseView()}
+        view={allRecords}
+        stored={false}
+        search=""
         addColumn={() => <button type="button">Add property</button>}
       />
     ));
@@ -1852,7 +1606,9 @@ describe('database table view', () => {
         name="Projects"
         source={source}
         canEdit
-        view={defaultDatabaseView()}
+        view={allRecords}
+        stored={false}
+        search=""
         onViewChange={changeView}
         addColumn={() => <button type="button">Add column</button>}
         renderToolbar={(actions) => (
@@ -1876,8 +1632,10 @@ describe('database table view', () => {
       { key: 'Enter' }
     );
     expect(changeView).toHaveBeenCalledWith({
-      ...defaultDatabaseView(),
-      sorts: [{ columnId: 'title', direction: 'desc' }],
+      query: {
+        filter: null,
+        sort: [{ column: 'title', direction: 'descending' }],
+      },
     });
     fireEvent.click(
       await screen.findByRole('button', { name: 'Create from toolbar' })
@@ -1899,9 +1657,16 @@ describe('database table view', () => {
   it('persists menu moves at the neighboring visible edge in both directions', async () => {
     const { source, setColumns } = sourceFixture();
     setColumns([...columns, { ...columns[0], id: 'notes', name: 'Notes' }]);
-    const [view, setView] = createSignal({
-      ...defaultDatabaseView(),
-      hiddenColumns: ['status'],
+    const [view, setView] = createSignal<DatabaseView>({
+      ...allRecords,
+      layout: {
+        kind: 'table',
+        columns: [
+          { column: 'title', width: null, hidden: false },
+          { column: 'status', width: null, hidden: true },
+          { column: 'notes', width: null, hidden: false },
+        ],
+      },
     });
     const reorder = vi.fn((_order: string[]) => okAsync(undefined));
     render(() => (
@@ -1910,7 +1675,11 @@ describe('database table view', () => {
         source={source}
         canEdit
         view={view()}
-        onViewChange={setView}
+        stored={false}
+        search=""
+        onViewChange={(change) =>
+          setView((current) => ({ ...current, ...change }))
+        }
         onReorderColumns={reorder}
         addColumn={() => null}
       />
@@ -1931,19 +1700,84 @@ describe('database table view', () => {
     };
     await moveName('right');
     await waitFor(() =>
-      expect(view().columnOrder).toEqual(['notes', 'status', 'title'])
+      expect(view().layout).toEqual({
+        kind: 'table',
+        columns: [
+          { column: 'notes', width: null, hidden: false },
+          { column: 'status', width: null, hidden: true },
+          { column: 'title', width: null, hidden: false },
+        ],
+      })
     );
     await waitFor(() =>
       expect(reorder).toHaveBeenNthCalledWith(1, ['notes', 'status', 'title'])
     );
     await moveName('left');
     await waitFor(() =>
-      expect(view().columnOrder).toEqual(['title', 'status', 'notes'])
+      expect(view().layout).toEqual({
+        kind: 'table',
+        columns: [
+          { column: 'title', width: null, hidden: false },
+          { column: 'status', width: null, hidden: true },
+          { column: 'notes', width: null, hidden: false },
+        ],
+      })
     );
     await waitFor(() =>
       expect(reorder).toHaveBeenNthCalledWith(2, ['title', 'status', 'notes'])
     );
     expect(source.write).not.toHaveBeenCalled();
+  });
+
+  it('moves the columns of a stored view in its own layout without reordering the table', async () => {
+    const { source, setColumns } = sourceFixture();
+    setColumns([...columns, { ...columns[0], id: 'notes', name: 'Notes' }]);
+    const changeView = vi.fn();
+    const reorder = vi.fn((_order: string[]) => okAsync(undefined));
+    render(() => (
+      <DatabaseTableView
+        name="Projects"
+        source={source}
+        canEdit
+        view={{
+          ...allRecords,
+          id: 'by-status',
+          name: 'By status',
+          layout: {
+            kind: 'table',
+            columns: [
+              { column: 'title', width: 240, hidden: false },
+              { column: 'status', width: null, hidden: false },
+              { column: 'notes', width: null, hidden: false },
+            ],
+          },
+        }}
+        stored
+        search=""
+        onViewChange={changeView}
+        onReorderColumns={reorder}
+        addColumn={() => null}
+      />
+    ));
+    fireEvent.keyDown(
+      screen.getByRole('button', { name: 'Name column menu' }),
+      { key: 'Enter' }
+    );
+    fireEvent.keyDown(
+      await screen.findByRole('menuitem', { name: 'Move right' }),
+      { key: 'Enter' }
+    );
+    expect(changeView).toHaveBeenCalledExactlyOnceWith({
+      layout: {
+        kind: 'table',
+        columns: [
+          { column: 'status', width: null, hidden: false },
+          { column: 'title', width: 240, hidden: false },
+          { column: 'notes', width: null, hidden: false },
+        ],
+      },
+    });
+    expect(reorder).not.toHaveBeenCalled();
   });
 
   it('moves immediately and serializes rapid column drops without snapping back on older completion', async () => {
@@ -1991,18 +1825,30 @@ describe('database table view', () => {
     await fixture.moveName('right');
     fixture.requests[0].resolve();
     await waitFor(() => expect(fixture.requests).toHaveLength(2));
-    fixture.setView({ ...fixture.view(), search: 'Plan' });
+    fixture.setView({
+      ...fixture.view(),
+      query: {
+        filter: null,
+        sort: [{ column: 'title', direction: 'ascending' }],
+      },
+    });
     fixture.requests[1].reject([
       { code: 'INVALID_SCHEMA', message: 'This table changed. Try again.' },
     ]);
     await screen.findByRole('alert');
-    expect(fixture.view().columnOrder).toEqual([
-      'notes',
-      'status',
-      'title',
-      'owner',
-    ]);
-    expect(fixture.view().search).toBe('Plan');
+    expect(fixture.view().layout).toEqual({
+      kind: 'table',
+      columns: [
+        { column: 'notes', width: null, hidden: false },
+        { column: 'status', width: null, hidden: true },
+        { column: 'title', width: null, hidden: false },
+        { column: 'owner', width: null, hidden: false },
+      ],
+    });
+    expect(fixture.view().query).toEqual({
+      filter: null,
+      sort: [{ column: 'title', direction: 'ascending' }],
+    });
     expect(fixture.headers()).toEqual([
       'Notes column menu',
       'Name column menu',
@@ -2027,20 +1873,33 @@ describe('database table view', () => {
       { code: 'INVALID_SCHEMA', message: 'Final save failed' },
     ]);
     await screen.findByText('Final save failed');
-    expect(fixture.view().columnOrder).toEqual([
-      'title',
-      'status',
-      'notes',
-      'owner',
-    ]);
+    expect(fixture.view().layout).toEqual({
+      kind: 'table',
+      columns: [
+        { column: 'title', width: null, hidden: false },
+        { column: 'status', width: null, hidden: true },
+        { column: 'notes', width: null, hidden: false },
+        { column: 'owner', width: null, hidden: false },
+      ],
+    });
   });
 
   it('does not overwrite a newly selected layout when a pending reorder fails', async () => {
     const fixture = columnOrderFixture();
     await fixture.moveName('right');
-    const selected: DatabaseViewConfig = {
-      ...defaultDatabaseView(),
-      columnOrder: ['owner', 'title', 'notes', 'status'],
+    const selected: DatabaseView = {
+      ...allRecords,
+      id: 'by-owner',
+      name: 'By owner',
+      layout: {
+        kind: 'table',
+        columns: [
+          { column: 'owner', width: null, hidden: false },
+          { column: 'title', width: null, hidden: false },
+          { column: 'notes', width: null, hidden: false },
+          { column: 'status', width: null, hidden: false },
+        ],
+      },
     };
     fixture.setView(selected);
     fixture.changeView.mockClear();
@@ -2068,28 +1927,43 @@ describe('database table view', () => {
         },
       ],
     });
-    const [view, setView] = createSignal({
-      ...defaultDatabaseView(),
-      hiddenColumns: ['status'],
+    const [view, setView] = createSignal<DatabaseView>({
+      ...allRecords,
+      layout: {
+        kind: 'table',
+        columns: [
+          { column: 'title', width: null, hidden: false },
+          { column: 'status', width: null, hidden: true },
+          { column: 'notes', width: null, hidden: false },
+        ],
+      },
     });
+    const changeView = (change: ViewChange) =>
+      setView((current) => ({ ...current, ...change }));
     render(() => (
       <DatabaseTableView
         name="Projects"
         source={source}
         canEdit={false}
         view={view()}
-        onViewChange={setView}
+        stored={false}
+        search=""
+        onViewChange={changeView}
         addColumn={() => null}
         renderToolbar={() => (
           <DatabaseToolbar
             columns={source.columns()}
-            value={view()}
-            onChange={setView}
-            savedViews={[]}
+            views={[]}
+            view={view()}
+            canEdit={false}
+            search=""
+            onSearchChange={vi.fn()}
             onSelectView={vi.fn()}
-            onSaveView={vi.fn(async () => {})}
-            onRenameView={vi.fn(async () => {})}
-            onDeleteView={vi.fn(async () => {})}
+            onChangeView={changeView}
+            onCreateView={vi.fn(() => okAsync(undefined))}
+            onRenameView={vi.fn(() => okAsync(undefined))}
+            onDeleteView={vi.fn(() => okAsync(undefined))}
+            onReorderViews={vi.fn()}
           />
         )}
       />
@@ -2115,7 +1989,14 @@ describe('database table view', () => {
     await waitFor(() =>
       expect(headers()).toEqual(['Notes column menu', 'Name column menu'])
     );
-    expect(view().columnOrder).toEqual(['notes', 'status', 'title']);
+    expect(view().layout).toEqual({
+      kind: 'table',
+      columns: [
+        { column: 'notes', width: null, hidden: false },
+        { column: 'status', width: null, hidden: true },
+        { column: 'title', width: null, hidden: false },
+      ],
+    });
 
     openMenu('Name');
     fireEvent.keyDown(
@@ -2139,9 +2020,17 @@ describe('database table view', () => {
     await waitFor(() =>
       expect(headers()).toEqual(['Notes column menu', 'Name column menu'])
     );
-    expect(view().hiddenColumns).toEqual(['status']);
+    expect(view().layout).toEqual({
+      kind: 'table',
+      columns: [
+        { column: 'notes', width: null, hidden: false },
+        { column: 'status', width: null, hidden: true },
+        { column: 'title', width: null, hidden: false },
+      ],
+    });
     expect(source.write).not.toHaveBeenCalled();
   });
+
   it('lets an empty Name-only table create its first record directly below the headers', async () => {
     const fixture = sourceFixture();
     fixture.setColumns([columns[0]]);
@@ -2152,7 +2041,9 @@ describe('database table view', () => {
         name="Playground"
         source={fixture.source}
         canEdit
-        view={defaultDatabaseView()}
+        view={allRecords}
+        stored={false}
+        search=""
         addColumn={() => <button type="button">Add column</button>}
         renderToolbar={(actions) => (
           <button type="button" onClick={() => void actions.createRecord()}>

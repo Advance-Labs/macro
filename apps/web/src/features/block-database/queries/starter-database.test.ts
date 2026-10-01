@@ -71,7 +71,7 @@ describe('starter onboarding', () => {
     expect(mocks.ensureStarter).not.toHaveBeenCalled();
   });
 
-  it('opens the newly seeded board and refreshes discovery and view caches', async () => {
+  it('opens the newly seeded board and refreshes the database list', async () => {
     await mocks.options!().queryFn();
     const selection = createUserScopedStorage(
       'database-view-selection:example'
@@ -79,9 +79,8 @@ describe('starter onboarding', () => {
     expect(JSON.parse(selection!)).toEqual({
       tableId: 'ideas',
       views: { ideas: 'board' },
-      drafts: {},
     });
-    expect(mocks.invalidateQueries).toHaveBeenCalledTimes(2);
+    expect(mocks.invalidateQueries).toHaveBeenCalledTimes(1);
   });
 
   it('does not replace an existing browser view preference', async () => {

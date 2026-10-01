@@ -19,9 +19,9 @@ import { toast } from '@core/component/Toast/Toast';
 import { enableDatabases } from '@core/constant/featureFlags';
 import { PaywallKey, usePaywallState } from '@core/constant/PaywallState';
 import { useUserId } from '@core/context/user';
+import type { DatabaseView } from '@core/database-sql/generated/types';
 import { createMethodRegistration } from '@core/orchestrator';
 import { blockHandleSignal } from '@core/signal/load';
-import { deepEqual } from '@core/util/compareUtils';
 import { createUserScopedStorage } from '@core/util/userScopedStorage';
 import { useDatabaseDetailQuery } from '@queries/storage/databases';
 import { useDatabaseTableChangedSync } from '@queries/storage/databases-sync';
@@ -37,25 +37,25 @@ import {
   untrack,
 } from 'solid-js';
 import { DatabaseToolbar } from '../components/database-toolbar';
+import type { NewViewLayout } from '../components/new-view-dialog';
 import { databaseChatContext } from '../core/chat-context';
 import type { DatabaseRelatedDestination } from '../core/database-relations';
 import {
-  type DatabaseViewConfig,
-  defaultDatabaseView,
-  reconcileDatabaseView,
-} from '../core/database-view';
-import {
-  clearSavedViewDraft,
   type DatabaseViewSelection,
   readViewSelection,
-  type TableViewState,
 } from '../core/view-selection';
-import {
-  type DatabaseBoardOrderPatch,
-  useSavedDatabaseViews,
-} from '../queries/saved-database-views';
+import { allRecordsView, boardLayout } from '../core/views';
+import { databaseOpMessage } from '../core/write-failure';
+import { tableViews } from '../queries/detail-cache';
 import { toViewColumn } from '../queries/table-rows';
 import { trashDatabase } from '../queries/trash-database';
+import {
+  createDatabaseView,
+  deleteDatabaseView,
+  reorderDatabaseViews,
+  updateDatabaseView,
+  type ViewChange,
+} from '../queries/views';
 import { AddColumnMenu } from './AddColumnMenu';
 import { DatabaseGrid } from './DatabaseGrid';
 import { DatabaseSidePanelSections } from './sidepanel/DatabaseSidePanelSections';
@@ -74,7 +74,7 @@ const Block: Component = () => {
     `database-view-selection:${databaseId}`
   );
   const [selection, setSelection] = makePersistedState(
-    createSignal<DatabaseViewSelection>({ views: {}, drafts: {} }),
+    createSignal<DatabaseViewSelection>({ views: {} }),
     {
       storages: {
         restore: () => {
@@ -128,18 +128,12 @@ const Block: Component = () => {
   }
   createMethodRegistration(blockHandleSignal.get, {
     goToLocationFromParams: (params: Record<string, string>) => {
-      if (params.tableId && params.viewId) {
-        setSelection((current) => {
-          const drafts = { ...current.drafts };
-          delete drafts[params.tableId];
-          return {
-            ...current,
-            tableId: params.tableId,
-            views: { ...current.views, [params.tableId]: params.viewId },
-            drafts,
-          };
-        });
-      }
+      if (params.tableId && params.viewId)
+        setSelection((current) => ({
+          ...current,
+          tableId: params.tableId,
+          views: { ...current.views, [params.tableId]: params.viewId },
+        }));
       if (params.tableId && params.rowId)
         void openRelated({
           databaseId,
@@ -179,9 +173,6 @@ const Block: Component = () => {
       setOpeningChat(false);
     }
   }
-  const tableViews = () => selection().drafts;
-  const emptyView = defaultDatabaseView();
-
   // Reading data only after status resolves keeps the database shell mounted.
   const detail = () => (!detailQuery.isPending ? detailQuery.data : undefined);
   const tables = () => detail()?.tables ?? [];
@@ -197,174 +188,76 @@ const Block: Component = () => {
     activeTable()
       ?.columns.filter((column) => column.column.config?.kind !== 'lookup')
       .map(toViewColumn) ?? [];
-  const saved = useSavedDatabaseViews(() => databaseId, activeTableId);
-  const viewState = () => {
-    const tableId = activeTableId() ?? '';
-    const edited = tableViews()[tableId];
-    if (edited) return edited;
-    const selected = saved
-      .views()
-      .find((entry) => entry.id === selection().views[tableId]);
-    return selected
-      ? { view: selected.view, selectedViewId: selected.id }
-      : undefined;
+  const storedViews = () => {
+    const table = activeTable();
+    return table ? tableViews(table) : [];
   };
-  const view = () =>
-    reconcileDatabaseView(viewState()?.view ?? emptyView, columns());
-  const selectedViewId = () => viewState()?.selectedViewId;
-  const selectedView = () =>
-    saved.views().find((entry) => entry.id === selectedViewId());
-  const isDirty = () =>
-    !deepEqual(
-      view(),
-      reconcileDatabaseView(selectedView()?.view ?? emptyView, columns())
-    );
-
-  function setViewState(state: TableViewState, tableId = activeTableId()) {
-    if (!tableId) return;
-    const original =
-      saved.views().find((entry) => entry.id === state.selectedViewId)?.view ??
-      emptyView;
-    setSelection((current) => {
-      const drafts = { ...current.drafts };
-      if (deepEqual(state.view, reconcileDatabaseView(original, columns())))
-        delete drafts[tableId];
-      else drafts[tableId] = state;
-      return { ...current, drafts };
-    });
-    if (selection().views[tableId] !== state.selectedViewId) {
-      setSelection((current) => {
-        const views = { ...current.views };
-        if (state.selectedViewId) views[tableId] = state.selectedViewId;
-        else delete views[tableId];
-        return { ...current, views };
-      });
-    }
-  }
-  function changeView(config: DatabaseViewConfig) {
-    const previous = view();
-    const laneOrderChanged =
-      config.groupOrder !== undefined &&
-      !deepEqual(previous.groupOrder, config.groupOrder);
-    const cardOrderChanged =
-      (config.cardOrder !== undefined || config.groupBy === previous.groupBy) &&
-      !deepEqual(previous.cardOrder, config.cardOrder);
-    const selected = selectedView();
+  const selectedView = () => {
     const tableId = activeTableId();
-    setViewState({ view: config, selectedViewId: selectedViewId() });
-    if ((laneOrderChanged || cardOrderChanged) && selected && tableId)
-      void persistBoardOrder(tableId, selected.id, selected.name, {
-        layout: config.layout,
-        groupBy: config.groupBy,
-        ...(laneOrderChanged || config.groupBy !== selected.view.groupBy
-          ? { groupOrder: config.groupOrder }
-          : {}),
-        ...(cardOrderChanged
-          ? { cardOrder: config.cardOrder, sorts: config.sorts }
-          : {}),
-      });
-  }
-  function clearSavedDraft(
-    tableId: string,
-    id: string,
-    config: DatabaseViewConfig
-  ) {
-    setSelection((current) =>
-      clearSavedViewDraft(current, tableId, id, config)
+    const id = tableId ? selection().views[tableId] : undefined;
+    return storedViews().find((view) => view.id === id);
+  };
+  /** All records, as this viewer has filtered, sorted and laid it out, per table. */
+  const [allRecords, setAllRecords] = createSignal<
+    Record<string, DatabaseView>
+  >({});
+  const [searches, setSearches] = createSignal<Record<string, string>>({});
+  const search = () => searches()[activeTableId() ?? ''] ?? '';
+  const view = (): DatabaseView | undefined => {
+    const table = activeTable();
+    if (!table) return undefined;
+    return (
+      selectedView() ??
+      allRecords()[table.table.id] ??
+      allRecordsView(table.table)
     );
-  }
-  async function persistBoardOrder(
-    tableId: string,
-    id: string,
-    name: string,
-    boardOrder: DatabaseBoardOrderPatch
-  ) {
-    try {
-      const result = await saved.save.mutateAsync({
-        tableId,
-        id,
-        name,
-        boardOrder,
-        preserveName: true,
-      });
-      clearSavedDraft(tableId, id, result.view);
-    } catch {
-      toast.failure(
-        'The board order could not be saved. Use Save changes to retry.'
-      );
-    }
+  };
+  function setSearch(value: string) {
+    const tableId = activeTableId();
+    if (tableId) setSearches((current) => ({ ...current, [tableId]: value }));
   }
   function selectView(id?: string) {
-    const selected = saved.views().find((entry) => entry.id === id);
-    setViewState({
-      view: selected?.view ?? defaultDatabaseView(),
-      selectedViewId: selected?.id,
+    const tableId = activeTableId();
+    if (!tableId) return;
+    setSelection((current) => {
+      const views = { ...current.views };
+      if (id) views[tableId] = id;
+      else delete views[tableId];
+      return { ...current, views };
     });
   }
-  async function saveView(
-    name: string,
-    layout: DatabaseViewConfig['layout'],
-    groupBy?: string | null
-  ) {
-    const tableId = activeTableId();
-    const original = view();
-    const originalState = tableId ? tableViews()[tableId] : undefined;
-    const config = reconcileDatabaseView(
-      {
-        ...original,
-        layout,
-        groupBy: groupBy ?? original.groupBy,
-        groupOrder:
-          groupBy && groupBy !== original.groupBy
-            ? undefined
-            : original.groupOrder,
-        cardOrder:
-          groupBy && groupBy !== original.groupBy
-            ? undefined
-            : original.cardOrder,
-      },
-      columns()
-    );
-    const { id } = await saved.save.mutateAsync({
-      name,
-      view: config,
-      tableId,
-    });
-    const current = tableId ? tableViews()[tableId] : undefined;
-    if (
-      current !== originalState &&
-      current?.selectedViewId !== originalState?.selectedViewId
-    )
+  function changeView(change: ViewChange) {
+    const current = view();
+    if (!current) return;
+    const stored = selectedView();
+    if (stored) {
+      void updateDatabaseView(stored, change).mapErr((failure) =>
+        toast.failure(databaseOpMessage(failure, 'this view'))
+      );
       return;
-    setViewState(
-      {
-        view: current && current !== originalState ? current.view : config,
-        selectedViewId: id,
-      },
-      tableId
-    );
-  }
-  async function updateView() {
-    const selected = selectedView();
-    const tableId = activeTableId();
-    const config = view();
-    if (selected && tableId) {
-      await saved.save.mutateAsync({
-        tableId,
-        id: selected.id,
-        name: selected.name,
-        view: config,
-      });
-      clearSavedDraft(tableId, selected.id, config);
     }
+    setAllRecords((views) => ({
+      ...views,
+      [current.tableId]: { ...current, ...change },
+    }));
   }
-  async function removeView(id: string) {
-    const tableId = activeTableId();
-    const config = view();
-    await saved.remove.mutateAsync(id);
-    if (tableId && selection().views[tableId] === id) {
-      setViewState({ view: tableViews()[tableId]?.view ?? config }, tableId);
-    }
+  function createView(
+    name: string,
+    layout: NewViewLayout,
+    groupBy: string | undefined
+  ) {
+    const tableId = activeTableId() ?? '';
+    const current = view();
+    return createDatabaseView(databaseId, tableId, {
+      name,
+      query: current?.query ?? { filter: null, sort: [] },
+      layout:
+        layout === 'board' && groupBy
+          ? boardLayout(groupBy, columns())
+          : current?.layout.kind === 'table'
+            ? current.layout
+            : { kind: 'table', columns: [] },
+    }).map((created) => selectView(created.id));
   }
 
   return (
@@ -451,87 +344,106 @@ const Block: Component = () => {
                     </div>
                   }
                 >
-                  <Show when={saved.query.isError}>
-                    <div
-                      class="flex items-center justify-between gap-2 border-edge border-b px-4 py-2 text-xs text-ink-muted"
-                      role="status"
-                    >
-                      Saved views could not be loaded.
-                      <Button
-                        size="xs"
-                        onClick={() => void saved.query.refetch()}
-                      >
-                        Retry
-                      </Button>
-                    </div>
-                  </Show>
                   <div class="flex min-h-0 min-w-0 flex-1 flex-col @min-[1000px]/database:flex-row">
                     <div class="flex min-h-0 min-w-0 flex-1 flex-col">
-                      <Show when={activeTable()}>
-                        {(table) => (
-                          <DatabaseGrid
-                            databaseId={databaseId}
-                            table={table()}
-                            canEdit={canEdit()}
-                            view={view()}
-                            onViewChange={changeView}
-                            onOpenRelated={openRelated}
-                            renderToolbar={(actions) => {
-                              gridEntry = {
-                                tableId: table().table.id,
-                                focus: actions.focusFirstCell,
-                                openRecord: actions.openRecord,
-                              };
-                              if (requestedRecord)
-                                queueMicrotask(openRequestedRecord);
-                              if (requestedGridEntry)
-                                queueMicrotask(enterFirstCell);
-                              return (
-                                <DatabaseToolbar
-                                  columns={columns()}
-                                  value={view()}
-                                  onChange={changeView}
-                                  savedViews={saved.views()}
-                                  selectedViewId={selectedViewId()}
-                                  isDirty={isDirty()}
-                                  saving={
-                                    saved.save.isPending ||
-                                    saved.rename.isPending ||
-                                    saved.remove.isPending
-                                  }
-                                  onSelectView={selectView}
-                                  onSaveView={saveView}
-                                  onUpdateView={updateView}
-                                  onRenameView={async (id, name) => {
-                                    await saved.rename.mutateAsync({
-                                      id,
-                                      name,
-                                    });
-                                  }}
-                                  onDeleteView={removeView}
-                                  onCreateRecord={
-                                    canEdit()
-                                      ? () => void actions.createRecord()
-                                      : undefined
-                                  }
-                                  canCreateRecord={columns().length > 0}
-                                  creating={actions.pending()}
-                                  addColumn={
-                                    <Show when={canEdit()}>
-                                      <AddColumnMenu
-                                        databaseId={databaseId}
-                                        tableId={table().table.id}
-                                        columns={table().columns}
-                                        label="Add column"
-                                        onCreated={actions.focusColumn}
-                                      />
-                                    </Show>
-                                  }
-                                />
-                              );
-                            }}
-                          />
-                        )}
+                      <Show
+                        when={
+                          activeTable() && view()
+                            ? { table: activeTable()!, view: view()! }
+                            : undefined
+                        }
+                      >
+                        {(shown) => {
+                          const table = () => shown().table;
+                          return (
+                            <DatabaseGrid
+                              databaseId={databaseId}
+                              table={table()}
+                              canEdit={canEdit()}
+                              view={shown().view}
+                              stored={!!selectedView()}
+                              search={search()}
+                              onViewChange={changeView}
+                              onClearConstraints={() => {
+                                setSearch('');
+                                changeView({
+                                  query: {
+                                    ...shown().view.query,
+                                    filter: null,
+                                  },
+                                });
+                              }}
+                              onOpenRelated={openRelated}
+                              renderToolbar={(actions) => {
+                                gridEntry = {
+                                  tableId: table().table.id,
+                                  focus: actions.focusFirstCell,
+                                  openRecord: actions.openRecord,
+                                };
+                                if (requestedRecord)
+                                  queueMicrotask(openRequestedRecord);
+                                if (requestedGridEntry)
+                                  queueMicrotask(enterFirstCell);
+                                return (
+                                  <DatabaseToolbar
+                                    columns={columns()}
+                                    views={storedViews()}
+                                    view={shown().view}
+                                    selectedViewId={selectedView()?.id}
+                                    canEdit={canEdit()}
+                                    search={search()}
+                                    onSearchChange={setSearch}
+                                    onSelectView={selectView}
+                                    onChangeView={changeView}
+                                    onCreateView={createView}
+                                    onRenameView={(target, name) =>
+                                      updateDatabaseView(target, { name }).map(
+                                        () => undefined
+                                      )
+                                    }
+                                    onDeleteView={(target) => {
+                                      if (selectedView()?.id === target.id)
+                                        selectView();
+                                      return deleteDatabaseView(target);
+                                    }}
+                                    onReorderViews={(order) =>
+                                      void reorderDatabaseViews(
+                                        databaseId,
+                                        table().table.id,
+                                        order
+                                      ).mapErr((failure) =>
+                                        toast.failure(
+                                          databaseOpMessage(
+                                            failure,
+                                            'these views'
+                                          )
+                                        )
+                                      )
+                                    }
+                                    onCreateRecord={
+                                      canEdit()
+                                        ? () => void actions.createRecord()
+                                        : undefined
+                                    }
+                                    canCreateRecord={columns().length > 0}
+                                    creating={actions.pending()}
+                                    addColumn={
+                                      <Show when={canEdit()}>
+                                        <AddColumnMenu
+                                          databaseId={databaseId}
+                                          tableId={table().table.id}
+                                          columns={table().columns}
+                                          label="Add column"
+                                          onCreated={actions.focusColumn}
+                                        />
+                                      </Show>
+                                    }
+                                  />
+                                );
+                              }}
+                            />
+                          );
+                        }}
                       </Show>
                     </div>
                   </div>

@@ -10,13 +10,15 @@ import userEvent from '@testing-library/user-event';
 import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GridCell } from '../component/GridCell';
-import {
-  type DatabaseViewColumn,
-  defaultDatabaseView,
-} from '../core/database-view';
+import type { DatabaseViewColumn } from '../core/database-view';
 import type { DatabaseRow } from '../core/table';
 import { DatabaseTable } from './database-table';
 
+// The property utils barrel pulls in live clients, which open sockets under jsdom.
+vi.mock('@property/utils', () => ({
+  useSearchInputFocus: (input: () => HTMLElement | undefined) =>
+    setTimeout(() => input()?.focus(), 100),
+}));
 vi.mock('@core/user', () => ({
   tryMacroId: (id: string) => (id.startsWith('macro|') ? id : undefined),
   macroIdToEmail: (id: string) => id.slice(6),
@@ -69,7 +71,8 @@ function setup(canEdit = true) {
       isUnsavedRow={(rowId) => rowId === unsavedRow()}
       columns={columns()}
       titleColumnId="name"
-      view={defaultDatabaseView()}
+      sort={[]}
+      widths={{}}
       canEdit={canEdit}
       canCreateRecord
       pending={false}
@@ -118,7 +121,8 @@ beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   // JSDOM reports an empty animation name; presence expects CSS's default none.
   menuStyles = document.createElement('style');
-  menuStyles.textContent = '[role=menu] { animation-name: none; }';
+  menuStyles.textContent =
+    '[role=menu], [role=dialog] { animation-name: none; }';
   document.head.append(menuStyles);
 });
 afterEach(() => {
@@ -298,7 +302,10 @@ describe('spreadsheet interactions', () => {
       {
         ...notes,
         dataType: 'SELECT_STRING',
-        options: ['First note', 'Second note'],
+        options: [
+          { id: 'first-note', label: 'First note', color: null },
+          { id: 'second-note', label: 'Second note', color: null },
+        ],
       },
     ]);
     const first = screen.getByRole('button', { name: 'Notes: First note' });
@@ -306,17 +313,19 @@ describe('spreadsheet interactions', () => {
     first.focus();
     await userEvent.keyboard('{ArrowUp}');
     expect(document.activeElement).toBe(first);
-    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.queryByRole('listbox')).toBeNull();
     await userEvent.keyboard('{ArrowDown}');
     expect(document.activeElement).toBe(second);
-    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.queryByRole('listbox')).toBeNull();
     await userEvent.keyboard('{ArrowUp}');
     expect(document.activeElement).toBe(first);
     await userEvent.keyboard('{Enter}');
-    expect(await screen.findByRole('menu')).toBeTruthy();
+    expect(
+      await screen.findByRole('listbox', { name: 'Notes options' })
+    ).toBeTruthy();
     await waitFor(() =>
       expect(document.activeElement).toBe(
-        screen.getByRole('textbox', { name: 'Search Notes options' })
+        screen.getByRole('combobox', { name: 'Search Notes options' })
       )
     );
     await userEvent.keyboard('{Escape}{ArrowDown}');
@@ -328,7 +337,14 @@ describe('spreadsheet interactions', () => {
     const getComputedStyle = window.getComputedStyle.bind(window);
     const { setColumns } = setup();
     setColumns([
-      { ...name, dataType: 'SELECT_STRING', options: ['First', 'Done'] },
+      {
+        ...name,
+        dataType: 'SELECT_STRING',
+        options: [
+          { id: 'first', label: 'First', color: null },
+          { id: 'done', label: 'Done', color: null },
+        ],
+      },
     ]);
     const grid = screen.getByRole('grid');
     grid.style.overflow = 'auto';
@@ -344,7 +360,7 @@ describe('spreadsheet interactions', () => {
     try {
       screen.getByRole('button', { name: 'Name: First' }).focus();
       await userEvent.keyboard('{Enter}Done');
-      const input = screen.getByRole('textbox', {
+      const input = screen.getByRole('combobox', {
         name: 'Search Name options',
       }) as HTMLInputElement;
       expect(document.activeElement).toBe(input);
@@ -419,8 +435,22 @@ describe('spreadsheet interactions', () => {
   it('types through consecutive select fields after Tab without exposing menu keyboard shortcuts', async () => {
     const { setColumns, onWrite } = setup();
     setColumns([
-      { ...name, dataType: 'SELECT_STRING', options: ['First', 'Done'] },
-      { ...notes, dataType: 'SELECT_STRING', options: ['First note', 'High'] },
+      {
+        ...name,
+        dataType: 'SELECT_STRING',
+        options: [
+          { id: 'first', label: 'First', color: null },
+          { id: 'done', label: 'Done', color: null },
+        ],
+      },
+      {
+        ...notes,
+        dataType: 'SELECT_STRING',
+        options: [
+          { id: 'first-note', label: 'First note', color: null },
+          { id: 'high', label: 'High', color: null },
+        ],
+      },
       { ...readonly, writable: true },
     ]);
     screen.getByRole('button', { name: 'Name: First' }).focus();
@@ -430,7 +460,7 @@ describe('spreadsheet interactions', () => {
       ['one', 'notes', 'High'],
       ['one', 'computed', 'Final note'],
     ]);
-    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.queryByRole('listbox')).toBeNull();
 
     screen.getByRole('button', { name: 'Notes: First note' }).focus();
     await userEvent.keyboard('{Enter}High{Enter}');
@@ -531,7 +561,10 @@ describe('spreadsheet interactions', () => {
       {
         ...notes,
         dataType: 'SELECT_STRING',
-        options: ['First note', 'Second note'],
+        options: [
+          { id: 'first-note', label: 'First note', color: null },
+          { id: 'second-note', label: 'Second note', color: null },
+        ],
       },
     ]);
     screen.getByRole('button', { name: /Name: First/ }).focus();
@@ -543,7 +576,7 @@ describe('spreadsheet interactions', () => {
     expect(document.activeElement).toBe(checkbox.parentElement);
     await userEvent.keyboard('{ArrowRight}{Enter}');
     expect(document.activeElement?.textContent).toBe('Second note');
-    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.queryByRole('listbox')).toBeNull();
     expect(onWrite).not.toHaveBeenCalled();
   });
 
@@ -617,7 +650,8 @@ describe('presence and reveal', () => {
         rows={rows}
         columns={[name, notes]}
         titleColumnId="name"
-        view={defaultDatabaseView()}
+        sort={[]}
+        widths={{}}
         canEdit
         canCreateRecord
         pending={false}
@@ -679,5 +713,74 @@ describe('presence and reveal', () => {
     expect(scrollIntoView).toHaveBeenCalled();
     setHighlightRowId(undefined);
     expect(row.dataset.highlighted).toBeUndefined();
+  });
+});
+
+describe('sort and column widths', () => {
+  it('marks the sorted header, sizes columns from their widths and resizes by dragging a header edge', () => {
+    const onResizeColumn = vi.fn();
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+      new DOMRect(0, 0, 200, 40)
+    );
+    render(() => (
+      <DatabaseTable
+        name="Tasks"
+        rows={rows}
+        columns={[name, notes]}
+        titleColumnId="name"
+        sort={[{ column: 'notes', direction: 'descending' }]}
+        widths={{ name: null, notes: 300 }}
+        onResizeColumn={onResizeColumn}
+        canEdit
+        canCreateRecord
+        pending={false}
+        addColumn={<button>Add column</button>}
+        getRowTitle={(row) => String(row.cells.name)}
+        onOpen={vi.fn()}
+        onCreate={vi.fn()}
+        onSort={vi.fn()}
+        renderCell={(row, column, options) => (
+          <GridCell
+            column={column()}
+            value={row().cells[column().id] ?? null}
+            canEdit
+            onWrite={async () => true}
+            onAddOption={async () => true}
+            {...options}
+          />
+        )}
+      />
+    ));
+    expect(
+      screen
+        .getByRole('columnheader', { name: 'Notes' })
+        .getAttribute('aria-sort')
+    ).toBe('descending');
+    expect(
+      screen
+        .getByRole('columnheader', { name: 'Name' })
+        .getAttribute('aria-sort')
+    ).toBe('none');
+    const headerRow = screen.getAllByRole('row')[0];
+    expect(headerRow.style.gridTemplateColumns).toContain('300px');
+
+    const separator = screen.getByRole('separator', { name: 'Resize Name' });
+    // JSDOM has no pointer capture or layout; the header measures 200px wide.
+    separator.setPointerCapture = vi.fn();
+    // JSDOM has no PointerEvent, so the pointer events travel as mouse events.
+    separator.dispatchEvent(
+      new MouseEvent('pointerdown', { bubbles: true, button: 0, clientX: 200 })
+    );
+    separator.dispatchEvent(
+      new MouseEvent('pointermove', { bubbles: true, clientX: 250 })
+    );
+    expect(headerRow.style.gridTemplateColumns).toMatch(
+      /^2\.75rem 250px 300px/
+    );
+    expect(onResizeColumn).not.toHaveBeenCalled();
+    separator.dispatchEvent(
+      new MouseEvent('pointerup', { bubbles: true, clientX: 260 })
+    );
+    expect(onResizeColumn).toHaveBeenCalledExactlyOnceWith('name', 260);
   });
 });
