@@ -206,7 +206,8 @@ dates (before, after, on or before, on or after), checkboxes (checked or not), s
 options (**is any of**/**is none of**, or **has any of**/**has all of**/**has none
 of** for a multi-select, picked as coloured pills), and emptiness for any column. A
 condition still being filled in is ignored and not saved. **Sort** orders by one or
-more columns, first first. **Search** matches text cells and option labels.
+more columns, first first; drag a level by its handle (or focus the handle and
+press Up or Down) to change which sorts first. **Search** matches text cells and option labels.
 
 A view's layout, Table or Board, is chosen when the view is created. Columns
 cannot be hidden, and they are added only from **Add column** after the headers or

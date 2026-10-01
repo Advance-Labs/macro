@@ -12,6 +12,7 @@ import {
   updateCondition,
   withOperator,
   withSort,
+  withSortMoved,
 } from './view-query';
 
 const name: DatabaseViewColumn = {
@@ -464,5 +465,37 @@ describe('sorts', () => {
     expect(withSort(sort, 'name', null)).toEqual([
       { column: 'guests', direction: 'descending' },
     ]);
+  });
+});
+
+describe('moving a sort key', () => {
+  it('reorders the sort levels, keeping each key’s direction', () => {
+    expect(
+      withSortMoved(
+        [
+          { column: 'name', direction: 'ascending' },
+          { column: 'guests', direction: 'descending' },
+          { column: 'date', direction: 'ascending' },
+        ],
+        'date',
+        'name',
+        'before'
+      )
+    ).toEqual([
+      { column: 'date', direction: 'ascending' },
+      { column: 'name', direction: 'ascending' },
+      { column: 'guests', direction: 'descending' },
+    ]);
+  });
+
+  it('moves nothing beside a column the sort lacks', () => {
+    expect(
+      withSortMoved(
+        [{ column: 'name', direction: 'ascending' }],
+        'name',
+        'guests',
+        'after'
+      )
+    ).toBeUndefined();
   });
 });

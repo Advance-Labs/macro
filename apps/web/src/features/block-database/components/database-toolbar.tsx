@@ -21,9 +21,8 @@ import { DeleteDialog } from '@ui/components/DeleteDialog';
 import { InputGroup } from '@ui/components/InputGroup';
 import { Tooltip } from '@ui/components/Tooltip';
 import type { ResultAsync } from 'neverthrow';
-import { createSignal, Index, Show } from 'solid-js';
+import { createSignal, Show } from 'solid-js';
 import type { DatabaseViewColumn } from '../core/database-view';
-import { withSort } from '../core/view-query';
 import { movedViewOrder } from '../core/views';
 import {
   type DatabaseOpFailure,
@@ -33,8 +32,8 @@ import type { ViewChange } from '../queries/views';
 import { FilterPanel, filterConditionCount } from './database-view-filters';
 import { createInlineRename } from './inline-rename';
 import { type NewView, NewViewDialog } from './new-view-dialog';
+import { SortPanel } from './sort-panel';
 import { ToolbarPopover } from './view-control-popover';
-import { ViewSelect } from './view-select';
 
 type DatabaseToolbarProps = {
   columns: DatabaseViewColumn[];
@@ -457,103 +456,6 @@ function ViewTab(props: {
           </Show>
         </ContextMenu>
       </Show>
-    </div>
-  );
-}
-
-function SortPanel(props: {
-  columns: DatabaseViewColumn[];
-  view: DatabaseView;
-  onChange: (change: ViewChange) => void;
-}) {
-  const sort = () => props.view.query.sort ?? [];
-  const setSort = (next: NonNullable<DatabaseView['query']['sort']>) =>
-    props.onChange({ query: { ...props.view.query, sort: next } });
-  return (
-    <div class="w-76 max-w-full">
-      <Show when={!sort().length}>
-        <p class="mb-3 text-xs text-ink-muted">
-          Choose the order records appear in.
-        </p>
-      </Show>
-      <div class="flex flex-col gap-2">
-        <Index each={sort()}>
-          {(key, index) => (
-            <div class="flex gap-1.5">
-              <ViewSelect
-                label="Sort property"
-                value={key().column}
-                options={props.columns
-                  .filter(
-                    (column) =>
-                      !column.relation &&
-                      (column.id === key().column ||
-                        !sort().some((item) => item.column === column.id))
-                  )
-                  .map((column) => ({ value: column.id, label: column.name }))}
-                onChange={(column) =>
-                  setSort(
-                    sort().map((item, position) =>
-                      position === index ? { ...item, column } : item
-                    )
-                  )
-                }
-              />
-              <ViewSelect
-                label="Sort direction"
-                value={key().direction}
-                class="w-28"
-                options={[
-                  { value: 'ascending', label: 'Ascending' },
-                  { value: 'descending', label: 'Descending' },
-                ]}
-                onChange={(direction) =>
-                  setSort(
-                    sort().map((item, position) =>
-                      position === index
-                        ? {
-                            ...item,
-                            direction,
-                          }
-                        : item
-                    )
-                  )
-                }
-              />
-              <Button
-                size="icon-sm"
-                label="Remove sort"
-                tooltipDisabled
-                onClick={() => setSort(withSort(sort(), key().column, null))}
-              >
-                <XIcon class="size-3.5" />
-              </Button>
-            </div>
-          )}
-        </Index>
-      </div>
-      <Button
-        size="sm"
-        variant="ghost"
-        class="mt-3"
-        disabled={
-          !props.columns.some(
-            (column) =>
-              !column.relation &&
-              !sort().some((key) => key.column === column.id)
-          )
-        }
-        onClick={() => {
-          const column = props.columns.find(
-            (item) =>
-              !item.relation && !sort().some((key) => key.column === item.id)
-          );
-          if (column)
-            setSort([...sort(), { column: column.id, direction: 'ascending' }]);
-        }}
-      >
-        <PlusIcon class="size-3.5" /> Add sort
-      </Button>
     </div>
   );
 }

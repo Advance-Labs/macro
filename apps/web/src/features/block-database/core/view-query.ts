@@ -19,6 +19,7 @@ import type {
 } from '@core/database-sql/generated/types';
 import { match } from 'ts-pattern';
 import type { DatabaseViewColumn } from './database-view';
+import { moveBeside } from './move-beside';
 
 export type FilterPath = readonly number[];
 
@@ -384,4 +385,23 @@ export function withSort(
 ): SortKey[] {
   const others = sort.filter((key) => key.column !== column);
   return direction ? [{ column, direction }, ...others] : others;
+}
+
+/** The sort with `column`'s key moved just before or after `target`'s, changing which sorts first. */
+export function withSortMoved(
+  sort: readonly SortKey[],
+  column: string,
+  target: string,
+  edge: 'before' | 'after'
+): SortKey[] | undefined {
+  const keys = new Map(sort.map((key) => [key.column, key]));
+  return moveBeside(
+    sort.map((key) => key.column),
+    column,
+    target,
+    edge
+  )?.flatMap((id) => {
+    const key = keys.get(id);
+    return key ? [key] : [];
+  });
 }
