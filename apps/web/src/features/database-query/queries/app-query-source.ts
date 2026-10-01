@@ -2,7 +2,10 @@ import { databaseSqlAnswer } from '@core/database-sql/answer';
 import { databaseSqlSchema } from '@core/database-sql/catalog';
 import { throwOnErr } from '@core/util/result';
 import { queryClient } from '@queries/client';
-import { readDatabaseSql } from '@queries/database-sql/create-database-sql-query';
+import {
+  checkDatabaseSql,
+  readDatabaseSql,
+} from '@queries/database-sql/create-database-sql-query';
 import {
   createSavedDatabaseQuery,
   useDatabaseQueryDefinition,
@@ -97,17 +100,35 @@ export function createSavedQuestionSource(
   });
 }
 
-/** Saved queries are immutable: every new SQL text becomes a new row. */
+/**
+ * Saved queries are immutable: every new SQL text becomes a new row. The
+ * service stores it as given, so it is compiled against the viewer's
+ * catalog first, and only a read is saved.
+ */
 export function saveQuestionSql(input: {
   sql: string;
   databaseId?: string;
 }): ResultAsync<string, QueryFailure> {
-  return createSavedDatabaseQuery({
-    definition: { version: 1, query: input.sql },
-    ...(input.databaseId ? { databaseId: input.databaseId } : {}),
-  })
-    .map((saved) => saved.id)
-    .mapErr((errors) => ({ kind: 'question', error: serviceError(errors) }));
+  return ResultAsync.fromPromise(fetchViewerDatabases(), databasesFailure)
+    .andThen((databases) =>
+      checkDatabaseSql({
+        schema: databaseSqlSchema(databases),
+        scope: input.databaseId,
+        sql: input.sql,
+      })
+    )
+    .andThen(() =>
+      createSavedDatabaseQuery({
+        definition: { version: 1, query: input.sql },
+        ...(input.databaseId ? { databaseId: input.databaseId } : {}),
+      }).mapErr(
+        (errors): QueryFailure => ({
+          kind: 'question',
+          error: serviceError(errors),
+        })
+      )
+    )
+    .map((saved) => saved.id);
 }
 
 export function trackQueryDatabase(id: string, onRefresh: () => void) {

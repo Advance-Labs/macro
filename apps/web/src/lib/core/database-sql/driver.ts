@@ -6,7 +6,7 @@
  */
 
 import type { DatabaseOpsError } from '@service-storage/databases';
-import { err, errAsync, ok, Result, ResultAsync } from 'neverthrow';
+import { err, errAsync, ok, okAsync, Result, ResultAsync } from 'neverthrow';
 import { match } from 'ts-pattern';
 import type {
   Bin,
@@ -171,4 +171,27 @@ export function runDatabaseSqlStatement(
   options: { source: RowSource; ops: OpsSink; open?: OpenEngine }
 ): ResultAsync<Outcome, DatabaseSqlFailure> {
   return drive(catalog, sql, options);
+}
+
+const NO_ROWS: RowSource = {
+  page: () => okAsync({ rows: [], next: null }),
+  bins: () => okAsync([]),
+};
+
+/**
+ * Compile and plan a statement against `catalog` without reading anything:
+ * every fetch answers with no rows. A statement that writes, or answers with
+ * no columns as a write does, is refused as read-only.
+ */
+export function checkReadStatement(
+  catalog: Catalog,
+  sql: string,
+  options: { open?: OpenEngine } = {}
+): ResultAsync<void, DatabaseSqlFailure> {
+  return drive(catalog, sql, { source: NO_ROWS, ...options }).andThen(
+    (outcome) =>
+      outcome.columns.length > 0
+        ? okAsync(undefined)
+        : errAsync<void, DatabaseSqlFailure>({ kind: 'read-only' })
+  );
 }

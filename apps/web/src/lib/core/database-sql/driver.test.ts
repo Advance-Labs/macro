@@ -1,6 +1,10 @@
 import { errAsync, okAsync } from 'neverthrow';
 import { describe, expect, it, vi } from 'vitest';
-import { runDatabaseSql, runDatabaseSqlStatement } from './driver';
+import {
+  checkReadStatement,
+  runDatabaseSql,
+  runDatabaseSqlStatement,
+} from './driver';
 import type {
   Bin,
   DatabaseOp,
@@ -174,5 +178,93 @@ describe('runDatabaseSql', () => {
     });
 
     expect(outcome._unsafeUnwrapErr()).toEqual({ kind: 'ops', error: refusal });
+  });
+});
+
+describe('checkReadStatement', () => {
+  it('accepts a read the engine compiles, without reading a row', async () => {
+    const free = vi.fn();
+    const checked = await checkReadStatement(
+      { tables: [] },
+      'SELECT name FROM crm.deals',
+      {
+        open: async () => ({
+          start: () => ({
+            step: 'fetch',
+            id: 0,
+            query: { type: 'soup', table: 'deals', propf: null, keyHint: null },
+            needs: ['name'],
+            cursor: null,
+            limit: 500,
+          }),
+          feed_page: (_id, page) => ({
+            step: 'done',
+            columns: [{ name: 'name', column: 'name', kind: 'text' }],
+            rows: page.rows.map(() => []),
+            rowIds: [],
+            readTables: ['deals'],
+            truncated: false,
+            insertedRowIds: [],
+            changesApplied: 0,
+          }),
+          feed_bins: vi.fn(),
+          feed_ops: vi.fn(),
+          free,
+        }),
+      }
+    );
+
+    expect(checked.isOk()).toBe(true);
+    expect(free).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a statement that writes', async () => {
+    const insert = readTranscript('insert-two-rows');
+
+    const checked = await checkReadStatement(insert.catalog, insert.sql, {
+      open: replay(insert),
+    });
+
+    expect(checked._unsafeUnwrapErr()).toEqual({ kind: 'read-only' });
+  });
+
+  it('refuses a write that matched no rows, which answers without columns', async () => {
+    const checked = await checkReadStatement(
+      { tables: [] },
+      "UPDATE crm.deals SET stage = 'Won' WHERE name = 'Acme'",
+      {
+        open: async () => ({
+          start: () => ({
+            step: 'done',
+            columns: [],
+            rows: [],
+            rowIds: [],
+            readTables: ['deals'],
+            truncated: false,
+            insertedRowIds: [],
+            changesApplied: 0,
+          }),
+          feed_page: vi.fn(),
+          feed_bins: vi.fn(),
+          feed_ops: vi.fn(),
+          free: vi.fn(),
+        }),
+      }
+    );
+
+    expect(checked._unsafeUnwrapErr()).toEqual({ kind: 'read-only' });
+  });
+
+  it('reports what the engine does not compile', async () => {
+    const checked = await checkReadStatement({ tables: [] }, 'SELEC 1', {
+      open: async () => {
+        throw 'expected a statement, found "SELEC"';
+      },
+    });
+
+    expect(checked._unsafeUnwrapErr()).toEqual({
+      kind: 'engine',
+      message: 'expected a statement, found "SELEC"',
+    });
   });
 });

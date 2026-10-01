@@ -7,6 +7,7 @@
  */
 
 import {
+  checkReadStatement,
   type DatabaseSqlFailure,
   engineFailure,
   type OpenEngine,
@@ -255,5 +256,22 @@ export function readDatabaseSql(
       }),
       ...(capabilities.open ? { open: capabilities.open } : {}),
     }).map((outcome) => ({ catalog, outcome }))
+  );
+}
+
+/** Compile and plan a statement against its catalog, reading nothing; a write is refused. */
+export function checkDatabaseSql(
+  { schema, scope, sql }: DatabaseSqlStatement,
+  capabilities: Pick<DatabaseSqlQueryCapabilities, 'open' | 'catalog'> = {}
+): ResultAsync<void, DatabaseSqlFailure> {
+  return ResultAsync.fromPromise(
+    (capabilities.catalog ?? buildDatabaseSqlCatalog)(schema, scope),
+    engineFailure
+  ).andThen((catalog) =>
+    checkReadStatement(
+      catalog,
+      sql,
+      capabilities.open ? { open: capabilities.open } : {}
+    )
   );
 }
