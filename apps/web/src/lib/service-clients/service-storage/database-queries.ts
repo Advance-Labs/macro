@@ -12,29 +12,22 @@ import type { SavedQuery } from './generated/schemas/savedQuery';
 import type { SaveQueryRequest } from './generated/schemas/saveQueryRequest';
 
 /**
- * Why a saved query was refused: it does not compile (400), is not a SELECT
- * (403), is gone or not visible (404), or reads too much (422).
+ * Why a saved query was refused: it is gone or not visible (404), or its SQL
+ * is longer than the route stores (422).
  */
-export type SavedQueryErrorCode =
-  | FetchWithTokenErrorCode
-  | 'INVALID_QUERY'
-  | 'READ_ONLY'
-  | 'BUDGET_EXCEEDED';
+export type SavedQueryErrorCode = FetchWithTokenErrorCode | 'QUERY_TOO_LONG';
 
 const documentStorageHost = SERVER_HOSTS['document-storage-service'];
 
-/** The body's `message` is the compiler's, verbatim. */
 async function errorResponseHandler(
   response: Response
 ): Promise<ResultError<SavedQueryErrorCode>> {
   return {
     code: match(response.status)
       .returnType<SavedQueryErrorCode>()
-      .with(400, () => 'INVALID_QUERY')
       .with(401, () => 'UNAUTHORIZED')
-      .with(403, () => 'READ_ONLY')
       .with(404, () => 'NOT_FOUND')
-      .with(422, () => 'BUDGET_EXCEEDED')
+      .with(422, () => 'QUERY_TOO_LONG')
       .with(P.number.gte(500), () => 'SERVER_ERROR')
       .otherwise(() => 'HTTP_ERROR'),
     message: (await errorBody(response)).message,

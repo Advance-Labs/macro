@@ -187,19 +187,19 @@ describe('saved query failures', () => {
       { code: 'NOT_FOUND', message: 'not found' },
     ]);
 
-    answer(400, JSON.stringify({ message: 'unknown column "Stage"' }));
+    answer(401, JSON.stringify({ message: 'unauthorized' }));
     expect((await getDatabaseQuery('query'))._unsafeUnwrapErr()).toEqual([
-      { code: 'INVALID_QUERY', message: 'unknown column "Stage"' },
+      { code: 'UNAUTHORIZED', message: 'unauthorized' },
     ]);
 
-    answer(403, JSON.stringify({ message: 'only SELECT' }));
+    answer(422, JSON.stringify({ message: 'query is too long' }));
     expect((await getDatabaseQuery('query'))._unsafeUnwrapErr()).toEqual([
-      { code: 'READ_ONLY', message: 'only SELECT' },
+      { code: 'QUERY_TOO_LONG', message: 'query is too long' },
     ]);
 
-    answer(422, JSON.stringify({ message: 'budget' }));
+    answer(500, JSON.stringify({ message: 'internal server error' }));
     expect((await getDatabaseQuery('query'))._unsafeUnwrapErr()).toEqual([
-      { code: 'BUDGET_EXCEEDED', message: 'budget' },
+      { code: 'SERVER_ERROR', message: 'internal server error' },
     ]);
   });
 });
