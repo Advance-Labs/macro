@@ -362,4 +362,256 @@ where
         .await;
         Ok(ColumnSchemaOutcome { table_versions })
     }
+
+    pub(super) async fn add_column(
+        &self,
+        receipt: EntityAccessReceipt<EditAccessLevel>,
+        viewer: Viewer,
+        command: CreateColumn,
+    ) -> Result<ColumnId, DatabaseError> {
+        let (database, tables) = self.database_for_edit(&receipt).await?;
+        if !tables.iter().any(|table| table.id == command.table_id) {
+            // The receipt covers this database only; a table elsewhere is
+            // indistinguishable from a missing one.
+            return Err(DatabaseError::NotFound);
+        }
+
+        // A link target must be a table the viewer can at least view.
+        if let Some(ColumnConfig::Link {
+            database_id,
+            table_id,
+        }) = &command.config
+        {
+            if self
+                .live_database_grant(&viewer, *database_id)
+                .await
+                .map_err(DatabaseError::Repo)?
+                .is_none()
+            {
+                return Err(DatabaseError::from(SchemaError::LinkDatabaseInaccessible));
+            }
+            let target_tables = self
+                .repository
+                .tables_for_databases(&[*database_id])
+                .await
+                .map_err(repository_error)?;
+            if !target_tables.iter().any(|table| table.id == *table_id) {
+                return Err(DatabaseError::from(SchemaError::LinkTableMissing));
+            }
+        }
+
+        if command.infer_type
+            && (command.config.is_some()
+                || !matches!(
+                    &command.binding,
+                    ColumnBinding::NewDefinition { data_type: DataType::String, is_multi_select: false, options, .. }
+                        if options.is_empty()
+                ))
+        {
+            return Err(DatabaseError::from(SchemaError::InferenceNeedsPlainText));
+        }
+
+        // Effective display labels are unique per table, compared as names.
+        let existing = self
+            .repository
+            .columns_for_tables(&[command.table_id])
+            .await
+            .map_err(repository_error)?;
+        let existing_ids: Vec<Uuid> = existing
+            .iter()
+            .map(|column| column.property_definition_id)
+            .collect();
+        let definition_names: HashMap<_, _> = self
+            .definitions
+            .definitions(&existing_ids)
+            .await
+            .map_err(repository_error)?
+            .into_iter()
+            .map(|definition| (definition.definition.id, definition.definition.display_name))
+            .collect();
+        let existing_names: Vec<_> = existing
+            .iter()
+            .filter_map(|column| {
+                column
+                    .display_name
+                    .as_ref()
+                    .or_else(|| definition_names.get(&column.property_definition_id))
+            })
+            .collect();
+        let (binding, option_values) = match command.binding {
+            ColumnBinding::NewDefinition {
+                name,
+                data_type,
+                is_multi_select,
+                options,
+            } => {
+                if !options.is_empty() && !takes_options(data_type) {
+                    return Err(DatabaseError::from(SchemaError::OptionsOnPlainColumn));
+                }
+                // Validated before anything is written.
+                let values = validate_option_labels(data_type, &options, &[])?;
+                (
+                    ColumnBinding::NewDefinition {
+                        name: validate_name(&name)?,
+                        data_type,
+                        is_multi_select,
+                        options,
+                    },
+                    values,
+                )
+            }
+            other => (other, Vec::new()),
+        };
+        if let ColumnBinding::NewDefinition { name, .. } = &binding
+            && existing_names
+                .iter()
+                .any(|existing| same_name(existing, name))
+        {
+            return Err(DatabaseError::from(SchemaError::ColumnNameTaken {
+                name: name.clone(),
+            }));
+        }
+        if let ColumnBinding::ExistingDefinition(id) = &binding
+            && existing_ids.contains(id)
+        {
+            return Err(DatabaseError::from(SchemaError::DefinitionAlreadyBound));
+        }
+
+        let definition_id = self
+            .definitions
+            .resolve_binding(database.id, &viewer, &binding)
+            .await
+            .map_err(repository_error)?;
+        let definition_id = match (definition_id, &binding) {
+            (Some(definition_id), _) => definition_id,
+            (None, ColumnBinding::ExistingDefinition(id)) => {
+                return Err(DatabaseError::from(SchemaError::DefinitionNotFound(*id)));
+            }
+            (None, ColumnBinding::NewDefinition { .. }) => {
+                return Err(DatabaseError::Repo(
+                    rootcause::report!("the definition store did not create a new definition")
+                        .into_dynamic(),
+                ));
+            }
+        };
+        let created = matches!(binding, ColumnBinding::NewDefinition { .. });
+        if !option_values.is_empty()
+            && let Err(error) = self
+                .definitions
+                .add_options(definition_id, &option_values)
+                .await
+        {
+            // Nothing binds the new definition yet, so it goes with the failure.
+            if created {
+                self.delete_unused_definition(definition_id).await;
+            }
+            return Err(repository_error(error));
+        }
+        let command = CreateColumn { binding, ..command };
+        let (column_id, version) = self
+            .repository
+            .create_column(command.table_id, definition_id, &command)
+            .await
+            .map_err(repository_error)?;
+        self.publish(
+            receipt_attribution(&receipt),
+            &[(database.id, command.table_id, version)],
+        )
+        .await;
+        Ok(column_id)
+    }
+
+    pub(super) async fn extend_column_options(
+        &self,
+        receipt: EntityAccessReceipt<EditAccessLevel>,
+        viewer: Viewer,
+        command: AddColumnOptions,
+    ) -> Result<ColumnDetail, DatabaseError> {
+        let (database, tables) = self.database_for_edit(&receipt).await?;
+        if !tables.iter().any(|table| table.id == command.table_id) {
+            // The receipt covers this database only; a table elsewhere is
+            // indistinguishable from a missing one.
+            return Err(DatabaseError::NotFound);
+        }
+        let columns = self
+            .repository
+            .columns_for_tables(&[command.table_id])
+            .await
+            .map_err(repository_error)?;
+        let column = columns
+            .iter()
+            .find(|column| column.id == command.column_id)
+            .ok_or(DatabaseError::NotFound)?;
+        let definition = self
+            .definitions
+            .definitions(&[column.property_definition_id])
+            .await
+            .map_err(repository_error)?
+            .into_iter()
+            .next()
+            .ok_or(DatabaseError::NotFound)?;
+
+        let data_type = definition.definition.data_type;
+        if !takes_options(data_type) {
+            return Err(DatabaseError::from(SchemaError::ColumnTakesNoOptions));
+        }
+        let entry = catalog::ColumnEntry {
+            column: column.clone(),
+            definition: definition.clone(),
+            writable: true,
+        };
+        if entry.shared_outside(database.id)
+            && !self
+                .definitions
+                .editable_definitions(&viewer, &[definition.definition.id])
+                .await
+                .map_err(repository_error)?
+                .contains(&definition.definition.id)
+        {
+            return Err(SchemaError::SharedOptions {
+                column: entry.name().to_owned(),
+            }
+            .into());
+        }
+        let existing: Vec<String> = definition
+            .property_options
+            .iter()
+            .map(|option| catalog::option_display(&option.value))
+            .collect();
+        let values = validate_option_labels(data_type, &command.labels, &existing)?;
+
+        // Every label was already there: nothing changed, so nothing is
+        // written, versioned, or announced.
+        if !values.is_empty() {
+            let options: Vec<NewOption> = values
+                .into_iter()
+                .map(|value| NewOption {
+                    definition_id: definition.definition.id,
+                    id: macro_uuid::generate_uuid_v7(),
+                    value,
+                })
+                .collect();
+            // Options are part of the column's catalog entry, so the table's
+            // version moves with them.
+            let version = self
+                .cells
+                .add_options(command.table_id, &options)
+                .await
+                .map_err(repository_error)?
+                .ok_or(DatabaseError::NotFound)?;
+            self.publish(
+                receipt_attribution(&receipt),
+                &[(database.id, command.table_id, version)],
+            )
+            .await;
+        }
+
+        self.column_detail(
+            database.id,
+            receipt_grant(&receipt, AccessLevel::Edit),
+            command.table_id,
+            command.column_id,
+        )
+        .await
+    }
 }
