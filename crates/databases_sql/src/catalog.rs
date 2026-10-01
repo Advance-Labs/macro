@@ -54,6 +54,20 @@ impl ViewerCatalog {
         })
     }
 
+    /// The table a relation column's rows belong to, found by the column's
+    /// definition.
+    pub(crate) fn related_table(&self, definition: Uuid) -> Option<TableId> {
+        self.databases
+            .iter()
+            .flat_map(|database| &database.tables)
+            .flat_map(|table| &table.columns)
+            .find(|column| column.definition.definition.id == definition)
+            .and_then(|column| match column.column.config {
+                Some(ColumnConfig::Link { table_id, .. }) => Some(table_id),
+                _ => None,
+            })
+    }
+
     /// The engine's view of a column, found by the definition reads key it
     /// by. A definition shared by several tables has one kind everywhere.
     pub(crate) fn column(&self, definition: Uuid) -> Option<&Column> {

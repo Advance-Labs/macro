@@ -5023,6 +5023,7 @@ export const QueryDatabaseResponse = z.object({
               z.null(),
             ])
             .optional(),
+          relatedTable: z.union([z.string().uuid(), z.null()]).optional(),
         })
       ),
       rows: z.array(

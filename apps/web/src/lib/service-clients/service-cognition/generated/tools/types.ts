@@ -5746,6 +5746,10 @@ export interface ResultColumn {
    * relation, whose ids are rows of another table.
    */
   target?: EntityKind | null;
+  /**
+   * For a relation, the table its rows belong to.
+   */
+  relatedTable?: string | null;
 }
 /**
  * One option of a select column.

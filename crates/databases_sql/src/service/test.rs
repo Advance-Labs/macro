@@ -357,6 +357,7 @@ async fn a_read_answers_typed_cells_with_what_renders_them() {
                     kind: OutcomeKind::Text,
                     options: vec![],
                     target: None,
+                    related_table: None,
                 },
                 ResultColumn {
                     name: "Status".into(),
@@ -372,12 +373,14 @@ async fn a_read_answers_typed_cells_with_what_renders_them() {
                         },
                     ],
                     target: None,
+                    related_table: None,
                 },
                 ResultColumn {
                     name: "Contact".into(),
                     kind: OutcomeKind::Entity,
                     options: vec![],
                     target: Some(EntityKind::User),
+                    related_table: None,
                 },
             ],
             rows: vec![vec![
@@ -396,6 +399,33 @@ async fn a_read_answers_typed_cells_with_what_renders_them() {
     let world = world.lock().unwrap();
     assert_eq!(world.soup_reads.len(), 1);
     assert!(world.soup_reads[0].properties_filter.is_some());
+}
+
+#[tokio::test]
+async fn a_relation_column_names_the_table_its_rows_belong_to() {
+    let world = world();
+    let outcome = sql(&world)
+        .execute(
+            agent_for(OWNER),
+            read("SELECT \"Hall\" FROM \"Offsite\".\"Guests\" WHERE \"Name\" = 'Maria'"),
+        )
+        .await
+        .expect("the owner reads");
+
+    assert_eq!(
+        result(&outcome).columns,
+        vec![ResultColumn {
+            name: "Hall".into(),
+            kind: OutcomeKind::Entity,
+            options: vec![],
+            target: Some(EntityKind::Row),
+            related_table: Some(HALLS),
+        }]
+    );
+    assert_eq!(
+        result(&outcome).rows,
+        vec![vec![Some(Cell::Entities(vec![BALLROOM.to_string()]))]]
+    );
 }
 
 #[tokio::test]

@@ -62,6 +62,9 @@ pub struct ResultColumn {
     /// relation, whose ids are rows of another table.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<EntityKind>,
+    /// For a relation, the table its rows belong to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub related_table: Option<TableId>,
 }
 
 /// A column an `ALTER COLUMN … TYPE` changed.
@@ -162,6 +165,17 @@ fn result_set(catalog: &ViewerCatalog, outcome: &Outcome) -> Option<ResultSet> {
                         (OutcomeKind::Entity, Some(ColumnKind::Entity { target, .. })) => {
                             Some(*target)
                         }
+                        _ => None,
+                    },
+                    related_table: match (column.kind, kind, column.column) {
+                        (
+                            OutcomeKind::Entity,
+                            Some(ColumnKind::Entity {
+                                target: EntityKind::Row,
+                                ..
+                            }),
+                            Some(definition),
+                        ) => catalog.related_table(definition),
                         _ => None,
                     },
                 }
