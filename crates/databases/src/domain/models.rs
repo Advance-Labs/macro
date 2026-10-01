@@ -799,11 +799,9 @@ pub struct DatabaseDetail {
 pub struct TableDetail {
     /// The table.
     pub table: Table,
-    /// The name SQL refers to the table by: its display name, quoted when it
-    /// needs it (`FROM "Table 1"`), optionally qualified by the database's.
+    /// The name SQL refers to the table by: its display name quoted and
+    /// qualified by the database's (`FROM "Plans"."Table 1"`).
     pub sql_name: String,
-    /// The same name; kept for clients that still distinguish reads.
-    pub read_sql_name: String,
     /// Columns in display order.
     pub columns: Vec<ColumnDetail>,
     /// The table's views, in their order.
@@ -815,8 +813,7 @@ pub struct TableDetail {
 pub struct ColumnDetail {
     /// The placement.
     pub column: Column,
-    /// The name SQL refers to the column by: its display name, quoted when it
-    /// needs it.
+    /// The name SQL refers to the column by: its display name, quoted.
     pub sql_name: String,
     /// The bound definition (name, type, options).
     pub definition:

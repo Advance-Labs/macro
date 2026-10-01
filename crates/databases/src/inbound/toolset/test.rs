@@ -161,7 +161,6 @@ fn detail(grant: AccessLevel) -> DatabaseDetail {
         tables: vec![TableDetail {
             table: table(),
             sql_name: "\"Offsite\".\"Guests\"".to_string(),
-            read_sql_name: "\"Offsite\".\"Guests\"".to_string(),
             columns: vec![status_column()],
             views: vec![],
         }],

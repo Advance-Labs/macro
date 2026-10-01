@@ -786,7 +786,6 @@ async fn schema_operations_respect_receipts() {
     assert_eq!(detail.grant, AccessLevel::View);
     assert_eq!(detail.tables.len(), 1);
     assert_eq!(detail.tables[0].sql_name, "\"Offsite\".\"Guests\"");
-    assert_eq!(detail.tables[0].read_sql_name, "\"Offsite\".\"Guests\"");
     assert_eq!(
         detail.tables[0]
             .columns

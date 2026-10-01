@@ -39,7 +39,6 @@ fn details_become_the_schema_the_engine_builds_its_catalog_from() {
                 version: TableVersion(1),
             },
             sql_name: "\"Deals\"".into(),
-            read_sql_name: "\"Deals\"".into(),
             columns: vec![
                 ColumnDetail {
                     column: Column {

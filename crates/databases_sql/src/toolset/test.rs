@@ -58,7 +58,6 @@ fn world() -> Shared {
                     version: TableVersion(1),
                 },
                 sql_name: "\"Guests\"".into(),
-                read_sql_name: "\"Guests\"".into(),
                 columns: vec![
                     ColumnDetail {
                         column: Column {

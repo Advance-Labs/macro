@@ -86,7 +86,6 @@ fn world() -> Shared {
                         version: TableVersion(1),
                     },
                     sql_name: "\"Guests\"".into(),
-                    read_sql_name: "\"Guests\"".into(),
                     columns: vec![
                         ColumnDetail {
                             column: Column {
@@ -248,7 +247,6 @@ fn world() -> Shared {
                         version: TableVersion(1),
                     },
                     sql_name: "\"Halls\"".into(),
-                    read_sql_name: "\"Halls\"".into(),
                     columns: vec![ColumnDetail {
                         column: Column {
                             id: HALL_NAME_COLUMN,
@@ -299,7 +297,6 @@ fn world() -> Shared {
                         version: TableVersion(1),
                     },
                     sql_name: "\"Plans\"".into(),
-                    read_sql_name: "\"Plans\"".into(),
                     columns: vec![ColumnDetail {
                         column: Column {
                             id: PLAN_NAME_COLUMN,

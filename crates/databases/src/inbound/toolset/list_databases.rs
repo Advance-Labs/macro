@@ -25,7 +25,7 @@ not just database names.\n\
 Start here whenever the user refers to \"my table\", \"the tracker\", or any named list of \
 theirs: this is the only way to turn that name into the `databaseId` every other database tool \
 needs. Each entry includes `id`, `name`, `grant`, and nested `tables` with their ids, display \
-names, and stable read aliases. `view` and `comment` permit reading, not row/schema edits.\n\
+names, and SQL names. `view` and `comment` permit reading, not row/schema edits.\n\
 \n\
 Takes no arguments and returns every database, so there is no filter to get wrong. Follow it \
 with DescribeDatabase for the matching database's columns before writing SQL. Do not claim a \

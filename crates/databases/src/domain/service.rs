@@ -354,7 +354,6 @@ where
             .collect();
         TableDetail {
             sql_name: catalog::sql_table_name(&entry.database.name, &entry.table.name),
-            read_sql_name: catalog::sql_table_name(&entry.database.name, &entry.table.name),
             table: entry.table,
             columns,
             views: entry.views,
