@@ -1,5 +1,4 @@
 import { ContextMenuContent, MenuItem } from '@core/component/ContextMenu';
-import type { DatabaseView } from '@core/database-sql/generated/types';
 import { ContextMenu } from '@kobalte/core/context-menu';
 import FunnelIcon from '@phosphor/funnel.svg';
 import KanbanIcon from '@phosphor/kanban.svg';
@@ -9,6 +8,7 @@ import SlidersHorizontalIcon from '@phosphor/sliders-horizontal.svg';
 import SortAscendingIcon from '@phosphor/sort-ascending.svg';
 import TableIcon from '@phosphor/table.svg';
 import XIcon from '@phosphor/x.svg';
+import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
 import { Key } from '@solid-primitives/keyed';
 import {
   closestCenter,
@@ -30,6 +30,7 @@ import {
   boardGroupColumns,
   boardLayout,
   layoutColumns,
+  movedViewOrder,
   withLaneHidden,
   withLayoutColumn,
 } from '../core/views';
@@ -137,12 +138,9 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
   }
   function reorder(id: string, targetId: string) {
     const order = props.views.map((view) => view.id);
-    const from = order.indexOf(id);
-    const to = order.indexOf(targetId);
-    if (from < 0 || to < 0 || from === to) return;
-    order.splice(from, 1);
-    order.splice(to, 0, id);
-    props.onReorderViews(order);
+    const moved = movedViewOrder(order, id, targetId);
+    if (moved.some((view, index) => view !== order[index]))
+      props.onReorderViews(moved);
   }
   const groupColumn = () =>
     props.columns.find((column) => column.id === board()?.groupBy);

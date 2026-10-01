@@ -8,7 +8,7 @@
 import { analytics } from '@app/lib/analytics';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { enableDatabases, isFeatureEnabled } from '@core/constant/featureFlags';
-import type { DatabaseOp, OpResult } from '@core/database-sql/generated/types';
+import type { DatabaseOp } from '@core/database-sql/generated/types';
 import { type ResultError, throwOnErr } from '@core/util/result';
 import { storageServiceClient } from '@service-storage/client';
 import type {
@@ -19,6 +19,7 @@ import type { ColumnDetail } from '@service-storage/generated/schemas/columnDeta
 import type { CreateColumnRequest } from '@service-storage/generated/schemas/createColumnRequest';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import type { ListedDatabase } from '@service-storage/generated/schemas/listedDatabase';
+import type { OpResult } from '@service-storage/generated/schemas/opResult';
 import { useQueries, useQuery } from '@tanstack/solid-query';
 import { okAsync, type ResultAsync } from 'neverthrow';
 import type { Accessor } from 'solid-js';

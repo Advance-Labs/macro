@@ -1,4 +1,4 @@
-import type { Board, ViewLayout } from '@core/database-sql/generated/types';
+import type { Board } from '@core/database-sql/generated/types';
 import { isEditableInput } from '@core/util/isEditableInput';
 import type { ResultError } from '@core/util/result';
 import CaretDownIcon from '@phosphor/caret-down.svg';
@@ -7,6 +7,7 @@ import GripIcon from '@phosphor/dots-six-vertical.svg';
 import DotsIcon from '@phosphor/dots-three.svg';
 import PlusIcon from '@phosphor/plus.svg';
 import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
+import type { ViewLayout } from '@service-storage/generated/schemas/viewLayout';
 import { Key } from '@solid-primitives/keyed';
 import { Button } from '@ui/components/Button';
 import { Dropdown } from '@ui/components/Dropdown';

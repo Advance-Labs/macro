@@ -19,12 +19,12 @@ import { toast } from '@core/component/Toast/Toast';
 import { enableDatabases } from '@core/constant/featureFlags';
 import { PaywallKey, usePaywallState } from '@core/constant/PaywallState';
 import { useUserId } from '@core/context/user';
-import type { DatabaseView } from '@core/database-sql/generated/types';
 import { createMethodRegistration } from '@core/orchestrator';
 import { blockHandleSignal } from '@core/signal/load';
 import { createUserScopedStorage } from '@core/util/userScopedStorage';
 import { useDatabaseDetailQuery } from '@queries/storage/databases';
 import { useDatabaseTableChangedSync } from '@queries/storage/databases-sync';
+import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
 import { getEntityGraphqlClient } from '@service-storage/graphql-soup';
 import { Button } from '@ui';
 import {
@@ -46,7 +46,6 @@ import {
 } from '../core/view-selection';
 import { allRecordsView, boardLayout } from '../core/views';
 import { databaseOpMessage } from '../core/write-failure';
-import { tableViews } from '../queries/detail-cache';
 import { toViewColumn } from '../queries/table-rows';
 import { trashDatabase } from '../queries/trash-database';
 import {
@@ -188,10 +187,7 @@ const Block: Component = () => {
     activeTable()
       ?.columns.filter((column) => column.column.config?.kind !== 'lookup')
       .map(toViewColumn) ?? [];
-  const storedViews = () => {
-    const table = activeTable();
-    return table ? tableViews(table) : [];
-  };
+  const storedViews = () => activeTable()?.views ?? [];
   const selectedView = () => {
     const tableId = activeTableId();
     const id = tableId ? selection().views[tableId] : undefined;

@@ -1,9 +1,5 @@
 import { databaseSqlSchema } from '@core/database-sql/catalog';
-import type {
-  DatabaseOp,
-  DatabaseView,
-  OpResult,
-} from '@core/database-sql/generated/types';
+import type { DatabaseOp } from '@core/database-sql/generated/types';
 import { type ResultError, throwOnErr } from '@core/util/result';
 import {
   createDatabaseSqlQuery,
@@ -21,6 +17,8 @@ import type {
 } from '@service-storage/databases';
 import type { ColumnDetail } from '@service-storage/generated/schemas/columnDetail';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
+import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
+import type { OpResult } from '@service-storage/generated/schemas/opResult';
 import type { TableDetail } from '@service-storage/generated/schemas/tableDetail';
 import { useQueryClient } from '@tanstack/solid-query';
 import { err, ok, okAsync, type Result, ResultAsync } from 'neverthrow';

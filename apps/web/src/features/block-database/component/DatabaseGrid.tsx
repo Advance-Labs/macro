@@ -1,5 +1,4 @@
 import { StaticMarkdownContext } from '@core/component/LexicalMarkdown/component/core/StaticMarkdown';
-import type { DatabaseView } from '@core/database-sql/generated/types';
 import { refreshInBackground } from '@queries/database-sql/create-database-sql-query';
 import {
   addDatabaseColumnOptions,
@@ -11,6 +10,7 @@ import {
   useDatabaseAwareness,
   useDatabaseTableChanges,
 } from '@queries/storage/databases-sync';
+import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
 import type { TableDetail } from '@service-storage/generated/schemas/tableDetail';
 import {
   createMemo,

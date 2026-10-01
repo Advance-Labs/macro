@@ -1,8 +1,6 @@
 import type {
   CellValue,
   DatabaseOp,
-  DatabaseView,
-  OpResult,
   Outcome,
   Step,
   ViewQuery,
@@ -11,6 +9,8 @@ import type { DatabaseSqlQueryCapabilities } from '@queries/database-sql/create-
 import { databasesKeys } from '@queries/storage/keys';
 import type { DatabaseOpsError } from '@service-storage/databases';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
+import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
+import type { OpResult } from '@service-storage/generated/schemas/opResult';
 import type { SoupQuery } from '@service-storage/graphql/generated/graphql';
 import { cleanup, render, waitFor } from '@solidjs/testing-library';
 import { QueryClient, QueryClientProvider } from '@tanstack/solid-query';

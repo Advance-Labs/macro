@@ -1,10 +1,10 @@
 import type {
   Board,
-  CardPosition,
   Catalog,
-  DatabaseView,
   Outcome,
 } from '@core/database-sql/generated/types';
+import type { CardPosition } from '@service-storage/generated/schemas/cardPosition';
+import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
 import {
   cleanup,
   fireEvent,
@@ -87,7 +87,7 @@ describe('database board view', () => {
       tableId: 'table',
       name: 'Board',
       position: 'a0',
-      query: { sort: [] },
+      query: { filter: null, sort: [] },
       layout: {
         kind: 'board',
         groupBy: 'stage',
@@ -245,7 +245,7 @@ describe('database board view', () => {
       tableId: 'table',
       name: 'Board',
       position: 'a0',
-      query: { sort: [] },
+      query: { filter: null, sort: [] },
       layout: {
         kind: 'board',
         groupBy: 'stage',
@@ -527,7 +527,10 @@ describe('database board view', () => {
       tableId: 'table',
       name: 'Board',
       position: 'a0',
-      query: { sort: [{ column: 'name', direction: 'ascending' }] },
+      query: {
+        filter: null,
+        sort: [{ column: 'name', direction: 'ascending' }],
+      },
       layout: {
         kind: 'board',
         groupBy: 'stage',

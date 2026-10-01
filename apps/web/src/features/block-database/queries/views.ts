@@ -3,16 +3,15 @@
  * change shows in the cached detail before the server answers; a refusal
  * reads the detail again.
  */
-import type {
-  CardPosition,
-  DatabaseView,
-  NewView,
-  ViewLayout,
-  ViewQuery,
-} from '@core/database-sql/generated/types';
+
 import { throwOnErr } from '@core/util/result';
 import { queryClient } from '@queries/client';
 import { storageServiceClient } from '@service-storage/client';
+import type { CardPosition } from '@service-storage/generated/schemas/cardPosition';
+import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
+import type { NewView } from '@service-storage/generated/schemas/newView';
+import type { ViewLayout } from '@service-storage/generated/schemas/viewLayout';
+import type { ViewQuery } from '@service-storage/generated/schemas/viewQuery';
 import { useQuery } from '@tanstack/solid-query';
 import { Mutex } from 'async-mutex';
 import { ResultAsync } from 'neverthrow';

@@ -4,11 +4,7 @@
  * generated from its OpenAPI spec.
  */
 import { SERVER_HOSTS } from '@core/constant/servers';
-import type {
-  CardPosition,
-  DatabaseOp,
-  OpResult,
-} from '@core/database-sql/generated/types';
+import type { DatabaseOp } from '@core/database-sql/generated/types';
 import {
   type FetchWithTokenErrorCode,
   type FetchWithTokenInit,
@@ -19,6 +15,7 @@ import { ResultAsync } from 'neverthrow';
 import { match, P } from 'ts-pattern';
 import type { AddColumnOptionsRequest } from './generated/schemas/addColumnOptionsRequest';
 import type { Awareness } from './generated/schemas/awareness';
+import type { CardPosition } from './generated/schemas/cardPosition';
 import type { ChangeColumnTypeRequest } from './generated/schemas/changeColumnTypeRequest';
 import type { ColumnCast } from './generated/schemas/columnCast';
 import type { ColumnDetail } from './generated/schemas/columnDetail';
@@ -35,6 +32,7 @@ import type { InferColumnTypeOutcome } from './generated/schemas/inferColumnType
 import type { InferColumnTypeRequest } from './generated/schemas/inferColumnTypeRequest';
 import type { ListedDatabase } from './generated/schemas/listedDatabase';
 import type { OpRefusalResponse } from './generated/schemas/opRefusalResponse';
+import type { OpResult } from './generated/schemas/opResult';
 import type { RenameColumnOutcome } from './generated/schemas/renameColumnOutcome';
 import type { RenameColumnRequest } from './generated/schemas/renameColumnRequest';
 import type { RenameTableRequest } from './generated/schemas/renameTableRequest';

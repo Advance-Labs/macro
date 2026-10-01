@@ -1,8 +1,8 @@
-import type { DatabaseView } from '@core/database-sql/generated/types';
 import ArrowClockwiseIcon from '@phosphor/arrow-clockwise.svg';
 import EyeSlashIcon from '@phosphor/eye-slash.svg';
 import WarningIcon from '@phosphor/warning-circle.svg';
 import XIcon from '@phosphor/x.svg';
+import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
 import { until } from '@solid-primitives/promise';
 import { Button } from '@ui/components/Button';
 import { DeleteDialog } from '@ui/components/DeleteDialog';

@@ -3,11 +3,7 @@
  * once, so the change shows before the server answers, and read again when
  * the server refuses it.
  */
-import type {
-  DatabaseOp,
-  DatabaseView,
-  OpResult,
-} from '@core/database-sql/generated/types';
+import type { DatabaseOp } from '@core/database-sql/generated/types';
 import { queryClient } from '@queries/client';
 import {
   applyDatabaseOps,
@@ -16,25 +12,10 @@ import {
 } from '@queries/storage/databases';
 import { databasesKeys } from '@queries/storage/keys';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
-import type { TableDetail } from '@service-storage/generated/schemas/tableDetail';
+import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
+import type { OpResult } from '@service-storage/generated/schemas/opResult';
 import { errAsync, okAsync, type ResultAsync } from 'neverthrow';
 import type { DatabaseOpFailure } from '../core/write-failure';
-
-/**
- * A table's views as the server sends them. The wire is the engine's
- * camelCase `DatabaseView`; the generated OpenAPI type spells a board's
- * fields in snake case because utoipa ignores serde's `rename_all_fields`.
- */
-export function tableViews(table: TableDetail): DatabaseView[] {
-  return table.views as unknown as DatabaseView[];
-}
-
-function withTableViews(
-  table: TableDetail,
-  views: DatabaseView[]
-): TableDetail {
-  return { ...table, views: views as unknown as TableDetail['views'] };
-}
 
 /** Change the cached detail in place; nothing happens before it is first read. */
 export function patchDetail(
@@ -57,7 +38,7 @@ export function patchViews(
     ...detail,
     tables: detail.tables.map((table) =>
       table.table.id === tableId
-        ? withTableViews(table, change(tableViews(table)))
+        ? { ...table, views: change(table.views) }
         : table
     ),
   }));

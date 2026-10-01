@@ -1,14 +1,12 @@
 import { toast } from '@core/component/Toast/Toast';
 import { engineFailure } from '@core/database-sql/driver';
-import type {
-  CardPosition,
-  DatabaseView,
-  Outcome,
-  ViewLayout,
-} from '@core/database-sql/generated/types';
+import type { Outcome } from '@core/database-sql/generated/types';
 import { loadDatabaseSqlWasm } from '@core/database-sql/wasm-module';
 import type { ResultError } from '@core/util/result';
 import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
+import type { CardPosition } from '@service-storage/generated/schemas/cardPosition';
+import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
+import type { ViewLayout } from '@service-storage/generated/schemas/viewLayout';
 import { ConfirmDialog } from '@ui/components/ConfirmDialog';
 import { Result, type ResultAsync } from 'neverthrow';
 import {

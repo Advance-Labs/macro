@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DatabaseViewColumn } from './database-view';
 import {
   layoutColumns,
+  movedViewOrder,
   withLaneHidden,
   withLaneOrder,
   withLayoutColumn,
@@ -197,5 +198,27 @@ describe('a removed column', () => {
       },
       layout: { ...board, cardFields: [] },
     });
+  });
+});
+
+describe('reordering view tabs', () => {
+  it('puts a dragged tab in the place of the tab it is dropped on, either way', () => {
+    expect(
+      movedViewOrder(['first', 'second', 'third'], 'third', 'first')
+    ).toEqual(['third', 'first', 'second']);
+    expect(
+      movedViewOrder(['first', 'second', 'third'], 'first', 'third')
+    ).toEqual(['second', 'third', 'first']);
+  });
+
+  it('keeps the order for a drop on itself or an unknown tab', () => {
+    expect(movedViewOrder(['first', 'second'], 'first', 'first')).toEqual([
+      'first',
+      'second',
+    ]);
+    expect(movedViewOrder(['first', 'second'], 'first', 'gone')).toEqual([
+      'first',
+      'second',
+    ]);
   });
 });

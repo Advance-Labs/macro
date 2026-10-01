@@ -4,7 +4,8 @@
  * (`models_databases::views::lanes::place_card`), so the optimistic keys are
  * the ones it writes when the view shows every card of the lane.
  */
-import type { Board, CardPosition } from '@core/database-sql/generated/types';
+import type { Board } from '@core/database-sql/generated/types';
+import type { CardPosition } from '@service-storage/generated/schemas/cardPosition';
 
 /** A card's move: `before` is the card it lands right after, `after` the one right before it. */
 export type CardMove = {

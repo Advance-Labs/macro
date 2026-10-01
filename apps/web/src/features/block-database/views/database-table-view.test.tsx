@@ -1,11 +1,11 @@
 import type {
   Board,
   Catalog,
-  DatabaseView,
   Outcome,
 } from '@core/database-sql/generated/types';
 import type { ResultError } from '@core/util/result';
 import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
+import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
 import {
   cleanup,
   fireEvent,

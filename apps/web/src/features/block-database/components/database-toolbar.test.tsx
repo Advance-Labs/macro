@@ -1,4 +1,4 @@
-import type { DatabaseView } from '@core/database-sql/generated/types';
+import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
 import {
   cleanup,
   fireEvent,

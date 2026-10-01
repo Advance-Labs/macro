@@ -3,12 +3,10 @@
  * table layout shows, in what order and how wide, and the layouts new views
  * start with.
  */
-import type {
-  DatabaseView,
-  FilterNode,
-  ViewColumn,
-  ViewLayout,
-} from '@core/database-sql/generated/types';
+import type { FilterNode } from '@core/database-sql/generated/types';
+import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
+import type { ViewColumn } from '@service-storage/generated/schemas/viewColumn';
+import type { ViewLayout } from '@service-storage/generated/schemas/viewLayout';
 import { type DatabaseViewColumn, isBoardGroupColumn } from './database-view';
 import { titleColumn } from './table';
 
@@ -228,4 +226,18 @@ export function withoutColumn(
             cardFields: view.layout.cardFields.filter((id) => id !== columnId),
           },
   };
+}
+
+/** The view order with `id` dropped onto `target`'s place; unchanged when either is unknown or they are the same. */
+export function movedViewOrder(
+  order: readonly string[],
+  id: string,
+  target: string
+): string[] {
+  const from = order.indexOf(id);
+  const to = order.indexOf(target);
+  if (from < 0 || to < 0 || from === to) return [...order];
+  const moved = order.filter((view) => view !== id);
+  moved.splice(to, 0, id);
+  return moved;
 }
