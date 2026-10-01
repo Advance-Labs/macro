@@ -82,8 +82,7 @@ pub async fn structured_completion(
     Json(request): Json<StructuredCompletionRequest>,
 ) -> Result<Json<StructuredCompletionResponse>, StructuredCompletionError> {
     let ctx = Arc::new(state);
-    // The caller's model when the plan allows it; callers that send a model
-    // the plan does not include keep getting the plan's default, as before.
+    // Fall back to the plan's best model when the requested one is not included.
     let model = if model_access.has_access(&request.model) {
         request.model.clone()
     } else {

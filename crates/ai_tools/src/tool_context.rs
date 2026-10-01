@@ -1049,10 +1049,7 @@ pub fn build_reminders_tool_context(
     )
 }
 
-/// Table-changed fan-out for AI tool hosts.
-///
-/// Owned by the databases crate, where the HTTP roots reach it too; re-exported
-/// under the tool-host name the AI tool wiring uses.
+/// Table-changed fan-out for AI tool hosts, the databases crate's publisher.
 pub use databases::outbound::gateway_event_publisher::MaybeGatewayTableEventPublisher as ToolTableEventPublisher;
 
 /// Type alias for the databases service implementation used by AI tools:
@@ -1064,12 +1061,8 @@ pub type ToolDatabasesService =
 pub type ToolDatabasesToolContext =
     DatabasesToolContext<ToolDatabasesService, ToolEntityAccessService>;
 
-/// Build the databases tool context from a database pool.
-///
-/// The schema tools go through the same access receipts the HTTP API does, so
-/// this needs the entity access service as well as the pool; the publisher is
-/// what lets an agent's write reach open clients, and the broker is what puts
-/// it on the acting user's activity feed.
+/// Build the databases tool context: `events` reaches open clients, `broker`
+/// the acting user's activity feed.
 pub fn build_databases_tool_context(
     pool: sqlx::PgPool,
     entity_access_service: Arc<ToolEntityAccessService>,

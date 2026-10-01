@@ -14,22 +14,18 @@ use crate::{
     objects::GraphqlActivityEvent,
 };
 
-/// The newest activity on a database the viewer can see, newest first.
-///
-/// Databases are not Soup items, so they have no `activity` edge; this reads
-/// the same rows through the same loader once a view receipt proves access.
-/// A database the viewer cannot see reads as not found, so the field never
-/// confirms that one exists.
-pub async fn resolve_database_activity<R, A>(
+/// The newest activity on a database the viewer can view, newest first. A
+/// database the viewer cannot view reads as not found, never confirming it exists.
+pub async fn resolve_database_activity<Reader, Access>(
     ctx: &Context<'_>,
-    access: &A,
+    access: &Access,
     viewer: &MacroUserIdStr<'static>,
     database_id: ID,
     limit: Option<i32>,
 ) -> async_graphql::Result<Vec<GraphqlActivityEvent>>
 where
-    R: SoupActivityEdgeReader,
-    A: EntityAccessService,
+    Reader: SoupActivityEdgeReader,
+    Access: EntityAccessService,
 {
     let database_id = parse_id(database_id, "databaseId")?;
     let limit = parse_activity_edge_limit(limit)?;
@@ -42,7 +38,7 @@ where
         )
         .await
         .map_err(access_error)?;
-    load_entity_activity::<R>(
+    load_entity_activity::<Reader>(
         ctx,
         ActivityEdgeKey {
             entity: EntityType::Database.with_entity_string(receipt.entity().entity_id.clone()),

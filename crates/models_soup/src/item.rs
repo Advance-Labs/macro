@@ -235,8 +235,8 @@ impl<T> SoupItem<T> {
             (SoupItem::AgentSession(session), SimpleSortMethod::ViewedUpdated) => {
                 session.viewed_at.unwrap_or(session.updated_at)
             }
-            // Rows are never viewed on their own, so every view-based sort
-            // falls back to the row's own timestamps.
+            // Rows are never viewed on their own: ViewedAt sorts them last and
+            // ViewedUpdated uses updated_at.
             (SoupItem::DatabaseRow(row), SimpleSortMethod::CreatedAt) => row.created_at,
             (SoupItem::DatabaseRow(_), SimpleSortMethod::ViewedAt) => DateTime::default(),
             (

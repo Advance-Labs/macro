@@ -156,19 +156,21 @@ where
 
 /// Unified entity mutation router wired from the domain services.
 #[derive(Clone)]
-pub struct DssEntityMutationService<D, H, C, K, E, P, Db, A, L> {
+pub struct DssEntityMutationService<D, H, C, K, E, P, Databases, A, L> {
     documents: Arc<D>,
     chats: Arc<H>,
     channels: Arc<C>,
     calls: Arc<K>,
     email: Arc<E>,
     projects: Arc<P>,
-    databases: Arc<Db>,
+    databases: Arc<Databases>,
     access: Arc<A>,
     lifecycle: Arc<L>,
 }
 
-impl<D, H, C, K, E, P, Db, A, L> DssEntityMutationService<D, H, C, K, E, P, Db, A, L> {
+impl<D, H, C, K, E, P, Databases, A, L>
+    DssEntityMutationService<D, H, C, K, E, P, Databases, A, L>
+{
     /// Compose the unified mutation router from domain services.
     #[expect(
         clippy::too_many_arguments,
@@ -181,7 +183,7 @@ impl<D, H, C, K, E, P, Db, A, L> DssEntityMutationService<D, H, C, K, E, P, Db, 
         calls: Arc<K>,
         email: Arc<E>,
         projects: Arc<P>,
-        databases: Arc<Db>,
+        databases: Arc<Databases>,
         access: Arc<A>,
         lifecycle: Arc<L>,
     ) -> Self {
@@ -199,7 +201,7 @@ impl<D, H, C, K, E, P, Db, A, L> DssEntityMutationService<D, H, C, K, E, P, Db, 
     }
 }
 
-impl<D, H, C, K, E, P, Db, A, L> DssEntityMutationService<D, H, C, K, E, P, Db, A, L>
+impl<D, H, C, K, E, P, Databases, A, L> DssEntityMutationService<D, H, C, K, E, P, Databases, A, L>
 where
     D: DocumentService
         + RenameEntity
@@ -225,7 +227,8 @@ where
         + TrashEntity
         + RestoreEntity
         + DeleteEntityPermanently,
-    Db: DatabasesService + RenameEntity + TrashEntity + RestoreEntity + DeleteEntityPermanently,
+    Databases:
+        DatabasesService + RenameEntity + TrashEntity + RestoreEntity + DeleteEntityPermanently,
     A: EntityAccessService,
     L: EntityLifecycleService,
 {
@@ -733,8 +736,7 @@ where
             | EntityType::AgentSession
             | EntityType::ScheduledAction
             | EntityType::Initiative
-            // Duplicating a database means copying every row of every table;
-            // there is no such use case (or domain method) yet.
+            // Duplicating a database is unsupported.
             | EntityType::Database
             | EntityType::DatabaseRow => {
                 return unsupported(requested, "duplication");
@@ -744,8 +746,8 @@ where
     }
 }
 
-impl<D, H, C, K, E, P, Db, A, L> EntityMutationService
-    for DssEntityMutationService<D, H, C, K, E, P, Db, A, L>
+impl<D, H, C, K, E, P, Databases, A, L> EntityMutationService
+    for DssEntityMutationService<D, H, C, K, E, P, Databases, A, L>
 where
     D: DocumentService
         + RenameEntity
@@ -771,7 +773,8 @@ where
         + TrashEntity
         + RestoreEntity
         + DeleteEntityPermanently,
-    Db: DatabasesService + RenameEntity + TrashEntity + RestoreEntity + DeleteEntityPermanently,
+    Databases:
+        DatabasesService + RenameEntity + TrashEntity + RestoreEntity + DeleteEntityPermanently,
     A: EntityAccessService,
     L: EntityLifecycleService,
 {

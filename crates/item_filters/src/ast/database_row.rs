@@ -2,11 +2,8 @@ use filter_ast::Expr;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// The possible literal values in a database row filter AST.
-///
-/// Rows are **off by default**: a query that says nothing about them gets
-/// none, so Home, Search and Recent never list them. Naming a table or a row
-/// is the opt-in.
+/// A database row filter literal. Rows are off by default: only naming a
+/// table or a row opts a query into them, so Home, Search and Recent never list them.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum DatabaseRowLiteral {
     /// Rows of this table.

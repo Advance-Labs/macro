@@ -1,8 +1,5 @@
-//! Database row SQL clauses for the shared flat and grouped Soup queries.
-//!
-//! A row is visible when the viewer can view its database: rows carry no
-//! `entity_access` of their own, so the arm joins up to the database and
-//! gates on the database's grants. Rows of a trashed database are gone.
+//! Database row clauses for the flat and grouped Soup queries: a row is visible
+//! when its database is untrashed and the viewer holds a grant on it.
 
 use filter_ast::Expr;
 use item_filters::ast::database_row::DatabaseRowLiteral;
@@ -29,8 +26,8 @@ pub(in crate::outbound::pg_soup_repo) fn build_database_row_filter(
         .unwrap_or_default()
 }
 
-/// Rows are never viewed on their own, so view-based sorts fall back to the
-/// row's timestamps, as [`models_soup::item::SoupItem`]'s cursor does.
+/// Rows are never viewed on their own: `ViewedAt` sorts them last and `ViewedUpdated`
+/// uses `updated_at`, matching [`models_soup::item::SoupItem`]'s cursor.
 pub(super) fn database_row_top_clause(sort: SimpleSortMethod, grouped: bool) -> String {
     let sort_ts = match sort {
         SimpleSortMethod::CreatedAt => "r.created_at",
