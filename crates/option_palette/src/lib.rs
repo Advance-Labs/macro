@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
-//! The palette select and tag options are coloured from: the colours the
-//! web's tag components render (`apps/web/src/features/property/tags/tagColors.ts`),
-//! each by name, with the hex value an option stores.
+//! The palette select and tag options are coloured from, each colour by name
+//! with the hex value an option stores. The web's `tagColors.ts` copies it
+//! and type-checks against the generated `OptionColor`.
 
 #[cfg(test)]
 mod test;
@@ -21,11 +21,11 @@ use serde::{Deserialize, Serialize};
     Deserialize,
     utoipa::ToSchema,
     specta::Type,
-    schemars::JsonSchema,
     strum::EnumIter,
     strum::IntoStaticStr,
     strum::EnumString,
 )]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[strum(ascii_case_insensitive)]
 pub enum OptionColor {

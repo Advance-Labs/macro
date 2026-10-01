@@ -9,6 +9,7 @@ ai_tools = [
   "dep:ai_toolset",
   "dep:async-trait",
   "dep:schemars",
+  "option_palette/schema",
   "ports",
 ]
 default = ["ai_tools", "inbound", "outbound", "ports"]

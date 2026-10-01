@@ -8,8 +8,12 @@ version = "0.1.0"
 # its agent tools and the databases ops, which also run in the browser, so it
 # stays wasm-safe and takes no workspace-hack dependency (see
 # .config/hakari.toml).
+[features]
+# The JSON Schema of OptionColor, for agent tools that take a colour.
+schema = ["dep:schemars"]
+
 [dependencies]
-schemars = { workspace = true }
+schemars = { workspace = true, optional = true }
 serde = { workspace = true }
 specta = { workspace = true }
 strum = { workspace = true }
