@@ -32,7 +32,7 @@ pub struct ViewPositionsResponse {
 pub async fn view_positions_handler<Service, EntityAccess, Authorization>(
     access: DatabaseAccessLevelExtractor<ViewAccessLevel, EntityAccess, Authorization>,
     State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
-    Path((_database, view_id)): Path<(Uuid, ViewId)>,
+    Path((_database, view_id)): Path<(DatabaseId, ViewId)>,
 ) -> Result<Json<ViewPositionsResponse>, DatabaseError>
 where
     Service: DatabasesService,

@@ -11,7 +11,7 @@ fn relation_schema_names_the_target_table() {
         Some(models_properties::shared::EntityType::User);
     column.column.config = Some(ColumnConfig::Link {
         database_id: DATABASE_ID,
-        table_id: target,
+        table_id: TableId::from_uuid(target),
     });
     column.writable = false;
     let schema = serde_json::to_value(ToolDatabaseSchema::from(database)).unwrap();

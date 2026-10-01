@@ -236,7 +236,7 @@ async fn an_update_changes_what_it_names_and_a_regrouped_board_forgets_its_cards
         vec![CardPosition {
             row: seeded.row_id,
             lane: None,
-            position: "80".into(),
+            position: "80".parse::<Position>().unwrap(),
         }],
     );
     let sorted = ViewQuery {
@@ -332,15 +332,15 @@ async fn views_reorder_when_the_order_names_each_of_them_once() {
         &vec![
             ViewPosition {
                 view: third.id,
-                position: "7f80".into(),
+                position: "7f80".parse::<Position>().unwrap(),
             },
             ViewPosition {
                 view: first.id,
-                position: "80".into(),
+                position: "80".parse::<Position>().unwrap(),
             },
             ViewPosition {
                 view: second.id,
-                position: "8180".into(),
+                position: "8180".parse::<Position>().unwrap(),
             },
         ]
     );
@@ -370,7 +370,7 @@ async fn a_deleted_view_takes_its_card_places_with_it() {
         vec![CardPosition {
             row: seeded.row_id,
             lane: None,
-            position: "80".into(),
+            position: "80".parse::<Position>().unwrap(),
         }],
     );
 
@@ -426,13 +426,13 @@ async fn moving_a_card_to_another_lane_sets_its_cell_and_places_it_there() {
             positions: vec![CardPosition {
                 row: sam,
                 lane: Some(declined),
-                position: "80".into(),
+                position: "80".parse::<Position>().unwrap(),
             }],
         }]
     );
     assert_eq!(
         cell(&seeded.world, sam, status),
-        Some(PropertyValue::SelectOption(vec![declined]))
+        Some(PropertyValue::SelectOption(vec![declined.into_uuid()]))
     );
 
     seeded
@@ -525,18 +525,18 @@ async fn moving_a_card_within_its_lane_places_the_unplaced_cards_before_it() {
                 CardPosition {
                     row: alex,
                     lane: Some(going),
-                    position: "7f80".into(),
+                    position: "7f80".parse::<Position>().unwrap(),
                 },
                 CardPosition {
                     row: sam,
                     lane: Some(going),
-                    position: "80".into(),
+                    position: "80".parse::<Position>().unwrap(),
                 },
             ],
             vec![CardPosition {
                 row: extra,
                 lane: Some(going),
-                position: "7e80".into(),
+                position: "7e80".parse::<Position>().unwrap(),
             }],
         ]
     );
@@ -766,7 +766,7 @@ async fn removing_an_option_takes_it_out_of_views_lanes_and_card_places() {
         vec![CardPosition {
             row: seeded.row_id,
             lane: Some(going),
-            position: "80".into(),
+            position: "80".parse::<Position>().unwrap(),
         }],
     );
 
@@ -910,7 +910,7 @@ async fn a_boards_card_places_read_back_for_its_database_alone() {
     let placed = vec![CardPosition {
         row: seeded.row_id,
         lane: None,
-        position: "80".into(),
+        position: "80".parse::<Position>().unwrap(),
     }];
     seeded
         .world
@@ -928,7 +928,7 @@ async fn a_boards_card_places_read_back_for_its_database_alone() {
             .unwrap(),
         placed
     );
-    let elsewhere = receipt::<ViewAccessLevel>(Uuid::new_v4(), OWNER, AccessLevel::Owner);
+    let elsewhere = receipt::<ViewAccessLevel>(DatabaseId::new(), OWNER, AccessLevel::Owner);
     assert!(matches!(
         seeded.service.view_positions(elsewhere, stages.id).await,
         Err(DatabaseError::NotFound)

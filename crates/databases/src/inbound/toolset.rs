@@ -21,6 +21,7 @@ mod write_warning;
 #[cfg(test)]
 mod test;
 
+use models_databases::{ColumnId, DatabaseId, OptionId, TableId};
 use std::sync::Arc;
 
 use ai_toolset::{AsyncToolCollection, ToolCallError};
@@ -37,7 +38,6 @@ use models_databases::cast::SpelledColumnType;
 use models_properties::shared::DataType;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::domain::catalog::{cast_targets, option_labels, sql_table_name};
 use crate::domain::models::{
@@ -126,7 +126,7 @@ impl<Service: DatabasesService, EntityAccess: EntityAccessService>
     pub(crate) async fn view_receipt(
         &self,
         user_id: &MacroUserIdStr<'static>,
-        database_id: Uuid,
+        database_id: DatabaseId,
     ) -> Result<EntityAccessReceipt<ViewAccessLevel>, ToolCallError> {
         self.receipt::<ViewAccessLevel>(user_id, database_id, "read")
             .await
@@ -136,7 +136,7 @@ impl<Service: DatabasesService, EntityAccess: EntityAccessService>
     pub(crate) async fn edit_receipt(
         &self,
         user_id: &MacroUserIdStr<'static>,
-        database_id: Uuid,
+        database_id: DatabaseId,
     ) -> Result<EntityAccessReceipt<EditAccessLevel>, ToolCallError> {
         self.receipt::<EditAccessLevel>(user_id, database_id, "edit")
             .await
@@ -147,7 +147,7 @@ impl<Service: DatabasesService, EntityAccess: EntityAccessService>
     pub(crate) async fn schema_after_write(
         &self,
         user_id: &MacroUserIdStr<'static>,
-        database_id: Uuid,
+        database_id: DatabaseId,
     ) -> SchemaAfterWrite {
         match self.current_schema(user_id, database_id).await {
             Ok(detail) => SchemaAfterWrite {
@@ -169,7 +169,7 @@ impl<Service: DatabasesService, EntityAccess: EntityAccessService>
     pub(crate) async fn current_schema(
         &self,
         user_id: &MacroUserIdStr<'static>,
-        database_id: Uuid,
+        database_id: DatabaseId,
     ) -> Result<DatabaseDetail, ToolCallError> {
         let receipt = self.view_receipt(user_id, database_id).await?;
         self.service
@@ -183,7 +183,7 @@ impl<Service: DatabasesService, EntityAccess: EntityAccessService>
     async fn receipt<Permission: RequiredPermission>(
         &self,
         user_id: &MacroUserIdStr<'static>,
-        database_id: Uuid,
+        database_id: DatabaseId,
         verb: &str,
     ) -> Result<EntityAccessReceipt<Permission>, ToolCallError> {
         database_receipt::<Permission, _>(
@@ -258,7 +258,7 @@ where
 /// One table of a described database, or an error pointing at DescribeDatabase.
 pub(crate) fn table_of(
     detail: &DatabaseDetail,
-    table_id: Uuid,
+    table_id: TableId,
 ) -> Result<&TableDetail, ToolCallError> {
     detail
         .tables
@@ -276,7 +276,7 @@ pub(crate) fn table_of(
 /// One column of a described table, or an error pointing at DescribeDatabase.
 pub(crate) fn column_of(
     table: &TableDetail,
-    column_id: Uuid,
+    column_id: ColumnId,
 ) -> Result<&ColumnDetail, ToolCallError> {
     table
         .columns
@@ -468,7 +468,7 @@ impl From<ToolEntityType> for models_properties::EntityType {
 pub struct ToolDatabase {
     /// The database's id. Pass this to DescribeDatabase, CreateTable, or
     /// AddColumn.
-    pub id: Uuid,
+    pub id: DatabaseId,
     /// Display name, as the user knows it.
     pub name: String,
     /// What the user may do with it.
@@ -483,7 +483,7 @@ pub struct ToolDatabase {
 #[serde(rename_all = "camelCase")]
 pub struct ToolTableSummary {
     /// Table id, used with the containing database id for schema operations.
-    pub id: Uuid,
+    pub id: TableId,
     /// Display name shown on the table tab.
     pub name: String,
     /// The name to use in SQL, quoted.
@@ -514,7 +514,7 @@ impl From<ListedDatabase> for ToolDatabase {
 #[serde(rename_all = "camelCase")]
 pub struct ToolColumn {
     /// The column placement's id.
-    pub id: Uuid,
+    pub id: ColumnId,
     /// The name to use in SQL.
     pub sql_name: String,
     /// The name the user sees.
@@ -553,7 +553,7 @@ pub struct ToolColumn {
 #[serde(rename_all = "camelCase")]
 pub struct ToolOption {
     /// The id views name it by.
-    pub id: Uuid,
+    pub id: OptionId,
     /// The label SQL reads and writes.
     pub label: String,
 }
@@ -563,9 +563,9 @@ pub struct ToolOption {
 #[serde(rename_all = "camelCase")]
 pub struct ToolRelation {
     /// Database containing the target rows.
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
     /// Table whose row ids this relation stores.
-    pub table_id: Uuid,
+    pub table_id: TableId,
 }
 
 /// One table of a database, as the model sees it.
@@ -573,7 +573,7 @@ pub struct ToolRelation {
 #[serde(rename_all = "camelCase")]
 pub struct ToolTable {
     /// The table's id. Pass this to AddColumn.
-    pub id: Uuid,
+    pub id: TableId,
     /// The name to use in SQL, quoted (`FROM "Guests"`).
     pub sql_name: String,
     /// Version at which this schema was described. A new SELECT supplies the
@@ -597,7 +597,7 @@ pub struct ToolTable {
 #[serde(rename_all = "camelCase")]
 pub struct ToolDatabaseSchema {
     /// The database's id.
-    pub id: Uuid,
+    pub id: DatabaseId,
     /// Display name.
     pub name: String,
     /// What the user may do with it.

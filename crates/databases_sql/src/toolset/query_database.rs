@@ -1,6 +1,7 @@
 //! QueryDatabase tool: the read *and* write verb for Macro Databases, and
 //! its read-only twin for document answers.
 
+use models_databases::{DatabaseId, RowId, TableId};
 use std::collections::HashMap;
 
 use ai_toolset::{
@@ -14,7 +15,6 @@ use entity_access::domain::ports::EntityAccessService;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use soup::domain::ports::SoupService;
-use uuid::Uuid;
 
 use super::{DatabasesSqlToolContext, sql_error};
 use crate::outcome::{ResultSet, SqlOutcome, SqlStatement};
@@ -48,7 +48,7 @@ pub struct QueryDatabase {
                        Tables of other databases stay reachable for joins."
     )]
     #[serde(default)]
-    pub database_id: Option<Uuid>,
+    pub database_id: Option<DatabaseId>,
     /// Optional versions from a previous QueryDatabase read. Reject the write
     /// if a listed table being written changed. Read-only dependencies are not
     /// guarded; omit for a read or intentional blind edit.
@@ -135,7 +135,7 @@ where
 #[serde(rename_all = "camelCase")]
 pub struct ToolTableVersion {
     /// Stable table id, not a SQL name.
-    pub table_id: Uuid,
+    pub table_id: TableId,
     /// Version acknowledged by the read.
     pub version: i64,
 }
@@ -156,10 +156,10 @@ pub struct QueryDatabaseResponse {
     pub changes_applied: usize,
     /// Ids the server minted for inserted rows, in insertion order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub inserted_row_ids: Vec<Uuid>,
+    pub inserted_row_ids: Vec<RowId>,
     /// New version of every table written, keyed by table id.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub new_versions: HashMap<Uuid, i64>,
+    pub new_versions: HashMap<TableId, i64>,
     /// Versions of the tables this query actually read. Supply these as
     /// baseVersions to guard tables a later edit writes. Tables it only reads
     /// are not guarded.

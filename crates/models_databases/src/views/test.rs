@@ -2,14 +2,15 @@ use chrono::TimeZone;
 use serde_json::json;
 
 use super::*;
+use uuid::Uuid;
 
-const NAME: Uuid = Uuid::from_u128(0xc01a);
-const STATUS: Uuid = Uuid::from_u128(0xc01b);
-const DIET: Uuid = Uuid::from_u128(0xc01c);
-const PLUS_ONES: Uuid = Uuid::from_u128(0xc01d);
-const GOING: Uuid = Uuid::from_u128(0x0b1);
-const DECLINED: Uuid = Uuid::from_u128(0x0b2);
-const VEGAN: Uuid = Uuid::from_u128(0x0b3);
+const NAME: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xc01a));
+const STATUS: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xc01b));
+const DIET: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xc01c));
+const PLUS_ONES: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xc01d));
+const GOING: OptionId = OptionId::from_uuid(Uuid::from_u128(0x0b1));
+const DECLINED: OptionId = OptionId::from_uuid(Uuid::from_u128(0x0b2));
+const VEGAN: OptionId = OptionId::from_uuid(Uuid::from_u128(0x0b3));
 
 /// `Guests(Name TEXT, Status SELECT[Going|Declined], Diet MULTI SELECT[Vegan],
 /// Plus ones NUMBER)`.
@@ -187,7 +188,7 @@ fn a_view_that_fits_its_table_passes() {
 
 #[test]
 fn a_view_that_does_not_fit_its_table_says_why() {
-    let ghost = Uuid::from_u128(0x6057);
+    let ghost = ColumnId::from_uuid(Uuid::from_u128(0x6057));
     let cases = [
         (
             ViewQuery {
@@ -588,26 +589,26 @@ fn removing_an_option_drops_it_from_tests_and_lanes() {
     );
 }
 
-const FIRST: Uuid = Uuid::from_u128(0x0001);
-const SECOND: Uuid = Uuid::from_u128(0x0002);
-const THIRD: Uuid = Uuid::from_u128(0x0003);
-const FOURTH: Uuid = Uuid::from_u128(0x0004);
-const MOVED: Uuid = Uuid::from_u128(0x0005);
+const FIRST: RowId = RowId::from_uuid(Uuid::from_u128(0x0001));
+const SECOND: RowId = RowId::from_uuid(Uuid::from_u128(0x0002));
+const THIRD: RowId = RowId::from_uuid(Uuid::from_u128(0x0003));
+const FOURTH: RowId = RowId::from_uuid(Uuid::from_u128(0x0004));
+const MOVED: RowId = RowId::from_uuid(Uuid::from_u128(0x0005));
 
 #[test]
 fn a_lane_shows_placed_cards_by_position_then_the_rest_by_creation() {
     let mut lane = vec![
         (FOURTH, None),
-        (THIRD, Some("8180".to_string())),
+        (THIRD, Some("8180".parse::<Position>().unwrap())),
         (SECOND, None),
-        (FIRST, Some("8280".to_string())),
+        (FIRST, Some("8280".parse::<Position>().unwrap())),
     ];
     arrange_lane(&mut lane);
     assert_eq!(
         lane,
         vec![
-            (THIRD, Some("8180".to_string())),
-            (FIRST, Some("8280".to_string())),
+            (THIRD, Some("8180".parse::<Position>().unwrap())),
+            (FIRST, Some("8280".parse::<Position>().unwrap())),
             (SECOND, None),
             (FOURTH, None),
         ]
@@ -617,33 +618,33 @@ fn a_lane_shows_placed_cards_by_position_then_the_rest_by_creation() {
 #[test]
 fn a_card_lands_between_placed_neighbours_with_one_new_key() {
     let lane = vec![
-        (FIRST, Some("80".to_string())),
-        (SECOND, Some("8180".to_string())),
+        (FIRST, Some("80".parse::<Position>().unwrap())),
+        (SECOND, Some("8180".parse::<Position>().unwrap())),
         (THIRD, None),
     ];
 
     assert_eq!(
         place_card(&lane, MOVED, Some(FIRST), Some(SECOND)),
-        Ok(vec![(MOVED, "817f80".to_string())])
+        Ok(vec![(MOVED, "817f80".parse::<Position>().unwrap())])
     );
     assert_eq!(
         place_card(&lane, MOVED, None, Some(FIRST)),
-        Ok(vec![(MOVED, "7f80".to_string())])
+        Ok(vec![(MOVED, "7f80".parse::<Position>().unwrap())])
     );
     assert_eq!(
         place_card(&lane, MOVED, Some(SECOND), None),
-        Ok(vec![(MOVED, "8280".to_string())])
+        Ok(vec![(MOVED, "8280".parse::<Position>().unwrap())])
     );
     assert_eq!(
         place_card(&[], MOVED, None, None),
-        Ok(vec![(MOVED, "80".to_string())])
+        Ok(vec![(MOVED, "80".parse::<Position>().unwrap())])
     );
 }
 
 #[test]
 fn a_card_landing_among_unplaced_cards_places_the_ones_before_it() {
     let lane = vec![
-        (FIRST, Some("80".to_string())),
+        (FIRST, Some("80".parse::<Position>().unwrap())),
         (SECOND, None),
         (THIRD, None),
         (FOURTH, None),
@@ -652,25 +653,25 @@ fn a_card_landing_among_unplaced_cards_places_the_ones_before_it() {
     assert_eq!(
         place_card(&lane, MOVED, Some(THIRD), Some(FOURTH)),
         Ok(vec![
-            (SECOND, "817f80".to_string()),
-            (THIRD, "8180".to_string()),
-            (MOVED, "8280".to_string()),
+            (SECOND, "817f80".parse::<Position>().unwrap()),
+            (THIRD, "8180".parse::<Position>().unwrap()),
+            (MOVED, "8280".parse::<Position>().unwrap()),
         ])
     );
     assert_eq!(
         place_card(&lane, MOVED, None, None),
         Ok(vec![
-            (SECOND, "817e80".to_string()),
-            (THIRD, "817f80".to_string()),
-            (FOURTH, "8180".to_string()),
-            (MOVED, "8280".to_string()),
+            (SECOND, "817e80".parse::<Position>().unwrap()),
+            (THIRD, "817f80".parse::<Position>().unwrap()),
+            (FOURTH, "8180".parse::<Position>().unwrap()),
+            (MOVED, "8280".parse::<Position>().unwrap()),
         ])
     );
 }
 
 #[test]
 fn a_neighbour_outside_the_lane_is_refused() {
-    let lane = vec![(FIRST, Some("80".to_string()))];
+    let lane = vec![(FIRST, Some("80".parse::<Position>().unwrap()))];
     assert_eq!(
         place_card(&lane, MOVED, Some(SECOND), None),
         Err(PlacementError::NotInLane(SECOND))
@@ -681,11 +682,11 @@ fn a_neighbour_outside_the_lane_is_refused() {
 fn a_stored_view_crosses_the_wire_in_camel_case() {
     let created = Utc.with_ymd_and_hms(2026, 10, 1, 9, 0, 0).unwrap();
     let view = DatabaseView {
-        id: Uuid::from_u128(0x71e),
-        database_id: Uuid::from_u128(0xdb),
-        table_id: Uuid::from_u128(0x7ab1),
+        id: ViewId::from_uuid(Uuid::from_u128(0x71e)),
+        database_id: DatabaseId::from_uuid(Uuid::from_u128(0xdb)),
+        table_id: TableId::from_uuid(Uuid::from_u128(0x7ab1)),
         name: "All".into(),
-        position: "80".into(),
+        position: "80".parse::<Position>().unwrap(),
         query: ViewQuery::default(),
         layout: ViewLayout::Table { columns: vec![] },
         created_at: created,
@@ -710,9 +711,9 @@ fn a_stored_view_crosses_the_wire_in_camel_case() {
 #[test]
 fn neighbours_that_are_not_adjacent_are_refused() {
     let lane = vec![
-        (FIRST, Some("80".to_string())),
-        (SECOND, Some("8180".to_string())),
-        (THIRD, Some("8280".to_string())),
+        (FIRST, Some("80".parse::<Position>().unwrap())),
+        (SECOND, Some("8180".parse::<Position>().unwrap())),
+        (THIRD, Some("8280".parse::<Position>().unwrap())),
     ];
     assert_eq!(
         place_card(&lane, MOVED, Some(FIRST), Some(THIRD)),

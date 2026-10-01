@@ -5,9 +5,9 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
+use models_databases::{DatabaseId, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::{
     DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, database_error,
@@ -33,11 +33,11 @@ still succeeded; call DescribeDatabase using databaseId before continuing."
 pub struct RenameTable {
     /// The database containing the table.
     #[schemars(description = "Id of the database containing the table, from ListDatabases.")]
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
 
     /// The table to rename.
     #[schemars(description = "Id of the table to rename, from DescribeDatabase.")]
-    pub table_id: Uuid,
+    pub table_id: TableId,
 
     /// New display name.
     #[schemars(
@@ -57,9 +57,9 @@ impl ToolAnnotated for RenameTable {
 #[serde(rename_all = "camelCase")]
 pub struct RenameTableResponse {
     /// Database containing the renamed table.
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
     /// The renamed table's id, unchanged by the rename.
-    pub table_id: Uuid,
+    pub table_id: TableId,
     /// The table's display name after the rename.
     pub name: String,
     /// The database's schema after the change.

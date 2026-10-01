@@ -5,9 +5,9 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
+use models_databases::DatabaseId;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::{
     DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, database_error,
@@ -56,7 +56,7 @@ impl ToolAnnotated for CreateDatabase {
 #[serde(rename_all = "camelCase")]
 pub struct CreateDatabaseResponse {
     /// Id of the database that was created, even if schema refresh failed.
-    pub id: Uuid,
+    pub id: DatabaseId,
     /// Its persisted display name.
     pub name: String,
     /// Refreshed schema and starter table, when available.

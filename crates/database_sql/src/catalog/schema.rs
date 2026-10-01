@@ -9,6 +9,7 @@ mod test;
 use models_databases::EntityKind as OpEntityKind;
 use models_databases::property::stored_cast_kind;
 pub use models_databases::property::{DataType, OptionValue};
+use models_databases::{ColumnId, DatabaseId, OptionId, TableId};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use uuid::Uuid;
@@ -34,7 +35,7 @@ pub struct Schema {
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseSchema {
     /// The database id.
-    pub id: Uuid,
+    pub id: DatabaseId,
     /// Its name, as users name it.
     pub name: String,
     /// Its tables.
@@ -47,7 +48,7 @@ pub struct DatabaseSchema {
 #[serde(rename_all = "camelCase")]
 pub struct TableSchema {
     /// The table id.
-    pub id: Uuid,
+    pub id: TableId,
     /// Its name.
     pub name: String,
     /// Its columns.
@@ -59,7 +60,7 @@ pub struct TableSchema {
 #[serde(rename_all = "camelCase")]
 pub struct ColumnSchema {
     /// The placement.
-    pub id: Uuid,
+    pub id: ColumnId,
     /// The property definition.
     pub definition: Uuid,
     /// The name it goes by: the placement's own, else the definition's.
@@ -89,7 +90,7 @@ pub struct PropertyType {
 #[serde(rename_all = "camelCase")]
 pub struct OptionSchema {
     /// The option id.
-    pub id: Uuid,
+    pub id: OptionId,
     /// Its value.
     pub value: OptionValue,
     /// Where it sorts among the definition's options.
@@ -140,7 +141,7 @@ impl ColumnSchema {
 /// another database whose database and table names both match one of the
 /// scoped database's, case-insensitively as the engine matches, is left out:
 /// the scoped table wins instead of the statement being ambiguous.
-pub fn build(schema: &Schema, scope: Option<Uuid>) -> Catalog {
+pub fn build(schema: &Schema, scope: Option<DatabaseId>) -> Catalog {
     let qualified = |database: &str, table: &str| (database.to_lowercase(), table.to_lowercase());
     let scoped: Vec<(String, String)> = schema
         .databases

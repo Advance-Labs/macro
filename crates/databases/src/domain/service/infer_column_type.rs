@@ -41,7 +41,7 @@ where
             || detail.column.config.is_some()
             || definition.data_type != DataType::String
             || definition.is_multi_select
-            || !matches!(definition.owner, PropertyOwner::Database { database_id } if database_id == database.id)
+            || !matches!(definition.owner, PropertyOwner::Database { database_id } if DatabaseId::from_uuid(database_id) == database.id)
         {
             return Err(DatabaseError::from(SchemaError::InferenceNeedsEmptyText));
         }

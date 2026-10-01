@@ -13,7 +13,7 @@ use models_properties::service::property_value::PropertyValue;
 
 use super::{Planner, refuse};
 use crate::domain::catalog::{ColumnEntry, TableEntry, schema_columns};
-use crate::domain::models::{DatabaseError, PropertyDefinitionId, RowId, TableId, Write};
+use crate::domain::models::{DatabaseError, Position, PropertyDefinitionId, RowId, TableId, Write};
 use crate::domain::service::{same_name, validate_name};
 
 /// Where one board's cards are: each row of its table with its lane (the
@@ -23,7 +23,7 @@ use crate::domain::service::{same_name, validate_name};
 pub(super) struct Board {
     /// The definition of the column the board was loaded grouped by.
     pub(super) grouping: PropertyDefinitionId,
-    pub(super) cards: HashMap<RowId, (Option<OptionId>, Option<String>)>,
+    pub(super) cards: HashMap<RowId, (Option<OptionId>, Option<Position>)>,
 }
 
 impl Board {
@@ -40,7 +40,9 @@ impl Board {
             .iter()
             .map(|row| {
                 let lane = match cells.get(row) {
-                    Some(PropertyValue::SelectOption(options)) => options.first().copied(),
+                    Some(PropertyValue::SelectOption(options)) => {
+                        options.first().copied().map(OptionId::from_uuid)
+                    }
                     _ => None,
                 };
                 let position = positions
@@ -54,8 +56,8 @@ impl Board {
     }
 
     /// One lane's cards other than `except`, in board order.
-    fn lane(&self, lane: Option<OptionId>, except: RowId) -> Vec<(RowId, Option<String>)> {
-        let mut cards: Vec<(RowId, Option<String>)> = self
+    fn lane(&self, lane: Option<OptionId>, except: RowId) -> Vec<(RowId, Option<Position>)> {
+        let mut cards: Vec<(RowId, Option<Position>)> = self
             .cards
             .iter()
             .filter(|(row, (card_lane, _))| **row != except && *card_lane == lane)
@@ -95,10 +97,10 @@ impl Planner<'_> {
                 self.check_view(index, entry, query, layout)?;
                 let now = self.now;
                 let views = self.views_of(entry);
-                let position = key_between(views.last().map(|view| view.position.as_str()), None)
+                let position = key_between(views.last().map(|view| &view.position), None)
                     .map_err(|error| refuse(index, None, None, error.to_string()))?;
                 let view = DatabaseView {
-                    id: macro_uuid::generate_uuid_v7(),
+                    id: ViewId::new(),
                     database_id: entry.database.id,
                     table_id: table,
                     name,
@@ -292,7 +294,7 @@ impl Planner<'_> {
             positions,
             cell: (
                 definition,
-                lane.map(|option| PropertyValue::SelectOption(vec![option])),
+                lane.map(|option| PropertyValue::SelectOption(vec![option.into_uuid()])),
             ),
         })
     }

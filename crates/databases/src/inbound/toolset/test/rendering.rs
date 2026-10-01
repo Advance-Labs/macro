@@ -44,7 +44,11 @@ fn describing_a_database_renders_option_labels() {
         .collect();
     assert_eq!(labels, vec!["Going", "Declined"]);
     let detail = detail(AccessLevel::Owner);
-    let ids: Vec<Uuid> = column.options.iter().map(|option| option.id).collect();
+    let ids: Vec<Uuid> = column
+        .options
+        .iter()
+        .map(|option| option.id.into_uuid())
+        .collect();
     let stored: Vec<Uuid> = detail.tables[0].columns[0]
         .definition
         .property_options

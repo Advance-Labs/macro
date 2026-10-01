@@ -5,9 +5,9 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
+use models_databases::{ColumnId, DatabaseId, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::{
     ColumnType, DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings,
@@ -50,14 +50,14 @@ call DescribeDatabase using databaseId before continuing, without repeating AddC
 pub struct AddColumn {
     /// The database the table belongs to.
     #[schemars(description = "Id of the database the table belongs to, from ListDatabases.")]
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
 
     /// The table to add the column to.
     #[schemars(
         description = "Id of the table to add the column to, from DescribeDatabase or \
                        CreateTable. It must belong to databaseId."
     )]
-    pub table_id: Uuid,
+    pub table_id: TableId,
 
     /// Display name of the new column.
     #[schemars(
@@ -102,7 +102,7 @@ pub struct AddColumn {
                        table must be one the user can reach."
     )]
     #[serde(default)]
-    pub link_to_table_id: Option<Uuid>,
+    pub link_to_table_id: Option<TableId>,
 }
 
 impl ToolAnnotated for AddColumn {
@@ -114,11 +114,11 @@ impl ToolAnnotated for AddColumn {
 #[serde(rename_all = "camelCase")]
 pub struct AddColumnResponse {
     /// Database containing the committed column.
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
     /// Table containing the committed column.
-    pub table_id: Uuid,
+    pub table_id: TableId,
     /// The new column placement's id.
-    pub column_id: Uuid,
+    pub column_id: ColumnId,
     /// The database's schema after the change.
     pub database: Option<ToolDatabaseSchema>,
     /// Follow-up guidance if schema refresh failed after the column was saved.

@@ -178,7 +178,7 @@ async fn rename_validates_the_name_and_writes_it() {
 
     let err = svc
         .rename_database(
-            receipt::<EditAccessLevel>(Uuid::new_v4(), OWNER, AccessLevel::Owner),
+            receipt::<EditAccessLevel>(DatabaseId::new(), OWNER, AccessLevel::Owner),
             "Elsewhere".into(),
         )
         .await
@@ -420,7 +420,7 @@ async fn schema_operations_respect_receipts() {
         .create_table(
             receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
             CreateTable {
-                database_id: other,
+                database_id: DatabaseId::from_uuid(other),
                 name: "Nope".into(),
             },
         )
@@ -430,7 +430,7 @@ async fn schema_operations_respect_receipts() {
 
     let err = svc
         .create_column(
-            receipt::<EditAccessLevel>(other, OWNER, AccessLevel::Owner),
+            receipt::<EditAccessLevel>(DatabaseId::from_uuid(other), OWNER, AccessLevel::Owner),
             viewer(OWNER),
             CreateColumn {
                 infer_type: false,

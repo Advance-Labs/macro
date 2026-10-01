@@ -9,6 +9,7 @@
 
 use std::collections::HashMap;
 
+use models_databases::OptionId;
 use uuid::Uuid;
 
 use crate::resolve::JoinKind;
@@ -97,7 +98,7 @@ fn members(cell: &Cell) -> Vec<String> {
         Cell::Number(number) => vec![number.to_bits().to_string()],
         Cell::Bool(flag) => vec![flag.to_string()],
         Cell::Date(date) => vec![date.timestamp_millis().to_string()],
-        Cell::Options(ids) => ids.iter().map(Uuid::to_string).collect(),
+        Cell::Options(ids) => ids.iter().map(OptionId::to_string).collect(),
         Cell::Entities(ids) => ids.clone(),
     }
 }

@@ -48,7 +48,7 @@ pub(super) fn apply_in_world(
             .ok_or(FakeError)?;
         let display_order = definition.property_options.len() as i32;
         definition.property_options.push(PropertyOption {
-            id: option.id,
+            id: option.id.into_uuid(),
             property_definition_id: option.definition_id,
             display_order,
             value: option.value.clone(),
@@ -63,11 +63,10 @@ pub(super) fn apply_in_world(
             Write::InsertRows { table_id, rows } => {
                 let mut ids = Vec::new();
                 for cells in rows {
-                    let id = Uuid::now_v7();
+                    let id = RowId::from_uuid(Uuid::now_v7());
                     let table_rows = world.rows.entry(*table_id).or_default();
                     let position =
-                        key_between(table_rows.last().map(|last| last.position.as_str()), None)
-                            .unwrap();
+                        key_between(table_rows.last().map(|last| &last.position), None).unwrap();
                     table_rows.push(RowRef { id, position });
                     ids.push(id);
                     if !cells.is_empty() {
@@ -144,7 +143,7 @@ pub(super) fn apply_in_world(
                             definition
                                 .property_options
                                 .iter_mut()
-                                .find(|option| option.id == *option_id)
+                                .find(|option| option.id == option_id.into_uuid())
                         })
                 else {
                     return Ok(WritesOutcome::MissingOption { write: index });
@@ -184,14 +183,14 @@ pub(super) fn apply_in_world(
                 let before = definition.property_options.len();
                 definition
                     .property_options
-                    .retain(|option| option.id != *option_id);
+                    .retain(|option| option.id != option_id.into_uuid());
                 if definition.property_options.len() == before {
                     return Ok(WritesOutcome::MissingOption { write: index });
                 }
                 for cells in world.cells.values_mut() {
                     if let Some(PropertyValue::SelectOption(options)) = cells.get_mut(definition_id)
                     {
-                        options.retain(|option| option != option_id);
+                        options.retain(|option| *option != option_id.into_uuid());
                         if options.is_empty() {
                             cells.remove(definition_id);
                         }

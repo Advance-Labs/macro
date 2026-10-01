@@ -1,3 +1,4 @@
+use models_databases::RowId;
 use std::collections::HashMap;
 
 use chrono::{TimeZone, Utc};
@@ -7,10 +8,10 @@ use crate::resolve::{Filter, Query, compile};
 use crate::split::split;
 use crate::test_support::{catalog, *};
 
-const ACME: Uuid = Uuid::from_u128(0xa1);
-const GLOBEX: Uuid = Uuid::from_u128(0xa2);
-const HOOLI: Uuid = Uuid::from_u128(0xa3);
-const INITECH: Uuid = Uuid::from_u128(0xa4);
+const ACME: RowId = RowId::from_uuid(Uuid::from_u128(0xa1));
+const GLOBEX: RowId = RowId::from_uuid(Uuid::from_u128(0xa2));
+const HOOLI: RowId = RowId::from_uuid(Uuid::from_u128(0xa3));
+const INITECH: RowId = RowId::from_uuid(Uuid::from_u128(0xa4));
 
 /// Four deals as the server would return them for a `SELECT *`:
 /// Acme (Won, 12000, Sam, vip, done), Globex (Lead, 3000, Sam), Hooli (Won,
@@ -234,7 +235,7 @@ fn limit_and_offset_apply_after_ordering() {
 
 #[test]
 fn residual_predicates_follow_sql_null_rules_and_macro_matching() {
-    let cases: &[(&str, &[Uuid])] = &[
+    let cases: &[(&str, &[RowId])] = &[
         // number comparisons; an empty cell never compares true
         ("amount > 5000", &[ACME, INITECH]),
         ("amount <= 7000", &[GLOBEX, INITECH]),
@@ -294,7 +295,7 @@ fn residual_predicates_follow_sql_null_rules_and_macro_matching() {
             panic!("not a SELECT");
         };
         let filter = select.where_.unwrap();
-        let held: Vec<Uuid> = deals()
+        let held: Vec<RowId> = deals()
             .iter()
             .filter(|row| super::predicate::holds(&filter, row))
             .map(|row| row.id)
@@ -325,7 +326,7 @@ fn distinct_over_aggregates_changes_nothing() {
         plan("SELECT DISTINCT stage, COUNT(*) FROM crm.deals GROUP BY stage ORDER BY 2 DESC");
     let (rows, ids) = fold_relations(&catalog(), &plan, vec![deals()]);
     assert_eq!(rows.len(), 3);
-    assert_eq!(ids, Vec::<Uuid>::new());
+    assert_eq!(ids, Vec::<RowId>::new());
 }
 
 #[test]
@@ -338,7 +339,7 @@ fn join_matches_by_membership_and_leaves_empty_cells_unmatched() {
     );
     let people = vec![
         Row {
-            id: Uuid::from_u128(0x71),
+            id: RowId::from_uuid(Uuid::from_u128(0x71)),
             position: None,
             cells: HashMap::from([
                 (
@@ -352,7 +353,7 @@ fn join_matches_by_membership_and_leaves_empty_cells_unmatched() {
             ]),
         },
         Row {
-            id: Uuid::from_u128(0x72),
+            id: RowId::from_uuid(Uuid::from_u128(0x72)),
             position: None,
             cells: HashMap::from([
                 (

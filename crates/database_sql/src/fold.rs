@@ -18,6 +18,8 @@ mod test;
 use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
+use models_databases::position::Position;
+use models_databases::{OptionId, RowId};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use uuid::Uuid;
@@ -42,7 +44,7 @@ pub enum Cell {
     /// A date-time.
     Date(DateTime<Utc>),
     /// The selected option ids; one for single-select columns.
-    Options(Vec<Uuid>),
+    Options(Vec<OptionId>),
     /// The referenced entity ids; one for single-valued columns.
     Entities(Vec<String>),
 }
@@ -63,7 +65,7 @@ pub(crate) enum CellKey {
     Number(u64),
     Bool(bool),
     Date(DateTime<Utc>),
-    Options(Vec<Uuid>),
+    Options(Vec<OptionId>),
     Entities(Vec<String>),
 }
 
@@ -87,11 +89,11 @@ impl From<&Cell> for CellKey {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 pub struct Row {
     /// The row entity id.
-    pub id: Uuid,
+    pub id: RowId,
     /// The row's place in its table, a fractional index that sorts as text;
     /// `None` for rows that are not table rows, such as people.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub position: Option<String>,
+    pub position: Option<Position>,
     /// Cells by column; a missing column is an empty cell.
     pub cells: HashMap<Uuid, Cell>,
 }
@@ -117,7 +119,7 @@ pub fn fold_relations(
     catalog: &Catalog,
     plan: &Plan,
     fetched: Vec<Vec<Row>>,
-) -> (Table, Vec<Uuid>) {
+) -> (Table, Vec<RowId>) {
     fold_joined(catalog, plan, join::join(plan, fetched))
 }
 
@@ -128,7 +130,7 @@ pub(crate) fn fold_rows(catalog: &Catalog, plan: &Plan, rows: Vec<Row>) -> Table
     fold_joined(catalog, plan, rows).0
 }
 
-fn fold_joined(catalog: &Catalog, plan: &Plan, rows: Vec<Row>) -> (Table, Vec<Uuid>) {
+fn fold_joined(catalog: &Catalog, plan: &Plan, rows: Vec<Row>) -> (Table, Vec<RowId>) {
     let rows: Vec<Row> = match &plan.residual {
         Some(filter) => rows
             .into_iter()
@@ -148,7 +150,7 @@ fn fold_joined(catalog: &Catalog, plan: &Plan, rows: Vec<Row>) -> (Table, Vec<Uu
                     .collect();
                 (row.id, cells)
             });
-            let (ids, table): (Vec<Uuid>, Table) = if plan.distinct {
+            let (ids, table): (Vec<RowId>, Table) = if plan.distinct {
                 window(plan, distinct(projected)).unzip()
             } else {
                 window(plan, projected).unzip()
@@ -174,8 +176,8 @@ fn window<Item>(plan: &Plan, rows: impl Iterator<Item = Item>) -> impl Iterator<
 
 /// Keep the first of every set of equal result rows, in order.
 fn distinct(
-    rows: impl Iterator<Item = (Uuid, Vec<Option<Cell>>)>,
-) -> impl Iterator<Item = (Uuid, Vec<Option<Cell>>)> {
+    rows: impl Iterator<Item = (RowId, Vec<Option<Cell>>)>,
+) -> impl Iterator<Item = (RowId, Vec<Option<Cell>>)> {
     let mut seen: HashSet<Vec<Option<CellKey>>> = HashSet::new();
     rows.filter(move |(_, cells)| {
         seen.insert(

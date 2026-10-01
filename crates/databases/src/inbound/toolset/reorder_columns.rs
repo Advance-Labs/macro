@@ -5,9 +5,9 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
+use models_databases::{ColumnId, DatabaseId, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::{
     DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, database_error,
@@ -29,16 +29,16 @@ Requires edit access. The response is the schema after the change."
 pub struct ReorderColumns {
     /// The database containing the table.
     #[schemars(description = "Id of the database containing the table, from ListDatabases.")]
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
     /// The table whose columns to reorder.
     #[schemars(description = "Id of the table, from DescribeDatabase.")]
-    pub table_id: Uuid,
+    pub table_id: TableId,
     /// Every column id, in the new order.
     #[schemars(
         description = "Every column id of the table, exactly once, in the new left-to-right \
                        order."
     )]
-    pub column_ids: Vec<Uuid>,
+    pub column_ids: Vec<ColumnId>,
 }
 
 impl ToolAnnotated for ReorderColumns {
@@ -51,9 +51,9 @@ impl ToolAnnotated for ReorderColumns {
 #[serde(rename_all = "camelCase")]
 pub struct ReorderColumnsResponse {
     /// Database containing the table.
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
     /// The reordered table.
-    pub table_id: Uuid,
+    pub table_id: TableId,
     /// The database's schema after the change.
     pub database: Option<ToolDatabaseSchema>,
     /// A failed follow-up read does not undo the committed order.

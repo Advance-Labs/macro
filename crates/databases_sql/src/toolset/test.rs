@@ -15,7 +15,11 @@ use std::sync::{Arc, Mutex};
 use ai_toolset::schema::generate_validated_input_schema;
 use ai_toolset::{AsyncTool, RequestContext, ServiceContext};
 use entity_access::domain::models::AccessLevel;
-use models_databases::{CellValue, CellWrite, DatabaseOp, OpResult, OptionRef, RowChanges};
+use models_databases::position::Position;
+use models_databases::{
+    CellValue, CellWrite, ColumnId, DatabaseId, DatabaseOp, OpResult, OptionId, OptionRef,
+    RowChanges, RowId, TableId,
+};
 use models_properties::service::property_value::PropertyValue;
 use models_properties::shared::DataType;
 use uuid::Uuid;
@@ -28,14 +32,14 @@ use crate::test_support::{
 
 mod saved_queries;
 
-const OFFSITE: Uuid = Uuid::from_u128(0xdb01);
-const GUESTS: Uuid = Uuid::from_u128(0x7a01);
+const OFFSITE: DatabaseId = DatabaseId::from_uuid(Uuid::from_u128(0xdb01));
+const GUESTS: TableId = TableId::from_uuid(Uuid::from_u128(0x7a01));
 const NAME: Uuid = Uuid::from_u128(0xc001);
 const STATUS: Uuid = Uuid::from_u128(0xc002);
-const STATUS_COLUMN: Uuid = Uuid::from_u128(0xb002);
-const GOING: Uuid = Uuid::from_u128(0xa001);
-const MAYBE: Uuid = Uuid::from_u128(0xa002);
-const MARIA: Uuid = Uuid::from_u128(0xe001);
+const STATUS_COLUMN: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xb002));
+const GOING: OptionId = OptionId::from_uuid(Uuid::from_u128(0xa001));
+const MAYBE: OptionId = OptionId::from_uuid(Uuid::from_u128(0xa002));
+const MARIA: RowId = RowId::from_uuid(Uuid::from_u128(0xe001));
 
 /// `Offsite.Guests` with one guest, the owner's; the viewer can read it.
 fn world() -> Shared {
@@ -54,17 +58,17 @@ fn world() -> Shared {
                     id: GUESTS,
                     database_id: OFFSITE,
                     name: "Guests".into(),
-                    position: "80".into(),
+                    position: "80".parse::<Position>().unwrap(),
                     version: TableVersion(1),
                 },
                 sql_name: "\"Guests\"".into(),
                 columns: vec![
                     ColumnDetail {
                         column: Column {
-                            id: Uuid::from_u128(0xb001),
+                            id: ColumnId::from_uuid(Uuid::from_u128(0xb001)),
                             table_id: GUESTS,
                             property_definition_id: NAME,
-                            position: "80".into(),
+                            position: "80".parse::<Position>().unwrap(),
                             config: None,
                             display_name: None,
                             infer_type: false,
@@ -93,7 +97,7 @@ fn world() -> Shared {
                             id: STATUS_COLUMN,
                             table_id: GUESTS,
                             property_definition_id: STATUS,
-                            position: "8180".into(),
+                            position: "8180".parse::<Position>().unwrap(),
                             config: None,
                             display_name: None,
                             infer_type: false,
@@ -114,7 +118,7 @@ fn world() -> Shared {
                             },
                             property_options: vec![
                                 PropertyOption {
-                                    id: GOING,
+                                    id: GOING.into_uuid(),
                                     property_definition_id: STATUS,
                                     display_order: 0,
                                     value: PropertyOptionValue::String("Going".into()),
@@ -123,7 +127,7 @@ fn world() -> Shared {
                                     updated_at: Utc::now(),
                                 },
                                 PropertyOption {
-                                    id: MAYBE,
+                                    id: MAYBE.into_uuid(),
                                     property_definition_id: STATUS,
                                     display_order: 1,
                                     value: PropertyOptionValue::String("Maybe".into()),
@@ -145,14 +149,14 @@ fn world() -> Shared {
             (VIEWER, OFFSITE, AccessLevel::View),
         ],
         rows: vec![StoredRow {
-            id: MARIA,
+            id: MARIA.into_uuid(),
             table_id: GUESTS,
             database_id: OFFSITE,
-            position: "80".into(),
+            position: "80".to_string(),
             created_at: Utc.with_ymd_and_hms(2026, 9, 1, 9, 1, 0).unwrap(),
             cells: vec![
                 (NAME, PropertyValue::Str("Maria".into())),
-                (STATUS, PropertyValue::SelectOption(vec![MAYBE])),
+                (STATUS, PropertyValue::SelectOption(vec![MAYBE.into_uuid()])),
             ],
         }],
         ..World::default()
@@ -508,7 +512,7 @@ async fn every_statement_kind_names_what_it_wrote() {
     world.lock().unwrap().op_answers.extend([
         Ok(vec![OpResult::RowsWritten {
             table_version: TableVersion(2),
-            inserted: vec![Uuid::from_u128(0xe002)],
+            inserted: vec![RowId::from_uuid(Uuid::from_u128(0xe002))],
             affected: 1,
         }]),
         Ok(vec![OpResult::RowsWritten {

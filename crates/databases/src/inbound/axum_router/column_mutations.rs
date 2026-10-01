@@ -16,9 +16,11 @@ pub struct ChangeColumnTypeRequest {
     /// Required category for entity references, omitted for row relationships.
     pub specific_entity_type: Option<models_properties::EntityType>,
     /// Related table, when choosing a database-row relationship.
-    pub link_to_table_id: Option<Uuid>,
+    #[schema(value_type = Option<Uuid>)]
+    pub link_to_table_id: Option<TableId>,
     /// Related database; defaults to the current database.
-    pub link_to_database_id: Option<Uuid>,
+    #[schema(value_type = Option<Uuid>)]
+    pub link_to_database_id: Option<DatabaseId>,
     /// Table version shown when the type menu opened.
     pub base_version: TableVersion,
     /// Empty the values that do not fit the new type instead of refusing the
@@ -40,7 +42,8 @@ pub struct DeleteColumnRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ReorderColumnsRequest {
     /// Every column, exactly once.
-    pub column_ids: Vec<Uuid>,
+    #[schema(value_type = Vec<Uuid>)]
+    pub column_ids: Vec<ColumnId>,
     /// Table version used to build the order.
     pub base_version: TableVersion,
 }

@@ -16,7 +16,8 @@ pub(crate) mod views;
 
 use std::collections::HashMap;
 
-use models_databases::position::{PositionError, key_between, keys_between};
+use models_databases::position::{Position, PositionError, key_between, keys_between};
+use uuid::Uuid;
 
 use macro_user_id::user_id::MacroUserIdStr;
 use models_properties::DataType;
@@ -33,8 +34,8 @@ use crate::domain::models::{
 };
 use crate::domain::models::{
     Column, ColumnConfig, ColumnId, CreateColumn, CreateDatabase, CreateTable, Database,
-    DatabaseId, FirstTable, PropertyDefinitionId, RenameColumnOutcome, RowRef, Table, TableId,
-    TableMutationOutcome, TableVersion,
+    DatabaseId, FirstTable, PropertyDefinitionId, RenameColumnOutcome, RowId, RowRef, Table,
+    TableId, TableMutationOutcome, TableVersion,
 };
 use crate::domain::models::{
     QueryDefinition, QueryId, SavedQuery, TableDeletion, TableOrderOutcome,
@@ -62,31 +63,74 @@ pub enum PgDatabasesRepoError {
     Properties(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
+/// The UUIDs of typed ids, for a statement's `ANY($n)`.
+pub(crate) fn uuids<Id: Copy + Into<Uuid>>(ids: &[Id]) -> Vec<Uuid> {
+    ids.iter().map(|id| (*id).into()).collect()
+}
+
+/// The positions as stored, for a statement's `UNNEST($n)`.
+pub(crate) fn stored_positions(positions: &[Position]) -> Vec<String> {
+    positions.iter().map(Position::to_string).collect()
+}
+
+/// A `databases` row, read by `query_as!` and mapped onto [`Database`].
+pub(crate) struct DatabaseRecord {
+    pub(crate) id: Uuid,
+    pub(crate) name: String,
+    pub(crate) owner_id: String,
+    pub(crate) created_at: chrono::DateTime<chrono::Utc>,
+    pub(crate) trashed_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl From<DatabaseRecord> for Database {
+    fn from(record: DatabaseRecord) -> Self {
+        Self {
+            id: DatabaseId::from_uuid(record.id),
+            name: record.name,
+            owner_id: record.owner_id,
+            created_at: record.created_at,
+            trashed_at: record.trashed_at,
+        }
+    }
+}
+
 /// A `database_tables` row, read by `query_as!` and mapped onto [`Table`].
 pub(crate) struct TableRecord {
-    pub(crate) id: TableId,
-    pub(crate) database_id: DatabaseId,
+    pub(crate) id: Uuid,
+    pub(crate) database_id: Uuid,
     pub(crate) name: String,
     pub(crate) position: String,
     pub(crate) version: i64,
 }
 
-impl From<TableRecord> for Table {
-    fn from(record: TableRecord) -> Self {
-        Self {
-            id: record.id,
-            database_id: record.database_id,
+impl TryFrom<TableRecord> for Table {
+    type Error = PositionError;
+
+    fn try_from(record: TableRecord) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: TableId::from_uuid(record.id),
+            database_id: DatabaseId::from_uuid(record.database_id),
             name: record.name,
-            position: record.position,
+            position: record.position.parse()?,
             version: TableVersion(record.version),
-        }
+        })
     }
+}
+
+/// Stored table rows as tables.
+pub(crate) fn tables_of(records: Vec<TableRecord>) -> Result<Vec<Table>, PositionError> {
+    records.into_iter().map(Table::try_from).collect()
+}
+
+/// The largest stored position of a list, read back.
+pub(crate) fn last_position(stored: Option<String>) -> Result<Option<Position>, PositionError> {
+    stored.map(|key| key.parse()).transpose()
 }
 
 /// The position that appends after `last`, the largest one a list has, or
 /// starts an empty list. Positions are fractional keys compared as bytes
 /// (the columns are `COLLATE "C"`), so the largest is the last.
-fn position_after(last: Option<&str>) -> Result<String, PositionError> {
+fn position_after(last: Option<&Position>) -> Result<Position, PositionError> {
     key_between(last, None)
 }
 
@@ -100,34 +144,36 @@ pub(crate) async fn insert_owned_database(
     table_id: TableId,
     table_name: &str,
 ) -> Result<Database, PgDatabasesRepoError> {
-    let database = sqlx::query_as!(
-        Database,
+    let position = position_after(None)?;
+    let database: Database = sqlx::query_as!(
+        DatabaseRecord,
         r#"
             INSERT INTO databases (id, name, owner_id)
             VALUES ($1, $2, $3)
             RETURNING id, name, owner_id, created_at, trashed_at
             "#,
-        database_id,
+        database_id.into_uuid(),
         name,
         owner_id,
     )
     .fetch_one(&mut **transaction)
-    .await?;
+    .await?
+    .into();
     sqlx::query!(
         r#"
             INSERT INTO database_tables (id, database_id, name, position)
             VALUES ($1, $2, $3, $4)
             "#,
-        table_id,
-        database_id,
+        table_id.into_uuid(),
+        database_id.into_uuid(),
         table_name,
-        position_after(None)?,
+        position.as_str(),
     )
     .execute(&mut **transaction)
     .await?;
     entity_access_db_utils::insert_entity_access_row(
         transaction,
-        &database_id,
+        database_id.as_uuid(),
         EntityType::Database,
         owner_id,
         EntityAccessSourceType::User,
@@ -143,14 +189,14 @@ pub(crate) async fn insert_column(
     column_id: ColumnId,
     table_id: TableId,
     definition_id: PropertyDefinitionId,
-    position: &str,
+    position: &Position,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         "INSERT INTO database_columns (id, table_id, property_definition_id, position, infer_type) VALUES ($1, $2, $3, $4, false)",
-        column_id,
-        table_id,
+        column_id.into_uuid(),
+        table_id.into_uuid(),
         definition_id,
-        position,
+        position.as_str(),
     )
     .execute(&mut **transaction)
     .await?;
@@ -241,10 +287,10 @@ where
         first_table: FirstTable,
     ) -> Result<Database, Self::Error> {
         let mut transaction = self.pool.begin().await?;
-        let table_id = macro_uuid::generate_uuid_v7();
+        let table_id = TableId::new();
         let database = insert_owned_database(
             &mut transaction,
-            macro_uuid::generate_uuid_v7(),
+            DatabaseId::new(),
             &command.name,
             command.owner_id.as_ref(),
             table_id,
@@ -256,7 +302,7 @@ where
             .create_database_definition_in(
                 &mut transaction,
                 NewDatabaseDefinition {
-                    database_id: database.id,
+                    database_id: database.id.into_uuid(),
                     name: first_table.title_column,
                     data_type: DataType::String,
                     is_multi_select: false,
@@ -268,7 +314,7 @@ where
             .map_err(|error| PgDatabasesRepoError::Properties(Box::new(error)))?;
         insert_column(
             &mut transaction,
-            macro_uuid::generate_uuid_v7(),
+            ColumnId::new(),
             table_id,
             title.definition.id,
             &position_after(None)?,
@@ -286,13 +332,13 @@ where
         id: DatabaseId,
     ) -> Result<Option<(Database, Vec<Table>)>, Self::Error> {
         let Some(database) = sqlx::query_as!(
-            Database,
+            DatabaseRecord,
             r#"SELECT id, name, owner_id, created_at, trashed_at FROM databases WHERE id = $1"#,
-            id
+            id.into_uuid()
         )
         .fetch_optional(&self.pool)
         .await?
-        else {
+        .map(Database::from) else {
             return Ok(None);
         };
 
@@ -304,13 +350,11 @@ where
             WHERE database_id = $1
             ORDER BY position
             "#,
-            id
+            id.into_uuid()
         )
         .fetch_all(&self.pool)
-        .await?
-        .into_iter()
-        .map(Table::from)
-        .collect();
+        .await?;
+        let tables = tables_of(tables)?;
 
         Ok(Some((database, tables)))
     }
@@ -319,7 +363,7 @@ where
     async fn rename_database(&self, id: DatabaseId, name: &str) -> Result<bool, Self::Error> {
         let renamed = sqlx::query!(
             r#"UPDATE databases SET name = $2, updated_at = now() WHERE id = $1"#,
-            id,
+            id.into_uuid(),
             name,
         )
         .execute(&self.pool)
@@ -335,7 +379,7 @@ where
     ) -> Result<bool, Self::Error> {
         let trashed = sqlx::query!(
             r#"UPDATE databases SET trashed_at = $2, updated_at = now() WHERE id = $1"#,
-            id,
+            id.into_uuid(),
             trashed_at,
         )
         .execute(&self.pool)
@@ -347,7 +391,7 @@ where
     async fn restore_database(&self, id: DatabaseId) -> Result<bool, Self::Error> {
         let restored = sqlx::query!(
             r#"UPDATE databases SET trashed_at = NULL, updated_at = now() WHERE id = $1"#,
-            id,
+            id.into_uuid(),
         )
         .execute(&self.pool)
         .await?;
@@ -365,12 +409,12 @@ where
 
         entity_access_db_utils::delete_entity_access_rows(
             &mut transaction,
-            &id,
+            id.as_uuid(),
             EntityType::Database,
         )
         .await?;
 
-        sqlx::query!(r#"DELETE FROM databases WHERE id = $1"#, id)
+        sqlx::query!(r#"DELETE FROM databases WHERE id = $1"#, id.into_uuid())
             .execute(&mut *transaction)
             .await?;
 
@@ -390,12 +434,12 @@ where
 
         let max_position = sqlx::query_scalar!(
             r#"SELECT MAX(position) FROM database_tables WHERE database_id = $1"#,
-            command.database_id
+            command.database_id.into_uuid()
         )
         .fetch_one(&mut *transaction)
         .await?;
-        let position = position_after(max_position.as_deref())?;
-        let id = macro_uuid::generate_uuid_v7();
+        let position = position_after(last_position(max_position)?.as_ref())?;
+        let id = TableId::new();
 
         let table = sqlx::query_as!(
             TableRecord,
@@ -408,18 +452,19 @@ where
             )
             RETURNING id, database_id, name, position, version
             "#,
-            id,
-            command.database_id,
+            id.into_uuid(),
+            command.database_id.into_uuid(),
             command.name,
-            position,
+            position.as_str(),
         )
         .fetch_optional(&mut *transaction)
         .await?;
 
         transaction.commit().await?;
-        Ok(table.map_or(TableMutationOutcome::Conflict, |table| {
-            TableMutationOutcome::Applied(table.into())
-        }))
+        Ok(match table {
+            Some(table) => TableMutationOutcome::Applied(table.try_into()?),
+            None => TableMutationOutcome::Conflict,
+        })
     }
 
     #[tracing::instrument(err, skip(self, table))]
@@ -447,17 +492,18 @@ where
               )
             RETURNING id, database_id, name, position, version
             "#,
-            table.id,
-            table.database_id,
+            table.id.into_uuid(),
+            table.database_id.into_uuid(),
             name,
             previous_name,
         )
         .fetch_optional(&mut *transaction)
         .await?;
         transaction.commit().await?;
-        Ok(renamed.map_or(TableMutationOutcome::Conflict, |table| {
-            TableMutationOutcome::Applied(table.into())
-        }))
+        Ok(match renamed {
+            Some(table) => TableMutationOutcome::Applied(table.try_into()?),
+            None => TableMutationOutcome::Conflict,
+        })
     }
 
     #[tracing::instrument(err, skip(self))]
@@ -486,22 +532,22 @@ where
 
         let max_position = sqlx::query_scalar!(
             r#"SELECT MAX(position) FROM database_columns WHERE table_id = $1"#,
-            table_id
+            table_id.into_uuid()
         )
         .fetch_one(&mut *transaction)
         .await?;
-        let position = position_after(max_position.as_deref())?;
-        let id = macro_uuid::generate_uuid_v7();
+        let position = position_after(last_position(max_position)?.as_ref())?;
+        let id = ColumnId::new();
 
         sqlx::query!(
             r#"
             INSERT INTO database_columns (id, table_id, property_definition_id, position, config, infer_type)
             VALUES ($1, $2, $3, $4, $5, $6)
             "#,
-            id,
-            table_id,
+            id.into_uuid(),
+            table_id.into_uuid(),
             property_definition_id,
-            position,
+            position.as_str(),
             config,
             command.infer_type,
         )
@@ -529,10 +575,10 @@ where
                           AND display_name IS NOT DISTINCT FROM $5)
               AND EXISTS (SELECT 1 FROM databases WHERE id = $2 AND trashed_at IS NULL)
             RETURNING version"#,
-            table.id,
-            table.database_id,
+            table.id.into_uuid(),
+            table.database_id.into_uuid(),
             table.version.0,
-            column.id,
+            column.id.into_uuid(),
             column.display_name,
         )
         .fetch_optional(&mut *transaction)
@@ -542,9 +588,9 @@ where
         };
         sqlx::query!(
             "UPDATE database_columns SET display_name = $2 WHERE id = $1 AND table_id = $3",
-            column.id,
+            column.id.into_uuid(),
             name,
-            table.id
+            table.id.into_uuid()
         )
         .execute(&mut *transaction)
         .await?;
@@ -569,8 +615,8 @@ where
         // Row writers take this same lock before checking versions and cells.
         let current = sqlx::query_scalar!(
             "SELECT version FROM database_tables WHERE id = $1 AND database_id = $2 FOR UPDATE",
-            table.id,
-            table.database_id,
+            table.id.into_uuid(),
+            table.database_id.into_uuid(),
         )
         .fetch_optional(&mut *transaction)
         .await?;
@@ -587,11 +633,11 @@ where
                     AND p.entity_type = 'DATABASE_ROW')
               AND EXISTS (SELECT 1 FROM databases WHERE id = $5 AND trashed_at IS NULL)
             RETURNING id"#,
-            column.id,
-            table.id,
+            column.id.into_uuid(),
+            table.id.into_uuid(),
             column.property_definition_id,
             definition_id,
-            table.database_id,
+            table.database_id.into_uuid(),
         )
         .fetch_optional(&mut *transaction)
         .await?;
@@ -607,33 +653,38 @@ where
     async fn row_refs(&self, table_id: TableId) -> Result<Vec<RowRef>, Self::Error> {
         let rows = sqlx::query!(
             "SELECT id, position FROM database_rows WHERE table_id = $1 ORDER BY position, id",
-            table_id,
+            table_id.into_uuid(),
         )
         .fetch_all(&self.pool)
         .await?;
         Ok(rows
             .into_iter()
-            .map(|row| RowRef {
-                id: row.id,
-                position: row.position,
+            .map(|row| {
+                Ok(RowRef {
+                    id: RowId::from_uuid(row.id),
+                    position: row.position.parse()?,
+                })
             })
-            .collect())
+            .collect::<Result<_, PositionError>>()?)
     }
 
     #[tracing::instrument(skip(self), err)]
     async fn databases_by_ids(&self, ids: &[DatabaseId]) -> Result<Vec<Database>, Self::Error> {
         Ok(sqlx::query_as!(
-            Database,
+            DatabaseRecord,
             r#"
             SELECT id, name, owner_id, created_at, trashed_at
             FROM databases
             WHERE id = ANY($1)
             ORDER BY created_at
             "#,
-            ids,
+            &uuids(ids),
         )
         .fetch_all(&self.pool)
-        .await?)
+        .await?
+        .into_iter()
+        .map(Database::from)
+        .collect())
     }
 
     #[tracing::instrument(skip(self), err)]
@@ -649,11 +700,11 @@ where
             WHERE database_id = ANY($1)
             ORDER BY database_id, position
             "#,
-            database_ids,
+            &uuids(database_ids),
         )
         .fetch_all(&self.pool)
         .await?;
-        Ok(tables.into_iter().map(Table::from).collect())
+        Ok(tables_of(tables)?)
     }
 
     #[tracing::instrument(skip(self), err)]
@@ -665,17 +716,17 @@ where
             WHERE table_id = ANY($1)
             ORDER BY table_id, position
             "#,
-            table_ids,
+            &uuids(table_ids),
         )
         .fetch_all(&self.pool)
         .await?;
         rows.into_iter()
             .map(|row| {
                 Ok(Column {
-                    id: row.id,
-                    table_id: row.table_id,
+                    id: ColumnId::from_uuid(row.id),
+                    table_id: TableId::from_uuid(row.table_id),
                     property_definition_id: row.property_definition_id,
-                    position: row.position,
+                    position: row.position.parse()?,
                     config: row.config.map(serde_json::from_value).transpose()?,
                     display_name: row.display_name,
                     infer_type: row.infer_type,
@@ -691,12 +742,12 @@ where
     ) -> Result<HashMap<TableId, TableVersion>, Self::Error> {
         let versions = sqlx::query!(
             r#"SELECT id, version FROM database_tables WHERE id = ANY($1)"#,
-            table_ids
+            &uuids(table_ids)
         )
         .fetch_all(&self.pool)
         .await?
         .into_iter()
-        .map(|row| (row.id, TableVersion(row.version)))
+        .map(|row| (TableId::from_uuid(row.id), TableVersion(row.version)))
         .collect();
 
         Ok(versions)

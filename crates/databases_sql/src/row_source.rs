@@ -29,6 +29,8 @@ use item_filters::ast::properties::{
 };
 use item_filters::ast::{EmailFilterAst, EntityFilterAst};
 use macro_user_id::user_id::MacroUserIdStr;
+use models_databases::position::PositionError;
+use models_databases::{OptionId, RowId, TableId};
 use models_grouping::{GroupByField, GroupingConfig};
 use models_pagination::{
     Base64SerdeErr, Base64Str, CursorWithValAndFilter, Query, SimpleSortMethod, TypeEraseCursor,
@@ -58,7 +60,7 @@ pub(crate) enum SoupSourceError {
     #[error("Soup could not read table {table}")]
     Soup {
         /// The table.
-        table: Uuid,
+        table: TableId,
         /// Soup's failure.
         #[source]
         source: SoupErr,
@@ -106,9 +108,18 @@ pub(crate) enum SoupSourceError {
     #[error("no column {column} in table {table}")]
     UnknownGroupColumn {
         /// The table.
-        table: Uuid,
+        table: TableId,
         /// The column.
         column: Uuid,
+    },
+    /// A row's stored position is not a fractional key.
+    #[error("row {row} has a position that is not a key")]
+    BadPosition {
+        /// The row.
+        row: RowId,
+        /// Why it is not a key.
+        #[source]
+        source: PositionError,
     },
     /// A page was asked of a grouped query, which is read as bins.
     #[error("a grouped query is read as bins, not pages")]
@@ -232,7 +243,7 @@ where
 {
     async fn soup_page(
         &self,
-        table: Uuid,
+        table: TableId,
         property_filter: Option<&Expr<PropertiesLiteral>>,
         key_hint: Option<&KeyHint>,
         cursor: Option<String>,
@@ -305,7 +316,7 @@ fn person_row(person: &MacroUserIdStr<'_>) -> Row {
     let email = person.email_str().to_owned();
     let name = email.split('@').next().unwrap_or_default().to_owned();
     Row {
-        id: Uuid::new_v5(&Uuid::NAMESPACE_OID, id.as_bytes()),
+        id: RowId::from_uuid(Uuid::new_v5(&Uuid::NAMESPACE_OID, id.as_bytes())),
         position: None,
         cells: HashMap::from([
             (PEOPLE_ID, Cell::Entities(vec![id.to_owned()])),
@@ -322,7 +333,8 @@ fn bin_key(kind: &ColumnKind, key: &str, column: Uuid) -> Result<Option<Cell>, S
         return Ok(None);
     }
     match kind {
-        ColumnKind::Select { .. } => Uuid::parse_str(key)
+        ColumnKind::Select { .. } => key
+            .parse::<OptionId>()
             .map(|option| Some(Cell::Options(vec![option])))
             .map_err(|source| SoupSourceError::BinKeyNotAnOption {
                 key: key.to_owned(),
@@ -336,11 +348,11 @@ fn bin_key(kind: &ColumnKind, key: &str, column: Uuid) -> Result<Option<Cell>, S
 /// Rows of one table and nothing else, with the pushed-down filter and the
 /// join's narrowing.
 fn rows_filter(
-    table: Uuid,
+    table: TableId,
     property_filter: Option<&Expr<PropertiesLiteral>>,
     key_hint: Option<&KeyHint>,
 ) -> EntityFilterAst {
-    let mut rows = Expr::val(DatabaseRowLiteral::TableId(table));
+    let mut rows = Expr::val(DatabaseRowLiteral::TableId(table.into_uuid()));
     let mut properties = property_filter.cloned();
     match key_hint.and_then(narrowing) {
         Some(Narrowing::Rows(ids)) => rows = Expr::and(rows, ids),
@@ -393,7 +405,7 @@ enum Narrowing {
 fn narrowing(hint: &KeyHint) -> Option<Narrowing> {
     enum Member<'hint> {
         Entity(&'hint str),
-        Option(Uuid),
+        Option(OptionId),
     }
     let mut members = Vec::new();
     for value in &hint.values {
@@ -412,7 +424,7 @@ fn narrowing(hint: &KeyHint) -> Option<Narrowing> {
                 .iter()
                 .map(|member| match member {
                     Member::Entity(id) => Uuid::parse_str(id).ok(),
-                    Member::Option(id) => Some(*id),
+                    Member::Option(id) => Some(id.into_uuid()),
                 })
                 .collect::<Option<Vec<Uuid>>>()?;
             balanced_or(
@@ -430,7 +442,7 @@ fn narrowing(hint: &KeyHint) -> Option<Narrowing> {
                         Member::Entity(id) => {
                             PropertyMatchValue::EntityRef(EntityRefId::new((*id).to_owned()).ok()?)
                         }
-                        Member::Option(id) => PropertyMatchValue::SelectOption(*id),
+                        Member::Option(id) => PropertyMatchValue::SelectOption(id.into_uuid()),
                     };
                     Some(Expr::val(PropertiesLiteral {
                         property_definition_id: column,
@@ -459,9 +471,14 @@ fn table_row(item: SoupItem<SoupPropertiesField>) -> Result<Row, SoupSourceError
             entity: format!("{:?}", item.entity()),
         });
     };
+    let id = RowId::from_uuid(row.id);
     Ok(Row {
-        id: row.id,
-        position: Some(row.position),
+        id,
+        position: Some(
+            row.position
+                .parse()
+                .map_err(|source| SoupSourceError::BadPosition { row: id, source })?,
+        ),
         cells: row
             .extra
             .properties
@@ -478,7 +495,9 @@ fn cell(value: PropertyValue) -> Cell {
         PropertyValue::Num(value) => Cell::Number(value),
         PropertyValue::Str(value) => Cell::Text(value),
         PropertyValue::Date(value) => Cell::Date(value),
-        PropertyValue::SelectOption(ids) => Cell::Options(ids),
+        PropertyValue::SelectOption(ids) => {
+            Cell::Options(ids.into_iter().map(OptionId::from_uuid).collect())
+        }
         PropertyValue::EntityRef(references) => Cell::Entities(
             references
                 .into_iter()

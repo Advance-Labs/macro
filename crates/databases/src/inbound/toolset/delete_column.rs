@@ -5,9 +5,9 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
+use models_databases::{ColumnId, DatabaseId, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::{
     DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, column_of,
@@ -30,13 +30,13 @@ Requires edit access. The response is the schema after the change."
 pub struct DeleteColumn {
     /// The database containing the column.
     #[schemars(description = "Id of the database containing the column, from ListDatabases.")]
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
     /// The table containing the column.
     #[schemars(description = "Id of the table containing the column, from DescribeDatabase.")]
-    pub table_id: Uuid,
+    pub table_id: TableId,
     /// The column to delete.
     #[schemars(description = "Id of the column to delete, from DescribeDatabase.")]
-    pub column_id: Uuid,
+    pub column_id: ColumnId,
 }
 
 impl ToolAnnotated for DeleteColumn {
@@ -48,11 +48,11 @@ impl ToolAnnotated for DeleteColumn {
 #[serde(rename_all = "camelCase")]
 pub struct DeleteColumnResponse {
     /// Database the column was deleted from.
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
     /// Table the column was deleted from.
-    pub table_id: Uuid,
+    pub table_id: TableId,
     /// The deleted column's id.
-    pub column_id: Uuid,
+    pub column_id: ColumnId,
     /// The database's schema after the change.
     pub database: Option<ToolDatabaseSchema>,
     /// A failed follow-up read does not undo the committed delete.

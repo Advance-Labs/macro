@@ -4,6 +4,8 @@
 //! against its source, so both sides agree on what crosses the wasm
 //! boundary; writes are driven on the server.
 
+use models_databases::position::Position;
+use models_databases::{ColumnId, DatabaseId, OptionId, RowId, TableId};
 use std::collections::HashMap;
 
 use serde_json::{Value, json};
@@ -16,9 +18,10 @@ use models_databases::{
 use super::*;
 use crate::catalog::{Column, ColumnKind, EntityKind, SelectOption, Table, TableSource};
 
-const CRM: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000db01);
-const DEALS: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000d001);
-const PEOPLE: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000d002);
+const CRM: DatabaseId =
+    DatabaseId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000db01));
+const DEALS: TableId = TableId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000d001));
+const PEOPLE: TableId = TableId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000d002));
 const NAME: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000c001);
 const AMOUNT: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000c002);
 const STAGE: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000c003);
@@ -26,20 +29,26 @@ const OWNER: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000c004);
 const PITCH: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000c005);
 // Writes name column placements, which differ from the definitions reads key
 // cells by.
-const NAME_COLUMN: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000b001);
-const AMOUNT_COLUMN: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000b002);
-const STAGE_COLUMN: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000b003);
-const OWNER_COLUMN: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000b004);
-const PEOPLE_NAME_COLUMN: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000b005);
-const PITCH_COLUMN: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000b006);
-const LEAD: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000a001);
-const WON: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000a002);
-const ACME: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000e001);
-const GLOBEX: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000e002);
-const INITECH: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000e003);
-const HOOLI: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000e004);
-const VANDELAY: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000e005);
-const SAM: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000f001);
+const NAME_COLUMN: ColumnId =
+    ColumnId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000b001));
+const AMOUNT_COLUMN: ColumnId =
+    ColumnId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000b002));
+const STAGE_COLUMN: ColumnId =
+    ColumnId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000b003));
+const OWNER_COLUMN: ColumnId =
+    ColumnId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000b004));
+const PEOPLE_NAME_COLUMN: ColumnId =
+    ColumnId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000b005));
+const PITCH_COLUMN: ColumnId =
+    ColumnId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000b006));
+const LEAD: OptionId = OptionId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000a001));
+const WON: OptionId = OptionId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000a002));
+const ACME: RowId = RowId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000e001));
+const GLOBEX: RowId = RowId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000e002));
+const INITECH: RowId = RowId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000e003));
+const HOOLI: RowId = RowId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000e004));
+const VANDELAY: RowId = RowId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000e005));
+const SAM: RowId = RowId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000f001));
 
 /// `crm.deals` (texts, a number, a single select, a relation to people)
 /// and `crm.people`, sharing the `name` definition, as the browser builds
@@ -166,12 +175,12 @@ fn fixture(name: &str) -> Value {
 }
 
 fn deal(
-    id: Uuid,
+    id: RowId,
     position: &str,
     name: &str,
     amount: f64,
-    stage: Uuid,
-    owner: Option<Uuid>,
+    stage: OptionId,
+    owner: Option<RowId>,
 ) -> Row {
     let mut cells = HashMap::from([
         (NAME, Cell::Text(name.into())),
@@ -183,7 +192,7 @@ fn deal(
     }
     Row {
         id,
-        position: Some(position.into()),
+        position: Some(position.parse().unwrap()),
         cells,
     }
 }
@@ -195,8 +204,8 @@ fn a_select_column_filter_is_one_soup_query() {
             "SELECT name, amount FROM crm.deals WHERE stage = 'Won' ORDER BY amount DESC",
             vec![Feed::Page(Page {
                 rows: vec![
-                    deal(ACME, "000000000001", "Acme", 12000.0, WON, Some(SAM)),
-                    deal(GLOBEX, "000000000002", "Globex", 50000.0, WON, None),
+                    deal(ACME, "80", "Acme", 12000.0, WON, Some(SAM)),
+                    deal(GLOBEX, "8180", "Globex", 50000.0, WON, None),
                 ],
                 next: None,
             })],
@@ -237,15 +246,15 @@ fn a_join_asks_for_the_joined_rows_it_needs() {
             vec![
                 Feed::Page(Page {
                     rows: vec![
-                        deal(ACME, "000000000001", "Acme", 12000.0, WON, Some(SAM)),
-                        deal(INITECH, "000000000003", "Initech", 300.0, LEAD, None),
+                        deal(ACME, "80", "Acme", 12000.0, WON, Some(SAM)),
+                        deal(INITECH, "8280", "Initech", 300.0, LEAD, None),
                     ],
                     next: None,
                 }),
                 Feed::Page(Page {
                     rows: vec![Row {
                         id: SAM,
-                        position: Some("000000000001".into()),
+                        position: Some("80".parse::<Position>().unwrap()),
                         cells: HashMap::from([(NAME, Cell::Text("Sam".into()))]),
                     }],
                     next: None,
@@ -263,11 +272,11 @@ fn pages_follow_the_cursor_to_the_end() {
             "SELECT name FROM crm.deals",
             vec![
                 Feed::Page(Page {
-                    rows: vec![deal(ACME, "000000000001", "Acme", 12000.0, WON, Some(SAM))],
+                    rows: vec![deal(ACME, "80", "Acme", 12000.0, WON, Some(SAM))],
                     next: Some("second-page".into()),
                 }),
                 Feed::Page(Page {
-                    rows: vec![deal(GLOBEX, "000000000002", "Globex", 50000.0, WON, None)],
+                    rows: vec![deal(GLOBEX, "8180", "Globex", 50000.0, WON, None)],
                     next: None,
                 }),
             ],
@@ -283,9 +292,9 @@ fn row_position_orders_rows_fed_newest_first() {
             "SELECT name FROM crm.deals ORDER BY stage, row_position",
             vec![Feed::Page(Page {
                 rows: vec![
-                    deal(INITECH, "000000000003", "Initech", 300.0, LEAD, None),
-                    deal(GLOBEX, "000000000002", "Globex", 50000.0, WON, None),
-                    deal(ACME, "000000000001", "Acme", 12000.0, WON, Some(SAM)),
+                    deal(INITECH, "8280", "Initech", 300.0, LEAD, None),
+                    deal(GLOBEX, "8180", "Globex", 50000.0, WON, None),
+                    deal(ACME, "80", "Acme", 12000.0, WON, Some(SAM)),
                 ],
                 next: None,
             })],
@@ -298,9 +307,9 @@ fn row_position_orders_rows_fed_newest_first() {
 fn deals() -> Page {
     Page {
         rows: vec![
-            deal(ACME, "000000000001", "Acme", 12000.0, WON, Some(SAM)),
-            deal(GLOBEX, "000000000002", "Globex", 50000.0, WON, None),
-            deal(INITECH, "000000000003", "Initech", 300.0, LEAD, None),
+            deal(ACME, "80", "Acme", 12000.0, WON, Some(SAM)),
+            deal(GLOBEX, "8180", "Globex", 50000.0, WON, None),
+            deal(INITECH, "8280", "Initech", 300.0, LEAD, None),
         ],
         next: None,
     }
@@ -405,8 +414,8 @@ fn an_update_that_copies_a_column_gives_each_row_its_own_cells() {
         vec![
             Feed::Page(Page {
                 rows: vec![
-                    deal(ACME, "000000000001", "Acme", 12000.0, WON, Some(SAM)),
-                    deal(GLOBEX, "000000000002", "Globex", 50000.0, WON, None),
+                    deal(ACME, "80", "Acme", 12000.0, WON, Some(SAM)),
+                    deal(GLOBEX, "8180", "Globex", 50000.0, WON, None),
                 ],
                 next: None,
             }),

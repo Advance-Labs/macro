@@ -3,6 +3,7 @@
 //! receipts from the world's grants, Soup answers table rows with Soup's
 //! filter semantics, and contacts lists the world's people.
 
+use models_databases::ViewId;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
@@ -186,7 +187,7 @@ impl DatabasesService for FakeDatabases {
             .saved
             .push((database_id, definition.clone()));
         Ok(SavedQuery {
-            id: Uuid::from_u128(0x0e11),
+            id: QueryId::from_uuid(Uuid::from_u128(0x0e11)),
             definition,
             database_id,
             created_by: Some(viewer.user_id.as_ref().to_string()),
@@ -502,7 +503,9 @@ fn row_matches(expr: &Expr<DatabaseRowLiteral>, row: &StoredRow) -> bool {
         Expr::And(a, b) => row_matches(a, row) && row_matches(b, row),
         Expr::Or(a, b) => row_matches(a, row) || row_matches(b, row),
         Expr::Not(a) => !row_matches(a, row),
-        Expr::Literal(DatabaseRowLiteral::TableId(table)) => row.table_id == *table,
+        Expr::Literal(DatabaseRowLiteral::TableId(table)) => {
+            row.table_id == TableId::from_uuid(*table)
+        }
         Expr::Literal(DatabaseRowLiteral::Id(id)) => row.id == *id,
     }
 }
@@ -533,8 +536,8 @@ fn properties_match(expr: &Expr<PropertiesLiteral>, row: &StoredRow) -> bool {
 pub(crate) fn soup_item(row: &StoredRow) -> SoupItem<SoupPropertiesField> {
     SoupItem::DatabaseRow(SoupDatabaseRow {
         id: row.id,
-        table_id: row.table_id,
-        database_id: row.database_id,
+        table_id: row.table_id.into_uuid(),
+        database_id: row.database_id.into_uuid(),
         position: row.position.clone(),
         owner_id: Owner::User(user(OWNER)),
         created_by: None,

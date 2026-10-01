@@ -17,8 +17,9 @@ mod schema_error;
 
 pub use schema_error::{ConversionRefusal, Misfit, MisfitGroup, SchemaError, SharingError};
 
+pub use models_databases::position::Position;
 pub use models_databases::views::{CardPosition, DatabaseView, ViewId, ViewPosition};
-pub use models_databases::{ColumnId, DatabaseId, RowId, TableId, TableVersion};
+pub use models_databases::{ColumnId, DatabaseId, OptionId, QueryId, RowId, TableId, TableVersion};
 
 /// Identifier of a `models_properties` property definition bound as a column.
 pub type PropertyDefinitionId = Uuid;
@@ -52,7 +53,8 @@ pub struct Table {
     /// Display name; also the basis of the table's SQL name.
     pub name: String,
     /// Fractional index for tab ordering.
-    pub position: String,
+    #[schema(value_type = String)]
+    pub position: Position,
     /// Current version.
     pub version: TableVersion,
 }
@@ -73,7 +75,8 @@ pub struct Column {
     #[schema(value_type = Uuid)]
     pub property_definition_id: PropertyDefinitionId,
     /// Fractional index for column ordering.
-    pub position: String,
+    #[schema(value_type = String)]
+    pub position: Position,
     /// Column-kind specific configuration.
     #[schema(required = true)]
     pub config: Option<ColumnConfig>,
@@ -241,7 +244,7 @@ pub struct RowRef {
     /// Identifier.
     pub id: RowId,
     /// Fractional index for manual ordering.
-    pub position: String,
+    pub position: Position,
 }
 
 /// What a new database starts with: one table whose only column, a text
@@ -389,7 +392,7 @@ pub struct NewOption {
     /// The definition the option joins.
     pub definition_id: PropertyDefinitionId,
     /// The option's id.
-    pub id: Uuid,
+    pub id: OptionId,
     /// Its stored value.
     pub value: PropertyOptionValue,
 }
@@ -432,7 +435,7 @@ pub enum Write {
         /// The definition.
         definition_id: PropertyDefinitionId,
         /// The option.
-        option_id: Uuid,
+        option_id: OptionId,
         /// Its new value, when its label changes.
         value: Option<PropertyOptionValue>,
         /// Its new hex colour, or `None` to clear it; when it changes.
@@ -450,7 +453,7 @@ pub enum Write {
         /// The definition.
         definition_id: PropertyDefinitionId,
         /// The option.
-        option_id: Uuid,
+        option_id: OptionId,
         /// The views of those tables that named the option, without it.
         views: Vec<DatabaseView>,
     },
@@ -648,9 +651,6 @@ impl std::fmt::Display for OpRefusal {
         write!(f, ": {}", self.reason)
     }
 }
-
-/// Identifier of a saved query.
-pub type QueryId = Uuid;
 
 /// What a saved query asks. Serialized as `{"version": 1, "query": "<sql>"}`:
 /// the integer version tags the shape, so a later version can change the

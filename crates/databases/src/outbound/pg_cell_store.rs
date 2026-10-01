@@ -82,7 +82,7 @@ fn options_by_definition(
 )> {
     let mut grouped: Vec<(PropertyDefinitionId, Vec<_>)> = Vec::new();
     for option in options {
-        let value = (option.id, option.value.clone());
+        let value = (option.id.into_uuid(), option.value.clone());
         match grouped
             .iter_mut()
             .find(|(definition, _)| *definition == option.definition_id)
@@ -108,7 +108,9 @@ fn name_taken(error: &PgDatabasesRepoError) -> bool {
 
 /// The row a properties-side entity id names.
 fn row_of(entity_id: &str) -> Result<RowId, PgCellStoreError> {
-    Uuid::parse_str(entity_id).map_err(|_| PgCellStoreError::CorruptRowId(entity_id.to_string()))
+    entity_id
+        .parse()
+        .map_err(|_| PgCellStoreError::CorruptRowId(entity_id.to_string()))
 }
 
 fn cells_error(error: impl std::error::Error + Send + Sync + 'static) -> PgCellStoreError {
@@ -351,7 +353,7 @@ where
                         .update_option_in(
                             &mut transaction,
                             *definition_id,
-                            *option_id,
+                            option_id.into_uuid(),
                             value.clone(),
                             match color {
                                 None => ColorChange::Keep,
@@ -381,7 +383,7 @@ where
                 } => {
                     if !self
                         .properties
-                        .delete_option_in(&mut transaction, *definition_id, *option_id)
+                        .delete_option_in(&mut transaction, *definition_id, option_id.into_uuid())
                         .await
                         .map_err(cells_error)?
                     {

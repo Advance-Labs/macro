@@ -5,6 +5,7 @@
 mod board;
 mod compile;
 
+use models_databases::ColumnId;
 use models_databases::views::{DatabaseView, SchemaColumn, ViewProblem, check};
 
 use crate::catalog::{Catalog, Column, ColumnKind, Table};
@@ -44,7 +45,7 @@ fn schema_column(column: &Column) -> SchemaColumn {
 }
 
 /// The column a checked view names by placement.
-fn placed(table: &Table, placement: uuid::Uuid) -> &Column {
+fn placed(table: &Table, placement: ColumnId) -> &Column {
     table
         .columns
         .iter()

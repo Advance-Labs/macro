@@ -6,9 +6,9 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
+use models_databases::{ColumnId, DatabaseId, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::{
     DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, column_of,
@@ -31,13 +31,13 @@ call DescribeDatabase using databaseId before continuing."
 pub struct RenameColumn {
     /// The database containing the column.
     #[schemars(description = "Id of the database containing the column, from ListDatabases.")]
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
     /// The table containing the column.
     #[schemars(description = "Id of the table containing the column, from DescribeDatabase.")]
-    pub table_id: Uuid,
+    pub table_id: TableId,
     /// The column to rename.
     #[schemars(description = "Id of the column to rename, from DescribeDatabase.")]
-    pub column_id: Uuid,
+    pub column_id: ColumnId,
     /// New display name.
     #[schemars(description = "New display name of the column, e.g. \"Dietary Needs\".")]
     pub name: String,
@@ -53,11 +53,11 @@ impl ToolAnnotated for RenameColumn {
 #[serde(rename_all = "camelCase")]
 pub struct RenameColumnResponse {
     /// Database containing the column.
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
     /// Table containing the column.
-    pub table_id: Uuid,
+    pub table_id: TableId,
     /// The renamed column's id, unchanged by the rename.
-    pub column_id: Uuid,
+    pub column_id: ColumnId,
     /// The column's display name after the rename.
     pub name: String,
     /// The database's schema after the change.

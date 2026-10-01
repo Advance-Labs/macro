@@ -61,7 +61,7 @@ where
     ) -> Result<Option<PropertyDefinitionId>, Self::Error> {
         Ok(self
             .properties
-            .get_bindable_property_definition(id, viewer.user_id.as_ref(), database_id)
+            .get_bindable_property_definition(id, viewer.user_id.as_ref(), database_id.into_uuid())
             .await
             .map_err(PgDefinitionStoreError::Properties)?
             .map(|definition| definition.id))
@@ -83,7 +83,7 @@ where
             .create_database_definition_in(
                 &mut transaction,
                 NewDatabaseDefinition {
-                    database_id,
+                    database_id: database_id.into_uuid(),
                     name,
                     data_type,
                     is_multi_select,

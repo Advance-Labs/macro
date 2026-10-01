@@ -485,8 +485,8 @@ fn numeric_selects_and_tags_cast_as_selects_and_a_relation_as_rows() {
     );
     assert_eq!(
         CastKind::from(ColumnKind::Relation {
-            database: uuid::Uuid::nil(),
-            table: uuid::Uuid::nil(),
+            database: crate::DatabaseId::from_uuid(uuid::Uuid::nil()),
+            table: crate::TableId::from_uuid(uuid::Uuid::nil()),
         }),
         CastKind::Relation
     );

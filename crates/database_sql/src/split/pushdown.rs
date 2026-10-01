@@ -131,7 +131,7 @@ fn literal(
 ) -> Option<Expr<PropertiesLiteral>> {
     let definition = binding(bindings, key)?.column?;
     let value = match value {
-        Value::Option(option) => PropertyMatchValue::SelectOption(*option),
+        Value::Option(option) => PropertyMatchValue::SelectOption(option.into_uuid()),
         // Resolve accepted the id; the ref type rejects only quotes and
         // backslashes, which no id contains.
         Value::Entity(id) => PropertyMatchValue::EntityRef(EntityRefId::new(id.clone()).ok()?),

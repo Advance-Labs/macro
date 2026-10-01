@@ -13,12 +13,12 @@
 //!
 //! Only the wasm-bindgen glue lives here; the engine knows nothing of it.
 
-use models_databases::position;
+use models_databases::DatabaseId;
+use models_databases::position::{self, Position};
 use models_databases::views::{CardPosition, DatabaseView};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_wasm_bindgen::Serializer;
-use uuid::Uuid;
 use wasm_bindgen::prelude::*;
 
 use crate::catalog::{Catalog, Schema, build};
@@ -92,7 +92,7 @@ impl Query {
 pub fn build_catalog(schema: JsValue, scope: Option<String>) -> Result<JsValue, JsValue> {
     let schema: Schema = read(Input::Schema, schema)?;
     let scope = scope
-        .map(|scope| Uuid::parse_str(&scope))
+        .map(|scope| scope.parse::<DatabaseId>())
         .transpose()
         .map_err(|error| {
             thrown(RunError::Unreadable {
@@ -150,7 +150,10 @@ pub fn board(
 /// Throws an `Error` when a bound is not a key or they are out of order.
 #[wasm_bindgen(js_name = keyBetween)]
 pub fn key_between(before: Option<String>, after: Option<String>) -> Result<String, JsError> {
-    position::key_between(before.as_deref(), after.as_deref())
+    let bound = |key: Option<String>| key.map(|key| key.parse::<Position>()).transpose();
+    let (before, after) = (bound(before)?, bound(after)?);
+    position::key_between(before.as_ref(), after.as_ref())
+        .map(String::from)
         .map_err(|error| JsError::new(&error.to_string()))
 }
 

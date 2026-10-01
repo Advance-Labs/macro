@@ -15,7 +15,7 @@ impl<Properties: Send + Sync + 'static> DatabaseSharingRepo for PgDatabasesRepo<
     ) -> Result<Vec<ChannelSharePermission>, Self::Error> {
         Ok(entity_access_db_utils::get_direct_channel_grants(
             &self.pool,
-            &database_id,
+            database_id.as_uuid(),
             EntityType::Database,
         )
         .await?)
@@ -30,7 +30,7 @@ impl<Properties: Send + Sync + 'static> DatabaseSharingRepo for PgDatabasesRepo<
         let mut transaction = self.pool.begin().await?;
         let live = sqlx::query_scalar!(
             "SELECT id FROM databases WHERE id = $1 AND trashed_at IS NULL FOR SHARE",
-            database_id,
+            database_id.into_uuid(),
         )
         .fetch_optional(&mut *transaction)
         .await?;
@@ -40,7 +40,7 @@ impl<Properties: Send + Sync + 'static> DatabaseSharingRepo for PgDatabasesRepo<
         }
         entity_access_db_utils::update_entity_access_channel_share_permissions(
             &mut transaction,
-            &database_id,
+            database_id.as_uuid(),
             EntityType::Database,
             grants,
         )

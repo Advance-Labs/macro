@@ -1,4 +1,5 @@
 use chrono::{TimeZone, Utc};
+use models_databases::{ColumnId, DatabaseId, TableId};
 
 use uuid::Uuid;
 
@@ -839,14 +840,14 @@ fn rejections_quote_what_the_agent_wrote() {
 fn exact_case_resolves_a_case_insensitive_collision() {
     use crate::catalog::{Column, ColumnKind, Table, TableSource};
     let table = |id: u128, database: &str| Table {
-        id: Uuid::from_u128(id),
-        database_id: Uuid::from_u128(id + 0x200),
+        id: TableId::from_uuid(Uuid::from_u128(id)),
+        database_id: DatabaseId::from_uuid(Uuid::from_u128(id + 0x200)),
         database: database.into(),
         name: "Table 1".into(),
         source: TableSource::Database,
         columns: vec![Column {
             id: Uuid::from_u128(id + 0x100),
-            placement: Uuid::from_u128(id + 0x100),
+            placement: ColumnId::from_uuid(Uuid::from_u128(id + 0x100)),
             name: "Name".into(),
             kind: ColumnKind::Text,
         }],
@@ -857,12 +858,18 @@ fn exact_case_resolves_a_case_insensitive_collision() {
     let Query::Select(select) = compile(&catalog, "SELECT * FROM test.\"Table 1\"").unwrap() else {
         panic!("a select");
     };
-    assert_eq!(select.relations[0].table, Uuid::from_u128(2));
+    assert_eq!(
+        select.relations[0].table,
+        TableId::from_uuid(Uuid::from_u128(2))
+    );
     let Query::Select(select) = compile(&catalog, "SELECT * FROM \"Test\".\"Table 1\"").unwrap()
     else {
         panic!("a select");
     };
-    assert_eq!(select.relations[0].table, Uuid::from_u128(1));
+    assert_eq!(
+        select.relations[0].table,
+        TableId::from_uuid(Uuid::from_u128(1))
+    );
     assert_eq!(
         compile(&catalog, "SELECT * FROM \"TEST\".\"Table 1\"")
             .unwrap_err()

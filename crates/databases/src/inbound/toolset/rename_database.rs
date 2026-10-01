@@ -5,9 +5,9 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
+use models_databases::DatabaseId;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::{
     DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, database_error,
@@ -29,7 +29,7 @@ Requires edit access."
 pub struct RenameDatabase {
     /// The database to rename.
     #[schemars(description = "Id of the database to rename, from ListDatabases.")]
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
     /// New display name.
     #[schemars(description = "New display name, as the user would title it.")]
     pub name: String,
@@ -45,7 +45,7 @@ impl ToolAnnotated for RenameDatabase {
 #[serde(rename_all = "camelCase")]
 pub struct RenameDatabaseResponse {
     /// The renamed database's id.
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
     /// Its display name after the rename.
     pub name: String,
     /// The database's schema after the change.

@@ -3658,6 +3658,7 @@
       "crates/filter_ast",
       "crates/item_filters",
       "crates/macro_user_id",
+      "crates/macro_uuid",
       "crates/maybe_send",
       "crates/model_file_type",
       "crates/model_owner",
@@ -8430,6 +8431,7 @@
       "crates/workspace-hack"
     ],
     "models_databases": [
+      "crates/macro_uuid",
       "crates/models_databases"
     ],
     "models_dcs": [

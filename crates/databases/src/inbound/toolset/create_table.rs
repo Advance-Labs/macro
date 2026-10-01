@@ -5,9 +5,9 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
+use models_databases::{DatabaseId, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::{
     DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, database_error,
@@ -38,7 +38,7 @@ call DescribeDatabase using databaseId before continuing. Do not repeat the crea
 pub struct CreateTable {
     /// The database to add the table to.
     #[schemars(description = "Id of the database to add the table to, from ListDatabases.")]
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
 
     /// Display name of the new table.
     #[schemars(
@@ -57,9 +57,9 @@ impl ToolAnnotated for CreateTable {
 #[serde(rename_all = "camelCase")]
 pub struct CreateTableResponse {
     /// Database containing the committed table.
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
     /// The new table's id. Pass this to AddColumn.
-    pub table_id: Uuid,
+    pub table_id: TableId,
     /// The database's schema after the change.
     pub database: Option<ToolDatabaseSchema>,
     /// A failed follow-up read does not undo the committed table.

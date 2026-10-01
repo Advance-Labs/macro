@@ -1,6 +1,7 @@
 use models_databases::views::{
     CardPosition, Lane, SortDirection, SortKey, ViewLayout, ViewProblem, ViewQuery,
 };
+use models_databases::{OptionId, RowId};
 use uuid::Uuid;
 
 use super::*;
@@ -8,16 +9,16 @@ use crate::fold::Cell;
 use crate::run::{OutcomeColumn, OutcomeKind};
 use crate::test_support::*;
 
-const FIRST: Uuid = Uuid::from_u128(0x101);
-const SECOND: Uuid = Uuid::from_u128(0x102);
-const THIRD: Uuid = Uuid::from_u128(0x103);
-const FOURTH: Uuid = Uuid::from_u128(0x104);
-const FIFTH: Uuid = Uuid::from_u128(0x105);
-const SIXTH: Uuid = Uuid::from_u128(0x106);
-const NOT_AN_OPTION: Uuid = Uuid::from_u128(0x999);
+const FIRST: RowId = RowId::from_uuid(Uuid::from_u128(0x101));
+const SECOND: RowId = RowId::from_uuid(Uuid::from_u128(0x102));
+const THIRD: RowId = RowId::from_uuid(Uuid::from_u128(0x103));
+const FOURTH: RowId = RowId::from_uuid(Uuid::from_u128(0x104));
+const FIFTH: RowId = RowId::from_uuid(Uuid::from_u128(0x105));
+const SIXTH: RowId = RowId::from_uuid(Uuid::from_u128(0x106));
+const NOT_AN_OPTION: OptionId = OptionId::from_uuid(Uuid::from_u128(0x999));
 
 /// The rows a view's read found, in its order: each row's status cell.
-fn outcome(rows: &[(Uuid, Option<Cell>)]) -> Outcome {
+fn outcome(rows: &[(RowId, Option<Cell>)]) -> Outcome {
     Outcome {
         columns: vec![
             OutcomeColumn {
@@ -99,18 +100,18 @@ fn cards_sit_in_their_lanes_in_hand_arranged_order() {
         CardPosition {
             row: FOURTH,
             lane: Some(DOING),
-            position: "a0".into(),
+            position: "80".parse().unwrap(),
         },
         CardPosition {
             row: FIFTH,
             lane: Some(TODO),
-            position: "a1".into(),
+            position: "8180".parse().unwrap(),
         },
         // Placed when it was in Doing; it has since moved to Todo.
         CardPosition {
             row: FIRST,
             lane: Some(DOING),
-            position: "Zz".into(),
+            position: "7f80".parse().unwrap(),
         },
     ];
 
@@ -164,12 +165,12 @@ fn unpositioned_cards_follow_positioned_ones_by_row_id() {
         CardPosition {
             row: FOURTH,
             lane: Some(TODO),
-            position: "a1".into(),
+            position: "8180".parse().unwrap(),
         },
         CardPosition {
             row: THIRD,
             lane: Some(TODO),
-            position: "a0".into(),
+            position: "80".parse().unwrap(),
         },
     ];
 
@@ -210,7 +211,7 @@ fn a_sorted_view_keeps_the_read_order_in_every_lane() {
     let positions = vec![CardPosition {
         row: SECOND,
         lane: Some(TODO),
-        position: "a0".into(),
+        position: "80".parse().unwrap(),
     }];
 
     assert_eq!(
@@ -243,7 +244,7 @@ fn a_sorted_view_keeps_the_read_order_in_every_lane() {
 }
 
 /// A lane's option and whether it is hidden.
-type ShownLane = (Option<Uuid>, bool);
+type ShownLane = (Option<OptionId>, bool);
 
 #[test]
 fn listed_lanes_come_first_and_keep_their_hidden_flag() {

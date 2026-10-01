@@ -41,7 +41,13 @@ where
         &self,
         viewer: &Viewer,
     ) -> Result<Vec<(DatabaseId, AccessLevel)>, Self::Error> {
-        Ok(self.access.accessible_databases(&viewer.user_id).await?)
+        Ok(self
+            .access
+            .accessible_databases(&viewer.user_id)
+            .await?
+            .into_iter()
+            .map(|(database, grant)| (DatabaseId::from_uuid(database), grant))
+            .collect())
     }
 
     #[tracing::instrument(err, skip(self, viewer))]

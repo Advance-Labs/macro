@@ -2,12 +2,15 @@ use chrono::TimeZone;
 use serde_json::json;
 
 use super::*;
+use uuid::Uuid;
 
-const TABLE: Uuid = Uuid::from_u128(0x7ab1);
-const NAME: Uuid = Uuid::from_u128(0xc01a);
-const STATUS: Uuid = Uuid::from_u128(0xc01b);
-const SAM: Uuid = Uuid::from_u128(0x5a11);
-const ALEX: Uuid = Uuid::from_u128(0xa1e8);
+const TABLE: TableId = TableId::from_uuid(Uuid::from_u128(0x7ab1));
+const NAME: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xc01a));
+const STATUS: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xc01b));
+const SAM: RowId = RowId::from_uuid(Uuid::from_u128(0x5a11));
+const ALEX: RowId = RowId::from_uuid(Uuid::from_u128(0xa1e8));
+const GOING: OptionId = OptionId::from_uuid(Uuid::from_u128(0xc01b));
+const PEOPLE: DatabaseId = DatabaseId::from_uuid(Uuid::from_u128(0xa1e8));
 
 #[test]
 fn an_insert_reads_its_rows_cells_and_values_from_json() {
@@ -60,10 +63,7 @@ fn every_value_kind_round_trips_through_json() {
         CellValue::Boolean(true),
         CellValue::Date(Utc.with_ymd_and_hms(2026, 9, 30, 0, 0, 0).unwrap()),
         CellValue::Link(vec!["https://macro.com".into()]),
-        CellValue::Options(vec![
-            OptionRef::Id(STATUS),
-            OptionRef::Label("Going".into()),
-        ]),
+        CellValue::Options(vec![OptionRef::Id(GOING), OptionRef::Label("Going".into())]),
         CellValue::Entities(vec![EntityRef {
             entity_type: EntityKind::User,
             entity_id: "macro|sam@macro.com".into(),
@@ -82,7 +82,7 @@ fn every_value_kind_round_trips_through_json() {
             {"type": "boolean", "value": true},
             {"type": "date", "value": "2026-09-30T00:00:00Z"},
             {"type": "link", "value": ["https://macro.com"]},
-            {"type": "options", "value": [{"id": STATUS}, {"label": "Going"}]},
+            {"type": "options", "value": [{"id": GOING}, {"label": "Going"}]},
             {"type": "entities", "value": [{"entityType": "USER", "entityId": "macro|sam@macro.com"}]},
             {"type": "rows", "value": [SAM]},
             {"type": "clear"},
@@ -168,7 +168,7 @@ fn deletes_and_type_changes_read_from_json() {
             "kind": "change_column_type",
             "table": TABLE,
             "column": NAME,
-            "to": {"type": "relation", "database": ALEX, "table": TABLE},
+            "to": {"type": "relation", "database": PEOPLE, "table": TABLE},
         },
     ]))
     .unwrap();
@@ -199,7 +199,7 @@ fn deletes_and_type_changes_read_from_json() {
                 table: TABLE,
                 column: NAME,
                 to: ColumnKind::Relation {
-                    database: ALEX,
+                    database: PEOPLE,
                     table: TABLE,
                 },
                 clear_invalid: false,
@@ -234,7 +234,7 @@ fn results_say_what_each_op_did_in_camel_case() {
 
 #[test]
 fn an_option_update_tells_a_missing_colour_from_a_cleared_one() {
-    let option = Uuid::from_u128(0x0b7);
+    let option = OptionId::from_uuid(Uuid::from_u128(0x0b7));
     let read = |body| serde_json::from_value::<DatabaseOp>(body).unwrap();
 
     assert_eq!(
@@ -306,7 +306,7 @@ fn an_option_update_tells_a_missing_colour_from_a_cleared_one() {
 
 #[test]
 fn an_option_removal_names_its_table_column_and_option() {
-    let option = Uuid::from_u128(0x0b7);
+    let option = OptionId::from_uuid(Uuid::from_u128(0x0b7));
     let op: DatabaseOp = serde_json::from_value(json!({
         "kind": "delete_option",
         "table": TABLE,
@@ -327,8 +327,8 @@ fn an_option_removal_names_its_table_column_and_option() {
 
 #[test]
 fn view_ops_read_their_table_view_and_card_from_json() {
-    let view = Uuid::from_u128(0x71e);
-    let lane = Uuid::from_u128(0x0b7);
+    let view = ViewId::from_uuid(Uuid::from_u128(0x71e));
+    let lane = OptionId::from_uuid(Uuid::from_u128(0x0b7));
     let read = |body| serde_json::from_value::<DatabaseOp>(body).unwrap();
 
     assert_eq!(

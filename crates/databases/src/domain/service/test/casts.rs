@@ -227,7 +227,7 @@ async fn clearing_a_cell_with_several_values_keeps_its_first() {
     let vegan = option_id(&seeded.world, diet, "Vegan");
     assert_eq!(
         cell(&seeded.world, seeded.row_id, diet),
-        Some(PropertyValue::SelectOption(vec![vegan]))
+        Some(PropertyValue::SelectOption(vec![vegan.into_uuid()]))
     );
 }
 

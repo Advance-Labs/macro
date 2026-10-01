@@ -7,6 +7,8 @@ use databases::domain::models::{
     Column, ColumnConfig, ColumnDetail, Database, DatabaseDetail, Table, TableDetail, TableVersion,
 };
 use entity_access::domain::models::AccessLevel;
+use models_databases::position::Position;
+use models_databases::{ColumnId, DatabaseId, OptionId, TableId};
 use models_properties::service::property_definition::PropertyDefinition;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
 use models_properties::service::property_option::PropertyOption;
@@ -16,8 +18,8 @@ use uuid::Uuid;
 
 use super::schema;
 
-const CRM: Uuid = Uuid::from_u128(0xdb01);
-const DEALS: Uuid = Uuid::from_u128(0x7a01);
+const CRM: DatabaseId = DatabaseId::from_uuid(Uuid::from_u128(0xdb01));
+const DEALS: TableId = TableId::from_uuid(Uuid::from_u128(0x7a01));
 
 #[test]
 fn details_become_the_schema_the_engine_builds_its_catalog_from() {
@@ -35,17 +37,17 @@ fn details_become_the_schema_the_engine_builds_its_catalog_from() {
                 id: DEALS,
                 database_id: CRM,
                 name: "Deals".into(),
-                position: "80".into(),
+                position: "80".parse::<Position>().unwrap(),
                 version: TableVersion(1),
             },
             sql_name: "\"Deals\"".into(),
             columns: vec![
                 ColumnDetail {
                     column: Column {
-                        id: Uuid::from_u128(0xb001),
+                        id: ColumnId::from_uuid(Uuid::from_u128(0xb001)),
                         table_id: DEALS,
                         property_definition_id: Uuid::from_u128(0xc001),
-                        position: "80".into(),
+                        position: "80".parse::<Position>().unwrap(),
                         config: None,
                         display_name: Some("Deal name".into()),
                         infer_type: false,
@@ -71,10 +73,10 @@ fn details_become_the_schema_the_engine_builds_its_catalog_from() {
                 },
                 ColumnDetail {
                     column: Column {
-                        id: Uuid::from_u128(0xb002),
+                        id: ColumnId::from_uuid(Uuid::from_u128(0xb002)),
                         table_id: DEALS,
                         property_definition_id: Uuid::from_u128(0xc002),
-                        position: "8180".into(),
+                        position: "8180".parse::<Position>().unwrap(),
                         config: None,
                         display_name: None,
                         infer_type: false,
@@ -119,10 +121,10 @@ fn details_become_the_schema_the_engine_builds_its_catalog_from() {
                 },
                 ColumnDetail {
                     column: Column {
-                        id: Uuid::from_u128(0xb003),
+                        id: ColumnId::from_uuid(Uuid::from_u128(0xb003)),
                         table_id: DEALS,
                         property_definition_id: Uuid::from_u128(0xc003),
-                        position: "8280".into(),
+                        position: "8280".parse::<Position>().unwrap(),
                         config: None,
                         display_name: None,
                         infer_type: false,
@@ -148,10 +150,10 @@ fn details_become_the_schema_the_engine_builds_its_catalog_from() {
                 },
                 ColumnDetail {
                     column: Column {
-                        id: Uuid::from_u128(0xb004),
+                        id: ColumnId::from_uuid(Uuid::from_u128(0xb004)),
                         table_id: DEALS,
                         property_definition_id: Uuid::from_u128(0xc004),
-                        position: "8380".into(),
+                        position: "8380".parse::<Position>().unwrap(),
                         config: Some(ColumnConfig::Link {
                             database_id: CRM,
                             table_id: DEALS,
@@ -194,7 +196,7 @@ fn details_become_the_schema_the_engine_builds_its_catalog_from() {
                     name: "Deals".into(),
                     columns: vec![
                         ColumnSchema {
-                            id: Uuid::from_u128(0xb001),
+                            id: ColumnId::from_uuid(Uuid::from_u128(0xb001)),
                             definition: Uuid::from_u128(0xc001),
                             name: "Deal name".into(),
                             property: PropertyType {
@@ -206,7 +208,7 @@ fn details_become_the_schema_the_engine_builds_its_catalog_from() {
                             options: vec![],
                         },
                         ColumnSchema {
-                            id: Uuid::from_u128(0xb002),
+                            id: ColumnId::from_uuid(Uuid::from_u128(0xb002)),
                             definition: Uuid::from_u128(0xc002),
                             name: "Tier".into(),
                             property: PropertyType {
@@ -217,19 +219,19 @@ fn details_become_the_schema_the_engine_builds_its_catalog_from() {
                             },
                             options: vec![
                                 OptionSchema {
-                                    id: Uuid::from_u128(0xa001),
+                                    id: OptionId::from_uuid(Uuid::from_u128(0xa001)),
                                     value: OptionValue::Number(2.0),
                                     order: 0,
                                 },
                                 OptionSchema {
-                                    id: Uuid::from_u128(0xa002),
+                                    id: OptionId::from_uuid(Uuid::from_u128(0xa002)),
                                     value: OptionValue::Number(2.5),
                                     order: 1,
                                 },
                             ],
                         },
                         ColumnSchema {
-                            id: Uuid::from_u128(0xb003),
+                            id: ColumnId::from_uuid(Uuid::from_u128(0xb003)),
                             definition: Uuid::from_u128(0xc003),
                             name: "Owner".into(),
                             property: PropertyType {
@@ -241,7 +243,7 @@ fn details_become_the_schema_the_engine_builds_its_catalog_from() {
                             options: vec![],
                         },
                         ColumnSchema {
-                            id: Uuid::from_u128(0xb004),
+                            id: ColumnId::from_uuid(Uuid::from_u128(0xb004)),
                             definition: Uuid::from_u128(0xc004),
                             name: "Related".into(),
                             property: PropertyType {
@@ -265,9 +267,9 @@ fn details_become_the_schema_the_engine_builds_its_catalog_from() {
 #[test]
 fn a_shared_relation_definition_relates_each_table_to_its_own_target() {
     const LINKED: Uuid = Uuid::from_u128(0xc0de);
-    const LEADS: Uuid = Uuid::from_u128(0x7a02);
-    const ACCOUNTS: Uuid = Uuid::from_u128(0x7a03);
-    const CONTACTS: Uuid = Uuid::from_u128(0x7a04);
+    const LEADS: TableId = TableId::from_uuid(Uuid::from_u128(0x7a02));
+    const ACCOUNTS: TableId = TableId::from_uuid(Uuid::from_u128(0x7a03));
+    const CONTACTS: TableId = TableId::from_uuid(Uuid::from_u128(0x7a04));
     let link = PropertyDefinitionWithOptions {
         definition: PropertyDefinition {
             id: LINKED,
@@ -283,12 +285,12 @@ fn a_shared_relation_definition_relates_each_table_to_its_own_target() {
         },
         property_options: Vec::new(),
     };
-    let table = |id: Uuid, name: &str, column: Uuid, target: Uuid| TableDetail {
+    let table = |id: TableId, name: &str, column: ColumnId, target: TableId| TableDetail {
         table: Table {
             id,
             database_id: CRM,
             name: name.into(),
-            position: "80".into(),
+            position: "80".parse::<Position>().unwrap(),
             version: TableVersion(1),
         },
         sql_name: format!("\"{name}\""),
@@ -297,7 +299,7 @@ fn a_shared_relation_definition_relates_each_table_to_its_own_target() {
                 id: column,
                 table_id: id,
                 property_definition_id: LINKED,
-                position: "80".into(),
+                position: "80".parse::<Position>().unwrap(),
                 config: Some(ColumnConfig::Link {
                     database_id: CRM,
                     table_id: target,
@@ -323,8 +325,18 @@ fn a_shared_relation_definition_relates_each_table_to_its_own_target() {
             },
             grant: AccessLevel::Owner,
             tables: vec![
-                table(DEALS, "Deals", Uuid::from_u128(0xb101), ACCOUNTS),
-                table(LEADS, "Leads", Uuid::from_u128(0xb102), CONTACTS),
+                table(
+                    DEALS,
+                    "Deals",
+                    ColumnId::from_uuid(Uuid::from_u128(0xb101)),
+                    ACCOUNTS,
+                ),
+                table(
+                    LEADS,
+                    "Leads",
+                    ColumnId::from_uuid(Uuid::from_u128(0xb102)),
+                    CONTACTS,
+                ),
             ],
         }],
         None,

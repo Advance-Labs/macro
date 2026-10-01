@@ -5,10 +5,10 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
+use models_databases::{ColumnId, DatabaseId, TableId};
 use models_properties::shared::DataType;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::{
     ColumnType, DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, ToolEntityType,
@@ -47,13 +47,13 @@ Requires edit access. The response is the schema after the change."
 pub struct ChangeColumnType {
     /// The database containing the column.
     #[schemars(description = "Id of the database containing the column, from ListDatabases.")]
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
     /// The table containing the column.
     #[schemars(description = "Id of the table containing the column, from DescribeDatabase.")]
-    pub table_id: Uuid,
+    pub table_id: TableId,
     /// The column to change.
     #[schemars(description = "Id of the column to change, from DescribeDatabase.")]
-    pub column_id: Uuid,
+    pub column_id: ColumnId,
     /// The new value type.
     #[schemars(
         description = "The new type: text, number, boolean, date, link (a URL), select, \
@@ -87,7 +87,7 @@ pub struct ChangeColumnType {
                        relation holding row ids. Requires dataType entity."
     )]
     #[serde(default)]
-    pub link_to_table_id: Option<Uuid>,
+    pub link_to_table_id: Option<TableId>,
     /// Empty what does not fit instead of refusing.
     #[schemars(
         description = "Empty the values that cannot become the new type instead of refusing \
@@ -107,11 +107,11 @@ impl ToolAnnotated for ChangeColumnType {
 #[serde(rename_all = "camelCase")]
 pub struct ChangeColumnTypeResponse {
     /// Database containing the column.
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
     /// Table containing the column.
-    pub table_id: Uuid,
+    pub table_id: TableId,
     /// The changed column's id, unchanged by the conversion.
-    pub column_id: Uuid,
+    pub column_id: ColumnId,
     /// Cells emptied because their value did not fit, with `clearInvalid`.
     pub cleared_cells: usize,
     /// Cells that held several values and kept only their first, with

@@ -1,5 +1,5 @@
 use super::*;
-use crate::domain::models::{QueryDefinition, SavedQuery};
+use crate::domain::models::{QueryDefinition, QueryId, SavedQuery};
 
 /// Request body for saving a query.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -10,15 +10,15 @@ pub struct SaveQueryRequest {
     /// The database whose tables win name resolution. The caller must be
     /// able to see it.
     #[serde(default)]
-    #[schema(nullable = false)]
-    pub database_id: Option<Uuid>,
+    #[schema(nullable = false, value_type = Option<Uuid>)]
+    pub database_id: Option<DatabaseId>,
 }
 
 /// Path params for the saved-query routes.
 #[derive(Debug, Deserialize)]
 pub struct QueryPath {
     /// Saved query id.
-    pub query_id: Uuid,
+    pub query_id: QueryId,
 }
 
 /// Save an immutable query. Editing a question saves a new one.

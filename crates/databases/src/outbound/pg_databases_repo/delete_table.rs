@@ -14,11 +14,11 @@ impl<Properties> PgDatabasesRepo<Properties> {
         }
         let tables = sqlx::query_scalar!(
             "SELECT id FROM database_tables WHERE database_id = $1",
-            table.database_id
+            table.database_id.into_uuid()
         )
         .fetch_all(&mut *transaction)
         .await?;
-        if !tables.contains(&table.id) {
+        if !tables.contains(table.id.as_uuid()) {
             return Ok(TableDeletion::NotFound);
         }
         if tables.len() <= 1 {
@@ -28,8 +28,8 @@ impl<Properties> PgDatabasesRepo<Properties> {
         // keys, and the rows' cells with them by trigger.
         let deleted = sqlx::query!(
             "DELETE FROM database_tables WHERE id = $1 AND database_id = $2",
-            table.id,
-            table.database_id
+            table.id.into_uuid(),
+            table.database_id.into_uuid()
         )
         .execute(&mut *transaction)
         .await?;

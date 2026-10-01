@@ -4,21 +4,23 @@
 use sqlx::PgExecutor;
 use uuid::Uuid;
 
-use super::PgDatabasesRepoError;
-use crate::domain::models::{CardPosition, DatabaseView, TableId, ViewId, ViewPosition};
+use super::{PgDatabasesRepoError, uuids};
+use crate::domain::models::{
+    CardPosition, DatabaseId, DatabaseView, OptionId, RowId, TableId, ViewId, ViewPosition,
+};
 
 /// The lane as stored.
-fn lane_key(lane: Option<Uuid>) -> String {
+fn lane_key(lane: Option<OptionId>) -> String {
     lane.map(|option| option.to_string()).unwrap_or_default()
 }
 
 /// The lane a stored key names; `None` for the lane of cards without an
 /// option.
-fn lane_of(key: &str) -> Result<Option<Uuid>, PgDatabasesRepoError> {
+fn lane_of(key: &str) -> Result<Option<OptionId>, PgDatabasesRepoError> {
     if key.is_empty() {
         return Ok(None);
     }
-    Uuid::parse_str(key)
+    key.parse()
         .map(Some)
         .map_err(|_| PgDatabasesRepoError::CorruptLane(key.to_string()))
 }
@@ -35,18 +37,18 @@ pub(crate) async fn views_for_tables(
         WHERE table_id = ANY($1)
         ORDER BY table_id, position, id
         "#,
-        table_ids,
+        &uuids(table_ids),
     )
     .fetch_all(executor)
     .await?;
     rows.into_iter()
         .map(|row| {
             Ok(DatabaseView {
-                id: row.id,
-                database_id: row.database_id,
-                table_id: row.table_id,
+                id: ViewId::from_uuid(row.id),
+                database_id: DatabaseId::from_uuid(row.database_id),
+                table_id: TableId::from_uuid(row.table_id),
                 name: row.name,
-                position: row.position,
+                position: row.position.parse()?,
                 query: serde_json::from_value(row.query)?,
                 layout: serde_json::from_value(row.layout)?,
                 created_at: row.created_at,
@@ -68,16 +70,16 @@ pub(crate) async fn view_positions(
         WHERE view_id = $1
         ORDER BY lane, position, row_id
         "#,
-        view_id,
+        view_id.into_uuid(),
     )
     .fetch_all(executor)
     .await?;
     rows.into_iter()
         .map(|row| {
             Ok(CardPosition {
-                row: row.row_id,
+                row: RowId::from_uuid(row.row_id),
                 lane: lane_of(&row.lane)?,
-                position: row.position,
+                position: row.position.parse()?,
             })
         })
         .collect()
@@ -94,11 +96,11 @@ pub(crate) async fn insert_view(
             (id, database_id, table_id, name, position, query, layout, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         "#,
-        view.id,
-        view.database_id,
-        view.table_id,
+        view.id.into_uuid(),
+        view.database_id.into_uuid(),
+        view.table_id.into_uuid(),
         view.name,
-        view.position,
+        view.position.as_str(),
         serde_json::to_value(&view.query)?,
         serde_json::to_value(&view.layout)?,
         view.created_at,
@@ -121,8 +123,8 @@ pub(crate) async fn update_view(
         SET name = $3, query = $4, layout = $5, updated_at = $6
         WHERE id = $1 AND table_id = $2
         "#,
-        view.id,
-        view.table_id,
+        view.id.into_uuid(),
+        view.table_id.into_uuid(),
         view.name,
         serde_json::to_value(&view.query)?,
         serde_json::to_value(&view.layout)?,
@@ -142,8 +144,8 @@ pub(crate) async fn delete_view(
 ) -> Result<bool, sqlx::Error> {
     let deleted = sqlx::query!(
         "DELETE FROM database_views WHERE id = $1 AND table_id = $2",
-        view_id,
-        table_id,
+        view_id.into_uuid(),
+        table_id.into_uuid(),
     )
     .execute(executor)
     .await?;
@@ -157,10 +159,13 @@ pub(crate) async fn order_views(
     table_id: TableId,
     positions: &[ViewPosition],
 ) -> Result<bool, sqlx::Error> {
-    let views: Vec<Uuid> = positions.iter().map(|placed| placed.view).collect();
+    let views: Vec<Uuid> = positions
+        .iter()
+        .map(|placed| placed.view.into_uuid())
+        .collect();
     let keys: Vec<String> = positions
         .iter()
-        .map(|placed| placed.position.clone())
+        .map(|placed| placed.position.to_string())
         .collect();
     let updated = sqlx::query!(
         r#"
@@ -169,7 +174,7 @@ pub(crate) async fn order_views(
         FROM UNNEST($2::uuid[], $3::text[]) AS ordered(id, position)
         WHERE target.id = ordered.id AND target.table_id = $1
         "#,
-        table_id,
+        table_id.into_uuid(),
         &views,
         &keys,
     )
@@ -185,7 +190,7 @@ pub(crate) async fn clear_positions(
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         "DELETE FROM database_view_positions WHERE view_id = $1",
-        view_id
+        view_id.into_uuid()
     )
     .execute(executor)
     .await?;
@@ -198,14 +203,17 @@ pub(crate) async fn place_cards(
     view_id: ViewId,
     positions: &[CardPosition],
 ) -> Result<(), sqlx::Error> {
-    let rows: Vec<Uuid> = positions.iter().map(|placed| placed.row).collect();
+    let rows: Vec<Uuid> = positions
+        .iter()
+        .map(|placed| placed.row.into_uuid())
+        .collect();
     let lanes: Vec<String> = positions
         .iter()
         .map(|placed| lane_key(placed.lane))
         .collect();
     let keys: Vec<String> = positions
         .iter()
-        .map(|placed| placed.position.clone())
+        .map(|placed| placed.position.to_string())
         .collect();
     sqlx::query!(
         r#"
@@ -215,7 +223,7 @@ pub(crate) async fn place_cards(
         ON CONFLICT (view_id, row_id)
         DO UPDATE SET lane = EXCLUDED.lane, position = EXCLUDED.position
         "#,
-        view_id,
+        view_id.into_uuid(),
         &rows,
         &lanes,
         &keys,
@@ -230,7 +238,7 @@ pub(crate) async fn place_cards(
 pub(crate) async fn clear_lane(
     executor: impl PgExecutor<'_>,
     table_ids: &[TableId],
-    option: Uuid,
+    option: OptionId,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
@@ -238,7 +246,7 @@ pub(crate) async fn clear_lane(
         USING database_views board
         WHERE placed.view_id = board.id AND board.table_id = ANY($1) AND placed.lane = $2
         "#,
-        table_ids,
+        &uuids(table_ids),
         lane_key(Some(option)),
     )
     .execute(executor)

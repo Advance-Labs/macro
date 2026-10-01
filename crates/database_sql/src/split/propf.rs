@@ -7,6 +7,7 @@
 #[cfg(test)]
 mod test;
 
+use models_databases::OptionId;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use uuid::Uuid;
@@ -45,7 +46,7 @@ pub struct PropfLiteral {
 pub enum PropfValue {
     /// A select option id.
     #[serde(rename = "so")]
-    SelectOption(Uuid),
+    SelectOption(OptionId),
     /// A referenced entity id.
     #[serde(rename = "er")]
     EntityRef(String),

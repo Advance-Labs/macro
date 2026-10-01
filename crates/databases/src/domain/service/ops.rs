@@ -521,7 +521,7 @@ struct Planner<'a> {
     options: Vec<NewOption>,
     /// The options of each definition an op has looked at, with their
     /// labels, as the ops planned so far leave them.
-    labels: HashMap<PropertyDefinitionId, Vec<(Uuid, String)>>,
+    labels: HashMap<PropertyDefinitionId, Vec<(OptionId, String)>>,
     /// The views of each table an op has looked at, in their order, as the
     /// ops planned so far leave them.
     views: HashMap<TableId, Vec<DatabaseView>>,
@@ -781,7 +781,7 @@ impl Planner<'_> {
         &mut self,
         place: Place,
         column: &ColumnEntry,
-        option: Uuid,
+        option: OptionId,
     ) -> Result<(), DatabaseError> {
         if self
             .labels_of(&column.definition)
@@ -800,7 +800,7 @@ impl Planner<'_> {
         &mut self,
         place: Place,
         column: &ColumnEntry,
-        option: Uuid,
+        option: OptionId,
         label: &str,
     ) -> Result<PropertyOptionValue, DatabaseError> {
         let data_type = column.definition.definition.data_type;

@@ -1,6 +1,7 @@
 //! SaveDatabaseQuery tool: save a question and hand back the live block that
 //! renders its answer wherever it is pasted.
 
+use models_databases::{DatabaseId, QueryId};
 use std::collections::HashSet;
 
 use ai_toolset::{
@@ -15,7 +16,6 @@ use entity_access::domain::ports::EntityAccessService;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use soup::domain::ports::SoupService;
-use uuid::Uuid;
 
 use super::{DatabasesSqlToolContext, QueryDatabaseDisplay, sql_error};
 use crate::service::ChartColumns;
@@ -40,7 +40,7 @@ pub struct SaveDatabaseQuery {
                        tables win when another database has a table of the same name."
     )]
     #[serde(default)]
-    pub database_id: Option<Uuid>,
+    pub database_id: Option<DatabaseId>,
     /// The SELECT to save.
     #[schemars(description = "The SELECT to save, exactly as it ran with QueryDatabase.")]
     pub sql: String,
@@ -102,7 +102,7 @@ impl ToolAnnotated for SaveDatabaseQuery {
 #[serde(rename_all = "camelCase")]
 pub struct SaveDatabaseQueryResponse {
     /// The saved question's id.
-    pub query_id: Uuid,
+    pub query_id: QueryId,
     /// The block to paste verbatim where the answer should appear.
     pub markdown: String,
 }
@@ -111,9 +111,9 @@ pub struct SaveDatabaseQueryResponse {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct QueryBlock<'a> {
-    query_id: Uuid,
+    query_id: QueryId,
     #[serde(skip_serializing_if = "Option::is_none")]
-    database_id: Option<Uuid>,
+    database_id: Option<DatabaseId>,
     title: &'a str,
     prompt: &'a str,
     display_mode: QueryDatabaseDisplay,
@@ -123,8 +123,8 @@ struct QueryBlock<'a> {
 
 /// The block's markdown: compact JSON between the node's tags.
 fn query_block_markdown(
-    query_id: Uuid,
-    database_id: Option<Uuid>,
+    query_id: QueryId,
+    database_id: Option<DatabaseId>,
     title: &str,
     prompt: &str,
     display_mode: QueryDatabaseDisplay,

@@ -180,7 +180,10 @@ where
                     match value {
                         ConvertedCell::Value(value) => value,
                         ConvertedCell::Options(labels) => PropertyValue::SelectOption(
-                            labels.iter().map(|label| option_ids[label]).collect(),
+                            labels
+                                .iter()
+                                .map(|label| option_ids[label].into_uuid())
+                                .collect(),
                         ),
                     },
                 )
@@ -564,7 +567,7 @@ where
                 .into_iter()
                 .map(|value| NewOption {
                     definition_id: definition.definition.id,
-                    id: macro_uuid::generate_uuid_v7(),
+                    id: OptionId::new(),
                     value,
                 })
                 .collect();

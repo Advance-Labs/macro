@@ -6,12 +6,11 @@ use std::collections::HashMap;
 use models_databases::cast::{Cast, CastKind, Contents, TARGETS, cast};
 use models_databases::property::{DataType as StoredDataType, OptionValue, stored_cast_kind};
 use models_databases::views::{SchemaColumn, ValueKind};
-use models_databases::{ColumnKind, EntityKind};
+use models_databases::{ColumnKind, EntityKind, OptionId};
 use models_permissions::share_permission::access_level::AccessLevel;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
 use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::shared::{DataType, PropertyOwner};
-use uuid::Uuid;
 
 use crate::domain::models::{
     Column, Database, DatabaseId, DatabaseView, PropertyDefinitionId, Table, TableId, grant_writes,
@@ -78,7 +77,7 @@ impl ColumnEntry {
     pub fn shared_outside(&self, database_id: DatabaseId) -> bool {
         !matches!(
             self.definition.definition.owner,
-            PropertyOwner::Database { database_id: owner } if owner == database_id
+            PropertyOwner::Database { database_id: owner } if DatabaseId::from_uuid(owner) == database_id
         )
     }
 }
@@ -348,11 +347,16 @@ pub fn option_value(value: &PropertyOptionValue) -> OptionValue {
 }
 
 /// Every option of a definition with its label, in display order.
-pub fn option_labels(definition: &PropertyDefinitionWithOptions) -> Vec<(Uuid, String)> {
+pub fn option_labels(definition: &PropertyDefinitionWithOptions) -> Vec<(OptionId, String)> {
     let mut options: Vec<_> = definition.property_options.iter().collect();
     options.sort_by_key(|option| option.display_order);
     options
         .into_iter()
-        .map(|option| (option.id, option_display(&option.value)))
+        .map(|option| {
+            (
+                OptionId::from_uuid(option.id),
+                option_display(&option.value),
+            )
+        })
         .collect()
 }

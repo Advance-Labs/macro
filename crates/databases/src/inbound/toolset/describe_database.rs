@@ -5,9 +5,9 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
+use models_databases::DatabaseId;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use uuid::Uuid;
 
 use super::{DatabasesToolContext, ToolDatabaseSchema, database_error};
 use crate::domain::ports::DatabasesService;
@@ -30,7 +30,7 @@ SQL dialect."
 pub struct DescribeDatabase {
     /// The database to describe.
     #[schemars(description = "Id of the database to describe, as returned by ListDatabases.")]
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
 }
 
 impl ToolAnnotated for DescribeDatabase {

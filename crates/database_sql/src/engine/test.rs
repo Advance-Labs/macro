@@ -1,3 +1,5 @@
+use models_databases::position::Position;
+use models_databases::{DatabaseId, OptionId, RowId};
 use std::collections::HashMap;
 
 mod transcripts;
@@ -12,12 +14,12 @@ use crate::resolve::column_key;
 use crate::run::{OpsSink, OutcomeKind, RowSource, run};
 use crate::test_support::{catalog, *};
 
-const FIX_LOGIN: Uuid = Uuid::from_u128(0xe1);
-const WRITE_DOCS: Uuid = Uuid::from_u128(0xe2);
-const SHIP_IT: Uuid = Uuid::from_u128(0xe3);
-const IDLE: Uuid = Uuid::from_u128(0xe4);
-const ACME: Uuid = Uuid::from_u128(0xa1);
-const GLOBEX: Uuid = Uuid::from_u128(0xa2);
+const FIX_LOGIN: RowId = RowId::from_uuid(Uuid::from_u128(0xe1));
+const WRITE_DOCS: RowId = RowId::from_uuid(Uuid::from_u128(0xe2));
+const SHIP_IT: RowId = RowId::from_uuid(Uuid::from_u128(0xe3));
+const IDLE: RowId = RowId::from_uuid(Uuid::from_u128(0xe4));
+const ACME: RowId = RowId::from_uuid(Uuid::from_u128(0xa1));
+const GLOBEX: RowId = RowId::from_uuid(Uuid::from_u128(0xa2));
 const SAM: &str = "macro|sam@example.com";
 const ANA: &str = "macro|ana@example.com";
 const KIM: &str = "macro|kim@example.com";
@@ -71,7 +73,7 @@ fn tasks() -> Vec<Row> {
 fn people() -> Vec<Row> {
     vec![
         Row {
-            id: Uuid::new_v5(&Uuid::NAMESPACE_OID, SAM.as_bytes()),
+            id: RowId::from_uuid(Uuid::new_v5(&Uuid::NAMESPACE_OID, SAM.as_bytes())),
             position: None,
             cells: HashMap::from([
                 (column_key(1, PEOPLE_ID), Cell::Entities(vec![SAM.into()])),
@@ -83,7 +85,7 @@ fn people() -> Vec<Row> {
             ]),
         },
         Row {
-            id: Uuid::new_v5(&Uuid::NAMESPACE_OID, ANA.as_bytes()),
+            id: RowId::from_uuid(Uuid::new_v5(&Uuid::NAMESPACE_OID, ANA.as_bytes())),
             position: None,
             cells: HashMap::from([
                 (column_key(1, PEOPLE_ID), Cell::Entities(vec![ANA.into()])),
@@ -95,7 +97,7 @@ fn people() -> Vec<Row> {
             ]),
         },
         Row {
-            id: Uuid::new_v5(&Uuid::NAMESPACE_OID, KIM.as_bytes()),
+            id: RowId::from_uuid(Uuid::new_v5(&Uuid::NAMESPACE_OID, KIM.as_bytes())),
             position: None,
             cells: HashMap::from([
                 (column_key(1, PEOPLE_ID), Cell::Entities(vec![KIM.into()])),
@@ -188,7 +190,9 @@ fn soup_matches(expr: &Expr<PropertiesLiteral>, row: &Row) -> bool {
             row.cells.get(&literal.property_definition_id),
             &literal.value,
         ) {
-            (Some(Cell::Options(ids)), PropertyMatchValue::SelectOption(id)) => ids.contains(id),
+            (Some(Cell::Options(ids)), PropertyMatchValue::SelectOption(id)) => {
+                ids.contains(&OptionId::from_uuid(*id))
+            }
             (Some(Cell::Entities(ids)), PropertyMatchValue::EntityRef(id)) => {
                 ids.iter().any(|candidate| candidate == &id.to_string())
             }
@@ -337,7 +341,7 @@ fn inner_join_drops_tasks_without_a_match_and_counts_joined_rows() {
             vec![Some(Cell::Options(vec![LOW])), Some(Cell::Number(1.0))],
         ]
     );
-    assert_eq!(outcome.row_ids, Vec::<Uuid>::new());
+    assert_eq!(outcome.row_ids, Vec::<RowId>::new());
 }
 
 #[test]
@@ -361,7 +365,7 @@ fn a_joined_tables_rows_arrive_keyed_by_definition_and_the_engine_keys_them() {
                 ]),
             }],
             GqlQuery::Soup { table, .. } if *table == PEOPLE => vec![Row {
-                id: Uuid::from_u128(0x99),
+                id: RowId::from_uuid(Uuid::from_u128(0x99)),
                 position: None,
                 cells: HashMap::from([(NAME, Cell::Text("Sam".into()))]),
             }],
@@ -401,7 +405,7 @@ fn a_definition_shared_by_both_tables_keeps_its_two_columns_apart() {
                 ]),
             }],
             GqlQuery::Soup { table, .. } if *table == PEOPLE => vec![Row {
-                id: Uuid::from_u128(0x99),
+                id: RowId::from_uuid(Uuid::from_u128(0x99)),
                 position: None,
                 cells: HashMap::from([(column_key(1, NAME), Cell::Text("Sam".into()))]),
             }],
@@ -478,7 +482,7 @@ fn pages_continue_by_cursor_and_ids_must_match() {
 fn a_relation_past_the_cap_is_truncated_and_the_next_still_fetched() {
     let many: Vec<Row> = (0..ROW_CAP + 5)
         .map(|index| Row {
-            id: Uuid::from_u128(0x1000 + index as u128),
+            id: RowId::from_uuid(Uuid::from_u128(0x1000 + index as u128)),
             position: None,
             cells: HashMap::from([
                 (TITLE, Cell::Text("t".into())),
@@ -594,7 +598,7 @@ struct NoWrites;
 impl OpsSink for NoWrites {
     type Error = std::convert::Infallible;
 
-    async fn apply(&self, _: Uuid, _: Vec<DatabaseOp>) -> Result<Vec<OpResult>, Self::Error> {
+    async fn apply(&self, _: DatabaseId, _: Vec<DatabaseOp>) -> Result<Vec<OpResult>, Self::Error> {
         unreachable!("these statements write nothing")
     }
 }
@@ -628,17 +632,17 @@ fn order_by_row_position_lists_rows_in_table_order_whatever_the_fetch_order() {
             vec![
                 Row {
                     id: GLOBEX,
-                    position: Some("000000000002".into()),
+                    position: Some("8180".parse::<Position>().unwrap()),
                     cells: HashMap::from([(NAME, Cell::Text("Globex".into()))]),
                 },
                 Row {
                     id: ACME,
-                    position: Some("000000000001".into()),
+                    position: Some("80".parse::<Position>().unwrap()),
                     cells: HashMap::from([(NAME, Cell::Text("Acme".into()))]),
                 },
                 Row {
                     id: SHIP_IT,
-                    position: Some("000000000003".into()),
+                    position: Some("8280".parse::<Position>().unwrap()),
                     cells: HashMap::from([(NAME, Cell::Text("Initech".into()))]),
                 },
             ]
@@ -664,7 +668,7 @@ fn row_position_breaks_ties_after_the_sorts() {
             vec![
                 Row {
                     id: IDLE,
-                    position: Some("000000000004".into()),
+                    position: Some("8380".parse::<Position>().unwrap()),
                     cells: HashMap::from([
                         (NAME, Cell::Text("Hooli".into())),
                         (STAGE, Cell::Options(vec![LEAD])),
@@ -672,7 +676,7 @@ fn row_position_breaks_ties_after_the_sorts() {
                 },
                 Row {
                     id: SHIP_IT,
-                    position: Some("000000000003".into()),
+                    position: Some("8280".parse::<Position>().unwrap()),
                     cells: HashMap::from([
                         (NAME, Cell::Text("Initech".into())),
                         (STAGE, Cell::Options(vec![WON])),
@@ -680,7 +684,7 @@ fn row_position_breaks_ties_after_the_sorts() {
                 },
                 Row {
                     id: GLOBEX,
-                    position: Some("000000000002".into()),
+                    position: Some("8180".parse::<Position>().unwrap()),
                     cells: HashMap::from([
                         (NAME, Cell::Text("Globex".into())),
                         (STAGE, Cell::Options(vec![LEAD])),
@@ -688,7 +692,7 @@ fn row_position_breaks_ties_after_the_sorts() {
                 },
                 Row {
                     id: ACME,
-                    position: Some("000000000001".into()),
+                    position: Some("80".parse::<Position>().unwrap()),
                     cells: HashMap::from([
                         (NAME, Cell::Text("Acme".into())),
                         (STAGE, Cell::Options(vec![WON])),
@@ -715,7 +719,7 @@ fn deals_newest_first() -> Vec<Row> {
     vec![
         Row {
             id: SHIP_IT,
-            position: Some("000000000003".into()),
+            position: Some("8280".parse::<Position>().unwrap()),
             cells: HashMap::from([
                 (NAME, Cell::Text("Initech".into())),
                 (STAGE, Cell::Options(vec![WON])),
@@ -723,7 +727,7 @@ fn deals_newest_first() -> Vec<Row> {
         },
         Row {
             id: GLOBEX,
-            position: Some("000000000002".into()),
+            position: Some("8180".parse::<Position>().unwrap()),
             cells: HashMap::from([
                 (NAME, Cell::Text("Globex".into())),
                 (STAGE, Cell::Options(vec![LEAD])),
@@ -731,7 +735,7 @@ fn deals_newest_first() -> Vec<Row> {
         },
         Row {
             id: ACME,
-            position: Some("000000000001".into()),
+            position: Some("80".parse::<Position>().unwrap()),
             cells: HashMap::from([
                 (NAME, Cell::Text("Acme".into())),
                 (STAGE, Cell::Options(vec![WON])),
@@ -782,7 +786,7 @@ fn a_selected_row_position_is_a_text_column_named_row_position() {
             vec![
                 Row {
                     id: ACME,
-                    position: Some("000000000001".into()),
+                    position: Some("80".parse::<Position>().unwrap()),
                     cells: HashMap::from([(NAME, Cell::Text("Acme".into()))]),
                 },
                 Row {
@@ -813,7 +817,7 @@ fn a_selected_row_position_is_a_text_column_named_row_position() {
         vec![
             vec![
                 Some(Cell::Text("Acme".into())),
-                Some(Cell::Text("000000000001".into()))
+                Some(Cell::Text("80".into()))
             ],
             vec![Some(Cell::Text("Globex".into())), None],
         ]
@@ -828,7 +832,7 @@ fn an_aggregate_of_row_position_is_named_after_it() {
         |_| {
             vec![Row {
                 id: ACME,
-                position: Some("000000000001".into()),
+                position: Some("80".parse::<Position>().unwrap()),
                 cells: HashMap::new(),
             }]
         },
@@ -859,14 +863,14 @@ fn a_filter_on_people_is_applied_by_the_fold() {
     assert_eq!(request.query, GqlQuery::People { ids: None });
     assert_eq!(request.needs, vec![PEOPLE_EMAIL, PEOPLE_ID]);
 
-    let ana = Uuid::new_v5(&Uuid::NAMESPACE_OID, ANA.as_bytes());
+    let ana = RowId::from_uuid(Uuid::new_v5(&Uuid::NAMESPACE_OID, ANA.as_bytes()));
     let step = engine
         .feed_page(
             request.id,
             Page {
                 rows: vec![
                     Row {
-                        id: Uuid::new_v5(&Uuid::NAMESPACE_OID, SAM.as_bytes()),
+                        id: RowId::from_uuid(Uuid::new_v5(&Uuid::NAMESPACE_OID, SAM.as_bytes())),
                         position: None,
                         cells: HashMap::from([
                             (PEOPLE_ID, Cell::Entities(vec![SAM.into()])),
@@ -962,7 +966,7 @@ fn a_join_past_the_hint_limit_fetches_the_joined_relation_whole() {
     let assigned = |count: usize| -> Vec<Row> {
         (0..count)
             .map(|index| Row {
-                id: Uuid::from_u128(0x1000 + index as u128),
+                id: RowId::from_uuid(Uuid::from_u128(0x1000 + index as u128)),
                 position: None,
                 cells: HashMap::from([(
                     ASSIGNEES,

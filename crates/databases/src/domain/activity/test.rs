@@ -3,6 +3,7 @@ use chrono::{TimeZone as _, Utc};
 use macro_event_broker::Event;
 use macro_user_id::user_id::MacroUserIdStr;
 use model_entity::EntityType;
+use models_databases::TableId;
 use uuid::Uuid;
 
 use super::*;
@@ -74,7 +75,7 @@ fn renamed_restored_and_tables_changed_map_to_edited() {
             database_id: DATABASE_ID.parse().unwrap(),
             attribution: by_user("macro|editor@example.com"),
             tables: vec![TableVersionChange {
-                table_id: Uuid::new_v4(),
+                table_id: TableId::new(),
                 version: TableVersion(3),
             }],
         }),
@@ -191,7 +192,7 @@ fn events_round_trip_through_json() {
         database_id: DATABASE_ID.parse().unwrap(),
         attribution: by_user("macro|editor@example.com"),
         tables: vec![TableVersionChange {
-            table_id: Uuid::new_v4(),
+            table_id: TableId::new(),
             version: TableVersion(7),
         }],
     });

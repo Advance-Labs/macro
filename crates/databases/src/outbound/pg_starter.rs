@@ -4,6 +4,7 @@
 #[cfg(test)]
 mod test;
 use models_databases::position::{PositionError, keys_between};
+use models_databases::{ColumnId, DatabaseId, OptionId, RowId};
 use models_properties::DataType;
 use models_properties::EntityReference;
 use models_properties::service::property_option::PropertyOptionValue;
@@ -91,7 +92,7 @@ where
             .fetch_optional(&mut *transaction)
             .await?;
             return Ok(StarterDatabase {
-                database_id,
+                database_id: database_id.map(DatabaseId::from_uuid),
                 table_id: None,
                 view_id: None,
                 created: false,
@@ -129,7 +130,7 @@ where
             .create_database_definition_in(
                 &mut transaction,
                 NewDatabaseDefinition {
-                    database_id,
+                    database_id: database_id.into_uuid(),
                     name: blueprint.title_name,
                     data_type: DataType::String,
                     is_multi_select: false,
@@ -149,7 +150,7 @@ where
             .create_database_definition_in(
                 &mut transaction,
                 NewDatabaseDefinition {
-                    database_id,
+                    database_id: database_id.into_uuid(),
                     name: blueprint.stage_name,
                     data_type: DataType::SelectString,
                     is_multi_select: false,
@@ -159,8 +160,8 @@ where
             )
             .await
             .map_err(dependency)?;
-        let title_column_id = macro_uuid::generate_uuid_v7();
-        let stage_column_id = macro_uuid::generate_uuid_v7();
+        let title_column_id = ColumnId::new();
+        let stage_column_id = ColumnId::new();
         let column_positions = keys_between(None, None, 2)?;
         for ((column_id, definition_id), position) in [
             (title_column_id, title.definition.id),
@@ -187,12 +188,12 @@ where
                 .property_options
                 .get(*stage_index)
                 .ok_or(PgStarterError::MissingStage(*stage_index))?;
-            let row_id = macro_uuid::generate_uuid_v7();
+            let row_id = RowId::new();
             sqlx::query!(
                 "INSERT INTO database_rows (id, table_id, position, created_by) VALUES ($1, $2, $3, $4)",
-                row_id,
-                table_id,
-                position,
+                row_id.into_uuid(),
+                table_id.into_uuid(),
+                position.as_str(),
                 user_id,
             )
             .execute(&mut *transaction)
@@ -218,7 +219,7 @@ where
         let stage_options: Vec<_> = stage
             .property_options
             .iter()
-            .map(|option| option.id)
+            .map(|option| OptionId::from_uuid(option.id))
             .collect();
         let [table_view, board] = blueprint.views(
             title_column_id,
@@ -231,7 +232,7 @@ where
         sqlx::query!(
             "UPDATE database_starter_seeds SET database_id = $2 WHERE user_id = $1",
             user_id,
-            database_id
+            database_id.into_uuid()
         )
         .execute(&mut *transaction)
         .await?;

@@ -3,13 +3,12 @@
 use chrono::{DateTime, Utc};
 use macro_event_broker::MacroEventBroker;
 use models_databases::OptionId;
-use models_databases::position::{PositionError, keys_between};
+use models_databases::position::{Position, PositionError, keys_between};
 use models_databases::views::{Lane, ViewLayout, ViewQuery};
 use serde::Serialize;
-use uuid::Uuid;
 
 use super::events::{Attribution, DatabaseCreatedMetadata, DatabaseMacroEvent};
-use super::models::{ColumnId, DatabaseError, DatabaseId, DatabaseView, TableId, Viewer};
+use super::models::{ColumnId, DatabaseError, DatabaseId, DatabaseView, TableId, ViewId, Viewer};
 
 /// Starter result. A missing database means the user already started or removed it.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
@@ -23,7 +22,7 @@ pub struct StarterDatabase {
     pub table_id: Option<TableId>,
     /// Initial board view, returned only on first creation.
     #[schema(required = true, value_type = Option<String>)]
-    pub view_id: Option<Uuid>,
+    pub view_id: Option<ViewId>,
     /// Whether this request created the example.
     pub created: bool,
 }
@@ -51,8 +50,8 @@ pub struct StarterBlueprint {
 impl Default for StarterBlueprint {
     fn default() -> Self {
         Self {
-            database_id: macro_uuid::generate_uuid_v7(),
-            table_id: macro_uuid::generate_uuid_v7(),
+            database_id: DatabaseId::new(),
+            table_id: TableId::new(),
             name: "Getting started",
             table_name: "Ideas",
             title_name: "Name",
@@ -81,8 +80,8 @@ impl StarterBlueprint {
         let [table_position, board_position] = keys_between(None, None, 2)?
             .try_into()
             .expect("two keys were asked for");
-        let view = |name: &str, position: String, layout: ViewLayout| DatabaseView {
-            id: macro_uuid::generate_uuid_v7(),
+        let view = |name: &str, position: Position, layout: ViewLayout| DatabaseView {
+            id: ViewId::new(),
             database_id: self.database_id,
             table_id: self.table_id,
             name: name.into(),

@@ -6,17 +6,14 @@ mod lanes;
 #[cfg(test)]
 mod test;
 
+pub use crate::ids::ViewId;
+use crate::ids::{ColumnId, DatabaseId, OptionId, RowId, TableId};
+use crate::position::Position;
 use chrono::{DateTime, SubsecRound, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-
-use crate::ids::{ColumnId, DatabaseId, OptionId, RowId, TableId};
 
 pub use check::{SchemaColumn, ValueKind, ViewProblem, check};
 pub use lanes::{PlacementError, arrange_lane, place_card};
-
-/// Identifier of a view.
-pub type ViewId = Uuid;
 
 /// When a view is written: now, to the microsecond, as a stored timestamp
 /// keeps it, so a view answered from a write equals the view read back.
@@ -41,7 +38,8 @@ pub struct DatabaseView {
     /// Its name, unique among the table's views ignoring case.
     pub name: String,
     /// Where it sorts among the table's views: a fractional key.
-    pub position: String,
+    #[schema(value_type = String)]
+    pub position: Position,
     /// Which rows it shows, in what order.
     pub query: ViewQuery,
     /// How it draws them.
@@ -394,7 +392,8 @@ pub struct CardPosition {
     #[schema(required = true, value_type = Option<Uuid>)]
     pub lane: Option<OptionId>,
     /// The card's key in that lane.
-    pub position: String,
+    #[schema(value_type = String)]
+    pub position: Position,
 }
 
 /// A view's place among its table's views.
@@ -406,7 +405,8 @@ pub struct ViewPosition {
     #[schema(value_type = Uuid)]
     pub view: ViewId,
     /// Its key.
-    pub position: String,
+    #[schema(value_type = String)]
+    pub position: Position,
 }
 
 impl ViewQuery {

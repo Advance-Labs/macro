@@ -97,7 +97,7 @@ async fn renaming_an_unknown_table_points_at_describe() {
     let (context, calls) = context(FakeAccess::granting(AccessLevel::Edit));
     let error = RenameTable {
         database_id: DATABASE_ID,
-        table_id: Uuid::nil(),
+        table_id: TableId::from_uuid(Uuid::nil()),
         name: "Attendees".to_string(),
     }
     .call(ServiceContext(context), request_context())

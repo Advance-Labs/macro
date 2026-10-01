@@ -10,8 +10,8 @@ use models_databases::views::{
     SortDirection, SortKey, TextOperator, ViewColumn, ViewLayout, ViewPosition, ViewQuery,
 };
 use models_databases::{
-    CellValue, CellWrite, ColumnKind, DatabaseOp, EntityKind, EntityRef, OpResult, OptionRef,
-    RowChange, RowChanges, TableVersion,
+    CellValue, CellWrite, ColumnId, ColumnKind, DatabaseId, DatabaseOp, EntityKind, EntityRef,
+    OpResult, OptionId, OptionRef, RowChange, RowChanges, RowId, TableId, TableVersion, ViewId,
 };
 use serde_json::{Map, Value};
 use utoipa::OpenApi;
@@ -21,14 +21,14 @@ use uuid::Uuid;
 #[openapi(components(schemas(DatabaseOp, OpResult)))]
 struct Schemas;
 
-const DATABASE: Uuid = Uuid::from_u128(0xdb);
-const TABLE: Uuid = Uuid::from_u128(0x7ab1);
-const VIEW: Uuid = Uuid::from_u128(0x71e3);
-const STATUS: Uuid = Uuid::from_u128(0xc01b);
-const NAME: Uuid = Uuid::from_u128(0xc01a);
-const ROW: Uuid = Uuid::from_u128(0x5a11);
-const OTHER_ROW: Uuid = Uuid::from_u128(0xa1e8);
-const DONE: Uuid = Uuid::from_u128(0xd0e);
+const DATABASE: DatabaseId = DatabaseId::from_uuid(Uuid::from_u128(0xdb));
+const TABLE: TableId = TableId::from_uuid(Uuid::from_u128(0x7ab1));
+const VIEW: ViewId = ViewId::from_uuid(Uuid::from_u128(0x71e3));
+const STATUS: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xc01b));
+const NAME: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xc01a));
+const ROW: RowId = RowId::from_uuid(Uuid::from_u128(0x5a11));
+const OTHER_ROW: RowId = RowId::from_uuid(Uuid::from_u128(0xa1e8));
+const DONE: OptionId = OptionId::from_uuid(Uuid::from_u128(0xd0e));
 
 fn every_filter_test() -> FilterGroup {
     let tests = vec![
@@ -276,7 +276,7 @@ fn results() -> Vec<OpResult> {
                 database_id: DATABASE,
                 table_id: TABLE,
                 name: "Board".into(),
-                position: "a0".into(),
+                position: "80".parse().unwrap(),
                 query: query(),
                 layout: board(),
                 created_at: at,
@@ -290,7 +290,7 @@ fn results() -> Vec<OpResult> {
             table_version: version,
             positions: vec![ViewPosition {
                 view: VIEW,
-                position: "a0".into(),
+                position: "80".parse().unwrap(),
             }],
         },
         OpResult::CardMoved {
@@ -299,12 +299,12 @@ fn results() -> Vec<OpResult> {
                 CardPosition {
                     row: ROW,
                     lane: Some(DONE),
-                    position: "a0".into(),
+                    position: "80".parse().unwrap(),
                 },
                 CardPosition {
                     row: OTHER_ROW,
                     lane: None,
-                    position: "a1".into(),
+                    position: "8180".parse().unwrap(),
                 },
             ],
         },

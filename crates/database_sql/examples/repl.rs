@@ -11,6 +11,7 @@
 
 mod common;
 
+use models_databases::{ColumnId, DatabaseId, OptionId, RowId, TableId};
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 use std::sync::Mutex;
@@ -45,40 +46,40 @@ const RENEWAL: Uuid = Uuid::from_u128(0x34);
 fn catalog() -> Catalog {
     Catalog {
         tables: vec![Table {
-            id: DEALS,
-            database_id: CRM,
+            id: TableId::from_uuid(DEALS),
+            database_id: DatabaseId::from_uuid(CRM),
             database: "crm".into(),
             name: "deals".into(),
             columns: vec![
                 Column {
                     id: NAME,
-                    placement: NAME,
+                    placement: ColumnId::from_uuid(NAME),
                     name: "name".into(),
                     kind: ColumnKind::Text,
                 },
                 Column {
                     id: AMOUNT,
-                    placement: AMOUNT,
+                    placement: ColumnId::from_uuid(AMOUNT),
                     name: "amount".into(),
                     kind: ColumnKind::Number,
                 },
                 Column {
                     id: STAGE,
-                    placement: STAGE,
+                    placement: ColumnId::from_uuid(STAGE),
                     name: "stage".into(),
                     kind: ColumnKind::Select {
                         multi: false,
                         options: vec![
                             SelectOption {
-                                id: LEAD,
+                                id: OptionId::from_uuid(LEAD),
                                 label: "Lead".into(),
                             },
                             SelectOption {
-                                id: WON,
+                                id: OptionId::from_uuid(WON),
                                 label: "Won".into(),
                             },
                             SelectOption {
-                                id: LOST,
+                                id: OptionId::from_uuid(LOST),
                                 label: "Lost".into(),
                             },
                         ],
@@ -86,13 +87,13 @@ fn catalog() -> Catalog {
                 },
                 Column {
                     id: CLOSED_AT,
-                    placement: CLOSED_AT,
+                    placement: ColumnId::from_uuid(CLOSED_AT),
                     name: "closed at".into(),
                     kind: ColumnKind::Date,
                 },
                 Column {
                     id: OWNER,
-                    placement: OWNER,
+                    placement: ColumnId::from_uuid(OWNER),
                     name: "owner".into(),
                     kind: ColumnKind::Entity {
                         multi: false,
@@ -101,17 +102,17 @@ fn catalog() -> Catalog {
                 },
                 Column {
                     id: TAGS,
-                    placement: TAGS,
+                    placement: ColumnId::from_uuid(TAGS),
                     name: "tags".into(),
                     kind: ColumnKind::Select {
                         multi: true,
                         options: vec![
                             SelectOption {
-                                id: VIP,
+                                id: OptionId::from_uuid(VIP),
                                 label: "vip".into(),
                             },
                             SelectOption {
-                                id: RENEWAL,
+                                id: OptionId::from_uuid(RENEWAL),
                                 label: "renewal".into(),
                             },
                         ],
@@ -119,7 +120,7 @@ fn catalog() -> Catalog {
                 },
                 Column {
                     id: DONE,
-                    placement: DONE,
+                    placement: ColumnId::from_uuid(DONE),
                     name: "done".into(),
                     kind: ColumnKind::Boolean,
                 },
@@ -131,7 +132,7 @@ fn catalog() -> Catalog {
 
 fn seed() -> Vec<Row> {
     let row = |id: u128, cells: Vec<(Uuid, Cell)>| Row {
-        id: Uuid::from_u128(id),
+        id: RowId::from_uuid(Uuid::from_u128(id)),
         position: None,
         cells: cells.into_iter().collect(),
     };
@@ -143,10 +144,10 @@ fn seed() -> Vec<Row> {
             vec![
                 (NAME, Cell::Text("Acme".into())),
                 (AMOUNT, Cell::Number(12000.0)),
-                (STAGE, Cell::Options(vec![WON])),
+                (STAGE, Cell::Options(vec![OptionId::from_uuid(WON)])),
                 (CLOSED_AT, date(2026, 9, 1)),
                 (OWNER, Cell::Entities(vec!["macro|sam@example.com".into()])),
-                (TAGS, Cell::Options(vec![VIP])),
+                (TAGS, Cell::Options(vec![OptionId::from_uuid(VIP)])),
                 (DONE, Cell::Bool(true)),
             ],
         ),
@@ -155,7 +156,7 @@ fn seed() -> Vec<Row> {
             vec![
                 (NAME, Cell::Text("Globex".into())),
                 (AMOUNT, Cell::Number(3000.0)),
-                (STAGE, Cell::Options(vec![LEAD])),
+                (STAGE, Cell::Options(vec![OptionId::from_uuid(LEAD)])),
                 (OWNER, Cell::Entities(vec!["macro|sam@example.com".into()])),
             ],
         ),
@@ -163,10 +164,13 @@ fn seed() -> Vec<Row> {
             0xa3,
             vec![
                 (NAME, Cell::Text("Hooli".into())),
-                (STAGE, Cell::Options(vec![WON])),
+                (STAGE, Cell::Options(vec![OptionId::from_uuid(WON)])),
                 (CLOSED_AT, date(2026, 9, 15)),
                 (OWNER, Cell::Entities(vec!["macro|ana@example.com".into()])),
-                (TAGS, Cell::Options(vec![VIP, RENEWAL])),
+                (
+                    TAGS,
+                    Cell::Options(vec![OptionId::from_uuid(VIP), OptionId::from_uuid(RENEWAL)]),
+                ),
             ],
         ),
         row(
@@ -174,7 +178,7 @@ fn seed() -> Vec<Row> {
             vec![
                 (NAME, Cell::Text("Initech".into())),
                 (AMOUNT, Cell::Number(7000.0)),
-                (STAGE, Cell::Options(vec![LOST])),
+                (STAGE, Cell::Options(vec![OptionId::from_uuid(LOST)])),
                 (DONE, Cell::Bool(false)),
             ],
         ),
@@ -214,7 +218,7 @@ impl Memory {
                 &literal.value,
             ) {
                 (Some(Cell::Options(ids)), PropertyMatchValue::SelectOption(id)) => {
-                    ids.contains(id)
+                    ids.contains(&OptionId::from_uuid(*id))
                 }
                 (Some(Cell::Entities(ids)), PropertyMatchValue::EntityRef(id)) => {
                     ids.iter().any(|candidate| candidate == &id.to_string())
@@ -257,11 +261,11 @@ struct NotGrouped;
 #[derive(Debug, thiserror::Error)]
 enum Refused {
     #[error("no column {0}")]
-    NoColumn(Uuid),
+    NoColumn(ColumnId),
     #[error("no option {0}")]
     NoOption(String),
     #[error("no row {0}")]
-    NoRow(Uuid),
+    NoRow(RowId),
     #[error("the REPL's schema is fixed")]
     SchemaFixed,
 }
@@ -303,7 +307,7 @@ impl RowSource for Memory {
 
 impl Memory {
     /// A written value as the cell it stores; `None` empties the cell.
-    fn cell(&self, column: Uuid, value: CellValue) -> Result<Option<Cell>, Refused> {
+    fn cell(&self, column: ColumnId, value: CellValue) -> Result<Option<Cell>, Refused> {
         let options = self
             .catalog
             .tables
@@ -340,7 +344,7 @@ impl Memory {
                     .collect(),
             )),
             CellValue::Rows(rows) => {
-                Some(Cell::Entities(rows.iter().map(Uuid::to_string).collect()))
+                Some(Cell::Entities(rows.iter().map(RowId::to_string).collect()))
             }
         })
     }
@@ -349,10 +353,10 @@ impl Memory {
         for write in cells {
             match self.cell(write.column, write.value)? {
                 Some(cell) => {
-                    row.cells.insert(write.column, cell);
+                    row.cells.insert(write.column.into_uuid(), cell);
                 }
                 None => {
-                    row.cells.remove(&write.column);
+                    row.cells.remove(write.column.as_uuid());
                 }
             }
         }
@@ -365,7 +369,7 @@ impl OpsSink for Memory {
 
     async fn apply(
         &self,
-        _database: Uuid,
+        _database: DatabaseId,
         ops: Vec<DatabaseOp>,
     ) -> Result<Vec<OpResult>, Self::Error> {
         let mut stored = self.rows.lock().unwrap();
@@ -376,7 +380,7 @@ impl OpsSink for Memory {
                     let mut inserted = Vec::new();
                     for cells in rows {
                         let mut row = Row {
-                            id: Uuid::now_v7(),
+                            id: RowId::from_uuid(Uuid::now_v7()),
                             position: None,
                             cells: HashMap::new(),
                         };
@@ -388,7 +392,7 @@ impl OpsSink for Memory {
                     (inserted, affected)
                 }
                 DatabaseOp::UpdateRows { changes, .. } => {
-                    let changes: Vec<(Uuid, Vec<CellWrite>)> = match changes {
+                    let changes: Vec<(RowId, Vec<CellWrite>)> = match changes {
                         RowChanges::Uniform { rows, cells } => {
                             rows.into_iter().map(|row| (row, cells.clone())).collect()
                         }

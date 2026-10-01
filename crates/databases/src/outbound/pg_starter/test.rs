@@ -116,7 +116,7 @@ async fn concurrent_starter_requests_create_one_complete_editable_example(pool: 
                     lanes: stages
                         .iter()
                         .map(|option| Lane {
-                            option: Some(*option),
+                            option: Some(OptionId::from_uuid(*option)),
                             hidden: false,
                         })
                         .collect(),
@@ -131,7 +131,7 @@ async fn concurrent_starter_requests_create_one_complete_editable_example(pool: 
     assert_eq!(positions, ["7f80", "80", "8180"]);
     let owner = sqlx::query_scalar!(
         "SELECT COUNT(*) FROM entity_access WHERE entity_id = $1 AND access_level = 'owner'",
-        id
+        id.into_uuid()
     )
     .fetch_one(&pool)
     .await
@@ -271,7 +271,7 @@ async fn failed_dependency_rolls_back_content_and_marker_then_retry_succeeds(poo
     );
     let definitions = sqlx::query_scalar!(
         "SELECT COUNT(*) FROM property_definitions WHERE database_id = $1",
-        blueprint.database_id
+        blueprint.database_id.into_uuid()
     )
     .fetch_one(&pool)
     .await

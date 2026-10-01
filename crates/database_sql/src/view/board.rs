@@ -3,6 +3,7 @@
 #[cfg(test)]
 mod test;
 
+use models_databases::position::Position;
 use models_databases::views::{CardPosition, DatabaseView, ViewLayout, ViewProblem, arrange_lane};
 use models_databases::{OptionId, RowId};
 use serde::{Deserialize, Serialize};
@@ -115,7 +116,7 @@ pub fn board(
 /// in the lane it was stored for: a card whose cell has since changed has no
 /// place in its new lane yet.
 fn arranged(lane: Option<OptionId>, cards: Vec<RowId>, positions: &[CardPosition]) -> Vec<RowId> {
-    let mut placed: Vec<(RowId, Option<String>)> = cards
+    let mut placed: Vec<(RowId, Option<Position>)> = cards
         .into_iter()
         .map(|row| {
             let position = positions

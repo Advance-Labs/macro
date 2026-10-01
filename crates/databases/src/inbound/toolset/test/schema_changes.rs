@@ -35,7 +35,7 @@ async fn renaming_an_unknown_column_points_at_describe() {
     let error = RenameColumn {
         database_id: DATABASE_ID,
         table_id: TABLE_ID,
-        column_id: Uuid::nil(),
+        column_id: ColumnId::from_uuid(Uuid::nil()),
         name: "RSVP".to_string(),
     }
     .call(ServiceContext(context), request_context())
@@ -92,7 +92,7 @@ async fn changing_a_column_type_uses_the_current_version_and_adds_extra_options(
 #[tokio::test]
 async fn changing_a_column_to_a_relation_targets_this_database() {
     let (context, calls) = context(FakeAccess::granting(AccessLevel::Edit));
-    let parties = Uuid::from_u128(0x7ab1_0000_0000_0000_0000_0000_0000_0002);
+    let parties = TableId::from_uuid(Uuid::from_u128(0x7ab1_0000_0000_0000_0000_0000_0000_0002));
     ChangeColumnType {
         database_id: DATABASE_ID,
         table_id: TABLE_ID,
@@ -187,7 +187,7 @@ async fn reordering_columns_guards_on_the_version_just_read() {
 #[tokio::test]
 async fn reordering_tables_passes_the_full_order_and_answers_the_schema() {
     let (context, calls) = context(FakeAccess::granting(AccessLevel::Edit));
-    let other_table = Uuid::from_u128(0x7ab1e);
+    let other_table = TableId::from_uuid(Uuid::from_u128(0x7ab1e));
     let response = ReorderTables {
         database_id: DATABASE_ID,
         table_ids: vec![other_table, TABLE_ID],

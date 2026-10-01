@@ -232,7 +232,7 @@ fn typed_one(column: &Column, lit: Literal) -> Result<Value, ResolveError> {
                 ..
             },
             Literal::Text(id),
-        ) => match uuid::Uuid::parse_str(&id) {
+        ) => match id.parse::<models_databases::RowId>() {
             Ok(_) => Ok(Value::Entity(id)),
             Err(_) => Err(ResolveError::RowIdNotAnId { written: id }),
         },

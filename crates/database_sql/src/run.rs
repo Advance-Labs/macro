@@ -17,7 +17,7 @@ use specta::Type;
 use uuid::Uuid;
 
 use models_databases::views::ViewProblem;
-use models_databases::{DatabaseOp, OpResult};
+use models_databases::{DatabaseId, DatabaseOp, OpResult, RowId, TableId};
 
 use crate::catalog::{Catalog, ColumnKind};
 use crate::engine::{Engine, Step};
@@ -78,7 +78,7 @@ pub trait OpsSink {
     /// Apply `ops` to `database`; one result per op, in order.
     fn apply(
         &self,
-        database: Uuid,
+        database: DatabaseId,
         ops: Vec<DatabaseOp>,
     ) -> impl Future<Output = Result<Vec<OpResult>, Self::Error>> + MaybeSend;
 }
@@ -126,7 +126,7 @@ pub enum RunError {
         #[specta(type = u32)]
         position: usize,
         /// The row.
-        row: Uuid,
+        row: RowId,
     },
     /// An `UPDATE` or `DELETE` matched more rows than a statement reads.
     #[error("the WHERE matches more than {limit} rows; narrow it and run the statement again")]
@@ -332,13 +332,13 @@ pub struct Outcome {
     /// The result rows.
     pub rows: Table,
     /// For a row-shaped result, the row entity id behind each result row.
-    pub row_ids: Vec<Uuid>,
+    pub row_ids: Vec<RowId>,
     /// The tables read, so a caller can watch them for changes.
-    pub read_tables: Vec<Uuid>,
+    pub read_tables: Vec<TableId>,
     /// Whether the read hit [`ROW_CAP`], making aggregates partial.
     pub truncated: bool,
     /// Rows an `INSERT` created, in statement order for the rows that landed.
-    pub inserted_row_ids: Vec<Uuid>,
+    pub inserted_row_ids: Vec<RowId>,
     /// Rows a write changed.
     pub changes_applied: u32,
     /// The column an `ALTER COLUMN` changed.
@@ -351,7 +351,7 @@ pub struct Outcome {
 #[serde(rename_all = "camelCase")]
 pub struct AlteredColumn {
     /// The table.
-    pub table: Uuid,
+    pub table: TableId,
     /// The column's property definition before the change.
     pub column: Uuid,
     /// The type it became, as SQL spells it.

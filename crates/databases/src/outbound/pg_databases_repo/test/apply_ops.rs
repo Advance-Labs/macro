@@ -1,6 +1,7 @@
 //! Typed ops through the service as hosts build it, over Postgres: a batch
 //! commits whole, and a refused op leaves nothing of it behind.
 
+use models_databases::OptionId;
 use std::sync::Arc;
 
 use entity_access::domain::models::{
@@ -22,8 +23,9 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::domain::models::{
-    ChangeColumnType, ColumnBinding, ColumnConfig, CreateColumn, CreateDatabase, CreateTable,
-    DatabaseError, DatabaseId, NewOption, OpRefusal, TableVersion, Viewer,
+    ChangeColumnType, ColumnBinding, ColumnConfig, ColumnId, CreateColumn, CreateDatabase,
+    CreateTable, DatabaseError, DatabaseId, NewOption, OpRefusal, PropertyDefinitionId, RowId,
+    TableId, TableVersion, Viewer,
 };
 use crate::domain::ports::{CellStore, ColumnDefinitionStore, DatabasesRepo, DatabasesService};
 use crate::outbound::gateway_event_publisher::NoOpTableEventPublisher;
@@ -76,11 +78,11 @@ pub(super) async fn insert_named_user(pool: &PgPool, user: &str) {
 /// `Guests(Name TEXT, Status SELECT[Going])` in a new database.
 pub(super) struct Guests {
     pub(super) database_id: DatabaseId,
-    pub(super) table_id: Uuid,
-    pub(super) name: Uuid,
-    pub(super) name_definition: Uuid,
-    pub(super) status: Uuid,
-    pub(super) status_definition: Uuid,
+    pub(super) table_id: TableId,
+    pub(super) name: ColumnId,
+    pub(super) name_definition: PropertyDefinitionId,
+    pub(super) status: ColumnId,
+    pub(super) status_definition: PropertyDefinitionId,
 }
 
 pub(super) async fn guests(pool: &PgPool) -> Guests {
@@ -117,7 +119,7 @@ pub(super) async fn guests(pool: &PgPool) -> Guests {
         .await
         .unwrap();
     let columns = repo.columns_for_tables(&[table_id]).await.unwrap();
-    let definition_of = |column: Uuid| {
+    let definition_of = |column: ColumnId| {
         columns
             .iter()
             .find(|placement| placement.id == column)
@@ -156,7 +158,7 @@ pub(super) fn cells(pool: &PgPool) -> PgCellStore<PropertiesPgRepo> {
     PgCellStore::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
 }
 
-pub(super) async fn version(pool: &PgPool, table_id: Uuid) -> TableVersion {
+pub(super) async fn version(pool: &PgPool, table_id: TableId) -> TableVersion {
     PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
         .table_versions(&[table_id])
         .await
@@ -232,7 +234,9 @@ async fn ops_insert_update_and_delete_rows_bumping_the_table_once_per_request(po
                         rows: vec![sam, alex, robin],
                         cells: vec![CellWrite {
                             column: guests.status,
-                            value: CellValue::Options(vec![OptionRef::Id(going)]),
+                            value: CellValue::Options(vec![OptionRef::Id(OptionId::from_uuid(
+                                going,
+                            ))]),
                         }],
                     },
                     create_missing_options: false,
@@ -411,7 +415,7 @@ async fn a_refused_op_leaves_nothing_of_its_batch_behind(pool: PgPool) {
                 },
                 DatabaseOp::DeleteRows {
                     table: guests.table_id,
-                    rows: vec![ghost],
+                    rows: vec![RowId::from_uuid(ghost)],
                 },
             ],
         )
@@ -767,7 +771,7 @@ async fn an_option_is_relabelled_and_recoloured_in_place(pool: PgPool) {
             vec![DatabaseOp::UpdateOption {
                 table: guests.table_id,
                 column: guests.status,
-                option: going,
+                option: OptionId::from_uuid(going),
                 label: Some("Attending".into()),
                 color: Some(Some(properties::TagColor::Pink.hex().into())),
             }],
@@ -842,7 +846,7 @@ async fn a_removed_option_leaves_its_cells_empty_and_the_others_alone(pool: PgPo
             vec![DatabaseOp::DeleteOption {
                 table: guests.table_id,
                 column: guests.status,
-                option: going,
+                option: OptionId::from_uuid(going),
             }],
         )
         .await
@@ -935,12 +939,12 @@ async fn appended_options_follow_the_existing_ones_in_place_and_colour(pool: PgP
             &[
                 NewOption {
                     definition_id: guests.status_definition,
-                    id: maybe,
+                    id: OptionId::from_uuid(maybe),
                     value: PropertyOptionValue::String("Maybe".into()),
                 },
                 NewOption {
                     definition_id: guests.status_definition,
-                    id: declined,
+                    id: OptionId::from_uuid(declined),
                     value: PropertyOptionValue::String("Declined".into()),
                 },
             ],

@@ -14,6 +14,8 @@ use entity_access::domain::models::{
 };
 use macro_user_id::lowercased::Lowercase;
 use macro_user_id::user_id::MacroUserId;
+use models_databases::position::Position;
+use models_databases::{ColumnId, DatabaseId, TableId, ViewId};
 use models_properties::service::property_definition::PropertyDefinition;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
 use models_properties::service::property_option::{PropertyOption, PropertyOptionValue};
@@ -52,20 +54,20 @@ struct Calls {
     described: usize,
     created_databases: Vec<String>,
     created_tables: Vec<String>,
-    renamed_tables: Vec<(Uuid, String, String)>,
-    created_columns: Vec<(Uuid, DataType, bool, Vec<String>)>,
-    added_options: Vec<(Uuid, Vec<String>)>,
+    renamed_tables: Vec<(TableId, String, String)>,
+    created_columns: Vec<(TableId, DataType, bool, Vec<String>)>,
+    added_options: Vec<(ColumnId, Vec<String>)>,
     renamed_databases: Vec<String>,
-    deleted_tables: Vec<Uuid>,
+    deleted_tables: Vec<TableId>,
     /// `(table, column, name, previous name)`.
-    renamed_columns: Vec<(Uuid, Uuid, String, String)>,
+    renamed_columns: Vec<(TableId, ColumnId, String, String)>,
     changed_column_types: Vec<crate::domain::models::ChangeColumnType>,
     /// `(table, column, base version)`.
-    deleted_columns: Vec<(Uuid, Uuid, TableVersion)>,
+    deleted_columns: Vec<(TableId, ColumnId, TableVersion)>,
     /// `(table, order, base version)`.
-    reordered_columns: Vec<(Uuid, Vec<Uuid>, TableVersion)>,
+    reordered_columns: Vec<(TableId, Vec<ColumnId>, TableVersion)>,
     /// Every table order the service was asked for.
-    reordered_tables: Vec<Vec<Uuid>>,
+    reordered_tables: Vec<Vec<TableId>>,
     /// The agent each attributed write reached the service as.
     acting_bots: Vec<Option<BotId>>,
     /// Every batch of ops the service was asked to apply.
@@ -82,10 +84,14 @@ struct FakeService {
     views: Vec<crate::domain::models::DatabaseView>,
 }
 
-const DATABASE_ID: Uuid = Uuid::from_u128(0x0dbb_0000_0000_0000_0000_0000_0000_0001);
-const TABLE_ID: Uuid = Uuid::from_u128(0x7ab1_0000_0000_0000_0000_0000_0000_0001);
-const COLUMN_ID: Uuid = Uuid::from_u128(0xc01a_0000_0000_0000_0000_0000_0000_0001);
-const VIEW_ID: Uuid = Uuid::from_u128(0x71e0_0000_0000_0000_0000_0000_0000_0001);
+const DATABASE_ID: DatabaseId =
+    DatabaseId::from_uuid(Uuid::from_u128(0x0dbb_0000_0000_0000_0000_0000_0000_0001));
+const TABLE_ID: TableId =
+    TableId::from_uuid(Uuid::from_u128(0x7ab1_0000_0000_0000_0000_0000_0000_0001));
+const COLUMN_ID: ColumnId =
+    ColumnId::from_uuid(Uuid::from_u128(0xc01a_0000_0000_0000_0000_0000_0000_0001));
+const VIEW_ID: ViewId =
+    ViewId::from_uuid(Uuid::from_u128(0x71e0_0000_0000_0000_0000_0000_0000_0001));
 
 fn database() -> Database {
     Database {
@@ -102,7 +108,7 @@ fn table() -> Table {
         id: TABLE_ID,
         database_id: DATABASE_ID,
         name: "Guests".to_string(),
-        position: "a".to_string(),
+        position: "80".parse().unwrap(),
         version: TableVersion(3),
     }
 }
@@ -116,7 +122,7 @@ fn status_column() -> ColumnDetail {
             id: COLUMN_ID,
             table_id: TABLE_ID,
             property_definition_id: Uuid::nil(),
-            position: "a".to_string(),
+            position: "80".parse().unwrap(),
             config: None,
         },
         sql_name: "\"Status\"".to_string(),
@@ -124,7 +130,7 @@ fn status_column() -> ColumnDetail {
             definition: PropertyDefinition {
                 id: Uuid::nil(),
                 owner: PropertyOwner::Database {
-                    database_id: DATABASE_ID,
+                    database_id: DATABASE_ID.into_uuid(),
                 },
                 display_name: "Status".to_string(),
                 data_type: DataType::SelectString,
@@ -230,7 +236,7 @@ impl DatabasesService for FakeService {
                         database_id: DATABASE_ID,
                         table_id: table,
                         name: view.name,
-                        position: "80".into(),
+                        position: "80".parse::<Position>().unwrap(),
                         query: view.query,
                         layout: view.layout,
                         created_at: at,
@@ -369,16 +375,16 @@ impl DatabasesService for FakeService {
     async fn column_casts(
         &self,
         _: EntityAccessReceipt<ViewAccessLevel>,
-        _: Uuid,
-        _: Uuid,
+        _: TableId,
+        _: ColumnId,
     ) -> Result<Vec<crate::domain::models::ColumnCast>, DatabaseError> {
         unimplemented!("tool tests do not preview type changes")
     }
     async fn delete_column(
         &self,
         _: EntityAccessReceipt<EditAccessLevel>,
-        table_id: Uuid,
-        column_id: Uuid,
+        table_id: TableId,
+        column_id: ColumnId,
         base_version: TableVersion,
     ) -> Result<crate::domain::models::ColumnSchemaOutcome, DatabaseError> {
         self.calls
@@ -393,8 +399,8 @@ impl DatabasesService for FakeService {
     async fn reorder_columns(
         &self,
         _: EntityAccessReceipt<EditAccessLevel>,
-        table_id: Uuid,
-        column_ids: Vec<Uuid>,
+        table_id: TableId,
+        column_ids: Vec<ColumnId>,
         base_version: TableVersion,
     ) -> Result<crate::domain::models::ColumnSchemaOutcome, DatabaseError> {
         self.calls

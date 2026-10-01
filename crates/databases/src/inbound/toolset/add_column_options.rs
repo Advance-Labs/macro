@@ -5,9 +5,9 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
+use models_databases::{ColumnId, DatabaseId, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::{
     DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, database_error,
@@ -39,21 +39,21 @@ continuing. Do not treat a failed follow-up read as a rejected mutation."
 pub struct AddColumnOptions {
     /// The database the column belongs to.
     #[schemars(description = "Id of the database the column belongs to, from ListDatabases.")]
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
 
     /// The table the column belongs to.
     #[schemars(
         description = "Id of the table the column belongs to, from DescribeDatabase. It must \
                        belong to databaseId."
     )]
-    pub table_id: Uuid,
+    pub table_id: TableId,
 
     /// The column to extend.
     #[schemars(
         description = "Id of the column to add options to, from DescribeDatabase. It must be a \
                        select, select_number, or tag column."
     )]
-    pub column_id: Uuid,
+    pub column_id: ColumnId,
 
     /// The labels to add.
     #[schemars(
@@ -72,11 +72,11 @@ impl ToolAnnotated for AddColumnOptions {
 #[serde(rename_all = "camelCase")]
 pub struct AddColumnOptionsResponse {
     /// Database containing the committed option change.
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
     /// Table containing the committed option change.
-    pub table_id: Uuid,
+    pub table_id: TableId,
     /// The column's id.
-    pub column_id: Uuid,
+    pub column_id: ColumnId,
     /// Every label the column now accepts, in display order.
     pub options: Vec<String>,
     /// The database's schema after the change.

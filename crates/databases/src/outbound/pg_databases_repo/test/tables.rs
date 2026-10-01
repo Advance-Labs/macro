@@ -7,7 +7,7 @@ async fn table_mutations_wait_for_trash_and_return_not_found(pool: PgPool) {
     let mut trash = pool.begin().await.unwrap();
     sqlx::query!(
         "UPDATE databases SET trashed_at = now() WHERE id = $1",
-        table.database_id,
+        table.database_id.into_uuid(),
     )
     .execute(&mut *trash)
     .await

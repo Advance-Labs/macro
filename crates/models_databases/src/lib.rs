@@ -9,7 +9,7 @@ pub mod position;
 pub mod property;
 pub mod views;
 
-pub use ids::{ColumnId, DatabaseId, OptionId, RowId, TableId, TableVersion};
+pub use ids::{ColumnId, DatabaseId, OptionId, QueryId, RowId, TableId, TableVersion, ViewId};
 pub use ops::{
     CellValue, CellWrite, ColumnKind, DatabaseOp, EntityKind, EntityRef, OpResult, OptionRef,
     RowChange, RowChanges,

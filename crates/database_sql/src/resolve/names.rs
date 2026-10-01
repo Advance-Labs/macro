@@ -2,6 +2,7 @@
 //! when nothing matches. A [`Scope`] is the relations a `SELECT` reads and
 //! the keys it hands out for their columns.
 
+use models_databases::{ColumnId, TableId};
 use uuid::Uuid;
 
 use crate::catalog::{Catalog, Column, ColumnKind, EntityKind, Table};
@@ -19,11 +20,11 @@ pub const ROW_POSITION: &str = "row_position";
 /// The columns every table has without declaring them: its row id and its
 /// row position. Each stand-in's id is its key. They are not catalog
 /// columns, so `SELECT *` and schema listings leave them out.
-pub fn virtual_columns(table: Uuid) -> [Column; 2] {
+pub fn virtual_columns(table: TableId) -> [Column; 2] {
     [
         Column {
             id: row_id_key(table),
-            placement: row_id_key(table),
+            placement: ColumnId::from_uuid(row_id_key(table)),
             name: ROW_ID.into(),
             kind: ColumnKind::Entity {
                 multi: false,
@@ -32,7 +33,7 @@ pub fn virtual_columns(table: Uuid) -> [Column; 2] {
         },
         Column {
             id: row_position_key(table),
-            placement: row_position_key(table),
+            placement: ColumnId::from_uuid(row_position_key(table)),
             name: ROW_POSITION.into(),
             kind: ColumnKind::Text,
         },

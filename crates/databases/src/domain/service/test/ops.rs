@@ -75,7 +75,7 @@ async fn an_insert_of_two_rows_mints_them_in_order_with_their_cells() {
             rows[1],
             seeded.status_column.property_definition_id
         ),
-        Some(PropertyValue::SelectOption(vec![going]))
+        Some(PropertyValue::SelectOption(vec![going.into_uuid()]))
     );
     assert_eq!(
         cell(
@@ -156,7 +156,7 @@ async fn a_uniform_update_gives_three_rows_the_same_cells() {
                 *row,
                 seeded.status_column.property_definition_id
             ),
-            Some(PropertyValue::SelectOption(vec![declined]))
+            Some(PropertyValue::SelectOption(vec![declined.into_uuid()]))
         );
         assert_eq!(
             cell(
@@ -334,11 +334,11 @@ async fn a_label_the_column_lacks_becomes_an_option_when_the_op_creates_them() {
     let rows = row_ids(&seeded.world, seeded.table_id);
     assert_eq!(
         cell(&seeded.world, rows[1], status),
-        Some(PropertyValue::SelectOption(vec![maybe]))
+        Some(PropertyValue::SelectOption(vec![maybe.into_uuid()]))
     );
     assert_eq!(
         cell(&seeded.world, rows[2], status),
-        Some(PropertyValue::SelectOption(vec![maybe]))
+        Some(PropertyValue::SelectOption(vec![maybe.into_uuid()]))
     );
 }
 
@@ -486,7 +486,7 @@ async fn a_failing_second_op_leaves_the_first_unapplied() {
                                 }],
                             },
                             RowChange {
-                                row: ghost,
+                                row: RowId::from_uuid(ghost),
                                 cells: vec![CellWrite {
                                     column: seeded.name_column.id,
                                     value: CellValue::Text("Nobody".into()),

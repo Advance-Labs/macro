@@ -1,10 +1,10 @@
 //! What a committed write's response could not include, told to the model so
 //! it neither repeats the write nor trusts a missing schema.
 
+use models_databases::DatabaseId;
 use std::fmt;
 
 use serde::{Serialize, Serializer};
-use uuid::Uuid;
 
 /// One part of a committed write that did not complete.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -12,7 +12,7 @@ pub enum WriteWarning {
     /// The change committed but the schema read after it failed.
     SchemaNotRefreshed {
         /// The database to describe again.
-        database_id: Uuid,
+        database_id: DatabaseId,
         /// Why the read failed, as the model was told.
         cause: String,
     },

@@ -11,7 +11,11 @@ use std::sync::{Arc, Mutex};
 use databases::domain::models::{DatabaseError, OpRefusal, QueryDefinition, TableVersion};
 use entity_access::domain::models::AccessLevel;
 use item_filters::ast::database_row::DatabaseRowLiteral;
-use models_databases::{CellValue, CellWrite, DatabaseOp, OpResult, OptionRef, RowChanges};
+use models_databases::position::Position;
+use models_databases::{
+    CellValue, CellWrite, ColumnId, DatabaseId, DatabaseOp, OpResult, OptionId, OptionRef,
+    RowChanges, RowId, TableId,
+};
 use models_properties::service::property_value::PropertyValue;
 use models_properties::shared::{DataType, EntityReference, EntityType as PropertyEntityType};
 use uuid::Uuid;
@@ -26,12 +30,12 @@ use crate::test_support::{
     AppliedOps, OWNER, STRANGER, Shared, StoredRow, VIEWER, World, agent_for, row_literals, sql,
 };
 
-const OFFSITE: Uuid = Uuid::from_u128(0xdb01);
-const GUESTS: Uuid = Uuid::from_u128(0x7a01);
-const VENUES: Uuid = Uuid::from_u128(0xdb02);
-const HALLS: Uuid = Uuid::from_u128(0x7a02);
-const SECRET: Uuid = Uuid::from_u128(0xdb03);
-const PLANS: Uuid = Uuid::from_u128(0x7a03);
+const OFFSITE: DatabaseId = DatabaseId::from_uuid(Uuid::from_u128(0xdb01));
+const GUESTS: TableId = TableId::from_uuid(Uuid::from_u128(0x7a01));
+const VENUES: DatabaseId = DatabaseId::from_uuid(Uuid::from_u128(0xdb02));
+const HALLS: TableId = TableId::from_uuid(Uuid::from_u128(0x7a02));
+const SECRET: DatabaseId = DatabaseId::from_uuid(Uuid::from_u128(0xdb03));
+const PLANS: TableId = TableId::from_uuid(Uuid::from_u128(0x7a03));
 
 const NAME: Uuid = Uuid::from_u128(0xc001);
 const STATUS: Uuid = Uuid::from_u128(0xc002);
@@ -40,20 +44,20 @@ const CONTACT: Uuid = Uuid::from_u128(0xc004);
 const HALL_NAME: Uuid = Uuid::from_u128(0xc005);
 const PLAN_NAME: Uuid = Uuid::from_u128(0xc006);
 
-const NAME_COLUMN: Uuid = Uuid::from_u128(0xb001);
-const STATUS_COLUMN: Uuid = Uuid::from_u128(0xb002);
-const HALL_COLUMN: Uuid = Uuid::from_u128(0xb003);
-const CONTACT_COLUMN: Uuid = Uuid::from_u128(0xb004);
-const HALL_NAME_COLUMN: Uuid = Uuid::from_u128(0xb005);
-const PLAN_NAME_COLUMN: Uuid = Uuid::from_u128(0xb006);
+const NAME_COLUMN: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xb001));
+const STATUS_COLUMN: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xb002));
+const HALL_COLUMN: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xb003));
+const CONTACT_COLUMN: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xb004));
+const HALL_NAME_COLUMN: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xb005));
+const PLAN_NAME_COLUMN: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xb006));
 
-const GOING: Uuid = Uuid::from_u128(0xa001);
-const MAYBE: Uuid = Uuid::from_u128(0xa002);
+const GOING: OptionId = OptionId::from_uuid(Uuid::from_u128(0xa001));
+const MAYBE: OptionId = OptionId::from_uuid(Uuid::from_u128(0xa002));
 
-const MARIA: Uuid = Uuid::from_u128(0xe001);
-const SAM: Uuid = Uuid::from_u128(0xe002);
-const BALLROOM: Uuid = Uuid::from_u128(0xe003);
-const LAUNCH: Uuid = Uuid::from_u128(0xe004);
+const MARIA: RowId = RowId::from_uuid(Uuid::from_u128(0xe001));
+const SAM: RowId = RowId::from_uuid(Uuid::from_u128(0xe002));
+const BALLROOM: RowId = RowId::from_uuid(Uuid::from_u128(0xe003));
+const LAUNCH: RowId = RowId::from_uuid(Uuid::from_u128(0xe004));
 
 /// `Offsite.Guests` (relating to `Venues.Halls`) and `Venues` are the
 /// owner's; the viewer can read `Offsite`; `Secret.Plans` is the
@@ -82,7 +86,7 @@ fn world() -> Shared {
                         id: GUESTS,
                         database_id: OFFSITE,
                         name: "Guests".into(),
-                        position: "80".into(),
+                        position: "80".parse::<Position>().unwrap(),
                         version: TableVersion(1),
                     },
                     sql_name: "\"Guests\"".into(),
@@ -92,7 +96,7 @@ fn world() -> Shared {
                                 id: NAME_COLUMN,
                                 table_id: GUESTS,
                                 property_definition_id: NAME,
-                                position: "80".into(),
+                                position: "80".parse::<Position>().unwrap(),
                                 config: None,
                                 display_name: None,
                                 infer_type: false,
@@ -121,7 +125,7 @@ fn world() -> Shared {
                                 id: STATUS_COLUMN,
                                 table_id: GUESTS,
                                 property_definition_id: STATUS,
-                                position: "8180".into(),
+                                position: "8180".parse::<Position>().unwrap(),
                                 config: None,
                                 display_name: None,
                                 infer_type: false,
@@ -142,7 +146,7 @@ fn world() -> Shared {
                                 },
                                 property_options: vec![
                                     PropertyOption {
-                                        id: GOING,
+                                        id: GOING.into_uuid(),
                                         property_definition_id: STATUS,
                                         display_order: 0,
                                         value: PropertyOptionValue::String("Going".into()),
@@ -151,7 +155,7 @@ fn world() -> Shared {
                                         updated_at: Utc::now(),
                                     },
                                     PropertyOption {
-                                        id: MAYBE,
+                                        id: MAYBE.into_uuid(),
                                         property_definition_id: STATUS,
                                         display_order: 1,
                                         value: PropertyOptionValue::String("Maybe".into()),
@@ -169,7 +173,7 @@ fn world() -> Shared {
                                 id: HALL_COLUMN,
                                 table_id: GUESTS,
                                 property_definition_id: HALL,
-                                position: "8280".into(),
+                                position: "8280".parse::<Position>().unwrap(),
                                 config: Some(ColumnConfig::Link {
                                     database_id: VENUES,
                                     table_id: HALLS,
@@ -201,7 +205,7 @@ fn world() -> Shared {
                                 id: CONTACT_COLUMN,
                                 table_id: GUESTS,
                                 property_definition_id: CONTACT,
-                                position: "8380".into(),
+                                position: "8380".parse::<Position>().unwrap(),
                                 config: None,
                                 display_name: None,
                                 infer_type: false,
@@ -243,7 +247,7 @@ fn world() -> Shared {
                         id: HALLS,
                         database_id: VENUES,
                         name: "Halls".into(),
-                        position: "80".into(),
+                        position: "80".parse::<Position>().unwrap(),
                         version: TableVersion(1),
                     },
                     sql_name: "\"Halls\"".into(),
@@ -252,7 +256,7 @@ fn world() -> Shared {
                             id: HALL_NAME_COLUMN,
                             table_id: HALLS,
                             property_definition_id: HALL_NAME,
-                            position: "80".into(),
+                            position: "80".parse::<Position>().unwrap(),
                             config: None,
                             display_name: None,
                             infer_type: false,
@@ -293,7 +297,7 @@ fn world() -> Shared {
                         id: PLANS,
                         database_id: SECRET,
                         name: "Plans".into(),
-                        position: "80".into(),
+                        position: "80".parse::<Position>().unwrap(),
                         version: TableVersion(1),
                     },
                     sql_name: "\"Plans\"".into(),
@@ -302,7 +306,7 @@ fn world() -> Shared {
                             id: PLAN_NAME_COLUMN,
                             table_id: PLANS,
                             property_definition_id: PLAN_NAME,
-                            position: "80".into(),
+                            position: "80".parse::<Position>().unwrap(),
                             config: None,
                             display_name: None,
                             infer_type: false,
@@ -338,14 +342,14 @@ fn world() -> Shared {
         ],
         rows: vec![
             StoredRow {
-                id: MARIA,
+                id: MARIA.into_uuid(),
                 table_id: GUESTS,
                 database_id: OFFSITE,
-                position: "80".into(),
+                position: "80".to_string(),
                 created_at: Utc.with_ymd_and_hms(2026, 9, 1, 9, 1, 0).unwrap(),
                 cells: vec![
                     (NAME, PropertyValue::Str("Maria".into())),
-                    (STATUS, PropertyValue::SelectOption(vec![GOING])),
+                    (STATUS, PropertyValue::SelectOption(vec![GOING.into_uuid()])),
                     (
                         HALL,
                         PropertyValue::EntityRef(vec![EntityReference {
@@ -358,29 +362,29 @@ fn world() -> Shared {
                 ],
             },
             StoredRow {
-                id: SAM,
+                id: SAM.into_uuid(),
                 table_id: GUESTS,
                 database_id: OFFSITE,
-                position: "8180".into(),
+                position: "8180".to_string(),
                 created_at: Utc.with_ymd_and_hms(2026, 9, 1, 9, 2, 0).unwrap(),
                 cells: vec![
                     (NAME, PropertyValue::Str("Sam".into())),
-                    (STATUS, PropertyValue::SelectOption(vec![MAYBE])),
+                    (STATUS, PropertyValue::SelectOption(vec![MAYBE.into_uuid()])),
                 ],
             },
             StoredRow {
-                id: BALLROOM,
+                id: BALLROOM.into_uuid(),
                 table_id: HALLS,
                 database_id: VENUES,
-                position: "8280".into(),
+                position: "8280".to_string(),
                 created_at: Utc.with_ymd_and_hms(2026, 9, 1, 9, 3, 0).unwrap(),
                 cells: vec![(HALL_NAME, PropertyValue::Str("Ballroom".into()))],
             },
             StoredRow {
-                id: LAUNCH,
+                id: LAUNCH.into_uuid(),
                 table_id: PLANS,
                 database_id: SECRET,
-                position: "8380".into(),
+                position: "8380".to_string(),
                 created_at: Utc.with_ymd_and_hms(2026, 9, 1, 9, 4, 0).unwrap(),
                 cells: vec![(PLAN_NAME, PropertyValue::Str("Launch".into()))],
             },
@@ -546,10 +550,10 @@ async fn a_cross_database_join_only_sees_databases_the_viewer_can_reach() {
     assert_eq!(
         reads,
         vec![
-            vec![DatabaseRowLiteral::TableId(GUESTS)],
+            vec![DatabaseRowLiteral::TableId(GUESTS.into_uuid())],
             vec![
-                DatabaseRowLiteral::TableId(HALLS),
-                DatabaseRowLiteral::Id(BALLROOM)
+                DatabaseRowLiteral::TableId(HALLS.into_uuid()),
+                DatabaseRowLiteral::Id(BALLROOM.into_uuid())
             ],
         ]
     );

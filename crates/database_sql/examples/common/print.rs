@@ -5,11 +5,11 @@ use database_sql::fold::Cell;
 use database_sql::resolve::{Query, compile};
 use database_sql::run::{Outcome, OutcomeKind};
 use database_sql::split::{GqlQuery, split};
-use uuid::Uuid;
+use models_databases::OptionId;
 
 /// A cell as a person would read it: option labels, not ids.
 pub fn show(catalog: &Catalog, value: Option<&Cell>) -> String {
-    let label = |id: &Uuid| {
+    let label = |id: &OptionId| {
         catalog
             .tables
             .iter()

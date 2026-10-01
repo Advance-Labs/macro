@@ -12,6 +12,7 @@ use databases::domain::catalog;
 use databases::domain::models::{
     ColumnConfig, ColumnDetail, DatabaseDetail, DatabaseId, TableDetail, TableId,
 };
+use models_databases::OptionId;
 use uuid::Uuid;
 
 /// What one statement can see: the viewer's databases in detail, and the
@@ -119,7 +120,7 @@ fn column_schema(column: &ColumnDetail) -> ColumnSchema {
             .property_options
             .iter()
             .map(|option| OptionSchema {
-                id: option.id,
+                id: OptionId::from_uuid(option.id),
                 value: catalog::option_value(&option.value),
                 order: option.display_order,
             })

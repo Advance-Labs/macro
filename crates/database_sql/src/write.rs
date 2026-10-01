@@ -4,7 +4,7 @@
 
 use models_databases::{
     CellValue, CellWrite, ColumnKind as OpColumnKind, DatabaseOp, EntityKind as OpEntityKind,
-    EntityRef, OpResult, OptionRef, RowChange, RowChanges,
+    EntityRef, OpResult, OptionId, OptionRef, RowChange, RowChanges, RowId, TableId,
 };
 use uuid::Uuid;
 
@@ -22,7 +22,7 @@ pub(crate) enum Sent {
     Rows,
     /// A column's type change.
     Column {
-        table: Uuid,
+        table: TableId,
         column: Uuid,
         to: OpColumnKind,
     },
@@ -122,7 +122,7 @@ pub(crate) fn update(
 }
 
 /// `DELETE` of the rows its read found; `None` when it found nothing.
-pub(crate) fn delete(table: Uuid, found: &Outcome) -> Option<DatabaseOp> {
+pub(crate) fn delete(table: TableId, found: &Outcome) -> Option<DatabaseOp> {
     (!found.row_ids.is_empty()).then(|| DatabaseOp::DeleteRows {
         table,
         rows: found.row_ids.clone(),
@@ -184,7 +184,7 @@ pub(crate) fn outcome(sent: &Sent, results: &[OpResult]) -> Result<Outcome, RunE
     }
 }
 
-fn table(catalog: &Catalog, id: Uuid) -> &Table {
+fn table(catalog: &Catalog, id: TableId) -> &Table {
     catalog
         .tables
         .iter()
@@ -238,7 +238,7 @@ fn copied_value(target: &Column, source: &Column, cell: Option<&Cell>) -> CellVa
 }
 
 /// Options by label, the way a statement names them.
-fn options(column: &Column, ids: &[Uuid]) -> CellValue {
+fn options(column: &Column, ids: &[OptionId]) -> CellValue {
     let ColumnKind::Select {
         options: labels, ..
     } = &column.kind
@@ -275,7 +275,7 @@ fn references(column: &Column, ids: &[String]) -> CellValue {
         ),
         Err(RelationTarget) => CellValue::Rows(
             ids.iter()
-                .filter_map(|id| Uuid::parse_str(id).ok())
+                .filter_map(|id| id.parse::<RowId>().ok())
                 .collect(),
         ),
     }

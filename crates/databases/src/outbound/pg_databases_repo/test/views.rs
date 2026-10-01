@@ -1,9 +1,9 @@
 //! Positions and views over Postgres: the byte order positions compare in,
 //! and views and card places through the ops.
 
-use models_databases::position::{key_between, keys_between};
+use models_databases::position::{Position, key_between, keys_between};
 use models_databases::views::{CardPosition, Lane, NewView, ViewLayout, ViewQuery};
-use models_databases::{CellValue, CellWrite, DatabaseOp, OpResult, OptionRef};
+use models_databases::{CellValue, CellWrite, DatabaseOp, OpResult, OptionId, OptionRef, RowId};
 use models_properties::service::property_value::PropertyValue;
 use properties::outbound::properties_pg_repo::PropertiesPgRepo;
 
@@ -13,7 +13,7 @@ use crate::domain::ports::{CellStore, ColumnDefinitionStore, DatabasesService};
 use crate::outbound::pg_definition_store::PgDefinitionStore;
 
 /// Insert one row per status into the guests table, answering their ids.
-async fn insert_statuses(pool: &PgPool, guests: &Guests, statuses: &[&str]) -> Vec<Uuid> {
+async fn insert_statuses(pool: &PgPool, guests: &Guests, statuses: &[&str]) -> Vec<RowId> {
     let results = service(pool)
         .apply_ops(
             edit(guests.database_id),
@@ -40,7 +40,7 @@ async fn insert_statuses(pool: &PgPool, guests: &Guests, statuses: &[&str]) -> V
     inserted.clone()
 }
 
-async fn row_positions(pool: &PgPool, table_id: Uuid) -> Vec<(Uuid, String)> {
+async fn row_positions(pool: &PgPool, table_id: TableId) -> Vec<(RowId, Position)> {
     PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
         .row_refs(table_id)
         .await
@@ -84,19 +84,19 @@ async fn positions_compare_as_bytes_as_the_keys_sort(pool: PgPool) {
     let mut keys = keys_between(None, None, 3).unwrap();
     keys.push(key_between(None, Some(&keys[0])).unwrap());
     keys.push(key_between(Some(&keys[1]), Some(&keys[2])).unwrap());
-    keys.push(key_between(Some("ff80"), None).unwrap());
+    keys.push(key_between(Some(&"ff80".parse().unwrap()), None).unwrap());
     for (row, key) in rows.iter().zip(&keys) {
         sqlx::query!(
             "UPDATE database_rows SET position = $2 WHERE id = $1",
-            row,
-            key
+            row.as_uuid(),
+            key.as_str()
         )
         .execute(&pool)
         .await
         .unwrap();
     }
 
-    let stored: Vec<String> = row_positions(&pool, guests.table_id)
+    let stored: Vec<Position> = row_positions(&pool, guests.table_id)
         .await
         .into_iter()
         .map(|(_, position)| position)
@@ -117,7 +117,10 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
         .unwrap()
         .remove(0)
         .property_options;
-    let (going, maybe) = (options[0].id, options[1].id);
+    let (going, maybe) = (
+        OptionId::from_uuid(options[0].id),
+        OptionId::from_uuid(options[1].id),
+    );
     let results = service
         .apply_ops(
             edit(guests.database_id),
@@ -178,19 +181,19 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
             CardPosition {
                 row: rows[1],
                 lane: Some(maybe),
-                position: "7f80".into(),
+                position: "7f80".parse::<Position>().unwrap(),
             },
             CardPosition {
                 row: rows[2],
                 lane: Some(maybe),
-                position: "80".into(),
+                position: "80".parse::<Position>().unwrap(),
             },
         ]
     );
     let stored = cells(&pool).cells(&rows).await.unwrap();
     assert_eq!(
         stored[&rows[2]][&guests.status_definition],
-        PropertyValue::SelectOption(vec![maybe])
+        PropertyValue::SelectOption(vec![maybe.into_uuid()])
     );
 
     service
@@ -209,7 +212,7 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
         vec![CardPosition {
             row: rows[2],
             lane: Some(maybe),
-            position: "80".into(),
+            position: "80".parse::<Position>().unwrap(),
         }]
     );
 
@@ -311,7 +314,7 @@ async fn removing_a_column_rewrites_the_views_that_named_it(pool: PgPool) {
     );
 }
 
-async fn version_of(pool: &PgPool, table_id: Uuid) -> TableVersion {
+async fn version_of(pool: &PgPool, table_id: TableId) -> TableVersion {
     PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
         .table_versions(&[table_id])
         .await

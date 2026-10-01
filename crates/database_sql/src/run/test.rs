@@ -1,3 +1,4 @@
+use models_databases::{ColumnId, DatabaseId, RowId};
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -8,13 +9,13 @@ use super::*;
 use crate::fold::Cell;
 use crate::test_support::{catalog, *};
 
-const ACME: Uuid = Uuid::from_u128(0xa1);
-const GLOBEX: Uuid = Uuid::from_u128(0xa2);
-const HOOLI: Uuid = Uuid::from_u128(0xa3);
-const INITECH: Uuid = Uuid::from_u128(0xa4);
-const NEW_ROW: Uuid = Uuid::from_u128(0xb1);
-const SECOND_NEW_ROW: Uuid = Uuid::from_u128(0xb2);
-const THIRD_NEW_ROW: Uuid = Uuid::from_u128(0xb3);
+const ACME: RowId = RowId::from_uuid(Uuid::from_u128(0xa1));
+const GLOBEX: RowId = RowId::from_uuid(Uuid::from_u128(0xa2));
+const HOOLI: RowId = RowId::from_uuid(Uuid::from_u128(0xa3));
+const INITECH: RowId = RowId::from_uuid(Uuid::from_u128(0xa4));
+const NEW_ROW: RowId = RowId::from_uuid(Uuid::from_u128(0xb1));
+const SECOND_NEW_ROW: RowId = RowId::from_uuid(Uuid::from_u128(0xb2));
+const THIRD_NEW_ROW: RowId = RowId::from_uuid(Uuid::from_u128(0xb3));
 
 /// One `page` or `bins` call as the fake saw it: query, needed columns,
 /// cursor, limit.
@@ -68,8 +69,8 @@ struct Refused(&'static str);
 /// the rows an insert created taken from `inserted`; it refuses any op the
 /// `refuse` test picks.
 struct FakeSink {
-    applied: Mutex<Vec<(Uuid, Vec<DatabaseOp>)>>,
-    inserted: Vec<Uuid>,
+    applied: Mutex<Vec<(DatabaseId, Vec<DatabaseOp>)>>,
+    inserted: Vec<RowId>,
     refuse: fn(&DatabaseOp) -> Option<&'static str>,
 }
 
@@ -88,7 +89,7 @@ impl OpsSink for FakeSink {
 
     async fn apply(
         &self,
-        database: Uuid,
+        database: DatabaseId,
         ops: Vec<DatabaseOp>,
     ) -> Result<Vec<OpResult>, Self::Error> {
         self.applied.lock().unwrap().push((database, ops.clone()));
@@ -302,7 +303,7 @@ fn aggregate_columns_are_named_after_the_statement() {
             ],
         ]
     );
-    assert_eq!(outcome.row_ids, Vec::<Uuid>::new());
+    assert_eq!(outcome.row_ids, Vec::<RowId>::new());
 }
 
 #[test]
@@ -385,7 +386,7 @@ fn count_only_groups_ask_for_bins_not_rows() {
 fn the_row_cap_marks_the_answer_truncated() {
     let many: Vec<Row> = (0..ROW_CAP + 5)
         .map(|i| Row {
-            id: Uuid::from_u128(0x1000 + i as u128),
+            id: RowId::from_uuid(Uuid::from_u128(0x1000 + i as u128)),
             position: None,
             cells: HashMap::from([(AMOUNT, Cell::Number(1.0))]),
         })
@@ -560,26 +561,26 @@ fn an_insert_is_one_op_holding_every_row() {
                 rows: vec![
                     vec![
                         CellWrite {
-                            column: NAME,
+                            column: ColumnId::from_uuid(NAME),
                             value: CellValue::Text("Acme".into()),
                         },
                         CellWrite {
-                            column: STAGE,
+                            column: ColumnId::from_uuid(STAGE),
                             value: CellValue::Options(vec![OptionRef::Label("Won".into())]),
                         },
                     ],
                     vec![
                         CellWrite {
-                            column: NAME,
+                            column: ColumnId::from_uuid(NAME),
                             value: CellValue::Text("Globex".into()),
                         },
                         CellWrite {
-                            column: STAGE,
+                            column: ColumnId::from_uuid(STAGE),
                             value: CellValue::Options(vec![OptionRef::Label("Lead".into())]),
                         },
                     ],
                     vec![CellWrite {
-                        column: NAME,
+                        column: ColumnId::from_uuid(NAME),
                         value: CellValue::Text("Hooli".into()),
                     }],
                 ],
@@ -622,11 +623,11 @@ fn update_and_delete_by_row_id_read_the_row_then_write_it() {
                         rows: vec![ACME],
                         cells: vec![
                             CellWrite {
-                                column: STAGE,
+                                column: ColumnId::from_uuid(STAGE),
                                 value: CellValue::Options(vec![OptionRef::Label("Won".into())]),
                             },
                             CellWrite {
-                                column: AMOUNT,
+                                column: ColumnId::from_uuid(AMOUNT),
                                 value: CellValue::Clear,
                             },
                         ],
@@ -673,7 +674,7 @@ fn a_row_named_by_id_that_the_table_lacks_is_refused() {
         error,
         RunFailure::Engine(RunError::NoSuchRow {
             position: 2,
-            row: Uuid::from_u128(0xff),
+            row: RowId::from_uuid(Uuid::from_u128(0xff)),
         })
     );
     assert_eq!(
@@ -764,7 +765,7 @@ fn a_type_change_is_one_op_without_reading_rows() {
             CRM,
             vec![DatabaseOp::ChangeColumnType {
                 table: DEALS,
-                column: NAME,
+                column: ColumnId::from_uuid(NAME),
                 to: models_databases::ColumnKind::Number,
                 clear_invalid: true,
             }],

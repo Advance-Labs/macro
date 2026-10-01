@@ -12,7 +12,7 @@ use contacts::domain::models::messages::ContactsNodes;
 use database_sql::catalog::Catalog;
 use database_sql::fold::Bin;
 use database_sql::run::{OpsSink, Outcome};
-use models_databases::{DatabaseOp, OpResult};
+use models_databases::{DatabaseId, DatabaseOp, OpResult, OptionId, RowId, TableId};
 use models_pagination::{Base64Str, Cursor, CursorVal, Paginated};
 use models_properties::service::property_definition::PropertyDefinition;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
@@ -87,10 +87,14 @@ impl ReplaySoup {
 /// A transcript row as Soup returns it: its cells as properties.
 fn soup_row(row: &Row) -> SoupItem<SoupPropertiesField> {
     SoupItem::DatabaseRow(SoupDatabaseRow {
-        id: row.id,
+        id: row.id.into_uuid(),
         table_id: Uuid::nil(),
         database_id: Uuid::nil(),
-        position: row.position.clone().unwrap_or_default(),
+        position: row
+            .position
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_default(),
         owner_id: model_owner::Owner::User(
             MacroUserIdStr::parse_from_str("macro|owner@macro.com").unwrap(),
         ),
@@ -119,7 +123,9 @@ fn soup_row(row: &Row) -> SoupItem<SoupPropertiesField> {
                         Cell::Number(number) => PropertyValue::Num(*number),
                         Cell::Bool(checked) => PropertyValue::Bool(*checked),
                         Cell::Date(date) => PropertyValue::Date(*date),
-                        Cell::Options(ids) => PropertyValue::SelectOption(ids.clone()),
+                        Cell::Options(ids) => PropertyValue::SelectOption(
+                            ids.iter().map(|id| id.into_uuid()).collect(),
+                        ),
                         Cell::Entities(ids) => PropertyValue::EntityRef(
                             ids.iter()
                                 .map(|id| EntityReference {
@@ -206,7 +212,7 @@ impl SoupService for ReplaySoup {
                 // Soup numbers a group's items from 1.
                 index_in_group: 1,
                 item: soup_row(&Row {
-                    id: Uuid::new_v4(),
+                    id: RowId::new(),
                     position: None,
                     cells: HashMap::new(),
                 }),
@@ -311,7 +317,7 @@ impl OpsSink for ReplaySink {
 
     async fn apply(
         &self,
-        _database: Uuid,
+        _database: DatabaseId,
         ops: Vec<DatabaseOp>,
     ) -> Result<Vec<OpResult>, Self::Error> {
         let (expected, results) = self
@@ -352,11 +358,11 @@ async fn replay(name: &str) -> Vec<EntityFilterAst> {
     soup.reads.into_inner().unwrap()
 }
 
-const DEALS: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000d001);
-const PEOPLE: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000d002);
+const DEALS: TableId = TableId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000d001));
+const PEOPLE: TableId = TableId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000d002));
 const STAGE: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000c003);
-const WON: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000a002);
-const SAM: Uuid = Uuid::from_u128(0x01990000_0000_7000_8000_00000000f001);
+const WON: OptionId = OptionId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000a002));
+const SAM: RowId = RowId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000f001));
 
 #[tokio::test]
 async fn every_transcript_reaches_its_outcome_through_soup() {
@@ -387,7 +393,9 @@ async fn a_table_read_is_its_rows_and_nothing_else() {
     );
     assert_eq!(
         reads[0].database_row_filter,
-        Some(Arc::new(Expr::val(DatabaseRowLiteral::TableId(DEALS))))
+        Some(Arc::new(Expr::val(DatabaseRowLiteral::TableId(
+            DEALS.into_uuid()
+        ))))
     );
     assert_eq!(reads[0].properties_filter, None);
     // Every other kind is excluded the way the browser excludes it.
@@ -419,14 +427,16 @@ async fn a_pushed_down_filter_is_the_soup_properties_filter() {
     assert_eq!(reads.len(), 1);
     assert_eq!(
         reads[0].database_row_filter,
-        Some(Arc::new(Expr::val(DatabaseRowLiteral::TableId(DEALS))))
+        Some(Arc::new(Expr::val(DatabaseRowLiteral::TableId(
+            DEALS.into_uuid()
+        ))))
     );
     assert_eq!(
         reads[0].properties_filter,
         Some(Arc::new(Expr::val(PropertiesLiteral {
             property_definition_id: STAGE,
             entity_type: None,
-            value: PropertyMatchValue::SelectOption(WON),
+            value: PropertyMatchValue::SelectOption(WON.into_uuid()),
         })))
     );
 }
@@ -437,13 +447,15 @@ async fn a_join_reads_only_the_joined_rows_it_can_match() {
     assert_eq!(reads.len(), 2);
     assert_eq!(
         reads[0].database_row_filter,
-        Some(Arc::new(Expr::val(DatabaseRowLiteral::TableId(DEALS))))
+        Some(Arc::new(Expr::val(DatabaseRowLiteral::TableId(
+            DEALS.into_uuid()
+        ))))
     );
     assert_eq!(
         reads[1].database_row_filter,
         Some(Arc::new(Expr::and(
-            Expr::val(DatabaseRowLiteral::TableId(PEOPLE)),
-            Expr::val(DatabaseRowLiteral::Id(SAM)),
+            Expr::val(DatabaseRowLiteral::TableId(PEOPLE.into_uuid())),
+            Expr::val(DatabaseRowLiteral::Id(SAM.into_uuid())),
         )))
     );
 }

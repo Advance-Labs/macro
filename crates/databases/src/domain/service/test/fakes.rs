@@ -81,7 +81,7 @@ impl DatabasesRepo for FakeRepo {
         first_table: FirstTable,
     ) -> Result<Database, FakeError> {
         let database = Database {
-            id: Uuid::new_v4(),
+            id: DatabaseId::new(),
             name: command.name.clone(),
             owner_id: command.owner_id.as_ref().to_string(),
             created_at: Utc::now(),
@@ -92,11 +92,11 @@ impl DatabasesRepo for FakeRepo {
             DataType::String,
             false,
             PropertyOwner::Database {
-                database_id: database.id,
+                database_id: database.id.into_uuid(),
             },
         );
         let table = Table {
-            id: Uuid::new_v4(),
+            id: TableId::new(),
             database_id: database.id,
             name: first_table.name.to_string(),
             position: key_between(None, None).unwrap(),
@@ -105,7 +105,7 @@ impl DatabasesRepo for FakeRepo {
         let mut world = self.0.lock().unwrap();
         world.databases.push(database.clone());
         world.columns.push(Column {
-            id: Uuid::new_v4(),
+            id: ColumnId::new(),
             table_id: table.id,
             property_definition_id: title.definition.id,
             display_name: None,
@@ -227,9 +227,9 @@ impl DatabasesRepo for FakeRepo {
         if siblings().any(|table| same_name(&table.name, &command.name)) {
             return Ok(TableMutationOutcome::Conflict);
         }
-        let last = siblings().map(|table| table.position.as_str()).max();
+        let last = siblings().map(|table| &table.position).max();
         let table = Table {
-            id: Uuid::new_v4(),
+            id: TableId::new(),
             database_id: command.database_id,
             name: command.name.clone(),
             position: key_between(last, None).unwrap(),
@@ -344,12 +344,12 @@ impl DatabasesRepo for FakeRepo {
             .columns
             .iter()
             .filter(|column| column.table_id == table_id)
-            .map(|column| column.position.as_str())
+            .map(|column| &column.position)
             .max();
         let column = Column {
             infer_type: command.infer_type,
             display_name: None,
-            id: Uuid::new_v4(),
+            id: ColumnId::new(),
             table_id,
             property_definition_id,
             position: key_between(last, None).unwrap(),
@@ -595,7 +595,7 @@ impl DatabasesRepo for FakeRepo {
         created_by: &MacroUserIdStr<'_>,
     ) -> Result<SavedQuery, FakeError> {
         let saved = SavedQuery {
-            id: Uuid::now_v7(),
+            id: QueryId::new(),
             definition: definition.clone(),
             database_id,
             created_by: Some(created_by.as_ref().to_string()),
@@ -701,7 +701,7 @@ impl CellStore for FakeCells {
                 .max()
                 .map_or(0, |highest| highest + 1);
             definition.property_options.push(PropertyOption {
-                id: option.id,
+                id: option.id.into_uuid(),
                 property_definition_id: option.definition_id,
                 display_order,
                 value: option.value.clone(),
@@ -772,7 +772,9 @@ impl ColumnDefinitionStore for FakeDefinitions {
             name,
             data_type,
             is_multi_select,
-            PropertyOwner::Database { database_id },
+            PropertyOwner::Database {
+                database_id: database_id.into_uuid(),
+            },
         );
         created.definition.specific_entity_type = specific_entity_type;
         created.property_options = options

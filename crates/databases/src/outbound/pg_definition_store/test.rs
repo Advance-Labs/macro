@@ -54,7 +54,7 @@ async fn insert_database(pool: &PgPool) -> DatabaseId {
     .execute(pool)
     .await
     .expect("database should insert");
-    id
+    DatabaseId::from_uuid(id)
 }
 
 async fn insert_option(
@@ -109,7 +109,12 @@ async fn a_typed_definition_is_owned_by_the_database(pool: PgPool) {
     assert!(!definition.is_system);
     // The whole point of the owner scope: the column is owned by the database,
     // so it never appears in the user's or a team's property list.
-    assert_eq!(definition.owner, PropertyOwner::Database { database_id });
+    assert_eq!(
+        definition.owner,
+        PropertyOwner::Database {
+            database_id: database_id.into_uuid()
+        }
+    );
     assert!(created.property_options.is_empty());
 }
 

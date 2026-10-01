@@ -44,7 +44,7 @@ use crate::domain::models::{
     TableMutationOutcome, TableVersion, Viewer,
 };
 use crate::domain::models::{
-    CardPosition, QueryDefinition, QueryId, SavedQuery, SavedQueryError, ViewId,
+    CardPosition, OptionId, QueryDefinition, QueryId, SavedQuery, SavedQueryError, ViewId,
 };
 use crate::domain::models::{
     ChangeColumnType, ColumnCast, ColumnReplacement, ColumnSchemaOutcome, ColumnTypeChangeOutcome,
@@ -88,7 +88,11 @@ fn repository_error<E: std::error::Error + Send + Sync + 'static>(e: E) -> Datab
 fn receipt_database_id<T: RequiredPermission>(
     receipt: &EntityAccessReceipt<T>,
 ) -> Result<DatabaseId, DatabaseError> {
-    Uuid::parse_str(&receipt.entity().entity_id).map_err(|_| DatabaseError::NotFound)
+    receipt
+        .entity()
+        .entity_id
+        .parse()
+        .map_err(|_| DatabaseError::NotFound)
 }
 
 /// The grant a receipt proves. Receipts minted for internal callers carry no

@@ -265,7 +265,7 @@ async fn inference_rejects_stale_wrong_database_trashed_and_fixed_columns() {
 
     let error = svc
         .infer_column_type(
-            receipt(Uuid::new_v4(), OWNER, AccessLevel::Edit),
+            receipt(DatabaseId::new(), OWNER, AccessLevel::Edit),
             command(TableVersion(1)),
         )
         .await

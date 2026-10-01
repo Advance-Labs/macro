@@ -18,7 +18,7 @@ fn fixture(name: &str) -> Value {
 /// The fixture's schema, built from its scope, as JSON.
 fn built(fixture: &Value) -> Value {
     let schema: Schema = serde_json::from_value(fixture["schema"].clone()).unwrap();
-    let scope: Option<Uuid> = serde_json::from_value(fixture["scope"].clone()).unwrap();
+    let scope: Option<DatabaseId> = serde_json::from_value(fixture["scope"].clone()).unwrap();
     serde_json::to_value(build(&schema, scope)).unwrap()
 }
 
@@ -50,14 +50,14 @@ fn people_join_the_databases_unless_the_scoped_database_has_its_own() {
         vec![(PEOPLE_TABLE, PLATFORM_DATABASE)]
     );
 
-    let own = Uuid::from_u128(0xdb);
+    let own = DatabaseId::from_uuid(Uuid::from_u128(0xdb));
     let catalog = build(
         &Schema {
             databases: vec![DatabaseSchema {
                 id: own,
                 name: "Macro".into(),
                 tables: vec![TableSchema {
-                    id: Uuid::from_u128(0x7a),
+                    id: TableId::from_uuid(Uuid::from_u128(0x7a)),
                     name: "People".into(),
                     columns: vec![],
                 }],
@@ -72,6 +72,6 @@ fn people_join_the_databases_unless_the_scoped_database_has_its_own() {
             .iter()
             .map(|table| table.id)
             .collect::<Vec<_>>(),
-        vec![Uuid::from_u128(0x7a)]
+        vec![TableId::from_uuid(Uuid::from_u128(0x7a))]
     );
 }

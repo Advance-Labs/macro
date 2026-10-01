@@ -230,7 +230,7 @@ async fn reorder_validates_complete_ids_and_delete_preserves_definitions() {
     for invalid in [
         vec![],
         vec![ids[0]; 3],
-        vec![Uuid::new_v4(); 3],
+        vec![ColumnId::new(); 3],
         vec![ids[0], ids[1]],
     ] {
         assert!(matches!(
@@ -331,7 +331,7 @@ async fn schema_mutations_reject_wrong_database_stale_and_trashed_database() {
     let elsewhere = Uuid::new_v4();
     assert!(matches!(
         svc.change_column_type(
-            receipt(elsewhere, OWNER, AccessLevel::Edit),
+            receipt(DatabaseId::from_uuid(elsewhere), OWNER, AccessLevel::Edit),
             viewer(OWNER),
             change(TableVersion(1))
         )
@@ -340,7 +340,7 @@ async fn schema_mutations_reject_wrong_database_stale_and_trashed_database() {
     ));
     assert!(matches!(
         svc.delete_column(
-            receipt(elsewhere, OWNER, AccessLevel::Edit),
+            receipt(DatabaseId::from_uuid(elsewhere), OWNER, AccessLevel::Edit),
             table_id,
             seeded.name_column.id,
             TableVersion(1)
@@ -350,7 +350,7 @@ async fn schema_mutations_reject_wrong_database_stale_and_trashed_database() {
     ));
     assert!(matches!(
         svc.reorder_columns(
-            receipt(elsewhere, OWNER, AccessLevel::Edit),
+            receipt(DatabaseId::from_uuid(elsewhere), OWNER, AccessLevel::Edit),
             table_id,
             ids.clone(),
             TableVersion(1)

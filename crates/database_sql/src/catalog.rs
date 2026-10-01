@@ -8,6 +8,7 @@ mod schema;
 
 use models_databases::EntityKind as OpEntityKind;
 use models_databases::cast::CastKind;
+use models_databases::{ColumnId, DatabaseId, OptionId, TableId};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use uuid::Uuid;
@@ -30,9 +31,9 @@ pub struct Catalog {
 #[serde(rename_all = "camelCase")]
 pub struct Table {
     /// The table id.
-    pub id: Uuid,
+    pub id: TableId,
     /// The database the table belongs to: where its writes are sent.
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
     /// The database the table belongs to, as users name it.
     pub database: String,
     /// The table's name, as users name it.
@@ -57,10 +58,12 @@ pub enum TableSource {
 }
 
 /// The database platform tables belong to. Nothing is written there.
-pub const PLATFORM_DATABASE: Uuid = Uuid::from_u128(0x6d61_6372_6f00_0000_0000_0000_0000_0000);
+pub const PLATFORM_DATABASE: DatabaseId =
+    DatabaseId::from_uuid(Uuid::from_u128(0x6d61_6372_6f00_0000_0000_0000_0000_0000));
 /// The id of the `people` table. Platform tables have fixed ids, so a saved
 /// query keeps meaning the same thing.
-pub const PEOPLE_TABLE: Uuid = Uuid::from_u128(0x6d61_6372_6f00_0000_0000_0000_7065_6f70);
+pub const PEOPLE_TABLE: TableId =
+    TableId::from_uuid(Uuid::from_u128(0x6d61_6372_6f00_0000_0000_0000_7065_6f70));
 /// `people.id`: the user's entity id.
 pub const PEOPLE_ID: Uuid = Uuid::from_u128(0x6d61_6372_6f00_0000_0000_0000_7065_6f71);
 /// `people.name`.
@@ -80,7 +83,7 @@ pub fn people_table() -> Table {
         columns: vec![
             Column {
                 id: PEOPLE_ID,
-                placement: PEOPLE_ID,
+                placement: ColumnId::from_uuid(PEOPLE_ID),
                 name: "id".into(),
                 kind: ColumnKind::Entity {
                     multi: false,
@@ -89,13 +92,13 @@ pub fn people_table() -> Table {
             },
             Column {
                 id: PEOPLE_NAME,
-                placement: PEOPLE_NAME,
+                placement: ColumnId::from_uuid(PEOPLE_NAME),
                 name: "name".into(),
                 kind: ColumnKind::Text,
             },
             Column {
                 id: PEOPLE_EMAIL,
-                placement: PEOPLE_EMAIL,
+                placement: ColumnId::from_uuid(PEOPLE_EMAIL),
                 name: "email".into(),
                 kind: ColumnKind::Text,
             },
@@ -111,7 +114,7 @@ pub struct Column {
     /// The property definition id: what reads key cells by.
     pub id: Uuid,
     /// The column placement: what writes name.
-    pub placement: Uuid,
+    pub placement: ColumnId,
     /// The column's display name.
     pub name: String,
     /// What the column holds.
@@ -243,7 +246,7 @@ impl TryFrom<EntityKind> for OpEntityKind {
 #[serde(rename_all = "camelCase")]
 pub struct SelectOption {
     /// The option id.
-    pub id: Uuid,
+    pub id: OptionId,
     /// The label users type in SQL.
     pub label: String,
 }

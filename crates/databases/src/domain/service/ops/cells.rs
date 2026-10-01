@@ -1,11 +1,10 @@
 //! Turning one row's cell writes into stored values, checked against each
 //! column's type and options as the ops before them leave those.
 
-use models_databases::{CellValue, CellWrite, OptionRef};
+use models_databases::{CellValue, CellWrite, OptionId, OptionRef};
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
 use models_properties::service::property_value::PropertyValue;
 use models_properties::shared::{DataType, EntityReference};
-use uuid::Uuid;
 
 use super::super::column_types::is_complete_url;
 use super::super::{option_label_key, takes_options, validate_option_labels};
@@ -103,14 +102,16 @@ impl Planner<'_> {
             }
             CellValue::Options(options) if takes_options(data_type) => {
                 single(options.len())?;
-                let mut ids: Vec<Uuid> = Vec::with_capacity(options.len());
+                let mut ids: Vec<OptionId> = Vec::with_capacity(options.len());
                 for option in options {
                     let id = self.option(place, column, option, create_missing_options)?;
                     if !ids.contains(&id) {
                         ids.push(id);
                     }
                 }
-                Ok((!ids.is_empty()).then_some(PropertyValue::SelectOption(ids)))
+                Ok((!ids.is_empty()).then(|| {
+                    PropertyValue::SelectOption(ids.into_iter().map(OptionId::into_uuid).collect())
+                }))
             }
             CellValue::Entities(references)
                 if data_type == DataType::Entity && !column.is_relation() =>
@@ -178,7 +179,7 @@ impl Planner<'_> {
         column: &ColumnEntry,
         option: &OptionRef,
         create_missing_options: bool,
-    ) -> Result<Uuid, DatabaseError> {
+    ) -> Result<OptionId, DatabaseError> {
         let definition = &column.definition;
         let data_type = definition.definition.data_type;
         let label = match option {
@@ -218,7 +219,7 @@ impl Planner<'_> {
             .into_iter()
             .next()
             .ok_or_else(|| place.refuse("an option label must not be empty"))?;
-        let id = macro_uuid::generate_uuid_v7();
+        let id = OptionId::new();
         self.labels_of(definition)
             .push((id, catalog::option_display(&value)));
         self.options.push(NewOption {
@@ -235,7 +236,7 @@ impl Planner<'_> {
     pub(super) fn labels_of(
         &mut self,
         definition: &PropertyDefinitionWithOptions,
-    ) -> &mut Vec<(Uuid, String)> {
+    ) -> &mut Vec<(OptionId, String)> {
         self.labels
             .entry(definition.definition.id)
             .or_insert_with(|| catalog::option_labels(definition))

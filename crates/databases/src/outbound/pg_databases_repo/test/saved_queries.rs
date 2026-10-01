@@ -20,7 +20,7 @@ async fn a_saved_query_round_trips_and_outlives_its_database(pool: PgPool) {
     );
     let stored = sqlx::query_scalar!(
         "SELECT definition FROM database_queries WHERE id = $1",
-        scoped.id
+        scoped.id.into_uuid()
     )
     .fetch_one(&pool)
     .await
@@ -42,7 +42,12 @@ async fn a_saved_query_round_trips_and_outlives_its_database(pool: PgPool) {
             ..scoped
         })
     );
-    assert_eq!(repo.get_query(Uuid::nil()).await.unwrap(), None);
+    assert_eq!(
+        repo.get_query(QueryId::from_uuid(Uuid::nil()))
+            .await
+            .unwrap(),
+        None
+    );
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]

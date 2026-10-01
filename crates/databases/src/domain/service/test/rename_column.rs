@@ -174,8 +174,8 @@ async fn rename_refuses_foreign_columns_tables_and_trashed_database() {
         .unwrap();
     for (receipt_db, target_table, target_column) in [
         (other.id, table_id, column.id),
-        (db, Uuid::new_v4(), column.id),
-        (db, table_id, Uuid::new_v4()),
+        (db, TableId::new(), column.id),
+        (db, table_id, ColumnId::new()),
     ] {
         let error = svc
             .rename_column(

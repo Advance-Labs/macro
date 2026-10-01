@@ -1,5 +1,5 @@
 use super::*;
-use crate::domain::models::SchemaError;
+use crate::domain::models::{DatabaseId, RowId, SchemaError, TableId};
 
 mod fakes;
 
@@ -46,8 +46,14 @@ fn a_new_column_binding_takes_its_fields_in_camel_case() {
     assert_eq!(data_type, DataType::SelectString);
     assert!(is_multi_select);
     assert_eq!(options, Some(vec!["Todo".to_string(), "Done".to_string()]));
-    assert_eq!(request.link_to_table_id, Some(Uuid::from_u128(7)));
-    assert_eq!(request.link_to_database_id, Some(Uuid::from_u128(8)));
+    assert_eq!(
+        request.link_to_table_id,
+        Some(TableId::from_uuid(Uuid::from_u128(7)))
+    );
+    assert_eq!(
+        request.link_to_database_id,
+        Some(DatabaseId::from_uuid(Uuid::from_u128(8)))
+    );
 }
 
 #[test]
@@ -106,8 +112,8 @@ fn an_infer_type_request_takes_camel_case_and_an_optional_entity_type() {
 
 #[test]
 fn a_table_order_request_takes_table_ids_in_camel_case() {
-    let first = Uuid::from_u128(1);
-    let second = Uuid::from_u128(2);
+    let first = TableId::from_uuid(Uuid::from_u128(1));
+    let second = TableId::from_uuid(Uuid::from_u128(2));
     let request: ReorderTablesRequest = serde_json::from_value(serde_json::json!({
         "tableIds": [second, first],
     }))
@@ -203,31 +209,31 @@ fn an_ops_body_reads_every_op_kind() {
         request.ops,
         vec![
             DatabaseOp::InsertRows {
-                table,
+                table: TableId::from_uuid(table),
                 rows: vec![vec![CellWrite {
-                    column,
+                    column: ColumnId::from_uuid(column),
                     value: CellValue::Text("Sam".into()),
                 }]],
                 create_missing_options: true,
             },
             DatabaseOp::UpdateRows {
-                table,
+                table: TableId::from_uuid(table),
                 changes: RowChanges::Uniform {
-                    rows: vec![row],
+                    rows: vec![RowId::from_uuid(row)],
                     cells: vec![CellWrite {
-                        column,
+                        column: ColumnId::from_uuid(column),
                         value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
                     }],
                 },
                 create_missing_options: false,
             },
             DatabaseOp::UpdateRows {
-                table,
+                table: TableId::from_uuid(table),
                 changes: RowChanges::PerRow {
                     rows: vec![RowChange {
-                        row,
+                        row: RowId::from_uuid(row),
                         cells: vec![CellWrite {
-                            column,
+                            column: ColumnId::from_uuid(column),
                             value: CellValue::Clear,
                         }],
                     }],
@@ -235,12 +241,12 @@ fn an_ops_body_reads_every_op_kind() {
                 create_missing_options: false,
             },
             DatabaseOp::DeleteRows {
-                table,
-                rows: vec![row],
+                table: TableId::from_uuid(table),
+                rows: vec![RowId::from_uuid(row)],
             },
             DatabaseOp::ChangeColumnType {
-                table,
-                column,
+                table: TableId::from_uuid(table),
+                column: ColumnId::from_uuid(column),
                 to: ColumnKind::Number,
                 clear_invalid: true,
             },
@@ -544,7 +550,7 @@ async fn a_refused_op_answers_where_it_was_refused() {
     let (status, body) = error_body(DatabaseError::InvalidOp(crate::domain::models::OpRefusal {
         op: 1,
         row: Some(2),
-        column: Some(column),
+        column: Some(ColumnId::from_uuid(column)),
         reason: "\"soon\" is not a number".into(),
     }))
     .await;

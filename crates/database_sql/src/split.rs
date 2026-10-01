@@ -18,6 +18,7 @@ mod test;
 
 use filter_ast::Expr;
 use item_filters::ast::properties::PropertiesLiteral;
+use models_databases::TableId;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use uuid::Uuid;
@@ -92,7 +93,7 @@ pub enum GqlQuery {
     /// `Query.soup` scoped to one table, paged to completion.
     Soup {
         /// The table whose rows are read.
-        table: Uuid,
+        table: TableId,
         /// The pushed-down part of `WHERE`, as the Soup `propf` expression.
         #[serde(rename = "propf")]
         #[specta(type = Option<Propf>)]
@@ -107,7 +108,7 @@ pub enum GqlQuery {
     /// without fetching rows.
     GroupSoup {
         /// The table whose rows are counted.
-        table: Uuid,
+        table: TableId,
         /// The pushed-down part of `WHERE`.
         #[serde(rename = "propf")]
         #[specta(type = Option<Propf>)]
@@ -315,7 +316,7 @@ impl Plan {
     }
 
     /// The `FROM` table.
-    pub fn table(&self) -> Uuid {
+    pub fn table(&self) -> TableId {
         self.relations[0].relation.table
     }
 }

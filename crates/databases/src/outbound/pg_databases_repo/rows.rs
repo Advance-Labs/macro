@@ -5,7 +5,7 @@ use sqlx::{PgConnection, PgExecutor};
 
 use models_databases::position::keys_between;
 
-use super::PgDatabasesRepoError;
+use super::{PgDatabasesRepoError, last_position, uuids};
 use crate::domain::models::{
     DatabaseId, PropertyDefinitionId, RowId, RowRef, TableId, TableVersion,
 };
@@ -18,7 +18,7 @@ pub(crate) async fn lock_live_database(
 ) -> Result<bool, sqlx::Error> {
     let live = sqlx::query_scalar!(
         "SELECT id FROM databases WHERE id = $1 AND trashed_at IS NULL FOR UPDATE",
-        database_id
+        database_id.into_uuid()
     )
     .fetch_optional(executor)
     .await?;
@@ -39,7 +39,7 @@ pub(crate) async fn append_rows(
         r#"SELECT t.id FROM database_tables t
                JOIN databases d ON d.id = t.database_id
                WHERE t.id = $1 AND d.trashed_at IS NULL FOR UPDATE OF t"#,
-        table_id,
+        table_id.into_uuid(),
     )
     .fetch_optional(&mut *connection)
     .await?;
@@ -48,19 +48,19 @@ pub(crate) async fn append_rows(
     }
     let max_position = sqlx::query_scalar!(
         "SELECT MAX(position) FROM database_rows WHERE table_id = $1",
-        table_id
+        table_id.into_uuid()
     )
     .fetch_one(&mut *connection)
     .await?;
-    let positions = keys_between(max_position.as_deref(), None, count)?;
+    let positions = keys_between(last_position(max_position)?.as_ref(), None, count)?;
     let mut rows = Vec::with_capacity(count);
     for position in positions {
-        let id = macro_uuid::generate_uuid_v7();
+        let id = RowId::new();
         sqlx::query!(
             "INSERT INTO database_rows (id, table_id, position, created_by) VALUES ($1, $2, $3, $4)",
-            id,
-            table_id,
-            position,
+            id.into_uuid(),
+            table_id.into_uuid(),
+            position.as_str(),
             created_by,
         )
         .execute(&mut *connection)
@@ -78,8 +78,8 @@ pub(crate) async fn delete_row(
 ) -> Result<bool, sqlx::Error> {
     let deleted = sqlx::query!(
         "DELETE FROM database_rows WHERE id = $1 AND table_id = $2",
-        row_id,
-        table_id,
+        row_id.into_uuid(),
+        table_id.into_uuid(),
     )
     .execute(executor)
     .await?;
@@ -98,7 +98,7 @@ pub(crate) async fn settle_inference(
     sqlx::query!(
         "UPDATE database_columns SET infer_type = FALSE
              WHERE infer_type AND table_id = $1 AND property_definition_id = ANY($2)",
-        table_id,
+        table_id.into_uuid(),
         definitions,
     )
     .execute(executor)
@@ -113,7 +113,7 @@ pub(crate) async fn bump_table_version(
 ) -> Result<TableVersion, sqlx::Error> {
     let version = sqlx::query_scalar!(
         r#"UPDATE database_tables SET version = version + 1 WHERE id = $1 RETURNING version"#,
-        table_id
+        table_id.into_uuid()
     )
     .fetch_one(executor)
     .await?;
@@ -132,10 +132,11 @@ pub(crate) async fn lock_live_tables(
            WHERE t.id = ANY($1) AND d.trashed_at IS NULL
            ORDER BY t.id
            FOR UPDATE OF t"#,
-        table_ids,
+        &uuids(table_ids),
     )
     .fetch_all(executor)
     .await
+    .map(|ids| ids.into_iter().map(TableId::from_uuid).collect())
 }
 
 /// Lock the rows among `row_ids` that belong to the table, for writing,
@@ -147,11 +148,12 @@ pub(crate) async fn lock_rows(
 ) -> Result<Vec<RowId>, sqlx::Error> {
     sqlx::query_scalar!(
         "SELECT id FROM database_rows WHERE table_id = $1 AND id = ANY($2) ORDER BY id FOR UPDATE",
-        table_id,
-        row_ids,
+        table_id.into_uuid(),
+        &uuids(row_ids),
     )
     .fetch_all(executor)
     .await
+    .map(|ids| ids.into_iter().map(RowId::from_uuid).collect())
 }
 
 /// Keep the rows among `row_ids` that belong to the table from being deleted
@@ -163,9 +165,10 @@ pub(crate) async fn hold_rows(
 ) -> Result<Vec<RowId>, sqlx::Error> {
     sqlx::query_scalar!(
         "SELECT id FROM database_rows WHERE table_id = $1 AND id = ANY($2) ORDER BY id FOR KEY SHARE",
-        table_id,
-        row_ids,
+        table_id.into_uuid(),
+        &uuids(row_ids),
     )
     .fetch_all(executor)
     .await
+    .map(|ids| ids.into_iter().map(RowId::from_uuid).collect())
 }

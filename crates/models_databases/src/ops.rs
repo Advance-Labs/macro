@@ -5,7 +5,6 @@ mod test;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
-use uuid::Uuid;
 
 use crate::ids::{ColumnId, DatabaseId, OptionId, RowId, TableId, TableVersion};
 use crate::views::{
@@ -303,7 +302,8 @@ pub enum CellValue {
 #[serde(rename_all = "snake_case")]
 pub enum OptionRef {
     /// An option the column has.
-    Id(Uuid),
+    #[schema(value_type = Uuid)]
+    Id(OptionId),
     /// An option's label, matched without regard to case. An unknown label
     /// is refused unless the op creates missing options.
     Label(String),

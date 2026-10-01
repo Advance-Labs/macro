@@ -5,9 +5,9 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
+use models_databases::{DatabaseId, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::{
     DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, database_error,
@@ -35,13 +35,13 @@ before continuing."
 pub struct ReorderTables {
     /// The database whose tables to reorder.
     #[schemars(description = "Id of the database, from ListDatabases.")]
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
     /// Every table id, in the new order.
     #[schemars(
         description = "Every table id of the database, exactly once, in the new left-to-right \
                        order, from DescribeDatabase."
     )]
-    pub table_ids: Vec<Uuid>,
+    pub table_ids: Vec<TableId>,
 }
 
 impl ToolAnnotated for ReorderTables {
@@ -54,9 +54,9 @@ impl ToolAnnotated for ReorderTables {
 #[serde(rename_all = "camelCase")]
 pub struct ReorderTablesResponse {
     /// Database whose tables were reordered.
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
     /// The table ids in their new order.
-    pub table_ids: Vec<Uuid>,
+    pub table_ids: Vec<TableId>,
     /// The database's schema after the change.
     pub database: Option<ToolDatabaseSchema>,
     /// A failed follow-up read does not undo the committed order.

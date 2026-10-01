@@ -41,7 +41,7 @@ fn pushable_and_residual_conjuncts_are_divided() {
                     property_filter: Some(Expr::Literal(PropertiesLiteral {
                         property_definition_id: STAGE,
                         entity_type: None,
-                        value: PropertyMatchValue::SelectOption(WON)
+                        value: PropertyMatchValue::SelectOption(WON.into_uuid())
                     })),
                     key_hint: None,
                 },
@@ -141,12 +141,12 @@ fn in_lists_nested_ors_and_has_push_as_one_expression() {
                                 Expr::Literal(PropertiesLiteral {
                                     property_definition_id: STAGE,
                                     entity_type: None,
-                                    value: PropertyMatchValue::SelectOption(WON)
+                                    value: PropertyMatchValue::SelectOption(WON.into_uuid())
                                 }),
                                 Expr::Literal(PropertiesLiteral {
                                     property_definition_id: STAGE,
                                     entity_type: None,
-                                    value: PropertyMatchValue::SelectOption(LEAD)
+                                    value: PropertyMatchValue::SelectOption(LEAD.into_uuid())
                                 })
                             ),
                             Expr::Literal(PropertiesLiteral {
@@ -160,7 +160,7 @@ fn in_lists_nested_ors_and_has_push_as_one_expression() {
                         Expr::Literal(PropertiesLiteral {
                             property_definition_id: TAGS,
                             entity_type: None,
-                            value: PropertyMatchValue::SelectOption(VIP)
+                            value: PropertyMatchValue::SelectOption(VIP.into_uuid())
                         }),
                     )),
                     key_hint: None,
@@ -326,12 +326,12 @@ fn any_other_aggregate_or_a_residual_filter_fetches_rows_and_folds() {
                         Expr::Literal(PropertiesLiteral {
                             property_definition_id: STAGE,
                             entity_type: None,
-                            value: PropertyMatchValue::SelectOption(WON)
+                            value: PropertyMatchValue::SelectOption(WON.into_uuid())
                         }),
                         Expr::Literal(PropertiesLiteral {
                             property_definition_id: STAGE,
                             entity_type: None,
-                            value: PropertyMatchValue::SelectOption(LEAD)
+                            value: PropertyMatchValue::SelectOption(LEAD.into_uuid())
                         })
                     )),
                     key_hint: None,
@@ -462,7 +462,7 @@ fn each_relation_gets_its_own_pushdown_and_needs() {
                     property_filter: Some(Expr::Literal(PropertiesLiteral {
                         property_definition_id: PRIORITY,
                         entity_type: None,
-                        value: PropertyMatchValue::SelectOption(HIGH)
+                        value: PropertyMatchValue::SelectOption(HIGH.into_uuid())
                     })),
                     key_hint: None,
                 },
@@ -489,7 +489,7 @@ fn each_relation_gets_its_own_pushdown_and_needs() {
                     property_filter: Some(Expr::Literal(PropertiesLiteral {
                         property_definition_id: STAGE,
                         entity_type: None,
-                        value: PropertyMatchValue::SelectOption(WON)
+                        value: PropertyMatchValue::SelectOption(WON.into_uuid())
                     })),
                     key_hint: None,
                 },

@@ -2,7 +2,7 @@
 /**  A column whose type an `ALTER COLUMN` changed. */
 export type AlteredColumn = {
   /**  The table. */
-  table: string;
+  table: TableId;
   /**  The column's property definition before the change. */
   column: string;
   /**  The type it became, as SQL spells it. */
@@ -39,11 +39,11 @@ export type Board = {
 /**  One lane and its cards. */
 export type BoardLane = {
   /**  The option whose cards the lane holds; `null` for cards without one. */
-  option: string | null;
+  option: OptionId | null;
   /**  Whether the lane is hidden: by the layout, or for being empty. */
   hidden: boolean;
   /**  The cards' rows, in display order. */
-  cards: string[];
+  cards: RowId[];
 };
 
 /**
@@ -53,14 +53,14 @@ export type BoardLane = {
  */
 export type CardPosition = {
   /**  The card's row. */
-  row: string;
+  row: RowId;
   /**
    *  The lane: an option of the board's column, `null` for the lane of
    *  cards without one.
    */
-  lane: string | null;
+  lane: OptionId | null;
   /**  The card's key in that lane. */
-  position: string;
+  position: Position;
 };
 
 /**  Every table a statement may name. */
@@ -83,7 +83,7 @@ export type Cell =
   /**  A date-time. */
   | { type: 'date'; value: string }
   /**  The selected option ids; one for single-select columns. */
-  | { type: 'options'; value: string[] }
+  | { type: 'options'; value: OptionId[] }
   /**  The referenced entity ids; one for single-valued columns. */
   | { type: 'entities'; value: string[] };
 
@@ -113,14 +113,14 @@ export type CellValue =
    */
   | { type: 'entities'; value: EntityRef[] }
   /**  Rows of the table a relation column points at. */
-  | { type: 'rows'; value: string[] }
+  | { type: 'rows'; value: RowId[] }
   /**  No value: the cell is emptied. */
   | { type: 'clear' };
 
 /**  One cell of a row: which column, and its new value. */
 export type CellWrite = {
   /**  The column placement. */
-  column: string;
+  column: ColumnId;
   /**  The value, or [`CellValue::Clear`] to empty the cell. */
   value: CellValue;
 };
@@ -130,12 +130,15 @@ export type Column = {
   /**  The property definition id: what reads key cells by. */
   id: string;
   /**  The column placement: what writes name. */
-  placement: string;
+  placement: ColumnId;
   /**  The column's display name. */
   name: string;
   /**  What the column holds. */
   kind: ColumnKind;
 };
+
+/**  Identifier of a column placement within a table. */
+export type ColumnId = string;
 
 /**
  *  The value type of a column, mirroring the property data types a query can
@@ -173,7 +176,7 @@ export type ColumnKind =
 /**  One column placement and the property definition behind it. */
 export type ColumnSchema = {
   /**  The placement. */
-  id: string;
+  id: ColumnId;
   /**  The property definition. */
   definition: string;
   /**  The name it goes by: the placement's own, else the definition's. */
@@ -212,6 +215,9 @@ export type DataType =
   /**  References to entities. */
   | 'ENTITY';
 
+/**  Identifier of a database (the shareable entity users see). */
+export type DatabaseId = string;
+
 /**
  *  One write to a database's data. A request's ops apply together or not at
  *  all, and every op names a table of the database the request is for.
@@ -221,7 +227,7 @@ export type DatabaseOp =
   | {
       kind: 'insert_rows';
       /**  The table. */
-      table: string;
+      table: TableId;
       /**
        *  One entry per new row: the cells it starts with. Columns left out
        *  start empty.
@@ -240,7 +246,7 @@ export type DatabaseOp =
   | {
       kind: 'update_rows';
       /**  The table the rows belong to. */
-      table: string;
+      table: TableId;
       /**  Which rows get which cells. */
       changes: RowChanges;
       /**
@@ -253,9 +259,9 @@ export type DatabaseOp =
   | {
       kind: 'delete_rows';
       /**  The table the rows belong to. */
-      table: string;
+      table: TableId;
       /**  The rows, each named once. */
-      rows: string[];
+      rows: RowId[];
     }
   /**
    *  Convert a column to another type, converting its cells. A value that
@@ -264,9 +270,9 @@ export type DatabaseOp =
   | {
       kind: 'change_column_type';
       /**  The table. */
-      table: string;
+      table: TableId;
       /**  The column placement; its id survives the change. */
-      column: string;
+      column: ColumnId;
       /**  The type it becomes. */
       to: OpColumnKind;
       /**
@@ -285,11 +291,11 @@ export type DatabaseOp =
   | {
       kind: 'update_option';
       /**  The table. */
-      table: string;
+      table: TableId;
       /**  The select or tag column. */
-      column: string;
+      column: ColumnId;
       /**  The option. */
-      option: string;
+      option: OptionId;
       /**
        *  Its new label; left out, it keeps its own. Labels are unique
        *  within a column, ignoring case.
@@ -310,17 +316,17 @@ export type DatabaseOp =
   | {
       kind: 'delete_option';
       /**  The table. */
-      table: string;
+      table: TableId;
       /**  The select or tag column. */
-      column: string;
+      column: ColumnId;
       /**  The option. */
-      option: string;
+      option: OptionId;
     }
   /**  Add a view of the table, after its other views. */
   | {
       kind: 'create_view';
       /**  The table. */
-      table: string;
+      table: TableId;
       /**  What it shows and how. */
       view: NewView;
     }
@@ -328,9 +334,9 @@ export type DatabaseOp =
   | {
       kind: 'update_view';
       /**  The view's table. */
-      table: string;
+      table: TableId;
       /**  The view. */
-      view: string;
+      view: ViewId;
       /**  Its new name. */
       name?: string | null;
       /**  Its new query. */
@@ -345,9 +351,9 @@ export type DatabaseOp =
   | {
       kind: 'delete_view';
       /**  The view's table. */
-      table: string;
+      table: TableId;
       /**  The view. */
-      view: string;
+      view: ViewId;
     }
   /**
    *  Set the order of a table's views: `order` names every one of them
@@ -356,9 +362,9 @@ export type DatabaseOp =
   | {
       kind: 'reorder_views';
       /**  The table. */
-      table: string;
+      table: TableId;
       /**  Its views, in their new order. */
-      order: string[];
+      order: ViewId[];
     }
   /**
    *  Move a board's card: into a lane, which sets the row's grouping cell
@@ -369,33 +375,33 @@ export type DatabaseOp =
   | {
       kind: 'move_card';
       /**  The view's table. */
-      table: string;
+      table: TableId;
       /**  The board. */
-      view: string;
+      view: ViewId;
       /**  The card's row. */
-      row: string;
+      row: RowId;
       /**
        *  The lane it goes to: an option of the board's column, or `null`
        *  for the lane of cards without one.
        */
-      lane: string | null;
+      lane: OptionId | null;
       /**
        *  The card that ends up just before it (it lands right after this
        *  one), if any.
        */
-      before?: string | null;
+      before?: RowId | null;
       /**
        *  The card that ends up just after it, if any. Given with `before`,
        *  it must be the card right after `before`; with neither, the card
        *  goes to the end of the lane.
        */
-      after?: string | null;
+      after?: RowId | null;
     };
 
 /**  One database and its tables, in order. */
 export type DatabaseSchema = {
   /**  The database id. */
-  id: string;
+  id: DatabaseId;
   /**  Its name, as users name it. */
   name: string;
   /**  Its tables. */
@@ -405,15 +411,15 @@ export type DatabaseSchema = {
 /**  A view of one table, as stored. */
 export type DatabaseView = {
   /**  The view. */
-  id: string;
+  id: ViewId;
   /**  The database the table belongs to. */
-  databaseId: string;
+  databaseId: DatabaseId;
   /**  The table it shows. */
-  tableId: string;
+  tableId: TableId;
   /**  Its name, unique among the table's views ignoring case. */
   name: string;
   /**  Where it sorts among the table's views: a fractional key. */
-  position: string;
+  position: Position;
   /**  Which rows it shows, in what order. */
   query: ViewQuery;
   /**  How it draws them. */
@@ -491,7 +497,7 @@ export type EntityRef = {
 /**  A test of one column's cells. */
 export type FilterCondition = {
   /**  The column tested. */
-  column: string;
+  column: ColumnId;
   /**  What its cell must be. The test's kind must fit the column's type. */
   test: FilterTest;
 };
@@ -565,7 +571,7 @@ export type FilterTest =
       /**  How the cell's options relate to these. */
       operator: SetOperator;
       /**  Options of the column; at least one. */
-      options: string[];
+      options: OptionId[];
     }
   /**  A reference or relation column. */
   | {
@@ -585,7 +591,7 @@ export type GqlQuery =
   | {
       type: 'soup';
       /**  The table whose rows are read. */
-      table: string;
+      table: TableId;
       /**  The pushed-down part of `WHERE`, as the Soup `propf` expression. */
       propf: Propf | null;
       /**
@@ -603,7 +609,7 @@ export type GqlQuery =
   | {
       type: 'groupSoup';
       /**  The table whose rows are counted. */
-      table: string;
+      table: TableId;
       /**  The pushed-down part of `WHERE`. */
       propf: Propf | null;
       /**  The column whose values form the bins. */
@@ -653,7 +659,7 @@ export type KeyHint = {
 /**  How one lane shows in a board layout. */
 export type Lane = {
   /**  The option the lane holds the cards of; `null` for cards without one. */
-  option: string | null;
+  option: OptionId | null;
   /**  Whether it is hidden. */
   hidden?: boolean;
 };
@@ -724,9 +730,9 @@ export type OpColumnKind =
   | {
       type: 'relation';
       /**  The database of the related table. */
-      database: string;
+      database: DatabaseId;
       /**  The related table. */
-      table: string;
+      table: TableId;
     };
 
 /**  A kind of Macro entity a reference column can point at. */
@@ -765,7 +771,7 @@ export type OpResult =
        *  The rows an insert created, in the order they were sent; empty
        *  for an update or a delete.
        */
-      inserted: string[];
+      inserted: RowId[];
       /**  How many rows the op inserted, updated or deleted. */
       affected: number;
     }
@@ -833,10 +839,13 @@ export type OpResultKind =
   /**  [`OpResult::CardMoved`]. */
   | 'cardMoved';
 
+/**  Identifier of an option of a select or tag column. */
+export type OptionId = string;
+
 /**  A select option, by its id or by its label. */
 export type OptionRef =
   /**  An option the column has. */
-  | ({ id: string } & { label?: never })
+  | ({ id: OptionId } & { label?: never })
   /**
    *  An option's label, matched without regard to case. An unknown label
    *  is refused unless the op creates missing options.
@@ -846,7 +855,7 @@ export type OptionRef =
 /**  One option of a select definition. */
 export type OptionSchema = {
   /**  The option id. */
-  id: string;
+  id: OptionId;
   /**  Its value. */
   value: OptionValue;
   /**  Where it sorts among the definition's options. */
@@ -867,13 +876,13 @@ export type Outcome = {
   /**  The result rows. */
   rows: (Cell | null)[][];
   /**  For a row-shaped result, the row entity id behind each result row. */
-  rowIds: string[];
+  rowIds: RowId[];
   /**  The tables read, so a caller can watch them for changes. */
-  readTables: string[];
+  readTables: TableId[];
   /**  Whether the read hit [`ROW_CAP`], making aggregates partial. */
   truncated: boolean;
   /**  Rows an `INSERT` created, in statement order for the rows that landed. */
-  insertedRowIds: string[];
+  insertedRowIds: RowId[];
   /**  Rows a write changed. */
   changesApplied: number;
   /**  The column an `ALTER COLUMN` changed. */
@@ -929,6 +938,16 @@ export type PlatformTable =
   /**  `macro.people`. */
   'people';
 
+/**
+ *  A fractional key: the lowercase hex form of a [`FractionalIndex`], kept as
+ *  that string so it orders, compares and travels exactly as it is stored.
+ *  Hex of fixed-width bytes sorts as the bytes do, so the derived [`Ord`] is
+ *  the stored `COLLATE "C"` order. Minted by [`key_between`] and
+ *  [`keys_between`], or read back through [`FromStr`] / [`TryFrom<String>`],
+ *  which accept only a key one of them could have minted.
+ */
+export type Position = string;
+
 /**  Whether a cell is empty. */
 export type PresenceOperator =
   /**  The cell holds nothing. */
@@ -973,7 +992,7 @@ export type PropfLiteral = {
 /**  The value a property is matched against. */
 export type PropfValue =
   /**  A select option id. */
-  | ({ so: string } & { er?: never })
+  | ({ so: OptionId } & { er?: never })
   /**  A referenced entity id. */
   | ({ er: string } & { so?: never });
 
@@ -1233,12 +1252,12 @@ export type ResolveError =
  */
 export type Row = {
   /**  The row entity id. */
-  id: string;
+  id: RowId;
   /**
    *  The row's place in its table, a fractional index that sorts as text;
    *  `None` for rows that are not table rows, such as people.
    */
-  position?: string | null;
+  position?: Position | null;
   /**  Cells by column; a missing column is an empty cell. */
   cells: { [key in string]: Cell };
 };
@@ -1246,7 +1265,7 @@ export type Row = {
 /**  One row's cells in a [`RowChanges::PerRow`] update. */
 export type RowChange = {
   /**  The row. */
-  row: string;
+  row: RowId;
   /**  Its new cells. */
   cells: CellWrite[];
 };
@@ -1257,7 +1276,7 @@ export type RowChanges =
   | {
       kind: 'uniform';
       /**  The rows. */
-      rows: string[];
+      rows: RowId[];
       /**  The cells each of them gets. */
       cells: CellWrite[];
     }
@@ -1267,6 +1286,9 @@ export type RowChanges =
       /**  The rows and their cells, in order. */
       rows: RowChange[];
     };
+
+/**  Identifier of a row. */
+export type RowId = string;
 
 /**
  *  Why a statement did not run, as one typed union: each failure is a
@@ -1298,7 +1320,7 @@ export type RunError =
       /**  Where the row is named in the statement's list of ids, from 1. */
       position: number;
       /**  The row. */
-      row: string;
+      row: RowId;
     } & {
       expected?: never;
       fed?: never;
@@ -1489,7 +1511,7 @@ export type Schema = {
 /**  One option of a select column. */
 export type SelectOption = {
   /**  The option id. */
-  id: string;
+  id: OptionId;
   /**  The label users type in SQL. */
   label: string;
 };
@@ -1527,7 +1549,7 @@ export type SortDirection =
 /**  One sort key. */
 export type SortKey = {
   /**  The column sorted on. */
-  column: string;
+  column: ColumnId;
   /**  Which way. */
   direction: SortDirection;
 };
@@ -1560,7 +1582,7 @@ export type Step =
       /**  Identifies the request; the feed must quote it. */
       id: number;
       /**  The database the ops are for. */
-      database: string;
+      database: DatabaseId;
       /**  The ops, in order. */
       ops: DatabaseOp[];
     }
@@ -1572,9 +1594,9 @@ export type Step =
 /**  One table and its columns, in display order. */
 export type Table = {
   /**  The table id. */
-  id: string;
+  id: TableId;
   /**  The database the table belongs to: where its writes are sent. */
-  databaseId: string;
+  databaseId: DatabaseId;
   /**  The database the table belongs to, as users name it. */
   database: string;
   /**  The table's name, as users name it. */
@@ -1585,13 +1607,16 @@ export type Table = {
   source?: TableSource;
 };
 
+/**  Identifier of one table (tab) within a database. */
+export type TableId = string;
+
 /**
  *  One table and its columns, in display order. Derived columns (lookups)
  *  are left out: they have no cells.
  */
 export type TableSchema = {
   /**  The table id. */
-  id: string;
+  id: TableId;
   /**  Its name. */
   name: string;
   /**  Its columns. */
@@ -1648,12 +1673,15 @@ export type ValueKind =
 /**  How one column shows in a table layout. */
 export type ViewColumn = {
   /**  The column. */
-  column: string;
+  column: ColumnId;
   /**  Its width in pixels; the default when unset. */
   width?: number | null;
   /**  Whether it is hidden. */
   hidden?: boolean;
 };
+
+/**  Identifier of a saved view of a table. */
+export type ViewId = string;
 
 /**  How a view draws its rows. */
 export type ViewLayout =
@@ -1678,7 +1706,7 @@ export type ViewLayout =
        *  The single-select column whose options are the lanes; moving a
        *  card to another lane sets this column.
        */
-      groupBy: string;
+      groupBy: ColumnId;
       /**
        *  How lanes show, in display order. A lane left out shows after the
        *  listed ones, options in the column's order; the lane of cards
@@ -1686,7 +1714,7 @@ export type ViewLayout =
        */
       lanes: Lane[];
       /**  The columns a card shows, in order. */
-      cardFields: string[];
+      cardFields: ColumnId[];
       /**  Whether a lane with no cards is hidden. */
       hideEmptyLanes: boolean;
     };
@@ -1694,9 +1722,9 @@ export type ViewLayout =
 /**  A view's place among its table's views. */
 export type ViewPosition = {
   /**  The view. */
-  view: string;
+  view: ViewId;
   /**  Its key. */
-  position: string;
+  position: Position;
 };
 
 /**  Why a view does not fit its table. */
@@ -1705,13 +1733,13 @@ export type ViewProblem =
   | {
       kind: 'unknownTable';
       /**  The table's id. */
-      table: string;
+      table: TableId;
     }
   /**  An id names no column of the table. */
   | {
       kind: 'unknownColumn';
       /**  The id. */
-      column: string;
+      column: ColumnId;
     }
   /**  An id names no option of the column. */
   | {
@@ -1719,7 +1747,7 @@ export type ViewProblem =
       /**  The column's name. */
       column: string;
       /**  The id. */
-      option: string;
+      option: OptionId;
     }
   /**  A test of one kind of value tests a column holding another. */
   | {

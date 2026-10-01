@@ -60,7 +60,7 @@ async fn reordering_three_tables_rewrites_every_position_and_reads_back_in_order
         .await
         .unwrap(),
     );
-    assert_eq!(notes.position, "8280");
+    assert_eq!(notes.position.as_str(), "8280");
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]

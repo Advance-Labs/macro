@@ -12,12 +12,15 @@ impl<Properties> PgDatabasesRepo<Properties> {
         if !rows::lock_live_database(&mut *transaction, database_id).await? {
             return Ok(TableOrderOutcome::NotFound);
         }
-        let mut current = sqlx::query_scalar!(
+        let mut current: Vec<TableId> = sqlx::query_scalar!(
             "SELECT id FROM database_tables WHERE database_id = $1",
-            database_id
+            database_id.into_uuid()
         )
         .fetch_all(&mut *transaction)
-        .await?;
+        .await?
+        .into_iter()
+        .map(TableId::from_uuid)
+        .collect();
         let mut requested = ids.to_vec();
         current.sort_unstable();
         requested.sort_unstable();
@@ -34,14 +37,14 @@ impl<Properties> PgDatabasesRepo<Properties> {
             WHERE t.id = ordered.id AND t.database_id = $1
             RETURNING t.id, t.database_id, t.name, t.position, t.version
             "#,
-            database_id,
-            ids,
-            &positions,
+            database_id.into_uuid(),
+            &uuids(ids),
+            &stored_positions(&positions),
         )
         .fetch_all(&mut *transaction)
         .await?;
         transaction.commit().await?;
-        let mut tables: Vec<Table> = tables.into_iter().map(Table::from).collect();
+        let mut tables = tables_of(tables)?;
         tables.sort_by(|left, right| left.position.cmp(&right.position));
         Ok(TableOrderOutcome::Applied(tables))
     }

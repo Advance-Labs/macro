@@ -1,12 +1,15 @@
 use super::*;
+use databases::domain::models::{ColumnId, TableId};
 use databases_sql::SqlStatement;
 use databases_sql::toolset::QueryDatabaseResponse;
 use serde_json::json;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-const GUESTS: Uuid = Uuid::from_u128(0x0e11_0000_0000_0000_0000_0000_0000_0001);
-const STATUS: Uuid = Uuid::from_u128(0x0e11_0000_0000_0000_0000_0000_0000_0002);
+const GUESTS: TableId =
+    TableId::from_uuid(Uuid::from_u128(0x0e11_0000_0000_0000_0000_0000_0000_0001));
+const STATUS: ColumnId =
+    ColumnId::from_uuid(Uuid::from_u128(0x0e11_0000_0000_0000_0000_0000_0000_0002));
 
 #[test]
 fn only_successful_tool_results_acknowledge_changes() {

@@ -15,25 +15,27 @@ pub(crate) async fn lock_column_tables(
         "SELECT t.id AS table_id, d.id AS database_id, d.trashed_at
              FROM database_tables t JOIN databases d ON d.id = t.database_id
              WHERE t.id = ANY($1) ORDER BY d.id, t.id FOR SHARE OF d",
-        ids
+        &uuids(ids)
     )
     .fetch_all(&mut *transaction)
     .await?;
     if !databases.iter().any(|row| {
-        row.table_id == table.id && row.database_id == table.database_id && row.trashed_at.is_none()
+        row.table_id == table.id.into_uuid()
+            && row.database_id == table.database_id.into_uuid()
+            && row.trashed_at.is_none()
     }) {
         transaction.rollback().await?;
         return Ok(None);
     }
     let versions = sqlx::query!(
         "SELECT id, version FROM database_tables WHERE id = ANY($1) ORDER BY id FOR UPDATE",
-        ids
+        &uuids(ids)
     )
     .fetch_all(&mut *transaction)
     .await?;
     if !versions
         .iter()
-        .any(|row| row.id == table.id && row.version == table.version.0)
+        .any(|row| row.id == table.id.into_uuid() && row.version == table.version.0)
     {
         transaction.rollback().await?;
         return Ok(None);
@@ -57,8 +59,8 @@ pub(crate) async fn rebind_placement(
     let changed = sqlx::query!(
         "UPDATE database_columns SET property_definition_id = $4, config = $5, infer_type = false
              WHERE id = $1 AND table_id = $2 AND property_definition_id = $3",
-        replacement.column.id,
-        table.id,
+        replacement.column.id.into_uuid(),
+        table.id.into_uuid(),
         replacement.column.property_definition_id,
         replacement.definition_id,
         config
@@ -86,8 +88,8 @@ impl<Properties> PgDatabasesRepo<Properties> {
         };
         let changed = sqlx::query!(
             "DELETE FROM database_columns WHERE id = $1 AND table_id = $2 AND property_definition_id = $3",
-            column.id,
-            table.id,
+            column.id.into_uuid(),
+            table.id.into_uuid(),
             column.property_definition_id
         )
         .execute(&mut *transaction)
@@ -98,7 +100,7 @@ impl<Properties> PgDatabasesRepo<Properties> {
         }
         let versions = sqlx::query!(
             "UPDATE database_tables SET version = version + 1 WHERE id = ANY($1) RETURNING id, version",
-            &tables
+            &uuids(&tables)
         )
         .fetch_all(&mut *transaction)
         .await?;
@@ -106,7 +108,7 @@ impl<Properties> PgDatabasesRepo<Properties> {
         Ok(Some(ColumnSchemaOutcome {
             table_versions: versions
                 .into_iter()
-                .map(|row| (row.id, TableVersion(row.version)))
+                .map(|row| (TableId::from_uuid(row.id), TableVersion(row.version)))
                 .collect(),
         }))
     }
@@ -123,9 +125,9 @@ impl<Properties> PgDatabasesRepo<Properties> {
         for (id, position) in ids.iter().zip(keys_between(None, None, ids.len())?) {
             let result = sqlx::query!(
                 "UPDATE database_columns SET position = $3 WHERE id = $1 AND table_id = $2",
-                id,
-                table.id,
-                position
+                id.into_uuid(),
+                table.id.into_uuid(),
+                position.as_str()
             )
             .execute(&mut *transaction)
             .await?;

@@ -19,7 +19,7 @@ mod test;
 
 use std::collections::HashSet;
 
-use models_databases::{DatabaseOp, OpResult};
+use models_databases::{DatabaseId, DatabaseOp, OpResult, RowId, TableId};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use uuid::Uuid;
@@ -49,7 +49,7 @@ pub enum Step {
         /// Identifies the request; the feed must quote it.
         id: u32,
         /// The database the ops are for.
-        database: Uuid,
+        database: DatabaseId,
         /// The ops, in order.
         ops: Vec<DatabaseOp>,
     },
@@ -247,7 +247,8 @@ impl Engine {
                     .insert(id_key, Cell::Entities(vec![row.id.to_string()]));
             }
             if positions && let Some(position) = &row.position {
-                row.cells.insert(position_key, Cell::Text(position.clone()));
+                row.cells
+                    .insert(position_key, Cell::Text(position.to_string()));
             }
         }
         read.current += 1;
@@ -297,7 +298,7 @@ impl Engine {
     }
 
     /// Ask for one op to be applied to the database `table` belongs to.
-    fn send(&mut self, table_id: Uuid, sent: Sent, op: DatabaseOp) -> Step {
+    fn send(&mut self, table_id: TableId, sent: Sent, op: DatabaseOp) -> Step {
         let database = table(&self.catalog, table_id).database_id;
         self.sent = Some(sent);
         Step::Ops {
@@ -369,7 +370,7 @@ impl Read {
         })
     }
 
-    fn outcome(&self, rows: crate::fold::Table, row_ids: Vec<Uuid>) -> Outcome {
+    fn outcome(&self, rows: crate::fold::Table, row_ids: Vec<RowId>) -> Outcome {
         Outcome {
             columns: self.columns.clone(),
             rows,
@@ -467,7 +468,7 @@ fn keyed(catalog: &Catalog, read: &Read, rows: Vec<Row>) -> Vec<Row> {
 }
 
 /// A table the statement reads or writes.
-fn table(catalog: &Catalog, id: Uuid) -> &Table {
+fn table(catalog: &Catalog, id: TableId) -> &Table {
     catalog
         .tables
         .iter()
@@ -477,13 +478,13 @@ fn table(catalog: &Catalog, id: Uuid) -> &Table {
 
 /// The rows a `WHERE row_id = …` or `WHERE row_id IN (…)` names, which must
 /// all exist: naming a row is not a search.
-fn named_rows(read: &SelectQuery) -> Vec<Uuid> {
+fn named_rows(read: &SelectQuery) -> Vec<RowId> {
     let row_id = row_id_key(read.table());
-    let ids = |values: &[Value]| -> Vec<Uuid> {
+    let ids = |values: &[Value]| -> Vec<RowId> {
         values
             .iter()
             .filter_map(|value| match value {
-                Value::Entity(id) => Uuid::parse_str(id).ok(),
+                Value::Entity(id) => id.parse().ok(),
                 _ => None,
             })
             .collect()

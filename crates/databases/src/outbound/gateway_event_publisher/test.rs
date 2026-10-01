@@ -1,4 +1,5 @@
 use chrono::TimeZone;
+use models_databases::{ColumnId, RowId};
 use uuid::Uuid;
 
 use super::*;
@@ -6,8 +7,8 @@ use super::*;
 #[test]
 fn a_table_change_serializes_in_camel_case() {
     let payload = TableChanged {
-        database_id: Uuid::from_u128(1),
-        table_id: Uuid::from_u128(2),
+        database_id: DatabaseId::from_uuid(Uuid::from_u128(1)),
+        table_id: TableId::from_uuid(Uuid::from_u128(2)),
         version: TableVersion(7),
     };
     assert_eq!(
@@ -23,12 +24,12 @@ fn a_table_change_serializes_in_camel_case() {
 #[test]
 fn an_awareness_relay_serializes_its_relay_time_as_epoch_milliseconds() {
     let payload = AwarenessRelay {
-        database_id: Uuid::from_u128(1),
+        database_id: DatabaseId::from_uuid(Uuid::from_u128(1)),
         user_id: "macro|sam@example.com".to_string(),
         state: Awareness {
-            table_id: Uuid::from_u128(2),
-            row_id: Some(Uuid::from_u128(3)),
-            column_id: Some(Uuid::from_u128(4)),
+            table_id: TableId::from_uuid(Uuid::from_u128(2)),
+            row_id: Some(RowId::from_uuid(Uuid::from_u128(3))),
+            column_id: Some(ColumnId::from_uuid(Uuid::from_u128(4))),
             editing: true,
             left: false,
         },

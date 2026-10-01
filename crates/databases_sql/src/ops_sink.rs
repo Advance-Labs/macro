@@ -9,7 +9,6 @@ use databases::domain::models::{DatabaseError, DatabaseId, TableId, TableVersion
 use databases::domain::ports::DatabasesService;
 use entity_access::domain::models::{EditAccessLevel, EntityAccessReceipt};
 use models_databases::{DatabaseOp, OpResult};
-use uuid::Uuid;
 
 /// Applies a statement's writes as `viewer`, keeping the table versions
 /// they produced.
@@ -29,7 +28,7 @@ pub(crate) enum ReceiptWriteError {
     #[error("the statement was not authorized to write database {database}")]
     UnauthorizedDatabase {
         /// The database written.
-        database: Uuid,
+        database: DatabaseId,
     },
     /// The databases service refused or failed the ops.
     #[error(transparent)]
@@ -44,7 +43,7 @@ where
 
     async fn apply(
         &self,
-        database: Uuid,
+        database: DatabaseId,
         ops: Vec<DatabaseOp>,
     ) -> Result<Vec<OpResult>, Self::Error> {
         let receipt = match &self.receipt {

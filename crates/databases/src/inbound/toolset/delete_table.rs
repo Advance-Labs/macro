@@ -5,9 +5,9 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
+use models_databases::{DatabaseId, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::{
     DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, database_error,
@@ -31,10 +31,10 @@ Requires edit access. The response is the schema after the change."
 pub struct DeleteTable {
     /// The database containing the table.
     #[schemars(description = "Id of the database containing the table, from ListDatabases.")]
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
     /// The table to delete.
     #[schemars(description = "Id of the table to delete, from DescribeDatabase.")]
-    pub table_id: Uuid,
+    pub table_id: TableId,
 }
 
 impl ToolAnnotated for DeleteTable {
@@ -46,9 +46,9 @@ impl ToolAnnotated for DeleteTable {
 #[serde(rename_all = "camelCase")]
 pub struct DeleteTableResponse {
     /// Database the table was deleted from.
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
     /// The deleted table's id.
-    pub table_id: Uuid,
+    pub table_id: TableId,
     /// The database's schema after the change.
     pub database: Option<ToolDatabaseSchema>,
     /// A failed follow-up read does not undo the committed delete.

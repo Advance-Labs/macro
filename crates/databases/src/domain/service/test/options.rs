@@ -10,14 +10,14 @@ use super::*;
 fn options(
     world: &Shared,
     definition_id: PropertyDefinitionId,
-) -> Vec<(Uuid, PropertyOptionValue, Option<String>)> {
+) -> Vec<(OptionId, PropertyOptionValue, Option<String>)> {
     let mut options = world.lock().unwrap().definitions[&definition_id]
         .property_options
         .clone();
     options.sort_by_key(|option| option.display_order);
     options
         .into_iter()
-        .map(|option| (option.id, option.value, option.color))
+        .map(|option| (OptionId::from_uuid(option.id), option.value, option.color))
         .collect()
 }
 
@@ -76,7 +76,7 @@ async fn relabelling_an_option_keeps_every_cell_that_holds_it() {
     );
     assert_eq!(
         cell(&seeded.world, seeded.row_id, status),
-        Some(PropertyValue::SelectOption(vec![going]))
+        Some(PropertyValue::SelectOption(vec![going.into_uuid()]))
     );
     assert_eq!(
         seeded.world.lock().unwrap().published,
@@ -374,14 +374,14 @@ async fn an_option_the_column_lacks_is_refused() {
         DatabaseOp::UpdateOption {
             table: seeded.table_id,
             column: seeded.status_column.id,
-            option: stale,
+            option: OptionId::from_uuid(stale),
             label: Some("Maybe".into()),
             color: None,
         },
         DatabaseOp::DeleteOption {
             table: seeded.table_id,
             column: seeded.status_column.id,
-            option: stale,
+            option: OptionId::from_uuid(stale),
         },
     ] {
         let error = seeded
@@ -414,7 +414,7 @@ async fn a_column_without_options_has_none_to_change() {
             vec![DatabaseOp::DeleteOption {
                 table: seeded.table_id,
                 column: seeded.name_column.id,
-                option: Uuid::from_u128(1),
+                option: OptionId::from_uuid(Uuid::from_u128(1)),
             }],
         )
         .await
@@ -531,7 +531,7 @@ async fn removing_an_option_empties_single_select_cells_and_trims_multi_select_o
     assert_eq!(cell(&seeded.world, seeded.row_id, status), None);
     assert_eq!(
         cell(&seeded.world, seeded.row_id, diet_definition),
-        Some(PropertyValue::SelectOption(vec![halal]))
+        Some(PropertyValue::SelectOption(vec![halal.into_uuid()]))
     );
 }
 
@@ -572,7 +572,7 @@ async fn a_later_op_sees_the_options_an_earlier_one_changed() {
         .unwrap();
     assert_eq!(
         cell(&seeded.world, seeded.row_id, status),
-        Some(PropertyValue::SelectOption(vec![going]))
+        Some(PropertyValue::SelectOption(vec![going.into_uuid()]))
     );
 
     let error = seeded

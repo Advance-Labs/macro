@@ -1,17 +1,18 @@
 //! The one catalog every stage's tests run against.
 
+use models_databases::{ColumnId, DatabaseId, OptionId, TableId, ViewId};
 use uuid::Uuid;
 
 use crate::catalog::{
     Catalog, Column, ColumnKind, EntityKind, SelectOption, Table, TableSource, people_table,
 };
 
-pub const CRM: Uuid = Uuid::from_u128(0xdb0);
-pub const SALES: Uuid = Uuid::from_u128(0xdb1);
-pub const MACRO: Uuid = Uuid::from_u128(0xdb2);
-pub const DEALS: Uuid = Uuid::from_u128(0xd0);
-pub const PEOPLE: Uuid = Uuid::from_u128(0xd1);
-pub const SALES_DEALS: Uuid = Uuid::from_u128(0xd2);
+pub const CRM: DatabaseId = DatabaseId::from_uuid(Uuid::from_u128(0xdb0));
+pub const SALES: DatabaseId = DatabaseId::from_uuid(Uuid::from_u128(0xdb1));
+pub const MACRO: DatabaseId = DatabaseId::from_uuid(Uuid::from_u128(0xdb2));
+pub const DEALS: TableId = TableId::from_uuid(Uuid::from_u128(0xd0));
+pub const PEOPLE: TableId = TableId::from_uuid(Uuid::from_u128(0xd1));
+pub const SALES_DEALS: TableId = TableId::from_uuid(Uuid::from_u128(0xd2));
 pub const NAME: Uuid = Uuid::from_u128(0x01);
 pub const AMOUNT: Uuid = Uuid::from_u128(0x02);
 pub const STAGE: Uuid = Uuid::from_u128(0x03);
@@ -20,16 +21,16 @@ pub const OWNER: Uuid = Uuid::from_u128(0x05);
 pub const TAGS: Uuid = Uuid::from_u128(0x06);
 pub const DONE: Uuid = Uuid::from_u128(0x07);
 pub const WEBSITE: Uuid = Uuid::from_u128(0x08);
-pub const LEAD: Uuid = Uuid::from_u128(0x31);
-pub const WON: Uuid = Uuid::from_u128(0x30);
-pub const VIP: Uuid = Uuid::from_u128(0x32);
-pub const TASKS: Uuid = Uuid::from_u128(0xd3);
+pub const LEAD: OptionId = OptionId::from_uuid(Uuid::from_u128(0x31));
+pub const WON: OptionId = OptionId::from_uuid(Uuid::from_u128(0x30));
+pub const VIP: OptionId = OptionId::from_uuid(Uuid::from_u128(0x32));
+pub const TASKS: TableId = TableId::from_uuid(Uuid::from_u128(0xd3));
 pub const TITLE: Uuid = Uuid::from_u128(0x11);
 pub const PRIORITY: Uuid = Uuid::from_u128(0x12);
 pub const ASSIGNEES: Uuid = Uuid::from_u128(0x13);
 pub const DEAL: Uuid = Uuid::from_u128(0x14);
-pub const HIGH: Uuid = Uuid::from_u128(0x41);
-pub const LOW: Uuid = Uuid::from_u128(0x42);
+pub const HIGH: OptionId = OptionId::from_uuid(Uuid::from_u128(0x41));
+pub const LOW: OptionId = OptionId::from_uuid(Uuid::from_u128(0x42));
 
 /// `crm.deals` with one column of every kind, `crm.people` (sharing the
 /// `name` definition with `crm.deals`), a second `deals` table in another
@@ -46,19 +47,19 @@ pub fn catalog() -> Catalog {
                 columns: vec![
                     Column {
                         id: NAME,
-                        placement: NAME,
+                        placement: ColumnId::from_uuid(NAME),
                         name: "name".into(),
                         kind: ColumnKind::Text,
                     },
                     Column {
                         id: AMOUNT,
-                        placement: AMOUNT,
+                        placement: ColumnId::from_uuid(AMOUNT),
                         name: "amount".into(),
                         kind: ColumnKind::Number,
                     },
                     Column {
                         id: STAGE,
-                        placement: STAGE,
+                        placement: ColumnId::from_uuid(STAGE),
                         name: "stage".into(),
                         kind: ColumnKind::Select {
                             multi: false,
@@ -76,13 +77,13 @@ pub fn catalog() -> Catalog {
                     },
                     Column {
                         id: CLOSED_AT,
-                        placement: CLOSED_AT,
+                        placement: ColumnId::from_uuid(CLOSED_AT),
                         name: "closed at".into(),
                         kind: ColumnKind::Date,
                     },
                     Column {
                         id: OWNER,
-                        placement: OWNER,
+                        placement: ColumnId::from_uuid(OWNER),
                         name: "owner".into(),
                         kind: ColumnKind::Entity {
                             multi: false,
@@ -91,7 +92,7 @@ pub fn catalog() -> Catalog {
                     },
                     Column {
                         id: TAGS,
-                        placement: TAGS,
+                        placement: ColumnId::from_uuid(TAGS),
                         name: "tags".into(),
                         kind: ColumnKind::Select {
                             multi: true,
@@ -103,13 +104,13 @@ pub fn catalog() -> Catalog {
                     },
                     Column {
                         id: DONE,
-                        placement: DONE,
+                        placement: ColumnId::from_uuid(DONE),
                         name: "done".into(),
                         kind: ColumnKind::Boolean,
                     },
                     Column {
                         id: WEBSITE,
-                        placement: WEBSITE,
+                        placement: ColumnId::from_uuid(WEBSITE),
                         name: "website".into(),
                         kind: ColumnKind::Link,
                     },
@@ -123,7 +124,7 @@ pub fn catalog() -> Catalog {
                 name: "people".into(),
                 columns: vec![Column {
                     id: NAME,
-                    placement: NAME,
+                    placement: ColumnId::from_uuid(NAME),
                     name: "name".into(),
                     kind: ColumnKind::Text,
                 }],
@@ -145,13 +146,13 @@ pub fn catalog() -> Catalog {
                 columns: vec![
                     Column {
                         id: TITLE,
-                        placement: TITLE,
+                        placement: ColumnId::from_uuid(TITLE),
                         name: "title".into(),
                         kind: ColumnKind::Text,
                     },
                     Column {
                         id: PRIORITY,
-                        placement: PRIORITY,
+                        placement: ColumnId::from_uuid(PRIORITY),
                         name: "priority".into(),
                         kind: ColumnKind::Select {
                             multi: false,
@@ -169,7 +170,7 @@ pub fn catalog() -> Catalog {
                     },
                     Column {
                         id: ASSIGNEES,
-                        placement: ASSIGNEES,
+                        placement: ColumnId::from_uuid(ASSIGNEES),
                         name: "assignees".into(),
                         kind: ColumnKind::Entity {
                             multi: true,
@@ -178,7 +179,7 @@ pub fn catalog() -> Catalog {
                     },
                     Column {
                         id: DEAL,
-                        placement: DEAL,
+                        placement: ColumnId::from_uuid(DEAL),
                         name: "deal".into(),
                         kind: ColumnKind::Entity {
                             multi: false,
@@ -193,33 +194,33 @@ pub fn catalog() -> Catalog {
     }
 }
 
-pub const WORK: Uuid = Uuid::from_u128(0xdb3);
-pub const ISSUES: Uuid = Uuid::from_u128(0xd4);
+pub const WORK: DatabaseId = DatabaseId::from_uuid(Uuid::from_u128(0xdb3));
+pub const ISSUES: TableId = TableId::from_uuid(Uuid::from_u128(0xd4));
 pub const SUMMARY: Uuid = Uuid::from_u128(0x51);
-pub const SUMMARY_PLACEMENT: Uuid = Uuid::from_u128(0x61);
+pub const SUMMARY_PLACEMENT: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0x61));
 pub const POINTS: Uuid = Uuid::from_u128(0x52);
-pub const POINTS_PLACEMENT: Uuid = Uuid::from_u128(0x62);
+pub const POINTS_PLACEMENT: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0x62));
 pub const STATUS: Uuid = Uuid::from_u128(0x53);
-pub const STATUS_PLACEMENT: Uuid = Uuid::from_u128(0x63);
+pub const STATUS_PLACEMENT: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0x63));
 pub const DUE: Uuid = Uuid::from_u128(0x54);
-pub const DUE_PLACEMENT: Uuid = Uuid::from_u128(0x64);
+pub const DUE_PLACEMENT: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0x64));
 pub const BLOCKED: Uuid = Uuid::from_u128(0x55);
-pub const BLOCKED_PLACEMENT: Uuid = Uuid::from_u128(0x65);
+pub const BLOCKED_PLACEMENT: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0x65));
 pub const LABELS: Uuid = Uuid::from_u128(0x56);
-pub const LABELS_PLACEMENT: Uuid = Uuid::from_u128(0x66);
+pub const LABELS_PLACEMENT: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0x66));
 pub const ASSIGNEE: Uuid = Uuid::from_u128(0x57);
-pub const ASSIGNEE_PLACEMENT: Uuid = Uuid::from_u128(0x67);
+pub const ASSIGNEE_PLACEMENT: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0x67));
 pub const REVIEWERS: Uuid = Uuid::from_u128(0x58);
-pub const REVIEWERS_PLACEMENT: Uuid = Uuid::from_u128(0x68);
+pub const REVIEWERS_PLACEMENT: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0x68));
 pub const SPEC: Uuid = Uuid::from_u128(0x59);
-pub const SPEC_PLACEMENT: Uuid = Uuid::from_u128(0x69);
+pub const SPEC_PLACEMENT: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0x69));
 pub const PARENT: Uuid = Uuid::from_u128(0x5a);
-pub const PARENT_PLACEMENT: Uuid = Uuid::from_u128(0x6a);
-pub const TODO: Uuid = Uuid::from_u128(0x71);
-pub const DOING: Uuid = Uuid::from_u128(0x72);
-pub const WONT_DO: Uuid = Uuid::from_u128(0x73);
-pub const BUG: Uuid = Uuid::from_u128(0x74);
-pub const FEATURE: Uuid = Uuid::from_u128(0x75);
+pub const PARENT_PLACEMENT: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0x6a));
+pub const TODO: OptionId = OptionId::from_uuid(Uuid::from_u128(0x71));
+pub const DOING: OptionId = OptionId::from_uuid(Uuid::from_u128(0x72));
+pub const WONT_DO: OptionId = OptionId::from_uuid(Uuid::from_u128(0x73));
+pub const BUG: OptionId = OptionId::from_uuid(Uuid::from_u128(0x74));
+pub const FEATURE: OptionId = OptionId::from_uuid(Uuid::from_u128(0x75));
 
 /// `work.issues`, the table views are tested on: one column of every kind,
 /// each placed under an id of its own, so a view (which names placements)
@@ -335,7 +336,7 @@ pub fn issues_catalog() -> Catalog {
     }
 }
 
-pub const ISSUES_VIEW: Uuid = Uuid::from_u128(0x7e1);
+pub const ISSUES_VIEW: ViewId = ViewId::from_uuid(Uuid::from_u128(0x7e1));
 
 /// A view of `work.issues`.
 pub fn issues_view(
@@ -348,7 +349,7 @@ pub fn issues_view(
         database_id: WORK,
         table_id: ISSUES,
         name: "Open work".into(),
-        position: "a0".into(),
+        position: "80".parse().unwrap(),
         query,
         layout,
         created_at: Utc.with_ymd_and_hms(2026, 9, 1, 0, 0, 0).unwrap(),

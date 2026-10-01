@@ -27,7 +27,7 @@ async fn database_channel_grants_can_be_changed_and_revoked_without_touching_own
         );
         let grants = repo.channel_grants(table.database_id).await.unwrap();
         assert_eq!(grants.first().map(|grant| grant.access_level), level);
-        let owner = sqlx::query_scalar!(r#"SELECT access_level AS "access_level: AccessLevel" FROM entity_access WHERE entity_id = $1 AND source_type = 'user' AND source_id = $2"#, table.database_id, USER).fetch_one(&pool).await.unwrap();
+        let owner = sqlx::query_scalar!(r#"SELECT access_level AS "access_level: AccessLevel" FROM entity_access WHERE entity_id = $1 AND source_type = 'user' AND source_id = $2"#, table.database_id.into_uuid(), USER).fetch_one(&pool).await.unwrap();
         assert_eq!(owner, AccessLevel::Owner);
     }
     repo.trash_database(table.database_id, chrono::Utc::now())
@@ -71,7 +71,7 @@ async fn sharing_a_reference_does_not_downgrade_existing_channel_access(pool: Pg
     let mut transaction = pool.begin().await.unwrap();
     entity_access_db_utils::channel_share::insert_if_absent(
         &mut transaction,
-        &table.database_id,
+        table.database_id.as_uuid(),
         EntityType::Database,
         &channel_id,
         AccessLevel::View,

@@ -21,6 +21,7 @@
 
 mod common;
 
+use models_databases::{ColumnId, DatabaseId, OptionId, RowId, TableId};
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 
@@ -199,7 +200,7 @@ impl Api {
         let definitions: Vec<Definition> =
             serde_json::from_value(data["user"]["propertyDefinitions"].clone())?;
         let mut columns = vec![ColumnSchema {
-            id: NAME,
+            id: ColumnId::from_uuid(NAME),
             definition: NAME,
             name: "name".into(),
             property: PropertyType {
@@ -232,14 +233,14 @@ impl Api {
                         (None, None) => return Err(ApiError::OptionValue(option.id)),
                     };
                     Ok(OptionSchema {
-                        id: option.id,
+                        id: OptionId::from_uuid(option.id),
                         value,
                         order: option.display_order,
                     })
                 })
                 .collect::<Result<_, _>>()?;
             columns.push(ColumnSchema {
-                id: definition.id,
+                id: ColumnId::from_uuid(definition.id),
                 definition: definition.id,
                 name: definition.display_name,
                 property: PropertyType {
@@ -253,17 +254,17 @@ impl Api {
         }
         let schema = Schema {
             databases: vec![DatabaseSchema {
-                id: TASKS,
+                id: DatabaseId::from_uuid(TASKS),
                 name: "macro".into(),
                 tables: vec![TableSchema {
-                    id: TASKS,
+                    id: TableId::from_uuid(TASKS),
                     name: "tasks".into(),
                     columns,
                 }],
             }],
             platform: Vec::new(),
         };
-        Ok(build(&schema, Some(TASKS)))
+        Ok(build(&schema, Some(DatabaseId::from_uuid(TASKS))))
     }
 }
 
@@ -369,7 +370,7 @@ fn row_from_item(item: &Json) -> Row {
         }
     }
     Row {
-        id,
+        id: RowId::from_uuid(id),
         position: None,
         cells,
     }
@@ -452,7 +453,7 @@ impl RowSource for Api {
                 } else if let Ok(id) = key.parse::<Uuid>() {
                     // Select bins are keyed by option id; entity bins by the
                     // entity id, which is never a bare UUID for users.
-                    Some(Cell::Options(vec![id]))
+                    Some(Cell::Options(vec![OptionId::from_uuid(id)]))
                 } else {
                     Some(Cell::Entities(vec![key.to_owned()]))
                 };
@@ -467,13 +468,17 @@ impl RowSource for Api {
 
 impl Api {
     /// The option ids a column's written options name.
-    fn option_ids(&self, column: Uuid, options: Vec<OptionRef>) -> Result<Vec<Uuid>, WriteError> {
+    fn option_ids(
+        &self,
+        column: Uuid,
+        options: Vec<OptionRef>,
+    ) -> Result<Vec<OptionId>, WriteError> {
         let labels: Vec<SelectOption> = self
             .catalog
             .tables
             .iter()
             .flat_map(|table| &table.columns)
-            .find(|candidate| candidate.placement == column)
+            .find(|candidate| candidate.placement == ColumnId::from_uuid(column))
             .map(|column| match &column.kind {
                 ColumnKind::Select { options, .. } => options.clone(),
                 _ => Vec::new(),
@@ -531,11 +536,11 @@ impl Api {
         })
     }
 
-    async fn set(&self, task: Uuid, column: Uuid, value: CellValue) -> Result<(), WriteError> {
-        if column == NAME {
+    async fn set(&self, task: RowId, column: ColumnId, value: CellValue) -> Result<(), WriteError> {
+        if column == ColumnId::from_uuid(NAME) {
             return Err(WriteError::TitleRename);
         }
-        let value = self.property_input(column, value)?;
+        let value = self.property_input(column.into_uuid(), value)?;
         self.gql(
             r#"mutation Set($input: SetEntityPropertyInput!) { setEntityProperty(input: $input) { id } }"#,
             json!({ "input": {
@@ -547,11 +552,13 @@ impl Api {
         Ok(())
     }
 
-    async fn create(&self, cells: Vec<CellWrite>) -> Result<Uuid, WriteError> {
+    async fn create(&self, cells: Vec<CellWrite>) -> Result<RowId, WriteError> {
         let name = cells
             .iter()
             .find_map(|cell| match &cell.value {
-                CellValue::Text(text) if cell.column == NAME => Some(text.clone()),
+                CellValue::Text(text) if cell.column == ColumnId::from_uuid(NAME) => {
+                    Some(text.clone())
+                }
                 _ => None,
             })
             .ok_or(WriteError::NameMissing)?;
@@ -568,12 +575,12 @@ impl Api {
         if !status.is_success() {
             return Err(ApiError::Status { status, body }.into());
         }
-        let task: Uuid = body["documentId"]
+        let task: RowId = body["documentId"]
             .as_str()
             .and_then(|id| id.parse().ok())
             .ok_or_else(|| WriteError::NoTaskId(body.clone()))?;
         for cell in cells {
-            if cell.column != NAME {
+            if cell.column != ColumnId::from_uuid(NAME) {
                 self.set(task, cell.column, cell.value).await?;
             }
         }
@@ -586,7 +593,7 @@ impl OpsSink for Api {
 
     async fn apply(
         &self,
-        _database: Uuid,
+        _database: DatabaseId,
         ops: Vec<DatabaseOp>,
     ) -> Result<Vec<OpResult>, Self::Error> {
         let mut results = Vec::new();
@@ -601,7 +608,7 @@ impl OpsSink for Api {
                     (inserted, affected)
                 }
                 DatabaseOp::UpdateRows { changes, .. } => {
-                    let changes: Vec<(Uuid, Vec<CellWrite>)> = match changes {
+                    let changes: Vec<(RowId, Vec<CellWrite>)> = match changes {
                         RowChanges::Uniform { rows, cells } => {
                             rows.into_iter().map(|row| (row, cells.clone())).collect()
                         }

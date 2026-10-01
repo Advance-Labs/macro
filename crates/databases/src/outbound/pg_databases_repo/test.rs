@@ -50,11 +50,13 @@ impl<Properties> PgDatabasesRepo<Properties> {
     }
 
     async fn row_table(&self, row_id: RowId) -> Result<Option<TableId>, PgDatabasesRepoError> {
-        Ok(
-            sqlx::query_scalar!("SELECT table_id FROM database_rows WHERE id = $1", row_id)
-                .fetch_optional(&self.pool)
-                .await?,
+        Ok(sqlx::query_scalar!(
+            "SELECT table_id FROM database_rows WHERE id = $1",
+            row_id.into_uuid()
         )
+        .fetch_optional(&self.pool)
+        .await?
+        .map(TableId::from_uuid))
     }
 }
 
@@ -207,7 +209,7 @@ async fn a_new_database_starts_with_a_table_holding_a_text_title_column(pool: Pg
     assert_eq!(
         title.owner,
         models_properties::shared::PropertyOwner::Database {
-            database_id: database.id
+            database_id: database.id.into_uuid()
         }
     );
     assert!(definitions[0].property_options.is_empty());
@@ -290,14 +292,24 @@ async fn renaming_trashing_or_restoring_a_missing_database_says_it_is_gone(pool:
     let repo = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool));
     let missing = Uuid::nil();
 
-    assert!(!repo.rename_database(missing, "Winter").await.unwrap());
     assert!(
         !repo
-            .trash_database(missing, chrono::Utc::now())
+            .rename_database(DatabaseId::from_uuid(missing), "Winter")
             .await
             .unwrap()
     );
-    assert!(!repo.restore_database(missing).await.unwrap());
+    assert!(
+        !repo
+            .trash_database(DatabaseId::from_uuid(missing), chrono::Utc::now())
+            .await
+            .unwrap()
+    );
+    assert!(
+        !repo
+            .restore_database(DatabaseId::from_uuid(missing))
+            .await
+            .unwrap()
+    );
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
@@ -364,7 +376,7 @@ async fn delete_database_cascades_and_purges_access_rows(pool: PgPool) {
 
     let access_rows = sqlx::query_scalar!(
         r#"SELECT COUNT(*) FROM entity_access WHERE entity_id = $1 AND entity_type = $2"#,
-        database_id,
+        database_id.into_uuid(),
         EntityType::Database.as_ref(),
     )
     .fetch_one(&pool)
@@ -387,7 +399,7 @@ async fn delete_database_cascades_and_purges_access_rows(pool: PgPool) {
             "tables",
             sqlx::query_scalar!(
                 r#"SELECT COUNT(*) FROM database_tables WHERE database_id = $1"#,
-                database_id
+                database_id.into_uuid()
             )
             .fetch_one(&pool)
             .await
@@ -397,7 +409,7 @@ async fn delete_database_cascades_and_purges_access_rows(pool: PgPool) {
             "columns",
             sqlx::query_scalar!(
                 r#"SELECT COUNT(*) FROM database_columns WHERE table_id = $1"#,
-                table.id
+                table.id.into_uuid()
             )
             .fetch_one(&pool)
             .await
@@ -407,7 +419,7 @@ async fn delete_database_cascades_and_purges_access_rows(pool: PgPool) {
             "rows",
             sqlx::query_scalar!(
                 r#"SELECT COUNT(*) FROM database_rows WHERE table_id = $1"#,
-                table.id
+                table.id.into_uuid()
             )
             .fetch_one(&pool)
             .await
@@ -417,7 +429,7 @@ async fn delete_database_cascades_and_purges_access_rows(pool: PgPool) {
             "entity access",
             sqlx::query_scalar!(
                 r#"SELECT COUNT(*) FROM entity_access WHERE entity_id = $1 AND entity_type = $2"#,
-                database_id,
+                database_id.into_uuid(),
                 EntityType::Database.as_ref(),
             )
             .fetch_one(&pool)
@@ -446,7 +458,7 @@ async fn get_database_is_none_when_missing(pool: PgPool) {
     let repo = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool));
 
     let missing = repo
-        .get_database(macro_uuid::generate_uuid_v7())
+        .get_database(DatabaseId::new())
         .await
         .expect("get should succeed");
 
@@ -478,7 +490,12 @@ async fn rows_are_minted_in_order_and_deleted_by_their_table(pool: PgPool) {
     assert_eq!(repo.row_table(first[0].id).await.unwrap(), Some(table.id));
 
     let other = macro_uuid::generate_uuid_v7();
-    assert!(!repo.delete_row(other, first[0].id).await.unwrap());
+    assert!(
+        !repo
+            .delete_row(TableId::from_uuid(other), first[0].id)
+            .await
+            .unwrap()
+    );
     assert!(repo.delete_row(table.id, first[0].id).await.unwrap());
     assert_eq!(repo.row_table(first[0].id).await.unwrap(), None);
     assert_eq!(repo.row_refs(table.id).await.unwrap().len(), 2);

@@ -12,7 +12,10 @@ use entity_access::domain::models::{
 };
 use macro_event_broker::{EventBrokerError, MacroEvent, MacroEventBroker};
 use macro_user_id::user_id::MacroUserIdStr;
-use models_databases::{CellValue, CellWrite, DatabaseOp, OpResult, OptionRef, RowChanges};
+use models_databases::position::Position;
+use models_databases::{
+    CellValue, CellWrite, DatabaseOp, OpResult, OptionId, OptionRef, RowChanges,
+};
 use models_properties::service::property_definition::PropertyDefinition;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
 use models_properties::service::property_option::{PropertyOption, PropertyOptionValue};
@@ -141,13 +144,13 @@ fn table_version(world: &Shared, table_id: TableId) -> TableVersion {
         .version
 }
 
-fn option_id(world: &Shared, definition_id: PropertyDefinitionId, label: &str) -> Uuid {
+fn option_id(world: &Shared, definition_id: PropertyDefinitionId, label: &str) -> OptionId {
     world.lock().unwrap().definitions[&definition_id]
         .property_options
         .iter()
         .find(|option| option.value == PropertyOptionValue::String(label.into()))
+        .map(|option| OptionId::from_uuid(option.id))
         .unwrap()
-        .id
 }
 
 fn row_ids(world: &Shared, table_id: TableId) -> Vec<RowId> {

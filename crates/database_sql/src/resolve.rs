@@ -23,6 +23,7 @@ use crate::catalog::{Catalog, Table, TableSource};
 use crate::parse::{self, Statement};
 use models_databases::ColumnKind as OpColumnKind;
 use models_databases::cast::{Cast, CastKind, Contents, cast};
+use models_databases::{OptionId, TableId};
 
 pub use crate::parse::{AggregateFunction, ComparisonOperator, Direction, JoinKind};
 
@@ -76,7 +77,7 @@ pub struct SelectQuery {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Relation {
     /// The table.
-    pub table: Uuid,
+    pub table: TableId,
     /// The alias its columns are qualified by.
     pub alias: String,
     /// Where its rows come from.
@@ -118,17 +119,17 @@ pub fn column_key(relation: usize, column: Uuid) -> Uuid {
 }
 
 /// The key of a table's row id.
-pub fn row_id_key(table: Uuid) -> Uuid {
-    Uuid::new_v5(&table, b"row_id")
+pub fn row_id_key(table: TableId) -> Uuid {
+    Uuid::new_v5(table.as_uuid(), b"row_id")
 }
 
 /// The key of a table's row position.
-pub fn row_position_key(table: Uuid) -> Uuid {
-    Uuid::new_v5(&table, b"row_position")
+pub fn row_position_key(table: TableId) -> Uuid {
+    Uuid::new_v5(table.as_uuid(), b"row_position")
 }
 
 /// The stand-in column a key names in `table`: its row id or row position.
-pub fn virtual_column(table: Uuid, key: Uuid) -> Option<crate::catalog::Column> {
+pub fn virtual_column(table: TableId, key: Uuid) -> Option<crate::catalog::Column> {
     names::virtual_columns(table)
         .into_iter()
         .find(|column| column.id == key)
@@ -136,7 +137,7 @@ pub fn virtual_column(table: Uuid, key: Uuid) -> Option<crate::catalog::Column> 
 
 impl SelectQuery {
     /// The `FROM` table.
-    pub fn table(&self) -> Uuid {
+    pub fn table(&self) -> TableId {
         self.relations[0].table
     }
 
@@ -238,11 +239,11 @@ pub enum Value {
     /// A date-time, parsed from an ISO 8601 date or date-time literal.
     Date(DateTime<Utc>),
     /// A select option, resolved from its label.
-    Option(Uuid),
+    Option(OptionId),
     /// An entity id such as `macro|sam@example.com`.
     Entity(String),
     /// Every option of a multi-select cell being written.
-    Options(Vec<Uuid>),
+    Options(Vec<OptionId>),
     /// Every reference of a multi-valued entity cell being written.
     Entities(Vec<String>),
 }
@@ -270,7 +271,7 @@ pub enum OrderKey {
 #[derive(Debug, Clone, PartialEq)]
 pub struct InsertQuery {
     /// The table written.
-    pub table: Uuid,
+    pub table: TableId,
     /// One entry per row: the cells to set, in column-list order. A `NULL`
     /// literal is not a cell.
     pub rows: Vec<Vec<(Uuid, Value)>>,
@@ -280,7 +281,7 @@ pub struct InsertQuery {
 #[derive(Debug, Clone, PartialEq)]
 pub struct UpdateQuery {
     /// The table written.
-    pub table: Uuid,
+    pub table: TableId,
     /// Finds the rows: `row_id`, then every column an assignment copies.
     pub read: SelectQuery,
     /// The cells to set, in statement order.
@@ -310,7 +311,7 @@ pub enum Assigned {
 #[derive(Debug, Clone, PartialEq)]
 pub struct DeleteQuery {
     /// The table written.
-    pub table: Uuid,
+    pub table: TableId,
     /// Finds the rows: `row_id` alone.
     pub read: SelectQuery,
 }
@@ -319,7 +320,7 @@ pub struct DeleteQuery {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlterColumnTypeQuery {
     /// The table.
-    pub table: Uuid,
+    pub table: TableId,
     /// The column's property definition.
     pub column: Uuid,
     /// The type it becomes.

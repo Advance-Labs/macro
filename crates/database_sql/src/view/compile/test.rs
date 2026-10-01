@@ -1,10 +1,10 @@
 use chrono::{TimeZone, Utc};
+use models_databases::ColumnId;
 use models_databases::views::{
     Conjunction, DatabaseView, DateOperator, FilterCondition, FilterGroup, FilterNode, FilterTest,
     NumberOperator, PresenceOperator, SetOperator, SortDirection, SortKey, TextOperator, ValueKind,
     ViewLayout, ViewProblem, ViewQuery,
 };
-use uuid::Uuid;
 
 use super::*;
 use crate::catalog::TableSource;
@@ -24,7 +24,7 @@ fn a_nested_view_is_the_select_its_sql_resolves_to() {
         database_id: WORK,
         table_id: ISSUES,
         name: "Open work".into(),
-        position: "a0".into(),
+        position: "80".parse().unwrap(),
         query: ViewQuery {
             filter: Some(FilterGroup {
                 conjunction: Conjunction::And,
@@ -202,7 +202,7 @@ fn a_nested_view_is_the_select_its_sql_resolves_to() {
 #[test]
 fn every_test_compiles_to_its_filter() {
     let due = Utc.with_ymd_and_hms(2026, 10, 1, 9, 30, 0).unwrap();
-    let cases: Vec<(Uuid, FilterTest, Filter)> = vec![
+    let cases: Vec<(ColumnId, FilterTest, Filter)> = vec![
         (
             DUE_PLACEMENT,
             FilterTest::Presence {
@@ -760,7 +760,7 @@ fn a_view_that_does_not_fit_its_table_is_refused() {
         ViewQuery {
             filter: None,
             sort: vec![SortKey {
-                column: SUMMARY,
+                column: ColumnId::from_uuid(SUMMARY),
                 direction: SortDirection::Ascending,
             }],
         },
@@ -768,7 +768,9 @@ fn a_view_that_does_not_fit_its_table_is_refused() {
     );
     assert_eq!(
         compile_view(&by_definition, &issues_catalog()),
-        Err(ViewProblem::UnknownColumn { column: SUMMARY })
+        Err(ViewProblem::UnknownColumn {
+            column: ColumnId::from_uuid(SUMMARY)
+        })
     );
 
     let misfit = issues_view(

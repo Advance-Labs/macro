@@ -5,13 +5,13 @@
 use std::cmp::Ordering;
 
 use crate::ids::RowId;
-use crate::position::{PositionError, key_between, keys_between};
+use crate::position::{Position, PositionError, key_between, keys_between};
 
 /// Put one lane's cards, each with its position in the lane if it has one,
 /// in the order the board shows them: cards with a position by it, then the
 /// rest by row id, which is creation order because row ids are minted in
 /// time order.
-pub fn arrange_lane(cards: &mut [(RowId, Option<String>)]) {
+pub fn arrange_lane(cards: &mut [(RowId, Option<Position>)]) {
     cards.sort_by(|(left_row, left), (right_row, right)| match (left, right) {
         (Some(left), Some(right)) => left.cmp(right).then(left_row.cmp(right_row)),
         (Some(_), None) => Ordering::Less,
@@ -48,11 +48,11 @@ pub enum PlacementError {
 /// positions too, in their current order, before the card's own; the card's
 /// is always last.
 pub fn place_card(
-    lane: &[(RowId, Option<String>)],
+    lane: &[(RowId, Option<Position>)],
     card: RowId,
     before: Option<RowId>,
     after: Option<RowId>,
-) -> Result<Vec<(RowId, String)>, PlacementError> {
+) -> Result<Vec<(RowId, Position)>, PlacementError> {
     let index_of = |row: RowId| {
         lane.iter()
             .position(|(card, _)| *card == row)
@@ -74,7 +74,7 @@ pub fn place_card(
         .iter()
         .take_while(|(_, position)| position.is_some())
         .count();
-    let position_at = |index: usize| lane[index].1.as_deref();
+    let position_at = |index: usize| lane[index].1.as_ref();
     if index <= positioned {
         let lower = index.checked_sub(1).and_then(position_at);
         let upper = (index < positioned).then(|| position_at(index)).flatten();

@@ -21,6 +21,7 @@ use column_mutations::{
     change_column_type_handler, column_casts_handler, delete_column_handler,
     reorder_columns_handler,
 };
+use models_databases::{DatabaseId, TableId};
 use std::sync::Arc;
 
 use axum::{
@@ -249,7 +250,8 @@ pub struct RenameTableRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ReorderTablesRequest {
     /// Every table of the database, exactly once, in the new left-to-right order.
-    pub table_ids: Vec<Uuid>,
+    #[schema(value_type = Vec<Uuid>)]
+    pub table_ids: Vec<TableId>,
 }
 
 /// Rename one column placement without changing its property's SQL identifier.
@@ -300,38 +302,38 @@ pub struct CreateColumnRequest {
     /// Definition source.
     pub binding: ColumnBindingRequest,
     /// Link this column to another table (many-to-many).
-    #[schema(nullable = false)]
-    pub link_to_table_id: Option<Uuid>,
+    #[schema(nullable = false, value_type = Option<Uuid>)]
+    pub link_to_table_id: Option<TableId>,
     /// Database of the linked table (defaults to this database).
-    #[schema(nullable = false)]
-    pub link_to_database_id: Option<Uuid>,
+    #[schema(nullable = false, value_type = Option<Uuid>)]
+    pub link_to_database_id: Option<DatabaseId>,
 }
 
 /// Path params for the single-database routes.
 #[derive(Debug, Deserialize)]
 pub struct DatabasePath {
     /// Database id.
-    pub id: Uuid,
+    pub id: DatabaseId,
 }
 
 /// Path params for the table routes.
 #[derive(Debug, Deserialize)]
 pub struct TablePath {
     /// Database id.
-    pub id: Uuid,
+    pub id: DatabaseId,
     /// Table id.
-    pub table_id: Uuid,
+    pub table_id: TableId,
 }
 
 /// Path params for the column routes.
 #[derive(Debug, Deserialize)]
 pub struct ColumnPath {
     /// Database id.
-    pub id: Uuid,
+    pub id: DatabaseId,
     /// Table id.
-    pub table_id: Uuid,
+    pub table_id: TableId,
     /// Column id.
-    pub column_id: Uuid,
+    pub column_id: ColumnId,
 }
 
 /// Request body for adding options to a select column.

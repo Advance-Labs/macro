@@ -4,6 +4,7 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
+use models_databases::OptionId;
 use uuid::Uuid;
 
 use crate::catalog::{Catalog, ColumnKind};
@@ -14,7 +15,7 @@ use super::aggregate::Group;
 use super::{Cell, Row, group_order_index};
 
 /// Each option's place in its column's declared order.
-type OptionRanks = HashMap<Uuid, usize>;
+type OptionRanks = HashMap<OptionId, usize>;
 
 /// Sort fetched rows by column keys. A key on an item index cannot occur
 /// here: a row shape has no aggregates to refer to.
@@ -146,7 +147,7 @@ fn compare(ranks: &OptionRanks, left: Option<&Cell>, right: Option<&Cell>) -> Ra
 
 /// The rank of a cell is the rank of each option it holds, in order; an
 /// option the column no longer declares sorts after every declared one.
-fn option_rank(ranks: &OptionRanks, options: &[Uuid]) -> Vec<usize> {
+fn option_rank(ranks: &OptionRanks, options: &[OptionId]) -> Vec<usize> {
     options
         .iter()
         .map(|option| ranks.get(option).copied().unwrap_or(usize::MAX))

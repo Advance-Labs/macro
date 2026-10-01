@@ -115,7 +115,7 @@ async fn add_column_options_extends_what_ops_accept_and_bumps_the_version() {
     let waitlisted = option_id(&world, column.definition.definition.id, "Waitlisted");
     assert_eq!(
         cell(&world, inserted[0], column.definition.definition.id),
-        Some(PropertyValue::SelectOption(vec![waitlisted]))
+        Some(PropertyValue::SelectOption(vec![waitlisted.into_uuid()]))
     );
 }
 
@@ -360,7 +360,7 @@ async fn add_column_options_respects_receipts() {
 
     let err = svc
         .add_column_options(
-            receipt::<EditAccessLevel>(elsewhere, OWNER, AccessLevel::Owner),
+            receipt::<EditAccessLevel>(DatabaseId::from_uuid(elsewhere), OWNER, AccessLevel::Owner),
             viewer(OWNER),
             AddColumnOptions {
                 table_id: guests,
@@ -381,7 +381,7 @@ async fn add_column_options_respects_receipts() {
             viewer(OWNER),
             AddColumnOptions {
                 table_id: guests,
-                column_id: Uuid::new_v4(),
+                column_id: ColumnId::new(),
                 labels: vec!["Waitlisted".into()],
             },
         )

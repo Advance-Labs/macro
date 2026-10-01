@@ -60,7 +60,7 @@ async fn the_name_of_an_existing_view_replaces_it() {
             database_id: DATABASE_ID,
             table_id: TABLE_ID,
             name: "stages".into(),
-            position: "80".into(),
+            position: "80".parse::<Position>().unwrap(),
             query: ViewQuery::default(),
             layout: ViewLayout::Table { columns: vec![] },
             created_at: at,

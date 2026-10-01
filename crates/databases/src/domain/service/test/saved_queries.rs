@@ -206,7 +206,7 @@ async fn a_query_is_saved_only_into_a_visible_live_database() {
     let missing = svc
         .save_query(
             viewer(OWNER),
-            Some(Uuid::new_v4()),
+            Some(DatabaseId::new()),
             QueryDefinition::V1 {
                 query: "SELECT COUNT(*) FROM \"Guests\"".into(),
             },
@@ -236,7 +236,7 @@ async fn reading_an_unknown_saved_query_is_not_found() {
     let seeded = seeded().await;
     let missing = seeded
         .service
-        .get_query(viewer(OWNER), Uuid::nil())
+        .get_query(viewer(OWNER), QueryId::from_uuid(Uuid::nil()))
         .await
         .unwrap_err();
     assert!(matches!(missing, SavedQueryError::NotFound), "{missing:?}");

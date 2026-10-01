@@ -221,7 +221,7 @@ async fn deleting_a_column_deletes_its_cells_in_that_table_only(pool: PgPool) {
 
     sqlx::query!(
         "DELETE FROM database_columns WHERE table_id = $1 AND property_definition_id = $2",
-        guests.id,
+        guests.id.into_uuid(),
         name,
     )
     .execute(&pool)
@@ -248,7 +248,7 @@ async fn rebinding_a_column_deletes_the_old_definitions_cells(pool: PgPool) {
     sqlx::query!(
         "UPDATE database_columns SET property_definition_id = $3
          WHERE table_id = $1 AND property_definition_id = $2",
-        table.id,
+        table.id.into_uuid(),
         name,
         title,
     )

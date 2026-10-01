@@ -11,10 +11,10 @@ use models_databases::views::{
     Conjunction, DatabaseView, FilterCondition, FilterGroup, FilterNode, NewView, SortKey,
     ViewLayout, ViewQuery,
 };
+use models_databases::{DatabaseId, TableId};
 use models_databases::{DatabaseOp, OpResult};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::{DatabasesToolContext, database_error, table_of};
 use crate::domain::ports::DatabasesService;
@@ -28,9 +28,9 @@ use crate::domain::ports::DatabasesService;
 )]
 pub struct SaveDatabaseView {
     /// Database id from ListDatabases.
-    pub database_id: Uuid,
+    pub database_id: DatabaseId,
     /// Table id from DescribeDatabase.
-    pub table_id: Uuid,
+    pub table_id: TableId,
     /// Name shown in the table's view tabs.
     pub name: String,
     /// Which rows the view shows; every row when left out.
