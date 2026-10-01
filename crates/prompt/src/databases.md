@@ -44,7 +44,7 @@ Each structure tool returns the refreshed schema.
 
 ## Rows
 
-`QueryDatabase` reads and writes rows in Macro's SQL dialect, one statement per call; its description is the dialect's reference. Always pass `databaseId`. To change rows, SELECT them first, then UPDATE or DELETE exactly those by `row_id`. If a result reports `truncatedTables`, aggregates over them are partial: say so.
+`QueryDatabase` reads and writes rows in Macro's SQL dialect, one statement per call; its description is the dialect's reference. Always pass `databaseId`. Combine tables, including `macro.people`, with JOIN, as that guide describes. To change rows, SELECT them first, then UPDATE or DELETE exactly those by `row_id`. If a result reports `truncatedTables`, aggregates over them are partial: say so.
 
 ## Answering with live blocks
 
