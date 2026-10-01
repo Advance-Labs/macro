@@ -356,11 +356,11 @@ export function createDatabaseRowsSource(props: {
       tableId,
       columnId,
       request: {
-        data_type: type.dataType,
+        dataType: type.dataType,
         ...(type.dataType === 'ENTITY'
-          ? { specific_entity_type: type.entityType }
+          ? { specificEntityType: type.entityType }
           : {}),
-        base_version: base,
+        baseVersion: base,
       },
     });
     if (inferred.isOk()) {

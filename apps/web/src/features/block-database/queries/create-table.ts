@@ -51,8 +51,8 @@ export function createTableWithName(params: {
           binding: {
             kind: 'new',
             name: 'Name',
-            data_type: 'STRING',
-            is_multi_select: false,
+            dataType: 'STRING',
+            isMultiSelect: false,
           },
         },
       });

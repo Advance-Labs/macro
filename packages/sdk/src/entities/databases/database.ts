@@ -77,7 +77,7 @@ export type ChangeColumnTypeOptions = {
 /** Settle an empty inferred column using the table version the caller read. */
 export type InferColumnTypeOptions = {
   dataType: 'STRING' | 'NUMBER' | 'ENTITY';
-  specificEntityType?: InferColumnTypeRequest['specific_entity_type'];
+  specificEntityType?: InferColumnTypeRequest['specificEntityType'];
   baseVersion: TableVersion;
 };
 
@@ -385,10 +385,10 @@ export class Database extends MacroEntity<DatabaseDetail> {
       client.storage.inferDatabaseColumnType({
         path: { id: this.id, table_id: column.table.id, column_id: column.id },
         body: {
-          data_type: options.dataType,
-          base_version: options.baseVersion,
+          dataType: options.dataType,
+          baseVersion: options.baseVersion,
           ...(options.specificEntityType !== undefined
-            ? { specific_entity_type: options.specificEntityType }
+            ? { specificEntityType: options.specificEntityType }
             : {}),
         },
       }),
@@ -406,13 +406,13 @@ export class Database extends MacroEntity<DatabaseDetail> {
     this.assertOwns(`table ${table.id}`, table.database);
     const binding: CreateColumnRequest['binding'] =
       'property' in options
-        ? { kind: 'existing', property_definition_id: options.property.id }
+        ? { kind: 'existing', propertyDefinitionId: options.property.id }
         : {
             kind: 'new',
             name: options.name,
-            data_type: options.dataType,
+            dataType: options.dataType,
             ...(options.multiSelect !== undefined
-              ? { is_multi_select: options.multiSelect }
+              ? { isMultiSelect: options.multiSelect }
               : {}),
             ...(options.options !== undefined
               ? { options: options.options }

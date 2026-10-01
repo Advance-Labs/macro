@@ -65,7 +65,6 @@ const detail: DatabaseDetail = {
         version: 1,
       },
       sql_name: '"Customers"',
-      read_sql_name: '"Customers"',
       columns: [nameColumn],
     },
   ],

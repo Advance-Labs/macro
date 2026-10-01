@@ -29,7 +29,6 @@ const detail: DatabaseDetail = {
       version: 1,
     },
     sql_name: `"${name}"`,
-    read_sql_name: `"${name}"`,
     columns: [],
   })),
 };

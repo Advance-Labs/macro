@@ -65,7 +65,6 @@ function detail(sqlName = '"guests"'): DatabaseDetail {
           version: 5,
         },
         sql_name: sqlName,
-        read_sql_name: sqlName,
         columns: [
           {
             shared_outside_database: false,
@@ -977,7 +976,7 @@ describe('first-entry column types', () => {
         id: 'db',
         tableId: 'guests-table',
         columnId: 'name',
-        request: { data_type: type, base_version: 5 },
+        request: { dataType: type, baseVersion: 5 },
       });
       expect(applyOps).toHaveBeenLastCalledWith(nameInsert(cell));
       expect(
@@ -1008,9 +1007,9 @@ describe('first-entry column types', () => {
       false
     );
     expect(transport.inferColumnType.mock.calls[0][0].request).toEqual({
-      data_type: 'ENTITY',
-      specific_entity_type: 'USER',
-      base_version: 5,
+      dataType: 'ENTITY',
+      specificEntityType: 'USER',
+      baseVersion: 5,
     });
     expect(applyOps).toHaveBeenLastCalledWith(
       nameEdit({

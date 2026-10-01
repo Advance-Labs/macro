@@ -45,7 +45,6 @@ const detail: DatabaseDetail = {
         version: 3,
       },
       sql_name: '"Invites"',
-      read_sql_name: '"Invites"',
       columns: [],
       views: [
         {

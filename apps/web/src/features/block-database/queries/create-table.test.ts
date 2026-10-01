@@ -73,7 +73,6 @@ function detail(columns: ColumnDetail[]): DatabaseDetail {
           version: columns.length,
         },
         sql_name: 'Workspace.Projects',
-        read_sql_name: 'Workspace.Projects',
         columns,
       },
     ],
@@ -108,8 +107,8 @@ describe('table setup', () => {
         binding: {
           kind: 'new',
           name: 'Name',
-          data_type: 'STRING',
-          is_multi_select: false,
+          dataType: 'STRING',
+          isMultiSelect: false,
         },
       },
     });

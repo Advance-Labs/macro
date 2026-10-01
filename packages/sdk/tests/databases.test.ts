@@ -39,7 +39,6 @@ const support: DatabaseDetail = {
     {
       table: ticketsTable,
       sql_name: 'tickets',
-      read_sql_name: 'tickets',
       views: [],
       columns: [
         {
@@ -169,9 +168,9 @@ describe('Database', () => {
       `${host}/databases/${databaseId}/tables/${tableId}/columns/${columnId}/infer-type`,
     );
     await expect(requests[1]?.json()).resolves.toEqual({
-      data_type: 'ENTITY',
-      specific_entity_type: 'USER',
-      base_version: 7,
+      dataType: 'ENTITY',
+      specificEntityType: 'USER',
+      baseVersion: 7,
     });
     await expect(
       macro.databases

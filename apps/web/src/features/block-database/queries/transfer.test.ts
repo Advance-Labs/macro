@@ -29,7 +29,6 @@ const table: TableDetail = {
     version: 1,
   },
   sql_name: '"CRM"."Contacts"',
-  read_sql_name: '"CRM"."Contacts"',
   views: [],
   columns: [
     {

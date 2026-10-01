@@ -45,8 +45,8 @@ describe('immediate column creation', () => {
         binding: {
           kind: 'new',
           name: 'Unnamed',
-          data_type: 'STRING',
-          is_multi_select: false,
+          dataType: 'STRING',
+          isMultiSelect: false,
         },
       },
     });

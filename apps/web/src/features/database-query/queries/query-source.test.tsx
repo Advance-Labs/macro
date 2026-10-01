@@ -41,7 +41,6 @@ describe('query schema', () => {
             version: 1,
           },
           sql_name: '"Projects"',
-          read_sql_name: '"Projects"',
           columns: [],
         },
         {
@@ -54,7 +53,6 @@ describe('query schema', () => {
             version: 1,
           },
           sql_name: '"Contacts"',
-          read_sql_name: '"Contacts"',
           columns: [],
         },
       ],
@@ -241,7 +239,6 @@ const workspace: DatabaseDetail = {
         version: 3,
       },
       sql_name: '"Work"."Projects"',
-      read_sql_name: '"Work"."Projects"',
       columns: [],
     },
   ],
@@ -258,7 +255,6 @@ const personal: DatabaseDetail = {
         database_id: 'db-personal',
       },
       sql_name: '"Personal"."Projects"',
-      read_sql_name: '"Personal"."Projects"',
     },
   ],
 };

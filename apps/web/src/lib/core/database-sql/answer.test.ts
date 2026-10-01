@@ -28,7 +28,6 @@ const party: DatabaseDetail = {
         version: 7,
       },
       sql_name: '"Party Planner"."Guests"',
-      read_sql_name: '"Party Planner"."Guests"',
       columns: [
         {
           shared_outside_database: false,

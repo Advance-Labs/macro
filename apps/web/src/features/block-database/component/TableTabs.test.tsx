@@ -55,7 +55,6 @@ const detail: DatabaseDetail = {
         version: 3,
       },
       sql_name: '"Guests"',
-      read_sql_name: '"Guests"',
       columns: [],
     },
     {
@@ -68,7 +67,6 @@ const detail: DatabaseDetail = {
         version: 1,
       },
       sql_name: '"Budget"',
-      read_sql_name: '"Budget"',
       columns: [],
     },
     {
@@ -81,7 +79,6 @@ const detail: DatabaseDetail = {
         version: 0,
       },
       sql_name: '"Venues"',
-      read_sql_name: '"Venues"',
       columns: [],
     },
   ],

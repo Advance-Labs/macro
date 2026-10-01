@@ -80,7 +80,6 @@ const crm: DatabaseDetail = {
         version: 3,
       },
       sql_name: '"Deals"',
-      read_sql_name: '"Deals"',
       columns: [
         {
           shared_outside_database: false,
@@ -176,7 +175,6 @@ const crm: DatabaseDetail = {
         version: 1,
       },
       sql_name: '"Contacts"',
-      read_sql_name: '"Contacts"',
       columns: [
         {
           shared_outside_database: false,
