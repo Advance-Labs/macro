@@ -222,10 +222,10 @@ impl DatabaseOp {
 
 /// A field that is `Some` whenever it is present, so `null` reads as
 /// `Some(None)` and a missing one, by `default`, as `None`.
-fn present<'de, Value, D>(deserializer: D) -> Result<Option<Value>, D::Error>
+fn present<'de, Value, Input>(deserializer: Input) -> Result<Option<Value>, Input::Error>
 where
     Value: Deserialize<'de>,
-    D: Deserializer<'de>,
+    Input: Deserializer<'de>,
 {
     Value::deserialize(deserializer).map(Some)
 }
@@ -290,8 +290,9 @@ pub enum CellValue {
     /// References to Macro entities of the kind the column points at; at
     /// most one for a single-valued column.
     Entities(Vec<EntityRef>),
-    /// Rows of the table a relation column points at, by [`RowId`].
-    Rows(Vec<Uuid>),
+    /// Rows of the table a relation column points at.
+    #[schema(value_type = Vec<Uuid>)]
+    Rows(Vec<RowId>),
     /// No value: the cell is emptied.
     Clear,
 }
@@ -319,9 +320,20 @@ pub struct EntityRef {
 
 /// A kind of Macro entity a reference column can point at.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema, specta::Type,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    utoipa::ToSchema,
+    specta::Type,
+    strum::IntoStaticStr,
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum EntityKind {
     /// People.
     User,
@@ -396,19 +408,7 @@ pub enum ColumnKind {
 impl EntityKind {
     /// The kind as the properties system and the type names spell it.
     pub fn name(self) -> &'static str {
-        match self {
-            EntityKind::User => "USER",
-            EntityKind::Document => "DOCUMENT",
-            EntityKind::Task => "TASK",
-            EntityKind::Company => "COMPANY",
-            EntityKind::CallRecord => "CALL_RECORD",
-            EntityKind::Channel => "CHANNEL",
-            EntityKind::Chat => "CHAT",
-            EntityKind::Project => "PROJECT",
-            EntityKind::Thread => "THREAD",
-            EntityKind::CalendarEvent => "CALENDAR_EVENT",
-            EntityKind::Initiative => "INITIATIVE",
-        }
+        self.into()
     }
 }
 
