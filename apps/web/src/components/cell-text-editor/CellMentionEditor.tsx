@@ -9,13 +9,13 @@ import {
   onMount,
   Show,
 } from 'solid-js';
-import type { CellTextEditorProps } from '../context/spreadsheet-mentions';
 import {
   cellTextSelection,
   readCellText,
   setCellTextCursor,
   writeCellText,
-} from '../primitives/cell-mention-dom';
+} from './cell-mention-dom';
+import type { CellTextEditorProps } from './types';
 
 export function CellMentionEditor(
   props: CellTextEditorProps & {
@@ -72,14 +72,24 @@ export function CellMentionEditor(
     setCellTextCursor(root, from + text.length);
     publish();
   };
+  const focus = () => {
+    root.focus({ preventScroll: true });
+    if (props.selectAll) {
+      const range = document.createRange();
+      range.selectNodeContents(root);
+      const selection = document.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    } else setCellTextCursor(root, readCellText(root).length);
+  };
   onMount(() => {
     writeCellText(root, props.value);
     setAnchor(root);
     document.addEventListener('selectionchange', update);
     onCleanup(() => document.removeEventListener('selectionchange', update));
+    props.onReady?.(focus);
     if (props.autoFocus) {
-      root.focus({ preventScroll: true });
-      setCellTextCursor(root, props.value.length);
+      focus();
       update();
     }
   });
@@ -100,7 +110,7 @@ export function CellMentionEditor(
         role="textbox"
         aria-label={props.label}
         aria-readonly={props.readonly}
-        data-spreadsheet-input
+        data-cell-text-editor
         contentEditable={!props.readonly}
         tabIndex={0}
         class={`${props.class} whitespace-pre-wrap touch:text-[max(16px,1rem)]`}
@@ -166,25 +176,27 @@ export function CellMentionEditor(
           props.onBlur();
         }}
       />
-      <Show when={anchor() && menu.isOpen()}>
-        <div
-          class="contents"
-          onPointerDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          onMouseDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          {props.renderMenu(menu, anchor()!, (value) => {
-            if (search && !props.readonly)
-              replace(value + ' ', search.start, search.end);
-            menu.closeMenu();
-          })}
-        </div>
+      <Show when={menu.isOpen() && anchor()}>
+        {(menuAnchor) => (
+          <div
+            class="contents"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {props.renderMenu(menu, menuAnchor(), (value) => {
+              if (search && !props.readonly)
+                replace(value + ' ', search.start, search.end);
+              menu.closeMenu();
+            })}
+          </div>
+        )}
       </Show>
     </>
   );

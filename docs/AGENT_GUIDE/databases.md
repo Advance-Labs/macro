@@ -1,0 +1,361 @@
+# Databases
+
+Choose **Create → Database** to create a database and its first table with a Name
+column. **C → L** opens a new database with its title selected and ready to type.
+Enter saves the title and focuses A1, ready to type without another click.
+Databases open at
+`/app/database/<uuid>`. A database contains tables; records belong to a table and
+its properties describe each record. The database name in the split header is an
+inline input for editors: click it to rename. Enter or leaving it saves; Escape
+cancels, and a failed rename shows a toast. Viewers without edit access see the
+split header's `viewer` badge instead.
+
+## Feature flag
+
+Databases is behind the `enable-databases` PostHog flag. A deployed app reads it
+at runtime, and a fresh `/app/database/<uuid>` link waits up to three seconds for
+PostHog before deciding. `VITE_ENABLE_DATABASES=true|false` overrides it at build
+time; `bun run dev` defaults it on, and a local stack's static build defers to
+PostHog unless the variable was set when it was built. With the flag off:
+
+- `/app/database/<uuid>` and a `~/database/<uuid>` split show the 404 view. The
+  database block's code is never fetched and no database request is made.
+- **Create → Database**, its **C → L** shortcut, the command palette entry and
+  the slash menu's **Database** action are absent, and no starter database is
+  created.
+- The sidebar, mentions, search and Quick Access list no databases; Activity
+  and the ReadActivity tool leave out database rows.
+- A document's database answer shows its title (or "Database answer") as a
+  plain label, keeps the node unchanged, and never loads the SQL engine.
+- Database tool calls in a chat render as a muted "Database tool" line.
+- The SQL engine's wasm and the database bundles are only fetched once a
+  database surface mounts with the flag on.
+
+`showDatabaseSql` (`VITE_SHOW_DATABASE_SQL`) is separate and only hides SQL.
+
+## Properties and records
+
+Use **Add column** immediately after the table’s headers. It creates an **Unnamed**
+Text column (**Unnamed 2**, and so on if that name exists), selects its name in the
+header, and lets you type immediately. Enter saves; Escape keeps the default name.
+There is no creation dialog. Double-click a header, press F2 while it is focused,
+or choose **Rename column** from its arrow or right-click menu to rename it later.
+Its type icon stays in place while editing. SQL refers to tables and columns by
+their display names (double-quoted), so a rename changes the name a saved query
+must use.
+
+The header arrow menu groups schema and view actions. **Change type** checks the
+column's values against Text, Number, Select, Multi-select, Date, Checkbox, URL,
+People, Documents, Tasks, and relations to tables in this database, showing
+"Checking values…" meanwhile, then lists only the types the column can become (a
+checkbox can only become text; only an empty column can become People or a
+relation). A type some values would not survive shows how many, such
+as "3 values aren't numbers"; choosing it opens a confirmation listing a few of
+them, and **Convert anyway, clearing 3 values** converts the rest and empties
+those (a cell with several values keeps its first). Every other type converts
+immediately. Plain number strings can become numbers; padding, leading zeros and
+ambiguous values count as values that don't fit. A date becomes its `YYYY-MM-DD`
+text. Changing a placement never changes another table that uses the same property.
+A relation can hold multiple records. **Delete column** opens a confirmation;
+it removes this table’s column and values while preserving other tables.
+Drag a column header left or right to reorder it, or use **Move left / Move right**.
+To add a column next to another, right-click its header and choose **Insert left** or
+**Insert right**: a Text column appears on that side with its name selected for
+editing, and its type is inferred from what you type.
+An orange insertion line shows the exact boundary before or after the target
+column. Release to place it there; Escape cancels. Original-position and
+offscreen boundaries show no line and do not change the order.
+The pointer can pass over the rows while reordering. Hold it at the grid's left
+or right edge to scroll to other columns. Drops move immediately while saves are
+queued, so another drag does not need to wait for the previous save.
+
+The first nonempty entry in a new default Text column sets its type. A plain number
+becomes Number; starting with `@` and choosing an item makes it the corresponding
+reference type. Other entries keep Text, and identifiers with leading zeros stay
+text. Choosing Text explicitly disables inference. Populated columns never infer a
+new type. Reference cells use Macro’s native mention menu, limited to the selected
+kind (for example, People shows users, Tasks shows tasks). Arrow keys navigate and
+Enter chooses; Escape returns without changing the value. Delete clears a selected
+reference cell. Text supports markdown and inline native mentions such as
+`Say hi to @Maya`, stored using the same mention encoding as documents. A mention
+inside a sentence preserves Text.
+
+### Select options
+
+A select or multi-select cell opens a compact option picker with its search field
+focused (**Search or create…**). Typing filters the options; when the typed name is
+not an option yet, a **Create “…”** row adds it, picks it, and keeps focus (on the
+cell for a single select, in the search for a multi-select, which stays open). Arrow
+keys move through the rows and Enter picks; **Clear value** empties the cell.
+Multi-select pickers toggle each option and keep the others.
+
+Each option row has a **⋯** button (`Edit <option>`) that opens the option editor:
+**Option name** saves on Enter or when you leave it, the colour swatches (the same
+picker tags use) recolour it, and **Delete option** asks for confirmation ("Cells
+using “X” will be cleared.") before removing it and clearing it from every cell.
+When the column's property is used outside this database, the editor says
+**Changes everywhere this property is used.** The same editor opens from a column
+header's **Edit options** menu item and from a board lane header. Changes show at
+once and are rolled back if the server refuses them.
+
+**New table**, beside the table tabs in the toolbar under the split header, creates another table
+with a Name column. Enter a table name and press Enter. If the table is created
+but its column setup fails,
+**Retry setup** continues that same table; **Open table** lets you finish manually.
+To rename a table, right-click its tab and choose **Rename table**, double-click
+the tab, or focus it and press F2. These actions also work on inactive tabs.
+The tab itself becomes an input. Enter or leaving the input saves; Escape cancels.
+Renaming preserves records and views. A concurrent rename asks you to reopen
+the editor, and a failed request keeps your draft available to retry.
+To reorder tables, drag a tab along the tab strip; an accent line shows where it
+will land, and Escape cancels the drag. From the keyboard, focus a tab, press
+Shift+F10 (or right-click it) and choose **Move left** or **Move right**; each is
+disabled at its end of the strip. The new order shows at once, is saved for every
+viewer, and survives a reload. If the save fails, the tabs return to their previous
+order and a toast says so.
+
+An editable empty row always follows the records. Enter a value in any of its
+cells to create a record; the next empty row appears immediately. Merely focusing
+or tabbing through an empty row does not save an empty record.
+Click a cell to edit, or focus it with the arrow keys and start typing. Enter
+saves and keeps that cell selected; Down then selects the same column in the
+next row, ready to type. Arrow keys inside a text editor keep their native cursor
+behavior. Escape cancels. Tab saves and immediately edits the next writable cell;
+Shift+Tab moves backward, and both wrap between rows. Read-only columns are
+skipped. Select values open the option picker; checkboxes change
+directly. Type on a selected select cell to search its options; Enter chooses a
+match, and Tab chooses the highlighted option or typed match before moving on.
+Date cells open Macro's date selector (the one tasks use): type a date or phrase
+such as `tomorrow`, `3d`, or `feb 17` and press Enter, or pick **Custom date...**
+for a calendar. Typing on a selected date cell starts that search; Delete clears
+the date, and Tab leaves the selector without changing it.
+Invalid numbers remain in the editor for correction.
+Arrow keys also move between checkbox and closed select cells without changing
+their values or opening a picker. Enter opens a selected select cell's picker.
+Blank grid lines continue below the editable row to fill the available space.
+Rapid edits remain attached to the same row while its first save is in flight.
+Committed cell edits continue saving to their original table if you switch tables
+while that first save is in flight.
+
+Right-click a cell or row number for **Edit cell**, **Open record**, **Rename**,
+**Duplicate**, or **Delete record**, as applicable. Shift+F10 or the keyboard menu
+key opens the same menu for a focused cell. Right-clicking an active text input
+keeps its native copy/paste menu. Duplicate copies editable values into a new row
+and focuses its name. Deletion requires confirmation.
+
+Click a row number or choose **Open record** for a compact centered dialog. The
+name is editable once at the top, with the remaining properties below. Tab moves
+directly between editable fields; previous/next controls browse the current view.
+Close or Escape returns to the grid.
+
+Relation cells show the names of records in their related table. Click one or
+start typing to search that table, then select records to link them. The selected
+chips open the referenced record in the compact editor; their **Remove** buttons
+remove only the relationship, never the related record. Enter selects a match.
+Tab selects a searched match before moving to the next cell; with an empty search
+it only moves. Escape closes the picker and returns focus to the cell. Choosing a
+relation in the empty row creates the record and its links together. View-only
+users can open references but cannot select or remove them. Relation cells show
+current record names, and unavailable records have a readable label. Search and
+sorting skip relations; a relation filter can only test whether it is empty.
+
+Rows are read in the browser: the grid runs its view, and relation pickers, CSV
+export and live answers run their SQL, in the database engine over Soup GraphQL
+(`/items/soup/graphql`), while every edit (a cell, a new or deleted record, a
+card move, an option change, a view change) is one typed op sent to
+`POST /databases/{id}/ops`. Agents and MCP write SQL, which the same engine
+turns into those ops on the server.
+Rows keep the table's order unless the view sorts them. After each of your own
+edits the grid reads its rows again, and another viewer's edit reaches an open
+grid or answer within a moment through the gateway's table-changed message; a
+changed search or filter keeps the current rows on screen until the new ones
+arrive.
+
+Edits save automatically, and the last write to a cell wins. A failed save
+appears as an actionable error above the grid; **Retry** reapplies the rejected
+change. A failed refresh after a successful save
+offers a refresh action; creating the record again would create a duplicate.
+If a row's create response is lost, its draft remains and the notice says it may
+already be saved. **Refresh** only reads the latest rows. Compare them with the
+draft, then use **Discard draft** to remove the local draft without deleting any
+saved record. The same uncertain draft cannot submit another insert.
+View-only access allows browsing, searching, and filtering or sorting All records
+for yourself, but disables data, schema and stored view changes.
+
+## Table and board views
+
+Tables contain the records; **Views** are shared ways to show them, stored with the
+database and the same for everyone who can open it. **All records** is always first:
+the table in its own order. Filters, sorts and column changes made on All records
+change only what you see, until you make a view of them. Viewers can search and use
+All records; only editors change stored views.
+
+**New view** (the **+** beside the tabs) offers **Table** or **Board**, a name, and
+for a board **Group by**, then **Create view**. The new view starts from what is on
+screen (its filter and sort) and opens. A board groups by a single **Select**
+column; multi-selects and checkboxes cannot group one. Double-click a view tab, press
+F2, or right-click it and choose **Rename view** to rename it in place (Enter saves,
+Escape cancels). **Delete view** asks for confirmation; the records stay. Drag a tab
+to reorder the views.
+
+**Filter**, **Sort**, **Search**, and **View settings** sit at the right of the views
+row. In **Filter**, the first condition reads **Where**; the second row of a group
+has the **And**/**Or** choice for that group. **Add condition** adds a test; **Add
+group** adds a nested group joined the other way, with its own **Add condition** and
+**Remove group**. Tests fit the column: text (contains, is, starts with…), numbers,
+dates (before, after, on or before, on or after), checkboxes (checked or not), select
+options (**is any of**/**is none of**, or **has any of**/**has all of**/**has none
+of** for a multi-select, picked as coloured pills), and emptiness for any column. A
+condition still being filled in is ignored and not saved. **Sort** orders by one or
+more columns, first first. **Search** matches text cells and option labels.
+
+**View settings** switches a stored view between Table and Board. A table view's
+**Columns** switches hide or show columns; dragging a column header's right edge
+sets its width, and both are saved in the view. Header menus offer sorting, **Move
+left**, **Move right**, and **Hide column**. On All records, moving a column moves it
+in the table for everyone; a stored view keeps its own column order. A board's
+settings choose **Group by**, the **Card fields** a card shows, **Hide empty lanes**,
+and list **Hidden lanes** with **Show** to bring one back.
+
+A board has a lane per option plus one for records without one. Drag a card within
+a lane or into another lane; it moves at once, and moving it to another lane also
+sets its Select value. The order is saved for everyone and survives a reload. A
+sorted board keeps the sort's order, so dragging a card asks **Remove sort to
+arrange cards manually?**; **Remove sort** clears the sort and then places the
+card. Drag a lane header to reorder lanes. A lane header shows the option's **⋯**
+editor and a lane menu with **Hide lane** and **Hide empty lanes**. The card's
+**Move …** menu offers the same moves without dragging.
+
+**+ New** at the bottom of a lane (or the lane header's **+**) puts an empty,
+focused card title in that lane; nothing opens. Enter creates the card with the
+lane's value and opens another empty card below it, so several can be typed in a
+row; each appears in place while it saves. Shift+Enter creates the card and opens
+its record. Escape, or leaving an empty title, cancels; leaving a typed title
+saves it. From the keyboard, press **n** with focus on any card or control in a
+lane, or Enter on a focused lane header, to start a card there. The toolbar's
+**New** starts one in the first lane. **New group** at the end of a board adds
+another option and lane, coloured with the next palette colour.
+
+Creating or changing a record can make it fall outside the current search or
+filters. A saved-record notice offers **Open record** to inspect it without
+changing the view. Its record dialog explains why it is outside the view; you can
+continue editing there. The selected table and view are restored when reopening
+the database. Views and card places are typed data in the databases service
+(`TableDetail.views`, `GET /databases/{id}/views/{view_id}/positions`) changed
+through `POST /databases/{id}/ops` (`create_view`, `update_view`, `delete_view`,
+`reorder_views`, `move_card`); rows load by running the view in the browser's
+engine, never SQL text.
+
+## First database
+
+When Databases is enabled and an authenticated user has no accessible databases,
+the app creates one small **Getting started** example in the background. Its
+**Ideas** table has Name and Stage columns and three cards spread across To do,
+Doing, and Done. Its Table and Board views show the same records; the first
+open selects Board. This example is created at most once per user. Retrying or
+opening another tab never overwrites edits, and removing the example does not
+cause it to reappear. The app waits for the feature flag and database list before
+provisioning, and disabled users receive no starter database.
+
+## AI questions and live answers
+
+Open **AI** (`Database AI`) at the right of the toolbar to create a native chat in the adjacent split.
+Its bottom composer contains a database mention and private context identifying
+this database, its current table, and all its tables. Nothing sends automatically.
+Type a question or requested change and send it using the normal chat controls.
+Any chat, not only one opened from a database, can build databases: the assistant
+has `ListDatabases`, `DescribeDatabase`, `QueryDatabase`, `SaveDatabaseQuery`,
+`CreateDatabase`, `RenameDatabase`, `CreateTable`, `RenameTable`, `ReorderTables`,
+`DeleteTable`, `AddColumn` (including relation columns via `linkToTableId`),
+`AddColumnOptions`, `RenameColumn`, `ChangeColumnType`, `DeleteColumn`,
+`ReorderColumns`, and `SaveDatabaseView`. It reads current schema before editing
+and checks actual results before reporting success.
+
+Query tool rows say what the query did in words (**Read Invites**, **Updated 3
+rows in Guests**, **Changed Price to number**, or **Queried Party Planner**) and
+never show the statement. Query tool results render inline. Their display menu switches between a table,
+a scalar answer, or compatible bar, line, area, scatter, and pie charts. A saved-view tool result
+offers **Open view**, which opens that database/table and selects the created view.
+The same tools are exposed to agent sessions through the Macro MCP server.
+
+In a document, `/database` → **Database** opens the question box with the AI prompt focused
+immediately. The empty input rotates through example questions; a selected database
+uses its actual table and column names. Typing hides these hints, and reduced-motion
+preferences keep them static. Use the searchable source picker below the question to
+choose a database; the entire chosen database is in scope, without a table
+prerequisite. **Automatic** finds a relevant accessible database from the question
+with read-only discovery tools and inspects all its tables; if matching sources are
+ambiguous, the assistant asks for clarification. Type to search the
+source menu, use the arrow keys and Enter to choose, or Escape to return without
+changing it. The displayed source is checked against the query's actual table
+dependencies. Single values default to an inline answer; multiple records become a
+result table. Asking for a chart can produce a **Bar chart**, **Line chart**,
+**Area chart**, **Scatter chart**, or **Pie chart**; the AI can also split one
+series into colored groups by a column, or stack bars and areas into a total. The
+answer's display menu offers the formats supported by its data; **View data** opens
+the underlying result table. Hovering a bar, point, or slice shows a tip with its
+label and value. Categories draw as horizontal bars, and dates draw on a time axis;
+rows without a date are left off that axis with a note saying how many. Missing
+values remain empty, and an unavailable chart falls back to the table with an
+explanation. Charts copied
+into documents stay live: only their query and chart settings are saved, never a
+copy of the reader's results. **Insert answer** saves a new answer; **Save changes** updates an
+existing one. Existing answers retain their resolved source and preview their
+saved query when opened. Changing the question or source preserves the draft but
+requires updating the result before saving. Results refresh
+when their source tables change, and each reader sees only data they can access.
+The AI supplies a short answer title independently of the original question.
+Double-click that title (or focus it and press F2) to rename it inline; Enter saves,
+Escape cancels. Renaming keeps the question and its saved query unchanged. A saved
+query names databases, tables, and columns by their display names, so renaming one
+it reads makes the answer fail until the question is updated.
+
+An existing document keeps its answer label when Databases is off and does not
+fetch its database results; see [Feature flag](#feature-flag).
+
+### Showing SQL
+
+People never see SQL. Questions still compile to SQL and run, saved answers
+still store it, and agents still write it through QueryDatabase, but the UI
+shows only the question, the answer, and plain-words descriptions. There is no
+SQL toggle, SQL editor, **Run SQL**, or **View SQL**, and a failed answer reads
+like "This answer couldn't be computed: the column Price no longer exists."
+instead of the engine's message. For development, start the web app with
+`VITE_SHOW_DATABASE_SQL=true` (the env-only `showDatabaseSql` flag) to bring
+back the SQL toggle and editor, **View SQL**, the raw error under **Technical
+details**, and the server's summary on query tool rows.
+
+## Sharing and files
+
+**Share** opens Macro's standard sharing dialog. The owner can share with people
+or channels and change or remove their access. Databases do not offer a public
+link. **Share** and viewer avatars (other people currently looking at the
+database) sit at the right of the split header, like other entities.
+
+The toolbar's **Database actions** (`…`) menu, beside **AI**, contains **Rename**,
+**Import CSV**, **Download**, and owner-only **Delete**. Rename focuses the inline
+title in the split header; Delete opens the standard confirmation dialog.
+**Download** offers **Current table as CSV**.
+Exports contain all records, regardless of the current filters. CSV uses column
+labels and preserves text, quoted commas, and line breaks. A table that changes
+during CSV export must be downloaded again so the file does not mix different
+versions.
+
+**Import CSV** in the `…` menu opens a preview and focuses the new table's name.
+Confirm **Import** to create a table with the CSV's columns and records. Imported
+values remain Text, preserving leading zeros and large identifiers; use a column's
+type menu afterward to convert it. The limit is 8 MB, 100 columns, and 10,000 rows.
+A failed response offers **Retry import** with the same request, so retrying a
+completed import does not create a second table.
+
+## Side panel and activity
+
+The split header's `Show Side Panel` toggle (or `]`) opens the database side panel,
+closed by default. **Details** shows the Owner and Created time. **Activity** (behind
+the `enable-entity-activity-section` flag, like documents) lists who created,
+renamed, edited, shared, trashed, or restored the database, with the same glyph rail
+and folding as a document's Activity section. Every write is one entry: a cell edit,
+a SQL statement however many rows it touches, or a schema change such as a new
+table or column. Consecutive edits by one person fold into `made N edits`. Changes an
+AI agent made read as the agent acting for the user who asked. The same entries
+appear on `/app/component/activity`; clicking one opens the database.
