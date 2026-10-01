@@ -37,6 +37,7 @@ import {
   type DatabaseColumnClearingChoice,
 } from './column-type-menu';
 import { createInlineRename } from './inline-rename';
+import { isOptionColumn } from './option-column';
 import { OptionEditor } from './option-editor';
 import { PropertyIcon } from './property-icon';
 import { OptionPill } from './select-pill';
@@ -89,9 +90,6 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
     setOptionsOpen(true);
   };
   const editing = useOptionEditing();
-  const hasOptions = () =>
-    !props.column.relation &&
-    ['SELECT_STRING', 'SELECT_NUMBER', 'TAG'].includes(props.column.dataType);
   const errorId = createUniqueId();
   let header!: HTMLDivElement;
   let input: HTMLInputElement | undefined;
@@ -175,7 +173,7 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
           },
         ]
       : []),
-    ...(canRename() && editing && hasOptions()
+    ...(canRename() && editing && isOptionColumn(props.column)
       ? [
           {
             label: 'Edit options',
