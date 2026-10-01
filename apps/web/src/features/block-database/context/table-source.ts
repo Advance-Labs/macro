@@ -29,7 +29,7 @@ export type DatabaseWriteResult = {
 export type DatabaseRowsSource = {
   columns: Accessor<DatabaseViewColumn[]>;
   snapshot: Accessor<DatabaseRowsSnapshot | undefined>;
-  /** The view's last read as the engine answered it, with the search folded into the view the engine ran. */
+  /** The view's last read as the engine answered it. */
   read: Accessor<
     { outcome: Outcome; catalog: Catalog; view: DatabaseView } | undefined
   >;

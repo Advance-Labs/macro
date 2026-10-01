@@ -22,10 +22,8 @@ import {
   on,
   Show,
 } from 'solid-js';
-import {
-  createHorizontalReorder,
-  createReorderItem,
-} from '../../../components/drag-drop/create-horizontal-reorder';
+import { createHorizontalReorder } from '../../../components/drag-drop/create-horizontal-reorder';
+import { createReorderItem } from '../../../components/drag-drop/create-reorder';
 import { DragSessionSensors } from '../../../components/drag-drop/drag-session-sensors';
 import { InsertionLine } from '../../../components/drag-drop/insertion-line';
 import {

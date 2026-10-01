@@ -14,6 +14,7 @@ import {
   StaticMarkdownContext,
 } from '@core/component/LexicalMarkdown/component/core/StaticMarkdown';
 import { isFeatureEnabled, showDatabaseSql } from '@core/constant/featureFlags';
+import { decodeHtmlEntities } from '@macro-inc/lexical-core/utils/html-entities';
 import DatabaseIcon from '@phosphor/database.svg';
 import TableIcon from '@phosphor/table.svg';
 import {
@@ -582,7 +583,9 @@ const saveDatabaseQueryHandler = createToolRenderer({
         <div class="flex min-w-0 flex-1 items-center justify-between gap-3">
           <span class="min-w-0 truncate">
             {ctx.response ? 'Saved' : 'Save'} question{' '}
-            <span class="text-ink">{ctx.tool.data.title}</span>
+            <span class="text-ink">
+              {decodeHtmlEntities(ctx.tool.data.title)}
+            </span>
           </span>
           <Tool.ResultToggle
             expanded={expanded()}

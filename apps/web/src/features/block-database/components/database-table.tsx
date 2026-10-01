@@ -28,10 +28,8 @@ import {
   onCleanup,
   Show,
 } from 'solid-js';
-import {
-  createHorizontalReorder,
-  createReorderItem,
-} from '../../../components/drag-drop/create-horizontal-reorder';
+import { createHorizontalReorder } from '../../../components/drag-drop/create-horizontal-reorder';
+import { createReorderItem } from '../../../components/drag-drop/create-reorder';
 import { DragSessionSensors } from '../../../components/drag-drop/drag-session-sensors';
 import { InsertionLine } from '../../../components/drag-drop/insertion-line';
 import type {
@@ -122,7 +120,6 @@ export function DatabaseTable(props: {
     previousName: string
   ) => DatabaseSchemaChange;
   onSort: (columnId: string, direction: 'asc' | 'desc' | null) => void;
-  onHide?: (columnId: string) => void;
   onMove?: (columnId: string, direction: 'left' | 'right') => void;
   onInsertColumn?: (columnId: string, side: 'left' | 'right') => void;
 }) {
@@ -445,7 +442,6 @@ export function DatabaseTable(props: {
                   canRename={props.canEdit}
                   onRename={props.onRenameColumn}
                   onSort={props.onSort}
-                  onHide={props.onHide}
                   onMove={props.onMove}
                   onInsert={props.onInsertColumn}
                   canMoveLeft={index() > 0}

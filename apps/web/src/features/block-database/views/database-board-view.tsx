@@ -16,6 +16,7 @@ import {
   Show,
   Switch,
 } from 'solid-js';
+import { BoardMenu } from '../components/board-menu';
 import {
   DatabaseBoard,
   type DatabaseBoardControls,
@@ -95,38 +96,58 @@ export function DatabaseBoardView(props: DatabaseBoardViewProps) {
     );
     return group ? { layout, group } : undefined;
   };
+  const menu = () => {
+    const layout = props.view.layout;
+    const changeView = props.onViewChange;
+    return layout.kind === 'board' && changeView
+      ? { layout, changeView }
+      : undefined;
+  };
   return (
-    <Show
-      when={grouping()}
-      fallback={
-        <div class="flex flex-1 flex-col items-start px-5 py-8">
-          <p class="text-sm text-ink-muted">
-            Choose a single Select column to group cards.
-          </p>
-          <Show when={props.onViewChange}>
-            {(changeView) => (
-              <Button
-                size="sm"
-                class="mt-3"
-                onClick={() =>
-                  changeView()({ layout: { kind: 'table', columns: [] } })
-                }
-              >
-                Open table
-              </Button>
-            )}
-          </Show>
-        </div>
-      }
-    >
-      {(shown) => (
-        <GroupedBoard
-          {...props}
-          layout={shown().layout}
-          groupColumn={shown().group}
-        />
-      )}
-    </Show>
+    <>
+      <Show when={menu()}>
+        {(shown) => (
+          <div class="flex shrink-0 items-center justify-end px-5 pt-2">
+            <BoardMenu
+              layout={shown().layout}
+              columns={props.columns}
+              onChange={(layout) => shown().changeView({ layout })}
+            />
+          </div>
+        )}
+      </Show>
+      <Show
+        when={grouping()}
+        fallback={
+          <div class="flex flex-1 flex-col items-start px-5 py-8">
+            <p class="text-sm text-ink-muted">
+              Choose a single Select column to group cards.
+            </p>
+            <Show when={props.onViewChange}>
+              {(changeView) => (
+                <Button
+                  size="sm"
+                  class="mt-3"
+                  onClick={() =>
+                    changeView()({ layout: { kind: 'table', columns: [] } })
+                  }
+                >
+                  Open table
+                </Button>
+              )}
+            </Show>
+          </div>
+        }
+      >
+        {(shown) => (
+          <GroupedBoard
+            {...props}
+            layout={shown().layout}
+            groupColumn={shown().group}
+          />
+        )}
+      </Show>
+    </>
   );
 }
 

@@ -24,7 +24,6 @@ import {
 } from 'neverthrow';
 import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DatabaseToolbar } from '../components/database-toolbar';
 import type { DatabaseWriteResult } from '../context/table-source';
 import type { DatabaseViewColumn } from '../core/database-view';
 import { allRecordsView } from '../core/views';
@@ -172,7 +171,6 @@ function columnOrderFixture() {
       canEdit
       view={view()}
       stored={false}
-      search=""
       onViewChange={changeView}
       onReorderColumns={reorder}
       addColumn={() => null}
@@ -264,7 +262,6 @@ describe('database table view', () => {
         canEdit
         view={allRecords}
         stored={false}
-        search=""
         addColumn={() => null}
         boardPositions={unplacedCards}
       />
@@ -318,7 +315,6 @@ describe('database table view', () => {
         canEdit
         view={allRecords}
         stored={false}
-        search=""
         addColumn={() => null}
         boardPositions={unplacedCards}
       />
@@ -369,7 +365,6 @@ describe('database table view', () => {
         canEdit
         view={allRecords}
         stored={false}
-        search=""
         addColumn={() => null}
         boardPositions={unplacedCards}
       />
@@ -403,7 +398,6 @@ describe('database table view', () => {
         canEdit={false}
         view={allRecords}
         stored={false}
-        search=""
         addColumn={() => null}
         boardPositions={unplacedCards}
       />
@@ -455,7 +449,6 @@ describe('database table view', () => {
           canEdit
           view={allRecords}
           stored={false}
-          search=""
           addColumn={() => null}
           boardPositions={unplacedCards}
         />
@@ -531,7 +524,6 @@ describe('database table view', () => {
         canEdit
         view={allRecords}
         stored={false}
-        search=""
         addColumn={() => null}
         boardPositions={unplacedCards}
       />
@@ -586,7 +578,6 @@ describe('database table view', () => {
           canEdit
           view={allRecords}
           stored={false}
-          search=""
           addColumn={() => null}
           actionsRef={(ready) => {
             actions = ready;
@@ -639,7 +630,6 @@ describe('database table view', () => {
         canEdit
         view={view()}
         stored={false}
-        search=""
         onViewChange={(change) =>
           setView((current) => ({ ...current, ...change }))
         }
@@ -699,7 +689,6 @@ describe('database table view', () => {
         canEdit
         view={allRecords}
         stored={false}
-        search=""
         addColumn={() => null}
         boardPositions={unplacedCards}
       />
@@ -746,7 +735,6 @@ describe('database table view', () => {
         canEdit
         view={allRecords}
         stored={false}
-        search=""
         addColumn={() => null}
         actionsRef={(ready) => {
           actions = ready;
@@ -784,7 +772,6 @@ describe('database table view', () => {
         canEdit
         view={statusBoard}
         stored
-        search=""
         addColumn={() => null}
         actionsRef={(ready) => {
           actions = ready;
@@ -817,7 +804,6 @@ describe('database table view', () => {
         canEdit
         view={allRecords}
         stored={false}
-        search=""
         addColumn={() => null}
         actionsRef={(ready) => {
           actions = ready;
@@ -855,7 +841,6 @@ describe('database table view', () => {
         onRenameColumn={vi.fn(() => okAsync(undefined))}
         view={allRecords}
         stored={false}
-        search=""
         addColumn={() => null}
         actionsRef={(value) => {
           actions = value;
@@ -934,7 +919,6 @@ describe('database table view', () => {
         canEdit
         view={allRecords}
         stored={false}
-        search=""
         addColumn={() => null}
         boardPositions={unplacedCards}
       />
@@ -997,7 +981,6 @@ describe('database table view', () => {
         canEdit
         view={allRecords}
         stored={false}
-        search=""
         addColumn={() => null}
         boardPositions={unplacedCards}
       />
@@ -1063,7 +1046,6 @@ describe('database table view', () => {
           canEdit
           view={statusBoard}
           stored
-          search=""
           boardPositions={unplacedCards}
           addColumn={() => <button type="button">Add column</button>}
         />
@@ -1137,7 +1119,7 @@ describe('database table view', () => {
     }
   );
 
-  it('reveals a card created outside search through its saved notice without creating it again', async () => {
+  it('reveals a card created outside the filters through its saved notice without creating it again', async () => {
     const fixture = createFakeRowsSource({
       columns,
       table: {
@@ -1156,9 +1138,23 @@ describe('database table view', () => {
         name="Projects"
         source={fixture.source}
         canEdit
-        view={statusBoard}
+        view={{
+          ...statusBoard,
+          query: {
+            filter: {
+              conjunction: 'and',
+              conditions: [
+                {
+                  kind: 'condition',
+                  column: 'title',
+                  test: { kind: 'text', operator: 'contains', value: 'launch' },
+                },
+              ],
+            },
+            sort: [],
+          },
+        }}
         stored
-        search="launch"
         boardPositions={unplacedCards}
         onViewChange={changeView}
         addColumn={() => <button type="button">Add column</button>}
@@ -1193,14 +1189,14 @@ describe('database table view', () => {
     ).toBeTruthy();
     expect(
       within(dialog).getByText(
-        'This record doesn’t match your search. You can keep editing it here.'
+        'This record doesn’t match your filters. You can keep editing it here.'
       )
     ).toBeTruthy();
     expect(changeView).not.toHaveBeenCalled();
     expect(fixture.source.write).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps editing a record that stops matching search and removes the explanation when it matches again', async () => {
+  it('keeps editing a record that stops matching the filters and removes the explanation when it matches again', async () => {
     const fixture = createFakeRowsSource({
       columns,
       table: {
@@ -1218,9 +1214,23 @@ describe('database table view', () => {
         name="Projects"
         source={fixture.source}
         canEdit
-        view={allRecords}
+        view={{
+          ...allRecords,
+          query: {
+            filter: {
+              conjunction: 'and',
+              conditions: [
+                {
+                  kind: 'condition',
+                  column: 'title',
+                  test: { kind: 'text', operator: 'contains', value: 'launch' },
+                },
+              ],
+            },
+            sort: [],
+          },
+        }}
         stored={false}
-        search="launch"
         addColumn={() => <button type="button">Add column</button>}
         boardPositions={unplacedCards}
       />
@@ -1234,7 +1244,7 @@ describe('database table view', () => {
       key: 'Enter',
     });
     await within(dialog).findByText(
-      'This record doesn’t match your search. You can keep editing it here.'
+      'This record doesn’t match your filters. You can keep editing it here.'
     );
     await waitFor(() => expect(fixture.source.write).toHaveBeenCalledTimes(1));
     fireEvent.click(
@@ -1276,9 +1286,23 @@ describe('database table view', () => {
         name="Projects"
         source={source}
         canEdit
-        view={allRecords}
+        view={{
+          ...allRecords,
+          query: {
+            filter: {
+              conjunction: 'and',
+              conditions: [
+                {
+                  kind: 'condition',
+                  column: 'title',
+                  test: { kind: 'text', operator: 'contains', value: 'launch' },
+                },
+              ],
+            },
+            sort: [],
+          },
+        }}
         stored={false}
-        search="launch"
         addColumn={() => <button type="button">Add column</button>}
         boardPositions={unplacedCards}
       />
@@ -1331,7 +1355,6 @@ describe('database table view', () => {
           canEdit
           view={allRecords}
           stored={false}
-          search=""
           addColumn={() => null}
           renderToolbar={(actions) => (
             <button type="button" onClick={() => void actions.createRecord()}>
@@ -1393,7 +1416,6 @@ describe('database table view', () => {
           canEdit
           view={allRecords}
           stored={false}
-          search=""
           addColumn={() => <button type="button">Add property</button>}
           boardPositions={unplacedCards}
         />
@@ -1446,7 +1468,6 @@ describe('database table view', () => {
         canEdit
         view={statusBoard}
         stored
-        search=""
         boardPositions={unplacedCards}
         addColumn={() => <button type="button">Add property</button>}
       />
@@ -1518,7 +1539,6 @@ describe('database table view', () => {
             },
           }}
           stored
-          search=""
           boardPositions={unplacedCards}
           addColumn={() => <button type="button">Add property</button>}
         />
@@ -1560,7 +1580,6 @@ describe('database table view', () => {
         canEdit
         view={statusBoard}
         stored
-        search=""
         boardPositions={unplacedCards}
         addColumn={() => <button type="button">Add property</button>}
         renderToolbar={(actions) => (
@@ -1614,7 +1633,6 @@ describe('database table view', () => {
         canEdit
         view={statusBoard}
         stored
-        search=""
         boardPositions={unplacedCards}
         addColumn={() => <button type="button">Add property</button>}
       />
@@ -1654,7 +1672,6 @@ describe('database table view', () => {
         canEdit
         view={allRecords}
         stored={false}
-        search=""
         addColumn={() => <button type="button">Add property</button>}
         boardPositions={unplacedCards}
       />
@@ -1699,7 +1716,6 @@ describe('database table view', () => {
         canEdit
         view={allRecords}
         stored={false}
-        search=""
         addColumn={() => null}
         boardPositions={unplacedCards}
       />
@@ -1743,7 +1759,6 @@ describe('database table view', () => {
         canEdit
         view={allRecords}
         stored={false}
-        search=""
         addColumn={(label) => (
           <button type="button">{label ?? 'Add property'}</button>
         )}
@@ -1783,7 +1798,6 @@ describe('database table view', () => {
         canEdit
         view={allRecords}
         stored={false}
-        search=""
         addColumn={() => <button type="button">Add property</button>}
         boardPositions={unplacedCards}
       />
@@ -1825,7 +1839,6 @@ describe('database table view', () => {
         canEdit
         view={allRecords}
         stored={false}
-        search=""
         onViewChange={changeView}
         addColumn={() => <button type="button">Add column</button>}
         renderToolbar={(actions) => (
@@ -1903,7 +1916,6 @@ describe('database table view', () => {
         canEdit
         view={view()}
         stored={false}
-        search=""
         onViewChange={(change) =>
           setView((current) => ({ ...current, ...change }))
         }
@@ -1990,7 +2002,6 @@ describe('database table view', () => {
           },
         }}
         stored
-        search=""
         onViewChange={changeView}
         onReorderColumns={reorder}
         addColumn={() => null}
@@ -2157,7 +2168,7 @@ describe('database table view', () => {
     expect(fixture.view()).toEqual(selected);
   });
 
-  it('lets viewers move and hide columns while keeping every record accessible and restoring its layout', async () => {
+  it('lets viewers move columns while a hidden one stays readable in the record', async () => {
     const { source, setColumns, setTable } = createFakeRowsSource({
       columns,
       table: {
@@ -2202,26 +2213,9 @@ describe('database table view', () => {
         canEdit={false}
         view={view()}
         stored={false}
-        search=""
         onViewChange={changeView}
         addColumn={() => null}
         boardPositions={unplacedCards}
-        renderToolbar={() => (
-          <DatabaseToolbar
-            columns={source.columns()}
-            views={[]}
-            view={view()}
-            canEdit={false}
-            search=""
-            onSearchChange={vi.fn()}
-            onSelectView={vi.fn()}
-            onChangeView={changeView}
-            onCreateView={vi.fn(() => okAsync(undefined))}
-            onRenameView={vi.fn(() => okAsync(undefined))}
-            onDeleteView={vi.fn(() => okAsync(undefined))}
-            onReorderViews={vi.fn()}
-          />
-        )}
       />
     ));
     const headers = () =>
@@ -2254,12 +2248,6 @@ describe('database table view', () => {
       ],
     });
 
-    openMenu('Name');
-    fireEvent.keyDown(
-      await screen.findByRole('menuitem', { name: 'Hide column' }),
-      { key: 'Enter' }
-    );
-    await waitFor(() => expect(headers()).toEqual(['Notes column menu']));
     fireEvent.click(screen.getByRole('button', { name: 'Open Plan launch' }));
     const record = await screen.findByRole('dialog');
     expect(
@@ -2271,19 +2259,6 @@ describe('database table view', () => {
     );
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
-    fireEvent.click(screen.getByRole('button', { name: 'View settings' }));
-    fireEvent.click(await screen.findByRole('switch', { name: 'Name' }));
-    await waitFor(() =>
-      expect(headers()).toEqual(['Notes column menu', 'Name column menu'])
-    );
-    expect(view().layout).toEqual({
-      kind: 'table',
-      columns: [
-        { column: 'notes', width: null, hidden: false },
-        { column: 'status', width: null, hidden: true },
-        { column: 'title', width: null, hidden: false },
-      ],
-    });
     expect(source.write).not.toHaveBeenCalled();
   });
 
@@ -2308,7 +2283,6 @@ describe('database table view', () => {
         canEdit
         view={allRecords}
         stored={false}
-        search=""
         addColumn={() => <button type="button">Add column</button>}
         renderToolbar={(actions) => (
           <button type="button" onClick={() => void actions.createRecord()}>

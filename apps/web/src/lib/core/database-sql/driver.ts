@@ -14,6 +14,11 @@ import type {
   Step,
 } from './generated/types';
 import {
+  type DatabaseSqlRunTrace,
+  type DatabaseSqlStepTrace,
+  traceDatabaseSqlRun,
+} from './trace';
+import {
   type DatabaseSqlQuery,
   openDatabaseSqlQuery,
   openDatabaseViewQuery,
@@ -41,15 +46,20 @@ export interface RowSource {
    * One page of a `soup` or `people` query, from `cursor` (the start when
    * `null`), at most `limit` rows, with cells keyed by property definition.
    * `needs` names the keys the engine will read; a source may ignore it.
+   * `step` hears about the GraphQL request the page is read with.
    */
   page: (
     query: GqlQuery,
     needs: string[],
     cursor: string | null,
-    limit: number
+    limit: number,
+    step: DatabaseSqlStepTrace
   ) => ResultAsync<Page, DatabaseSqlFetchFailure>;
   /** The bins of a `groupSoup` query. */
-  bins: (query: GqlQuery) => ResultAsync<Bin[], DatabaseSqlFetchFailure>;
+  bins: (
+    query: GqlQuery,
+    step: DatabaseSqlStepTrace
+  ) => ResultAsync<Bin[], DatabaseSqlFetchFailure>;
 }
 
 /** Opens the engine for one statement; the wasm module unless a test says otherwise. */
@@ -91,19 +101,39 @@ function feed(next: () => Step): Result<Step, DatabaseSqlFailure> {
 function nextStep(
   query: DatabaseSqlQuery,
   step: Exclude<Step, { step: 'done' }>,
-  source: RowSource
+  source: RowSource,
+  trace: DatabaseSqlRunTrace
 ): ResultAsync<Step, DatabaseSqlFailure> {
   return match(step)
     .returnType<ResultAsync<Step, DatabaseSqlFailure>>()
     .with({ step: 'fetch' }, (request) =>
-      source
-        .page(request.query, request.needs, request.cursor, request.limit)
-        .andThen((page) => feed(() => query.feed_page(request.id, page)))
+      trace
+        .fetch(
+          request,
+          (traced) =>
+            source.page(
+              request.query,
+              request.needs,
+              request.cursor,
+              request.limit,
+              traced
+            ),
+          (page) => page.rows.length
+        )
+        .andThen((page) =>
+          trace.fold(() => feed(() => query.feed_page(request.id, page)))
+        )
     )
     .with({ step: 'bins' }, (request) =>
-      source
-        .bins(request.query)
-        .andThen((bins) => feed(() => query.feed_bins(request.id, bins)))
+      trace
+        .fetch(
+          request,
+          (traced) => source.bins(request.query, traced),
+          (bins) => bins.length
+        )
+        .andThen((bins) =>
+          trace.fold(() => feed(() => query.feed_bins(request.id, bins)))
+        )
     )
     .with({ step: 'ops' }, () =>
       errAsync<Step, DatabaseSqlFailure>({ kind: 'read-only' })
@@ -113,7 +143,8 @@ function nextStep(
 
 async function steps(
   query: DatabaseSqlQuery,
-  source: RowSource
+  source: RowSource,
+  trace: DatabaseSqlRunTrace
 ): Promise<Result<Outcome, DatabaseSqlFailure>> {
   let step = feed(() => query.start());
   while (step.isOk()) {
@@ -122,17 +153,19 @@ async function steps(
       const { step: _done, ...outcome } = current;
       return ok(outcome);
     }
-    step = await nextStep(query, current, source);
+    step = await nextStep(query, current, source, trace);
   }
   return err(step.error);
 }
 
 function drive(
-  opened: Promise<DatabaseSqlQuery>,
-  source: RowSource
+  opened: () => Promise<DatabaseSqlQuery>,
+  source: RowSource,
+  trace: DatabaseSqlRunTrace
 ): ResultAsync<Outcome, DatabaseSqlFailure> {
-  return ResultAsync.fromPromise(opened, engineFailure).andThen(
-    (query) => new ResultAsync(steps(query, source).finally(() => query.free()))
+  return ResultAsync.fromPromise(opened(), engineFailure).andThen(
+    (query) =>
+      new ResultAsync(steps(query, source, trace).finally(() => query.free()))
   );
 }
 
@@ -145,7 +178,9 @@ export function runDatabaseSql(
     open = openDatabaseSqlQuery,
   }: { source: RowSource; open?: OpenEngine }
 ): ResultAsync<Outcome, DatabaseSqlFailure> {
-  return drive(open(catalog, sql), source);
+  return traceDatabaseSqlRun({ kind: 'sql', sql }, catalog, (trace) =>
+    drive(() => open(catalog, sql), source, trace)
+  );
 }
 
 /** Read the rows a view shows, as its compiled query finds them. */
@@ -157,7 +192,9 @@ export function runDatabaseView(
     open = openDatabaseViewQuery,
   }: { source: RowSource; open?: OpenView }
 ): ResultAsync<Outcome, DatabaseSqlFailure> {
-  return drive(open(catalog, view), source);
+  return traceDatabaseSqlRun({ kind: 'view', view }, catalog, (trace) =>
+    drive(() => open(catalog, view), source, trace)
+  );
 }
 
 const NO_ROWS: RowSource = {
@@ -171,7 +208,9 @@ export function checkReadStatement(
   sql: string,
   { open = openDatabaseSqlQuery }: { open?: OpenEngine } = {}
 ): ResultAsync<void, DatabaseSqlFailure> {
-  return drive(open(catalog, sql), NO_ROWS).andThen((outcome) =>
+  return traceDatabaseSqlRun({ kind: 'check', sql }, catalog, (trace) =>
+    drive(() => open(catalog, sql), NO_ROWS, trace)
+  ).andThen((outcome) =>
     outcome.columns.length > 0
       ? okAsync(undefined)
       : errAsync<void, DatabaseSqlFailure>({ kind: 'read-only' })

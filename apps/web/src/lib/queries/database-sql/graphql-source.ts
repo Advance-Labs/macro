@@ -19,6 +19,7 @@ import type {
   Row,
   Table,
 } from '@core/database-sql/generated/types';
+import type { DatabaseSqlStepTrace } from '@core/database-sql/trace';
 import type { CacheHost } from '@graphql-cache/host/types';
 import { buildGraphqlEntitySoupInput } from '@queries/soup/graphql/entity-input';
 import {
@@ -40,11 +41,12 @@ import {
   type SoupQueryVariables,
 } from '@service-storage/graphql/generated/graphql';
 import type { GraphqlSoupItem } from '@service-storage/graphql-soup';
-import type {
-  AnyVariables,
-  Client,
-  DocumentInput,
-  RequestPolicy,
+import {
+  type AnyVariables,
+  type Client,
+  type DocumentInput,
+  type RequestPolicy,
+  stringifyDocument,
 } from '@urql/core';
 import { err, errAsync, ok, okAsync, Result, ResultAsync } from 'neverthrow';
 import { match, P } from 'ts-pattern';
@@ -112,16 +114,26 @@ function thrownFetchFailure(thrown: unknown): DatabaseSqlFetchFailure {
   );
 }
 
-/** One GraphQL read; a GraphQL error or a missing answer is a fetch failure. */
+/**
+ * One GraphQL read inside the step's trace; a GraphQL error or a missing
+ * answer is a fetch failure.
+ */
 function graphqlQuery<Data, Variables extends AnyVariables>(
   client: Client,
   document: DocumentInput<Data, Variables>,
   variables: Variables,
   requestPolicy: RequestPolicy,
-  name: string
+  name: string,
+  step: DatabaseSqlStepTrace
 ): ResultAsync<Data, DatabaseSqlFetchFailure> {
+  step.request(stringifyDocument(document), variables);
   return ResultAsync.fromPromise(
-    client.query(document, variables, { requestPolicy }).toPromise(),
+    client
+      .query(document, variables, {
+        requestPolicy,
+        fetchOptions: { headers: step.headers() },
+      })
+      .toPromise(),
     thrownFetchFailure
   ).andThen((result): Result<Data, DatabaseSqlFetchFailure> => {
     if (result.error) return err(fetchFailure(result.error.message));
@@ -139,12 +151,12 @@ export function createGraphqlRowSource({
   membership,
 }: GraphqlRowSourceCapabilities): RowSource {
   return {
-    page: (query, _needs, cursor, limit) =>
+    page: (query, _needs, cursor, limit, step) =>
       match(query)
         .returnType<ResultAsync<Page, DatabaseSqlFetchFailure>>()
         .with({ type: 'soup' }, (soup) =>
           soupInput(soup, cursor, limit).asyncAndThen((input) =>
-            soupPage(client, requestPolicy, input, membership)
+            soupPage(client, requestPolicy, input, membership, step)
           )
         )
         .with({ type: 'people' }, ({ ids }) => peoplePage(catalog, people, ids))
@@ -152,11 +164,11 @@ export function createGraphqlRowSource({
           errAsync(fetchFailure('a grouped query is read as bins, not pages'))
         )
         .exhaustive(),
-    bins: (query) =>
+    bins: (query, step) =>
       match(query)
         .returnType<ResultAsync<Bin[], DatabaseSqlFetchFailure>>()
         .with({ type: 'groupSoup' }, (grouped) =>
-          groupBins(client, requestPolicy, catalog, grouped)
+          groupBins(client, requestPolicy, catalog, grouped, step)
         )
         .with({ type: P.union('soup', 'people') }, () =>
           errAsync(fetchFailure('only a grouped query has bins'))
@@ -309,7 +321,8 @@ function soupPage(
   client: Client,
   requestPolicy: RequestPolicy,
   input: SoupInput,
-  membership: LocalMembership | undefined
+  membership: LocalMembership | undefined,
+  step: DatabaseSqlStepTrace
 ): ResultAsync<Page, DatabaseSqlFetchFailure> {
   const evidence = input.initial ? JSON.stringify(input) : undefined;
   const local: ResultAsync<Page | undefined, DatabaseSqlFetchFailure> =
@@ -324,7 +337,8 @@ function soupPage(
           SoupDocument,
           { input },
           requestPolicy,
-          'Soup'
+          'Soup',
+          step
         ).andThen((data) => {
           const { items, nextCursor } = data.user.soup;
           if (evidence && membership && isNetworkRead(requestPolicy)) {
@@ -455,7 +469,8 @@ function groupBins(
   client: Client,
   requestPolicy: RequestPolicy,
   catalog: Catalog,
-  { table, propf, groupBy }: Extract<GqlQuery, { type: 'groupSoup' }>
+  { table, propf, groupBy }: Extract<GqlQuery, { type: 'groupSoup' }>,
+  step: DatabaseSqlStepTrace
 ): ResultAsync<Bin[], DatabaseSqlFetchFailure> {
   const kind = catalog.tables
     .find((candidate) => candidate.id === table)
@@ -494,7 +509,8 @@ function groupBins(
           },
         },
         requestPolicy,
-        'grouped Soup'
+        'grouped Soup',
+        step
       )
     )
     .andThen((data) =>

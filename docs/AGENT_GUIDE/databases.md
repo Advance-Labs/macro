@@ -171,7 +171,7 @@ tools send the same ops.
 Rows keep the table's order unless the view sorts them. After each of your own
 edits the grid reads its rows again, and another viewer's edit reaches an open
 grid or answer within a moment through the gateway's table-changed message; a
-changed search or filter keeps the current rows on screen until the new ones
+changed filter keeps the current rows on screen until the new ones
 arrive.
 
 Edits save automatically, and the last write to a cell wins. A failed save
@@ -201,8 +201,7 @@ F2, or right-click it and choose **Rename view** to rename it in place (Enter sa
 Escape cancels). **Delete view** asks for confirmation; the records stay. Drag a tab
 to reorder the views.
 
-**Filter**, **Sort**, **Search**, and **View settings** sit at the right of the views
-row. In **Filter**, the first condition reads **Where**; the second row of a group
+**Filter**, **Sort**, and **Search** sit at the right of the views row. In **Filter**, the first condition reads **Where**; the second row of a group
 has the **And**/**Or** choice for that group. **Add condition** adds a test; **Add
 group** adds a nested group joined the other way, with its own **Add condition** and
 **Remove group**. Tests fit the column: text (contains, is, starts with…), numbers,
@@ -210,15 +209,32 @@ dates (before, after, on or before, on or after), checkboxes (checked or not), s
 options (**is any of**/**is none of**, or **has any of**/**has all of**/**has none
 of** for a multi-select, picked as coloured pills), and emptiness for any column. A
 condition still being filled in is ignored and not saved. **Sort** orders by one or
-more columns, first first. **Search** matches text cells and option labels.
+more columns, first first; drag a level by its handle (or focus the handle and
+press Up or Down) to change which sorts first.
 
-**View settings** switches a stored view between Table and Board. A table view's
-**Columns** switches hide or show columns; dragging a column header's right edge
-sets its width, and both are saved in the view. Header menus offer sorting, **Move
-left**, **Move right**, and **Hide column**. On All records, moving a column moves it
-in the table for everyone; a stored view keeps its own column order. A board's
-settings choose **Group by**, the **Card fields** a card shows, **Hide empty lanes**,
-and list **Hidden lanes** with **Show** to bring one back.
+**Search** (or Ctrl+F / Cmd+F anywhere in the database: grid, board, toolbar or a
+cell being edited, instead of the browser's find) searches every table of the
+database, not just the one on screen, and does not filter the grid. Each table is
+read once in the browser's engine with a "contains" test over its text columns and
+its options' labels. Results are grouped by table: each shows the record's title
+and, when the match is in another column, that column and the matched text
+highlighted, up to 20 per table with a count of the rest. Arrow keys move through
+the results and Enter (or a click) opens one: the database switches to its table
+and the row is scrolled to and highlighted, or its record opens when the view does
+not show it. Escape closes the search and returns focus to where it was opened
+from. The term is kept while you switch tables.
+
+A view's layout, Table or Board, is chosen when the view is created. Columns
+cannot be hidden, and they are added only from **Add column** after the headers or
+a header's **Insert left**/**Insert right**. Dragging a column header's right edge
+sets its width, saved in the view. Header menus offer sorting, **Move left** and
+**Move right**. On All records, moving a column moves it in the table for everyone;
+a stored view keeps its own column order.
+
+A board's **Board menu** (the **⋯** above its lanes, for anyone who can change the
+view) holds its settings: **Group by** another single select, the **Card fields**
+a card shows, **Hide empty lanes**, and **Hidden lanes**, whose **Show …** items
+bring a hidden lane back.
 
 A board has a lane per option plus one for records without one. Drag a card within
 a lane or into another lane; it moves at once, and moving it to another lane also
@@ -239,7 +255,7 @@ lane, or Enter on a focused lane header, to start a card there. The toolbar's
 **New** starts one in the first lane. **New group** at the end of a board adds
 another option and lane, coloured with the next palette colour.
 
-Creating or changing a record can make it fall outside the current search or
+Creating or changing a record can make it fall outside the current
 filters. A saved-record notice offers **Open record** to inspect it without
 changing the view. Its record dialog explains why it is outside the view; you can
 continue editing there. The selected table and view are restored when reopening

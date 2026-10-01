@@ -21,7 +21,7 @@ import type { createTableController } from './table-controller';
 /** How long a revealed row stays tinted. */
 const HIGHLIGHT_MS = 1_600;
 
-/** A saved record the view's search or filters leave out. */
+/** A saved record the view's filters leave out. */
 type HiddenSavedRecord = {
   rowId: string;
   created: boolean;
@@ -50,7 +50,7 @@ export function createRecordActions(options: {
   visibleColumns: Accessor<DatabaseViewColumn[]>;
   layout: Accessor<'table' | 'board'>;
   canEdit: Accessor<boolean>;
-  /** The view searches or filters, so a saved record can fall outside it. */
+  /** The view filters, so a saved record can fall outside it. */
   constrained: Accessor<boolean>;
   /** Opens a table cell for typing. */
   editCell: (rowId: string, columnId: string) => void;

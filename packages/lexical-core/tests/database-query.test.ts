@@ -8,6 +8,7 @@ import { SupportedNodeTypes } from '../node-list';
 import {
   $isDatabaseQueryNode,
   databaseQueryMarkdown,
+  parseDatabaseQueryJson,
 } from '../nodes/DatabaseQueryNode';
 import {
   type DatabaseQueryData,
@@ -231,6 +232,36 @@ describe('database query node', () => {
     expect(text.match(/<\/m-db-query>/g)).toHaveLength(1);
     expect(exported(parse(text))).toBe(text);
     expect(markdownToPlainText(text)).toBe(tricky.title);
+  });
+  it('keeps &, < and " in a title as they were typed, once', () => {
+    const text = databaseQueryMarkdown({
+      ...source,
+      title: 'Q&A <draft> "final"',
+      prompt: 'Who said "yes" & when?',
+    });
+    expect(text).toBe(
+      `<m-db-query>{"queryId":"${source.queryId}","databaseId":"db-1","tableId":"projects-table","title":"Q&A \\u003cdraft> \\"final\\"","prompt":"Who said \\"yes\\" & when?","displayMode":"scalar"}</m-db-query>`
+    );
+    expect(parseDatabaseQueryJson(text.slice(12, -13))).toEqual({
+      queryId: source.queryId,
+      databaseId: 'db-1',
+      tableId: 'projects-table',
+      title: 'Q&A <draft> "final"',
+      prompt: 'Who said "yes" & when?',
+      displayMode: 'scalar',
+    });
+  });
+  it('reads a title a model wrote with HTML entities as the characters they stand for', () => {
+    expect(
+      parseDatabaseQueryJson(
+        '{"queryId":"q","title":"2025 Attendees &amp; Emails","prompt":"Q&amp;A &lt;draft&gt; &quot;final&quot; &amp;lt;","displayMode":"table"}'
+      )
+    ).toEqual({
+      queryId: 'q',
+      title: '2025 Attendees & Emails',
+      prompt: 'Q&A <draft> "final" &lt;',
+      displayMode: 'table',
+    });
   });
   it('writes the saved-query payload the assistant emits', () => {
     expect(

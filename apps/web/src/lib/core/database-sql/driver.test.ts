@@ -37,6 +37,7 @@ describe('runDatabaseSql', () => {
         ['01990000-0000-7000-8000-00000000c001'],
         null,
         500,
+        expect.any(Object),
       ],
       [
         {
@@ -48,6 +49,7 @@ describe('runDatabaseSql', () => {
         ['01990000-0000-7000-8000-00000000c001'],
         'second-page',
         500,
+        expect.any(Object),
       ],
     ]);
   });
@@ -75,6 +77,7 @@ describe('runDatabaseSql', () => {
           propf: null,
           groupBy: '01990000-0000-7000-8000-00000000c003',
         },
+        expect.any(Object),
       ],
     ]);
     expect(page).not.toHaveBeenCalled();

@@ -19,6 +19,7 @@ import type {
 } from '@core/database-sql/generated/types';
 import { match } from 'ts-pattern';
 import type { DatabaseViewColumn } from './database-view';
+import { moveBeside } from './move-beside';
 
 export type FilterPath = readonly number[];
 
@@ -356,26 +357,6 @@ export function searchFilter(
     : { kind: 'nothing' };
 }
 
-/** A filter no row passes: a cell is never both empty and not. */
-export function noRowFilter(columnId: string): FilterNode {
-  return {
-    kind: 'group',
-    conjunction: 'and',
-    conditions: [
-      {
-        kind: 'condition',
-        column: columnId,
-        test: { kind: 'presence', operator: 'isEmpty' },
-      },
-      {
-        kind: 'condition',
-        column: columnId,
-        test: { kind: 'presence', operator: 'isNotEmpty' },
-      },
-    ],
-  };
-}
-
 /** Sorted by `column` first, or no longer by it when `direction` is null. */
 export function withSort(
   sort: readonly SortKey[],
@@ -384,4 +365,23 @@ export function withSort(
 ): SortKey[] {
   const others = sort.filter((key) => key.column !== column);
   return direction ? [{ column, direction }, ...others] : others;
+}
+
+/** The sort with `column`'s key moved just before or after `target`'s, changing which sorts first. */
+export function withSortMoved(
+  sort: readonly SortKey[],
+  column: string,
+  target: string,
+  edge: 'before' | 'after'
+): SortKey[] | undefined {
+  const keys = new Map(sort.map((key) => [key.column, key]));
+  return moveBeside(
+    sort.map((key) => key.column),
+    column,
+    target,
+    edge
+  )?.flatMap((id) => {
+    const key = keys.get(id);
+    return key ? [key] : [];
+  });
 }

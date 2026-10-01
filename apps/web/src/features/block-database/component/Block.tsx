@@ -19,6 +19,8 @@ import { toast } from '@core/component/Toast/Toast';
 import { enableDatabases } from '@core/constant/featureFlags';
 import { PaywallKey, usePaywallState } from '@core/constant/PaywallState';
 import { useUserId } from '@core/context/user';
+import { registerHotkey } from '@core/hotkey/hotkeys';
+import { TOKENS } from '@core/hotkey/tokens';
 import { createMethodRegistration } from '@core/orchestrator';
 import { blockHandleSignal } from '@core/signal/load';
 import { createUserScopedStorage } from '@core/util/userScopedStorage';
@@ -37,6 +39,7 @@ import {
   untrack,
 } from 'solid-js';
 import { match } from 'ts-pattern';
+import { DatabaseSearch } from '../components/database-search';
 import { DatabaseToolbar } from '../components/database-toolbar';
 import type { NewView } from '../components/new-view-dialog';
 import { databaseChatContext } from '../core/chat-context';
@@ -47,6 +50,8 @@ import {
 } from '../core/view-selection';
 import { allRecordsView, boardLayout } from '../core/views';
 import { databaseOpMessage } from '../core/write-failure';
+import { createDatabaseSearch } from '../primitives/database-search';
+import { searchDatabase } from '../queries/database-search';
 import { toViewColumn } from '../queries/table-rows';
 import { trashDatabase } from '../queries/trash-database';
 import {
@@ -56,7 +61,6 @@ import {
   updateDatabaseView,
   type ViewChange,
 } from '../queries/views';
-import { AddColumnMenu } from './AddColumnMenu';
 import { DatabaseGrid } from './DatabaseGrid';
 import { DatabaseSidePanelSections } from './sidepanel/DatabaseSidePanelSections';
 import { TopBar } from './TopBar';
@@ -196,11 +200,18 @@ const Block: Component = () => {
   const [allRecords, setAllRecords] = createSignal<
     Record<string, DatabaseView>
   >({});
-  const [searches, setSearches] = createSignal<Record<string, string>>({});
-  const search = () => {
-    const tableId = activeTableId();
-    return tableId ? (searches()[tableId] ?? '') : '';
-  };
+  const search = createDatabaseSearch({ detail, search: searchDatabase });
+  registerHotkey({
+    hotkey: 'cmd+f',
+    hotkeyToken: TOKENS.database.search,
+    scopeId: panel.splitHotkeyScope,
+    description: 'Search database',
+    runWithInputFocused: true,
+    keyDownHandler: () => {
+      search.open();
+      return true;
+    },
+  });
   const view = (): DatabaseView | undefined => {
     const table = activeTable();
     if (!table) return undefined;
@@ -210,10 +221,6 @@ const Block: Component = () => {
       allRecordsView(table.table)
     );
   };
-  function setSearch(value: string) {
-    const tableId = activeTableId();
-    if (tableId) setSearches((current) => ({ ...current, [tableId]: value }));
-  }
   function selectView(id?: string) {
     const tableId = activeTableId();
     if (!tableId) return;
@@ -358,10 +365,8 @@ const Block: Component = () => {
                           canEdit={canEdit()}
                           view={shown().view}
                           stored={!!selectedView()}
-                          search={search()}
                           onViewChange={changeView}
                           onClearConstraints={() => {
-                            setSearch('');
                             changeView({
                               query: {
                                 ...shown().view.query,
@@ -386,8 +391,20 @@ const Block: Component = () => {
                               view={shown().view}
                               selectedViewId={selectedView()?.id}
                               canEdit={canEdit()}
-                              search={search()}
-                              onSearchChange={setSearch}
+                              search={
+                                <DatabaseSearch
+                                  term={search.term()}
+                                  isOpen={search.isOpen()}
+                                  results={search.results()}
+                                  onTermChange={search.setTerm}
+                                  onOpen={search.open}
+                                  onClose={search.close}
+                                  inputRef={search.setInput}
+                                  onChoose={(choice) =>
+                                    void openRelated({ databaseId, ...choice })
+                                  }
+                                />
+                              }
                               onSelectView={selectView}
                               onChangeView={changeView}
                               onCreateView={(created) =>
@@ -421,17 +438,6 @@ const Block: Component = () => {
                               }
                               canCreateRecord={columns().length > 0}
                               creating={actions.pending()}
-                              addColumn={
-                                <Show when={canEdit()}>
-                                  <AddColumnMenu
-                                    databaseId={databaseId}
-                                    tableId={table().table.id}
-                                    columns={table().columns}
-                                    label="Add column"
-                                    onCreated={actions.focusColumn}
-                                  />
-                                </Show>
-                              }
                             />
                           )}
                         />

@@ -70,7 +70,6 @@ export type DatabaseGridProps = {
   /** The view on screen: a stored one, or the table's own All records. */
   view: DatabaseView;
   stored: boolean;
-  search: string;
   onViewChange?: (change: ViewChange) => void;
   onClearConstraints?: () => void;
   actionsRef?: (actions: DatabaseRecordsActions) => void;
@@ -182,7 +181,6 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
       databaseId,
       table,
       view: () => props.view,
-      search: () => props.search,
       applyOps: (ops) => applyDatabaseOps(databaseId, ops),
       onTableChanged: (listener) =>
         useDatabaseTableChanges((change) => {
@@ -286,7 +284,6 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
             canEdit={props.canEdit}
             view={props.view}
             stored={props.stored}
-            search={props.search}
             onViewChange={props.onViewChange}
             onClearConstraints={props.onClearConstraints}
             boardPositions={boardPositions}

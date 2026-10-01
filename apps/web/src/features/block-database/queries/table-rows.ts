@@ -45,7 +45,6 @@ import type {
 } from '../core/database-view';
 import { gridRows } from '../core/grid-cells';
 import type { DatabaseRow, DatabaseRowMutation } from '../core/table';
-import { noRowFilter, searchFilter } from '../core/view-query';
 import type {
   DatabaseCellFailure,
   DatabaseReadFailure,
@@ -132,8 +131,6 @@ export function createDatabaseRowsSource(props: {
   table: Accessor<TableDetail>;
   /** The view whose rows the engine reads, filtered and sorted as it says. */
   view: Accessor<DatabaseView>;
-  /** Rows also hold this text, in a text cell or an option's label. */
-  search: Accessor<string>;
   /** Applies a write's ops to this database; reads run in the browser's SQL engine. */
   applyOps: (ops: DatabaseOp[]) => ResultAsync<OpResult[], DatabaseOpsError>;
   /** Where the engine reads rows from; the app's GraphQL client by default. */
@@ -187,7 +184,6 @@ export function createDatabaseRowsSource(props: {
   }
   // Version-only schema updates must not recreate columns and remount editors.
   const details = createMemo(() => props.table().columns);
-  const columns = createMemo(() => details().map(toViewColumn));
   /** A read of this table alone, built from the cached schema. */
   const tableStatement = (
     read: (
@@ -212,36 +208,32 @@ export function createDatabaseRowsSource(props: {
       undefined,
       { equals: sameDatabaseSqlStatement }
     );
-  const viewStatement = tableStatement((table) => {
-    const view = props.view();
-    const narrowing = match(
-      searchFilter(props.search(), table.columns.map(toViewColumn))
-    )
-      .with(undefined, () => undefined)
-      .with({ kind: 'matching' }, ({ filter }) => filter)
-      // A table without columns has no cell to test; its rows are hidden instead.
-      .with({ kind: 'nothing' }, () =>
-        table.columns[0] ? noRowFilter(table.columns[0].column.id) : undefined
-      )
-      .exhaustive();
-    if (!narrowing) return { view };
-    const filter = view.query.filter;
-    return {
-      view: {
-        ...view,
-        query: {
-          ...view.query,
-          filter: {
-            conjunction: 'and',
-            conditions: filter
-              ? [{ kind: 'group', ...filter }, narrowing]
-              : [narrowing],
-          },
-        },
-      },
-    };
-  });
+  const viewStatement = tableStatement(() => ({ view: props.view() }));
   const rowsQuery = createDatabaseSqlQuery(viewStatement, props.read);
+  // A type change gives a column a new definition. Until the read of it
+  // lands, the column keeps the definition its shown cells were read with.
+  const shownDetails = createMemo<ColumnDetail[]>((held) => {
+    const answered = new Map(
+      rowsQuery
+        .catalog()
+        ?.tables.flatMap((table) =>
+          table.columns.map((column) => [column.placement, column.id] as const)
+        )
+    );
+    return details().map((column) => {
+      const read = answered.get(column.column.id);
+      if (read === undefined || read === column.definition.definition.id)
+        return column;
+      return (
+        held.find(
+          (previous) =>
+            previous.column.id === column.column.id &&
+            previous.definition.definition.id === read
+        ) ?? column
+      );
+    });
+  }, []);
+  const columns = createMemo(() => shownDetails().map(toViewColumn));
   const [retainedIds, setRetainedIds] = createSignal<
     Accessor<readonly string[]>
   >(() => []);
@@ -266,7 +258,7 @@ export function createDatabaseRowsSource(props: {
     const outcome = query.outcome();
     const catalog = query.catalog();
     if (!outcome || !catalog) return undefined;
-    return gridRows(outcome, catalog, props.table().columns);
+    return gridRows(outcome, catalog, shownDetails());
   }
   const retainedRows = () => {
     const ids = retainedRowIds();
@@ -275,16 +267,12 @@ export function createDatabaseRowsSource(props: {
       ids.includes(row.rowId)
     );
   };
-  // Searching a table without columns finds nothing, though its view keeps every row.
-  const searchHidesEveryRow = () =>
-    details().length === 0 &&
-    searchFilter(props.search(), [])?.kind === 'nothing';
   const snapshot = () => {
     const rows = rowsOf(rowsQuery);
     if (!rows) return undefined;
     return {
       version: readVersion(),
-      rows: searchHidesEveryRow() ? [] : rows,
+      rows,
       retained: retainedRows(),
     };
   };
