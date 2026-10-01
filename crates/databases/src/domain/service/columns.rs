@@ -223,27 +223,13 @@ where
         })
     }
 
-    /// Why a column's type cannot change at all, whatever it holds: it is
-    /// a lookup, a lookup reads through it, or a board groups by it.
+    /// Why a column's type cannot change at all, whatever it holds: a board
+    /// groups by it.
     pub(super) async fn retype_blocker(
         &self,
         table_id: TableId,
         detail: &ColumnDetail,
     ) -> Result<Option<SchemaError>, DatabaseError> {
-        if matches!(detail.column.config, Some(ColumnConfig::Lookup { .. })) {
-            return Ok(Some(SchemaError::RetypeLookup));
-        }
-        let read_through = self.repository
-            .columns_for_tables(&[table_id])
-            .await
-            .map_err(repository_error)?
-            .iter()
-            .any(|column| {
-                matches!(column.config, Some(ColumnConfig::Lookup { via_column_id, .. }) if via_column_id == detail.column.id)
-            });
-        if read_through {
-            return Ok(Some(SchemaError::LookupBlocksRetype));
-        }
         let views = self
             .repository
             .views_for_tables(&[table_id])
@@ -276,9 +262,6 @@ where
             .iter()
             .find(|column| column.id == column_id)
             .ok_or(DatabaseError::NotFound)?;
-        if columns.iter().any(|column| matches!(column.config, Some(ColumnConfig::Lookup { via_column_id, .. }) if via_column_id == column_id)) {
-            return Err(DatabaseError::from(SchemaError::LookupBlocksRemoval));
-        }
         let table_views = self
             .repository
             .views_for_tables(&[table_id])

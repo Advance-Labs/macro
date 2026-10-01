@@ -114,7 +114,7 @@ export class DatabaseColumn {
   }
 
   /**
-   * Column-kind configuration (link or lookup), or `undefined` for a plain
+   * Column-kind configuration (a link), or `undefined` for a plain
    * value column.
    */
   async config(): Promise<ColumnConfig | undefined> {

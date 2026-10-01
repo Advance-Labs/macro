@@ -19,14 +19,14 @@ import type {
 import type { DatabaseRelatedRow } from '../core/database-relations';
 import { titleColumn } from '../core/table';
 import { tableRowsStatement } from '../sql';
-import { isGridColumn, toViewColumn } from './table-rows';
+import { toViewColumn } from './table-rows';
 
 /** A table's rows by id, named by its title column as a row title is. */
 function relatedRows(
   table: TableDetail,
   outcome: Outcome
 ): DatabaseRelatedRow[] {
-  const columns = table.columns.filter(isGridColumn);
+  const { columns } = table;
   const viewColumns = columns.map(toViewColumn);
   const title = titleColumn(viewColumns) ?? viewColumns[0];
   const titleDefinition = columns.find(

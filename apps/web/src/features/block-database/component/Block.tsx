@@ -185,10 +185,7 @@ const Block: Component = () => {
   const activeTableId = () => activeTable()?.table.id;
   const canEdit = () =>
     detail()?.grant === 'edit' || detail()?.grant === 'owner';
-  const columns = () =>
-    activeTable()
-      ?.columns.filter((column) => column.column.config?.kind !== 'lookup')
-      .map(toViewColumn) ?? [];
+  const columns = () => activeTable()?.columns.map(toViewColumn) ?? [];
   const storedViews = () => activeTable()?.views ?? [];
   const selectedView = () => {
     const tableId = activeTableId();

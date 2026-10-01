@@ -17,14 +17,12 @@ const TIER_COLUMN = id('c0c003');
 const CONTACT_COLUMN = id('c0c004');
 const EMAIL_COLUMN = id('c0c005');
 const OWNER_COLUMN = id('c0c006');
-const CONTACT_EMAIL_COLUMN = id('c0c007');
 const NAME = id('de0001');
 const STAGE = id('de0002');
 const TIER = id('de0003');
 const CONTACT = id('de0004');
 const EMAIL = id('de0005');
 const OWNER = id('de0006');
-const CONTACT_EMAIL = id('de0007');
 const WON = id('0e0001');
 const LEAD = id('0e0002');
 const TWO = id('0e0003');
@@ -165,28 +163,6 @@ const crm: DatabaseDetail = {
             property_options: [],
           },
           writable: true,
-        },
-        {
-          shared_outside_database: false,
-          column: {
-            id: CONTACT_EMAIL_COLUMN,
-            table_id: DEALS,
-            property_definition_id: CONTACT_EMAIL,
-            position: 'e',
-            config: {
-              kind: 'lookup',
-              via_column_id: CONTACT_COLUMN,
-              target: EMAIL_COLUMN,
-            },
-            display_name: null,
-            infer_type: false,
-          },
-          sql_name: '"Contact email"',
-          definition: {
-            definition: definition(CONTACT_EMAIL, 'Contact email', 'STRING'),
-            property_options: [],
-          },
-          writable: false,
         },
       ],
     },

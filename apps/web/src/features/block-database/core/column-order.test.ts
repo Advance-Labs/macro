@@ -93,14 +93,14 @@ describe('column insertion edges', () => {
 });
 
 describe('complete schema column order', () => {
-  it('includes every lookup placement once while keeping its saved slot', () => {
+  it('keeps every omitted schema column once in its saved slot', () => {
     const schema = [
-      'lookup-first',
+      'omitted-first',
       'name',
-      'lookup-middle',
+      'omitted-middle',
       'status',
       'owner',
-      'lookup-last',
+      'omitted-last',
     ];
     const result = mergeDatabaseColumnOrder(schema, [
       'owner',
@@ -108,12 +108,12 @@ describe('complete schema column order', () => {
       'status',
     ]);
     expect(result).toEqual([
-      'lookup-first',
+      'omitted-first',
       'owner',
-      'lookup-middle',
+      'omitted-middle',
       'name',
       'status',
-      'lookup-last',
+      'omitted-last',
     ]);
     expect(new Set(result)).toEqual(new Set(schema));
     expect(result).toHaveLength(schema.length);

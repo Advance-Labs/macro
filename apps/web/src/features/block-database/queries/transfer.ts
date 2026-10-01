@@ -19,7 +19,7 @@ import type {
 import { gridRows } from '../core/grid-cells';
 import { formatCellValue } from '../core/table';
 import { tableRowsStatement } from '../sql';
-import { isGridColumn, toViewColumn } from './table-rows';
+import { toViewColumn } from './table-rows';
 
 /** Request IDs survive a transport error; retrying resolves the original import. */
 export function importDatabaseTable(
@@ -56,7 +56,7 @@ export function exportDatabaseTableCsv(
   database: DatabaseDetail,
   table: TableDetail
 ): ResultAsync<Blob, DatabaseExportFailure> {
-  const columns = table.columns.filter(isGridColumn);
+  const { columns } = table;
   const viewColumns = columns.map(toViewColumn);
   return readDatabaseSql({
     schema: databaseSqlSchema([{ ...database, tables: [table] }]),

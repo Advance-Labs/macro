@@ -91,13 +91,7 @@ pub(crate) fn schema(databases: &[DatabaseDetail]) -> Schema {
                     .map(|table| TableSchema {
                         id: table.table.id,
                         name: table.table.name.clone(),
-                        columns: table
-                            .columns
-                            .iter()
-                            // Lookups are derived and have no cells.
-                            .filter(|column| !column.column.is_lookup())
-                            .map(column_schema)
-                            .collect(),
+                        columns: table.columns.iter().map(column_schema).collect(),
                     })
                     .collect(),
             })

@@ -23,7 +23,7 @@ use crate::domain::ports::DatabasesService;
     description = "\
 Delete a column and every value in it. This cannot be undone, so only do it when the user \
 asked for that column to go. Deleting a relation column also removes the relationships it \
-held. A column that a lookup reads through cannot be deleted until the lookup is.\n\
+held.\n\
 \n\
 Requires edit access. The response is the schema after the change."
 )]

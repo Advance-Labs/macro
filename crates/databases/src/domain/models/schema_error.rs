@@ -107,9 +107,6 @@ pub enum SchemaError {
     /// A column order does not name every column once.
     #[error("The column order must include every column exactly once.")]
     IncompleteColumnOrder,
-    /// A lookup reads through the column being removed.
-    #[error("Remove the lookup that uses this column first.")]
-    LookupBlocksRemoval,
     /// A board groups by the column being removed.
     #[error(
         "The board \"{board}\" groups its cards by this column; delete the board or group it by \
@@ -128,12 +125,6 @@ pub enum SchemaError {
         /// The board's name.
         board: String,
     },
-    /// A lookup's type is its source's.
-    #[error("A lookup's type comes from its source column.")]
-    RetypeLookup,
-    /// A lookup reads through the column being retyped.
-    #[error("Remove the lookup that uses this column before changing its type.")]
-    LookupBlocksRetype,
     /// A relation was asked for with a type other than entity.
     #[error("A relation column's type is entity.")]
     RelationNotEntity,

@@ -85,11 +85,6 @@ export function toViewColumn(column: ColumnDetail): DatabaseViewColumn {
   };
 }
 
-/** Lookup columns are not part of the grid, so a view never names them. */
-export function isGridColumn(column: ColumnDetail) {
-  return column.column.config?.kind !== 'lookup';
-}
-
 /** A stale table or column name, which a refreshed schema may resolve. */
 function isStaleSchema(
   failure: DatabaseReadFailure | DatabaseWriteFailure
@@ -194,9 +189,7 @@ export function createDatabaseRowsSource(props: {
   }
   // Version-only schema updates must not recreate columns and remount editors.
   const details = createMemo(() => props.table().columns);
-  const columns = createMemo(() =>
-    details().filter(isGridColumn).map(toViewColumn)
-  );
+  const columns = createMemo(() => details().map(toViewColumn));
   /** A read of this table alone, built from the cached schema. */
   const tableStatement = (
     read: (
@@ -223,15 +216,14 @@ export function createDatabaseRowsSource(props: {
     );
   const viewStatement = tableStatement((table) => {
     const view = props.view();
-    const gridColumns = table.columns.filter(isGridColumn);
     const narrowing = match(
-      searchFilter(props.search(), gridColumns.map(toViewColumn))
+      searchFilter(props.search(), table.columns.map(toViewColumn))
     )
       .with(undefined, () => undefined)
       .with({ kind: 'matching' }, ({ filter }) => filter)
       // A table without columns has no cell to test; its rows are hidden instead.
       .with({ kind: 'nothing' }, () =>
-        gridColumns[0] ? noRowFilter(gridColumns[0].column.id) : undefined
+        table.columns[0] ? noRowFilter(table.columns[0].column.id) : undefined
       )
       .exhaustive();
     if (!narrowing) return { view };
@@ -287,7 +279,7 @@ export function createDatabaseRowsSource(props: {
   };
   // Searching a table without columns finds nothing, though its view keeps every row.
   const searchHidesEveryRow = () =>
-    !details().some(isGridColumn) &&
+    details().length === 0 &&
     searchFilter(props.search(), [])?.kind === 'nothing';
   const snapshot = () => {
     const rows = rowsOf(rowsQuery);

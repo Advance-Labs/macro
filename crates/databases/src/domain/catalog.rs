@@ -27,8 +27,7 @@ pub struct TableEntry {
     pub table: Table,
     /// The viewer's grant on the database.
     pub grant: AccessLevel,
-    /// The columns, in display order. Lookup columns are not here: they are
-    /// derived and have no cells.
+    /// The columns, in display order.
     pub columns: Vec<ColumnEntry>,
     /// The table's views, in their order.
     pub views: Vec<DatabaseView>,
@@ -163,7 +162,6 @@ pub fn build_entries(
                 .get(&table.id)
                 .into_iter()
                 .flatten()
-                .filter(|column| !column.is_lookup())
                 .filter_map(|column| {
                     let definition = definitions.get(&column.property_definition_id)?.clone();
                     Some(ColumnEntry {
@@ -269,10 +267,6 @@ pub fn cast_targets(
     column: &Column,
     definition: &PropertyDefinitionWithOptions,
 ) -> (Vec<ColumnKind>, Vec<ColumnKind>) {
-    // A lookup's type is its source's, so it changes to nothing.
-    if column.is_lookup() {
-        return (Vec::new(), Vec::new());
-    }
     let current = PropertyType::of(column, definition);
     let from = current.cast_kind();
     let mut safe = Vec::new();

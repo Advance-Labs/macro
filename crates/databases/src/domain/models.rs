@@ -104,11 +104,6 @@ impl Column {
     pub fn is_relation(&self) -> bool {
         matches!(self.config, Some(ColumnConfig::Link { .. }))
     }
-
-    /// Whether the placement is a lookup: derived, with no cells of its own.
-    pub fn is_lookup(&self) -> bool {
-        matches!(self.config, Some(ColumnConfig::Lookup { .. }))
-    }
 }
 
 /// A renamed placement and its table's version after the atomic update.
@@ -238,14 +233,6 @@ pub enum ColumnConfig {
         #[schema(value_type = Uuid)]
         table_id: TableId,
     },
-    /// A derived lookup through a link or entity column on the same table.
-    Lookup {
-        /// The link/entity column the lookup reads through.
-        #[schema(value_type = Uuid)]
-        via_column_id: ColumnId,
-        /// Target field on the other side (a definition id or magic column name).
-        target: String,
-    },
 }
 
 /// A row's identity and place in its table. Cells are not here: they are
@@ -342,7 +329,7 @@ pub struct CreateColumn {
     pub table_id: TableId,
     /// Definition source.
     pub binding: ColumnBinding,
-    /// Column-kind configuration (links, lookups).
+    /// Column-kind configuration (links).
     pub config: Option<ColumnConfig>,
 }
 

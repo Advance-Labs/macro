@@ -22,7 +22,7 @@ export function reorderDatabaseColumns(
     : undefined;
 }
 
-/** Apply a partial layout without moving omitted schema columns, such as lookups. */
+/** Apply a partial layout without moving omitted schema columns. */
 export function mergeDatabaseColumnOrder(
   order: readonly string[],
   requestedOrder: readonly string[]
