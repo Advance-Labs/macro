@@ -18,7 +18,7 @@ pub enum ToolSet {
     #[default]
     All,
     None,
-    /// Built-in database discovery, queries, schema edits, and personal views.
+    /// Built-in database discovery, queries, schema edits, and views.
     Databases,
     /// Database discovery and queries that cannot modify records or views.
     DatabasesReadOnly,

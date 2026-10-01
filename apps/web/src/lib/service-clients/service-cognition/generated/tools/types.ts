@@ -1176,28 +1176,142 @@ export type TaskProjectReference =
       state: 'visible';
     };
 /**
- * Layouts the database UI can persist and render.
+ * How a group's conditions combine.
  */
-export type ViewLayout = 'table' | 'board';
+export type Conjunction = 'and' | 'or';
 /**
- * Supported database filter operations.
+ * What a column's cell must be, by the kind of value the column holds.
  */
-export type FilterOperator =
+export type FilterTest =
+  | {
+      operator: PresenceOperator;
+      kind: 'presence';
+    }
+  | {
+      operator: TextOperator;
+      /**
+       * The text compared against, ignoring case for the containment
+       * tests.
+       */
+      value: string;
+      kind: 'text';
+    }
+  | {
+      operator: NumberOperator;
+      /**
+       * The number compared against; finite.
+       */
+      value: number;
+      kind: 'number';
+    }
+  | {
+      operator: DateOperator;
+      /**
+       * The date-time compared against.
+       */
+      value: string;
+      kind: 'date';
+    }
+  | {
+      /**
+       * Whether the box is checked.
+       */
+      checked: boolean;
+      kind: 'checkbox';
+    }
+  | {
+      operator: SetOperator;
+      /**
+       * Options of the column; at least one.
+       */
+      options: string[];
+      kind: 'options';
+    }
+  | {
+      operator: SetOperator;
+      /**
+       * Entity ids, or for a relation the related rows' ids; at least
+       * one.
+       */
+      entities: string[];
+      kind: 'entities';
+    };
+/**
+ * Whether a cell is empty.
+ */
+export type PresenceOperator = 'isEmpty' | 'isNotEmpty';
+/**
+ * How a text cell compares to a text.
+ */
+export type TextOperator =
+  | 'is'
+  | 'isNot'
   | 'contains'
-  | 'not_contains'
-  | 'equals'
-  | 'not_equals'
-  | 'starts_with'
-  | 'is_empty'
-  | 'is_not_empty'
-  | 'gt'
-  | 'gte'
-  | 'lt'
-  | 'lte';
+  | 'doesNotContain'
+  | 'startsWith'
+  | 'endsWith';
 /**
- * Sort direction.
+ * How a number cell compares to a number.
  */
-export type SortDirection = 'asc' | 'desc';
+export type NumberOperator =
+  | 'is'
+  | 'isNot'
+  | 'greaterThan'
+  | 'greaterThanOrEqual'
+  | 'lessThan'
+  | 'lessThanOrEqual';
+/**
+ * How a date cell compares to a date-time.
+ */
+export type DateOperator = 'before' | 'after' | 'onOrBefore' | 'onOrAfter';
+/**
+ * How a cell's options or references relate to a set of them. The first
+ * two fit a column holding one value, the last three one holding several.
+ */
+export type SetOperator =
+  | 'isAnyOf'
+  | 'isNoneOf'
+  | 'hasAny'
+  | 'hasAll'
+  | 'hasNone';
+/**
+ * A sort direction. Empty cells sort last either way.
+ */
+export type SortDirection = 'ascending' | 'descending';
+/**
+ * How a view draws its rows.
+ */
+export type ViewLayout =
+  | {
+      /**
+       * How columns show, in display order. A column left out shows
+       * after the listed ones, in the table's order.
+       */
+      columns: ViewColumn[];
+      kind: 'table';
+    }
+  | {
+      /**
+       * The single-select column whose options are the lanes; moving a
+       * card to another lane sets this column.
+       */
+      groupBy: string;
+      /**
+       * How lanes show, in display order. A lane left out shows after the
+       * listed ones, options in the column's order; the lane of cards
+       * without an option first.
+       */
+      lanes: Lane[];
+      /**
+       * The columns a card shows, in order.
+       */
+      cardFields: string[];
+      /**
+       * Whether a lane with no cards is hidden.
+       */
+      hideEmptyLanes: boolean;
+      kind: 'board';
+    };
 /**
  * How search terms are matched against skill names.
  */
@@ -1468,6 +1582,11 @@ export interface ToolTable {
    * Columns in display order. `row_id` is implicit and is not listed.
    */
   columns: ToolColumn[];
+  /**
+   * The table's saved views, in their order. SaveDatabaseView under one
+   * of these names replaces that view.
+   */
+  views: unknown[];
 }
 /**
  * One column of a table, as the model sees it.
@@ -1497,10 +1616,11 @@ export interface ToolColumn {
    */
   isMultiSelect: boolean;
   /**
-   * For a select or tag column, the labels SQL accepts. Writing anything
-   * else is rejected by the statement.
+   * For a select or tag column, its options: the labels SQL accepts
+   * (writing anything else is rejected by the statement), and the ids a
+   * view names them by.
    */
-  options?: string[];
+  options?: ToolOption[];
   /**
    * Whether SQL may write to this column.
    */
@@ -1520,6 +1640,19 @@ export interface ToolColumn {
    * list is refused while the column holds values.
    */
   checkedTypes: string[];
+}
+/**
+ * One option of a select or tag column.
+ */
+export interface ToolOption {
+  /**
+   * The id views name it by.
+   */
+  id: string;
+  /**
+   * The label SQL reads and writes.
+   */
+  label: string;
 }
 /**
  * The target of a database-row relationship.
@@ -7234,7 +7367,7 @@ export interface SaveDatabaseQueryResponse {
   markdown: string;
 }
 /**
- * Save a personal table or kanban board view in Macro. DescribeDatabase first and use stable column ids for filters, sorts, grouping, visibility, and order. A board requires groupBy pointing to a select, multi-select, or checkbox column. Filters are ANDed. This changes presentation only, never source records. A same-named view on this table is updated, so inspect the returned created flag. Requires view access to the source database. The result contains the saved viewId and exact persisted configuration. Supports table and board only: it cannot save charts or SQL views.
+ * Save a table or kanban board view of a Macro database table. Views are shared: everyone who can open the database sees them, so saving one needs edit access. DescribeDatabase first: every reference in a view is an id from it, columns by their id and select options by their option id, never by name. The view filters and sorts the table's own rows: its filter conditions combine with one `and` or `or`, and each test must fit its column's type (text, number, date, checkbox, options, entities, or presence for any column). A board groups its cards by a single-select column, one lane per option. Saving a view under a name the table already has replaces that view, so read `created` in the result. This changes presentation only, never records, and cannot save charts or SQL.
  */
 export interface SaveDatabaseView {
   /**
@@ -7246,107 +7379,93 @@ export interface SaveDatabaseView {
    */
   tableId: string;
   /**
-   * Name shown in the table's saved-view menu.
+   * Name shown in the table's view tabs.
    */
   name: string;
-  view: DatabaseViewDefinition;
-}
-/**
- * Presentation configuration shared with the database frontend.
- */
-export interface DatabaseViewDefinition {
+  /**
+   * Which rows the view shows; every row when left out.
+   */
+  filter?: ToolFilter | null;
+  /**
+   * The sort keys, first key first; the table's own order when empty.
+   */
+  sort?: SortKey[];
   layout: ViewLayout;
-  /**
-   * A select, multi-select, or checkbox column id for a board; null for a table.
-   */
-  groupBy?: string | null;
-  /**
-   * Lane keys in display order: `empty` or `value:` followed by a JSON label.
-   * Omit for alphabetical order; additional lanes follow alphabetically.
-   */
-  groupOrder?: string[];
-  /**
-   * Manual row ids per lane, using the same lane keys as groupOrder. Sorting
-   * takes precedence. Omit to preserve an existing view's positions when
-   * groupBy is unchanged; an empty object clears manual positions.
-   */
-  cardOrder?: {
-    [k: string]: string[];
-  } | null;
-  /**
-   * Filters are combined with AND.
-   */
-  filters?: ViewFilter[];
-  /**
-   * Sort priority, first item first.
-   */
-  sorts?: ViewSort[];
-  /**
-   * Column ids to hide from this view.
-   */
-  hiddenColumns?: string[];
-  /**
-   * Display order; unlisted columns follow in schema order.
-   */
-  columnOrder?: string[];
-  /**
-   * Optional local text search, empty for all rows.
-   */
-  search?: string;
 }
 /**
- * One filter, using the stable column placement id.
+ * Conditions joined by one conjunction. Views saved here filter on one
+ * level; the app can nest groups.
  */
-export interface ViewFilter {
+export interface ToolFilter {
+  conjunction: Conjunction;
   /**
-   * Column placement id from the database schema.
+   * The conditions.
    */
-  columnId: string;
-  operator: FilterOperator;
-  /**
-   * Comparison text. Numbers use a finite decimal; dates use YYYY-MM-DD;
-   * checkboxes accept 1/0 or true/false. Empty operators need no value.
-   */
-  value: string;
+  conditions: FilterCondition[];
 }
 /**
- * One ordered sort key.
+ * A test of one column's cells.
  */
-export interface ViewSort {
+export interface FilterCondition {
   /**
-   * Column placement id from the database schema.
+   * The column tested.
    */
-  columnId: string;
+  column: string;
+  test: FilterTest;
+}
+/**
+ * One sort key.
+ */
+export interface SortKey {
+  /**
+   * The column sorted on.
+   */
+  column: string;
   direction: SortDirection;
 }
 /**
- * A persisted personal view acknowledgment.
+ * How one column shows in a table layout.
+ */
+export interface ViewColumn {
+  /**
+   * The column.
+   */
+  column: string;
+  /**
+   * Its width in pixels; the default when unset.
+   */
+  width?: number | null;
+  /**
+   * Whether it is hidden.
+   */
+  hidden?: boolean;
+}
+/**
+ * How one lane shows in a board layout.
+ */
+export interface Lane {
+  /**
+   * The option the lane holds the cards of; `null` for cards without one.
+   */
+  option?: string | null;
+  /**
+   * Whether it is hidden.
+   */
+  hidden?: boolean;
+}
+/**
+ * The view as saved.
  */
 export interface SavedDatabaseView {
   /**
-   * Id in the user's saved-view collection.
+   * The view, with its id.
    */
-  viewId: string;
-  /**
-   * Database containing the source table.
-   */
-  databaseId: string;
-  /**
-   * Source table id.
-   */
-  tableId: string;
-  /**
-   * Trimmed persisted name.
-   */
-  name: string;
-  /**
-   * The exact frontend-compatible saved configuration.
-   */
-  config: {
+  view: {
     [k: string]: unknown;
   };
   /**
-   * True for a new view; false when updating the same name on this table.
+   * Whether this created the view; `false` when it replaced the one of
+   * the same name.
    */
   created: boolean;
 }

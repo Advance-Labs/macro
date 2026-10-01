@@ -25,6 +25,7 @@ pub mod run;
 pub mod split;
 #[cfg(test)]
 mod test_support;
+pub mod view;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 mod write;
@@ -41,3 +42,4 @@ pub use run::{
 pub use split::{
     GqlQuery, JoinPlan, KeyHint, Plan, Propf, PropfLiteral, PropfValue, RelationPlan, Shape, split,
 };
+pub use view::{Board, BoardLane, board, compile_view, view_as_sql};

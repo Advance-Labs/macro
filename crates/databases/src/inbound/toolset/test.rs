@@ -24,12 +24,11 @@ use uuid::Uuid;
 use super::*;
 mod committed_writes;
 mod relations;
-mod saved_views;
 mod schema_changes;
+mod views;
 use crate::domain::models::{
     Column, ColumnDetail, Database, RenameColumnOutcome, Table, TableDetail, TableVersion,
 };
-use saved_views::FakeViews;
 
 const USER: &str = "macro|wolf@macro.com";
 
@@ -67,6 +66,8 @@ struct Calls {
     reordered_tables: Vec<Vec<Uuid>>,
     /// The agent each attributed write reached the service as.
     acting_bots: Vec<Option<BotId>>,
+    /// Every batch of ops the service was asked to apply.
+    applied: Vec<Vec<models_databases::DatabaseOp>>,
 }
 
 #[derive(Clone, Default)]
@@ -75,11 +76,14 @@ struct FakeService {
     /// Fail only the post-write schema enrichment.
     schema_error: bool,
     multi_select_group: bool,
+    /// The described table's views.
+    views: Vec<crate::domain::models::DatabaseView>,
 }
 
 const DATABASE_ID: Uuid = Uuid::from_u128(0x0dbb_0000_0000_0000_0000_0000_0000_0001);
 const TABLE_ID: Uuid = Uuid::from_u128(0x7ab1_0000_0000_0000_0000_0000_0000_0001);
 const COLUMN_ID: Uuid = Uuid::from_u128(0xc01a_0000_0000_0000_0000_0000_0000_0001);
+const VIEW_ID: Uuid = Uuid::from_u128(0x71e0_0000_0000_0000_0000_0000_0000_0001);
 
 fn database() -> Database {
     Database {
@@ -157,6 +161,7 @@ fn detail(grant: AccessLevel) -> DatabaseDetail {
             sql_name: "\"Offsite\".\"Guests\"".to_string(),
             read_sql_name: "\"Offsite\".\"Guests\"".to_string(),
             columns: vec![status_column()],
+            views: vec![],
         }],
     }
 }
@@ -197,13 +202,67 @@ impl DatabasesService for FakeService {
         unimplemented!("the toolset does not share awareness")
     }
 
+    async fn view_positions(
+        &self,
+        _receipt: EntityAccessReceipt<ViewAccessLevel>,
+        _view_id: crate::domain::models::ViewId,
+    ) -> Result<Vec<crate::domain::models::CardPosition>, DatabaseError> {
+        unimplemented!("the toolset does not read card places")
+    }
+
+    /// Answers a view op with the view it would leave, as of a fixed time.
     async fn apply_ops(
         &self,
         _receipt: EntityAccessReceipt<EditAccessLevel>,
         _viewer: Viewer,
-        _ops: Vec<models_databases::DatabaseOp>,
+        ops: Vec<models_databases::DatabaseOp>,
     ) -> Result<Vec<models_databases::OpResult>, DatabaseError> {
-        unimplemented!("the toolset does not apply ops")
+        use models_databases::{DatabaseOp, OpResult};
+        self.calls.lock().unwrap().applied.push(ops.clone());
+        let at = chrono::DateTime::UNIX_EPOCH;
+        Ok(ops
+            .into_iter()
+            .map(|op| {
+                let view = match op {
+                    DatabaseOp::CreateView { table, view } => crate::domain::models::DatabaseView {
+                        id: VIEW_ID,
+                        database_id: DATABASE_ID,
+                        table_id: table,
+                        name: view.name,
+                        position: "80".into(),
+                        query: view.query,
+                        layout: view.layout,
+                        created_at: at,
+                        updated_at: at,
+                    },
+                    DatabaseOp::UpdateView {
+                        view,
+                        name,
+                        query,
+                        layout,
+                        ..
+                    } => {
+                        let current = self
+                            .views
+                            .iter()
+                            .find(|stored| stored.id == view)
+                            .expect("the view the tool found")
+                            .clone();
+                        crate::domain::models::DatabaseView {
+                            name: name.unwrap_or(current.name),
+                            query: query.unwrap_or(current.query),
+                            layout: layout.unwrap_or(current.layout),
+                            ..current
+                        }
+                    }
+                    other => unimplemented!("the toolset sends no {other:?}"),
+                };
+                OpResult::ViewWritten {
+                    table_version: TableVersion(4),
+                    view: Box::new(view),
+                }
+            })
+            .collect())
     }
 
     async fn get_database(
@@ -223,6 +282,7 @@ impl DatabasesService for FakeService {
             .definition
             .definition
             .is_multi_select = self.multi_select_group;
+        database.tables[0].views = self.views.clone();
         Ok(database)
     }
 
@@ -601,10 +661,7 @@ type Context = DatabasesToolContext<FakeService, FakeAccess>;
 fn context(access: Arc<FakeAccess>) -> (Context, Arc<Mutex<Calls>>) {
     let service = FakeService::default();
     let calls = service.calls.clone();
-    (
-        DatabasesToolContext::new(service, access, FakeViews::default()),
-        calls,
-    )
+    (DatabasesToolContext::new(service, access), calls)
 }
 
 // --- schema validation ---
@@ -983,8 +1040,8 @@ fn an_empty_list_says_so_rather_than_looking_like_a_failure() {
     assert!(list_databases::summarize(&[]).contains("No accessible databases"));
 }
 
-/// Select options reach the model as the labels SQL accepts, not as the option
-/// ids they are stored under — writing an id would be rejected.
+/// Select options reach the model as the labels SQL accepts, and with the
+/// ids a view names them by.
 #[test]
 fn describing_a_database_renders_option_labels() {
     let schema = ToolDatabaseSchema::from(detail(AccessLevel::Owner));
@@ -995,7 +1052,21 @@ fn describing_a_database_renders_option_labels() {
     let column = &schema.tables[0].columns[0];
     assert_eq!(column.sql_name, "\"Status\"");
     assert_eq!(column.data_type, ColumnType::Select);
-    assert_eq!(column.options, vec!["Going", "Declined"]);
+    let labels: Vec<&str> = column
+        .options
+        .iter()
+        .map(|option| option.label.as_str())
+        .collect();
+    assert_eq!(labels, vec!["Going", "Declined"]);
+    let detail = detail(AccessLevel::Owner);
+    let ids: Vec<Uuid> = column.options.iter().map(|option| option.id).collect();
+    let stored: Vec<Uuid> = detail.tables[0].columns[0]
+        .definition
+        .property_options
+        .iter()
+        .map(|option| option.id)
+        .collect();
+    assert_eq!(ids.len(), stored.len());
 }
 
 #[test]
@@ -1007,7 +1078,12 @@ fn describing_a_renamed_column_supplies_its_current_label_as_the_sql_identifier(
     let column = &schema.tables[0].columns[0];
     assert_eq!(column.name, "RSVP");
     assert_eq!(column.sql_name, "\"RSVP\"");
-    assert_eq!(column.options, vec!["Going", "Declined"]);
+    let labels: Vec<&str> = column
+        .options
+        .iter()
+        .map(|option| option.label.as_str())
+        .collect();
+    assert_eq!(labels, vec!["Going", "Declined"]);
 }
 
 #[test]

@@ -15,6 +15,7 @@ mod saved_queries;
 mod sharing;
 mod tables;
 mod transfer;
+mod views;
 
 const USER: &str = "macro|databases-a@macro.com";
 

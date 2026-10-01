@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ColumnDetail } from './columnDetail';
+import type { DatabaseView } from './databaseView';
 import type { Table } from './table';
 
 /**
@@ -20,4 +21,6 @@ needs it (`FROM "Table 1"`), optionally qualified by the database's. */
   sql_name: string;
   /** The table. */
   table: Table;
+  /** The table's views, in their order. */
+  views: DatabaseView[];
 }

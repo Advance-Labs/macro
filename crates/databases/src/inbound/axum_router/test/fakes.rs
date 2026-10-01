@@ -209,6 +209,14 @@ impl DatabasesService for RecordingService {
         Ok(Vec::new())
     }
 
+    async fn view_positions(
+        &self,
+        _: EntityAccessReceipt<ViewAccessLevel>,
+        _: crate::domain::models::ViewId,
+    ) -> Result<Vec<crate::domain::models::CardPosition>, DatabaseError> {
+        unimplemented!("{ONLY_OPS}")
+    }
+
     async fn create_database(&self, _: CreateDatabase) -> Result<Database, DatabaseError> {
         unimplemented!("{ONLY_OPS}")
     }

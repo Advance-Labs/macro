@@ -35,11 +35,7 @@ async fn reordering_three_tables_rewrites_every_position_and_reads_back_in_order
             .iter()
             .map(|t| (t.name.as_str(), t.position.as_str()))
             .collect::<Vec<_>>(),
-        vec![
-            ("Budget", "000000000001"),
-            ("Table 1", "000000000002"),
-            ("Guests", "000000000003"),
-        ]
+        vec![("Budget", "7f80"), ("Table 1", "80"), ("Guests", "8180"),]
     );
 
     let (_, after) = repo
@@ -64,7 +60,7 @@ async fn reordering_three_tables_rewrites_every_position_and_reads_back_in_order
         .await
         .unwrap(),
     );
-    assert_eq!(notes.position, "000000000004");
+    assert_eq!(notes.position, "8280");
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]

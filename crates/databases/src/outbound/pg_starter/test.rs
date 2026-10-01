@@ -1,7 +1,7 @@
 use macro_db_migrator::MACRO_DB_MIGRATIONS;
 use macro_user_id::{cowlike::CowLike, user_id::MacroUserIdStr};
+use models_databases::views::{Lane, ViewLayout, ViewQuery};
 use properties::outbound::properties_pg_repo::PropertiesPgRepo;
-use saved_views::{PgViewStorage, ViewStorage};
 
 use super::*;
 use crate::{
@@ -35,12 +35,8 @@ async fn insert_user(pool: &PgPool) {
     .unwrap();
 }
 
-fn repo(pool: &PgPool) -> PgDatabaseStarterRepo<PropertiesPgRepo, PgViewStorage> {
-    PgDatabaseStarterRepo::new(
-        pool.clone(),
-        PropertiesPgRepo::new(pool.clone()),
-        PgViewStorage::new(pool.clone()),
-    )
+fn repo(pool: &PgPool) -> PgDatabaseStarterRepo<PropertiesPgRepo> {
+    PgDatabaseStarterRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
@@ -78,22 +74,60 @@ async fn concurrent_starter_requests_create_one_complete_editable_example(pool: 
     .await
     .unwrap();
     assert!(rows.iter().all(|row| cells[&row.id].len() == 2));
-    let views = PgViewStorage::new(pool.clone())
-        .get_views_for_user(USER)
-        .await
-        .unwrap();
-    assert_eq!(views.len(), 2);
-    let board = views
+    let views = data.views_for_tables(&[table]).await.unwrap();
+    let stages: Vec<_> = crate::outbound::pg_definition_store::PgDefinitionStore::new(
+        PropertiesPgRepo::new(pool.clone()),
+    )
+    .definitions(&[columns[1].property_definition_id])
+    .await
+    .unwrap()
+    .remove(0)
+    .property_options
+    .iter()
+    .map(|option| option.id)
+    .collect();
+    let shown: Vec<(&str, &str, &ViewQuery, &ViewLayout)> = views
         .iter()
-        .find(|view| Some(view.id) == created.view_id)
-        .unwrap();
-    assert_eq!(board.config["view"]["layout"], "board");
-    assert_eq!(board.config["view"]["groupBy"], columns[1].id.to_string());
-    assert!(
-        views
-            .iter()
-            .all(|view| view.config["tableId"] == table.to_string())
+        .map(|view| {
+            (
+                view.name.as_str(),
+                view.position.as_str(),
+                &view.query,
+                &view.layout,
+            )
+        })
+        .collect();
+    assert_eq!(
+        shown,
+        vec![
+            (
+                "Table",
+                "7f80",
+                &ViewQuery::default(),
+                &ViewLayout::Table { columns: vec![] }
+            ),
+            (
+                "Board",
+                "80",
+                &ViewQuery::default(),
+                &ViewLayout::Board {
+                    group_by: columns[1].id,
+                    lanes: stages
+                        .iter()
+                        .map(|option| Lane {
+                            option: Some(*option),
+                            hidden: false,
+                        })
+                        .collect(),
+                    card_fields: vec![columns[0].id],
+                    hide_empty_lanes: false,
+                }
+            ),
+        ]
     );
+    assert_eq!(created.view_id, Some(views[1].id));
+    let positions: Vec<&str> = rows.iter().map(|row| row.position.as_str()).collect();
+    assert_eq!(positions, ["7f80", "80", "8180"]);
     let owner = sqlx::query_scalar!(
         "SELECT COUNT(*) FROM entity_access WHERE entity_id = $1 AND access_level = 'owner'",
         id
@@ -202,29 +236,27 @@ async fn existing_database_skips_seed_even_after_it_is_deleted(pool: PgPool) {
     );
 }
 
-struct FailedViews;
-impl TransactionalViewStorage for FailedViews {
-    type Transaction = Transaction<'static, Postgres>;
-    type Err = std::io::Error;
-    async fn create_view_in(
-        &self,
-        _: &mut Self::Transaction,
-        _: &saved_views::View,
-    ) -> Result<(), Self::Err> {
-        Err(std::io::Error::other("injected saved-view failure"))
-    }
-}
-
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn failed_dependency_rolls_back_content_and_marker_then_retry_succeeds(pool: PgPool) {
     insert_user(&pool).await;
-    let failed = PgDatabaseStarterRepo::new(
-        pool.clone(),
-        PropertiesPgRepo::new(pool.clone()),
-        FailedViews,
-    );
+    // The views are the seed's last write before the marker, so failing them
+    // proves everything before rolls back with them.
+    sqlx::raw_sql(
+        "CREATE FUNCTION refuse_views() RETURNS trigger LANGUAGE plpgsql AS $$
+         BEGIN RAISE EXCEPTION 'injected view failure'; END $$;
+         CREATE TRIGGER refuse_views BEFORE INSERT ON database_views
+         FOR EACH ROW EXECUTE FUNCTION refuse_views();",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     let blueprint = StarterBlueprint::default();
-    assert!(failed.ensure_starter(&viewer(), &blueprint).await.is_err());
+    assert!(
+        repo(&pool)
+            .ensure_starter(&viewer(), &blueprint)
+            .await
+            .is_err()
+    );
     assert!(
         PgDatabasesRepo::new(pool.clone())
             .get_database(blueprint.database_id)
@@ -240,6 +272,10 @@ async fn failed_dependency_rolls_back_content_and_marker_then_retry_succeeds(poo
     .await
     .unwrap();
     assert_eq!(definitions, Some(0));
+    sqlx::raw_sql("DROP TRIGGER refuse_views ON database_views")
+        .execute(&pool)
+        .await
+        .unwrap();
     let success = repo(&pool)
         .ensure_starter(&viewer(), &blueprint)
         .await

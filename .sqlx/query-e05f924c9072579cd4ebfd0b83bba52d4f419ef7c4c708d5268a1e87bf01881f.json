@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE database_columns SET position = CASE WHEN id = $1 THEN '000000000002' ELSE '000000000001' END WHERE table_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e05f924c9072579cd4ebfd0b83bba52d4f419ef7c4c708d5268a1e87bf01881f"
+}

@@ -15,8 +15,12 @@ mod sharing;
 #[cfg(test)]
 mod test;
 mod transfer;
+/// View and card-place statements, shared with the cell store's batches.
+pub(crate) mod views;
 
 use std::collections::HashMap;
+
+use models_databases::position::{PositionError, key_between, keys_between};
 
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -25,11 +29,13 @@ use entity_access_db_utils::{AccessLevel, EntityAccessSourceType};
 use model_entity::EntityType;
 
 use crate::domain::models::{
+    CardPosition, ColumnReplacement, ColumnSchemaOutcome, DatabaseView, ViewId,
+};
+use crate::domain::models::{
     Column, ColumnConfig, ColumnId, CreateColumn, CreateDatabase, CreateTable, Database,
     DatabaseId, PropertyDefinitionId, RenameColumnOutcome, RowId, RowRef, Table, TableId,
     TableMutationOutcome, TableVersion,
 };
-use crate::domain::models::{ColumnReplacement, ColumnSchemaOutcome};
 use crate::domain::models::{
     QueryDefinition, QueryId, SavedQuery, TableDeletion, TableOrderOutcome,
 };
@@ -41,27 +47,20 @@ pub enum PgDatabasesRepoError {
     /// Underlying database failure.
     #[error("database error")]
     Sqlx(#[from] sqlx::Error),
-    /// A domain value could not be encoded as JSON for storage.
-    #[error("failed to encode json for storage")]
+    /// A domain value could not be encoded as JSON for storage, or a stored
+    /// one decoded.
+    #[error("failed to encode or decode stored json")]
     Json(#[from] serde_json::Error),
+    /// A stored position is not a fractional key.
+    #[error("stored position")]
+    Position(#[from] PositionError),
 }
 
-/// Width of the zero-padded decimal ordering keys stored in `position`.
-///
-/// There is no fractional-index helper in the workspace yet, so ordering keys
-/// are plain zero-padded counters: a new item's position is
-/// `max(position) + 1`, rendered to a fixed width so lexicographic ordering
-/// (what the `TEXT` column and every `ORDER BY position` give us) matches
-/// numeric ordering. Inserting *between* two neighbours is therefore not
-/// expressible yet; when it is needed, swap [`next_position`] for a real
-/// fractional index — the column is already `TEXT` and every read orders by it,
-/// so nothing else has to change.
-const POSITION_WIDTH: usize = 12;
-
-/// The ordering key that appends after `max`, the largest existing position.
-fn next_position(max: Option<&str>) -> String {
-    let next = max.and_then(|p| p.parse::<u64>().ok()).unwrap_or(0) + 1;
-    format!("{next:0POSITION_WIDTH$}")
+/// The position that appends after `last`, the largest one a list has, or
+/// starts an empty list. Positions are fractional keys compared as bytes
+/// (the columns are `COLLATE "C"`), so the largest is the last.
+fn position_after(last: Option<&str>) -> Result<String, PositionError> {
+    key_between(last, None)
 }
 
 /// [`DatabasesRepo`] backed by MacroDB.
@@ -84,16 +83,32 @@ impl DatabasesRepo for PgDatabasesRepo {
         &self,
         table: &Table,
         replacement: &ColumnReplacement,
+        views: &[DatabaseView],
     ) -> Result<Option<TableVersion>, Self::Err> {
-        self.replace_column_placement(table, replacement).await
+        self.replace_column_placement(table, replacement, views)
+            .await
     }
 
     async fn delete_column(
         &self,
         table: &Table,
         column: &Column,
+        views: &[DatabaseView],
     ) -> Result<Option<ColumnSchemaOutcome>, Self::Err> {
-        self.delete_column_placement(table, column).await
+        self.delete_column_placement(table, column, views).await
+    }
+
+    #[tracing::instrument(err, skip(self))]
+    async fn views_for_tables(
+        &self,
+        table_ids: &[TableId],
+    ) -> Result<Vec<DatabaseView>, Self::Err> {
+        views::views_for_tables(&self.pool, table_ids).await
+    }
+
+    #[tracing::instrument(err, skip(self))]
+    async fn view_positions(&self, view_id: ViewId) -> Result<Vec<CardPosition>, Self::Err> {
+        Ok(views::view_positions(&self.pool, view_id).await?)
     }
 
     async fn reorder_columns(
@@ -155,7 +170,7 @@ impl DatabasesRepo for PgDatabasesRepo {
             macro_uuid::generate_uuid_v7(),
             id,
             starter_table_name,
-            next_position(None),
+            position_after(None)?,
         )
         .execute(&mut *transaction)
         .await?;
@@ -316,7 +331,7 @@ impl DatabasesRepo for PgDatabasesRepo {
         )
         .fetch_one(&mut *transaction)
         .await?;
-        let position = next_position(max_position.as_deref());
+        let position = position_after(max_position.as_deref())?;
         let id = macro_uuid::generate_uuid_v7();
 
         let row = sqlx::query!(
@@ -430,7 +445,7 @@ impl DatabasesRepo for PgDatabasesRepo {
         )
         .fetch_one(&mut *transaction)
         .await?;
-        let position = next_position(max_position.as_deref());
+        let position = position_after(max_position.as_deref())?;
         let id = macro_uuid::generate_uuid_v7();
 
         sqlx::query!(

@@ -32,14 +32,14 @@ use crate::outbound::pg_definition_store::PgDefinitionStore;
 
 const USER: &str = "macro|apply-ops@macro.com";
 
-fn viewer() -> Viewer {
+pub(super) fn viewer() -> Viewer {
     Viewer {
         user_id: MacroUserIdStr::parse_from_str(USER).unwrap().into_owned(),
         acting_bot: None,
     }
 }
 
-fn edit(database_id: DatabaseId) -> EntityAccessReceipt<EditAccessLevel> {
+pub(super) fn edit(database_id: DatabaseId) -> EntityAccessReceipt<EditAccessLevel> {
     EntityAccessReceipt::try_new_authenticated_user(
         MacroUserIdStr::parse_from_str(USER).unwrap().into_owned(),
         Entity {
@@ -53,11 +53,11 @@ fn edit(database_id: DatabaseId) -> EntityAccessReceipt<EditAccessLevel> {
     .unwrap()
 }
 
-async fn insert_user(pool: &PgPool) {
+pub(super) async fn insert_user(pool: &PgPool) {
     insert_named_user(pool, USER).await;
 }
 
-async fn insert_named_user(pool: &PgPool, user: &str) {
+pub(super) async fn insert_named_user(pool: &PgPool, user: &str) {
     let id = macro_uuid::generate_uuid_v7();
     sqlx::query!(r#"INSERT INTO macro_user (id, username, email, stripe_customer_id) VALUES ($1, $2, $2, $2)"#, id, user)
         .execute(pool).await.unwrap();
@@ -72,16 +72,16 @@ async fn insert_named_user(pool: &PgPool, user: &str) {
 }
 
 /// `Guests(Name TEXT, Status SELECT[Going])` in a new database.
-struct Guests {
-    database_id: DatabaseId,
-    table_id: Uuid,
-    name: Uuid,
-    name_definition: Uuid,
-    status: Uuid,
-    status_definition: Uuid,
+pub(super) struct Guests {
+    pub(super) database_id: DatabaseId,
+    pub(super) table_id: Uuid,
+    pub(super) name: Uuid,
+    pub(super) name_definition: Uuid,
+    pub(super) status: Uuid,
+    pub(super) status_definition: Uuid,
 }
 
-async fn guests(pool: &PgPool) -> Guests {
+pub(super) async fn guests(pool: &PgPool) -> Guests {
     insert_user(pool).await;
     let service = build_service(pool.clone(), NoOpTableEventPublisher, NoopMacroEventBroker);
     let database = service
@@ -148,11 +148,11 @@ async fn guests(pool: &PgPool) -> Guests {
     }
 }
 
-fn cells(pool: &PgPool) -> PgCellStore<PropertiesPgRepo> {
+pub(super) fn cells(pool: &PgPool) -> PgCellStore<PropertiesPgRepo> {
     PgCellStore::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
 }
 
-async fn version(pool: &PgPool, table_id: Uuid) -> TableVersion {
+pub(super) async fn version(pool: &PgPool, table_id: Uuid) -> TableVersion {
     PgDatabasesRepo::new(pool.clone())
         .table_versions(&[table_id])
         .await

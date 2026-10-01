@@ -324,3 +324,55 @@ fn an_option_removal_names_its_table_column_and_option() {
     );
     assert_eq!(op.table(), TABLE);
 }
+
+#[test]
+fn view_ops_read_their_table_view_and_card_from_json() {
+    let view = Uuid::from_u128(0x71e);
+    let lane = Uuid::from_u128(0x0b7);
+    let read = |body| serde_json::from_value::<DatabaseOp>(body).unwrap();
+
+    assert_eq!(
+        read(json!({
+            "kind": "update_view",
+            "table": TABLE,
+            "view": view,
+            "name": "By stage",
+        })),
+        DatabaseOp::UpdateView {
+            table: TABLE,
+            view,
+            name: Some("By stage".into()),
+            query: None,
+            layout: None,
+        }
+    );
+    assert_eq!(
+        read(json!({"kind": "reorder_views", "table": TABLE, "order": [view]})),
+        DatabaseOp::ReorderViews {
+            table: TABLE,
+            order: vec![view],
+        }
+    );
+    assert_eq!(
+        read(json!({
+            "kind": "move_card",
+            "table": TABLE,
+            "view": view,
+            "row": SAM,
+            "lane": lane,
+            "before": ALEX,
+        })),
+        DatabaseOp::MoveCard {
+            table: TABLE,
+            view,
+            row: SAM,
+            lane: Some(lane),
+            before: Some(ALEX),
+            after: None,
+        }
+    );
+    assert_eq!(
+        read(json!({"kind": "delete_view", "table": TABLE, "view": view})).table(),
+        TABLE
+    );
+}

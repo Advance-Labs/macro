@@ -7,8 +7,9 @@
 //!   that document nodes point at.
 //! - `GET /` — list the caller's databases; `POST /` — create one.
 //! - `GET /{id}` — schema detail (tables, columns, definitions, SQL names).
-//! - `POST /{id}/ops` — typed, batched writes to the database's rows and
-//!   column types, applied together or not at all.
+//! - `POST /{id}/ops` — typed, batched writes to the database's rows, column
+//!   types, options and views, applied together or not at all.
+//! - `GET /{id}/views/{view_id}/positions` — where a board's cards sit.
 //! - `POST /{id}/tables`, `POST /{id}/tables/{table_id}/columns`,
 //!   `POST /{id}/tables/{table_id}/columns/{column_id}/options` — schema
 //!   operations, which stay structured because property definitions carry
@@ -29,6 +30,8 @@ pub mod sharing;
 mod test;
 /// Atomic table imports.
 pub mod transfer;
+/// A board's card places: `GET /{id}/views/{view_id}/positions`.
+pub mod views;
 use crate::domain::sharing::DatabaseSharingService;
 use crate::domain::transfer::DatabaseTransferService;
 use column_mutations::{
@@ -52,7 +55,7 @@ use macro_authorization::{
 };
 use model_error_response::ErrorResponse;
 use models_properties::shared::DataType;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::domain::models::{
@@ -143,6 +146,10 @@ where
         .route("/{id}", get(get_database_handler::<S, Eas, Auth>))
         .route("/{id}/awareness", put(awareness_handler::<S, Eas, Auth>))
         .route("/{id}/ops", post(ops::apply_ops_handler::<S, Eas, Auth>))
+        .route(
+            "/{id}/views/{view_id}/positions",
+            get(views::view_positions_handler::<S, Eas, Auth>),
+        )
         .route(
             "/{id}/permissions",
             get(sharing::get_permissions_handler::<S, Eas, Auth>)

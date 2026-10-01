@@ -47,10 +47,10 @@ use uuid::Uuid;
 
 use crate::domain::catalog::{cast_targets, option_labels, sql_table_name};
 use crate::domain::models::{
-    ColumnConfig, ColumnDetail, DatabaseDetail, DatabaseError, ListedDatabase, TableDetail, Viewer,
+    ColumnConfig, ColumnDetail, DatabaseDetail, DatabaseError, DatabaseView, ListedDatabase,
+    TableDetail, Viewer,
 };
 use crate::domain::ports::DatabasesService;
-use crate::domain::views::{DatabaseViewService, DatabaseViewsServiceImpl};
 
 pub use add_column::{AddColumn, AddColumnResponse};
 pub use add_column_options::{AddColumnOptions, AddColumnOptionsResponse};
@@ -66,7 +66,7 @@ pub use rename_database::{RenameDatabase, RenameDatabaseResponse};
 pub use rename_table::{RenameTable, RenameTableResponse};
 pub use reorder_columns::{ReorderColumns, ReorderColumnsResponse};
 pub use reorder_tables::{ReorderTables, ReorderTablesResponse};
-pub use save_database_view::SaveDatabaseView;
+pub use save_database_view::{SaveDatabaseView, SavedDatabaseView};
 
 /// Service context for the databases AI tools.
 pub struct DatabasesToolContext<S: DatabasesService, E: EntityAccessService> {
@@ -74,8 +74,6 @@ pub struct DatabasesToolContext<S: DatabasesService, E: EntityAccessService> {
     pub service: Arc<S>,
     /// Mints the access receipts the schema operations are gated on.
     pub entity_access_service: Arc<E>,
-    /// Personal saved-view use case, backed by the owning saved_views port.
-    pub views: Arc<dyn DatabaseViewService>,
     /// The agent the tools act as, for the requesting user.
     pub actor: BotId,
 }
@@ -85,7 +83,6 @@ impl<S: DatabasesService, E: EntityAccessService> Clone for DatabasesToolContext
         Self {
             service: self.service.clone(),
             entity_access_service: self.entity_access_service.clone(),
-            views: self.views.clone(),
             actor: self.actor,
         }
     }
@@ -93,15 +90,9 @@ impl<S: DatabasesService, E: EntityAccessService> Clone for DatabasesToolContext
 
 impl<S: DatabasesService, E: EntityAccessService> DatabasesToolContext<S, E> {
     /// Create a new databases tool context.
-    pub fn new<V>(service: S, entity_access_service: Arc<E>, views: V) -> Self
-    where
-        V: saved_views::ViewStorage + Send + Sync + 'static,
-        V::Err: std::error::Error + Send + Sync + 'static,
-    {
-        let service = Arc::new(service);
+    pub fn new(service: S, entity_access_service: Arc<E>) -> Self {
         Self {
-            views: Arc::new(DatabaseViewsServiceImpl::new(service.clone(), views)),
-            service,
+            service: Arc::new(service),
             entity_access_service,
             actor: bot_id::MACRO_AI_BOT_ID,
         }
@@ -539,10 +530,11 @@ pub struct ToolColumn {
     /// Whether the column holds several values. Multi-valued cells are written
     /// as lists (`['a', 'b']`) and tested with `HAS`.
     pub is_multi_select: bool,
-    /// For a select or tag column, the labels SQL accepts. Writing anything
-    /// else is rejected by the statement.
+    /// For a select or tag column, its options: the labels SQL accepts
+    /// (writing anything else is rejected by the statement), and the ids a
+    /// view names them by.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub options: Vec<String>,
+    pub options: Vec<ToolOption>,
     /// Whether SQL may write to this column.
     pub writable: bool,
     /// A database-row relationship; distinct from a Macro entity reference.
@@ -555,6 +547,16 @@ pub struct ToolColumn {
     /// `clearInvalid` empties, the ones that do not fit. Any type in neither
     /// list is refused while the column holds values.
     pub checked_types: Vec<String>,
+}
+
+/// One option of a select or tag column.
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolOption {
+    /// The id views name it by.
+    pub id: Uuid,
+    /// The label SQL reads and writes.
+    pub label: String,
 }
 
 /// The target of a database-row relationship.
@@ -584,6 +586,10 @@ pub struct ToolTable {
     pub writable: bool,
     /// Columns in display order. `row_id` is implicit and is not listed.
     pub columns: Vec<ToolColumn>,
+    /// The table's saved views, in their order. SaveDatabaseView under one
+    /// of these names replaces that view.
+    #[schemars(with = "Vec<serde_json::Value>")]
+    pub views: Vec<DatabaseView>,
 }
 
 /// Everything a model needs to write SQL against one database.
@@ -641,7 +647,7 @@ impl From<DatabaseDetail> for ToolDatabaseSchema {
                                 // that does not round-trip is one SQL rejects.
                                 options: option_labels(&column.definition)
                                     .into_iter()
-                                    .map(|(_, label)| label)
+                                    .map(|(id, label)| ToolOption { id, label })
                                     .collect(),
                                 name: column
                                     .column
@@ -675,6 +681,7 @@ impl From<DatabaseDetail> for ToolDatabaseSchema {
                             }
                         })
                         .collect(),
+                    views: table.views,
                 })
                 .collect(),
         }

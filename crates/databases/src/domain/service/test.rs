@@ -22,8 +22,9 @@ use uuid::Uuid;
 
 use super::*;
 use crate::domain::models::{
-    Column, ColumnBinding, ColumnConfig, OpRefusal, PropertyDefinitionId, RowId, RowRef,
-    TableDeletion, TableOrderOutcome, TableVersion, Write, Writes, WritesOutcome,
+    CardPosition, Column, ColumnBinding, ColumnConfig, DatabaseView, OpRefusal,
+    PropertyDefinitionId, RowId, RowRef, TableDeletion, TableOrderOutcome, TableVersion, ViewId,
+    Write, Writes, WritesOutcome,
 };
 
 mod casts;
@@ -88,6 +89,21 @@ struct World {
     /// The shared definitions each user may change, as the properties system
     /// answers it.
     editable_definitions: HashMap<String, Vec<PropertyDefinitionId>>,
+    /// Every table's views.
+    views: Vec<DatabaseView>,
+    /// Where each board's cards sit.
+    positions: HashMap<ViewId, Vec<CardPosition>>,
+}
+
+/// Store views a schema change rewrote; `false` when one is gone.
+fn rewrite_views(w: &mut World, views: &[DatabaseView]) -> bool {
+    for view in views {
+        let Some(stored) = w.views.iter_mut().find(|stored| stored.id == view.id) else {
+            return false;
+        };
+        *stored = view.clone();
+    }
+    true
 }
 
 type Shared = Arc<Mutex<World>>;
@@ -413,6 +429,7 @@ impl DatabasesRepo for FakeRepo {
         &self,
         table: &Table,
         replacement: &ColumnReplacement,
+        views: &[DatabaseView],
     ) -> Result<Option<TableVersion>, FakeError> {
         let mut w = self.0.lock().unwrap();
         let Some(t) = w
@@ -429,6 +446,9 @@ impl DatabasesRepo for FakeRepo {
         }) else {
             return Ok(None);
         };
+        if !rewrite_views(&mut w, views) {
+            return Ok(None);
+        }
         w.columns[c].property_definition_id = replacement.definition_id;
         w.columns[c].config = replacement.config.clone();
         w.columns[c].infer_type = false;
@@ -439,6 +459,7 @@ impl DatabasesRepo for FakeRepo {
         &self,
         table: &Table,
         column: &Column,
+        views: &[DatabaseView],
     ) -> Result<Option<ColumnSchemaOutcome>, FakeError> {
         let mut w = self.0.lock().unwrap();
         let Some(t) = w
@@ -455,6 +476,9 @@ impl DatabasesRepo for FakeRepo {
         else {
             return Ok(None);
         };
+        if !rewrite_views(&mut w, views) {
+            return Ok(None);
+        }
         w.columns.remove(c);
         w.tables[t].version.0 += 1;
         Ok(Some(ColumnSchemaOutcome {
@@ -607,6 +631,32 @@ impl DatabasesRepo for FakeRepo {
         columns.sort_by(|a, b| (a.table_id, &a.position).cmp(&(b.table_id, &b.position)));
         Ok(columns)
     }
+    async fn views_for_tables(
+        &self,
+        table_ids: &[TableId],
+    ) -> Result<Vec<DatabaseView>, FakeError> {
+        let mut views: Vec<DatabaseView> = self
+            .0
+            .lock()
+            .unwrap()
+            .views
+            .iter()
+            .filter(|view| table_ids.contains(&view.table_id))
+            .cloned()
+            .collect();
+        views.sort_by(|a, b| (a.table_id, &a.position).cmp(&(b.table_id, &b.position)));
+        Ok(views)
+    }
+    async fn view_positions(&self, view_id: ViewId) -> Result<Vec<CardPosition>, FakeError> {
+        Ok(self
+            .0
+            .lock()
+            .unwrap()
+            .positions
+            .get(&view_id)
+            .cloned()
+            .unwrap_or_default())
+    }
     async fn save_query(
         &self,
         database_id: Option<DatabaseId>,
@@ -647,6 +697,20 @@ impl CellStore for FakeCells {
             .filter_map(|row| w.cells.get(row).map(|cells| (*row, cells.clone())))
             .collect())
     }
+    async fn column_cells(
+        &self,
+        rows: &[RowId],
+        definition: PropertyDefinitionId,
+    ) -> Result<HashMap<RowId, PropertyValue>, FakeError> {
+        let w = self.0.lock().unwrap();
+        Ok(rows
+            .iter()
+            .filter_map(|row| {
+                let value = w.cells.get(row)?.get(&definition)?;
+                Some((*row, value.clone()))
+            })
+            .collect())
+    }
     async fn write(
         &self,
         row: RowId,
@@ -680,6 +744,8 @@ impl CellStore for FakeCells {
             w.rows.clone(),
             w.cells.clone(),
             w.settled.clone(),
+            w.views.clone(),
+            w.positions.clone(),
         );
         let outcome = apply_in_world(&mut w, writes);
         if !matches!(outcome, WritesOutcome::Applied { .. }) {
@@ -690,6 +756,8 @@ impl CellStore for FakeCells {
                 w.rows,
                 w.cells,
                 w.settled,
+                w.views,
+                w.positions,
             ) = before;
         }
         Ok(outcome)
@@ -833,10 +901,26 @@ fn apply_in_world(w: &mut World, writes: &Writes) -> WritesOutcome {
                 inserted.push(Vec::new());
             }
             Write::DeleteOption {
+                tables,
                 definition_id,
                 option_id,
+                views,
                 ..
             } => {
+                if !rewrite_views(w, views) {
+                    return WritesOutcome::MissingView { write: index };
+                }
+                let boards: Vec<ViewId> = w
+                    .views
+                    .iter()
+                    .filter(|view| tables.contains(&view.table_id))
+                    .map(|view| view.id)
+                    .collect();
+                for board in boards {
+                    if let Some(placed) = w.positions.get_mut(&board) {
+                        placed.retain(|card| card.lane != Some(*option_id));
+                    }
+                }
                 let Some(definition) = w.definitions.get_mut(definition_id) else {
                     return WritesOutcome::MissingOption { write: index };
                 };
@@ -855,6 +939,83 @@ fn apply_in_world(w: &mut World, writes: &Writes) -> WritesOutcome {
                             cells.remove(definition_id);
                         }
                     }
+                }
+                inserted.push(Vec::new());
+            }
+            Write::CreateView { view } => {
+                if w.views.iter().any(|other| {
+                    other.table_id == view.table_id && other.name.eq_ignore_ascii_case(&view.name)
+                }) {
+                    return WritesOutcome::ViewNameTaken { write: index };
+                }
+                w.views.push(view.clone());
+                inserted.push(Vec::new());
+            }
+            Write::UpdateView { view, regrouped } => {
+                if !rewrite_views(w, std::slice::from_ref(view)) {
+                    return WritesOutcome::MissingView { write: index };
+                }
+                if *regrouped {
+                    w.positions.remove(&view.id);
+                }
+                inserted.push(Vec::new());
+            }
+            Write::DeleteView { table_id, view_id } => {
+                let before = w.views.len();
+                w.views
+                    .retain(|view| !(view.id == *view_id && view.table_id == *table_id));
+                if w.views.len() == before {
+                    return WritesOutcome::MissingView { write: index };
+                }
+                w.positions.remove(view_id);
+                inserted.push(Vec::new());
+            }
+            Write::OrderViews {
+                table_id,
+                positions,
+            } => {
+                for placed in positions {
+                    let Some(view) = w
+                        .views
+                        .iter_mut()
+                        .find(|view| view.id == placed.view && view.table_id == *table_id)
+                    else {
+                        return WritesOutcome::MissingView { write: index };
+                    };
+                    view.position = placed.position.clone();
+                }
+                inserted.push(Vec::new());
+            }
+            Write::MoveCard {
+                table_id,
+                view_id,
+                row,
+                positions,
+                cell: (definition, value),
+            } => {
+                let owned = w
+                    .rows
+                    .get(table_id)
+                    .is_some_and(|rows| rows.iter().any(|r| r.id == *row));
+                if !owned {
+                    return WritesOutcome::MissingRow {
+                        write: index,
+                        row: *row,
+                    };
+                }
+                let stored = w.cells.entry(*row).or_default();
+                match value {
+                    Some(value) => {
+                        stored.insert(*definition, value.clone());
+                    }
+                    None => {
+                        stored.remove(definition);
+                    }
+                }
+                let placed = w.positions.entry(*view_id).or_default();
+                for position in positions {
+                    placed.retain(|card| card.row != position.row);
+                    placed.push(position.clone());
                 }
                 inserted.push(Vec::new());
             }

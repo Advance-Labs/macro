@@ -161,6 +161,7 @@ pub(crate) fn table(
                 column
             })
             .collect(),
+        views: Vec::new(),
     }
 }
 
@@ -269,6 +270,14 @@ pub(crate) fn row(
 pub(crate) struct FakeDatabases(pub(crate) Shared);
 
 impl DatabasesService for FakeDatabases {
+    async fn view_positions(
+        &self,
+        _receipt: EntityAccessReceipt<ViewAccessLevel>,
+        _view_id: databases::domain::models::ViewId,
+    ) -> Result<Vec<databases::domain::models::CardPosition>, DatabaseError> {
+        unimplemented!("the SQL adapter reads no card places")
+    }
+
     async fn database_details(&self, viewer: Viewer) -> Result<Vec<DatabaseDetail>, DatabaseError> {
         let world = self.0.lock().unwrap();
         Ok(world

@@ -7,9 +7,14 @@
 import type { DatabaseOpOneOf } from './databaseOpOneOf';
 import type { DatabaseOpOneOfFive } from './databaseOpOneOfFive';
 import type { DatabaseOpOneOfNine } from './databaseOpOneOfNine';
+import type { DatabaseOpOneOfOneeight } from './databaseOpOneOfOneeight';
+import type { DatabaseOpOneOfOnefour } from './databaseOpOneOfOnefour';
+import type { DatabaseOpOneOfOnesix } from './databaseOpOneOfOnesix';
 import type { DatabaseOpOneOfOnetwo } from './databaseOpOneOfOnetwo';
 import type { DatabaseOpOneOfSeven } from './databaseOpOneOfSeven';
 import type { DatabaseOpOneOfThree } from './databaseOpOneOfThree';
+import type { DatabaseOpOneOfTwotwo } from './databaseOpOneOfTwotwo';
+import type { DatabaseOpOneOfTwozero } from './databaseOpOneOfTwozero';
 
 /**
  * One write to a database's data. A request's ops apply together or not at
@@ -21,4 +26,9 @@ export type DatabaseOp =
   | DatabaseOpOneOfFive
   | DatabaseOpOneOfSeven
   | DatabaseOpOneOfNine
-  | DatabaseOpOneOfOnetwo;
+  | DatabaseOpOneOfOnetwo
+  | DatabaseOpOneOfOnefour
+  | DatabaseOpOneOfOnesix
+  | DatabaseOpOneOfOneeight
+  | DatabaseOpOneOfTwozero
+  | DatabaseOpOneOfTwotwo;

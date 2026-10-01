@@ -192,3 +192,166 @@ pub fn catalog() -> Catalog {
         ],
     }
 }
+
+pub const WORK: Uuid = Uuid::from_u128(0xdb3);
+pub const ISSUES: Uuid = Uuid::from_u128(0xd4);
+pub const SUMMARY: Uuid = Uuid::from_u128(0x51);
+pub const SUMMARY_PLACEMENT: Uuid = Uuid::from_u128(0x61);
+pub const POINTS: Uuid = Uuid::from_u128(0x52);
+pub const POINTS_PLACEMENT: Uuid = Uuid::from_u128(0x62);
+pub const STATUS: Uuid = Uuid::from_u128(0x53);
+pub const STATUS_PLACEMENT: Uuid = Uuid::from_u128(0x63);
+pub const DUE: Uuid = Uuid::from_u128(0x54);
+pub const DUE_PLACEMENT: Uuid = Uuid::from_u128(0x64);
+pub const BLOCKED: Uuid = Uuid::from_u128(0x55);
+pub const BLOCKED_PLACEMENT: Uuid = Uuid::from_u128(0x65);
+pub const LABELS: Uuid = Uuid::from_u128(0x56);
+pub const LABELS_PLACEMENT: Uuid = Uuid::from_u128(0x66);
+pub const ASSIGNEE: Uuid = Uuid::from_u128(0x57);
+pub const ASSIGNEE_PLACEMENT: Uuid = Uuid::from_u128(0x67);
+pub const REVIEWERS: Uuid = Uuid::from_u128(0x58);
+pub const REVIEWERS_PLACEMENT: Uuid = Uuid::from_u128(0x68);
+pub const SPEC: Uuid = Uuid::from_u128(0x59);
+pub const SPEC_PLACEMENT: Uuid = Uuid::from_u128(0x69);
+pub const PARENT: Uuid = Uuid::from_u128(0x5a);
+pub const PARENT_PLACEMENT: Uuid = Uuid::from_u128(0x6a);
+pub const TODO: Uuid = Uuid::from_u128(0x71);
+pub const DOING: Uuid = Uuid::from_u128(0x72);
+pub const WONT_DO: Uuid = Uuid::from_u128(0x73);
+pub const BUG: Uuid = Uuid::from_u128(0x74);
+pub const FEATURE: Uuid = Uuid::from_u128(0x75);
+
+/// `work.issues`, the table views are tested on: one column of every kind,
+/// each placed under an id of its own, so a view (which names placements)
+/// and a query (which names definitions) can be told apart.
+pub fn issues_catalog() -> Catalog {
+    Catalog {
+        tables: vec![Table {
+            id: ISSUES,
+            database_id: WORK,
+            database: "work".into(),
+            name: "issues".into(),
+            columns: vec![
+                Column {
+                    id: SUMMARY,
+                    placement: SUMMARY_PLACEMENT,
+                    name: "summary".into(),
+                    kind: ColumnKind::Text,
+                },
+                Column {
+                    id: POINTS,
+                    placement: POINTS_PLACEMENT,
+                    name: "points".into(),
+                    kind: ColumnKind::Number,
+                },
+                Column {
+                    id: STATUS,
+                    placement: STATUS_PLACEMENT,
+                    name: "status".into(),
+                    kind: ColumnKind::Select {
+                        multi: false,
+                        options: vec![
+                            SelectOption {
+                                id: TODO,
+                                label: "Todo".into(),
+                            },
+                            SelectOption {
+                                id: DOING,
+                                label: "Doing".into(),
+                            },
+                            SelectOption {
+                                id: WONT_DO,
+                                label: "Won't do".into(),
+                            },
+                        ],
+                    },
+                },
+                Column {
+                    id: DUE,
+                    placement: DUE_PLACEMENT,
+                    name: "due date".into(),
+                    kind: ColumnKind::Date,
+                },
+                Column {
+                    id: BLOCKED,
+                    placement: BLOCKED_PLACEMENT,
+                    name: "blocked".into(),
+                    kind: ColumnKind::Boolean,
+                },
+                Column {
+                    id: LABELS,
+                    placement: LABELS_PLACEMENT,
+                    name: "labels".into(),
+                    kind: ColumnKind::Select {
+                        multi: true,
+                        options: vec![
+                            SelectOption {
+                                id: BUG,
+                                label: "bug".into(),
+                            },
+                            SelectOption {
+                                id: FEATURE,
+                                label: "feature".into(),
+                            },
+                        ],
+                    },
+                },
+                Column {
+                    id: ASSIGNEE,
+                    placement: ASSIGNEE_PLACEMENT,
+                    name: "assignee".into(),
+                    kind: ColumnKind::Entity {
+                        multi: false,
+                        target: EntityKind::User,
+                    },
+                },
+                Column {
+                    id: REVIEWERS,
+                    placement: REVIEWERS_PLACEMENT,
+                    name: "reviewers".into(),
+                    kind: ColumnKind::Entity {
+                        multi: true,
+                        target: EntityKind::User,
+                    },
+                },
+                Column {
+                    id: SPEC,
+                    placement: SPEC_PLACEMENT,
+                    name: "\"spec\" link".into(),
+                    kind: ColumnKind::Link,
+                },
+                Column {
+                    id: PARENT,
+                    placement: PARENT_PLACEMENT,
+                    name: "parent".into(),
+                    kind: ColumnKind::Entity {
+                        multi: false,
+                        target: EntityKind::Row,
+                    },
+                },
+            ],
+            source: TableSource::Database,
+        }],
+    }
+}
+
+pub const ISSUES_VIEW: Uuid = Uuid::from_u128(0x7e1);
+
+/// A view of `work.issues`.
+pub fn issues_view(
+    query: models_databases::views::ViewQuery,
+    layout: models_databases::views::ViewLayout,
+) -> models_databases::views::DatabaseView {
+    use chrono::{TimeZone, Utc};
+    models_databases::views::DatabaseView {
+        id: ISSUES_VIEW,
+        database_id: WORK,
+        table_id: ISSUES,
+        name: "Open work".into(),
+        position: "a0".into(),
+        query,
+        layout,
+        created_at: Utc.with_ymd_and_hms(2026, 9, 1, 0, 0, 0).unwrap(),
+        updated_at: Utc.with_ymd_and_hms(2026, 9, 1, 0, 0, 0).unwrap(),
+    }
+}

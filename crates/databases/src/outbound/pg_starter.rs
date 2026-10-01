@@ -4,17 +4,18 @@
 mod test;
 use entity_access_db_utils::{AccessLevel, EntityAccessSourceType};
 use model_entity::EntityType;
+use models_databases::position::{PositionError, key_between, keys_between};
 use models_properties::DataType;
 use models_properties::service::property_value::PropertyValue;
 use properties::domain::database_definition_writer::{
     DatabaseDefinitionWriter, NewDatabaseDefinition,
 };
 use properties::domain::ports::PropertiesRepo;
-use saved_views::TransactionalViewStorage;
 use sqlx::{PgPool, Postgres, Transaction};
 
 use crate::domain::models::Viewer;
 use crate::domain::starter::{DatabaseStarterRepo, StarterBlueprint, StarterDatabase};
+use crate::outbound::pg_databases_repo::{PgDatabasesRepoError, views};
 
 /// Errors retain the owning port's original failure.
 #[derive(Debug, thiserror::Error)]
@@ -22,29 +23,30 @@ pub enum PgStarterError {
     /// Database failure rolls back the entire seed.
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
-    /// Property definition or saved-view writer failed.
+    /// The property definition writer failed.
     #[error("starter dependency failed: {0}")]
     Dependency(#[source] Box<dyn std::error::Error + Send + Sync>),
+    /// A view could not be stored.
+    #[error("starter views failed: {0}")]
+    Views(#[from] PgDatabasesRepoError),
+    /// The seed's positions could not be minted.
+    #[error("starter positions failed: {0}")]
+    Position(#[from] PositionError),
     /// The seed rows' cells could not be written after the rows committed.
     #[error("starter cells failed: {0}")]
     Cells(#[source] anyhow::Error),
 }
 
-/// Composition receives owning property and saved-view ports, never constructs them.
-pub struct PgDatabaseStarterRepo<Properties, Views> {
+/// Composition receives the owning property port, never constructs it.
+pub struct PgDatabaseStarterRepo<Properties> {
     pool: PgPool,
     properties: Properties,
-    views: Views,
 }
 
-impl<Properties, Views> PgDatabaseStarterRepo<Properties, Views> {
+impl<Properties> PgDatabaseStarterRepo<Properties> {
     /// Build the atomic adapter in a composition root.
-    pub fn new(pool: PgPool, properties: Properties, views: Views) -> Self {
-        Self {
-            pool,
-            properties,
-            views,
-        }
+    pub fn new(pool: PgPool, properties: Properties) -> Self {
+        Self { pool, properties }
     }
 }
 
@@ -52,11 +54,10 @@ fn dependency(error: impl std::error::Error + Send + Sync + 'static) -> PgStarte
     PgStarterError::Dependency(Box::new(error))
 }
 
-impl<P, V> DatabaseStarterRepo for PgDatabaseStarterRepo<P, V>
+impl<P> DatabaseStarterRepo for PgDatabaseStarterRepo<P>
 where
     P: DatabaseDefinitionWriter<Transaction = Transaction<'static, Postgres>>
         + PropertiesRepo<Err = anyhow::Error>,
-    V: TransactionalViewStorage<Transaction = Transaction<'static, Postgres>>,
 {
     type Err = PgStarterError;
 
@@ -108,8 +109,15 @@ where
         )
         .execute(&mut *transaction)
         .await?;
-        sqlx::query!("INSERT INTO database_tables (id, database_id, name, position, version) VALUES ($1, $2, $3, '000000000001', 1)", table_id, database_id, blueprint.table_name)
-            .execute(&mut *transaction).await?;
+        sqlx::query!(
+            "INSERT INTO database_tables (id, database_id, name, position, version) VALUES ($1, $2, $3, $4, 1)",
+            table_id,
+            database_id,
+            blueprint.table_name,
+            key_between(None, None)?,
+        )
+        .execute(&mut *transaction)
+        .await?;
         let title = self
             .properties
             .create_database_definition_in(
@@ -142,17 +150,20 @@ where
             .map_err(dependency)?;
         let title_column_id = macro_uuid::generate_uuid_v7();
         let stage_column_id = macro_uuid::generate_uuid_v7();
+        let [title_position, stage_position] = keys_between(None, None, 2)?
+            .try_into()
+            .expect("two keys were asked for");
         for (column_id, definition_id, position) in [
-            (title_column_id, title.definition.id, "000000000001"),
-            (stage_column_id, stage.definition.id, "000000000002"),
+            (title_column_id, title.definition.id, title_position),
+            (stage_column_id, stage.definition.id, stage_position),
         ] {
             sqlx::query!("INSERT INTO database_columns (id, table_id, property_definition_id, position, infer_type) VALUES ($1, $2, $3, $4, false)", column_id, table_id, definition_id, position)
                 .execute(&mut *transaction).await?;
         }
         let mut seeded = Vec::with_capacity(blueprint.rows.len());
-        for (index, (name, stage_index)) in blueprint.rows.iter().enumerate() {
+        let positions = keys_between(None, None, blueprint.rows.len())?;
+        for ((name, stage_index), position) in blueprint.rows.iter().zip(positions) {
             let row_id = macro_uuid::generate_uuid_v7();
-            let position = format!("{:012}", index + 1);
             sqlx::query!("INSERT INTO database_rows (id, table_id, position, created_by) VALUES ($1, $2, $3, $4)", row_id, table_id, position, user_id)
                 .execute(&mut *transaction).await?;
             seeded.push((
@@ -166,16 +177,19 @@ where
                 ],
             ));
         }
-        let mut board_id = None;
-        for view in blueprint.views(user_id, stage_column_id) {
-            if view.config["view"]["layout"] == "board" {
-                board_id = Some(view.id);
-            }
-            self.views
-                .create_view_in(&mut transaction, &view)
-                .await
-                .map_err(dependency)?;
-        }
+        let stage_options: Vec<_> = stage
+            .property_options
+            .iter()
+            .map(|option| option.id)
+            .collect();
+        let [table_view, board] = blueprint.views(
+            title_column_id,
+            stage_column_id,
+            &stage_options,
+            models_databases::views::written_at(),
+        )?;
+        views::insert_view(&mut *transaction, &table_view).await?;
+        views::insert_view(&mut *transaction, &board).await?;
         entity_access_db_utils::insert_entity_access_row(
             &mut transaction,
             &database_id,
@@ -211,7 +225,7 @@ where
         Ok(StarterDatabase {
             database_id: Some(database_id),
             table_id: Some(table_id),
-            view_id: board_id,
+            view_id: Some(board.id),
             created: true,
         })
     }

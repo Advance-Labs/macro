@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::domain::models::{PropertyDefinitionId, RowId, TableId, Write, Writes, WritesOutcome};
 use crate::domain::ports::CellStore;
-use crate::outbound::pg_databases_repo::rows;
+use crate::outbound::pg_databases_repo::{PgDatabasesRepoError, rows, views};
 
 /// [`CellStore`] over the properties repository, with the pool its batches
 /// open their transaction on.
@@ -53,6 +53,17 @@ pub enum PgCellStoreError {
     /// The properties writer failed inside a batch; nothing of it committed.
     #[error("row batch cells: {0}")]
     Cells(#[source] Box<dyn std::error::Error + Send + Sync>),
+    /// A view statement of a batch failed; nothing of it committed.
+    #[error("row batch views: {0}")]
+    Views(#[from] PgDatabasesRepoError),
+}
+
+/// Whether a view statement failed on the unique view name of its table.
+fn name_taken(error: &PgDatabasesRepoError) -> bool {
+    matches!(
+        error,
+        PgDatabasesRepoError::Sqlx(sqlx::Error::Database(database)) if database.is_unique_violation()
+    )
 }
 
 fn cells_error(error: impl std::error::Error + Send + Sync + 'static) -> PgCellStoreError {
@@ -95,6 +106,36 @@ where
             }
         }
         Ok(cells)
+    }
+
+    #[tracing::instrument(err, skip(self, rows), fields(rows = rows.len()))]
+    async fn column_cells(
+        &self,
+        rows: &[RowId],
+        definition: PropertyDefinitionId,
+    ) -> Result<HashMap<RowId, PropertyValue>, Self::Err> {
+        if rows.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let fetched = self
+            .properties
+            .get_entity_properties_batch_filtered(
+                rows.iter().map(|row| row_entity(*row)).collect(),
+                vec![definition],
+                None,
+            )
+            .await?;
+        Ok(fetched
+            .into_iter()
+            .filter_map(|(key, properties)| {
+                let row = Uuid::parse_str(&key.entity_id).ok()?;
+                let value = properties
+                    .into_iter()
+                    .find(|property| property.property.property_definition_id == definition)?
+                    .value?;
+                Some((row, value))
+            })
+            .collect())
     }
 
     #[tracing::instrument(err, skip(self, cells), fields(cells = cells.len()))]
@@ -269,8 +310,10 @@ where
                     inserted.push(Vec::new());
                 }
                 Write::DeleteOption {
+                    tables,
                     definition_id,
                     option_id,
+                    views: rewritten,
                     ..
                 } => {
                     if !self
@@ -281,6 +324,79 @@ where
                     {
                         return Ok(WritesOutcome::MissingOption { write: index });
                     }
+                    for view in rewritten {
+                        if !views::update_view(&mut *transaction, view).await? {
+                            return Ok(WritesOutcome::MissingView { write: index });
+                        }
+                    }
+                    views::clear_lane(&mut *transaction, tables, *option_id).await?;
+                    inserted.push(Vec::new());
+                }
+                Write::CreateView { view } => {
+                    match views::insert_view(&mut *transaction, view).await {
+                        Ok(()) => {}
+                        Err(error) if name_taken(&error) => {
+                            return Ok(WritesOutcome::ViewNameTaken { write: index });
+                        }
+                        Err(error) => return Err(error.into()),
+                    }
+                    inserted.push(Vec::new());
+                }
+                Write::UpdateView { view, regrouped } => {
+                    match views::update_view(&mut *transaction, view).await {
+                        Ok(true) => {}
+                        Ok(false) => return Ok(WritesOutcome::MissingView { write: index }),
+                        Err(error) if name_taken(&error) => {
+                            return Ok(WritesOutcome::ViewNameTaken { write: index });
+                        }
+                        Err(error) => return Err(error.into()),
+                    }
+                    if *regrouped {
+                        views::clear_positions(&mut *transaction, view.id).await?;
+                    }
+                    inserted.push(Vec::new());
+                }
+                Write::DeleteView { table_id, view_id } => {
+                    if !views::delete_view(&mut *transaction, *table_id, *view_id).await? {
+                        return Ok(WritesOutcome::MissingView { write: index });
+                    }
+                    inserted.push(Vec::new());
+                }
+                Write::OrderViews {
+                    table_id,
+                    positions,
+                } => {
+                    if !views::order_views(&mut *transaction, *table_id, positions).await? {
+                        return Ok(WritesOutcome::MissingView { write: index });
+                    }
+                    inserted.push(Vec::new());
+                }
+                Write::MoveCard {
+                    table_id,
+                    view_id,
+                    row,
+                    positions,
+                    cell: (definition, value),
+                } => {
+                    if rows::lock_rows(&mut *transaction, *table_id, &[*row])
+                        .await?
+                        .is_empty()
+                    {
+                        return Ok(WritesOutcome::MissingRow {
+                            write: index,
+                            row: *row,
+                        });
+                    }
+                    self.properties
+                        .upsert_entity_property_in(
+                            &mut transaction,
+                            &row_entity(*row),
+                            *definition,
+                            value.clone(),
+                        )
+                        .await
+                        .map_err(cells_error)?;
+                    views::place_cards(&mut *transaction, *view_id, positions).await?;
                     inserted.push(Vec::new());
                 }
             }

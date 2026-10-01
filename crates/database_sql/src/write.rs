@@ -180,8 +180,16 @@ pub(crate) fn outcome(sent: &Sent, results: &[OpResult]) -> Result<Outcome, RunE
         (Sent::Column { .. }, OpResult::RowsWritten { .. }) => Err(RunError::Results {
             message: "a column type change was sent, but rows written came back".into(),
         }),
-        (_, OpResult::OptionChanged { .. }) => Err(RunError::Results {
-            message: "a statement changes no option, but an option change came back".into(),
+        (
+            _,
+            OpResult::OptionChanged { .. }
+            | OpResult::ViewWritten { .. }
+            | OpResult::ViewDeleted { .. }
+            | OpResult::ViewsReordered { .. }
+            | OpResult::CardMoved { .. },
+        ) => Err(RunError::Results {
+            message: "a statement writes rows or a column type, but something else came back"
+                .into(),
         }),
     }
 }

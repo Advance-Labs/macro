@@ -34,7 +34,7 @@ where
             .map(PropertyType::from_column_kind)
             .chain([PropertyType::RELATION]);
         if let Some(reason) = self.retype_blocker(table_id, &detail).await? {
-            return Ok(targets.map(|target| never(target, reason)).collect());
+            return Ok(targets.map(|target| never(target, &reason)).collect());
         }
 
         let rows = self.rows_with_cells(table_id).await?;

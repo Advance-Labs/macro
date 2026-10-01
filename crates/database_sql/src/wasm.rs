@@ -1,18 +1,21 @@
 //! The engine, as the browser calls it.
 //!
-//! Two entry points: [`build_catalog`], the catalog a statement names tables
-//! in, and [`Query`], a statement held open between steps. A driver
-//! constructs one with the catalog and the statement, reads the first
-//! [`Step`] from [`Query::start`], serves each request, and feeds the pages,
-//! bins or op results back until a step is `done`. Values cross as plain JSON
-//! objects in the shapes `serde` gives the engine's types, which
-//! `bin/database_sql_types.rs` writes out as TypeScript for
-//! `apps/web/src/lib/core/database-sql/wasm-module.ts`. Every failure is
-//! thrown as an [`EngineError`].
+//! Entry points: [`build_catalog`], the catalog a statement names tables in;
+//! [`Query`], a statement held open between steps, made from SQL or from a
+//! view by [`run_view`]; and the view helpers [`view_as_sql`], [`board`] and
+//! [`key_between`]. A driver reads the first [`Step`] from [`Query::start`],
+//! serves each request, and feeds the pages, bins or op results back until a
+//! step is `done`. Values cross as plain JSON objects in the shapes `serde`
+//! gives the engine's types, which `bin/database_sql_types.rs` writes out as
+//! TypeScript for `apps/web/src/lib/core/database-sql/wasm-module.ts`. Every
+//! failure is thrown as an [`EngineError`], except [`key_between`]'s, a JS
+//! `Error`.
 //!
 //! Only the wasm-bindgen glue lives here; the engine knows nothing of it.
 
 use models_databases::OpResult;
+use models_databases::position;
+use models_databases::views::{CardPosition, DatabaseView};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_wasm_bindgen::Serializer;
@@ -22,7 +25,8 @@ use wasm_bindgen::prelude::*;
 use crate::catalog::{Catalog, Schema, build};
 use crate::engine::{Engine, Step};
 use crate::fold::Bin;
-use crate::run::{EngineError, Input, Page, RunError};
+use crate::run::{EngineError, Input, Outcome, Page, RunError};
+use crate::view;
 
 /// One statement in flight.
 #[wasm_bindgen]
@@ -96,6 +100,74 @@ pub fn build_catalog(schema: JsValue, scope: Option<String>) -> Result<JsValue, 
             })
         })?;
     to_js(&build(&schema, scope))
+}
+
+/// The rows `view` (a `DatabaseView` as JSON) shows, as a statement to
+/// drive like any other.
+///
+/// # Errors
+///
+/// Throws an `EngineError` when the catalog or the view cannot be read, or
+/// the view does not fit its table.
+#[wasm_bindgen(js_name = runView)]
+pub fn run_view(catalog: JsValue, view: JsValue) -> Result<Query, JsValue> {
+    let catalog: Catalog = read(Input::Catalog, catalog)?;
+    let view: DatabaseView = read(Input::View, view)?;
+    let select = view::compile_view(&view, &catalog).map_err(|problem| thrown(problem.into()))?;
+    let (engine, first) = Engine::from_select(&catalog, select);
+    Ok(Query {
+        engine,
+        first: Some(first),
+    })
+}
+
+/// `view` as the SQL statement it runs.
+///
+/// # Errors
+///
+/// Throws an `EngineError` when the catalog or the view cannot be read, or
+/// the view does not fit its table.
+#[wasm_bindgen(js_name = viewAsSql)]
+pub fn view_as_sql(catalog: JsValue, view: JsValue) -> Result<String, JsValue> {
+    let catalog: Catalog = read(Input::Catalog, catalog)?;
+    let view: DatabaseView = read(Input::View, view)?;
+    view::view_as_sql(&view, &catalog).map_err(|problem| thrown(problem.into()))
+}
+
+/// The `Board` a board view makes of `outcome`, what its `runView` query
+/// produced, with the cards' stored `positions` (`CardPosition[]`).
+///
+/// # Errors
+///
+/// Throws an `EngineError` when an argument cannot be read, or the view is
+/// not a board that fits its table.
+#[wasm_bindgen]
+pub fn board(
+    catalog: JsValue,
+    view: JsValue,
+    outcome: JsValue,
+    positions: JsValue,
+) -> Result<JsValue, JsValue> {
+    let catalog: Catalog = read(Input::Catalog, catalog)?;
+    let view: DatabaseView = read(Input::View, view)?;
+    let outcome: Outcome = read(Input::Outcome, outcome)?;
+    let positions: Vec<CardPosition> = read(Input::Positions, positions)?;
+    to_js(
+        &view::board(&view, &catalog, &outcome, &positions)
+            .map_err(|problem| thrown(problem.into()))?,
+    )
+}
+
+/// A position key that sorts after `before` and before `after`; leave one
+/// out to place it first or last.
+///
+/// # Errors
+///
+/// Throws an `Error` when a bound is not a key or they are out of order.
+#[wasm_bindgen(js_name = keyBetween)]
+pub fn key_between(before: Option<String>, after: Option<String>) -> Result<String, JsError> {
+    position::key_between(before.as_deref(), after.as_deref())
+        .map_err(|error| JsError::new(&error.to_string()))
 }
 
 fn read<Value: DeserializeOwned>(what: Input, value: JsValue) -> Result<Value, JsValue> {

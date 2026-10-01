@@ -246,8 +246,9 @@ pub enum OrderKey {
     Position(u32),
 }
 
-/// A sort direction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A sort direction; the string form is the keyword.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::IntoStaticStr)]
+#[strum(serialize_all = "UPPERCASE")]
 pub enum Dir {
     /// Ascending.
     Asc,

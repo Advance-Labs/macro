@@ -1,7 +1,9 @@
 use super::column_types::{ConvertedCell, Converter, is_empty};
+use super::views::{views_without_column, views_without_tests_of};
 use super::*;
 use crate::domain::catalog::{ColumnEntry, PropertyType};
 use models_databases::cast::{Cast, Contents, cast};
+use models_databases::views::written_at;
 use models_properties::service::property_value::PropertyValue;
 
 impl<Repo, Defs, Cells, Events, Access, Broker>
@@ -100,7 +102,7 @@ where
             )
             .await?;
         if let Some(reason) = self.retype_blocker(table.id, &detail).await? {
-            return Err(DatabaseError::InvalidSchemaOperation(reason.into()));
+            return Err(DatabaseError::InvalidSchemaOperation(reason));
         }
         let current = PropertyType::of(&detail.column, &detail.definition);
         let target = PropertyType {
@@ -211,7 +213,13 @@ where
                 }),
             values,
         };
-        let version = match self.repo.replace_column(table, &replacement).await {
+        let table_views = self
+            .repo
+            .views_for_tables(&[table.id])
+            .await
+            .map_err(repo_err)?;
+        let views = views_without_tests_of(&table_views, replacement.column.id, written_at())?;
+        let version = match self.repo.replace_column(table, &replacement, &views).await {
             Ok(Some(version)) => {
                 // The placement now names the new definition; the converted
                 // cells follow it, and the old definition's cells are left
@@ -249,14 +257,14 @@ where
     }
 
     /// Why a column's type cannot change at all, whatever it holds: it is
-    /// a lookup, or a lookup reads through it.
+    /// a lookup, a lookup reads through it, or a board groups by it.
     pub(super) async fn retype_blocker(
         &self,
         table_id: TableId,
         detail: &ColumnDetail,
-    ) -> Result<Option<&'static str>, DatabaseError> {
+    ) -> Result<Option<String>, DatabaseError> {
         if matches!(detail.column.config, Some(ColumnConfig::Lookup { .. })) {
-            return Ok(Some("A lookup's type comes from its source column."));
+            return Ok(Some("A lookup's type comes from its source column.".into()));
         }
         let read_through = self
             .repo
@@ -267,8 +275,24 @@ where
             .any(|column| {
                 matches!(column.config, Some(ColumnConfig::Lookup { via_column_id, .. }) if via_column_id == detail.column.id)
             });
-        Ok(read_through
-            .then_some("Remove the lookup that uses this column before changing its type."))
+        if read_through {
+            return Ok(Some(
+                "Remove the lookup that uses this column before changing its type.".into(),
+            ));
+        }
+        let views = self
+            .repo
+            .views_for_tables(&[table_id])
+            .await
+            .map_err(repo_err)?;
+        Ok(
+            views_without_tests_of(&views, detail.column.id, written_at())
+                .err()
+                .map(|error| match error {
+                    DatabaseError::InvalidSchemaOperation(reason) => reason,
+                    other => other.to_string(),
+                }),
+        )
     }
 
     pub(super) async fn remove_placement(
@@ -298,9 +322,15 @@ where
         if columns.iter().any(|column| matches!(column.config, Some(ColumnConfig::Lookup { via_column_id, .. }) if via_column_id == column_id)) {
             return Err(DatabaseError::InvalidSchemaOperation("Remove the lookup that uses this column first.".into()));
         }
+        let table_views = self
+            .repo
+            .views_for_tables(&[table_id])
+            .await
+            .map_err(repo_err)?;
+        let views = views_without_column(&table_views, column_id, written_at())?;
         let outcome = self
             .repo
-            .delete_column(table, column)
+            .delete_column(table, column, &views)
             .await
             .map_err(repo_err)?
             .ok_or(DatabaseError::VersionConflict)?;

@@ -9,8 +9,10 @@ property definitions and value types. There is no second store.
 1. Rows are read as Soup items, scoped to the databases the caller can reach as
    `entity_access` answers it.
 2. Every data write is a batch of typed ops (`models_databases::DatabaseOp`,
-   `POST /databases/{id}/ops`), checked against the receipt's database and
-   applied in one transaction, all or nothing.
+   `POST /databases/{id}/ops`): rows, select options, views and a board's card
+   moves, checked against the receipt's database and applied in one
+   transaction, all or nothing. Lists are ordered by fractional keys
+   (`models_databases::position`), stored `COLLATE "C"`.
 3. Schema changes are structured calls; a column type change follows one cast
    rule for the type menu, the agent tool and `ALTER COLUMN`.
 4. Successful commits publish their versions and change notifications.
@@ -29,7 +31,8 @@ through `apply_ops`.
 | Typed ops | `src/domain/service/ops.rs`, `models_databases` |
 | Rows, cells, and column definitions | `src/outbound/pg_databases_repo.rs`, `pg_cell_store.rs`, `pg_definition_store.rs` |
 | Column casts and inference | `src/domain/service/columns.rs`, `column_types.rs`, `infer_column_type.rs` |
-| Saved queries, views, sharing, imports, starter data | Corresponding modules under `src/domain/` |
+| Typed views and a board's card places | `models_databases::views`, `src/domain/service/ops/views.rs`, `src/outbound/pg_databases_repo/views.rs` |
+| Saved queries, sharing, imports, starter data | Corresponding modules under `src/domain/` |
 | HTTP transport | `src/inbound/axum_router.rs`, `starter_router.rs` |
 | Service construction and notifications | `src/outbound/build.rs`, `gateway_event_publisher.rs` |
 
@@ -50,6 +53,7 @@ cargo test -p databases --features postgres,inbound,ai_tools,gateway,entity_muta
 ```
 
 The suite covers permission scoping, typed round trips, relations, safe casts,
-rollback, stale/concurrent writes, sharing, saved views, and retry-safe
+rollback, stale/concurrent writes, sharing, typed views and card moves, the
+fractional-position migration, and retry-safe
 import/starter provisioning. SQLx tests
 create isolated databases using the repository migrator.

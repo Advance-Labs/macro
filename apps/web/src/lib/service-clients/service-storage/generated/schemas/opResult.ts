@@ -6,9 +6,20 @@
  */
 import type { OpResultOneOf } from './opResultOneOf';
 import type { OpResultOneOfFive } from './opResultOneOfFive';
+import type { OpResultOneOfNine } from './opResultOneOfNine';
+import type { OpResultOneOfOneone } from './opResultOneOfOneone';
+import type { OpResultOneOfOnethree } from './opResultOneOfOnethree';
+import type { OpResultOneOfSeven } from './opResultOneOfSeven';
 import type { OpResultOneOfThree } from './opResultOneOfThree';
 
 /**
  * What one op did, in the order the ops were sent.
  */
-export type OpResult = OpResultOneOf | OpResultOneOfThree | OpResultOneOfFive;
+export type OpResult =
+  | OpResultOneOf
+  | OpResultOneOfThree
+  | OpResultOneOfFive
+  | OpResultOneOfSeven
+  | OpResultOneOfNine
+  | OpResultOneOfOneone
+  | OpResultOneOfOnethree;

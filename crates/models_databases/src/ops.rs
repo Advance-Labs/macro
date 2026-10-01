@@ -9,6 +9,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 use uuid::Uuid;
 
 use crate::ids::{ColumnId, DatabaseId, OptionId, RowId, TableId, TableVersion};
+use crate::views::{
+    CardPosition, DatabaseView, NewView, ViewId, ViewLayout, ViewPosition, ViewQuery,
+};
 
 /// One write to a database's data. A request's ops apply together or not at
 /// all, and every op names a table of the database the request is for.
@@ -116,6 +119,86 @@ pub enum DatabaseOp {
         #[schema(value_type = Uuid)]
         option: OptionId,
     },
+    /// Add a view of the table, after its other views.
+    CreateView {
+        /// The table.
+        #[schema(value_type = Uuid)]
+        table: TableId,
+        /// What it shows and how.
+        view: NewView,
+    },
+    /// Change a view's name, query or layout; what is left out stays.
+    UpdateView {
+        /// The view's table.
+        #[schema(value_type = Uuid)]
+        table: TableId,
+        /// The view.
+        #[schema(value_type = Uuid)]
+        view: ViewId,
+        /// Its new name.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schema(nullable = false)]
+        #[specta(optional)]
+        name: Option<String>,
+        /// Its new query.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schema(nullable = false)]
+        #[specta(optional)]
+        query: Option<ViewQuery>,
+        /// Its new layout. A board grouped by another column forgets where
+        /// its cards were.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schema(nullable = false)]
+        #[specta(optional)]
+        layout: Option<ViewLayout>,
+    },
+    /// Remove a view, with where its cards were.
+    DeleteView {
+        /// The view's table.
+        #[schema(value_type = Uuid)]
+        table: TableId,
+        /// The view.
+        #[schema(value_type = Uuid)]
+        view: ViewId,
+    },
+    /// Set the order of a table's views: `order` names every one of them
+    /// once.
+    ReorderViews {
+        /// The table.
+        #[schema(value_type = Uuid)]
+        table: TableId,
+        /// Its views, in their new order.
+        #[schema(value_type = Vec<Uuid>)]
+        order: Vec<ViewId>,
+    },
+    /// Move a board's card: into a lane, which sets the row's grouping cell
+    /// to the lane's option (or empties it for the lane without one), and to
+    /// a place there, between two of its cards. Only an unsorted board's
+    /// cards move by hand.
+    MoveCard {
+        /// The view's table.
+        #[schema(value_type = Uuid)]
+        table: TableId,
+        /// The board.
+        #[schema(value_type = Uuid)]
+        view: ViewId,
+        /// The card's row.
+        #[schema(value_type = Uuid)]
+        row: RowId,
+        /// The lane it goes to: an option of the board's column, or `null`
+        /// for the lane of cards without one.
+        #[schema(required = true, value_type = Option<Uuid>)]
+        lane: Option<OptionId>,
+        /// The card it lands right after, if any.
+        #[serde(default)]
+        #[schema(required = true, value_type = Option<Uuid>)]
+        before: Option<RowId>,
+        /// The card it lands right before, when `before` is not given; with
+        /// neither, the card goes to the end of the lane.
+        #[serde(default)]
+        #[schema(required = true, value_type = Option<Uuid>)]
+        after: Option<RowId>,
+    },
 }
 
 impl DatabaseOp {
@@ -127,7 +210,12 @@ impl DatabaseOp {
             | DatabaseOp::DeleteRows { table, .. }
             | DatabaseOp::ChangeColumnType { table, .. }
             | DatabaseOp::UpdateOption { table, .. }
-            | DatabaseOp::DeleteOption { table, .. } => *table,
+            | DatabaseOp::DeleteOption { table, .. }
+            | DatabaseOp::CreateView { table, .. }
+            | DatabaseOp::UpdateView { table, .. }
+            | DatabaseOp::DeleteView { table, .. }
+            | DatabaseOp::ReorderViews { table, .. }
+            | DatabaseOp::MoveCard { table, .. } => *table,
         }
     }
 }
@@ -356,6 +444,36 @@ pub enum OpResult {
         /// The table's version after the change.
         table_version: TableVersion,
     },
+    /// The view a creation or change left.
+    #[serde(rename_all = "camelCase")]
+    ViewWritten {
+        /// The table's version after the change.
+        table_version: TableVersion,
+        /// The view as stored.
+        view: Box<DatabaseView>,
+    },
+    /// A view's removal.
+    #[serde(rename_all = "camelCase")]
+    ViewDeleted {
+        /// The table's version after the change.
+        table_version: TableVersion,
+    },
+    /// The table's views' new places.
+    #[serde(rename_all = "camelCase")]
+    ViewsReordered {
+        /// The table's version after the change.
+        table_version: TableVersion,
+        /// Every view's key, in their new order.
+        positions: Vec<ViewPosition>,
+    },
+    /// Where a moved card, and any card it needed placed first, now sit.
+    #[serde(rename_all = "camelCase")]
+    CardMoved {
+        /// The table's version after the change.
+        table_version: TableVersion,
+        /// The positions written, the moved card's last.
+        positions: Vec<CardPosition>,
+    },
 }
 
 impl OpResult {
@@ -364,7 +482,11 @@ impl OpResult {
         match self {
             OpResult::RowsWritten { table_version, .. }
             | OpResult::ColumnTyped { table_version, .. }
-            | OpResult::OptionChanged { table_version } => *table_version,
+            | OpResult::OptionChanged { table_version }
+            | OpResult::ViewWritten { table_version, .. }
+            | OpResult::ViewDeleted { table_version }
+            | OpResult::ViewsReordered { table_version, .. }
+            | OpResult::CardMoved { table_version, .. } => *table_version,
         }
     }
 }

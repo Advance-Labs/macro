@@ -7,11 +7,7 @@ fn failed_refresh() -> (Context, Arc<Mutex<Calls>>) {
     };
     let calls = service.calls.clone();
     (
-        DatabasesToolContext::new(
-            service,
-            FakeAccess::granting(AccessLevel::Owner),
-            FakeViews::default(),
-        ),
+        DatabasesToolContext::new(service, FakeAccess::granting(AccessLevel::Owner)),
         calls,
     )
 }

@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 
 use models_databases::cast::{Cast, CastKind, Contents, TARGETS, cast, number_label};
+use models_databases::views::{SchemaColumn, ValueKind};
 use models_databases::{ColumnKind, EntityKind};
 use models_permissions::share_permission::access_level::AccessLevel;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
@@ -12,7 +13,7 @@ use models_properties::shared::{DataType, PropertyOwner};
 use uuid::Uuid;
 
 use crate::domain::models::{
-    Column, ColumnConfig, Database, DatabaseId, PropertyDefinitionId, Table, TableId,
+    Column, ColumnConfig, Database, DatabaseId, DatabaseView, PropertyDefinitionId, Table, TableId,
 };
 
 /// One table the viewer can see, with what the service needs to write and
@@ -28,6 +29,8 @@ pub struct TableEntry {
     /// The columns, in display order. Lookup columns are not here: they are
     /// derived and have no cells.
     pub columns: Vec<ColumnEntry>,
+    /// The table's views, in their order.
+    pub views: Vec<DatabaseView>,
 }
 
 /// One column placement with the definition behind it.
@@ -61,6 +64,26 @@ impl ColumnEntry {
         self.definition.definition.is_multi_select || self.is_relation()
     }
 
+    /// Whether the column's cells are drawn from its options.
+    pub fn takes_options(&self) -> bool {
+        matches!(
+            self.definition.definition.data_type,
+            DataType::SelectString | DataType::SelectNumber | DataType::Tag
+        )
+    }
+
+    /// The kind of value the column holds, as a view's filters test it.
+    pub fn value_kind(&self) -> ValueKind {
+        match self.definition.definition.data_type {
+            DataType::String | DataType::Link => ValueKind::Text,
+            DataType::Number => ValueKind::Number,
+            DataType::Date => ValueKind::Date,
+            DataType::Boolean => ValueKind::Checkbox,
+            DataType::SelectString | DataType::SelectNumber | DataType::Tag => ValueKind::Options,
+            DataType::Entity => ValueKind::Entities,
+        }
+    }
+
     /// Whether the definition belongs to something beyond `database_id`, so
     /// a change to it shows wherever else it is used.
     pub fn shared_outside(&self, database_id: DatabaseId) -> bool {
@@ -80,12 +103,35 @@ impl TableEntry {
     }
 }
 
+/// A table's columns as a view's checks see them.
+pub fn schema_columns(entry: &TableEntry) -> Vec<SchemaColumn> {
+    entry
+        .columns
+        .iter()
+        .map(|column| SchemaColumn {
+            id: column.column.id,
+            name: column.name().to_string(),
+            values: column.value_kind(),
+            multi: column.is_multi(),
+            options: if column.takes_options() {
+                option_labels(&column.definition)
+                    .into_iter()
+                    .map(|(id, _)| id)
+                    .collect()
+            } else {
+                Vec::new()
+            },
+        })
+        .collect()
+}
+
 /// Assemble the viewer's entries from what the repository returned.
 pub fn build_entries(
     databases: &[Database],
     tables: &[Table],
     columns: &[Column],
     definitions: &HashMap<PropertyDefinitionId, PropertyDefinitionWithOptions>,
+    views: &[DatabaseView],
     grants: &HashMap<DatabaseId, AccessLevel>,
 ) -> Vec<TableEntry> {
     let databases_by_id: HashMap<DatabaseId, &Database> =
@@ -117,11 +163,18 @@ pub fn build_entries(
                     })
                 })
                 .collect();
+            let mut table_views: Vec<DatabaseView> = views
+                .iter()
+                .filter(|view| view.table_id == table.id)
+                .cloned()
+                .collect();
+            table_views.sort_by(|left, right| left.position.cmp(&right.position));
             Some(TableEntry {
                 database: database.clone(),
                 table: table.clone(),
                 grant,
                 columns,
+                views: table_views,
             })
         })
         .collect()

@@ -13,6 +13,7 @@ ai_tools = [
   "dep:anyhow",
   "dep:async-trait",
   "dep:schemars",
+  "models_databases/schema",
   "ports",
 ]
 # Axum HTTP router: the SQL-first API surface (exec, snapshot, schema ops).
@@ -31,7 +32,7 @@ entity_mutation = ["dep:entity_mutation", "ports"]
 gateway = ["dep:connection_gateway_client", "outbound"]
 # Driven adapters share the port contracts.
 outbound = ["ports"]
-ports = ["dep:async-trait", "dep:entity_access", "dep:saved_views", "dep:tokio", "dep:tracing"]
+ports = ["dep:entity_access", "dep:tokio", "dep:tracing"]
 # Postgres persistence for databases/tables/columns/rows, and cells through
 # the properties adapter.
 postgres = [
@@ -72,7 +73,6 @@ models_permissions = { path = "../models_permissions" }
 properties = { path = "../properties", optional = true, default-features = false, features = ["outbound"] }
 rootcause = { workspace = true }
 schemars = { workspace = true, optional = true }
-saved_views = { path = "../saved_views", optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

@@ -12,7 +12,7 @@ Structure changes go through tools, never SQL DDL. Each returns the refreshed sc
 - `CreateDatabase` makes a new container with a starter table called “Table 1”: rename it with `RenameTable` to the first table the user asked for instead of adding a redundant tab. `RenameDatabase` retitles a database.
 - `CreateTable`, `RenameTable`, `DeleteTable` add, retitle, and remove tabs. A database keeps at least one table. `ReorderTables` sets the left-to-right tab order and takes every table id once.
 - `AddColumn` adds a typed field; `AddColumnOptions` adds labels to a select or tag column; `RenameColumn` relabels one; `ChangeColumnType` converts a column's values to one of its `safeTypes` or `checkedTypes`, refusing (with counts and examples) when a value does not fit; pass `clearInvalid` only when the user accepts emptying those values; `DeleteColumn` removes one with its values; `ReorderColumns` sets the left-to-right order and takes every column id once.
-- `SaveDatabaseView` persists a personal table or board view with filters, sorts, hidden columns, and an optional grouping column, by stable column ids. A board groups by one single-valued select or checkbox column. It changes presentation, not records, and cannot save charts.
+- `SaveDatabaseView` saves a table or board view of one table, shared with everyone who can open the database: a filter (conditions joined by one `and` or `or`, each test fitting its column's type), sort keys, and a layout, all by the column and option ids `DescribeDatabase` lists, never by name. A board groups its cards by one single-select column, a lane per option. Saving under a name the table already has replaces that view. It changes presentation, not records, and cannot save charts.
 
 ## SQL
 

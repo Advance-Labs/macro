@@ -897,7 +897,6 @@ dependencies = [
  "remote_env_var",
  "reqwest 0.13.4",
  "rootcause",
- "saved_views",
  "schemars 1.2.1",
  "search_service_client",
  "secretsmanager_client",
@@ -5360,7 +5359,6 @@ dependencies = [
  "models_properties",
  "properties",
  "rootcause",
- "saved_views",
  "schemars 1.2.1",
  "serde",
  "serde_json",
@@ -7533,6 +7531,12 @@ checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
 ]
+
+[[package]]
+name = "fractional_index"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce01fad85c73f947e62a39152c7b0f785af7f44859da36e421c42a3023bcbe3a"
 
 [[package]]
 name = "fragile"
@@ -12013,10 +12017,14 @@ name = "models_databases"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "fractional_index",
  "option_palette",
+ "schemars 1.2.1",
  "serde",
  "serde_json",
  "specta",
+ "strum 0.27.2",
+ "thiserror 2.0.18",
  "utoipa",
  "uuid",
 ]

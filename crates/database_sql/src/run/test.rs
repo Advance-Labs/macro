@@ -493,6 +493,24 @@ fn an_error_crosses_as_a_typed_value_with_its_words() {
     );
 }
 
+#[test]
+fn a_view_problem_crosses_tagged_by_its_stage() {
+    let problem =
+        RunError::from(models_databases::views::ViewProblem::UnknownTable { table: DEALS });
+
+    assert_eq!(
+        serde_json::to_value(EngineError::from(problem)).unwrap(),
+        serde_json::json!({
+            "error": {
+                "stage": "view",
+                "kind": "unknownTable",
+                "table": DEALS,
+            },
+            "message": format!("no table {DEALS} among the tables you can see"),
+        })
+    );
+}
+
 // ---- writes -----------------------------------------------------------------
 
 #[test]

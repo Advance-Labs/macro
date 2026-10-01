@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 // ===== Identifiers =====
 
+pub use models_databases::views::{CardPosition, DatabaseView, ViewId, ViewPosition};
 pub use models_databases::{ColumnId, DatabaseId, RowId, TableId, TableVersion};
 
 /// Identifier of a `models_properties` property definition bound as a column.
@@ -417,7 +418,8 @@ pub enum Write {
         color: Option<Option<String>>,
     },
     /// Remove one option of a definition and take it out of every cell
-    /// holding it, emptying the cells left with nothing.
+    /// holding it, emptying the cells left with nothing, out of the views
+    /// naming it, and out of the boards with a lane for it.
     DeleteOption {
         /// The table the op named.
         table_id: TableId,
@@ -428,6 +430,49 @@ pub enum Write {
         definition_id: PropertyDefinitionId,
         /// The option.
         option_id: Uuid,
+        /// The views of those tables that named the option, without it.
+        views: Vec<DatabaseView>,
+    },
+    /// Store a new view.
+    CreateView {
+        /// The view, its id, position and times minted.
+        view: DatabaseView,
+    },
+    /// Replace a view's name, query and layout.
+    UpdateView {
+        /// The view as it becomes.
+        view: DatabaseView,
+        /// Whether its board is grouped by another column now, so where its
+        /// cards were means nothing any more.
+        regrouped: bool,
+    },
+    /// Remove a view and where its cards were.
+    DeleteView {
+        /// The view's table.
+        table_id: TableId,
+        /// The view.
+        view_id: ViewId,
+    },
+    /// Give a table's views new positions.
+    OrderViews {
+        /// The table.
+        table_id: TableId,
+        /// Every view of the table with its new key.
+        positions: Vec<ViewPosition>,
+    },
+    /// Move a board's card: store the places a move gives cards, and set
+    /// the card's grouping cell to its new lane.
+    MoveCard {
+        /// The board's table.
+        table_id: TableId,
+        /// The board.
+        view_id: ViewId,
+        /// The card's row, which must belong to the table.
+        row: RowId,
+        /// The places to store, the moved card's last.
+        positions: Vec<CardPosition>,
+        /// The grouping column's definition, and the card's new value there.
+        cell: (PropertyDefinitionId, Option<PropertyValue>),
     },
 }
 
@@ -439,7 +484,11 @@ impl Write {
             | Write::UpdateRows { table_id, .. }
             | Write::DeleteRows { table_id, .. }
             | Write::UpdateOption { table_id, .. }
-            | Write::DeleteOption { table_id, .. } => *table_id,
+            | Write::DeleteOption { table_id, .. }
+            | Write::DeleteView { table_id, .. }
+            | Write::OrderViews { table_id, .. }
+            | Write::MoveCard { table_id, .. } => *table_id,
+            Write::CreateView { view } | Write::UpdateView { view, .. } => view.table_id,
         }
     }
 
@@ -448,29 +497,48 @@ impl Write {
         match self {
             Write::InsertRows { table_id, .. }
             | Write::UpdateRows { table_id, .. }
-            | Write::DeleteRows { table_id, .. } => std::slice::from_ref(table_id),
+            | Write::DeleteRows { table_id, .. }
+            | Write::DeleteView { table_id, .. }
+            | Write::OrderViews { table_id, .. }
+            | Write::MoveCard { table_id, .. } => std::slice::from_ref(table_id),
+            Write::CreateView { view } | Write::UpdateView { view, .. } => {
+                std::slice::from_ref(&view.table_id)
+            }
             Write::UpdateOption { tables, .. } | Write::DeleteOption { tables, .. } => tables,
         }
     }
 
-    /// How many rows it inserts, updates or deletes; none for an option
-    /// change.
+    /// How many rows it inserts, updates or deletes; none for a change to
+    /// an option or a view.
     pub fn affected(&self) -> usize {
         match self {
             Write::InsertRows { rows, .. } => rows.len(),
             Write::UpdateRows { rows, .. } => rows.len(),
             Write::DeleteRows { rows, .. } => rows.len(),
-            Write::UpdateOption { .. } | Write::DeleteOption { .. } => 0,
+            Write::UpdateOption { .. }
+            | Write::DeleteOption { .. }
+            | Write::CreateView { .. }
+            | Write::UpdateView { .. }
+            | Write::DeleteView { .. }
+            | Write::OrderViews { .. }
+            | Write::MoveCard { .. } => 0,
         }
     }
 
-    /// Whether it changes anything, and so bumps its tables' versions.
+    /// Whether it changes anything, and so bumps its tables' versions. A
+    /// view's change bumps its table's too, so open clients pick it up.
     pub fn changes(&self) -> bool {
         match self {
             Write::InsertRows { .. } | Write::UpdateRows { .. } | Write::DeleteRows { .. } => {
                 self.affected() > 0
             }
-            Write::UpdateOption { .. } | Write::DeleteOption { .. } => true,
+            Write::UpdateOption { .. }
+            | Write::DeleteOption { .. }
+            | Write::CreateView { .. }
+            | Write::UpdateView { .. }
+            | Write::DeleteView { .. }
+            | Write::OrderViews { .. }
+            | Write::MoveCard { .. } => true,
         }
     }
 }
@@ -509,6 +577,16 @@ pub enum WritesOutcome {
     /// A write gave an option a label another option of its definition
     /// took first.
     OptionLabelTaken {
+        /// The write's index.
+        write: usize,
+    },
+    /// A write named a view its table no longer has.
+    MissingView {
+        /// The write's index.
+        write: usize,
+    },
+    /// A write gave a view a name another view of its table took first.
+    ViewNameTaken {
         /// The write's index.
         write: usize,
     },
@@ -711,6 +789,8 @@ pub struct TableDetail {
     pub read_sql_name: String,
     /// Columns in display order.
     pub columns: Vec<ColumnDetail>,
+    /// The table's views, in their order.
+    pub views: Vec<DatabaseView>,
 }
 
 /// One column placement with the definition behind it.

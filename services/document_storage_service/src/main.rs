@@ -1653,7 +1653,6 @@ async fn run() -> anyhow::Result<()> {
                 databases::outbound::pg_starter::PgDatabaseStarterRepo::new(
                     db.clone(),
                     properties::outbound::properties_pg_repo::PropertiesPgRepo::new(db.clone()),
-                    saved_views::PgViewStorage::new(db.clone()),
                 ),
                 macro_event_broker.clone(),
             )),

@@ -1,12 +1,15 @@
 //! A small, retry-safe first database. Blueprint and provisioning policy live here.
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use macro_event_broker::MacroEventBroker;
+use models_databases::OptionId;
+use models_databases::position::{PositionError, keys_between};
+use models_databases::views::{Lane, ViewLayout, ViewQuery};
 use serde::Serialize;
 use uuid::Uuid;
 
 use super::events::{Attribution, DatabaseCreatedMetadata, DatabaseMacroEvent};
-use super::models::{DatabaseError, DatabaseId, TableId, Viewer};
+use super::models::{ColumnId, DatabaseError, DatabaseId, DatabaseView, TableId, Viewer};
 
 /// Starter result. A missing database means the user already started or removed it.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
@@ -65,15 +68,55 @@ impl Default for StarterBlueprint {
 }
 
 impl StarterBlueprint {
-    /// Native personal views of the same records, without copying data.
-    pub fn views(&self, user_id: &str, stage_column_id: Uuid) -> Vec<saved_views::View> {
-        [("Table", "table"), ("Board", "board")].into_iter().map(|(name, layout)| {
-            saved_views::View::new(user_id.into(), name.into(), serde_json::json!({
-                "kind": "database-view", "version": 1, "databaseId": self.database_id, "tableId": self.table_id,
-                "view": { "layout": layout, "groupBy": if layout == "board" { Some(stage_column_id) } else { None },
-                    "filters": [], "sorts": [], "hiddenColumns": [], "search": "" }
-            }))
-        }).collect()
+    /// Two views of the same records: every column as a table, and a board
+    /// of the ideas by stage, one lane per stage in order, each card showing
+    /// its title.
+    pub fn views(
+        &self,
+        title_column: ColumnId,
+        stage_column: ColumnId,
+        stage_options: &[OptionId],
+        now: DateTime<Utc>,
+    ) -> Result<[DatabaseView; 2], PositionError> {
+        let [table_position, board_position] = keys_between(None, None, 2)?
+            .try_into()
+            .expect("two keys were asked for");
+        let view = |name: &str, position: String, layout: ViewLayout| DatabaseView {
+            id: macro_uuid::generate_uuid_v7(),
+            database_id: self.database_id,
+            table_id: self.table_id,
+            name: name.into(),
+            position,
+            query: ViewQuery::default(),
+            layout,
+            created_at: now,
+            updated_at: now,
+        };
+        Ok([
+            view(
+                "Table",
+                table_position,
+                ViewLayout::Table {
+                    columns: Vec::new(),
+                },
+            ),
+            view(
+                "Board",
+                board_position,
+                ViewLayout::Board {
+                    group_by: stage_column,
+                    lanes: stage_options
+                        .iter()
+                        .map(|option| Lane {
+                            option: Some(*option),
+                            hidden: false,
+                        })
+                        .collect(),
+                    card_fields: vec![title_column],
+                    hide_empty_lanes: false,
+                },
+            ),
+        ])
     }
 }
 

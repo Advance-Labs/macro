@@ -26,11 +26,11 @@ use crate::domain::models::{
     RenameColumnOutcome, RowId, RowRef, Table, TableId, TableMutationOutcome, TableVersion, Viewer,
 };
 use crate::domain::models::{
-    ChangeColumnType, ColumnCast, ColumnReplacement, ColumnSchemaOutcome, ColumnTypeChangeOutcome,
+    CardPosition, DatabaseView, QueryDefinition, QueryId, SavedQuery, SavedQueryError,
+    TableDeletion, TableOrderOutcome, ViewId, Writes, WritesOutcome,
 };
 use crate::domain::models::{
-    QueryDefinition, QueryId, SavedQuery, SavedQueryError, TableDeletion, TableOrderOutcome,
-    Writes, WritesOutcome,
+    ChangeColumnType, ColumnCast, ColumnReplacement, ColumnSchemaOutcome, ColumnTypeChangeOutcome,
 };
 use models_databases::{DatabaseOp, OpResult};
 
@@ -131,19 +131,24 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         definition_id: PropertyDefinitionId,
     ) -> impl Future<Output = Result<Option<TableVersion>, Self::Err>> + Send;
 
-    /// Swap a placement onto a fresh definition. The converted cells in the
-    /// replacement are the service's to write afterwards.
+    /// Swap a placement onto a fresh definition, rewriting `views` (the
+    /// table's views whose filters tested the old values) in the same
+    /// transaction. The converted cells in the replacement are the service's
+    /// to write afterwards.
     fn replace_column(
         &self,
         table: &Table,
         replacement: &ColumnReplacement,
+        views: &[DatabaseView],
     ) -> impl Future<Output = Result<Option<TableVersion>, Self::Err>> + Send;
 
-    /// Remove a column placement.
+    /// Remove a column placement, rewriting `views` (the table's views that
+    /// referred to it, without it) in the same transaction.
     fn delete_column(
         &self,
         table: &Table,
         column: &Column,
+        views: &[DatabaseView],
     ) -> impl Future<Output = Result<Option<ColumnSchemaOutcome>, Self::Err>> + Send;
 
     /// Reorder a table's column placements.
@@ -219,6 +224,18 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         table_ids: &[TableId],
     ) -> impl Future<Output = Result<Vec<Column>, Self::Err>> + Send;
 
+    /// Every view of the given tables, ordered by table then position.
+    fn views_for_tables(
+        &self,
+        table_ids: &[TableId],
+    ) -> impl Future<Output = Result<Vec<DatabaseView>, Self::Err>> + Send;
+
+    /// Where a board's cards sit, those that have a place.
+    fn view_positions(
+        &self,
+        view_id: ViewId,
+    ) -> impl Future<Output = Result<Vec<CardPosition>, Self::Err>> + Send;
+
     /// Store a new, immutable query.
     fn save_query(
         &self,
@@ -250,6 +267,14 @@ pub trait CellStore: Send + Sync + 'static {
     ) -> impl Future<
         Output = Result<HashMap<RowId, HashMap<PropertyDefinitionId, PropertyValue>>, Self::Err>,
     > + Send;
+
+    /// One column's cells of these rows: what `definition` holds on each, for
+    /// the rows where it holds something.
+    fn column_cells(
+        &self,
+        rows: &[RowId],
+        definition: PropertyDefinitionId,
+    ) -> impl Future<Output = Result<HashMap<RowId, PropertyValue>, Self::Err>> + Send;
 
     /// Set (or, with `None`, clear) cells on one row.
     fn write(
@@ -538,6 +563,15 @@ pub trait DatabasesService: Send + Sync + 'static {
         viewer: Viewer,
         ops: Vec<DatabaseOp>,
     ) -> impl Future<Output = Result<Vec<OpResult>, DatabaseError>> + Send;
+
+    /// Where a board's cards sit: their lane and key, for the cards that
+    /// have been placed. Rows that were never moved by hand have none, and
+    /// show after the placed ones.
+    fn view_positions(
+        &self,
+        receipt: EntityAccessReceipt<ViewAccessLevel>,
+        view_id: ViewId,
+    ) -> impl Future<Output = Result<Vec<CardPosition>, DatabaseError>> + Send;
 
     /// Tell the database's other viewers where this viewer is. Best effort:
     /// a relay failure is logged, never surfaced.

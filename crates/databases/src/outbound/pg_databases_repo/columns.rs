@@ -46,6 +46,7 @@ impl PgDatabasesRepo {
         &self,
         table: &Table,
         replacement: &ColumnReplacement,
+        views: &[DatabaseView],
     ) -> Result<Option<TableVersion>, PgDatabasesRepoError> {
         let Some(mut tx) = self.lock_column_tables(table, &[table.id]).await? else {
             return Ok(None);
@@ -61,7 +62,7 @@ impl PgDatabasesRepo {
             replacement.column.id, table.id, replacement.column.property_definition_id,
             replacement.definition_id, config
         ).execute(&mut *tx).await?;
-        if changed.rows_affected() != 1 {
+        if changed.rows_affected() != 1 || !rewrite_views(&mut tx, views).await? {
             tx.rollback().await?;
             return Ok(None);
         }
@@ -79,6 +80,7 @@ impl PgDatabasesRepo {
         &self,
         table: &Table,
         column: &Column,
+        views: &[DatabaseView],
     ) -> Result<Option<ColumnSchemaOutcome>, PgDatabasesRepoError> {
         let mut tables = vec![table.id];
         if let Some(ColumnConfig::Link { table_id, .. }) = column.config
@@ -93,7 +95,7 @@ impl PgDatabasesRepo {
             "DELETE FROM database_columns WHERE id = $1 AND table_id = $2 AND property_definition_id = $3",
             column.id, table.id, column.property_definition_id
         ).execute(&mut *tx).await?;
-        if changed.rows_affected() != 1 {
+        if changed.rows_affected() != 1 || !rewrite_views(&mut tx, views).await? {
             tx.rollback().await?;
             return Ok(None);
         }
@@ -118,8 +120,7 @@ impl PgDatabasesRepo {
         let Some(mut tx) = self.lock_column_tables(table, &[table.id]).await? else {
             return Ok(None);
         };
-        for (index, id) in ids.iter().enumerate() {
-            let position = format!("{:0POSITION_WIDTH$}", index + 1);
+        for (id, position) in ids.iter().zip(keys_between(None, None, ids.len())?) {
             let result = sqlx::query!(
                 "UPDATE database_columns SET position = $3 WHERE id = $1 AND table_id = $2",
                 id,
@@ -142,4 +143,17 @@ impl PgDatabasesRepo {
         tx.commit().await?;
         Ok(Some(TableVersion(version)))
     }
+}
+
+/// Store views rewritten by a schema change; `false` when one is gone.
+async fn rewrite_views(
+    tx: &mut Transaction<'_, Postgres>,
+    views: &[DatabaseView],
+) -> Result<bool, PgDatabasesRepoError> {
+    for view in views {
+        if !views::update_view(&mut **tx, view).await? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }

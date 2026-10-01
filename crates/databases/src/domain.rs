@@ -19,9 +19,6 @@ pub mod service;
 pub mod sharing;
 
 #[cfg(feature = "ports")]
-pub mod views;
-
-#[cfg(feature = "ports")]
 pub mod transfer;
 
 /// Retry-safe first database provisioning.

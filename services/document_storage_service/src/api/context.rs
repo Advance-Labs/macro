@@ -507,7 +507,6 @@ pub(crate) type DssDatabaseStarterState =
         databases::domain::starter::DatabaseStarterServiceImpl<
             databases::outbound::pg_starter::PgDatabaseStarterRepo<
                 properties::outbound::properties_pg_repo::PropertiesPgRepo,
-                saved_views::PgViewStorage,
             >,
             DssEventBroker,
         >,

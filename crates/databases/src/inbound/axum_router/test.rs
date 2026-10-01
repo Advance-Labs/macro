@@ -249,6 +249,61 @@ async fn view_access_cannot_remove_an_option() {
     .await;
 }
 
+#[tokio::test]
+async fn view_access_cannot_create_a_view() {
+    only_editors_may_send(serde_json::json!({
+        "kind": "create_view",
+        "table": Uuid::from_u128(0x7ab1),
+        "view": {"name": "Everyone", "layout": {"kind": "table", "columns": []}},
+    }))
+    .await;
+}
+
+#[tokio::test]
+async fn view_access_cannot_change_a_view() {
+    only_editors_may_send(serde_json::json!({
+        "kind": "update_view",
+        "table": Uuid::from_u128(0x7ab1),
+        "view": Uuid::from_u128(0x71e),
+        "name": "Everyone",
+    }))
+    .await;
+}
+
+#[tokio::test]
+async fn view_access_cannot_remove_a_view() {
+    only_editors_may_send(serde_json::json!({
+        "kind": "delete_view",
+        "table": Uuid::from_u128(0x7ab1),
+        "view": Uuid::from_u128(0x71e),
+    }))
+    .await;
+}
+
+#[tokio::test]
+async fn view_access_cannot_reorder_views() {
+    only_editors_may_send(serde_json::json!({
+        "kind": "reorder_views",
+        "table": Uuid::from_u128(0x7ab1),
+        "order": [Uuid::from_u128(0x71e)],
+    }))
+    .await;
+}
+
+#[tokio::test]
+async fn view_access_cannot_move_a_card() {
+    only_editors_may_send(serde_json::json!({
+        "kind": "move_card",
+        "table": Uuid::from_u128(0x7ab1),
+        "view": Uuid::from_u128(0x71e),
+        "row": Uuid::from_u128(0x5a11),
+        "lane": null,
+        "before": null,
+        "after": null,
+    }))
+    .await;
+}
+
 async fn error_body(error: DatabaseError) -> (StatusCode, serde_json::Value) {
     let response = error.into_response();
     let status = response.status();

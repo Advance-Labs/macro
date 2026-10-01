@@ -7,8 +7,9 @@
 //! ```
 
 use database_sql::catalog::Schema;
-use database_sql::{Bin, Catalog, EngineError, Page, Step};
+use database_sql::{Bin, Board, Catalog, EngineError, Outcome, Page, Step};
 use models_databases::OpResult;
+use models_databases::views::{CardPosition, DatabaseView};
 use specta::Types;
 use specta::datatype::{DataType, Fields};
 use specta_typescript::Typescript;
@@ -21,8 +22,8 @@ const FIELD_DEFAULT: &str = "serde:field:default";
 const FIELD_SKIP_SERIALIZING_IF: &str = "serde:field:skip_serializing_if";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // What `wasm::Query` and `wasm::build_catalog` read, return and throw;
-    // everything else is reached from these.
+    // What the `wasm` entry points read, return and throw; everything else
+    // is reached from these.
     let types = Types::default()
         .register::<Schema>()
         .register::<Catalog>()
@@ -30,6 +31,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .register::<Page>()
         .register::<Bin>()
         .register::<OpResult>()
+        .register::<Outcome>()
+        .register::<DatabaseView>()
+        .register::<CardPosition>()
+        .register::<Board>()
         .register::<EngineError>();
     // serde-wasm-bindgen hands `NaN` and the infinities across as numbers,
     // so an `f64` is a plain `number` rather than JSON's `number | null`.

@@ -31,9 +31,7 @@ impl PgDatabasesRepo {
         if current != requested {
             return Ok(TableOrderOutcome::Conflict);
         }
-        let positions: Vec<String> = (1..=ids.len())
-            .map(|index| format!("{index:0POSITION_WIDTH$}"))
-            .collect();
+        let positions = keys_between(None, None, ids.len())?;
         let tables = sqlx::query!(
             r#"
             UPDATE database_tables t

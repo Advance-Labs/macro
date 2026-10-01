@@ -3,7 +3,8 @@
 
 use sqlx::{PgConnection, PgExecutor};
 
-use super::next_position;
+use models_databases::position::keys_between;
+
 use crate::domain::models::{PropertyDefinitionId, RowId, RowRef, TableId, TableVersion};
 
 /// Append `count` empty rows to a live table, in order; `None` when the
@@ -33,10 +34,11 @@ pub(crate) async fn append_rows(
     )
     .fetch_one(&mut *connection)
     .await?;
-    let mut last = max_position;
+    // A stored position that is not a key fails to decode as one.
+    let positions = keys_between(max_position.as_deref(), None, count)
+        .map_err(|error| sqlx::Error::Decode(Box::new(error)))?;
     let mut rows = Vec::with_capacity(count);
-    for _ in 0..count {
-        let position = next_position(last.as_deref());
+    for position in positions {
         let id = macro_uuid::generate_uuid_v7();
         sqlx::query!(
             "INSERT INTO database_rows (id, table_id, position, created_by) VALUES ($1, $2, $3, $4)",
@@ -47,11 +49,7 @@ pub(crate) async fn append_rows(
         )
         .execute(&mut *connection)
         .await?;
-        rows.push(RowRef {
-            id,
-            position: position.clone(),
-        });
-        last = Some(position);
+        rows.push(RowRef { id, position });
     }
     Ok(Some(rows))
 }

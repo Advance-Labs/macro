@@ -16,6 +16,7 @@ mod sharing;
 #[cfg(test)]
 mod test;
 mod transfer;
+mod views;
 
 use std::collections::{HashMap, HashSet};
 
@@ -45,9 +46,11 @@ use crate::domain::models::{
     TableVersion, Viewer,
 };
 use crate::domain::models::{
+    CardPosition, QueryDefinition, QueryId, SavedQuery, SavedQueryError, ViewId,
+};
+use crate::domain::models::{
     ChangeColumnType, ColumnCast, ColumnReplacement, ColumnSchemaOutcome, ColumnTypeChangeOutcome,
 };
-use crate::domain::models::{QueryDefinition, QueryId, SavedQuery, SavedQueryError};
 use crate::domain::ports::{
     AccessDirectory, CellStore, ColumnDefinitionStore, DatabasesRepo, DatabasesService,
     TableEventPublisher,
@@ -276,11 +279,17 @@ where
             .into_iter()
             .map(|d| (d.definition.id, d))
             .collect();
+        let views = self
+            .repo
+            .views_for_tables(&table_ids)
+            .await
+            .map_err(repo_err)?;
         Ok(catalog::build_entries(
             &databases,
             &tables,
             &columns,
             &definitions,
+            &views,
             grants,
         ))
     }
@@ -362,6 +371,7 @@ where
             read_sql_name: catalog::sql_table_name(&entry.database.name, &entry.table.name),
             table: entry.table,
             columns,
+            views: entry.views,
         }
     }
 
@@ -1119,6 +1129,15 @@ where
         ops: Vec<models_databases::DatabaseOp>,
     ) -> Result<Vec<models_databases::OpResult>, DatabaseError> {
         self.apply_database_ops(receipt, viewer, ops).await
+    }
+
+    #[tracing::instrument(skip(self, receipt), err)]
+    async fn view_positions(
+        &self,
+        receipt: EntityAccessReceipt<ViewAccessLevel>,
+        view_id: ViewId,
+    ) -> Result<Vec<CardPosition>, DatabaseError> {
+        self.board_positions(receipt, view_id).await
     }
 
     #[tracing::instrument(skip(self, receipt), err)]

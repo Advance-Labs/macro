@@ -1,6 +1,8 @@
 //! Typed ops: the batched write surface. Every op is checked against the
-//! receipt's database before anything is written, and the row writes they
-//! become commit in one transaction.
+//! receipt's database before anything is written, and the writes they become
+//! commit in one transaction.
+
+mod views;
 
 use models_databases::{
     CellValue, CellWrite, ColumnKind, DatabaseOp, OpResult, OptionRef, RowChanges,
@@ -13,8 +15,10 @@ use super::column_types::is_complete_url;
 use super::*;
 use crate::domain::catalog::{ColumnEntry, entity_type};
 use crate::domain::models::{
-    CellChanges, NewOption, OpRefusal, PropertyDefinitionId, RowId, Write, Writes, WritesOutcome,
+    CellChanges, DatabaseView, NewOption, OpRefusal, PropertyDefinitionId, RowId, ViewId, Write,
+    Writes, WritesOutcome,
 };
+use chrono::DateTime;
 
 /// Most rows one request inserts, updates and deletes in total.
 const MAX_WRITTEN_ROWS: usize = 10_000;
@@ -106,12 +110,16 @@ where
         let editable = self
             .editable_shared_definitions(&entries, database_id, &viewer, &ops)
             .await?;
+        let boards = self.boards_moved_by(&entries, &ops).await?;
         let mut planner = Planner {
             entries: &entries,
             database_id,
             editable: &editable,
             options: Vec::new(),
             labels: HashMap::new(),
+            views: HashMap::new(),
+            boards,
+            now: models_databases::views::written_at(),
             related: Vec::new(),
             written_rows: 0,
         };
@@ -155,6 +163,22 @@ where
                     None,
                     option_column(&ops[write]),
                     "another option took that label first; refresh and try again",
+                ));
+            }
+            WritesOutcome::MissingView { write } => {
+                return Err(refuse(
+                    write,
+                    None,
+                    None,
+                    "the view was removed by someone else; refresh and try again",
+                ));
+            }
+            WritesOutcome::ViewNameTaken { write } => {
+                return Err(refuse(
+                    write,
+                    None,
+                    None,
+                    "another view took that name first; refresh and try again",
                 ));
             }
             WritesOutcome::MissingRow { write, row } => {
@@ -214,9 +238,80 @@ where
                     Write::UpdateOption { .. } | Write::DeleteOption { .. } => {
                         OpResult::OptionChanged { table_version }
                     }
+                    Write::CreateView { view } | Write::UpdateView { view, .. } => {
+                        OpResult::ViewWritten {
+                            table_version,
+                            view: Box::new(view.clone()),
+                        }
+                    }
+                    Write::DeleteView { .. } => OpResult::ViewDeleted { table_version },
+                    Write::OrderViews { positions, .. } => OpResult::ViewsReordered {
+                        table_version,
+                        positions: positions.clone(),
+                    },
+                    Write::MoveCard { positions, .. } => OpResult::CardMoved {
+                        table_version,
+                        positions: positions.clone(),
+                    },
                 }
             })
             .collect())
+    }
+
+    /// Where the cards of every board a `MoveCard` of the batch names are
+    /// now, so the planner can place each move among them.
+    async fn boards_moved_by(
+        &self,
+        entries: &[TableEntry],
+        ops: &[DatabaseOp],
+    ) -> Result<HashMap<ViewId, views::Board>, DatabaseError> {
+        let mut boards = HashMap::new();
+        for op in ops {
+            let DatabaseOp::MoveCard { table, view, .. } = op else {
+                continue;
+            };
+            if boards.contains_key(view) {
+                continue;
+            }
+            let Some(entry) = entries.iter().find(|entry| entry.table.id == *table) else {
+                continue;
+            };
+            let Some(group_by) = entry
+                .views
+                .iter()
+                .find(|stored| stored.id == *view)
+                .and_then(|stored| stored.layout.group_by())
+            else {
+                continue;
+            };
+            let Some(grouping) = entry
+                .columns
+                .iter()
+                .find(|column| column.column.id == group_by)
+                .map(|column| column.definition.definition.id)
+            else {
+                continue;
+            };
+            let rows: Vec<RowId> = self
+                .repo
+                .row_refs(*table)
+                .await
+                .map_err(repo_err)?
+                .into_iter()
+                .map(|row| row.id)
+                .collect();
+            let cells = self
+                .cells
+                .column_cells(&rows, grouping)
+                .await
+                .map_err(repo_err)?;
+            let positions = self.repo.view_positions(*view).await.map_err(repo_err)?;
+            boards.insert(
+                *view,
+                views::Board::new(grouping, &rows, &cells, &positions),
+            );
+        }
+        Ok(boards)
     }
 
     /// The definitions shared beyond the database whose options the batch
@@ -306,7 +401,12 @@ fn row_index(op: &DatabaseOp, row: RowId) -> Option<usize> {
         DatabaseOp::InsertRows { .. }
         | DatabaseOp::ChangeColumnType { .. }
         | DatabaseOp::UpdateOption { .. }
-        | DatabaseOp::DeleteOption { .. } => None,
+        | DatabaseOp::DeleteOption { .. }
+        | DatabaseOp::CreateView { .. }
+        | DatabaseOp::UpdateView { .. }
+        | DatabaseOp::DeleteView { .. }
+        | DatabaseOp::ReorderViews { .. }
+        | DatabaseOp::MoveCard { .. } => None,
     }
 }
 
@@ -368,6 +468,13 @@ struct Planner<'a> {
     /// The options of each definition an op has looked at, with their
     /// labels, as the ops planned so far leave them.
     labels: HashMap<PropertyDefinitionId, Vec<(Uuid, String)>>,
+    /// The views of each table an op has looked at, in their order, as the
+    /// ops planned so far leave them.
+    views: HashMap<TableId, Vec<DatabaseView>>,
+    /// Where the cards of the boards the batch moves cards on are.
+    boards: HashMap<ViewId, views::Board>,
+    /// When the batch is applied, for the views it writes.
+    now: DateTime<Utc>,
     related: Vec<RelatedRow>,
     written_rows: usize,
 }
@@ -408,7 +515,12 @@ impl Planner<'_> {
             } => rows.len(),
             DatabaseOp::ChangeColumnType { .. }
             | DatabaseOp::UpdateOption { .. }
-            | DatabaseOp::DeleteOption { .. } => 0,
+            | DatabaseOp::DeleteOption { .. }
+            | DatabaseOp::CreateView { .. }
+            | DatabaseOp::UpdateView { .. }
+            | DatabaseOp::DeleteView { .. }
+            | DatabaseOp::ReorderViews { .. }
+            | DatabaseOp::MoveCard { .. } => 0,
         };
         self.written_rows += rows;
         if self.written_rows > MAX_WRITTEN_ROWS {
@@ -544,13 +656,22 @@ impl Planner<'_> {
                 self.known_option(place, column, *option)?;
                 self.labels_of(&column.definition)
                     .retain(|(id, _)| id != option);
+                let definition_id = column.definition.definition.id;
+                let tables = self.tables_binding(column);
+                let views = self.views_without_option(&tables, definition_id, *option);
                 Ok(Write::DeleteOption {
                     table_id: table,
-                    tables: self.tables_binding(column),
-                    definition_id: column.definition.definition.id,
+                    tables,
+                    definition_id,
                     option_id: *option,
+                    views,
                 })
             }
+            DatabaseOp::CreateView { .. }
+            | DatabaseOp::UpdateView { .. }
+            | DatabaseOp::DeleteView { .. }
+            | DatabaseOp::ReorderViews { .. }
+            | DatabaseOp::MoveCard { .. } => self.view_write(index, entry, op),
         }
     }
 

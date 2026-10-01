@@ -63,7 +63,7 @@ impl DatabaseTransferRepo for PgDatabasesRepo {
         .fetch_one(&mut *transaction)
         .await?;
         let id = macro_uuid::generate_uuid_v7();
-        let position = next_position(max_position.as_deref());
+        let position = position_after(max_position.as_deref())?;
         let table = sqlx::query!(
             r#"INSERT INTO database_tables (id, database_id, name, position, version, import_key, import_fingerprint)
                SELECT $1, $2, $3, $4, 1, $5, $6 WHERE NOT EXISTS (
@@ -74,9 +74,9 @@ impl DatabaseTransferRepo for PgDatabasesRepo {
         let Some(table) = table else {
             return Ok(ImportOutcome::NameConflict);
         };
-        for (index, definition) in definitions.iter().enumerate() {
+        let column_positions = keys_between(None, None, definitions.len())?;
+        for (definition, position) in definitions.iter().zip(column_positions) {
             let column_id = macro_uuid::generate_uuid_v7();
-            let position = format!("{:0POSITION_WIDTH$}", index + 1);
             sqlx::query!(
                 "INSERT INTO database_columns (id, table_id, property_definition_id, position, infer_type) VALUES ($1, $2, $3, $4, false)",
                 column_id, id, definition, position,
@@ -85,16 +85,13 @@ impl DatabaseTransferRepo for PgDatabasesRepo {
         // Rows are minted in a bounded INSERT using Postgres arrays; their
         // cells follow through the properties system once this commits.
         let mut rows = Vec::with_capacity(request.rows.len());
-        for (batch_index, batch) in request.rows.chunks(500).enumerate() {
-            let mut row_ids = Vec::with_capacity(batch.len());
-            let mut positions = Vec::with_capacity(batch.len());
-            for index in 0..batch.len() {
-                row_ids.push(macro_uuid::generate_uuid_v7());
-                positions.push(format!(
-                    "{:0POSITION_WIDTH$}",
-                    batch_index * 500 + index + 1
-                ));
-            }
+        let mut row_positions = keys_between(None, None, request.rows.len())?.into_iter();
+        for batch in request.rows.chunks(500) {
+            let row_ids: Vec<Uuid> = batch
+                .iter()
+                .map(|_| macro_uuid::generate_uuid_v7())
+                .collect();
+            let positions: Vec<String> = row_positions.by_ref().take(batch.len()).collect();
             sqlx::query!(
                 r#"INSERT INTO database_rows (id, table_id, position, created_by)
                    SELECT row_id, $1, position, $2 FROM UNNEST($3::uuid[], $4::text[]) AS data(row_id, position)"#,

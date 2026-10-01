@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use uuid::Uuid;
 
+use models_databases::views::ViewProblem;
 use models_databases::{DatabaseOp, OpResult};
 
 use crate::catalog::{Catalog, ColumnKind};
@@ -100,6 +101,9 @@ pub enum RunError {
     /// column in a way its type does not allow.
     #[error(transparent)]
     Resolve(ResolveError),
+    /// A view does not fit the table it shows.
+    #[error(transparent)]
+    View(ViewProblem),
     /// The source could not answer a read.
     #[error("could not read rows: {message}")]
     Source {
@@ -198,6 +202,12 @@ pub enum Input {
     Bins,
     /// The results of a write's ops.
     Results,
+    /// A view.
+    View,
+    /// What a view's read produced.
+    Outcome,
+    /// The stored positions of a board's cards.
+    Positions,
 }
 
 impl From<CompileError> for RunError {
@@ -206,6 +216,12 @@ impl From<CompileError> for RunError {
             CompileError::Parse(error) => RunError::Parse(error),
             CompileError::Resolve(error) => RunError::Resolve(error),
         }
+    }
+}
+
+impl From<ViewProblem> for RunError {
+    fn from(problem: ViewProblem) -> Self {
+        RunError::View(problem)
     }
 }
 
