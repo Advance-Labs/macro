@@ -77,10 +77,7 @@ export function PlotChart(props: {
       class="min-w-0"
       style={plot() ? undefined : { height: `${chart().height}px` }}
     >
-      <div
-        ref={container}
-        class="[&_[aria-label=tip]]:text-ink"
-      />
+      <div ref={container} class="[&_[aria-label=tip]]:text-ink" />
       <Show when={failed()}>
         <p class="py-6 text-center text-xs text-ink-muted">
           The chart could not load. View the data below.
