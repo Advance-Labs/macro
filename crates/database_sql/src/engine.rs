@@ -277,7 +277,7 @@ impl Engine {
             Then::Update(update) => &update.read,
             Then::Delete(delete) => &delete.read,
         };
-        if let Some((position, row)) = named_rows(read)
+        if let Some((position, row)) = named_rows(read.table(), read.where_.as_ref())
             .into_iter()
             .enumerate()
             .find(|(_, row)| !found.row_ids.contains(row))
@@ -338,10 +338,36 @@ impl Requests {
 }
 
 impl Read {
+    /// The rows the current relation needs: for the `FROM` table, the rows
+    /// its `WHERE` names by id; for a joined one, the values it is joined on.
+    /// `None` past [`MAX_KEY_HINT_VALUES`].
+    fn key_hint(&self) -> Option<KeyHint> {
+        if self.current == 0 {
+            return self.named_rows_hint();
+        }
+        self.join_hint()
+    }
+
+    /// The rows a `WHERE row_id IN (…)` names, which never pushes into
+    /// `propf`, as row ids the source may narrow its fetch to.
+    fn named_rows_hint(&self) -> Option<KeyHint> {
+        let rows = named_rows(self.plan.table(), self.plan.residual.as_ref());
+        if rows.is_empty() || rows.len() > MAX_KEY_HINT_VALUES {
+            return None;
+        }
+        Some(KeyHint {
+            column: None,
+            values: rows
+                .iter()
+                .map(|row| Cell::Entities(vec![row.to_string()]))
+                .collect(),
+        })
+    }
+
     /// The values the current relation is joined on, from the rows of the
     /// relation on the other side of the join's first equality, one member
-    /// each; `None` past [`MAX_KEY_HINT_VALUES`].
-    fn key_hint(&self) -> Option<KeyHint> {
+    /// each.
+    fn join_hint(&self) -> Option<KeyHint> {
         let join = self
             .plan
             .joins
@@ -476,10 +502,10 @@ fn table(catalog: &Catalog, id: TableId) -> &Table {
         .expect("the engine resolved its statement against this catalog")
 }
 
-/// The rows a `WHERE row_id = …` or `WHERE row_id IN (…)` names, which must
-/// all exist: naming a row is not a search.
-fn named_rows(read: &SelectQuery) -> Vec<RowId> {
-    let row_id = row_id_key(read.table());
+/// The rows of `table` a `WHERE row_id = …` or `WHERE row_id IN (…)` names.
+/// A write's must all exist: naming a row is not a search.
+fn named_rows(table: TableId, filter: Option<&Filter>) -> Vec<RowId> {
+    let row_id = row_id_key(table);
     let ids = |values: &[Value]| -> Vec<RowId> {
         values
             .iter()
@@ -489,7 +515,7 @@ fn named_rows(read: &SelectQuery) -> Vec<RowId> {
             })
             .collect()
     };
-    match &read.where_ {
+    match filter {
         Some(Filter::Comparison {
             column,
             operator: ComparisonOperator::Equal,

@@ -1043,3 +1043,26 @@ fn a_count_per_person_fetches_people_rather_than_bins() {
         })
     );
 }
+
+#[test]
+fn a_read_that_names_its_rows_asks_for_only_those_rows() {
+    let (outcome, requests) = drive(
+        &catalog(),
+        "SELECT row_id FROM crm.deals WHERE row_id IN ('00000000-0000-0000-0000-0000000000a2')",
+        by_table,
+    );
+    assert_eq!(outcome.row_ids, vec![GLOBEX]);
+    // The source may narrow the fetch to the named row; the fold filters
+    // regardless, as this source serves the whole table.
+    assert_eq!(
+        requests[0].query,
+        GqlQuery::Soup {
+            table: DEALS,
+            property_filter: None,
+            key_hint: Some(KeyHint {
+                column: None,
+                values: vec![Cell::Entities(vec![GLOBEX.to_string()])],
+            }),
+        }
+    );
+}
