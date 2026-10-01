@@ -14,9 +14,13 @@ import { userKvKeys } from './keys';
  * Gate reads on `isSuccess` (see `queries/gate.ts`): reading `data` while
  * pending suspends the caller's `<Suspense>`.
  */
-export function useUserKvQuery(namespace: () => string) {
+export function useUserKvQuery(
+  namespace: () => string,
+  options: { enabled?: () => boolean } = {}
+) {
   return useQuery(() => ({
     queryKey: userKvKeys.namespace(namespace()).queryKey,
+    enabled: options.enabled?.() ?? true,
     queryFn: async (): Promise<UserKvEntry[]> =>
       await throwOnErr(() =>
         storageServiceClient.listUserKv({ namespace: namespace() })
