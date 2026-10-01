@@ -168,7 +168,7 @@ turns into those ops on the server.
 Rows keep the table's order unless the view sorts them. After each of your own
 edits the grid reads its rows again, and another viewer's edit reaches an open
 grid or answer within a moment through the gateway's table-changed message; a
-changed search or filter keeps the current rows on screen until the new ones
+changed filter keeps the current rows on screen until the new ones
 arrive.
 
 Edits save automatically, and the last write to a cell wins. A failed save
@@ -207,7 +207,19 @@ options (**is any of**/**is none of**, or **has any of**/**has all of**/**has no
 of** for a multi-select, picked as coloured pills), and emptiness for any column. A
 condition still being filled in is ignored and not saved. **Sort** orders by one or
 more columns, first first; drag a level by its handle (or focus the handle and
-press Up or Down) to change which sorts first. **Search** matches text cells and option labels.
+press Up or Down) to change which sorts first.
+
+**Search** (or Ctrl+F / Cmd+F anywhere in the database: grid, board, toolbar or a
+cell being edited, instead of the browser's find) searches every table of the
+database, not just the one on screen, and does not filter the grid. Each table is
+read once in the browser's engine with a "contains" test over its text columns and
+its options' labels. Results are grouped by table: each shows the record's title
+and, when the match is in another column, that column and the matched text
+highlighted, up to 20 per table with a count of the rest. Arrow keys move through
+the results and Enter (or a click) opens one: the database switches to its table
+and the row is scrolled to and highlighted, or its record opens when the view does
+not show it. Escape closes the search and returns focus to where it was opened
+from. The term is kept while you switch tables.
 
 A view's layout, Table or Board, is chosen when the view is created. Columns
 cannot be hidden, and they are added only from **Add column** after the headers or
@@ -240,7 +252,7 @@ lane, or Enter on a focused lane header, to start a card there. The toolbar's
 **New** starts one in the first lane. **New group** at the end of a board adds
 another option and lane, coloured with the next palette colour.
 
-Creating or changing a record can make it fall outside the current search or
+Creating or changing a record can make it fall outside the current
 filters. A saved-record notice offers **Open record** to inspect it without
 changing the view. Its record dialog explains why it is outside the view; you can
 continue editing there. The selected table and view are restored when reopening

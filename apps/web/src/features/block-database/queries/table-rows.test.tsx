@@ -264,7 +264,6 @@ function setup(
     addOption?: DatabaseRowsSource['addOption'];
     onSource?: (source: DatabaseRowsSource) => void;
     view?: Accessor<DatabaseView>;
-    search?: Accessor<string>;
   } = {}
 ) {
   const client = queryClient;
@@ -281,7 +280,6 @@ function setup(
       // Deliberately retain old props: retries must use the refreshed cache.
       table: () => initialDetail.tables[0],
       view: options.view ?? (() => allGuests),
-      search: options.search ?? (() => ''),
       applyOps,
       read: options.read ?? engine().read,
       onTableChanged: (listener) => {
@@ -314,8 +312,8 @@ afterEach(() => {
 });
 
 describe('database view reads', () => {
-  it('runs the view in the engine, its search folded in, and keeps the previous rows while a changed one loads', async () => {
-    const [search, setSearch] = createSignal('');
+  it('runs the view in the engine and keeps the previous rows while a changed one loads', async () => {
+    const [view, setView] = createSignal(allGuests);
     let finishSearch!: (outcome: Outcome) => void;
     const { read, reads } = engine((request) =>
       typeof request !== 'string' && request.filter
@@ -325,29 +323,38 @@ describe('database view reads', () => {
         : guests()
     );
     const applyOps = vi.fn<ApplyOps>();
-    const { source } = setup(detail(), applyOps, { read, search });
+    const { source } = setup(detail(), applyOps, { read, view });
     await waitFor(() =>
       expect(source.snapshot()?.rows).toEqual([
         { rowId: 'record', cells: { name: 'Ada' } },
       ])
     );
 
-    setSearch('grace');
+    setView({
+      ...allGuests,
+      query: {
+        filter: {
+          conjunction: 'and',
+          conditions: [
+            {
+              kind: 'condition',
+              column: 'name',
+              test: { kind: 'text', operator: 'contains', value: 'grace' },
+            },
+          ],
+        },
+        sort: [],
+      },
+    });
     await waitFor(() =>
       expect(reads.at(-1)).toEqual({
         filter: {
           conjunction: 'and',
           conditions: [
             {
-              kind: 'group',
-              conjunction: 'or',
-              conditions: [
-                {
-                  kind: 'condition',
-                  column: 'name',
-                  test: { kind: 'text', operator: 'contains', value: 'grace' },
-                },
-              ],
+              kind: 'condition',
+              column: 'name',
+              test: { kind: 'text', operator: 'contains', value: 'grace' },
             },
           ],
         },
@@ -567,7 +574,6 @@ describe('a column type change', () => {
         databaseId: 'db',
         table,
         view: () => allGuests,
-        search: () => '',
         applyOps: vi.fn<ApplyOps>(),
         read: {
           client: () => client,
@@ -1108,7 +1114,7 @@ describe('accepted writes after switching tables', () => {
 
 describe('a refresh another read replaced', () => {
   it('leaves the read version where it was', async () => {
-    const [search, setSearch] = createSignal('');
+    const [view, setView] = createSignal(allGuests);
     let holding = false;
     let answerHeld: ((outcome: Outcome) => void) | undefined;
     const { read } = engine(() =>
@@ -1120,7 +1126,7 @@ describe('a refresh another read replaced', () => {
     );
     const { source, client } = setup(detail(), vi.fn<ApplyOps>(), {
       read,
-      search,
+      view,
     });
     await waitFor(() => expect(source.snapshot()?.version).toBe(5));
     const newerSchema = detail();
@@ -1132,7 +1138,22 @@ describe('a refresh another read replaced', () => {
     const refreshed = source.refresh();
     await waitFor(() => expect(answerHeld).toBeDefined());
     holding = false;
-    setSearch('Ada');
+    setView({
+      ...allGuests,
+      query: {
+        filter: {
+          conjunction: 'and',
+          conditions: [
+            {
+              kind: 'condition',
+              column: 'name',
+              test: { kind: 'text', operator: 'contains', value: 'Ada' },
+            },
+          ],
+        },
+        sort: [],
+      },
+    });
     await waitFor(() => expect(source.loading()).toBe(false));
     answerHeld?.(guests());
 

@@ -2,11 +2,9 @@ import { ContextMenuContent, MenuItem } from '@core/component/ContextMenu';
 import { ContextMenu } from '@kobalte/core/context-menu';
 import FunnelIcon from '@phosphor/funnel.svg';
 import KanbanIcon from '@phosphor/kanban.svg';
-import MagnifyingGlassIcon from '@phosphor/magnifying-glass.svg';
 import PlusIcon from '@phosphor/plus.svg';
 import SortAscendingIcon from '@phosphor/sort-ascending.svg';
 import TableIcon from '@phosphor/table.svg';
-import XIcon from '@phosphor/x.svg';
 import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
 import { Key } from '@solid-primitives/keyed';
 import {
@@ -18,10 +16,9 @@ import {
 } from '@thisbeyond/solid-dnd';
 import { Button } from '@ui/components/Button';
 import { DeleteDialog } from '@ui/components/DeleteDialog';
-import { InputGroup } from '@ui/components/InputGroup';
 import { Tooltip } from '@ui/components/Tooltip';
 import type { ResultAsync } from 'neverthrow';
-import { createSignal, Show } from 'solid-js';
+import { createSignal, type JSX, Show } from 'solid-js';
 import type { DatabaseViewColumn } from '../core/database-view';
 import { movedViewOrder } from '../core/views';
 import {
@@ -43,8 +40,8 @@ type DatabaseToolbarProps = {
   view: DatabaseView;
   selectedViewId?: string;
   canEdit: boolean;
-  search: string;
-  onSearchChange: (search: string) => void;
+  /** The database's search, beside the view controls. */
+  search?: JSX.Element;
   onSelectView: (id?: string) => void;
   onChangeView: (change: ViewChange) => void;
   onCreateView: (view: NewView) => ResultAsync<void, DatabaseOpFailure>;
@@ -64,9 +61,6 @@ type DatabaseToolbarProps = {
 export function DatabaseToolbar(props: DatabaseToolbarProps) {
   const [creating, setCreating] = createSignal<HTMLElement>();
   const [deleting, setDeleting] = createSignal<{ view: DatabaseView }>();
-  const [searchOpen, setSearchOpen] = createSignal(false);
-  let searchButton: HTMLButtonElement | undefined;
-  let searchInput: HTMLInputElement | undefined;
   let renameInput: HTMLInputElement | undefined;
   let allRecordsButton: HTMLButtonElement | undefined;
   let viewRail: HTMLDivElement | undefined;
@@ -209,77 +203,7 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
               />
             </ToolbarPopover>
           </Show>
-          <Show
-            when={searchOpen() || props.search}
-            fallback={
-              <button
-                ref={searchButton}
-                type="button"
-                aria-label="Search"
-                title="Search records"
-                onClick={() => setSearchOpen(true)}
-                class="flex size-8 shrink-0 items-center justify-center rounded-md text-ink-muted outline-none hover:bg-hover hover:text-ink focus-visible:ring-2 focus-visible:ring-ink/50"
-              >
-                <MagnifyingGlassIcon class="size-3.5" />
-              </button>
-            }
-          >
-            <InputGroup
-              size="sm"
-              class="w-32 @min-[640px]/view-toolbar:w-44"
-              onFocusOut={(event) => {
-                const next = event.relatedTarget;
-                if (next instanceof Node && event.currentTarget.contains(next))
-                  return;
-                if (!props.search) setSearchOpen(false);
-              }}
-            >
-              <InputGroup.Addon align="inline-start">
-                <MagnifyingGlassIcon class="size-3.5" />
-              </InputGroup.Addon>
-              <InputGroup.Input
-                ref={(element) => {
-                  searchInput = element;
-                  if (searchOpen()) queueMicrotask(() => element.focus());
-                }}
-                type="search"
-                aria-label="Search records"
-                placeholder="Search…"
-                value={props.search}
-                onInput={(event) =>
-                  props.onSearchChange(event.currentTarget.value)
-                }
-                onKeyDown={(event) => {
-                  if (event.key !== 'Escape') return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  props.onSearchChange('');
-                  setSearchOpen(false);
-                  queueMicrotask(() => searchButton?.focus());
-                }}
-                class="text-xs"
-              />
-              <InputGroup.Addon align="inline-end">
-                <InputGroup.Button
-                  size="icon-xs"
-                  label={props.search ? 'Clear search' : 'Close search'}
-                  tooltipDisabled
-                  onClick={() => {
-                    if (props.search) {
-                      setSearchOpen(true);
-                      props.onSearchChange('');
-                      searchInput?.focus();
-                    } else {
-                      setSearchOpen(false);
-                      queueMicrotask(() => searchButton?.focus());
-                    }
-                  }}
-                >
-                  <XIcon class="size-3" />
-                </InputGroup.Button>
-              </InputGroup.Addon>
-            </InputGroup>
-          </Show>
+          {props.search}
           <div class="ml-1 flex shrink-0 items-center">
             <Show when={props.onCreateRecord && board()}>
               <Button

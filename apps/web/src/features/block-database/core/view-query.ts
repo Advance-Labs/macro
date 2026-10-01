@@ -357,26 +357,6 @@ export function searchFilter(
     : { kind: 'nothing' };
 }
 
-/** A filter no row passes: a cell is never both empty and not. */
-export function noRowFilter(columnId: string): FilterNode {
-  return {
-    kind: 'group',
-    conjunction: 'and',
-    conditions: [
-      {
-        kind: 'condition',
-        column: columnId,
-        test: { kind: 'presence', operator: 'isEmpty' },
-      },
-      {
-        kind: 'condition',
-        column: columnId,
-        test: { kind: 'presence', operator: 'isNotEmpty' },
-      },
-    ],
-  };
-}
-
 /** Sorted by `column` first, or no longer by it when `direction` is null. */
 export function withSort(
   sort: readonly SortKey[],

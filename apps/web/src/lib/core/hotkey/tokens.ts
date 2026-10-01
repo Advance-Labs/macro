@@ -235,6 +235,10 @@ export const TOKENS = {
     },
   },
 
+  database: {
+    search: 'database.search',
+  },
+
   // markdown editor
   md: {
     find: 'md.find',

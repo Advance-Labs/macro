@@ -1,4 +1,5 @@
 import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
+import { until } from '@solid-primitives/promise';
 import { Button } from '@ui/components/Button';
 import { DeleteDialog } from '@ui/components/DeleteDialog';
 import {
@@ -96,9 +97,8 @@ export function DatabaseRecordsView(props: {
   view: DatabaseView;
   /** Whether the view is stored, so changing it changes it for everyone. */
   stored: boolean;
-  search: string;
   onViewChange?: (change: ViewChange) => void;
-  /** Clear the search and the view's filter. */
+  /** Clear the view's filter. */
   onClearConstraints?: () => void;
   /** A board's card places. */
   boardPositions: BoardPositions;
@@ -179,10 +179,6 @@ export function DatabaseRecordsView(props: {
   });
   const visibleColumns = columnLayout.visibleColumns;
   const filtered = () => filterConditionCount(props.view.query.filter) > 0;
-  const searched = () => props.search.trim() !== '';
-  const constrained = () => searched() || filtered();
-  const constraints = () =>
-    searched() ? (filtered() ? 'search and filters' : 'search') : 'filters';
   const records = createRecordActions({
     controller,
     draftRows,
@@ -191,7 +187,7 @@ export function DatabaseRecordsView(props: {
     visibleColumns,
     layout: layoutKind,
     canEdit: () => props.canEdit,
-    constrained,
+    constrained: filtered,
     editCell,
   });
   const gridRows = createHeldGridRows({
@@ -217,7 +213,11 @@ export function DatabaseRecordsView(props: {
         : boardControls?.addCard() || records.createRow({ open: true }),
     focusFirstCell: records.focusFirstCell,
     focusColumn,
-    openRecord: records.reveal,
+    // A grid just mounted for a record from elsewhere has no rows to find it in yet.
+    openRecord: (rowId) =>
+      void until(() => props.source.snapshot()).then(() =>
+        records.reveal(rowId)
+      ),
     pending: controller.pending,
   };
   props.actionsRef?.(actions);
@@ -395,7 +395,7 @@ export function DatabaseRecordsView(props: {
               message={
                 records.hiddenSavedRecord()?.noEditableColumns
                   ? 'This view has no editable columns. Open the record to see its details.'
-                  : `“${rowTitle(row(), columns())}” doesn’t match your ${constraints()}.`
+                  : `“${rowTitle(row(), columns())}” doesn’t match your filters.`
               }
               onOpen={() => records.open(row().rowId)}
               onDismiss={records.dismissHiddenRecord}
@@ -512,16 +512,16 @@ export function DatabaseRecordsView(props: {
                 <Show
                   when={
                     rows().length === 0 &&
-                    (constrained() || columns().length === 0)
+                    (filtered() || columns().length === 0)
                   }
                 >
                   <div class="py-5 pr-4 pl-14">
                     <p class="max-w-80 text-sm text-ink-muted">
-                      {constrained()
+                      {filtered()
                         ? 'No records match this view.'
                         : 'Add a column to get started.'}
                     </p>
-                    <Show when={constrained()}>
+                    <Show when={filtered()}>
                       <Button
                         variant="ghost"
                         size="xs"
@@ -546,8 +546,8 @@ export function DatabaseRecordsView(props: {
               canEdit={props.canEdit}
               pending={controller.pending()}
               outsideViewReason={
-                records.selectedPosition() < 0 && constrained()
-                  ? `This record doesn’t match your ${constraints()}. You can ${props.canEdit ? 'keep editing' : 'view'} it here.`
+                records.selectedPosition() < 0 && filtered()
+                  ? `This record doesn’t match your filters. You can ${props.canEdit ? 'keep editing' : 'view'} it here.`
                   : undefined
               }
               saveError={recordSaveError(row().rowId)}

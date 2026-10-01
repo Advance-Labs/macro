@@ -81,8 +81,6 @@ describe('database toolbar views', () => {
         }}
         selectedViewId="work"
         canEdit
-        search=""
-        onSearchChange={vi.fn()}
         onSelectView={select}
         onChangeView={vi.fn()}
         onCreateView={vi.fn(() => okAsync(undefined))}
@@ -150,8 +148,6 @@ describe('database toolbar views', () => {
         }}
         selectedViewId="work"
         canEdit
-        search=""
-        onSearchChange={vi.fn()}
         onSelectView={select}
         onChangeView={vi.fn()}
         onCreateView={vi.fn(() => okAsync(undefined))}
@@ -228,8 +224,6 @@ describe('database toolbar views', () => {
         }}
         selectedViewId="work"
         canEdit
-        search=""
-        onSearchChange={vi.fn()}
         onSelectView={vi.fn()}
         onChangeView={vi.fn()}
         onCreateView={vi.fn(() => okAsync(undefined))}
@@ -307,8 +301,6 @@ describe('database toolbar views', () => {
         }}
         selectedViewId="work"
         canEdit
-        search=""
-        onSearchChange={vi.fn()}
         onSelectView={vi.fn()}
         onChangeView={vi.fn()}
         onCreateView={vi.fn(() => okAsync(undefined))}
@@ -375,8 +367,6 @@ describe('database toolbar views', () => {
         }}
         selectedViewId="work"
         canEdit
-        search=""
-        onSearchChange={vi.fn()}
         onSelectView={vi.fn()}
         onChangeView={vi.fn()}
         onCreateView={vi.fn(() => okAsync(undefined))}
@@ -448,8 +438,6 @@ describe('database toolbar views', () => {
           updatedAt: '1970-01-01T00:00:00.000Z',
         }}
         canEdit
-        search=""
-        onSearchChange={vi.fn()}
         onSelectView={vi.fn()}
         onChangeView={vi.fn()}
         onCreateView={create}
@@ -526,8 +514,6 @@ describe('database toolbar view controls', () => {
         view={view()}
         selectedViewId="work"
         canEdit
-        search=""
-        onSearchChange={vi.fn()}
         onSelectView={vi.fn()}
         onChangeView={change}
         onCreateView={vi.fn(() => okAsync(undefined))}
@@ -580,55 +566,6 @@ describe('database toolbar view controls', () => {
     expect(screen.getByRole('button', { name: 'Sort 1' })).toBeTruthy();
   });
 
-  it('opens search inline, clears it in place, and closes it on Escape', async () => {
-    const [search, setSearch] = createSignal('');
-    render(() => (
-      <DatabaseToolbar
-        columns={[]}
-        views={[]}
-        view={{
-          id: 'table',
-          databaseId: 'database',
-          tableId: 'table',
-          name: 'All records',
-          position: '',
-          query: { filter: null, sort: [] },
-          layout: { kind: 'table', columns: [] },
-          createdAt: '1970-01-01T00:00:00.000Z',
-          updatedAt: '1970-01-01T00:00:00.000Z',
-        }}
-        canEdit
-        search={search()}
-        onSearchChange={setSearch}
-        onSelectView={vi.fn()}
-        onChangeView={vi.fn()}
-        onCreateView={vi.fn(() => okAsync(undefined))}
-        onRenameView={vi.fn(() => okAsync(undefined))}
-        onDeleteView={vi.fn(() => okAsync(undefined))}
-        onReorderViews={vi.fn()}
-      />
-    ));
-    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
-    const input = await screen.findByRole('searchbox', {
-      name: 'Search records',
-    });
-    await waitFor(() => expect(document.activeElement).toBe(input));
-    fireEvent.input(input, { target: { value: 'launch' } });
-    expect(search()).toBe('launch');
-    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
-    expect(search()).toBe('');
-    expect(document.activeElement).toBe(input);
-    fireEvent.input(input, { target: { value: 'second search' } });
-    fireEvent.keyDown(input, { key: 'Escape' });
-    await waitFor(() =>
-      expect(document.activeElement).toBe(
-        screen.getByRole('button', { name: 'Search' })
-      )
-    );
-    expect(screen.queryByRole('searchbox')).toBeNull();
-    expect(search()).toBe('');
-  });
-
   it('shows viewers no view controls on a stored view, but keeps them on All records', () => {
     const [selected, setSelected] = createSignal<string | undefined>('work');
     render(() => (
@@ -669,8 +606,6 @@ describe('database toolbar view controls', () => {
         }}
         selectedViewId={selected()}
         canEdit={false}
-        search=""
-        onSearchChange={vi.fn()}
         onSelectView={setSelected}
         onChangeView={vi.fn()}
         onCreateView={vi.fn(() => okAsync(undefined))}
@@ -682,7 +617,6 @@ describe('database toolbar view controls', () => {
     expect(screen.queryByRole('button', { name: 'Filter' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Sort' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'New view' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Search' })).toBeTruthy();
     fireEvent.keyDown(screen.getByRole('button', { name: 'My work' }), {
       key: 'F2',
     });
@@ -745,8 +679,6 @@ describe('database toolbar view controls', () => {
         }}
         selectedViewId="board"
         canEdit
-        search=""
-        onSearchChange={vi.fn()}
         onSelectView={vi.fn()}
         onChangeView={vi.fn()}
         onCreateView={vi.fn(() => okAsync(undefined))}
@@ -787,8 +719,6 @@ describe('database toolbar view controls', () => {
           updatedAt: '1970-01-01T00:00:00.000Z',
         }}
         canEdit
-        search=""
-        onSearchChange={vi.fn()}
         onSelectView={vi.fn()}
         onChangeView={vi.fn()}
         onCreateView={vi.fn(() => okAsync(undefined))}
