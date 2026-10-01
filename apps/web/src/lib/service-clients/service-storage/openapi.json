@@ -24953,15 +24953,7 @@
           {
             "type": "object",
             "description": "Move a board's card: into a lane, which sets the row's grouping cell\nto the lane's option (or empties it for the lane without one), and to\na place there, between two of its cards. Only an unsorted board's\ncards move by hand.",
-            "required": [
-              "table",
-              "view",
-              "row",
-              "lane",
-              "before",
-              "after",
-              "kind"
-            ],
+            "required": ["table", "view", "row", "lane", "kind"],
             "properties": {
               "after": {
                 "type": ["string", "null"],
@@ -37143,14 +37135,14 @@
             "type": "object",
             "description": "Cards in lanes, one lane per option of a single-select column plus\none for cards without one. A multi-select column cannot group a\nboard: a card is in exactly one lane, so a card in several would need\na place in each.",
             "required": [
-              "group_by",
+              "groupBy",
               "lanes",
-              "card_fields",
-              "hide_empty_lanes",
+              "cardFields",
+              "hideEmptyLanes",
               "kind"
             ],
             "properties": {
-              "card_fields": {
+              "cardFields": {
                 "type": "array",
                 "items": {
                   "type": "string",
@@ -37158,12 +37150,12 @@
                 },
                 "description": "The columns a card shows, in order."
               },
-              "group_by": {
+              "groupBy": {
                 "type": "string",
                 "format": "uuid",
                 "description": "The single-select column whose options are the lanes; moving a\ncard to another lane sets this column."
               },
-              "hide_empty_lanes": {
+              "hideEmptyLanes": {
                 "type": "boolean",
                 "description": "Whether a lane with no cards is hidden."
               },

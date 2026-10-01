@@ -191,12 +191,12 @@ pub enum DatabaseOp {
         lane: Option<OptionId>,
         /// The card it lands right after, if any.
         #[serde(default)]
-        #[schema(required = true, value_type = Option<Uuid>)]
+        #[schema(value_type = Option<Uuid>)]
         before: Option<RowId>,
         /// The card it lands right before, when `before` is not given; with
         /// neither, the card goes to the end of the lane.
         #[serde(default)]
-        #[schema(required = true, value_type = Option<Uuid>)]
+        #[schema(value_type = Option<Uuid>)]
         after: Option<RowId>,
     },
 }

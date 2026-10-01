@@ -18,9 +18,9 @@ cards move by hand.
 export type DatabaseOpOneOfTwotwo = {
   /** The card it lands right before, when `before` is not given; with
 neither, the card goes to the end of the lane. */
-  after: DatabaseOpOneOfTwotwoAfter;
+  after?: DatabaseOpOneOfTwotwoAfter;
   /** The card it lands right after, if any. */
-  before: DatabaseOpOneOfTwotwoBefore;
+  before?: DatabaseOpOneOfTwotwoBefore;
   kind: DatabaseOpOneOfTwotwoKind;
   /** The lane it goes to: an option of the board's column, or `null`
 for the lane of cards without one. */

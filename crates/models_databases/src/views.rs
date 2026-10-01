@@ -165,11 +165,7 @@ pub struct FilterCondition {
 /// What a column's cell must be, by the kind of value the column holds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[serde(
-    tag = "kind",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase"
-)]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum FilterTest {
     /// Whether the cell is empty; fits a column of any type.
     Presence {
@@ -326,11 +322,7 @@ impl SetOperator {
 /// How a view draws its rows.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[serde(
-    tag = "kind",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase"
-)]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ViewLayout {
     /// A grid with a row per row.
     Table {
@@ -342,6 +334,7 @@ pub enum ViewLayout {
     /// one for cards without one. A multi-select column cannot group a
     /// board: a card is in exactly one lane, so a card in several would need
     /// a place in each.
+    #[serde(rename_all = "camelCase")]
     Board {
         /// The single-select column whose options are the lanes; moving a
         /// card to another lane sets this column.

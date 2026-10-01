@@ -6743,15 +6743,15 @@ export const getDatabaseResponse = zod
                           .describe('A grid with a row per row.'),
                         zod
                           .object({
-                            card_fields: zod
+                            cardFields: zod
                               .array(zod.uuid())
                               .describe('The columns a card shows, in order.'),
-                            group_by: zod
+                            groupBy: zod
                               .uuid()
                               .describe(
                                 'The single-select column whose options are the lanes; moving a\ncard to another lane sets this column.'
                               ),
-                            hide_empty_lanes: zod
+                            hideEmptyLanes: zod
                               .boolean()
                               .describe(
                                 'Whether a lane with no cards is hidden.'
@@ -7860,15 +7860,15 @@ export const applyDatabaseOpsBody = zod
                           .describe('A grid with a row per row.'),
                         zod
                           .object({
-                            card_fields: zod
+                            cardFields: zod
                               .array(zod.uuid())
                               .describe('The columns a card shows, in order.'),
-                            group_by: zod
+                            groupBy: zod
                               .uuid()
                               .describe(
                                 'The single-select column whose options are the lanes; moving a\ncard to another lane sets this column.'
                               ),
-                            hide_empty_lanes: zod
+                            hideEmptyLanes: zod
                               .boolean()
                               .describe(
                                 'Whether a lane with no cards is hidden.'
@@ -8163,15 +8163,15 @@ export const applyDatabaseOpsBody = zod
                       .describe('A grid with a row per row.'),
                     zod
                       .object({
-                        card_fields: zod
+                        cardFields: zod
                           .array(zod.uuid())
                           .describe('The columns a card shows, in order.'),
-                        group_by: zod
+                        groupBy: zod
                           .uuid()
                           .describe(
                             'The single-select column whose options are the lanes; moving a\ncard to another lane sets this column.'
                           ),
-                        hide_empty_lanes: zod
+                        hideEmptyLanes: zod
                           .boolean()
                           .describe('Whether a lane with no cards is hidden.'),
                         kind: zod.enum(['board']),
@@ -8440,13 +8440,13 @@ export const applyDatabaseOpsBody = zod
               .object({
                 after: zod
                   .uuid()
-                  .nullable()
+                  .nullish()
                   .describe(
                     'The card it lands right before, when `before` is not given; with\nneither, the card goes to the end of the lane.'
                   ),
                 before: zod
                   .uuid()
-                  .nullable()
+                  .nullish()
                   .describe('The card it lands right after, if any.'),
                 kind: zod.enum(['move_card']),
                 lane: zod
@@ -8592,15 +8592,15 @@ export const applyDatabaseOpsResponse = zod
                           .describe('A grid with a row per row.'),
                         zod
                           .object({
-                            card_fields: zod
+                            cardFields: zod
                               .array(zod.uuid())
                               .describe('The columns a card shows, in order.'),
-                            group_by: zod
+                            groupBy: zod
                               .uuid()
                               .describe(
                                 'The single-select column whose options are the lanes; moving a\ncard to another lane sets this column.'
                               ),
-                            hide_empty_lanes: zod
+                            hideEmptyLanes: zod
                               .boolean()
                               .describe(
                                 'Whether a lane with no cards is hidden.'

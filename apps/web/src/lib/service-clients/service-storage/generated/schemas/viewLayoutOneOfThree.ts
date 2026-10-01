@@ -16,12 +16,12 @@ a place in each.
  */
 export type ViewLayoutOneOfThree = {
   /** The columns a card shows, in order. */
-  card_fields: string[];
+  cardFields: string[];
   /** The single-select column whose options are the lanes; moving a
 card to another lane sets this column. */
-  group_by: string;
+  groupBy: string;
   /** Whether a lane with no cards is hidden. */
-  hide_empty_lanes: boolean;
+  hideEmptyLanes: boolean;
   kind: ViewLayoutOneOfThreeKind;
   /** How lanes show, in display order. A lane left out shows after the
 listed ones, options in the column's order; the lane of cards
