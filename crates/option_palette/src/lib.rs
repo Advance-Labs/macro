@@ -23,32 +23,47 @@ use serde::{Deserialize, Serialize};
     specta::Type,
     schemars::JsonSchema,
     strum::EnumIter,
+    strum::IntoStaticStr,
+    strum::EnumString,
 )]
 #[serde(rename_all = "snake_case")]
+#[strum(ascii_case_insensitive)]
 pub enum OptionColor {
-    /// Red (`#E5484D`).
+    /// Red.
+    #[strum(serialize = "#E5484D")]
     Red,
-    /// Tomato (`#E54D2E`).
+    /// Tomato.
+    #[strum(serialize = "#E54D2E")]
     Tomato,
-    /// Orange (`#F76B15`).
+    /// Orange.
+    #[strum(serialize = "#F76B15")]
     Orange,
-    /// Amber (`#FFB224`).
+    /// Amber.
+    #[strum(serialize = "#FFB224")]
     Amber,
-    /// Yellow (`#F5D90A`).
+    /// Yellow.
+    #[strum(serialize = "#F5D90A")]
     Yellow,
-    /// Green (`#46A758`).
+    /// Green.
+    #[strum(serialize = "#46A758")]
     Green,
-    /// Teal (`#12A594`).
+    /// Teal.
+    #[strum(serialize = "#12A594")]
     Teal,
-    /// Blue (`#0091FF`).
+    /// Blue.
+    #[strum(serialize = "#0091FF")]
     Blue,
-    /// Indigo (`#3E63DD`).
+    /// Indigo.
+    #[strum(serialize = "#3E63DD")]
     Indigo,
-    /// Purple (`#8E4EC6`).
+    /// Purple.
+    #[strum(serialize = "#8E4EC6")]
     Purple,
-    /// Pink (`#E93D82`).
+    /// Pink.
+    #[strum(serialize = "#E93D82")]
     Pink,
-    /// Gray (`#889096`).
+    /// Gray.
+    #[strum(serialize = "#889096")]
     Gray,
 }
 
@@ -72,27 +87,13 @@ const NEW_OPTION_ORDER: [OptionColor; 12] = [
 impl OptionColor {
     /// The hex value an option of this colour stores.
     pub fn hex(self) -> &'static str {
-        match self {
-            OptionColor::Red => "#E5484D",
-            OptionColor::Tomato => "#E54D2E",
-            OptionColor::Orange => "#F76B15",
-            OptionColor::Amber => "#FFB224",
-            OptionColor::Yellow => "#F5D90A",
-            OptionColor::Green => "#46A758",
-            OptionColor::Teal => "#12A594",
-            OptionColor::Blue => "#0091FF",
-            OptionColor::Indigo => "#3E63DD",
-            OptionColor::Purple => "#8E4EC6",
-            OptionColor::Pink => "#E93D82",
-            OptionColor::Gray => "#889096",
-        }
+        self.into()
     }
 
     /// The palette colour a stored hex value is, ignoring case; `None` for
     /// a colour outside the palette.
     pub fn from_hex(hex: &str) -> Option<OptionColor> {
-        <OptionColor as strum::IntoEnumIterator>::iter()
-            .find(|color| color.hex().eq_ignore_ascii_case(hex))
+        hex.parse().ok()
     }
 
     /// The colour of the option at `position` among its definition's
