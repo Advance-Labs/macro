@@ -136,16 +136,22 @@ export function WelcomeStep(props: {
           data-welcome-heading
           class="font-[Roboto_Slab_Variable] font-[315] text-4xl leading-[1.12] tracking-tight sm:text-5xl md:text-[60px]"
         >
-          One unified interface
+          The unified workspace
           <br />
-          for all your work.
+          <span class="inline-block" data-welcome-company>
+            for your company.
+          </span>
         </h1>
         <p
           data-welcome-copy
-          class="mx-auto max-w-sm text-sm leading-6 text-ink-muted md:max-w-[480px] md:text-[17.5px] md:leading-[30px]"
+          class="mx-auto max-w-[288px] text-balance text-[13px] leading-[1.8] text-ink-muted sm:max-w-[384px] md:max-w-[480px] md:text-[clamp(14px,1.4vw,17.5px)]"
         >
-          Work together with your agents, with every conversation, document, and
-          tool in one place.
+          <span class="md:mx-auto md:block md:w-fit">
+            Your email, chat, tasks, docs, agents and CRM
+          </span>{' '}
+          <span class="md:mx-auto md:block md:w-fit">
+            in one tab with team level memory for agents.
+          </span>
         </p>
       </div>
       <div
@@ -179,19 +185,19 @@ export function IntroductionStep(props: {
       </div>
       <div class="grid grid-cols-3 gap-4 text-center text-xs leading-5 text-ink-muted">
         <span>
-          Bring your tools
+          Read your work
           <br />
-          <strong class="font-medium text-ink">into one place</strong>
+          <strong class="font-medium text-ink">in one inbox</strong>
         </span>
         <span>
-          Find the context
+          Search across
           <br />
-          <strong class="font-medium text-ink">behind your work</strong>
+          <strong class="font-medium text-ink">email, chat, and docs</strong>
         </span>
         <span>
-          Move forward
+          Give agents
           <br />
-          <strong class="font-medium text-ink">with your team</strong>
+          <strong class="font-medium text-ink">tools to edit</strong>
         </span>
       </div>
       <ContinueButton label="Set up my workspace" onClick={props.onContinue} />
