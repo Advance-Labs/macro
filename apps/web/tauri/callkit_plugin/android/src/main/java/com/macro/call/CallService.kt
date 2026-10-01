@@ -75,7 +75,12 @@ class CallService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = handleStart(intent)
     internal fun handleStart(intent: Intent?, promote: (Notification, Int) -> Unit = ::promoteForeground): Int {
-        val call = Calls.offer ?: run { stop(); return START_NOT_STICKY }
+        // Android can redeliver a start to this object after stopSelf was requested.
+        instance = this
+        val call = Calls.offer ?: run {
+            updateForeground(promote = promote)
+            stop(); return START_NOT_STICKY
+        }
         callId = call.callId
         try {
             updateForeground(Calls.room != null || intent?.getBooleanExtra("media", false) == true,
@@ -117,8 +122,8 @@ class CallService : Service() {
         }
         val notification = builder.build().apply { if (ringing) this.flags = this.flags or Notification.FLAG_INSISTENT }
         var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
-        if (media) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-        if (camera) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+        if (media || Calls.room != null) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        if (camera || Calls.video) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
         promote(notification, types)
         foregroundTypes = types
     }

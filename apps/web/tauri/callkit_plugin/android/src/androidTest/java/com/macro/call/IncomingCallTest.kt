@@ -75,6 +75,41 @@ class IncomingCallTest {
         }
     }
 
+    @Test fun redeliveredStartRestoresServiceOwnershipAndCleansUpOnHangup() {
+        val id = UUID.randomUUID().toString()
+        val manager = context.getSystemService(NotificationManager::class.java)
+        instrumentation.runOnMainSync { Calls.receive(context, data(id), System.currentTimeMillis()) }
+        fun awaitCondition(message: String, condition: () -> Boolean) {
+            val deadline = System.currentTimeMillis() + 10_000
+            while (System.currentTimeMillis() < deadline) {
+                var ready = false
+                instrumentation.runOnMainSync { ready = condition() }
+                if (ready) return
+                Thread.sleep(100)
+            }
+            fail(message)
+        }
+        awaitCondition("Call service did not start") { CallService.instance != null }
+        var service: CallService? = null
+        instrumentation.runOnMainSync {
+            service = CallService.instance
+            // Model the ownership gap after stop() clears the pointer but before
+            // Android destroys the service. Deliver a real start to that same object.
+            CallService::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, null)
+            CallService.start(context)
+        }
+        awaitCondition("Redelivered start did not restore the live instance") { CallService.instance != null }
+        instrumentation.runOnMainSync {
+            assertSame("Android must reuse the existing service", service, CallService.instance)
+            Calls.end(context, id)
+        }
+        awaitCondition("Hangup left a foreground call notification") {
+            CallService.instance == null && manager.activeNotifications.none { it.id == CallService.NOTIFICATION_ID }
+        }
+        val mediaSession = CallService::class.java.getDeclaredField("mediaSession").apply { isAccessible = true }
+        awaitCondition("Hangup did not release the service media session") { mediaSession.get(service) == null }
+    }
+
     @Test fun endingBeforeServiceStartDoesNotCrashOrLeaveANotification() {
         val id = UUID.randomUUID().toString()
         instrumentation.runOnMainSync {

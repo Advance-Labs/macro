@@ -70,6 +70,11 @@ class MediaLifecycleTest {
             awaitCondition("Remote participant did not join") { Calls.room?.remoteParticipants?.isNotEmpty() == true }
             awaitCondition("Audio foreground service did not start") { CallService.instance != null }
             instrumentation.runOnMainSync {
+                Calls.showIncoming(context)
+                assertTrue("Late Telecom notification must retain microphone support",
+                    CallService.instance!!.foregroundServiceType and android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE != 0)
+            }
+            instrumentation.runOnMainSync {
                 val room = Calls.room
                 var injected = false
                 CallService.instance!!.handleStart(Intent().putExtra("media", true).putExtra("camera", true)) { _, types ->
@@ -97,6 +102,17 @@ class MediaLifecycleTest {
             awaitCondition("Native microphone did not mute") { Calls.muted }
             instrumentation.runOnMainSync { Calls.scope.launch { Calls.camera(context, true) } }
             awaitCondition("Native camera did not start") { Calls.video }
+            instrumentation.runOnMainSync {
+                val room = Calls.room
+                Calls.showIncoming(context)
+                val types = CallService.instance!!.foregroundServiceType
+                assertTrue("Late Telecom notification must retain microphone support",
+                    types and android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE != 0)
+                assertTrue("Late Telecom notification must retain camera support",
+                    types and android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA != 0)
+                assertSame(room, Calls.room)
+                assertTrue(Calls.video)
+            }
             awaitCondition("Remote participant did not receive video") {
                 observer.remoteParticipants.values.any { participant -> participant.trackPublications.values.any { it.track is VideoTrack } }
             }
