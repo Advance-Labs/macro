@@ -237,13 +237,25 @@ build-database-sql-wasm:
     CARGO_TARGET_DIR="{{database_sql_wasm_target}}" wasm-pack build {{justfile_directory()}}/../../crates/database_sql --target web --release --out-dir {{justfile_directory()}}/src/lib/core/database-sql/wasm
 
 # Dev fast path: build the database-sql wasm pkg only when it is missing or
-# any engine source is newer than the built artifact.
+# any source it is compiled from is newer than the built artifact: the
+# engine's own and every workspace crate it depends on (the ops come from
+# models_databases), so a changed export is never served stale.
 ensure-database-sql-wasm:
     #!/usr/bin/env bash
     set -euo pipefail
     WASM="{{justfile_directory()}}/src/lib/core/database-sql/wasm/database_sql_bg.wasm"
-    CRATE="{{justfile_directory()}}/../../crates/database_sql"
-    if [ ! -f "$WASM" ] || [ -n "$(find "$CRATE/src" "$CRATE/Cargo.toml" -newer "$WASM" -print -quit)" ]; then
+    ROOT="{{justfile_directory()}}/../.."
+    if [ ! -f "$WASM" ]; then
+        just --justfile "{{justfile()}}" build-database-sql-wasm
+        exit 0
+    fi
+    CRATES=$(cd "$ROOT" && cargo tree -p database_sql --target wasm32-unknown-unknown -e normal --prefix none --format '{p}' | sed -n 's/.*(\(\/[^)]*\)).*/\1/p' | sort -u)
+    SOURCES=()
+    for crate in $CRATES; do
+        SOURCES+=("$crate/Cargo.toml")
+        [ -d "$crate/src" ] && SOURCES+=("$crate/src")
+    done
+    if [ -n "$(find "${SOURCES[@]}" -newer "$WASM" -print -quit)" ]; then
         just --justfile "{{justfile()}}" build-database-sql-wasm
     fi
 
