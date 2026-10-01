@@ -124,6 +124,7 @@ internal object Calls {
     }
     fun abortPendingJoin(ctx: Context) { joinLease?.let { abortJoin(ctx, it.id) } }
     fun resetRecipient(ctx: Context, previous: String?) {
+        if (previous == null) return
         joinLease?.takeIf { it.recipient == previous }?.let { abortJoin(ctx, it.id) }
         if (recipient == previous) end(ctx)
     }
@@ -373,7 +374,9 @@ internal object Calls {
                 putLong(next.callId, now)
             }.apply()
         }
-        joinLease = null; leaseTimeout?.cancel(); leaseTimeout = null
+        if (joinLease?.callId == next.callId) {
+            joinLease = null; leaseTimeout?.cancel(); leaseTimeout = null
+        }
         microphonePermissionStartedAt = null; microphonePermissionPausedMs = 0L
         poller?.cancel(); poller = null
         session?.cancel(); session = null

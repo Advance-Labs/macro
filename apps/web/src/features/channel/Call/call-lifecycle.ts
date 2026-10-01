@@ -226,7 +226,7 @@ export function createCallLifecycle(options: {
           request.reject(error);
           dispatch({ t: 'fail', error });
         };
-        const timeout = setTimeout(
+        let timeout = setTimeout(
           () => fail(new Error('Connection timed out')),
           JOIN_TIMEOUT_MS
         );
@@ -272,12 +272,18 @@ export function createCallLifecycle(options: {
             );
             if (needsConnection || renewMembership) {
               if (options.prepareToken) {
+                // Permission prompts precede the lease and connection deadline.
+                clearTimeout(timeout);
                 const cleanup = await options.prepareToken(request.channelId);
                 if (!active) {
                   await cleanup();
                   return;
                 }
                 finishPreparation = cleanup;
+                timeout = setTimeout(
+                  () => fail(new Error('Connection timed out')),
+                  JOIN_TIMEOUT_MS
+                );
               }
               const [token] = await Promise.all([
                 options.requestToken(request.channelId),

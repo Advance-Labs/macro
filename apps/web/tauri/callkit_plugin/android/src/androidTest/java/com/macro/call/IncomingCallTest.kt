@@ -110,6 +110,24 @@ class IncomingCallTest {
         awaitNotification(false)
     }
 
+    @Test fun unrelatedRingHangupPreservesPendingJoin() {
+        val ringId = UUID.randomUUID().toString()
+        val outgoingId = UUID.randomUUID().toString()
+        instrumentation.runOnMainSync {
+            Calls.receive(context, data(ringId), System.currentTimeMillis())
+            val lease = Calls.prepareJoin(context, "other-channel")
+            try {
+                Calls.end(context, ringId)
+                Calls.outgoing(context, CallOffer(outgoingId, "other-channel", "Outgoing call",
+                    "wss://unused.invalid", "test-token"), lease)
+                assertEquals("Unrelated ring teardown must preserve the outgoing lease", outgoingId, Calls.offer?.callId)
+            } finally {
+                Calls.abortJoin(context, lease)
+                Calls.end(context)
+            }
+        }
+    }
+
     @Test fun microphonePermissionPausesExpiryThenRevalidatesCancellation() {
         val id = UUID.randomUUID().toString()
         instrumentation.runOnMainSync {
@@ -222,6 +240,25 @@ class IncomingCallTest {
                 Calls.outgoing(context, CallOffer(id, "call-test-channel", "Cancelled", "wss://unused.invalid", "token"), lease)
             }
             assertNull(Calls.room)
+        }
+    }
+
+    @Test fun nullAccountResetPreservesUnassignedJoinAndCall() {
+        instrumentation.runOnMainSync {
+            context.getSharedPreferences("macro_push", Context.MODE_PRIVATE).edit().remove("recipient").commit()
+            val lease = Calls.prepareJoin(context, "call-test-channel")
+            val id = UUID.randomUUID().toString()
+            try {
+                Calls.resetRecipient(context, null)
+                Calls.outgoing(context, CallOffer(id, "call-test-channel", "Unassigned account",
+                    "wss://unused.invalid", "token"), lease)
+                assertEquals("Null reset must preserve an unassigned lease", id, Calls.offer?.callId)
+                Calls.resetRecipient(context, null)
+                assertEquals("Null reset must preserve an unassigned active call", id, Calls.offer?.callId)
+            } finally {
+                Calls.abortJoin(context, lease)
+                Calls.end(context)
+            }
         }
     }
 

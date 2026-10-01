@@ -146,6 +146,45 @@ describe('shared call lifecycle', () => {
     expect(ports.requestToken).not.toHaveBeenCalled();
   });
 
+  it('allows permission preparation to outlast the connection deadline', async () => {
+    const preparation = deferred<() => Promise<void>>();
+    const cleanup = vi.fn(async () => {});
+    const { lifecycle, ports } = setup({
+      prepareToken: () => preparation.promise,
+    });
+    ports.rollbackJoin.mockClear();
+    const joined = lifecycle.join(call.channelId);
+    await vi.advanceTimersByTimeAsync(JOIN_TIMEOUT_MS + 5_000);
+    expect(ports.rollbackJoin).not.toHaveBeenCalled();
+    expect(ports.requestToken).not.toHaveBeenCalled();
+    preparation.resolve(cleanup);
+    await joined;
+    expect(ports.connect).toHaveBeenCalledOnce();
+    expect(cleanup).toHaveBeenCalledOnce();
+  });
+
+  it('starts the connection deadline after permission preparation', async () => {
+    const preparation = deferred<() => Promise<void>>();
+    const cleanup = vi.fn(async () => {});
+    const { lifecycle, ports } = setup({
+      prepareToken: () => preparation.promise,
+    });
+    ports.requestToken.mockReturnValueOnce(
+      deferred<CallTokenResponse>().promise
+    );
+    const rejected = expect(lifecycle.join(call.channelId)).rejects.toThrow(
+      'Connection timed out'
+    );
+    await vi.advanceTimersByTimeAsync(JOIN_TIMEOUT_MS + 5_000);
+    preparation.resolve(cleanup);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ports.requestToken).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(JOIN_TIMEOUT_MS);
+    await rejected;
+    expect(cleanup).toHaveBeenCalledOnce();
+    expect(ports.connect).not.toHaveBeenCalled();
+  });
+
   it('aborts native handoff when requesting membership fails', async () => {
     const cleanup = vi.fn(async () => {});
     const { lifecycle, ports } = setup({ prepareToken: async () => cleanup });
