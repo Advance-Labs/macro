@@ -6,13 +6,14 @@
 
 mod schema;
 
+use models_databases::cast::CastKind;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use uuid::Uuid;
 
 pub use schema::{
     ColumnSchema, DataType, DatabaseSchema, OptionSchema, OptionValue, PlatformTable, PropertyType,
-    Schema, TableSchema, build, number_label,
+    Schema, TableSchema, build,
 };
 
 /// Every table a statement may name.
@@ -218,6 +219,26 @@ pub struct SelectOption {
 }
 
 impl ColumnKind {
+    /// The column's values as the cast rule reads them.
+    pub fn cast_kind(&self) -> CastKind {
+        match self {
+            ColumnKind::Text => CastKind::Text,
+            ColumnKind::Number => CastKind::Number,
+            ColumnKind::Boolean => CastKind::Boolean,
+            ColumnKind::Date => CastKind::Date,
+            ColumnKind::Link => CastKind::Link,
+            ColumnKind::Select { multi, .. } => CastKind::Select { multi: *multi },
+            ColumnKind::Entity {
+                target: EntityKind::Row,
+                ..
+            } => CastKind::Relation,
+            ColumnKind::Entity { multi, target } => CastKind::Entity {
+                target: crate::write::entity_kind(*target),
+                multi: *multi,
+            },
+        }
+    }
+
     /// Whether a cell can hold several values.
     pub fn is_multi(&self) -> bool {
         matches!(

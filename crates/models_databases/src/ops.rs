@@ -234,6 +234,25 @@ pub enum ColumnKind {
     },
 }
 
+impl EntityKind {
+    /// The kind as the properties system and the type names spell it.
+    pub fn name(self) -> &'static str {
+        match self {
+            EntityKind::User => "USER",
+            EntityKind::Document => "DOCUMENT",
+            EntityKind::Task => "TASK",
+            EntityKind::Company => "COMPANY",
+            EntityKind::CallRecord => "CALL_RECORD",
+            EntityKind::Channel => "CHANNEL",
+            EntityKind::Chat => "CHAT",
+            EntityKind::Project => "PROJECT",
+            EntityKind::Thread => "THREAD",
+            EntityKind::CalendarEvent => "CALENDAR_EVENT",
+            EntityKind::Initiative => "INITIATIVE",
+        }
+    }
+}
+
 /// What one op did, in the order the ops were sent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]

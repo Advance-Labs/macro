@@ -3,14 +3,14 @@
 //! become commit in one transaction.
 
 use models_databases::{
-    CellValue, CellWrite, ColumnKind, DatabaseOp, EntityKind, OpResult, OptionRef, RowChanges,
+    CellValue, CellWrite, ColumnKind, DatabaseOp, OpResult, OptionRef, RowChanges,
 };
 use models_properties::service::property_value::PropertyValue;
 use models_properties::shared::EntityReference;
 
 use super::column_types::is_complete_url;
 use super::*;
-use crate::domain::catalog::ColumnEntry;
+use crate::domain::catalog::{ColumnEntry, entity_type};
 use crate::domain::models::{
     CellChanges, NewOption, OpRefusal, PropertyDefinitionId, RowId, RowWrite, RowWrites,
     RowWritesOutcome,
@@ -275,24 +275,6 @@ fn change_column_type(
         relation,
         base_version: current_version(entries, table),
         clear_invalid,
-    }
-}
-
-/// The properties system's name for what a reference points at.
-fn entity_type(kind: EntityKind) -> models_properties::EntityType {
-    use models_properties::EntityType as Stored;
-    match kind {
-        EntityKind::User => Stored::User,
-        EntityKind::Document => Stored::Document,
-        EntityKind::Task => Stored::Task,
-        EntityKind::Company => Stored::Company,
-        EntityKind::CallRecord => Stored::CallRecord,
-        EntityKind::Channel => Stored::Channel,
-        EntityKind::Chat => Stored::Chat,
-        EntityKind::Project => Stored::Project,
-        EntityKind::Thread => Stored::Thread,
-        EntityKind::CalendarEvent => Stored::CalendarEvent,
-        EntityKind::Initiative => Stored::Initiative,
     }
 }
 
@@ -666,7 +648,7 @@ impl Planner<'_> {
 fn label_key(data_type: DataType, label: &str) -> String {
     match label.trim().parse::<f64>() {
         Ok(number) if data_type == DataType::SelectNumber && number.is_finite() => {
-            database_sql::catalog::number_label(number)
+            models_databases::cast::number_label(number)
         }
         _ => option_key(label),
     }

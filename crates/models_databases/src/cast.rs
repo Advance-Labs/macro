@@ -1,13 +1,14 @@
 //! Which column type changes keep a column's values: one rule, read as a
-//! table, that the server's type change, its dry run, the agent tools and
-//! `ALTER COLUMN … TYPE` all consult before touching data.
+//! table, that the type menu and its dry run, the agent tools, the
+//! `ChangeColumnType` op and `ALTER COLUMN … TYPE` all consult before
+//! touching data.
 
 #[cfg(test)]
 mod test;
 
 use std::fmt;
 
-use crate::catalog::{ColumnKind, EntityKind};
+use crate::ops::{ColumnKind, EntityKind};
 
 /// Whether a column has any values. Emptiness is a fact about the data, not
 /// the type: an empty column can take any type.
@@ -30,11 +31,10 @@ pub enum Cast {
     Never(&'static str),
 }
 
-/// A type a column can be changed to, spelled in SQL the way
-/// `DescribeDatabase` names column types: `text`, `select[]`,
-/// `entity(USER)`.
+/// A column's values as the cast rule reads them. Numeric selects and tags
+/// are selects: their options convert the same way.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ColumnType {
+pub enum CastKind {
     /// Free text.
     Text,
     /// A number.
@@ -45,18 +45,11 @@ pub enum ColumnType {
     Date,
     /// A URL.
     Link,
-    /// Text options.
+    /// Options.
     Select {
         /// Whether a cell holds several options.
         multi: bool,
     },
-    /// Numeric options.
-    SelectNumber {
-        /// Whether a cell holds several options.
-        multi: bool,
-    },
-    /// Colored labels; always several per cell.
-    Tag,
     /// References to Macro entities.
     Entity {
         /// What the references point at.
@@ -64,70 +57,69 @@ pub enum ColumnType {
         /// Whether a cell holds several references.
         multi: bool,
     },
+    /// Rows of another table.
+    Relation,
+}
+
+impl From<ColumnKind> for CastKind {
+    fn from(kind: ColumnKind) -> Self {
+        match kind {
+            ColumnKind::Text => CastKind::Text,
+            ColumnKind::Number => CastKind::Number,
+            ColumnKind::Boolean => CastKind::Boolean,
+            ColumnKind::Date => CastKind::Date,
+            ColumnKind::Link => CastKind::Link,
+            ColumnKind::Select { multi } | ColumnKind::SelectNumber { multi } => {
+                CastKind::Select { multi }
+            }
+            ColumnKind::Tag => CastKind::Select { multi: true },
+            ColumnKind::Entity { target, multi } => CastKind::Entity { target, multi },
+            ColumnKind::Relation { .. } => CastKind::Relation,
+        }
+    }
 }
 
 /// The types a column is offered to change to, in menu order.
-pub const TARGETS: [ColumnType; 10] = [
-    ColumnType::Text,
-    ColumnType::Number,
-    ColumnType::Select { multi: false },
-    ColumnType::Select { multi: true },
-    ColumnType::Date,
-    ColumnType::Boolean,
-    ColumnType::Link,
-    ColumnType::Entity {
+pub const TARGETS: [ColumnKind; 10] = [
+    ColumnKind::Text,
+    ColumnKind::Number,
+    ColumnKind::Select { multi: false },
+    ColumnKind::Select { multi: true },
+    ColumnKind::Date,
+    ColumnKind::Boolean,
+    ColumnKind::Link,
+    ColumnKind::Entity {
         target: EntityKind::User,
         multi: false,
     },
-    ColumnType::Entity {
+    ColumnKind::Entity {
         target: EntityKind::Document,
         multi: false,
     },
-    ColumnType::Entity {
+    ColumnKind::Entity {
         target: EntityKind::Task,
         multi: false,
     },
 ];
 
-impl ColumnType {
-    /// The kind a column of this type has, without options.
-    pub fn kind(&self) -> ColumnKind {
-        match *self {
-            ColumnType::Text => ColumnKind::Text,
-            ColumnType::Number => ColumnKind::Number,
-            ColumnType::Boolean => ColumnKind::Boolean,
-            ColumnType::Date => ColumnKind::Date,
-            ColumnType::Link => ColumnKind::Link,
-            ColumnType::Select { multi } | ColumnType::SelectNumber { multi } => {
-                ColumnKind::Select {
-                    multi,
-                    options: Vec::new(),
-                }
-            }
-            ColumnType::Tag => ColumnKind::Select {
-                multi: true,
-                options: Vec::new(),
-            },
-            ColumnType::Entity { target, multi } => ColumnKind::Entity { multi, target },
-        }
-    }
-}
-
-impl fmt::Display for ColumnType {
+/// A type as the type menu, the agent tools and `ALTER COLUMN` spell it:
+/// `text`, `select[]`, `entity(USER)`.
+impl fmt::Display for ColumnKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let several = |multi: bool| if multi { "[]" } else { "" };
         match self {
-            ColumnType::Text => f.write_str("text"),
-            ColumnType::Number => f.write_str("number"),
-            ColumnType::Boolean => f.write_str("boolean"),
-            ColumnType::Date => f.write_str("date"),
-            ColumnType::Link => f.write_str("link"),
-            ColumnType::Select { multi } => write!(f, "select{}", several(*multi)),
-            ColumnType::SelectNumber { multi } => write!(f, "select_number{}", several(*multi)),
-            ColumnType::Tag => f.write_str("tag"),
-            ColumnType::Entity { target, multi } => {
-                write!(f, "entity({}){}", target.sql_name(), several(*multi))
+            ColumnKind::Text => f.write_str("text"),
+            ColumnKind::Number => f.write_str("number"),
+            ColumnKind::Boolean => f.write_str("boolean"),
+            ColumnKind::Date => f.write_str("date"),
+            ColumnKind::Link => f.write_str("link"),
+            ColumnKind::Select { multi } => write!(f, "select{}", several(*multi)),
+            ColumnKind::SelectNumber { multi } => write!(f, "select_number{}", several(*multi)),
+            ColumnKind::Tag => f.write_str("tag"),
+            ColumnKind::Entity { target, multi } => {
+                write!(f, "entity({}){}", target.name(), several(*multi))
             }
+            ColumnKind::Relation { .. } => f.write_str("relation"),
         }
     }
 }
@@ -146,18 +138,15 @@ const FROM_DATE: &str = "A date can only become text.";
 const FROM_URL: &str = "A URL can only become text or a select.";
 
 /// What changing a column of kind `from` to kind `to` does to its values.
-/// Select options play no part: only the kinds and whether they hold
-/// several values do.
-pub fn cast(from: &ColumnKind, to: &ColumnKind, contents: Contents) -> Cast {
+pub fn cast(from: CastKind, to: CastKind, contents: Contents) -> Cast {
     use Cast::{Checked, Never, Safe};
-    use ColumnKind::{Boolean, Date, Entity, Link, Number, Select, Text};
-    use EntityKind::Row;
+    use CastKind::{Boolean, Date, Entity, Link, Number, Relation, Select, Text};
 
     match (from, to) {
         _ if contents == Contents::Empty => Safe,
 
-        (Entity { target: Row, .. }, _) => Never(FROM_RELATION),
-        (_, Entity { target: Row, .. }) => Never(TO_RELATION),
+        (Relation, _) => Never(FROM_RELATION),
+        (_, Relation) => Never(TO_RELATION),
         (Entity { target: from, .. }, Entity { target: to, .. }) if from != to => {
             Never(ACROSS_ENTITIES)
         }
@@ -180,16 +169,24 @@ pub fn cast(from: &ColumnKind, to: &ColumnKind, contents: Contents) -> Cast {
         (Date, Text | Date) => Safe,
         (Date, _) => Never(FROM_DATE),
 
-        (Select { multi: false, .. }, Text | Select { .. }) => Safe,
-        (Select { multi: false, .. }, Number | Link | Date | Boolean) => Checked,
+        (Select { multi: false }, Text | Select { .. }) => Safe,
+        (Select { multi: false }, Number | Link | Date | Boolean) => Checked,
 
-        (Select { multi: true, .. }, Select { multi: true, .. }) => Safe,
-        (Select { multi: true, .. }, Text | Select { .. } | Number | Link | Date | Boolean) => {
-            Checked
-        }
+        (Select { multi: true }, Select { multi: true }) => Safe,
+        (Select { multi: true }, Text | Select { .. } | Number | Link | Date | Boolean) => Checked,
 
         (Link, Text | Link) => Safe,
-        (Link, Select { multi: false, .. }) => Checked,
+        (Link, Select { multi: false }) => Checked,
         (Link, _) => Never(FROM_URL),
+    }
+}
+
+/// A number the way an option's label shows it: no trailing `.0` on whole
+/// numbers.
+pub fn number_label(number: f64) -> String {
+    if number.fract() == 0.0 && number.abs() < 1e15 {
+        format!("{}", number as i64)
+    } else {
+        number.to_string()
     }
 }

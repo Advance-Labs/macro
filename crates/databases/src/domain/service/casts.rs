@@ -3,9 +3,9 @@
 
 use super::column_types::{Converter, is_empty};
 use super::*;
-use crate::domain::catalog::{ColumnEntry, PropertyType};
+use crate::domain::catalog::PropertyType;
 use crate::domain::models::CastVerdict;
-use database_sql::cast::{Cast, Contents, TARGETS, cast};
+use models_databases::cast::{Cast, Contents, TARGETS, cast};
 
 impl<Repo, Defs, Cells, Events, Access, Broker>
     DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
@@ -31,7 +31,7 @@ where
             .await?;
         let targets = TARGETS
             .into_iter()
-            .map(PropertyType::from_column_type)
+            .map(PropertyType::from_column_kind)
             .chain([PropertyType::RELATION]);
         if let Some(reason) = self.retype_blocker(table_id, &detail).await? {
             return Ok(targets.map(|target| never(target, reason)).collect());
@@ -49,18 +49,14 @@ where
             Contents::Empty
         };
         let current = PropertyType::of(&detail.column, &detail.definition);
-        let from = catalog::column_kind(&ColumnEntry {
-            column: detail.column.clone(),
-            definition: detail.definition.clone(),
-            writable: detail.writable,
-        });
+        let from = current.cast_kind();
 
         let verdicts: Vec<(PropertyType, Cast)> = targets
             .map(|target| {
                 let verdict = if target == current {
                     Cast::Safe
                 } else {
-                    cast(&from, &target.kind(), contents)
+                    cast(from, target.cast_kind(), contents)
                 };
                 (target, verdict)
             })

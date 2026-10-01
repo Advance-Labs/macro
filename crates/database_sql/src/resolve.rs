@@ -19,9 +19,10 @@ use uuid::Uuid;
 
 pub use self::error::ResolveError;
 pub use self::names::{ROW_ID, ROW_POSITION};
-use crate::cast::{Cast, ColumnType, Contents, cast};
 use crate::catalog::{Catalog, Table, TableSource};
 use crate::parse::{self, Statement};
+use models_databases::ColumnKind as OpColumnKind;
+use models_databases::cast::{Cast, CastKind, Contents, cast};
 
 pub use crate::parse::{AggFn, CmpOp, Dir, JoinKind};
 
@@ -309,7 +310,7 @@ pub struct AlterColumnTypeQuery {
     /// The column's property definition.
     pub column: Uuid,
     /// The type it becomes.
-    pub to: ColumnType,
+    pub to: OpColumnKind,
     /// Empty the values that do not fit instead of refusing.
     pub clear_invalid: bool,
 }
@@ -331,7 +332,11 @@ pub fn resolve(catalog: &Catalog, statement: Statement) -> Result<Query, Resolve
             let column = names::column(table, &alter.column)?;
             // No data is read here, so the column is taken to hold values;
             // the writer knows better and lets an empty one take any type.
-            if let Cast::Never(reason) = cast(&column.kind, &alter.to.kind(), Contents::Filled) {
+            if let Cast::Never(reason) = cast(
+                column.kind.cast_kind(),
+                CastKind::from(alter.to),
+                Contents::Filled,
+            ) {
                 return Err(ResolveError::CastNever {
                     column: column.name.clone(),
                     to: alter.to.to_string(),

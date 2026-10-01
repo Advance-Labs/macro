@@ -1,5 +1,5 @@
 //! Converting a column's cells to another type, one cell at a time, after
-//! `database_sql::cast` has said the change can work at all. A cell that
+//! `models_databases::cast` has said the change can work at all. A cell that
 //! does not fit is a [`Misfit`]: counted and quoted when the change is
 //! refused, emptied when the caller asked to clear what does not fit.
 

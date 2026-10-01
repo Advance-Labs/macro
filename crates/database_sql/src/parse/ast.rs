@@ -2,7 +2,7 @@
 //! are [`Lit`]s; binding them to a catalog is the next stage's job. No spans:
 //! later stages report problems by quoting the identifier.
 
-use crate::cast::ColumnType;
+use models_databases::ColumnKind as OpColumnKind;
 
 /// An identifier as written, quotes removed, case preserved.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -306,7 +306,7 @@ pub struct AlterColumnType {
     /// The column.
     pub column: Ident,
     /// The type it becomes.
-    pub to: ColumnType,
+    pub to: OpColumnKind,
     /// `USING NULL`: empty the values that do not fit instead of refusing.
     pub clear_invalid: bool,
 }

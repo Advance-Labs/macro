@@ -827,7 +827,7 @@ fn a_type_change_binds_the_column_and_keeps_using_null() {
         Query::AlterColumnType(AlterColumnTypeQuery {
             table: DEALS,
             column: AMOUNT,
-            to: crate::cast::ColumnType::Text,
+            to: models_databases::ColumnKind::Text,
             clear_invalid: true,
         })
     );

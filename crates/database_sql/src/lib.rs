@@ -16,7 +16,6 @@
 //! dependencies.
 #![deny(missing_docs)]
 
-pub mod cast;
 pub mod catalog;
 pub mod engine;
 pub mod fold;
@@ -30,7 +29,6 @@ mod test_support;
 pub mod wasm;
 mod write;
 
-pub use cast::{Cast, ColumnType, Contents, cast};
 pub use catalog::Catalog;
 pub use engine::{Engine, Request, Step};
 pub use fold::{Bin, Cell, Row, Table, fold_bins, fold_relations, fold_rows};

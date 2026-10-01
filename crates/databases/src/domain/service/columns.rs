@@ -1,7 +1,7 @@
 use super::column_types::{ConvertedCell, Converter, is_empty};
 use super::*;
 use crate::domain::catalog::{ColumnEntry, PropertyType};
-use database_sql::cast::{Cast, Contents, cast};
+use models_databases::cast::{Cast, Contents, cast};
 use models_properties::service::property_value::PropertyValue;
 
 impl<Repo, Defs, Cells, Events, Access, Broker>
@@ -147,7 +147,7 @@ where
             definition: detail.definition.clone(),
             writable: detail.writable,
         };
-        if let Cast::Never(reason) = cast(&catalog::column_kind(&entry), &target.kind(), contents) {
+        if let Cast::Never(reason) = cast(current.cast_kind(), target.cast_kind(), contents) {
             return Err(DatabaseError::InvalidSchemaOperation(reason.into()));
         }
         let mut converter = Converter::new(&detail.definition, target, cmd.clear_invalid);

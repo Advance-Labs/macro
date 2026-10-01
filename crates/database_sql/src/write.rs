@@ -8,7 +8,6 @@ use models_databases::{
 };
 use uuid::Uuid;
 
-use crate::cast::ColumnType;
 use crate::catalog::{Catalog, Column, ColumnKind, EntityKind, Table};
 use crate::fold::Cell;
 use crate::resolve::{
@@ -25,7 +24,7 @@ pub(crate) enum Sent {
     Column {
         table: Uuid,
         column: Uuid,
-        to: ColumnType,
+        to: OpColumnKind,
     },
 }
 
@@ -135,7 +134,7 @@ pub(crate) fn alter(catalog: &Catalog, query: &AlterColumnTypeQuery) -> Database
     DatabaseOp::ChangeColumnType {
         table: query.table,
         column: column(table(catalog, query.table), query.column).placement,
-        to: column_kind(query.to),
+        to: query.to,
         clear_invalid: query.clear_invalid,
     }
 }
@@ -283,25 +282,9 @@ fn references(column: &Column, ids: &[String]) -> CellValue {
     }
 }
 
-/// The op's name for a type; the parser refuses relations.
-fn column_kind(to: ColumnType) -> OpColumnKind {
-    match to {
-        ColumnType::Text => OpColumnKind::Text,
-        ColumnType::Number => OpColumnKind::Number,
-        ColumnType::Boolean => OpColumnKind::Boolean,
-        ColumnType::Date => OpColumnKind::Date,
-        ColumnType::Link => OpColumnKind::Link,
-        ColumnType::Select { multi } => OpColumnKind::Select { multi },
-        ColumnType::SelectNumber { multi } => OpColumnKind::SelectNumber { multi },
-        ColumnType::Tag => OpColumnKind::Tag,
-        ColumnType::Entity { target, multi } => OpColumnKind::Entity {
-            target: entity_kind(target),
-            multi,
-        },
-    }
-}
-
-fn entity_kind(kind: EntityKind) -> OpEntityKind {
+/// What a reference points at, as an op names it; a relation is written as
+/// rows, never as references.
+pub(crate) fn entity_kind(kind: EntityKind) -> OpEntityKind {
     match kind {
         EntityKind::User => OpEntityKind::User,
         EntityKind::Document => OpEntityKind::Document,

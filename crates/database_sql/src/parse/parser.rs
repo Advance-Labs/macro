@@ -18,8 +18,8 @@ use strum::IntoEnumIterator;
 use super::ParseError;
 use super::ast::*;
 use super::lexer::{Tok, Token};
-use crate::cast::ColumnType;
 use crate::catalog::EntityKind;
+use models_databases::ColumnKind as OpColumnKind;
 
 /// The input: the statement's tokens, always ending in [`Tok::End`]. A
 /// newtype because nom implements [`Input`] only for bytes and `&str`.
@@ -895,7 +895,7 @@ fn skip_column_word(input: In<'_>) -> In<'_> {
 }
 
 /// `name`, `entity(KIND)`, either with `[]` for several values.
-fn column_type(input: In<'_>) -> R<'_, ColumnType> {
+fn column_type(input: In<'_>) -> R<'_, OpColumnKind> {
     let name = match input.first().map(|token| &token.kind) {
         Some(Tok::Ident(name)) => name.as_str(),
         Some(Tok::Select) => "select",
@@ -923,7 +923,7 @@ fn column_type(input: In<'_>) -> R<'_, ColumnType> {
     if several {
         (input, ()) = cut(tok(Tok::RBracket, "] after [")).parse(input.take_from(1))?;
     }
-    let single = |to: ColumnType| {
+    let single = |to: OpColumnKind| {
         if several {
             let name: &'static str = type_name.into();
             Err(nom::Err::Failure(message_at(
@@ -935,15 +935,15 @@ fn column_type(input: In<'_>) -> R<'_, ColumnType> {
         }
     };
     let to = match type_name {
-        TypeName::Text => single(ColumnType::Text)?,
-        TypeName::Number => single(ColumnType::Number)?,
-        TypeName::Boolean => single(ColumnType::Boolean)?,
-        TypeName::Date => single(ColumnType::Date)?,
-        TypeName::Link => single(ColumnType::Link)?,
-        TypeName::Select => ColumnType::Select { multi: several },
-        TypeName::SelectNumber => ColumnType::SelectNumber { multi: several },
-        TypeName::Entity => ColumnType::Entity {
-            target,
+        TypeName::Text => single(OpColumnKind::Text)?,
+        TypeName::Number => single(OpColumnKind::Number)?,
+        TypeName::Boolean => single(OpColumnKind::Boolean)?,
+        TypeName::Date => single(OpColumnKind::Date)?,
+        TypeName::Link => single(OpColumnKind::Link)?,
+        TypeName::Select => OpColumnKind::Select { multi: several },
+        TypeName::SelectNumber => OpColumnKind::SelectNumber { multi: several },
+        TypeName::Entity => OpColumnKind::Entity {
+            target: crate::write::entity_kind(target),
             multi: several,
         },
         TypeName::Tag if several => {
@@ -952,7 +952,7 @@ fn column_type(input: In<'_>) -> R<'_, ColumnType> {
                 "tag always holds several values; write tag",
             )));
         }
-        TypeName::Tag => ColumnType::Tag,
+        TypeName::Tag => OpColumnKind::Tag,
     };
     Ok((input, to))
 }

@@ -6,6 +6,7 @@
 #[cfg(test)]
 mod test;
 
+use models_databases::cast::number_label;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use uuid::Uuid;
@@ -184,15 +185,6 @@ impl OptionValue {
             OptionValue::String(text) => text.clone(),
             OptionValue::Number(number) => number_label(*number),
         }
-    }
-}
-
-/// A number the way a label shows it: no trailing `.0` on whole numbers.
-pub fn number_label(number: f64) -> String {
-    if number.fract() == 0.0 && number.abs() < 1e15 {
-        format!("{}", number as i64)
-    } else {
-        number.to_string()
     }
 }
 

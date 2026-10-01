@@ -3,11 +3,8 @@
 
 use std::collections::HashMap;
 
-use database_sql::cast::{Cast, ColumnType, Contents, TARGETS, cast};
-use database_sql::catalog::{
-    ColumnKind, ColumnSchema, DataType as StoredDataType, EntityKind, OptionSchema, OptionValue,
-    PropertyType as StoredType,
-};
+use models_databases::cast::{Cast, CastKind, Contents, TARGETS, cast, number_label};
+use models_databases::{ColumnKind, EntityKind};
 use models_permissions::share_permission::access_level::AccessLevel;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
 use models_properties::service::property_option::PropertyOptionValue;
@@ -121,31 +118,6 @@ pub fn build_entries(
         .collect()
 }
 
-/// One column as the schema describes it.
-pub fn column_schema(column: &ColumnEntry) -> ColumnSchema {
-    ColumnSchema {
-        id: column.column.id,
-        definition: column.definition.definition.id,
-        name: column.name().to_owned(),
-        property: PropertyType::of(&column.column, &column.definition).stored(),
-        options: column
-            .definition
-            .property_options
-            .iter()
-            .map(|option| OptionSchema {
-                id: option.id,
-                value: option_value(&option.value),
-                order: option.display_order,
-            })
-            .collect(),
-    }
-}
-
-/// The engine's view of a column's type.
-pub fn column_kind(column: &ColumnEntry) -> ColumnKind {
-    column_schema(column).kind()
-}
-
 /// A column's type as the properties system stores it: what a column is,
 /// or what a type change asks it to become.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -181,52 +153,52 @@ impl PropertyType {
         }
     }
 
-    /// The property type SQL's `ColumnType` names.
-    pub fn from_column_type(column_type: ColumnType) -> Self {
+    /// The property type a [`ColumnKind`] names.
+    pub fn from_column_kind(kind: ColumnKind) -> Self {
         let plain = |data_type, is_multi_select| PropertyType {
             data_type,
             is_multi_select,
             specific_entity_type: None,
             relation: false,
         };
-        match column_type {
-            ColumnType::Text => plain(DataType::String, false),
-            ColumnType::Number => plain(DataType::Number, false),
-            ColumnType::Boolean => plain(DataType::Boolean, false),
-            ColumnType::Date => plain(DataType::Date, false),
-            ColumnType::Link => plain(DataType::Link, false),
-            ColumnType::Select { multi } => plain(DataType::SelectString, multi),
-            ColumnType::SelectNumber { multi } => plain(DataType::SelectNumber, multi),
-            ColumnType::Tag => plain(DataType::Tag, true),
-            ColumnType::Entity { target, multi } => PropertyType {
+        match kind {
+            ColumnKind::Text => plain(DataType::String, false),
+            ColumnKind::Number => plain(DataType::Number, false),
+            ColumnKind::Boolean => plain(DataType::Boolean, false),
+            ColumnKind::Date => plain(DataType::Date, false),
+            ColumnKind::Link => plain(DataType::Link, false),
+            ColumnKind::Select { multi } => plain(DataType::SelectString, multi),
+            ColumnKind::SelectNumber { multi } => plain(DataType::SelectNumber, multi),
+            ColumnKind::Tag => plain(DataType::Tag, true),
+            ColumnKind::Entity { target, multi } => PropertyType {
                 specific_entity_type: Some(entity_type(target)),
                 ..plain(DataType::Entity, multi)
             },
+            ColumnKind::Relation { .. } => PropertyType::RELATION,
         }
     }
 
-    /// The engine's kind for a column of this type, without options.
-    pub fn kind(&self) -> ColumnKind {
-        self.stored().kind(Vec::new())
-    }
-
-    /// The type as the engine's schema spells it.
-    pub fn stored(&self) -> StoredType {
-        StoredType {
-            data_type: match self.data_type {
-                DataType::String => StoredDataType::String,
-                DataType::Number => StoredDataType::Number,
-                DataType::Boolean => StoredDataType::Boolean,
-                DataType::Date => StoredDataType::Date,
-                DataType::Link => StoredDataType::Link,
-                DataType::SelectString => StoredDataType::SelectString,
-                DataType::SelectNumber => StoredDataType::SelectNumber,
-                DataType::Tag => StoredDataType::Tag,
-                DataType::Entity => StoredDataType::Entity,
+    /// A column of this type's values, as the cast rule reads them.
+    pub fn cast_kind(&self) -> CastKind {
+        if self.relation {
+            return CastKind::Relation;
+        }
+        match self.data_type {
+            DataType::String => CastKind::Text,
+            DataType::Number => CastKind::Number,
+            DataType::Boolean => CastKind::Boolean,
+            DataType::Date => CastKind::Date,
+            DataType::Link => CastKind::Link,
+            DataType::SelectString | DataType::SelectNumber | DataType::Tag => CastKind::Select {
+                multi: self.is_multi_select,
             },
-            multi: self.is_multi_select,
-            entity_type: self.specific_entity_type.map(entity_kind),
-            relation: self.relation,
+            DataType::Entity => match self.specific_entity_type.map(entity_kind) {
+                Some(None) => CastKind::Relation,
+                target => CastKind::Entity {
+                    target: target.flatten().unwrap_or(EntityKind::User),
+                    multi: self.is_multi_select,
+                },
+            },
         }
     }
 }
@@ -237,16 +209,16 @@ impl PropertyType {
 pub fn cast_targets(
     column: &Column,
     definition: &PropertyDefinitionWithOptions,
-) -> (Vec<ColumnType>, Vec<ColumnType>) {
+) -> (Vec<ColumnKind>, Vec<ColumnKind>) {
     let current = PropertyType::of(column, definition);
-    let from = current.kind();
+    let from = current.cast_kind();
     let mut safe = Vec::new();
     let mut checked = Vec::new();
     for target in TARGETS {
-        if PropertyType::from_column_type(target) == current {
+        if PropertyType::from_column_kind(target) == current {
             continue;
         }
-        match cast(&from, &target.kind(), Contents::Filled) {
+        match cast(from, CastKind::from(target), Contents::Filled) {
             Cast::Safe => safe.push(target),
             Cast::Checked => checked.push(target),
             Cast::Never(_) => {}
@@ -255,10 +227,11 @@ pub fn cast_targets(
     (safe, checked)
 }
 
-/// The engine's name for what an entity column references.
-pub fn entity_kind(entity_type: models_properties::EntityType) -> EntityKind {
+/// What a reference column points at, as ops name it; `None` for rows of
+/// another table, which a relation holds.
+pub fn entity_kind(entity_type: models_properties::EntityType) -> Option<EntityKind> {
     use models_properties::EntityType as Stored;
-    match entity_type {
+    Some(match entity_type {
         Stored::User => EntityKind::User,
         Stored::Document => EntityKind::Document,
         Stored::Task => EntityKind::Task,
@@ -270,11 +243,11 @@ pub fn entity_kind(entity_type: models_properties::EntityType) -> EntityKind {
         Stored::Thread => EntityKind::Thread,
         Stored::CalendarEvent => EntityKind::CalendarEvent,
         Stored::Initiative => EntityKind::Initiative,
-        Stored::DatabaseRow => EntityKind::Row,
-    }
+        Stored::DatabaseRow => return None,
+    })
 }
 
-/// The properties system's name for what an entity column references.
+/// The properties system's name for what a reference points at.
 pub fn entity_type(kind: EntityKind) -> models_properties::EntityType {
     use models_properties::EntityType as Stored;
     match kind {
@@ -289,7 +262,6 @@ pub fn entity_type(kind: EntityKind) -> models_properties::EntityType {
         EntityKind::Thread => Stored::Thread,
         EntityKind::CalendarEvent => Stored::CalendarEvent,
         EntityKind::Initiative => Stored::Initiative,
-        EntityKind::Row => Stored::DatabaseRow,
     }
 }
 
@@ -305,17 +277,12 @@ pub fn sql_table_name(database: &str, table: &str) -> String {
     format!("{}.{}", sql_identifier(database), sql_identifier(table))
 }
 
-/// An option's value as the engine's schema holds it.
-pub fn option_value(value: &PropertyOptionValue) -> OptionValue {
-    match value {
-        PropertyOptionValue::String(text) => OptionValue::String(text.clone()),
-        PropertyOptionValue::Number(number) => OptionValue::Number(*number),
-    }
-}
-
 /// An option's label as users write it.
 pub fn option_display(value: &PropertyOptionValue) -> String {
-    option_value(value).label()
+    match value {
+        PropertyOptionValue::String(text) => text.clone(),
+        PropertyOptionValue::Number(number) => number_label(*number),
+    }
 }
 
 /// Every option of a definition with its label, in display order.

@@ -1,6 +1,5 @@
 use super::*;
-use crate::cast::ColumnType;
-use crate::catalog::EntityKind;
+use models_databases::{ColumnKind as OpColumnKind, EntityKind};
 
 fn col(name: &str) -> ColumnRef {
     ColumnRef {
@@ -848,7 +847,7 @@ fn alter_column_type_names_the_table_column_and_type() {
                 table: Ident("deals".into()),
             },
             column: Ident("amount".into()),
-            to: ColumnType::Text,
+            to: OpColumnKind::Text,
             clear_invalid: false,
         })
     );
@@ -864,7 +863,7 @@ fn using_null_clears_what_does_not_fit_and_column_is_optional() {
                 table: Ident("deals".into()),
             },
             column: Ident("closed at".into()),
-            to: ColumnType::Select { multi: true },
+            to: OpColumnKind::Select { multi: true },
             clear_invalid: true,
         })
     );
@@ -880,7 +879,7 @@ fn an_entity_type_names_its_kind_and_takes_brackets_for_several() {
                 table: Ident("deals".into()),
             },
             column: Ident("owner".into()),
-            to: ColumnType::Entity {
+            to: OpColumnKind::Entity {
                 target: EntityKind::User,
                 multi: true,
             },
@@ -895,7 +894,7 @@ fn an_entity_type_names_its_kind_and_takes_brackets_for_several() {
                 table: Ident("deals".into()),
             },
             column: Ident("column".into()),
-            to: ColumnType::SelectNumber { multi: false },
+            to: OpColumnKind::SelectNumber { multi: false },
             clear_invalid: false,
         })
     );
