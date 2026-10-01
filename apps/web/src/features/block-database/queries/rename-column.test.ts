@@ -36,6 +36,8 @@ const column: ColumnDetail = {
     property_definition_id: 'definition',
     position: 'a',
     config: null,
+    display_name: null,
+    infer_type: false,
   },
   sql_name: 'name',
   writable: true,

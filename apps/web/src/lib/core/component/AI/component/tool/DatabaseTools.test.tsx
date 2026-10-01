@@ -281,7 +281,13 @@ describe('SaveDatabaseView', () => {
 
 describe('QueryDatabase with SQL hidden', () => {
   const read = {
-    results: [{ columns: [{ name: 'Count' }], rows: [[12]] }],
+    results: [
+      {
+        columns: [{ name: 'Count', kind: 'number' as const }],
+        rows: [[{ type: 'number' as const, value: 12 }]],
+        rowIds: [],
+      },
+    ],
     changesApplied: 0,
     readVersions: [{ tableId: invitesTableId, version: 4 }],
     summary: 'Returned 1 row.',

@@ -196,7 +196,12 @@ describe('runDatabaseSql', () => {
     const refusal = {
       code: 'INVALID_OP' as const,
       message: 'op 0, row 1: "Done" is not an option of "Status"',
-      refusal: { op: 0, row: 1, column: null },
+      refusal: {
+        message: 'op 0, row 1: "Done" is not an option of "Status"',
+        op: 0,
+        row: 1,
+        column: null,
+      },
     };
 
     const outcome = await runDatabaseSqlStatement(update.catalog, update.sql, {

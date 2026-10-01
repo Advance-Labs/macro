@@ -57,6 +57,7 @@ const option = (
   property_definition_id: STAGE,
   display_order,
   value,
+  color: null,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 });
@@ -90,6 +91,7 @@ const crm: DatabaseDetail = {
             position: 'a',
             config: null,
             display_name: 'Deal name',
+            infer_type: false,
           },
           sql_name: '"Deal name"',
           definition: {
@@ -105,6 +107,8 @@ const crm: DatabaseDetail = {
             property_definition_id: STAGE,
             position: 'b',
             config: null,
+            display_name: null,
+            infer_type: false,
           },
           sql_name: '"Stage"',
           definition: {
@@ -123,6 +127,8 @@ const crm: DatabaseDetail = {
             property_definition_id: TIER,
             position: 'c',
             config: null,
+            display_name: null,
+            infer_type: false,
           },
           sql_name: '"Tier"',
           definition: {
@@ -145,6 +151,8 @@ const crm: DatabaseDetail = {
               database_id: CRM,
               table_id: CONTACTS,
             },
+            display_name: null,
+            infer_type: false,
           },
           sql_name: '"Contact"',
           definition: {
@@ -164,6 +172,8 @@ const crm: DatabaseDetail = {
               via_column_id: CONTACT_COLUMN,
               target: EMAIL_COLUMN,
             },
+            display_name: null,
+            infer_type: false,
           },
           sql_name: '"Contact email"',
           definition: {
@@ -192,6 +202,8 @@ const crm: DatabaseDetail = {
             property_definition_id: EMAIL,
             position: 'a',
             config: null,
+            display_name: null,
+            infer_type: false,
           },
           sql_name: '"Email"',
           definition: {
@@ -207,6 +219,8 @@ const crm: DatabaseDetail = {
             property_definition_id: OWNER,
             position: 'b',
             config: null,
+            display_name: null,
+            infer_type: false,
           },
           sql_name: '"Owner"',
           definition: {

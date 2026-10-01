@@ -2,37 +2,54 @@ import { describe, expect, it } from 'vitest';
 import { toolAnswers } from './tool-answer';
 
 describe('QueryDatabase tool results as answers', () => {
-  it('reads each column’s kind off the tool’s entity type and values', () => {
+  it('keeps the tool’s typed cells, with option labels and entity targets as sources', () => {
     expect(
       toolAnswers({
         results: [
           {
             columns: [
-              { name: 'Host', entityType: 'user' },
-              { name: 'Guests', entityType: 'user' },
-              { name: 'Budget' },
-              { name: 'Starts' },
-              { name: 'Venue' },
+              { name: 'Name', kind: 'text' },
+              {
+                name: 'RSVP',
+                kind: 'select',
+                options: [{ id: 'option-yes', label: 'Yes' }],
+              },
+              { name: 'Host', kind: 'entity', target: 'USER' },
+              { name: 'Parties', kind: 'entity', target: 'DATABASE_ROW' },
+              { name: 'Starts', kind: 'date' },
             ],
             rows: [
               [
-                'macro|ada@x.test',
-                '["macro|ada@x.test","macro|grace@x.test"]',
-                1200,
-                '2026-06-01T18:30:00+00:00',
-                'Rooftop',
+                { type: 'text', value: 'Ada' },
+                { type: 'options', value: ['option-yes'] },
+                { type: 'entities', value: ['macro|ada@x.test'] },
+                { type: 'entities', value: ['row-party'] },
+                { type: 'date', value: '2026-06-01T18:30:00Z' },
               ],
-              [null, null, null, null, null],
+              [{ type: 'text', value: 'Grace' }, null, null, null, null],
             ],
+            rowIds: ['row-ada', 'row-grace'],
           },
         ],
         changesApplied: 0,
-        readVersions: [{ tableId: 'table-parties', version: 4 }],
+        readVersions: [{ tableId: 'table-guests', version: 4 }],
         summary: 'Read 2 rows.',
       })
     ).toEqual([
       {
         columns: [
+          { name: 'Name', kind: 'text' },
+          {
+            name: 'RSVP',
+            kind: 'select',
+            source: {
+              markdown: false,
+              options: [{ id: 'option-yes', label: 'Yes', color: null }],
+              tag: false,
+              target: null,
+              relatedTable: null,
+            },
+          },
           {
             name: 'Host',
             kind: 'entity',
@@ -45,71 +62,33 @@ describe('QueryDatabase tool results as answers', () => {
             },
           },
           {
-            name: 'Guests',
+            name: 'Parties',
             kind: 'entity',
             source: {
               markdown: false,
               options: [],
               tag: false,
-              target: 'USER',
+              target: 'DATABASE_ROW',
               relatedTable: null,
             },
           },
-          { name: 'Budget', kind: 'number' },
           { name: 'Starts', kind: 'date' },
-          { name: 'Venue', kind: 'text' },
         ],
         rows: [
           [
+            { type: 'text', value: 'Ada' },
+            { type: 'options', value: ['option-yes'] },
             { type: 'entities', value: ['macro|ada@x.test'] },
-            {
-              type: 'entities',
-              value: ['macro|ada@x.test', 'macro|grace@x.test'],
-            },
-            { type: 'number', value: 1200 },
-            { type: 'date', value: '2026-06-01T18:30:00+00:00' },
-            { type: 'text', value: 'Rooftop' },
+            { type: 'entities', value: ['row-party'] },
+            { type: 'date', value: '2026-06-01T18:30:00Z' },
           ],
-          [null, null, null, null, null],
+          [{ type: 'text', value: 'Grace' }, null, null, null, null],
         ],
-        rowIds: [],
-        readTables: ['table-parties'],
+        rowIds: ['row-ada', 'row-grace'],
+        readTables: ['table-guests'],
         readDatabaseIds: [],
         truncatedTables: [],
       },
-    ]);
-  });
-
-  it('moves a leading row_id column into the rows’ ids', () => {
-    const [answer] = toolAnswers({
-      results: [
-        {
-          columns: [{ name: 'row_id' }, { name: 'Name' }],
-          rows: [['row-1', 'Halloween Bash']],
-        },
-      ],
-      changesApplied: 0,
-      readVersions: [],
-      summary: '',
-    });
-
-    expect(answer.columns).toEqual([{ name: 'Name', kind: 'text' }]);
-    expect(answer.rows).toEqual([[{ type: 'text', value: 'Halloween Bash' }]]);
-    expect(answer.rowIds).toEqual(['row-1']);
-  });
-
-  it('keeps text that only looks like a number as text', () => {
-    const [answer] = toolAnswers({
-      results: [{ columns: [{ name: 'Zip' }], rows: [['02139'], [12]] }],
-      changesApplied: 0,
-      readVersions: [],
-      summary: '',
-    });
-
-    expect(answer.columns).toEqual([{ name: 'Zip', kind: 'text' }]);
-    expect(answer.rows).toEqual([
-      [{ type: 'text', value: '02139' }],
-      [{ type: 'text', value: '12' }],
     ]);
   });
 });

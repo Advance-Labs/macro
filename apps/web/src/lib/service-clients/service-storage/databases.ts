@@ -26,10 +26,12 @@ import type { CreateColumnResponse } from './generated/schemas/createColumnRespo
 import type { Database } from './generated/schemas/database';
 import type { DatabaseDetail } from './generated/schemas/databaseDetail';
 import type { DeleteColumnRequest } from './generated/schemas/deleteColumnRequest';
+import type { ErrorResponse } from './generated/schemas/errorResponse';
 import type { ImportTable } from './generated/schemas/importTable';
 import type { InferColumnTypeOutcome } from './generated/schemas/inferColumnTypeOutcome';
 import type { InferColumnTypeRequest } from './generated/schemas/inferColumnTypeRequest';
 import type { ListedDatabase } from './generated/schemas/listedDatabase';
+import type { OpRefusalResponse } from './generated/schemas/opRefusalResponse';
 import type { RenameColumnOutcome } from './generated/schemas/renameColumnOutcome';
 import type { RenameColumnRequest } from './generated/schemas/renameColumnRequest';
 import type { RenameTableRequest } from './generated/schemas/renameTableRequest';
@@ -55,50 +57,43 @@ export type DatabaseSharingErrorCode =
 /** A batch of `/ops` the service refused (400); nothing of it was written. */
 export type DatabaseOpsErrorCode = FetchWithTokenErrorCode | 'INVALID_OP';
 
-/** Which op of a refused batch failed, and on which row and column. */
-export type OpRefusal = {
-  op: number;
-  row: number | null;
-  column: string | null;
-};
-
-/** An `/ops` failure; an `INVALID_OP` names the op it refused when the service says. */
+/** An `/ops` failure; an `INVALID_OP` names the op, row and column it refused. */
 export type DatabaseOpsError = ResultError<DatabaseOpsErrorCode> & {
-  refusal: OpRefusal | null;
+  refusal: OpRefusalResponse | null;
 };
 
 const dssHost = SERVER_HOSTS['document-storage-service'];
 
-/** The `ErrorResponse` body's fields, read without trusting the body. */
-type ErrorBody = {
-  message: string;
-  refusal: OpRefusal | null;
-};
+function isErrorResponse(body: unknown): body is ErrorResponse {
+  return (
+    !!body &&
+    typeof body === 'object' &&
+    'message' in body &&
+    typeof body.message === 'string'
+  );
+}
 
-async function errorBody(response: Response): Promise<ErrorBody> {
+function isOpRefusal(body: unknown): body is OpRefusalResponse {
+  return isErrorResponse(body) && 'op' in body && typeof body.op === 'number';
+}
+
+/** A failed response's body, and the message it gives. */
+async function errorBody(
+  response: Response
+): Promise<{ body: unknown; message: string }> {
   const text = await response.text();
-  let parsed: unknown;
+  let body: unknown;
   try {
-    parsed = JSON.parse(text);
+    body = JSON.parse(text);
   } catch {
     // A proxy's plain-text body is the message.
   }
-  const fields: Record<string, unknown> =
-    parsed && typeof parsed === 'object' ? { ...parsed } : {};
-  const { message, op, row, column } = fields;
   return {
+    body,
     message:
-      typeof message === 'string' && message
-        ? message
+      isErrorResponse(body) && body.message
+        ? body.message
         : text || `HTTP error! status: ${response.status}`,
-    refusal:
-      typeof op === 'number'
-        ? {
-            op,
-            row: typeof row === 'number' ? row : null,
-            column: typeof column === 'string' ? column : null,
-          }
-        : null,
   };
 }
 
@@ -353,7 +348,7 @@ export const databasesClient = {
     id: string;
     request: ApplyOpsRequest;
   }): ResultAsync<ApplyOpsResponse, DatabaseOpsError[]> {
-    let refusal: OpRefusal | null = null;
+    let refusal: OpRefusalResponse | null = null;
     return new ResultAsync(
       fetchWithToken<ApplyOpsResponse, 'INVALID_OP'>(
         `${dssHost}/databases/${id}/ops`,
@@ -361,12 +356,9 @@ export const databasesClient = {
           method: 'POST',
           body: json(request),
           errorResponseHandler: async (response) => {
-            const body = await errorBody(response);
-            refusal = body.refusal;
-            return {
-              code: statusCode(response.status, 'INVALID_OP'),
-              message: body.message,
-            };
+            const { body, message } = await errorBody(response);
+            refusal = isOpRefusal(body) ? body : null;
+            return { code: statusCode(response.status, 'INVALID_OP'), message };
           },
         }
       )

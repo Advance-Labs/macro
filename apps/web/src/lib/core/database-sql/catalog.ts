@@ -29,7 +29,7 @@ export function databaseSqlSchema(
             property: {
               dataType: definition.definition.data_type,
               multi: definition.definition.is_multi_select,
-              entityType: definition.definition.specific_entity_type ?? null,
+              entityType: definition.definition.specific_entity_type,
               relation: column.config?.kind === 'link',
             },
             options: definition.property_options.map((option) => ({

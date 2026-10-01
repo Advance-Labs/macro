@@ -115,12 +115,17 @@ describe('databases client failures', () => {
       {
         code: 'INVALID_OP',
         message: 'op 0, row 1, column col-status: "Done" is not an option',
-        refusal: { op: 0, row: 1, column: 'col-status' },
+        refusal: {
+          message: 'op 0, row 1, column col-status: "Done" is not an option',
+          op: 0,
+          row: 1,
+          column: 'col-status',
+        },
       },
     ]);
   });
 
-  it('leaves the refusal empty when the service does not name the op', async () => {
+  it('leaves the refusal empty when the body is not an op refusal', async () => {
     answer(400, JSON.stringify({ message: 'op 0: the table has no rows' }));
 
     const applied = await databasesClient.applyOps({

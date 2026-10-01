@@ -60,7 +60,7 @@ export function useDatabaseDetailQuery(databaseId: () => string | undefined) {
 
 function liveDatabaseIds(listed: readonly ListedDatabase[]): string[] {
   return listed
-    .filter((entry) => !entry.database.trashed_at)
+    .filter((entry) => entry.database.trashed_at === null)
     .map((entry) => entry.database.id);
 }
 

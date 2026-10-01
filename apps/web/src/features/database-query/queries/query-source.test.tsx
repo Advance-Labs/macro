@@ -68,6 +68,8 @@ describe('query schema', () => {
         property_definition_id: 'relation-definition',
         position: 'a',
         config: { kind: 'link', database_id: 'db', table_id: 'legacy' },
+        display_name: null,
+        infer_type: false,
       },
       sql_name: '"Projects"',
       writable: false,

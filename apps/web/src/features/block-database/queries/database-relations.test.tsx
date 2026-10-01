@@ -23,6 +23,8 @@ const nameColumn: ColumnDetail = {
     property_definition_id: 'name-definition',
     position: 'a',
     config: null,
+    display_name: null,
+    infer_type: false,
   },
   sql_name: '"Name"',
   writable: true,

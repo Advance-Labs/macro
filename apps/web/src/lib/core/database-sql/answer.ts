@@ -59,7 +59,7 @@ function answerSource(
   const colors = new Map(
     (detail?.definition.property_options ?? []).map((option) => [
       option.id,
-      option.color ?? null,
+      option.color,
     ])
   );
   const link =

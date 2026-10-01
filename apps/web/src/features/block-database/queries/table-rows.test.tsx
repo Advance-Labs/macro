@@ -64,6 +64,8 @@ function detail(sqlName = '"guests"'): DatabaseDetail {
               property_definition_id: 'definition',
               position: 'a',
               config: null,
+              display_name: null,
+              infer_type: false,
             },
             sql_name: '"Name"',
             writable: true,
@@ -551,7 +553,12 @@ describe('database rows SQL names', () => {
     const refused: DatabaseOpsError = {
       code: 'INVALID_OP',
       message: 'op 0: Invalid value',
-      refusal: { op: 0, row: null, column: null },
+      refusal: {
+        message: 'op 0: Invalid value',
+        op: 0,
+        row: null,
+        column: null,
+      },
     };
     transport.get.mockImplementation(() => okAsync(detail()));
     applyOps.mockReturnValueOnce(errAsync(refused));
@@ -578,7 +585,12 @@ describe('database rows SQL names', () => {
     const collision: DatabaseOpsError = {
       code: 'INVALID_OP',
       message: 'op 0, row 0, column name: no such column in this table',
-      refusal: { op: 0, row: 0, column: 'name' },
+      refusal: {
+        message: 'op 0, row 0, column name: no such column in this table',
+        op: 0,
+        row: 0,
+        column: 'name',
+      },
     };
     const refreshed = detail('"Personal Guests"');
     transport.get.mockImplementation(() => okAsync(refreshed));
@@ -615,7 +627,12 @@ describe('database rows SQL names', () => {
     const collision: DatabaseOpsError = {
       code: 'INVALID_OP',
       message: 'op 0, row 0, column name: no such column in this table',
-      refusal: { op: 0, row: 0, column: 'name' },
+      refusal: {
+        message: 'op 0, row 0, column name: no such column in this table',
+        op: 0,
+        row: 0,
+        column: 'name',
+      },
     };
     transport.get.mockImplementation(() =>
       errAsync([{ code: 'HTTP_ERROR', message: 'Connection lost' }])

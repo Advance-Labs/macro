@@ -20,6 +20,8 @@ function column(
       config: options.relation
         ? { kind: 'link', database_id: 'db', table_id: 'related' }
         : null,
+      display_name: null,
+      infer_type: false,
     },
     sql_name: '"Column"',
     writable: true,
@@ -144,6 +146,8 @@ describe('grid values a column cannot take', () => {
         property_definition_id: 'definition',
         position: 'a',
         config: null,
+        display_name: null,
+        infer_type: false,
       },
       sql_name: '"Parties"',
       writable: true,
