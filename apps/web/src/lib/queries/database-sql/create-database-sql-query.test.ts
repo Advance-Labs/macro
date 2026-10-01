@@ -1,3 +1,4 @@
+import { databaseSqlSchema } from '@core/database-sql/catalog';
 import type { OpenEngine } from '@core/database-sql/driver';
 import type {
   Catalog,
@@ -20,7 +21,10 @@ import {
 import { createRoot, createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { empty, fromPromise, fromValue, mergeMap, pipe } from 'wonka';
-import { createDatabaseSqlQuery } from './create-database-sql-query';
+import {
+  createDatabaseSqlQuery,
+  readDatabaseSql,
+} from './create-database-sql-query';
 
 const CRM = '01990000-0000-7000-8000-00000000db01';
 const DEALS = '01990000-0000-7000-8000-00000000d001';
@@ -439,6 +443,99 @@ describe('createDatabaseSqlQuery', () => {
 
     expect(query.outcome()?.rows).toEqual([
       [{ type: 'text', value: 'Globex' }],
+    ]);
+  });
+});
+
+describe('readDatabaseSql over macro.people', () => {
+  it('reads the people a viewer can see with no databases open', async () => {
+    const PEOPLE = '01990000-0000-7000-8000-00000000a001';
+    const PERSON_ID = '01990000-0000-7000-8000-00000000a002';
+    const PERSON_NAME = '01990000-0000-7000-8000-00000000a003';
+    const PERSON_EMAIL = '01990000-0000-7000-8000-00000000a004';
+    const peopleCatalog: Catalog = {
+      tables: [
+        {
+          id: PEOPLE,
+          databaseId: PEOPLE,
+          database: 'macro',
+          name: 'people',
+          source: 'people',
+          columns: [
+            {
+              id: PERSON_ID,
+              placement: PERSON_ID,
+              name: 'id',
+              kind: { kind: 'entity', multi: false, target: 'USER' },
+            },
+            {
+              id: PERSON_NAME,
+              placement: PERSON_NAME,
+              name: 'name',
+              kind: { kind: 'text' },
+            },
+            {
+              id: PERSON_EMAIL,
+              placement: PERSON_EMAIL,
+              name: 'email',
+              kind: { kind: 'text' },
+            },
+          ],
+        },
+      ],
+    };
+    // Stands in for the engine's builder: `macro.people` exists only when
+    // the schema offers it.
+    const catalogOf = async (built: Schema): Promise<Catalog> =>
+      built.platform?.includes('people') ? peopleCatalog : { tables: [] };
+    const peopleNames: OpenEngine = async (opened) => {
+      if (!opened.tables.some((table) => table.source === 'people'))
+        throw new Error('unknown table macro.people');
+      return {
+        start: () => ({
+          step: 'fetch',
+          id: 0,
+          query: { type: 'people', ids: null },
+          needs: [PERSON_NAME],
+          cursor: null,
+          limit: 500,
+        }),
+        feed_page: (_id, page) => ({
+          step: 'done',
+          columns: [{ name: 'name', column: PERSON_NAME, kind: 'text' }],
+          rows: page.rows.map((row) => [row.cells[PERSON_NAME] ?? null]),
+          rowIds: page.rows.map((row) => row.id),
+          readTables: [PEOPLE],
+          truncated: false,
+          insertedRowIds: [],
+          changesApplied: 0,
+        }),
+        feed_bins: () => {
+          throw 'no bins';
+        },
+        free: () => {},
+      };
+    };
+
+    const read = await readDatabaseSql(
+      { schema: databaseSqlSchema([]), sql: 'SELECT name FROM macro.people' },
+      {
+        client: () => createClient({ url: 'http://test', exchanges: [] }),
+        cacheHost: () => undefined,
+        people: async () => [
+          {
+            id: 'macro|ada@databases.test',
+            name: 'Ada',
+            email: 'ada@databases.test',
+          },
+        ],
+        catalog: catalogOf,
+        open: peopleNames,
+      }
+    );
+
+    expect(read._unsafeUnwrap().outcome.rows).toEqual([
+      [{ type: 'text', value: 'Ada' }],
     ]);
   });
 });

@@ -244,8 +244,18 @@ const crm: DatabaseDetail = {
 };
 
 describe('databaseSqlSchema', () => {
+  it('offers the platform people table with no databases at all', () => {
+    expect(databaseSqlSchema([])).toEqual({
+      databases: [],
+      platform: ['people'],
+    });
+  });
+
   it('describes a database detail as the schema the engine builds its catalog from', () => {
-    expect(databaseSqlSchema([crm])).toEqual(readCatalogFixture('crm').schema);
+    expect(databaseSqlSchema([crm])).toEqual({
+      ...readCatalogFixture('crm').schema,
+      platform: ['people'],
+    });
   });
 
   it('describes every database a scoped statement can name', () => {
@@ -275,7 +285,10 @@ describe('databaseSqlSchema', () => {
     };
 
     const fixture = readCatalogFixture('scoped');
-    expect(databaseSqlSchema([crm, other])).toEqual(fixture.schema);
+    expect(databaseSqlSchema([crm, other])).toEqual({
+      ...fixture.schema,
+      platform: ['people'],
+    });
     expect(fixture.scope).toBe(CRM);
   });
 });

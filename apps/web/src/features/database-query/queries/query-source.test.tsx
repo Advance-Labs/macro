@@ -309,7 +309,7 @@ describe('live query source', () => {
               ],
             },
           ],
-          platform: [],
+          platform: ['people'],
         },
       },
     ]);
