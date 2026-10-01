@@ -2,6 +2,8 @@
 
 mod apply_writes;
 
+use models_databases::position::{key_between, keys_between};
+
 use super::*;
 use apply_writes::apply_in_world;
 
@@ -45,9 +47,9 @@ pub(super) struct World {
 }
 
 /// Store views a schema change rewrote; `false` when one is gone.
-pub(super) fn rewrite_views(w: &mut World, views: &[DatabaseView]) -> bool {
+pub(super) fn rewrite_views(world: &mut World, views: &[DatabaseView]) -> bool {
     for view in views {
-        let Some(stored) = w.views.iter_mut().find(|stored| stored.id == view.id) else {
+        let Some(stored) = world.views.iter_mut().find(|stored| stored.id == view.id) else {
             return false;
         };
         *stored = view.clone();
@@ -60,7 +62,7 @@ pub(super) type Shared = Arc<Mutex<World>>;
 #[derive(Clone)]
 pub(super) struct FakeRepo(pub(super) Shared);
 #[derive(Clone)]
-pub(super) struct FakeDefs(pub(super) Shared);
+pub(super) struct FakeDefinitions(pub(super) Shared);
 #[derive(Clone)]
 pub(super) struct FakeCells(pub(super) Shared);
 #[derive(Clone)]
@@ -72,28 +74,47 @@ impl DatabasesRepo for FakeRepo {
     type Error = FakeError;
     async fn create_database(
         &self,
-        cmd: &CreateDatabase,
-        starter_table_name: &str,
+        command: &CreateDatabase,
+        first_table: FirstTable,
     ) -> Result<Database, FakeError> {
         let database = Database {
             id: Uuid::new_v4(),
-            name: cmd.name.clone(),
-            owner_id: cmd.owner_id.as_ref().to_string(),
+            name: command.name.clone(),
+            owner_id: command.owner_id.as_ref().to_string(),
             created_at: Utc::now(),
             trashed_at: None,
         };
-        let mut w = self.0.lock().unwrap();
-        w.databases.push(database.clone());
-        let position = format!("{:04}", w.tables.len());
-        w.tables.push(Table {
+        let title = definition(
+            first_table.title_column,
+            DataType::String,
+            false,
+            PropertyOwner::Database {
+                database_id: database.id,
+            },
+        );
+        let table = Table {
             id: Uuid::new_v4(),
             database_id: database.id,
-            name: starter_table_name.to_string(),
-            position,
+            name: first_table.name.to_string(),
+            position: key_between(None, None).unwrap(),
             version: TableVersion(0),
+        };
+        let mut world = self.0.lock().unwrap();
+        world.databases.push(database.clone());
+        world.columns.push(Column {
+            id: Uuid::new_v4(),
+            table_id: table.id,
+            property_definition_id: title.definition.id,
+            display_name: None,
+            position: key_between(None, None).unwrap(),
+            infer_type: false,
+            config: None,
         });
-        w.grants
-            .entry(cmd.owner_id.as_ref().to_string())
+        world.definitions.insert(title.definition.id, title);
+        world.tables.push(table);
+        world
+            .grants
+            .entry(command.owner_id.as_ref().to_string())
             .or_default()
             .push((database.id, AccessLevel::Owner));
         Ok(database)
@@ -102,21 +123,30 @@ impl DatabasesRepo for FakeRepo {
         &self,
         id: DatabaseId,
     ) -> Result<Option<(Database, Vec<Table>)>, FakeError> {
-        let w = self.0.lock().unwrap();
-        Ok(w.databases.iter().find(|d| d.id == id).map(|d| {
-            (
-                d.clone(),
-                w.tables
-                    .iter()
-                    .filter(|t| t.database_id == id)
-                    .cloned()
-                    .collect(),
-            )
-        }))
+        let world = self.0.lock().unwrap();
+        Ok(world
+            .databases
+            .iter()
+            .find(|database| database.id == id)
+            .map(|database| {
+                (
+                    database.clone(),
+                    world
+                        .tables
+                        .iter()
+                        .filter(|table| table.database_id == id)
+                        .cloned()
+                        .collect(),
+                )
+            }))
     }
     async fn rename_database(&self, id: DatabaseId, name: &str) -> Result<bool, FakeError> {
-        let mut w = self.0.lock().unwrap();
-        if let Some(database) = w.databases.iter_mut().find(|d| d.id == id) {
+        let mut world = self.0.lock().unwrap();
+        if let Some(database) = world
+            .databases
+            .iter_mut()
+            .find(|database| database.id == id)
+        {
             database.name = name.to_string();
             Ok(true)
         } else {
@@ -128,8 +158,12 @@ impl DatabasesRepo for FakeRepo {
         id: DatabaseId,
         trashed_at: chrono::DateTime<Utc>,
     ) -> Result<bool, FakeError> {
-        let mut w = self.0.lock().unwrap();
-        if let Some(database) = w.databases.iter_mut().find(|d| d.id == id) {
+        let mut world = self.0.lock().unwrap();
+        if let Some(database) = world
+            .databases
+            .iter_mut()
+            .find(|database| database.id == id)
+        {
             database.trashed_at = Some(trashed_at);
             Ok(true)
         } else {
@@ -137,8 +171,12 @@ impl DatabasesRepo for FakeRepo {
         }
     }
     async fn restore_database(&self, id: DatabaseId) -> Result<bool, FakeError> {
-        let mut w = self.0.lock().unwrap();
-        if let Some(database) = w.databases.iter_mut().find(|d| d.id == id) {
+        let mut world = self.0.lock().unwrap();
+        if let Some(database) = world
+            .databases
+            .iter_mut()
+            .find(|database| database.id == id)
+        {
             database.trashed_at = None;
             Ok(true)
         } else {
@@ -146,49 +184,55 @@ impl DatabasesRepo for FakeRepo {
         }
     }
     async fn delete_database(&self, id: DatabaseId) -> Result<(), FakeError> {
-        let mut w = self.0.lock().unwrap();
-        w.databases.retain(|d| d.id != id);
-        let table_ids: Vec<TableId> = w
+        let mut world = self.0.lock().unwrap();
+        world.databases.retain(|database| database.id != id);
+        let table_ids: Vec<TableId> = world
             .tables
             .iter()
-            .filter(|t| t.database_id == id)
-            .map(|t| t.id)
+            .filter(|table| table.database_id == id)
+            .map(|table| table.id)
             .collect();
-        w.tables.retain(|t| t.database_id != id);
-        w.columns.retain(|c| !table_ids.contains(&c.table_id));
+        world.tables.retain(|table| table.database_id != id);
+        world
+            .columns
+            .retain(|column| !table_ids.contains(&column.table_id));
         let row_ids: Vec<RowId> = table_ids
             .iter()
-            .filter_map(|table_id| w.rows.remove(table_id))
+            .filter_map(|table_id| world.rows.remove(table_id))
             .flatten()
             .map(|row| row.id)
             .collect();
-        w.cells.retain(|row_id, _| !row_ids.contains(row_id));
+        world.cells.retain(|row_id, _| !row_ids.contains(row_id));
         // The Postgres adapter purges `entity_access` rows in the same
         // transaction; the fake's grant map stands in for that table.
-        for grants in w.grants.values_mut() {
+        for grants in world.grants.values_mut() {
             grants.retain(|(database_id, _)| *database_id != id);
         }
         Ok(())
     }
-    async fn create_table(&self, cmd: &CreateTable) -> Result<TableMutationOutcome, FakeError> {
-        let mut w = self.0.lock().unwrap();
-        if w.table_write_not_found {
+    async fn create_table(&self, command: &CreateTable) -> Result<TableMutationOutcome, FakeError> {
+        let mut world = self.0.lock().unwrap();
+        if world.table_write_not_found {
             return Ok(TableMutationOutcome::NotFound);
         }
-        if w.tables
-            .iter()
-            .any(|table| table.database_id == cmd.database_id && same_name(&table.name, &cmd.name))
-        {
+        let siblings = || {
+            world
+                .tables
+                .iter()
+                .filter(|table| table.database_id == command.database_id)
+        };
+        if siblings().any(|table| same_name(&table.name, &command.name)) {
             return Ok(TableMutationOutcome::Conflict);
         }
+        let last = siblings().map(|table| table.position.as_str()).max();
         let table = Table {
             id: Uuid::new_v4(),
-            database_id: cmd.database_id,
-            name: cmd.name.clone(),
-            position: format!("{:04}", w.tables.len()),
+            database_id: command.database_id,
+            name: command.name.clone(),
+            position: key_between(last, None).unwrap(),
             version: TableVersion(0),
         };
-        w.tables.push(table.clone());
+        world.tables.push(table.clone());
         Ok(TableMutationOutcome::Applied(table))
     }
     async fn rename_table(
@@ -233,16 +277,18 @@ impl DatabasesRepo for FakeRepo {
         if current != requested {
             return Ok(TableOrderOutcome::Conflict);
         }
-        for (index, id) in ids.iter().enumerate() {
+        for (id, position) in ids.iter().zip(keys_between(None, None, ids.len()).unwrap()) {
             let table = world
                 .tables
                 .iter_mut()
                 .find(|table| table.id == *id)
                 .unwrap();
-            table.position = format!("{:04}", index + 1);
+            table.position = position;
             table.version.0 += 1;
         }
-        world.tables.sort_by(|a, b| a.position.cmp(&b.position));
+        world
+            .tables
+            .sort_by(|left, right| left.position.cmp(&right.position));
         Ok(TableOrderOutcome::Applied(
             ids.iter()
                 .map(|id| {
@@ -257,29 +303,30 @@ impl DatabasesRepo for FakeRepo {
         ))
     }
     async fn delete_table(&self, table: &Table) -> Result<TableDeletion, FakeError> {
-        let mut w = self.0.lock().unwrap();
-        if w.table_write_not_found
-            || !w
+        let mut world = self.0.lock().unwrap();
+        if world.table_write_not_found
+            || !world
                 .databases
                 .iter()
-                .any(|d| d.id == table.database_id && d.trashed_at.is_none())
-            || !w.tables.iter().any(|t| t.id == table.id)
+                .any(|database| database.id == table.database_id && database.trashed_at.is_none())
+            || !world.tables.iter().any(|stored| stored.id == table.id)
         {
             return Ok(TableDeletion::NotFound);
         }
-        if w.tables
+        if world
+            .tables
             .iter()
-            .filter(|t| t.database_id == table.database_id)
+            .filter(|stored| stored.database_id == table.database_id)
             .count()
             <= 1
         {
             return Ok(TableDeletion::LastTable);
         }
-        w.tables.retain(|t| t.id != table.id);
-        w.columns.retain(|c| c.table_id != table.id);
+        world.tables.retain(|stored| stored.id != table.id);
+        world.columns.retain(|column| column.table_id != table.id);
         // The schema's cleanup triggers take the rows' cells with them.
-        for row in w.rows.remove(&table.id).unwrap_or_default() {
-            w.cells.remove(&row.id);
+        for row in world.rows.remove(&table.id).unwrap_or_default() {
+            world.cells.remove(&row.id);
         }
         Ok(TableDeletion::Deleted)
     }
@@ -287,22 +334,28 @@ impl DatabasesRepo for FakeRepo {
         &self,
         table_id: TableId,
         property_definition_id: PropertyDefinitionId,
-        cmd: &CreateColumn,
+        command: &CreateColumn,
     ) -> Result<(ColumnId, TableVersion), FakeError> {
-        let mut w = self.0.lock().unwrap();
+        let mut world = self.0.lock().unwrap();
+        let last = world
+            .columns
+            .iter()
+            .filter(|column| column.table_id == table_id)
+            .map(|column| column.position.as_str())
+            .max();
         let column = Column {
-            infer_type: cmd.infer_type,
+            infer_type: command.infer_type,
             display_name: None,
             id: Uuid::new_v4(),
             table_id,
             property_definition_id,
-            position: format!("{:04}", w.columns.len()),
-            config: cmd.config.clone(),
+            position: key_between(last, None).unwrap(),
+            config: command.config.clone(),
         };
-        w.columns.push(column.clone());
+        world.columns.push(column.clone());
         // Unlike Postgres the fake leaves the version alone, so the seeded
         // tests' versions count only data writes.
-        let version = w
+        let version = world
             .tables
             .iter()
             .find(|table| table.id == table_id)
@@ -344,10 +397,11 @@ impl DatabasesRepo for FakeRepo {
         column: &Column,
         definition_id: PropertyDefinitionId,
     ) -> Result<Option<TableVersion>, FakeError> {
-        let mut w = self.0.lock().unwrap();
-        let has_value = w.rows.get(&table.id).is_some_and(|rows| {
+        let mut world = self.0.lock().unwrap();
+        let has_value = world.rows.get(&table.id).is_some_and(|rows| {
             rows.iter().any(|row| {
-                w.cells
+                world
+                    .cells
                     .get(&row.id)
                     .is_some_and(|cells| cells.contains_key(&column.property_definition_id))
             })
@@ -355,25 +409,25 @@ impl DatabasesRepo for FakeRepo {
         if has_value {
             return Ok(None);
         }
-        let Some(t) = w
+        let Some(table_index) = world
             .tables
             .iter()
-            .position(|t| t.id == table.id && t.version == table.version)
+            .position(|stored| stored.id == table.id && stored.version == table.version)
         else {
             return Ok(None);
         };
-        let Some(c) = w.columns.iter().position(|c| {
-            c.id == column.id
-                && c.table_id == table.id
-                && c.property_definition_id == column.property_definition_id
-                && c.infer_type
+        let Some(column_index) = world.columns.iter().position(|stored| {
+            stored.id == column.id
+                && stored.table_id == table.id
+                && stored.property_definition_id == column.property_definition_id
+                && stored.infer_type
         }) else {
             return Ok(None);
         };
-        w.columns[c].property_definition_id = definition_id;
-        w.columns[c].infer_type = false;
-        w.tables[t].version.0 += 1;
-        Ok(Some(w.tables[t].version))
+        world.columns[column_index].property_definition_id = definition_id;
+        world.columns[column_index].infer_type = false;
+        world.tables[table_index].version.0 += 1;
+        Ok(Some(world.tables[table_index].version))
     }
     async fn delete_column(
         &self,
@@ -381,38 +435,38 @@ impl DatabasesRepo for FakeRepo {
         column: &Column,
         views: &[DatabaseView],
     ) -> Result<Option<ColumnSchemaOutcome>, FakeError> {
-        let mut w = self.0.lock().unwrap();
-        let Some(t) = w
+        let mut world = self.0.lock().unwrap();
+        let Some(table_index) = world
             .tables
             .iter()
-            .position(|t| t.id == table.id && t.version == table.version)
+            .position(|stored| stored.id == table.id && stored.version == table.version)
         else {
             return Ok(None);
         };
-        let Some(c) = w
+        let Some(column_index) = world
             .columns
             .iter()
-            .position(|c| c.id == column.id && c.table_id == table.id)
+            .position(|stored| stored.id == column.id && stored.table_id == table.id)
         else {
             return Ok(None);
         };
-        if !rewrite_views(&mut w, views) {
+        if !rewrite_views(&mut world, views) {
             return Ok(None);
         }
-        let removed = w.columns.remove(c);
-        let rows: Vec<RowId> = w
+        let removed = world.columns.remove(column_index);
+        let rows: Vec<RowId> = world
             .rows
             .get(&table.id)
             .map(|rows| rows.iter().map(|row| row.id).collect())
             .unwrap_or_default();
         for row in rows {
-            if let Some(cells) = w.cells.get_mut(&row) {
+            if let Some(cells) = world.cells.get_mut(&row) {
                 cells.remove(&removed.property_definition_id);
             }
         }
-        w.tables[t].version.0 += 1;
+        world.tables[table_index].version.0 += 1;
         Ok(Some(ColumnSchemaOutcome {
-            table_versions: HashMap::from([(table.id, w.tables[t].version)]),
+            table_versions: HashMap::from([(table.id, world.tables[table_index].version)]),
         }))
     }
     async fn reorder_columns(
@@ -420,26 +474,26 @@ impl DatabasesRepo for FakeRepo {
         table: &Table,
         ids: &[ColumnId],
     ) -> Result<Option<TableVersion>, FakeError> {
-        let mut w = self.0.lock().unwrap();
-        let Some(t) = w
+        let mut world = self.0.lock().unwrap();
+        let Some(table_index) = world
             .tables
             .iter()
-            .position(|t| t.id == table.id && t.version == table.version)
+            .position(|stored| stored.id == table.id && stored.version == table.version)
         else {
             return Ok(None);
         };
-        for (index, id) in ids.iter().enumerate() {
-            let Some(c) = w
+        for (id, position) in ids.iter().zip(keys_between(None, None, ids.len()).unwrap()) {
+            let Some(column) = world
                 .columns
                 .iter_mut()
-                .find(|c| c.id == *id && c.table_id == table.id)
+                .find(|column| column.id == *id && column.table_id == table.id)
             else {
                 return Ok(None);
             };
-            c.position = format!("{:04}", index + 1);
+            column.position = position;
         }
-        w.tables[t].version.0 += 1;
-        Ok(Some(w.tables[t].version))
+        world.tables[table_index].version.0 += 1;
+        Ok(Some(world.tables[table_index].version))
     }
     async fn row_refs(&self, table_id: TableId) -> Result<Vec<RowRef>, FakeError> {
         Ok(self
@@ -455,11 +509,12 @@ impl DatabasesRepo for FakeRepo {
         &self,
         table_ids: &[TableId],
     ) -> Result<HashMap<TableId, TableVersion>, FakeError> {
-        let w = self.0.lock().unwrap();
-        Ok(w.tables
+        let world = self.0.lock().unwrap();
+        Ok(world
+            .tables
             .iter()
-            .filter(|t| table_ids.contains(&t.id))
-            .map(|t| (t.id, t.version))
+            .filter(|table| table_ids.contains(&table.id))
+            .map(|table| (table.id, table.version))
             .collect())
     }
     async fn databases_by_ids(&self, ids: &[DatabaseId]) -> Result<Vec<Database>, FakeError> {
@@ -469,7 +524,7 @@ impl DatabasesRepo for FakeRepo {
             .unwrap()
             .databases
             .iter()
-            .filter(|d| ids.contains(&d.id))
+            .filter(|database| ids.contains(&database.id))
             .cloned()
             .collect())
     }
@@ -483,7 +538,7 @@ impl DatabasesRepo for FakeRepo {
             .unwrap()
             .tables
             .iter()
-            .filter(|t| database_ids.contains(&t.database_id))
+            .filter(|table| database_ids.contains(&table.database_id))
             .cloned()
             .collect())
     }
@@ -494,10 +549,12 @@ impl DatabasesRepo for FakeRepo {
             .unwrap()
             .columns
             .iter()
-            .filter(|c| table_ids.contains(&c.table_id))
+            .filter(|column| table_ids.contains(&column.table_id))
             .cloned()
             .collect();
-        columns.sort_by(|a, b| (a.table_id, &a.position).cmp(&(b.table_id, &b.position)));
+        columns.sort_by(|left, right| {
+            (left.table_id, &left.position).cmp(&(right.table_id, &right.position))
+        });
         Ok(columns)
     }
     async fn views_for_tables(
@@ -513,7 +570,9 @@ impl DatabasesRepo for FakeRepo {
             .filter(|view| table_ids.contains(&view.table_id))
             .cloned()
             .collect();
-        views.sort_by(|a, b| (a.table_id, &a.position).cmp(&(b.table_id, &b.position)));
+        views.sort_by(|left, right| {
+            (left.table_id, &left.position).cmp(&(right.table_id, &right.position))
+        });
         Ok(views)
     }
     async fn view_positions(&self, view_id: ViewId) -> Result<Vec<CardPosition>, FakeError> {
@@ -560,10 +619,10 @@ impl CellStore for FakeCells {
         &self,
         rows: &[RowId],
     ) -> Result<HashMap<RowId, HashMap<PropertyDefinitionId, PropertyValue>>, FakeError> {
-        let w = self.0.lock().unwrap();
+        let world = self.0.lock().unwrap();
         Ok(rows
             .iter()
-            .filter_map(|row| w.cells.get(row).map(|cells| (*row, cells.clone())))
+            .filter_map(|row| world.cells.get(row).map(|cells| (*row, cells.clone())))
             .collect())
     }
     async fn column_cells(
@@ -571,11 +630,11 @@ impl CellStore for FakeCells {
         rows: &[RowId],
         definition: PropertyDefinitionId,
     ) -> Result<HashMap<RowId, PropertyValue>, FakeError> {
-        let w = self.0.lock().unwrap();
+        let world = self.0.lock().unwrap();
         Ok(rows
             .iter()
             .filter_map(|row| {
-                let value = w.cells.get(row)?.get(&definition)?;
+                let value = world.cells.get(row)?.get(&definition)?;
                 Some((*row, value.clone()))
             })
             .collect())
@@ -586,35 +645,37 @@ impl CellStore for FakeCells {
         replacement: &ColumnReplacement,
         views: &[DatabaseView],
     ) -> Result<Option<TableVersion>, FakeError> {
-        let mut w = self.0.lock().unwrap();
-        let Some(t) = w
+        let mut world = self.0.lock().unwrap();
+        let Some(table_index) = world
             .tables
             .iter()
-            .position(|t| t.id == table.id && t.version == table.version)
+            .position(|stored| stored.id == table.id && stored.version == table.version)
         else {
             return Ok(None);
         };
-        let Some(c) = w.columns.iter().position(|c| {
-            c.id == replacement.column.id
-                && c.table_id == table.id
-                && c.property_definition_id == replacement.column.property_definition_id
+        let Some(column_index) = world.columns.iter().position(|stored| {
+            stored.id == replacement.column.id
+                && stored.table_id == table.id
+                && stored.property_definition_id == replacement.column.property_definition_id
         }) else {
             return Ok(None);
         };
-        if !rewrite_views(&mut w, views) {
+        if !rewrite_views(&mut world, views) {
             return Ok(None);
         }
         for (row, value) in &replacement.values {
-            w.cells
+            world
+                .cells
                 .entry(*row)
                 .or_default()
                 .insert(replacement.definition_id, value.clone());
         }
-        w.columns[c].property_definition_id = replacement.definition_id;
-        w.columns[c].config = replacement.config.clone();
-        w.columns[c].infer_type = false;
-        w.tables[t].version.0 += 1;
-        Ok(Some(w.tables[t].version))
+        let column = &mut world.columns[column_index];
+        column.property_definition_id = replacement.definition_id;
+        column.config = replacement.config.clone();
+        column.infer_type = false;
+        world.tables[table_index].version.0 += 1;
+        Ok(Some(world.tables[table_index].version))
     }
     async fn add_options(
         &self,
@@ -650,36 +711,36 @@ impl CellStore for FakeCells {
         Ok(Some(world.tables[table_index].version))
     }
     async fn apply_writes(&self, writes: &Writes) -> Result<WritesOutcome, FakeError> {
-        let mut w = self.0.lock().unwrap();
-        w.write_batches += 1;
+        let mut world = self.0.lock().unwrap();
+        world.write_batches += 1;
         let before = (
-            w.tables.clone(),
-            w.columns.clone(),
-            w.definitions.clone(),
-            w.rows.clone(),
-            w.cells.clone(),
-            w.settled.clone(),
-            w.views.clone(),
-            w.positions.clone(),
+            world.tables.clone(),
+            world.columns.clone(),
+            world.definitions.clone(),
+            world.rows.clone(),
+            world.cells.clone(),
+            world.settled.clone(),
+            world.views.clone(),
+            world.positions.clone(),
         );
-        let outcome = apply_in_world(&mut w, writes);
-        if !matches!(outcome, WritesOutcome::Applied { .. }) {
+        let outcome = apply_in_world(&mut world, writes);
+        if !matches!(outcome, Ok(WritesOutcome::Applied { .. })) {
             (
-                w.tables,
-                w.columns,
-                w.definitions,
-                w.rows,
-                w.cells,
-                w.settled,
-                w.views,
-                w.positions,
+                world.tables,
+                world.columns,
+                world.definitions,
+                world.rows,
+                world.cells,
+                world.settled,
+                world.views,
+                world.positions,
             ) = before;
         }
-        Ok(outcome)
+        outcome
     }
 }
 
-impl ColumnDefinitionStore for FakeDefs {
+impl ColumnDefinitionStore for FakeDefinitions {
     type Error = FakeError;
     async fn resolve_binding(
         &self,
@@ -702,14 +763,14 @@ impl ColumnDefinitionStore for FakeDefs {
                 // Options are attached through `add_options`, as in Postgres.
                 options: _,
             } => {
-                let def = definition(
+                let created = definition(
                     name,
                     *data_type,
                     *is_multi_select,
                     PropertyOwner::Database { database_id },
                 );
-                let id = def.definition.id;
-                self.0.lock().unwrap().definitions.insert(id, def);
+                let id = created.definition.id;
+                self.0.lock().unwrap().definitions.insert(id, created);
                 Ok(Some(id))
             }
         }
@@ -722,19 +783,19 @@ impl ColumnDefinitionStore for FakeDefs {
         is_multi_select: bool,
         specific_entity_type: Option<PropertyEntityType>,
     ) -> Result<PropertyDefinitionWithOptions, FakeError> {
-        let mut def = definition(
+        let mut created = definition(
             name,
             data_type,
             is_multi_select,
             PropertyOwner::Database { database_id },
         );
-        def.definition.specific_entity_type = specific_entity_type;
+        created.definition.specific_entity_type = specific_entity_type;
         self.0
             .lock()
             .unwrap()
             .definitions
-            .insert(def.definition.id, def.clone());
-        Ok(def)
+            .insert(created.definition.id, created.clone());
+        Ok(created)
     }
     async fn delete_unused_definition(&self, id: PropertyDefinitionId) -> Result<(), FakeError> {
         self.0.lock().unwrap().definitions.remove(&id);
@@ -745,16 +806,16 @@ impl ColumnDefinitionStore for FakeDefs {
         definition_id: PropertyDefinitionId,
         values: &[PropertyOptionValue],
     ) -> Result<Vec<PropertyOption>, FakeError> {
-        let mut w = self.0.lock().unwrap();
-        let def = w.definitions.get_mut(&definition_id).ok_or(FakeError)?;
-        let mut display_order = def
+        let mut world = self.0.lock().unwrap();
+        let extended = world.definitions.get_mut(&definition_id).ok_or(FakeError)?;
+        let mut display_order = extended
             .property_options
             .iter()
-            .map(|o| o.display_order)
+            .map(|option| option.display_order)
             .max()
             .map_or(0, |highest| highest + 1);
         for value in values {
-            def.property_options.push(PropertyOption {
+            extended.property_options.push(PropertyOption {
                 id: Uuid::new_v4(),
                 property_definition_id: definition_id,
                 display_order,
@@ -765,16 +826,16 @@ impl ColumnDefinitionStore for FakeDefs {
             });
             display_order += 1;
         }
-        Ok(def.property_options.clone())
+        Ok(extended.property_options.clone())
     }
     async fn definitions(
         &self,
         ids: &[PropertyDefinitionId],
     ) -> Result<Vec<PropertyDefinitionWithOptions>, FakeError> {
-        let w = self.0.lock().unwrap();
+        let world = self.0.lock().unwrap();
         Ok(ids
             .iter()
-            .filter_map(|id| w.definitions.get(id).cloned())
+            .filter_map(|id| world.definitions.get(id).cloned())
             .collect())
     }
     async fn editable_definitions(
@@ -782,8 +843,8 @@ impl ColumnDefinitionStore for FakeDefs {
         viewer: &Viewer,
         ids: &[PropertyDefinitionId],
     ) -> Result<Vec<PropertyDefinitionId>, FakeError> {
-        let w = self.0.lock().unwrap();
-        let editable = w
+        let world = self.0.lock().unwrap();
+        let editable = world
             .editable_definitions
             .get(viewer.user_id.as_ref())
             .cloned()

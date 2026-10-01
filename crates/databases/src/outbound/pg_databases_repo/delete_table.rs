@@ -1,7 +1,7 @@
 use super::*;
 use crate::domain::models::TableDeletion;
 
-impl PgDatabasesRepo {
+impl<Properties> PgDatabasesRepo<Properties> {
     pub(super) async fn delete_table_and_rows(
         &self,
         table: &Table,

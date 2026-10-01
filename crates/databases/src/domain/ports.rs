@@ -14,7 +14,7 @@ use models_properties::service::property_value::PropertyValue;
 
 use crate::domain::models::{
     AddColumnOptions, Awareness, Column, ColumnBinding, ColumnDetail, ColumnId, CreateColumn,
-    CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId,
+    CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId, FirstTable,
     InferColumnType, InferColumnTypeOutcome, ListedDatabase, PropertyDefinitionId,
     RenameColumnOutcome, RowId, RowRef, Table, TableId, TableMutationOutcome, TableVersion, Viewer,
 };
@@ -32,12 +32,12 @@ pub trait DatabasesRepo: Send + Sync + 'static {
     /// The error type returned by repository operations.
     type Error: std::error::Error + Send + Sync + 'static;
 
-    /// Create a database with its starter table, granting the creator owner
-    /// access.
+    /// Create a database with its first table and that table's title
+    /// column, granting the creator owner access, all or nothing.
     fn create_database(
         &self,
         command: &CreateDatabase,
-        starter_table_name: &str,
+        first_table: FirstTable,
     ) -> impl Future<Output = Result<Database, Self::Error>> + Send;
 
     /// A database and its tables, if it exists.

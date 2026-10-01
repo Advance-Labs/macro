@@ -19,6 +19,10 @@ use std::collections::HashMap;
 use models_databases::position::{PositionError, key_between, keys_between};
 
 use macro_user_id::user_id::MacroUserIdStr;
+use models_properties::DataType;
+use properties::domain::database_definition_writer::{
+    DatabaseDefinitionWriter, NewDatabaseDefinition,
+};
 use sqlx::{PgPool, Postgres, Transaction};
 
 use entity_access_db_utils::{AccessLevel, EntityAccessSourceType};
@@ -29,7 +33,7 @@ use crate::domain::models::{
 };
 use crate::domain::models::{
     Column, ColumnConfig, ColumnId, CreateColumn, CreateDatabase, CreateTable, Database,
-    DatabaseId, PropertyDefinitionId, RenameColumnOutcome, RowRef, Table, TableId,
+    DatabaseId, FirstTable, PropertyDefinitionId, RenameColumnOutcome, RowRef, Table, TableId,
     TableMutationOutcome, TableVersion,
 };
 use crate::domain::models::{
@@ -53,6 +57,9 @@ pub enum PgDatabasesRepoError {
     /// A stored card lane is neither empty nor an option id.
     #[error("stored card lane `{0}` is not an option id")]
     CorruptLane(String),
+    /// The properties domain refused or failed a write.
+    #[error("properties write failed: {0}")]
+    Properties(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
 /// A `database_tables` row, read by `query_as!` and mapped onto [`Table`].
@@ -130,20 +137,48 @@ pub(crate) async fn insert_owned_database(
     Ok(database)
 }
 
-/// [`DatabasesRepo`] backed by MacroDB.
-#[derive(Debug, Clone)]
-pub struct PgDatabasesRepo {
-    pool: PgPool,
+/// Insert a column placement bound to `definition_id` inside `transaction`.
+pub(crate) async fn insert_column(
+    transaction: &mut Transaction<'static, Postgres>,
+    column_id: ColumnId,
+    table_id: TableId,
+    definition_id: PropertyDefinitionId,
+    position: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "INSERT INTO database_columns (id, table_id, property_definition_id, position, infer_type) VALUES ($1, $2, $3, $4, false)",
+        column_id,
+        table_id,
+        definition_id,
+        position,
+    )
+    .execute(&mut **transaction)
+    .await?;
+    Ok(())
 }
 
-impl PgDatabasesRepo {
-    /// Create a repository over the given pool.
-    pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+/// [`DatabasesRepo`] backed by MacroDB; a new database's title definition is
+/// written through the properties domain, in the same transaction.
+#[derive(Debug, Clone)]
+pub struct PgDatabasesRepo<Properties> {
+    pool: PgPool,
+    properties: Properties,
+}
+
+impl<Properties> PgDatabasesRepo<Properties> {
+    /// Create a repository over the pool and the properties writer.
+    pub fn new(pool: PgPool, properties: Properties) -> Self {
+        Self { pool, properties }
     }
 }
 
-impl DatabasesRepo for PgDatabasesRepo {
+impl<Properties> DatabasesRepo for PgDatabasesRepo<Properties>
+where
+    Properties: DatabaseDefinitionWriter<Transaction = Transaction<'static, Postgres>>
+        + Send
+        + Sync
+        + 'static,
+{
     type Error = PgDatabasesRepoError;
 
     #[tracing::instrument(err, skip(self, table, column, views))]
@@ -203,16 +238,40 @@ impl DatabasesRepo for PgDatabasesRepo {
     async fn create_database(
         &self,
         command: &CreateDatabase,
-        starter_table_name: &str,
+        first_table: FirstTable,
     ) -> Result<Database, Self::Error> {
         let mut transaction = self.pool.begin().await?;
+        let table_id = macro_uuid::generate_uuid_v7();
         let database = insert_owned_database(
             &mut transaction,
             macro_uuid::generate_uuid_v7(),
             &command.name,
             command.owner_id.as_ref(),
+            table_id,
+            first_table.name,
+        )
+        .await?;
+        let title = self
+            .properties
+            .create_database_definition_in(
+                &mut transaction,
+                NewDatabaseDefinition {
+                    database_id: database.id,
+                    name: first_table.title_column,
+                    data_type: DataType::String,
+                    is_multi_select: false,
+                    specific_entity_type: None,
+                    options: &[],
+                },
+            )
+            .await
+            .map_err(|error| PgDatabasesRepoError::Properties(Box::new(error)))?;
+        insert_column(
+            &mut transaction,
             macro_uuid::generate_uuid_v7(),
-            starter_table_name,
+            table_id,
+            title.definition.id,
+            &position_after(None)?,
         )
         .await?;
         transaction.commit().await?;

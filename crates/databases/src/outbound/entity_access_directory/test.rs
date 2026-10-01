@@ -12,8 +12,10 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::*;
-use crate::domain::models::{CreateDatabase, Database};
+use crate::domain::models::{CreateDatabase, Database, FirstTable};
 use crate::domain::ports::DatabasesRepo;
+use properties::outbound::properties_pg_repo::PropertiesPgRepo;
+
 use crate::outbound::pg_databases_repo::PgDatabasesRepo;
 
 /// A user id no other test in this process shares, so the source-id cache
@@ -46,14 +48,17 @@ async fn insert_user(pool: &PgPool, user_id: &str) {
 }
 
 async fn create_database(pool: &PgPool, owner: &MacroUserIdStr<'static>) -> Database {
-    PgDatabasesRepo::new(pool.clone())
+    PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
         .create_database(
             &CreateDatabase {
                 name: "Offsite".to_string(),
                 owner_id: owner.clone(),
                 acting_bot: None,
             },
-            "Table 1",
+            FirstTable {
+                name: "Table 1",
+                title_column: "Name",
+            },
         )
         .await
         .expect("database should insert")

@@ -368,7 +368,8 @@ where
     Ok(Json(databases))
 }
 
-/// Create a database owned by the caller.
+/// Create a database owned by the caller; its first table, "Table 1", holds a
+/// "Name" text column.
 #[utoipa::path(
     post,
     tag = "databases",

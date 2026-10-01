@@ -1,6 +1,6 @@
 use super::*;
 
-impl PgDatabasesRepo {
+impl<Properties> PgDatabasesRepo<Properties> {
     pub(super) async fn rewrite_table_positions(
         &self,
         database_id: DatabaseId,

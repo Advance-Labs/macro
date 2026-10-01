@@ -1,6 +1,7 @@
 use macro_db_migrator::MACRO_DB_MIGRATIONS;
 use macro_user_id::cowlike::CowLike;
 use macro_user_id::user_id::MacroUserIdStr;
+use properties::outbound::properties_pg_repo::PropertiesPgRepo;
 use sqlx::PgPool;
 
 use super::*;
@@ -8,6 +9,7 @@ use uuid::Uuid;
 
 use crate::domain::models::Viewer;
 use crate::domain::models::{ColumnBinding, RowId};
+use crate::domain::ports::ColumnDefinitionStore;
 
 #[cfg(feature = "gateway")]
 mod apply_ops;
@@ -24,7 +26,7 @@ const USER: &str = "macro|databases-a@macro.com";
 
 /// Row statements the repository tests drive directly; the service writes
 /// rows only through the cell store's batches.
-impl PgDatabasesRepo {
+impl<Properties> PgDatabasesRepo<Properties> {
     async fn insert_rows(
         &self,
         table_id: TableId,
@@ -117,9 +119,9 @@ async fn insert_definition(pool: &PgPool, display_name: &str) -> Uuid {
 }
 
 /// Database → table → one bound string column, the fixture every test starts from.
-async fn fixture(pool: &PgPool) -> (PgDatabasesRepo, Table, Uuid) {
+async fn fixture(pool: &PgPool) -> (PgDatabasesRepo<PropertiesPgRepo>, Table, Uuid) {
     insert_user(pool).await;
-    let repo = PgDatabasesRepo::new(pool.clone());
+    let repo = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
 
     let database = repo
         .create_database(
@@ -128,7 +130,10 @@ async fn fixture(pool: &PgPool) -> (PgDatabasesRepo, Table, Uuid) {
                 owner_id: user(),
                 acting_bot: None,
             },
-            "Table 1",
+            FirstTable {
+                name: "Table 1",
+                title_column: "Name",
+            },
         )
         .await
         .expect("database should insert");
@@ -157,6 +162,54 @@ async fn fixture(pool: &PgPool) -> (PgDatabasesRepo, Table, Uuid) {
     .expect("column should insert");
 
     (repo, table, definition_id)
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn a_new_database_starts_with_a_table_holding_a_text_title_column(pool: PgPool) {
+    insert_user(&pool).await;
+    let repo = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
+    let database = repo
+        .create_database(
+            &CreateDatabase {
+                name: "Hiring".to_string(),
+                owner_id: user(),
+                acting_bot: None,
+            },
+            FirstTable {
+                name: "Table 1",
+                title_column: "Name",
+            },
+        )
+        .await
+        .unwrap();
+
+    let (_, tables) = repo.get_database(database.id).await.unwrap().unwrap();
+    assert_eq!(tables.len(), 1);
+    assert_eq!(tables[0].name, "Table 1");
+    let columns = repo.columns_for_tables(&[tables[0].id]).await.unwrap();
+    assert_eq!(columns.len(), 1);
+    assert_eq!(columns[0].display_name, None);
+    assert!(!columns[0].infer_type);
+    assert!(columns[0].config.is_none());
+    let definitions = crate::outbound::pg_definition_store::PgDefinitionStore::new(
+        PropertiesPgRepo::new(pool.clone()),
+    )
+    .definitions(&[columns[0].property_definition_id])
+    .await
+    .unwrap();
+    assert_eq!(definitions.len(), 1);
+    let title = &definitions[0].definition;
+    assert_eq!(title.display_name, "Name");
+    assert_eq!(title.data_type, models_properties::DataType::String);
+    assert!(!title.is_multi_select);
+    assert_eq!(title.specific_entity_type, None);
+    assert_eq!(
+        title.owner,
+        models_properties::shared::PropertyOwner::Database {
+            database_id: database.id
+        }
+    );
+    assert!(definitions[0].property_options.is_empty());
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
@@ -233,7 +286,7 @@ async fn rename_trash_and_restore_round_trip(pool: PgPool) {
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn renaming_trashing_or_restoring_a_missing_database_says_it_is_gone(pool: PgPool) {
-    let repo = PgDatabasesRepo::new(pool);
+    let repo = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool));
     let missing = Uuid::nil();
 
     assert!(!repo.rename_database(missing, "Winter").await.unwrap());
@@ -389,7 +442,7 @@ async fn delete_database_cascades_and_purges_access_rows(pool: PgPool) {
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn get_database_is_none_when_missing(pool: PgPool) {
     insert_user(&pool).await;
-    let repo = PgDatabasesRepo::new(pool);
+    let repo = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool));
 
     let missing = repo
         .get_database(macro_uuid::generate_uuid_v7())

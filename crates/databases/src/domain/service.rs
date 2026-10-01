@@ -38,7 +38,7 @@ use crate::domain::events::{
 };
 use crate::domain::models::{
     AddColumnOptions, Awareness, ColumnBinding, ColumnConfig, ColumnDetail, ColumnId, CreateColumn,
-    CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId,
+    CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId, FirstTable,
     InferColumnType, InferColumnTypeOutcome, ListedDatabase, NewOption, PropertyDefinitionId,
     RenameColumnOutcome, RowId, RowRef, SchemaError, SharingError, Table, TableDetail, TableId,
     TableMutationOutcome, TableVersion, Viewer,
@@ -54,8 +54,11 @@ use crate::domain::ports::{
     TableEventPublisher,
 };
 
-/// Name of the table every new database starts with.
-const STARTER_TABLE_NAME: &str = "Table 1";
+/// The table every new database starts with.
+const FIRST_TABLE: FirstTable = FirstTable {
+    name: "Table 1",
+    title_column: "Name",
+};
 /// Longest accepted database/table/column name.
 const MAX_NAME_LEN: usize = 200;
 /// Longest accepted select-option label.
@@ -492,7 +495,7 @@ where
         };
         let database = self
             .repository
-            .create_database(&command, STARTER_TABLE_NAME)
+            .create_database(&command, FIRST_TABLE)
             .await
             .map_err(repository_error)?;
         self.emit(DatabaseMacroEvent::created(DatabaseCreatedMetadata {

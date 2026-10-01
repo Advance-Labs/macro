@@ -41,7 +41,7 @@ async fn insert_statuses(pool: &PgPool, guests: &Guests, statuses: &[&str]) -> V
 }
 
 async fn row_positions(pool: &PgPool, table_id: Uuid) -> Vec<(Uuid, String)> {
-    PgDatabasesRepo::new(pool.clone())
+    PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
         .row_refs(table_id)
         .await
         .unwrap()
@@ -150,7 +150,7 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
     let [OpResult::ViewWritten { view: board, .. }] = results.as_slice() else {
         panic!("expected a view, got {results:?}");
     };
-    let repo = PgDatabasesRepo::new(pool.clone());
+    let repo = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
     assert_eq!(
         repo.views_for_tables(&[guests.table_id]).await.unwrap(),
         vec![*board.clone()]
@@ -294,7 +294,7 @@ async fn removing_a_column_rewrites_the_views_that_named_it(pool: PgPool) {
         .await
         .unwrap();
 
-    let stored = PgDatabasesRepo::new(pool.clone())
+    let stored = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
         .views_for_tables(&[guests.table_id])
         .await
         .unwrap();
@@ -312,7 +312,7 @@ async fn removing_a_column_rewrites_the_views_that_named_it(pool: PgPool) {
 }
 
 async fn version_of(pool: &PgPool, table_id: Uuid) -> TableVersion {
-    PgDatabasesRepo::new(pool.clone())
+    PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
         .table_versions(&[table_id])
         .await
         .unwrap()[&table_id]

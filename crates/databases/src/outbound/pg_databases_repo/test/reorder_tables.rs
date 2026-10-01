@@ -118,7 +118,10 @@ async fn an_order_naming_another_databases_table_is_a_conflict_and_changes_neith
                 owner_id: user(),
                 acting_bot: None,
             },
-            "Candidates",
+            FirstTable {
+                name: "Candidates",
+                title_column: "Name",
+            },
         )
         .await
         .unwrap();

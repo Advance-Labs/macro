@@ -68,7 +68,7 @@ pub(crate) async fn rebind_placement(
     Ok(changed.rows_affected() == 1 && rewrite_views(transaction, views).await?)
 }
 
-impl PgDatabasesRepo {
+impl<Properties> PgDatabasesRepo<Properties> {
     pub(super) async fn delete_column_placement(
         &self,
         table: &Table,

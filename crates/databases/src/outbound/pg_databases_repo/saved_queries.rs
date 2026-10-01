@@ -24,7 +24,7 @@ impl TryFrom<SavedQueryRecord> for SavedQuery {
     }
 }
 
-impl PgDatabasesRepo {
+impl<Properties> PgDatabasesRepo<Properties> {
     pub(super) async fn insert_query(
         &self,
         database_id: Option<DatabaseId>,

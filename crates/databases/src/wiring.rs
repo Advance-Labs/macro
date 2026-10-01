@@ -17,7 +17,7 @@ use crate::outbound::pg_definition_store::PgDefinitionStore;
 
 /// The service as every host builds it.
 pub type PgDatabasesService<Events, Broker, EntityAccess> = DatabasesServiceImpl<
-    PgDatabasesRepo,
+    PgDatabasesRepo<PropertiesPgRepo>,
     PgDefinitionStore<PropertiesPgRepo>,
     PgCellStore<PropertiesPgRepo>,
     Events,
@@ -39,7 +39,7 @@ where
     EntityAccess: EntityAccessService + AccessibleDatabases,
 {
     DatabasesServiceImpl::new(
-        PgDatabasesRepo::new(pool.clone()),
+        PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone())),
         PgDefinitionStore::new(PropertiesPgRepo::new(pool.clone())),
         PgCellStore::new(pool.clone(), PropertiesPgRepo::new(pool)),
         events,

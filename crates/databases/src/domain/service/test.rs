@@ -59,13 +59,19 @@ fn viewer(id: &'static str) -> Viewer {
     }
 }
 
-type Service =
-    DatabasesServiceImpl<FakeRepo, FakeDefs, FakeCells, FakeEvents, FakeAccess, RecordingBroker>;
+type Service = DatabasesServiceImpl<
+    FakeRepo,
+    FakeDefinitions,
+    FakeCells,
+    FakeEvents,
+    FakeAccess,
+    RecordingBroker,
+>;
 
 fn service(world: &Shared) -> Service {
     DatabasesServiceImpl::new(
         FakeRepo(world.clone()),
-        FakeDefs(world.clone()),
+        FakeDefinitions(world.clone()),
         FakeCells(world.clone()),
         FakeEvents(world.clone()),
         FakeAccess(world.clone()),
@@ -212,29 +218,19 @@ async fn seeded() -> Seeded {
         })
         .await
         .unwrap();
-    let table_id = {
-        let mut w = world.lock().unwrap();
-        w.tables[0].name = "Guests".into();
-        w.tables[0].id
+    // The database starts with its title column, Name.
+    let (table_id, name_column) = {
+        let mut world_state = world.lock().unwrap();
+        world_state.tables[0].name = "Guests".into();
+        let table_id = world_state.tables[0].id;
+        let name_column = world_state
+            .columns
+            .iter()
+            .find(|column| column.table_id == table_id)
+            .unwrap()
+            .id;
+        (table_id, name_column)
     };
-    let name_column = service
-        .create_column(
-            receipt::<EditAccessLevel>(database.id, OWNER, AccessLevel::Owner),
-            viewer(OWNER),
-            CreateColumn {
-                infer_type: false,
-                table_id,
-                binding: ColumnBinding::NewDefinition {
-                    name: "Name".into(),
-                    data_type: DataType::String,
-                    is_multi_select: false,
-                    options: vec![],
-                },
-                config: None,
-            },
-        )
-        .await
-        .unwrap();
     let status_column = service
         .create_column(
             receipt::<EditAccessLevel>(database.id, OWNER, AccessLevel::Owner),
@@ -357,11 +353,24 @@ async fn create_database_grants_owner_and_starter_table() {
             .is_empty()
     );
     {
-        let w = world.lock().unwrap();
-        assert_eq!(w.tables.len(), 1);
-        assert_eq!(w.tables[0].name, "Table 1");
-        assert_eq!(w.tables[0].database_id, db.id);
+        let world_state = world.lock().unwrap();
+        assert_eq!(world_state.tables.len(), 1);
+        assert_eq!(world_state.tables[0].name, "Table 1");
+        assert_eq!(world_state.tables[0].database_id, db.id);
     }
+    let detail = svc
+        .get_database(
+            receipt::<ViewAccessLevel>(db.id, OWNER, AccessLevel::Owner),
+            viewer(OWNER),
+        )
+        .await
+        .unwrap();
+    let columns = &detail.tables[0].columns;
+    assert_eq!(columns.len(), 1, "one request yields a usable table");
+    assert_eq!(columns[0].name(), "Name");
+    assert_eq!(columns[0].definition.definition.data_type, DataType::String);
+    assert!(!columns[0].definition.definition.is_multi_select);
+    assert!(!columns[0].shared_outside_database);
 
     let err = svc
         .create_database(CreateDatabase {
@@ -954,34 +963,24 @@ async fn grants_scope_writes_per_database() {
         })
         .await
         .unwrap();
-    let rooms = {
-        let mut w = world.lock().unwrap();
-        let table = w
+    let (rooms, room_name) = {
+        let mut world_state = world.lock().unwrap();
+        let table = world_state
             .tables
             .iter_mut()
-            .find(|t| t.database_id == venue.id)
+            .find(|table| table.database_id == venue.id)
             .unwrap();
         table.name = "Rooms".into();
-        table.id
+        let rooms = table.id;
+        // The database starts with its title column, Name.
+        let room_name = world_state
+            .columns
+            .iter()
+            .find(|column| column.table_id == rooms)
+            .unwrap()
+            .id;
+        (rooms, room_name)
     };
-    let room_name = svc
-        .create_column(
-            receipt::<EditAccessLevel>(venue.id, VIEWER, AccessLevel::Owner),
-            viewer(VIEWER),
-            CreateColumn {
-                infer_type: false,
-                table_id: rooms,
-                binding: ColumnBinding::NewDefinition {
-                    name: "Name".into(),
-                    data_type: DataType::String,
-                    is_multi_select: false,
-                    options: vec![],
-                },
-                config: None,
-            },
-        )
-        .await
-        .unwrap();
 
     // VIEWER writes their own database...
     let written = svc

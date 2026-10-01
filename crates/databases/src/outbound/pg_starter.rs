@@ -16,7 +16,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use crate::domain::models::Viewer;
 use crate::domain::starter::{DatabaseStarterRepo, StarterBlueprint, StarterDatabase};
 use crate::outbound::pg_databases_repo::{
-    PgDatabasesRepoError, insert_owned_database, rows, views,
+    PgDatabasesRepoError, insert_column, insert_owned_database, rows, views,
 };
 
 /// Starter seeding errors; any of them rolls the whole seed back.
@@ -163,14 +163,13 @@ where
         .into_iter()
         .zip(column_positions)
         {
-            sqlx::query!(
-                "INSERT INTO database_columns (id, table_id, property_definition_id, position, infer_type) VALUES ($1, $2, $3, $4, false)",
+            insert_column(
+                &mut transaction,
                 column_id,
                 table_id,
                 definition_id,
-                position,
+                &position,
             )
-            .execute(&mut *transaction)
             .await?;
         }
         rows::bump_table_version(&mut *transaction, table_id)

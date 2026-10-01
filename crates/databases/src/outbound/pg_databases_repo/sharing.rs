@@ -5,7 +5,7 @@ use models_permissions::share_permission::channel_share_permission::{
     ChannelSharePermission, UpdateChannelSharePermission,
 };
 
-impl DatabaseSharingRepo for PgDatabasesRepo {
+impl<Properties: Send + Sync + 'static> DatabaseSharingRepo for PgDatabasesRepo<Properties> {
     type Error = PgDatabasesRepoError;
 
     #[tracing::instrument(err, skip(self))]

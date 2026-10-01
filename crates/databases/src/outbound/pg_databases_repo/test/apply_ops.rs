@@ -94,26 +94,10 @@ pub(super) async fn guests(pool: &PgPool) -> Guests {
         })
         .await
         .unwrap();
-    let repo = PgDatabasesRepo::new(pool.clone());
+    let repo = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
     let table_id = repo.get_database(database.id).await.unwrap().unwrap().1[0].id;
-    let name = service
-        .create_column(
-            edit(database.id),
-            viewer(),
-            CreateColumn {
-                infer_type: false,
-                table_id,
-                binding: ColumnBinding::NewDefinition {
-                    name: "Name".into(),
-                    data_type: DataType::String,
-                    is_multi_select: false,
-                    options: vec![],
-                },
-                config: None,
-            },
-        )
-        .await
-        .unwrap();
+    // The database starts with its title column, Name.
+    let name = repo.columns_for_tables(&[table_id]).await.unwrap()[0].id;
     let status = service
         .create_column(
             edit(database.id),
@@ -173,7 +157,7 @@ pub(super) fn cells(pool: &PgPool) -> PgCellStore<PropertiesPgRepo> {
 }
 
 pub(super) async fn version(pool: &PgPool, table_id: Uuid) -> TableVersion {
-    PgDatabasesRepo::new(pool.clone())
+    PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
         .table_versions(&[table_id])
         .await
         .unwrap()[&table_id]
@@ -221,7 +205,7 @@ async fn ops_insert_update_and_delete_rows_bumping_the_table_once_per_request(po
         panic!("expected one insert of three rows, got {inserted:?}");
     };
     assert_eq!(*table_version, TableVersion(before.0 + 1));
-    let rows = PgDatabasesRepo::new(pool.clone())
+    let rows = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
         .row_refs(guests.table_id)
         .await
         .unwrap();
@@ -306,7 +290,7 @@ async fn ops_insert_update_and_delete_rows_bumping_the_table_once_per_request(po
         ]
     );
     assert_eq!(version(&pool, guests.table_id).await, after);
-    let rows = PgDatabasesRepo::new(pool.clone())
+    let rows = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
         .row_refs(guests.table_id)
         .await
         .unwrap();
@@ -447,7 +431,7 @@ async fn a_refused_op_leaves_nothing_of_its_batch_behind(pool: PgPool) {
         }
     );
     assert!(
-        PgDatabasesRepo::new(pool.clone())
+        PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
             .row_refs(guests.table_id)
             .await
             .unwrap()
@@ -478,7 +462,7 @@ async fn a_refused_op_leaves_nothing_of_its_batch_behind(pool: PgPool) {
         })
         .await
         .unwrap();
-    let elsewhere_table = PgDatabasesRepo::new(pool.clone())
+    let elsewhere_table = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
         .get_database(elsewhere.id)
         .await
         .unwrap()
@@ -510,7 +494,7 @@ async fn a_refused_op_leaves_nothing_of_its_batch_behind(pool: PgPool) {
     assert_eq!(refusal.op, 1);
     for table in [guests.table_id, elsewhere_table] {
         assert!(
-            PgDatabasesRepo::new(pool.clone())
+            PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
                 .row_refs(table)
                 .await
                 .unwrap()
@@ -554,14 +538,15 @@ async fn a_relation_cell_holds_rows_of_its_target_table(pool: PgPool) {
         )
         .await
         .unwrap();
-    let relation_definition = PgDatabasesRepo::new(pool.clone())
-        .columns_for_tables(&[guests.table_id])
-        .await
-        .unwrap()
-        .into_iter()
-        .find(|column| column.id == relation)
-        .unwrap()
-        .property_definition_id;
+    let relation_definition =
+        PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
+            .columns_for_tables(&[guests.table_id])
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|column| column.id == relation)
+            .unwrap()
+            .property_definition_id;
     let keynote = service
         .apply_ops(
             edit(guests.database_id),
@@ -744,7 +729,7 @@ async fn a_type_change_through_ops_converts_like_change_column_type(pool: PgPool
             trimmed_cells: 0,
         }]
     );
-    let number = PgDatabasesRepo::new(pool.clone())
+    let number = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
         .columns_for_tables(&[guests.table_id])
         .await
         .unwrap()

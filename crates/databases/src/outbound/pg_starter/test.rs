@@ -6,7 +6,7 @@ use properties::outbound::properties_pg_repo::PropertiesPgRepo;
 use super::*;
 use crate::{
     domain::{
-        models::CreateDatabase,
+        models::{CreateDatabase, FirstTable},
         ports::{CellStore, ColumnDefinitionStore, DatabasesRepo},
     },
     outbound::pg_databases_repo::PgDatabasesRepo,
@@ -57,7 +57,7 @@ async fn concurrent_starter_requests_create_one_complete_editable_example(pool: 
     let created = if left.created { left } else { right };
     let id = created.database_id.unwrap();
     let table = created.table_id.unwrap();
-    let data = PgDatabasesRepo::new(pool.clone());
+    let data = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
     let (database, tables) = data.get_database(id).await.unwrap().unwrap();
     assert_eq!(database.name, "Getting started");
     assert_eq!(tables.len(), 1);
@@ -157,7 +157,7 @@ async fn the_starter_stages_are_coloured_in_palette_order(pool: PgPool) {
         .ensure_starter(&viewer(), &StarterBlueprint::default())
         .await
         .unwrap();
-    let columns = PgDatabasesRepo::new(pool.clone())
+    let columns = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
         .columns_for_tables(&[created.table_id.unwrap()])
         .await
         .unwrap();
@@ -186,7 +186,7 @@ async fn starter_never_resurrects_trashed_or_deleted_content(pool: PgPool) {
         .unwrap()
         .database_id
         .unwrap();
-    let data = PgDatabasesRepo::new(pool.clone());
+    let data = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
     data.trash_database(id, chrono::Utc::now()).await.unwrap();
     let trashed = repo
         .ensure_starter(&viewer(), &StarterBlueprint::default())
@@ -207,7 +207,7 @@ async fn starter_never_resurrects_trashed_or_deleted_content(pool: PgPool) {
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn existing_database_skips_seed_even_after_it_is_deleted(pool: PgPool) {
     insert_user(&pool).await;
-    let data = PgDatabasesRepo::new(pool.clone());
+    let data = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
     let database = data
         .create_database(
             &CreateDatabase {
@@ -215,7 +215,10 @@ async fn existing_database_skips_seed_even_after_it_is_deleted(pool: PgPool) {
                 owner_id: viewer().user_id,
                 acting_bot: None,
             },
-            "Tasks",
+            FirstTable {
+                name: "Tasks",
+                title_column: "Name",
+            },
         )
         .await
         .unwrap();
@@ -258,7 +261,7 @@ async fn failed_dependency_rolls_back_content_and_marker_then_retry_succeeds(poo
             .is_err()
     );
     assert!(
-        PgDatabasesRepo::new(pool.clone())
+        PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
             .get_database(blueprint.database_id)
             .await
             .unwrap()
@@ -304,7 +307,7 @@ async fn a_failed_cell_rolls_back_the_whole_seed(pool: PgPool) {
             .is_err()
     );
     assert!(
-        PgDatabasesRepo::new(pool.clone())
+        PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
             .get_database(blueprint.database_id)
             .await
             .unwrap()

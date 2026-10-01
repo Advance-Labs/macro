@@ -257,7 +257,17 @@ pub struct RowRef {
     pub position: String,
 }
 
-/// Command to create a database (with one starter table).
+/// What a new database starts with: one table whose only column, a text
+/// column, holds each row's title.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FirstTable {
+    /// The table's display name.
+    pub name: &'static str,
+    /// The title column's display name.
+    pub title_column: &'static str,
+}
+
+/// Command to create a database (with its [`FirstTable`]).
 #[derive(Debug, Clone)]
 pub struct CreateDatabase {
     /// Display name.
