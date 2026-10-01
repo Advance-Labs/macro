@@ -1,7 +1,5 @@
-//! The one check of a view against its table: every id names something the
-//! table has, every test fits the column it tests, and a board is grouped by
-//! a single-select column. The server runs it on every view an op writes and
-//! the engine on every view it compiles.
+//! The one check of a view against its table, run by the server on every
+//! view an op writes and by the engine on every view it compiles.
 
 use std::collections::HashSet;
 

@@ -1,7 +1,5 @@
-//! Positions: the fractional keys tables, columns, rows, views and cards are
-//! ordered by. A key sorts as plain bytes, so text columns compare them under
-//! `COLLATE "C"` and the browser compares them as strings. The server and the
-//! browser (through the engine's wasm build) mint them with the same code.
+//! The fractional keys everything is ordered by; they sort as plain bytes
+//! (`COLLATE "C"`), and the browser mints them through the engine's wasm build.
 
 #[cfg(test)]
 mod test;

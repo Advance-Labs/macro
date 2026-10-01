@@ -1,8 +1,5 @@
-//! Views: saved, typed ways of looking at one table. A view's query keeps
-//! every row it shows whole (it filters and sorts one table, nothing more),
-//! and its layout says how they are drawn: as a table, or as a board of cards
-//! in lanes, one per option of a single-select column, in an order people
-//! arrange by hand. Every reference is by id, never by name.
+//! Views: saved, typed ways of looking at one table (a filter, a sort and a
+//! table or board layout), referring to everything by id.
 
 mod check;
 mod lanes;
