@@ -1,4 +1,5 @@
 import type {
+  CardPosition,
   ChangeColumnTypeRequest,
   ColumnCast,
   ColumnDetail,
@@ -22,6 +23,7 @@ import type { PropertyDefinition } from '../properties/property-definition';
 import { User } from '../users/user';
 import { DatabaseColumn } from './column';
 import { DatabaseTable } from './table';
+import type { DatabaseView } from './view';
 
 /** How a new column obtains the property definition behind it. */
 export type ColumnBinding =
@@ -220,6 +222,20 @@ export class Database extends MacroEntity<DatabaseDetail> {
         path: { id: this.id, table_id: column.table.id, column_id: column.id },
       }),
     );
+  }
+
+  /** Where a board view's cards sit: each placed card's lane and key. */
+  async viewPositions(view: DatabaseView): Promise<CardPosition[]> {
+    if (view.table.database.id !== this.id)
+      throw new MacroError(
+        `view ${view.id} does not belong to database ${this.id}`,
+      );
+    const { positions } = unwrap(
+      await this.client.storage.getDatabaseViewPositions({
+        path: { id: this.id, view_id: view.id },
+      }),
+    );
+    return positions;
   }
 
   /** Import text rows atomically. Keep requestId unchanged when retrying. */

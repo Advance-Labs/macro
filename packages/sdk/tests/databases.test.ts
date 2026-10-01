@@ -378,4 +378,69 @@ describe('Database', () => {
       `${host}/databases/${databaseId}/tables/${tableId}/columns/${columnId}/casts`,
     );
   });
+
+  test("exposes a table's views as handles and reads a board's card positions", async () => {
+    const viewId = '0198a4cc-e138-7670-a308-a6b766602706';
+    const rowId = '0198a4cc-e138-7670-a308-a6b766602707';
+    const optionId = '0198a4cc-e138-7670-a308-a6b766602708';
+    const board = {
+      id: viewId,
+      databaseId,
+      tableId,
+      name: 'By status',
+      position: 'a0',
+      query: { filter: null, sort: [] },
+      layout: {
+        kind: 'board',
+        groupBy: columnId,
+        cardFields: [columnId],
+        hideEmptyLanes: false,
+        lanes: [{ option: optionId }],
+      },
+      createdAt: '2026-10-01T00:00:00Z',
+      updatedAt: '2026-10-01T00:00:00Z',
+    };
+    const urls: string[] = [];
+    intercept((request) => {
+      urls.push(request.url);
+      if (request.url.endsWith('/positions'))
+        return Response.json({
+          positions: [{ row: rowId, lane: optionId, position: 'a0' }],
+        });
+      return Response.json({
+        database: { id: databaseId, name: 'Support' },
+        tables: [
+          {
+            table: { id: tableId, name: 'Tickets' },
+            columns: [],
+            views: [board],
+          },
+        ],
+      });
+    });
+    const table = await client().databases.byId(databaseId).table('Tickets');
+    if (!table) throw new Error('Missing fixture table');
+    const views = await table.views();
+    expect(views.map((view) => view.id)).toEqual([viewId]);
+    const view = views[0];
+    if (!view) throw new Error('Missing fixture view');
+    expect(view.table).toBe(table);
+    await expect(view.name()).resolves.toBe('By status');
+    await expect(view.position()).resolves.toBe('a0');
+    await expect(view.layout()).resolves.toEqual({
+      kind: 'board',
+      groupBy: columnId,
+      cardFields: [columnId],
+      hideEmptyLanes: false,
+      lanes: [{ option: optionId }],
+    });
+    await expect(view.query()).resolves.toEqual({ filter: null, sort: [] });
+    expect(await view.positions()).toEqual([
+      { row: rowId, lane: optionId, position: 'a0' },
+    ]);
+    expect(urls).toEqual([
+      `${host}/databases/${databaseId}`,
+      `${host}/databases/${databaseId}/views/${viewId}/positions`,
+    ]);
+  });
 });

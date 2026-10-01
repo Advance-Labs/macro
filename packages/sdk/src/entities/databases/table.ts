@@ -5,6 +5,7 @@ import type {
 import { MacroNotFoundError } from '../../utils';
 import { DatabaseColumn } from './column';
 import type { AddColumnOptions, Database } from './database';
+import { DatabaseView } from './view';
 
 /**
  * One table (tab) of a {@link Database}.
@@ -94,6 +95,12 @@ export class DatabaseTable {
   ): Promise<DatabaseTable> {
     await this.database.reorderColumns(this, columnIds, baseVersion);
     return this;
+  }
+
+  /** The table's views, in their order. */
+  async views(): Promise<DatabaseView[]> {
+    const { views } = await this.detail();
+    return views.map((view) => DatabaseView.byId(this, view.id));
   }
 
   /** Delete this table. See {@link Database.deleteTable}. */
