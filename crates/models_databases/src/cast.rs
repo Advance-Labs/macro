@@ -1,7 +1,5 @@
-//! Which column type changes keep a column's values: one rule, read as a
-//! table, that the type menu and its dry run, the agent tools, the
-//! `ChangeColumnType` op and `ALTER COLUMN … TYPE` all consult before
-//! touching data.
+//! Which column type changes keep a column's values: the one rule every
+//! type change consults before touching data.
 
 #[cfg(test)]
 mod test;
@@ -135,7 +133,7 @@ const NUMBER_TO_CHECKBOX: &str = "Numbers aren't checkboxes.";
 const NUMBER_TO_URL: &str = "Numbers aren't URLs.";
 const FROM_CHECKBOX: &str = "A checkbox can only become text.";
 const FROM_DATE: &str = "A date can only become text.";
-const FROM_URL: &str = "A URL can only become text or a select.";
+const FROM_URL: &str = "A URL can only become text or a single select.";
 
 /// What changing a column of kind `from` to kind `to` does to its values.
 pub fn cast(from: CastKind, to: CastKind, contents: Contents) -> Cast {
