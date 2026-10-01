@@ -97,6 +97,9 @@ use databases::inbound::axum_router::{
     CreateTableRequest as DatabaseCreateTableRequest,
     saved_queries::SaveQueryRequest as DatabaseSaveQueryRequest,
 };
+use databases::outbound::gateway_event_publisher::{
+    AwarenessRelay as DatabaseAwarenessRelay, TableChanged as DatabaseTableChanged,
+};
 use document_sub_type::DocumentSubType;
 use documents_hex::inbound::axum_router::{
     edit_document::EditDocumentResponse, get_branch_name::BranchNameResponse,
@@ -638,6 +641,8 @@ use utoipa::OpenApi;
             DatabaseCreateColumnResponse,
             DatabaseAddColumnOptionsRequest,
             DatabaseAwareness,
+            DatabaseAwarenessRelay,
+            DatabaseTableChanged,
             DatabaseApplyOpsRequest,
             DatabaseApplyOpsResponse,
             DatabaseOpRefusalResponse,
