@@ -69,8 +69,13 @@ function columnCell(
   return { kind: 'text', text: formatCellValue(column, value) };
 }
 
-/** A calendar day reads as the grid's date; a moment keeps its time. */
-function formatDateValue(value: string): string | undefined {
+/**
+ * A date value as the moment it names. A calendar day, stored as UTC
+ * midnight, is that day at local midnight so it reads as the same day.
+ */
+export function resultDate(
+  value: string
+): { date: Date; calendarDay: boolean } | undefined {
   const parts =
     /^\d{4}-\d{2}-\d{2}(?:T(\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(Z|[+-]\d{2}:?\d{2})?)?$/.exec(
       value
@@ -81,10 +86,21 @@ function formatDateValue(value: string): string | undefined {
   const utc = !zone || zone === 'Z' || /^[+-]00:?00$/.test(zone);
   if (midnight && (utc || !time)) {
     const day = fromCellDate(value);
-    return day ? formatDate(day) : undefined;
+    return day ? { date: day, calendarDay: true } : undefined;
   }
-  const moment = new Date(value);
-  return `${formatDate(moment)}, ${formatTime(moment)}`;
+  return { date: new Date(value), calendarDay: false };
+}
+
+/** A calendar day reads as the grid's date; a moment keeps its time. */
+export function formatResultDate(date: Date, calendarDay: boolean): string {
+  return calendarDay
+    ? formatDate(date)
+    : `${formatDate(date)}, ${formatTime(date)}`;
+}
+
+function formatDateValue(value: string): string | undefined {
+  const parsed = resultDate(value);
+  return parsed && formatResultDate(parsed.date, parsed.calendarDay);
 }
 
 function linkedRecords(value: string | number): ResultCell {

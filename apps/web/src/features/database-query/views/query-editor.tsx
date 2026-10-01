@@ -27,8 +27,10 @@ import {
   queryFocusTable,
 } from '../core/query';
 import {
+  chartModeLabel,
   isChartMode,
   prepareQueryChart,
+  QUERY_CHART_MODES,
   type QueryDisplayMode,
 } from '../core/query-chart';
 import { questionExamples } from '../core/question-examples';
@@ -75,18 +77,13 @@ export function QueryEditor(props: {
         ? [{ value: 'scalar' as const, label: 'Inline answer' }]
         : []),
       { value: 'table' as const, label: 'Result table' },
-      ...(['bar', 'line', 'pie'] as const)
-        .filter(
-          (mode) =>
-            mode === displayMode() ||
-            !!prepareQueryChart(current, mode, composer.presentation().chart)
-              .data ||
-            !!prepareQueryChart(current, mode).data
-        )
-        .map((value) => ({
-          value,
-          label: `${value[0].toUpperCase()}${value.slice(1)} chart`,
-        })),
+      ...QUERY_CHART_MODES.filter(
+        (mode) =>
+          mode === displayMode() ||
+          !!prepareQueryChart(current, mode, composer.presentation().chart)
+            .data ||
+          !!prepareQueryChart(current, mode).data
+      ).map((value) => ({ value, label: chartModeLabel(value) })),
     ];
   };
   const savedChart = () => {

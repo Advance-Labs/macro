@@ -3,7 +3,12 @@ import { Select } from '@ui/components/Select';
 import { createMemo, createSignal, Show } from 'solid-js';
 import { AppAnswerDisplay } from '../answer-display';
 import { isScalarAnswer, type QueryAnswer } from '../core/query';
-import { prepareQueryChart, type QueryDisplayMode } from '../core/query-chart';
+import {
+  chartModeLabel,
+  prepareQueryChart,
+  QUERY_CHART_MODES,
+  type QueryDisplayMode,
+} from '../core/query-chart';
 import { QueryResults } from './query-results';
 
 /** A shared result surface for native chat and MCP database tools. */
@@ -23,12 +28,9 @@ export function ToolQueryResults(props: {
       ? [{ value: 'scalar' as const, label: 'Answer' }]
       : []),
     { value: 'table' as const, label: 'Table' },
-    ...(['bar', 'line', 'pie'] as const)
-      .filter((mode) => prepareQueryChart(props.answer, mode).data)
-      .map((value) => ({
-        value,
-        label: `${value[0].toUpperCase()}${value.slice(1)} chart`,
-      })),
+    ...QUERY_CHART_MODES.filter(
+      (mode) => prepareQueryChart(props.answer, mode).data
+    ).map((value) => ({ value, label: chartModeLabel(value) })),
   ]);
   const display = () =>
     modes().find(

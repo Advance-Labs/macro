@@ -66,10 +66,7 @@ export function QueryResults(props: {
       >
         {(data) => (
           <>
-            <QueryChart
-              data={data()}
-              mode={isChartMode(props.displayMode) ? props.displayMode : 'bar'}
-            />
+            <QueryChart data={data()} />
             <details class="mt-3 text-xs text-ink-muted">
               <summary class="rounded outline-none focus-visible:ring-2 focus-visible:ring-ink/25">
                 View data

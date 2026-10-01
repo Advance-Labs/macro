@@ -1,5 +1,5 @@
 import { showDatabaseSql } from '@core/constant/featureFlags';
-import { fireEvent, render, screen } from '@solidjs/testing-library';
+import { fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { QueryAnswer } from '../core/query';
@@ -47,7 +47,7 @@ describe('live database charts', () => {
     expect(rendered.getByRole('alert').textContent).toBe('Answer unavailable');
     rendered.unmount();
   });
-  it('renders a saved chart as a block and updates when fresh permitted results arrive', () => {
+  it('renders a saved chart as a block and updates when fresh permitted results arrive', async () => {
     const result = (value: number): QueryAnswer => ({
       results: [
         {
@@ -79,9 +79,17 @@ describe('live database charts', () => {
     expect(
       rendered.getByRole('img', { name: 'Count by Status. Bar chart.' })
     ).toBeTruthy();
-    expect(rendered.getByRole('img').textContent).toContain('5');
+    // Plot's element reports the scales it drew.
+    const valueDomain = () =>
+      rendered
+        .getByRole('img')
+        .querySelector<
+          SVGSVGElement & { scale(name: 'x'): { domain: number[] } }
+        >('svg.macro-chart')
+        ?.scale('x').domain;
+    await waitFor(() => expect(valueDomain()).toEqual([0, 5]));
     setAnswer(result(8));
-    expect(rendered.getByRole('img').textContent).toContain('8');
+    await waitFor(() => expect(valueDomain()).toEqual([0, 8]));
     expect(rendered.getByRole('button', { name: 'Details' })).toBeTruthy();
     rendered.unmount();
   });
