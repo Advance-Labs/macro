@@ -1,4 +1,6 @@
+import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { EntityIcon as CoreEntityIcon } from '@core/component/EntityIcon';
+import { enableDatabases } from '@core/constant/featureFlags';
 import { useUserId } from '@core/context/user';
 import { tryMacroId, useDisplayName } from '@core/user';
 import { useAllProperties } from '@property/editor/hooks/useAllProperties';
@@ -20,7 +22,10 @@ import {
   runWithOwner,
   useContext,
 } from 'solid-js';
-import type { ActivityDisplayEntityType } from '../core/event';
+import type {
+  ActivityDisplayEntityType,
+  ActivityEntityType,
+} from '../core/event';
 
 /** Resolved display for one referenced entity: name, icon, and link target. */
 export type EntityDisplay = {
@@ -65,6 +70,11 @@ export type ActivityContext = {
    * it loads, `Bot` when the list does not know the id or failed to load.
    */
   botName: (botId: Accessor<string>) => Accessor<string | undefined>;
+  /**
+   * Whether rows about this kind of entity show at all. Reactive: a kind
+   * behind a rollout appears once its flag resolves on.
+   */
+  entityTypeShown: (entityType: ActivityEntityType) => boolean;
   /** Name, icon, and link target for a referenced entity. */
   entityDisplay: (
     entityId: Accessor<string>,
@@ -94,6 +104,7 @@ function appActivityContext(): ActivityContext {
   const owner = getOwner();
   let bots: ReturnType<typeof useBotsQuery> | undefined;
   const botsQuery = () => (bots ??= runWithOwner(owner, useBotsQuery));
+  const databasesFlag = useFeatureFlag(enableDatabases);
   return {
     graphql: () => getGraphqlSoupClient(),
     currentUserId: () => userId() ?? '',
@@ -111,6 +122,8 @@ function appActivityContext(): ActivityContext {
       if (!list || list.isPending) return undefined;
       return getBotDisplayName(`bot|${id}`, undefined, list.data ?? []);
     },
+    entityTypeShown: (entityType) =>
+      entityType !== 'database' || databasesFlag().enabled,
     entityDisplay: (entityId, entityType) => {
       const type = entityType();
       if (type === 'DATABASE') {
