@@ -13,40 +13,36 @@ use crate::view::compile_view;
 const SAM: &str = "macro|sam@example.com";
 const ANA: &str = "macro|o'neil@example.com";
 
-fn condition(column: uuid::Uuid, test: FilterTest) -> FilterNode {
-    FilterNode::Condition(FilterCondition { column, test })
-}
-
 /// The view `compile_view`'s literal test compiles.
 fn open_work() -> ViewQuery {
     ViewQuery {
         filter: Some(FilterGroup {
             conjunction: Conjunction::And,
             conditions: vec![
-                condition(
-                    SUMMARY_PLACEMENT,
-                    FilterTest::Text {
+                FilterNode::Condition(FilterCondition {
+                    column: SUMMARY_PLACEMENT,
+                    test: FilterTest::Text {
                         operator: TextOperator::Contains,
                         value: "50%_off\\".into(),
                     },
-                ),
+                }),
                 FilterNode::Group(FilterGroup {
                     conjunction: Conjunction::Or,
                     conditions: vec![
-                        condition(
-                            STATUS_PLACEMENT,
-                            FilterTest::Options {
+                        FilterNode::Condition(FilterCondition {
+                            column: STATUS_PLACEMENT,
+                            test: FilterTest::Options {
                                 operator: SetOperator::IsNoneOf,
                                 options: vec![WONT_DO],
                             },
-                        ),
-                        condition(
-                            POINTS_PLACEMENT,
-                            FilterTest::Number {
+                        }),
+                        FilterNode::Condition(FilterCondition {
+                            column: POINTS_PLACEMENT,
+                            test: FilterTest::Number {
                                 operator: NumberOperator::GreaterThan,
                                 value: 3.0,
                             },
-                        ),
+                        }),
                     ],
                 }),
             ],
@@ -93,13 +89,13 @@ fn quotes_in_names_and_values_are_doubled() {
         ViewQuery {
             filter: Some(FilterGroup {
                 conjunction: Conjunction::And,
-                conditions: vec![condition(
-                    SPEC_PLACEMENT,
-                    FilterTest::Text {
+                conditions: vec![FilterNode::Condition(FilterCondition {
+                    column: SPEC_PLACEMENT,
+                    test: FilterTest::Text {
                         operator: TextOperator::Is,
                         value: "it's".into(),
                     },
-                )],
+                })],
             }),
             sort: vec![],
         },
@@ -123,118 +119,124 @@ fn the_sql_compiles_back_to_the_view_query() {
     let every_test = FilterGroup {
         conjunction: Conjunction::Or,
         conditions: vec![
-            condition(
-                DUE_PLACEMENT,
-                FilterTest::Presence {
+            FilterNode::Condition(FilterCondition {
+                column: DUE_PLACEMENT,
+                test: FilterTest::Presence {
                     operator: PresenceOperator::IsEmpty,
                 },
-            ),
-            condition(
-                LABELS_PLACEMENT,
-                FilterTest::Presence {
+            }),
+            FilterNode::Condition(FilterCondition {
+                column: LABELS_PLACEMENT,
+                test: FilterTest::Presence {
                     operator: PresenceOperator::IsNotEmpty,
                 },
-            ),
-            condition(
-                SUMMARY_PLACEMENT,
-                FilterTest::Text {
+            }),
+            FilterNode::Condition(FilterCondition {
+                column: SUMMARY_PLACEMENT,
+                test: FilterTest::Text {
                     operator: TextOperator::IsNot,
                     value: "Won't \"ship\"".into(),
                 },
-            ),
-            condition(
-                SUMMARY_PLACEMENT,
-                FilterTest::Text {
+            }),
+            FilterNode::Condition(FilterCondition {
+                column: SUMMARY_PLACEMENT,
+                test: FilterTest::Text {
                     operator: TextOperator::DoesNotContain,
                     value: "a_b%c\\".into(),
                 },
-            ),
-            condition(
-                SPEC_PLACEMENT,
-                FilterTest::Text {
+            }),
+            FilterNode::Condition(FilterCondition {
+                column: SPEC_PLACEMENT,
+                test: FilterTest::Text {
                     operator: TextOperator::StartsWith,
                     value: "https://".into(),
                 },
-            ),
-            condition(
-                SUMMARY_PLACEMENT,
-                FilterTest::Text {
+            }),
+            FilterNode::Condition(FilterCondition {
+                column: SUMMARY_PLACEMENT,
+                test: FilterTest::Text {
                     operator: TextOperator::EndsWith,
                     value: "'".into(),
                 },
-            ),
-            condition(
-                POINTS_PLACEMENT,
-                FilterTest::Number {
+            }),
+            FilterNode::Condition(FilterCondition {
+                column: POINTS_PLACEMENT,
+                test: FilterTest::Number {
                     operator: NumberOperator::IsNot,
                     value: -2.75,
                 },
-            ),
-            condition(
-                POINTS_PLACEMENT,
-                FilterTest::Number {
+            }),
+            FilterNode::Condition(FilterCondition {
+                column: POINTS_PLACEMENT,
+                test: FilterTest::Number {
                     operator: NumberOperator::LessThanOrEqual,
                     value: 0.1,
                 },
-            ),
-            condition(
-                POINTS_PLACEMENT,
-                FilterTest::Number {
+            }),
+            FilterNode::Condition(FilterCondition {
+                column: POINTS_PLACEMENT,
+                test: FilterTest::Number {
                     operator: NumberOperator::Is,
                     value: 1e21,
                 },
-            ),
-            condition(
-                DUE_PLACEMENT,
-                FilterTest::Date {
+            }),
+            FilterNode::Condition(FilterCondition {
+                column: DUE_PLACEMENT,
+                test: FilterTest::Date {
                     operator: DateOperator::OnOrAfter,
                     value: due,
                 },
-            ),
-            condition(BLOCKED_PLACEMENT, FilterTest::Checkbox { checked: false }),
-            condition(BLOCKED_PLACEMENT, FilterTest::Checkbox { checked: true }),
-            condition(
-                STATUS_PLACEMENT,
-                FilterTest::Options {
+            }),
+            FilterNode::Condition(FilterCondition {
+                column: BLOCKED_PLACEMENT,
+                test: FilterTest::Checkbox { checked: false },
+            }),
+            FilterNode::Condition(FilterCondition {
+                column: BLOCKED_PLACEMENT,
+                test: FilterTest::Checkbox { checked: true },
+            }),
+            FilterNode::Condition(FilterCondition {
+                column: STATUS_PLACEMENT,
+                test: FilterTest::Options {
                     operator: SetOperator::IsAnyOf,
                     options: vec![WONT_DO, TODO],
                 },
-            ),
-            condition(
-                LABELS_PLACEMENT,
-                FilterTest::Options {
+            }),
+            FilterNode::Condition(FilterCondition {
+                column: LABELS_PLACEMENT,
+                test: FilterTest::Options {
                     operator: SetOperator::HasAll,
                     options: vec![BUG, FEATURE],
                 },
-            ),
-            condition(
-                LABELS_PLACEMENT,
-                FilterTest::Options {
+            }),
+            FilterNode::Condition(FilterCondition {
+                column: LABELS_PLACEMENT,
+                test: FilterTest::Options {
                     operator: SetOperator::HasNone,
                     options: vec![FEATURE],
                 },
-            ),
-            condition(
-                ASSIGNEE_PLACEMENT,
-                FilterTest::Entities {
+            }),
+            FilterNode::Condition(FilterCondition {
+                column: ASSIGNEE_PLACEMENT,
+                test: FilterTest::Entities {
                     operator: SetOperator::IsNoneOf,
                     entities: vec![SAM.into(), ANA.into()],
                 },
-            ),
-            condition(
-                REVIEWERS_PLACEMENT,
-                FilterTest::Entities {
+            }),
+            FilterNode::Condition(FilterCondition {
+                column: REVIEWERS_PLACEMENT,
+                test: FilterTest::Entities {
                     operator: SetOperator::HasAny,
                     entities: vec![SAM.into(), ANA.into()],
                 },
-            ),
-            condition(
-                PARENT_PLACEMENT,
-                FilterTest::Entities {
+            }),
+            FilterNode::Condition(FilterCondition {
+                column: PARENT_PLACEMENT,
+                test: FilterTest::Entities {
                     operator: SetOperator::IsAnyOf,
                     entities: vec!["00000000-0000-0000-0000-000000000101".into()],
                 },
-            ),
+            }),
         ],
     };
     let nested = FilterGroup {
@@ -243,35 +245,38 @@ fn the_sql_compiles_back_to_the_view_query() {
             FilterNode::Group(FilterGroup {
                 conjunction: Conjunction::And,
                 conditions: vec![
-                    condition(BLOCKED_PLACEMENT, FilterTest::Checkbox { checked: true }),
+                    FilterNode::Condition(FilterCondition {
+                        column: BLOCKED_PLACEMENT,
+                        test: FilterTest::Checkbox { checked: true },
+                    }),
                     FilterNode::Group(FilterGroup {
                         conjunction: Conjunction::Or,
                         conditions: vec![
-                            condition(
-                                LABELS_PLACEMENT,
-                                FilterTest::Options {
+                            FilterNode::Condition(FilterCondition {
+                                column: LABELS_PLACEMENT,
+                                test: FilterTest::Options {
                                     operator: SetOperator::HasAny,
                                     options: vec![BUG, FEATURE],
                                 },
-                            ),
-                            condition(
-                                SUMMARY_PLACEMENT,
-                                FilterTest::Text {
+                            }),
+                            FilterNode::Condition(FilterCondition {
+                                column: SUMMARY_PLACEMENT,
+                                test: FilterTest::Text {
                                     operator: TextOperator::Contains,
                                     value: "or".into(),
                                 },
-                            ),
+                            }),
                         ],
                     }),
                 ],
             }),
-            condition(
-                STATUS_PLACEMENT,
-                FilterTest::Options {
+            FilterNode::Condition(FilterCondition {
+                column: STATUS_PLACEMENT,
+                test: FilterTest::Options {
                     operator: SetOperator::IsNoneOf,
                     options: vec![DOING],
                 },
-            ),
+            }),
         ],
     };
     let views = vec![
@@ -300,13 +305,13 @@ fn the_sql_compiles_back_to_the_view_query() {
         ViewQuery {
             filter: Some(FilterGroup {
                 conjunction: Conjunction::And,
-                conditions: vec![condition(
-                    SUMMARY_PLACEMENT,
-                    FilterTest::Text {
+                conditions: vec![FilterNode::Condition(FilterCondition {
+                    column: SUMMARY_PLACEMENT,
+                    test: FilterTest::Text {
                         operator: TextOperator::IsNot,
                         value: "x".into(),
                     },
-                )],
+                })],
             }),
             sort: vec![],
         },

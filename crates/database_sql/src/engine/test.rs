@@ -22,54 +22,90 @@ const SAM: &str = "macro|sam@example.com";
 const ANA: &str = "macro|ana@example.com";
 const KIM: &str = "macro|kim@example.com";
 
-fn task(id: Uuid, title: &str, priority: Uuid, assignees: &[&str], deal: Option<Uuid>) -> Row {
-    let mut cells = HashMap::from([
-        (TITLE, Cell::Text(title.into())),
-        (PRIORITY, Cell::Options(vec![priority])),
-        (
-            ASSIGNEES,
-            Cell::Entities(assignees.iter().map(|id| id.to_string()).collect()),
-        ),
-    ]);
-    if let Some(deal) = deal {
-        cells.insert(DEAL, Cell::Entities(vec![deal.to_string()]));
-    }
-    Row {
-        id,
-        position: None,
-        cells,
-    }
-}
-
 /// Sam and Ana share the high-priority login fix; Kim has a low one; the
 /// idle task has no one and no deal.
 fn tasks() -> Vec<Row> {
     vec![
-        task(FIX_LOGIN, "Fix login", HIGH, &[SAM, ANA], Some(ACME)),
-        task(WRITE_DOCS, "Write docs", LOW, &[KIM], None),
-        task(SHIP_IT, "Ship it", HIGH, &[SAM], Some(GLOBEX)),
-        task(IDLE, "Idle", HIGH, &[], None),
+        Row {
+            id: FIX_LOGIN,
+            position: None,
+            cells: HashMap::from([
+                (TITLE, Cell::Text("Fix login".into())),
+                (PRIORITY, Cell::Options(vec![HIGH])),
+                (ASSIGNEES, Cell::Entities(vec![SAM.into(), ANA.into()])),
+                (DEAL, Cell::Entities(vec![ACME.to_string()])),
+            ]),
+        },
+        Row {
+            id: WRITE_DOCS,
+            position: None,
+            cells: HashMap::from([
+                (TITLE, Cell::Text("Write docs".into())),
+                (PRIORITY, Cell::Options(vec![LOW])),
+                (ASSIGNEES, Cell::Entities(vec![KIM.into()])),
+            ]),
+        },
+        Row {
+            id: SHIP_IT,
+            position: None,
+            cells: HashMap::from([
+                (TITLE, Cell::Text("Ship it".into())),
+                (PRIORITY, Cell::Options(vec![HIGH])),
+                (ASSIGNEES, Cell::Entities(vec![SAM.into()])),
+                (DEAL, Cell::Entities(vec![GLOBEX.to_string()])),
+            ]),
+        },
+        Row {
+            id: IDLE,
+            position: None,
+            cells: HashMap::from([
+                (TITLE, Cell::Text("Idle".into())),
+                (PRIORITY, Cell::Options(vec![HIGH])),
+                (ASSIGNEES, Cell::Entities(vec![])),
+            ]),
+        },
     ]
 }
 
-/// A person as the driver would key them for the second relation.
-fn person(id: &str, name: &str, email: &str) -> Row {
-    Row {
-        id: Uuid::new_v5(&Uuid::NAMESPACE_OID, id.as_bytes()),
-        position: None,
-        cells: HashMap::from([
-            (column_key(1, PEOPLE_ID), Cell::Entities(vec![id.into()])),
-            (column_key(1, PEOPLE_NAME), Cell::Text(name.into())),
-            (column_key(1, PEOPLE_EMAIL), Cell::Text(email.into())),
-        ]),
-    }
-}
-
+/// People as the driver would key them for the second relation.
 fn people() -> Vec<Row> {
     vec![
-        person(SAM, "Sam", "sam@example.com"),
-        person(ANA, "Ana", "ana@example.com"),
-        person(KIM, "Kim", "kim@example.com"),
+        Row {
+            id: Uuid::new_v5(&Uuid::NAMESPACE_OID, SAM.as_bytes()),
+            position: None,
+            cells: HashMap::from([
+                (column_key(1, PEOPLE_ID), Cell::Entities(vec![SAM.into()])),
+                (column_key(1, PEOPLE_NAME), Cell::Text("Sam".into())),
+                (
+                    column_key(1, PEOPLE_EMAIL),
+                    Cell::Text("sam@example.com".into()),
+                ),
+            ]),
+        },
+        Row {
+            id: Uuid::new_v5(&Uuid::NAMESPACE_OID, ANA.as_bytes()),
+            position: None,
+            cells: HashMap::from([
+                (column_key(1, PEOPLE_ID), Cell::Entities(vec![ANA.into()])),
+                (column_key(1, PEOPLE_NAME), Cell::Text("Ana".into())),
+                (
+                    column_key(1, PEOPLE_EMAIL),
+                    Cell::Text("ana@example.com".into()),
+                ),
+            ]),
+        },
+        Row {
+            id: Uuid::new_v5(&Uuid::NAMESPACE_OID, KIM.as_bytes()),
+            position: None,
+            cells: HashMap::from([
+                (column_key(1, PEOPLE_ID), Cell::Entities(vec![KIM.into()])),
+                (column_key(1, PEOPLE_NAME), Cell::Text("Kim".into())),
+                (
+                    column_key(1, PEOPLE_EMAIL),
+                    Cell::Text("kim@example.com".into()),
+                ),
+            ]),
+        },
     ]
 }
 
@@ -161,10 +197,6 @@ fn soup_matches(expr: &Expr<PropertiesLiteral>, row: &Row) -> bool {
     }
 }
 
-fn text(value: &str) -> Option<Cell> {
-    Some(Cell::Text(value.into()))
-}
-
 #[test]
 fn emails_of_people_with_high_priority_tasks() {
     let (outcome, requests) = drive(
@@ -185,7 +217,10 @@ fn emails_of_people_with_high_priority_tasks() {
     // Sam is on two high tasks; DISTINCT keeps one. Kim's task is low.
     assert_eq!(
         outcome.rows,
-        vec![vec![text("ana@example.com")], vec![text("sam@example.com")]]
+        vec![
+            vec![Some(Cell::Text("ana@example.com".into()))],
+            vec![Some(Cell::Text("sam@example.com".into()))]
+        ]
     );
     assert_eq!(outcome.row_ids, vec![FIX_LOGIN, FIX_LOGIN]);
     assert_eq!(outcome.read_tables, vec![TASKS, PEOPLE_TABLE]);
@@ -224,10 +259,22 @@ fn without_distinct_each_assignment_is_a_row() {
     assert_eq!(
         outcome.rows,
         vec![
-            vec![text("Fix login"), text("Ana")],
-            vec![text("Fix login"), text("Sam")],
-            vec![text("Ship it"), text("Sam")],
-            vec![text("Write docs"), text("Kim")],
+            vec![
+                Some(Cell::Text("Fix login".into())),
+                Some(Cell::Text("Ana".into()))
+            ],
+            vec![
+                Some(Cell::Text("Fix login".into())),
+                Some(Cell::Text("Sam".into()))
+            ],
+            vec![
+                Some(Cell::Text("Ship it".into())),
+                Some(Cell::Text("Sam".into()))
+            ],
+            vec![
+                Some(Cell::Text("Write docs".into())),
+                Some(Cell::Text("Kim".into()))
+            ],
         ]
     );
     assert_eq!(
@@ -247,9 +294,13 @@ fn left_join_on_row_id_keeps_tasks_without_a_deal() {
     assert_eq!(
         outcome.rows,
         vec![
-            vec![text("Fix login"), text("Acme"), Some(Cell::Number(12000.0))],
-            vec![text("Idle"), None, None],
-            vec![text("Write docs"), None, None],
+            vec![
+                Some(Cell::Text("Fix login".into())),
+                Some(Cell::Text("Acme".into())),
+                Some(Cell::Number(12000.0))
+            ],
+            vec![Some(Cell::Text("Idle".into())), None, None],
+            vec![Some(Cell::Text("Write docs".into())), None, None],
         ]
     );
     // The hint names the row id (no property) with the deals the tasks link.
@@ -317,7 +368,13 @@ fn a_joined_tables_rows_arrive_keyed_by_definition_and_the_engine_keys_them() {
             other => panic!("unexpected {other:?}"),
         },
     );
-    assert_eq!(outcome.rows, vec![vec![text("Acme"), text("Sam")]]);
+    assert_eq!(
+        outcome.rows,
+        vec![vec![
+            Some(Cell::Text("Acme".into())),
+            Some(Cell::Text("Sam".into()))
+        ]]
+    );
     assert_eq!(
         requests[1].needs,
         vec![column_key(1, NAME), crate::resolve::row_id_key(PEOPLE)]
@@ -351,7 +408,13 @@ fn a_definition_shared_by_both_tables_keeps_its_two_columns_apart() {
             other => panic!("unexpected {other:?}"),
         },
     );
-    assert_eq!(outcome.rows, vec![vec![text("Acme"), text("Sam")]]);
+    assert_eq!(
+        outcome.rows,
+        vec![vec![
+            Some(Cell::Text("Acme".into())),
+            Some(Cell::Text("Sam".into()))
+        ]]
+    );
     assert_eq!(
         outcome
             .columns
@@ -414,7 +477,15 @@ fn pages_continue_by_cursor_and_ids_must_match() {
 #[test]
 fn a_relation_past_the_cap_is_truncated_and_the_next_still_fetched() {
     let many: Vec<Row> = (0..ROW_CAP + 5)
-        .map(|i| task(Uuid::from_u128(0x1000 + i as u128), "t", HIGH, &[SAM], None))
+        .map(|index| Row {
+            id: Uuid::from_u128(0x1000 + index as u128),
+            position: None,
+            cells: HashMap::from([
+                (TITLE, Cell::Text("t".into())),
+                (PRIORITY, Cell::Options(vec![HIGH])),
+                (ASSIGNEES, Cell::Entities(vec![SAM.into()])),
+            ]),
+        })
         .collect();
     let (mut engine, step) = Engine::start(
         &catalog(),
@@ -455,7 +526,10 @@ fn a_relation_past_the_cap_is_truncated_and_the_next_still_fetched() {
         panic!("expected the answer");
     };
     assert!(outcome.truncated);
-    assert_eq!(outcome.rows, vec![vec![text("sam@example.com")]]);
+    assert_eq!(
+        outcome.rows,
+        vec![vec![Some(Cell::Text("sam@example.com".into()))]]
+    );
 }
 
 #[test]
@@ -533,7 +607,10 @@ fn run_answers_a_join_through_a_row_source() {
     .unwrap();
     assert_eq!(
         outcome.rows,
-        vec![vec![text("sam@example.com")], vec![text("ana@example.com")]]
+        vec![
+            vec![Some(Cell::Text("sam@example.com".into()))],
+            vec![Some(Cell::Text("ana@example.com".into()))]
+        ]
     );
 }
 
@@ -566,9 +643,9 @@ fn order_by_row_position_lists_rows_in_table_order_whatever_the_fetch_order() {
     assert_eq!(
         outcome.rows,
         vec![
-            vec![text("Acme")],
-            vec![text("Globex")],
-            vec![text("Initech")]
+            vec![Some(Cell::Text("Acme".into()))],
+            vec![Some(Cell::Text("Globex".into()))],
+            vec![Some(Cell::Text("Initech".into()))]
         ]
     );
     assert_eq!(outcome.row_ids, vec![ACME, GLOBEX, SHIP_IT]);
@@ -620,10 +697,10 @@ fn row_position_breaks_ties_after_the_sorts() {
     assert_eq!(
         outcome.rows,
         vec![
-            vec![text("Globex")],
-            vec![text("Hooli")],
-            vec![text("Acme")],
-            vec![text("Initech")],
+            vec![Some(Cell::Text("Globex".into()))],
+            vec![Some(Cell::Text("Hooli".into()))],
+            vec![Some(Cell::Text("Acme".into()))],
+            vec![Some(Cell::Text("Initech".into()))],
         ]
     );
     assert_eq!(outcome.row_ids, vec![GLOBEX, IDLE, ACME, SHIP_IT]);
@@ -667,9 +744,9 @@ fn without_order_by_rows_come_back_in_table_order_whatever_the_fetch_order() {
     assert_eq!(
         outcome.rows,
         vec![
-            vec![text("Acme")],
-            vec![text("Globex")],
-            vec![text("Initech")]
+            vec![Some(Cell::Text("Acme".into()))],
+            vec![Some(Cell::Text("Globex".into()))],
+            vec![Some(Cell::Text("Initech".into()))]
         ]
     );
     assert_eq!(outcome.row_ids, vec![ACME, GLOBEX, SHIP_IT]);
@@ -685,9 +762,9 @@ fn groups_without_order_by_come_in_the_table_order_of_their_first_rows() {
     assert_eq!(
         outcome.rows,
         vec![
-            vec![text("Acme"), Some(Cell::Number(1.0))],
-            vec![text("Globex"), Some(Cell::Number(1.0))],
-            vec![text("Initech"), Some(Cell::Number(1.0))],
+            vec![Some(Cell::Text("Acme".into())), Some(Cell::Number(1.0))],
+            vec![Some(Cell::Text("Globex".into())), Some(Cell::Number(1.0))],
+            vec![Some(Cell::Text("Initech".into())), Some(Cell::Number(1.0))],
         ]
     );
 }
@@ -730,8 +807,11 @@ fn a_selected_row_position_is_a_text_column_named_row_position() {
     assert_eq!(
         outcome.rows,
         vec![
-            vec![text("Acme"), text("000000000001")],
-            vec![text("Globex"), None],
+            vec![
+                Some(Cell::Text("Acme".into())),
+                Some(Cell::Text("000000000001".into()))
+            ],
+            vec![Some(Cell::Text("Globex".into())), None],
         ]
     );
 }

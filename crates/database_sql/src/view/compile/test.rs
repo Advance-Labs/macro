@@ -17,10 +17,6 @@ use crate::test_support::*;
 const SAM: &str = "macro|sam@example.com";
 const ANA: &str = "macro|ana@example.com";
 
-fn view(query: ViewQuery) -> DatabaseView {
-    issues_view(query, ViewLayout::Table { columns: vec![] })
-}
-
 #[test]
 fn a_nested_view_is_the_select_its_sql_resolves_to() {
     let view = DatabaseView {
@@ -641,16 +637,19 @@ fn every_test_compiles_to_its_filter() {
 
     for (column, test, expected) in cases {
         let compiled = compile_view(
-            &view(ViewQuery {
-                filter: Some(FilterGroup {
-                    conjunction: Conjunction::And,
-                    conditions: vec![FilterNode::Condition(FilterCondition {
-                        column,
-                        test: test.clone(),
-                    })],
-                }),
-                sort: vec![],
-            }),
+            &issues_view(
+                ViewQuery {
+                    filter: Some(FilterGroup {
+                        conjunction: Conjunction::And,
+                        conditions: vec![FilterNode::Condition(FilterCondition {
+                            column,
+                            test: test.clone(),
+                        })],
+                    }),
+                    sort: vec![],
+                },
+                ViewLayout::Table { columns: vec![] },
+            ),
             &issues_catalog(),
         )
         .unwrap();
@@ -715,10 +714,13 @@ fn groups_collapse_and_empty_groups_keep_every_row() {
 
     for (case, filter, expected) in cases {
         let compiled = compile_view(
-            &view(ViewQuery {
-                filter,
-                sort: vec![],
-            }),
+            &issues_view(
+                ViewQuery {
+                    filter,
+                    sort: vec![],
+                },
+                ViewLayout::Table { columns: vec![] },
+            ),
             &issues_catalog(),
         )
         .unwrap();
@@ -728,7 +730,11 @@ fn groups_collapse_and_empty_groups_keep_every_row() {
 
 #[test]
 fn an_unsorted_view_keeps_the_table_order() {
-    let compiled = compile_view(&view(ViewQuery::default()), &issues_catalog()).unwrap();
+    let compiled = compile_view(
+        &issues_view(ViewQuery::default(), ViewLayout::Table { columns: vec![] }),
+        &issues_catalog(),
+    )
+    .unwrap();
 
     assert_eq!(
         compiled.order_by,
@@ -743,38 +749,44 @@ fn an_unsorted_view_keeps_the_table_order() {
 fn a_view_that_does_not_fit_its_table_is_refused() {
     let in_another_table = DatabaseView {
         table_id: DEALS,
-        ..view(ViewQuery::default())
+        ..issues_view(ViewQuery::default(), ViewLayout::Table { columns: vec![] })
     };
     assert_eq!(
         compile_view(&in_another_table, &issues_catalog()),
         Err(ViewProblem::UnknownTable { table: DEALS })
     );
 
-    let by_definition = view(ViewQuery {
-        filter: None,
-        sort: vec![SortKey {
-            column: SUMMARY,
-            direction: SortDirection::Ascending,
-        }],
-    });
+    let by_definition = issues_view(
+        ViewQuery {
+            filter: None,
+            sort: vec![SortKey {
+                column: SUMMARY,
+                direction: SortDirection::Ascending,
+            }],
+        },
+        ViewLayout::Table { columns: vec![] },
+    );
     assert_eq!(
         compile_view(&by_definition, &issues_catalog()),
         Err(ViewProblem::UnknownColumn { column: SUMMARY })
     );
 
-    let misfit = view(ViewQuery {
-        filter: Some(FilterGroup {
-            conjunction: Conjunction::And,
-            conditions: vec![FilterNode::Condition(FilterCondition {
-                column: POINTS_PLACEMENT,
-                test: FilterTest::Text {
-                    operator: TextOperator::Is,
-                    value: "5".into(),
-                },
-            })],
-        }),
-        sort: vec![],
-    });
+    let misfit = issues_view(
+        ViewQuery {
+            filter: Some(FilterGroup {
+                conjunction: Conjunction::And,
+                conditions: vec![FilterNode::Condition(FilterCondition {
+                    column: POINTS_PLACEMENT,
+                    test: FilterTest::Text {
+                        operator: TextOperator::Is,
+                        value: "5".into(),
+                    },
+                })],
+            }),
+            sort: vec![],
+        },
+        ViewLayout::Table { columns: vec![] },
+    );
     assert_eq!(
         compile_view(&misfit, &issues_catalog()),
         Err(ViewProblem::TestDoesNotFit {

@@ -18,22 +18,6 @@ fn select(sql: &str) -> SelectQuery {
     }
 }
 
-fn option(column: Uuid, option: Uuid) -> Expr<PropertiesLiteral> {
-    Expr::Literal(PropertiesLiteral {
-        property_definition_id: column,
-        entity_type: None,
-        value: PropertyMatchValue::SelectOption(option),
-    })
-}
-
-fn entity(column: Uuid, id: &str) -> Expr<PropertiesLiteral> {
-    Expr::Literal(PropertiesLiteral {
-        property_definition_id: column,
-        entity_type: None,
-        value: PropertyMatchValue::EntityRef(EntityRefId::new(id.into()).unwrap()),
-    })
-}
-
 #[test]
 fn pushable_and_residual_conjuncts_are_divided() {
     let plan = split(
@@ -54,7 +38,11 @@ fn pushable_and_residual_conjuncts_are_divided() {
                 },
                 query: GqlQuery::Soup {
                     table: DEALS,
-                    property_filter: Some(option(STAGE, WON)),
+                    property_filter: Some(Expr::Literal(PropertiesLiteral {
+                        property_definition_id: STAGE,
+                        entity_type: None,
+                        value: PropertyMatchValue::SelectOption(WON)
+                    })),
                     key_hint: None,
                 },
                 needs: vec![NAME, AMOUNT],
@@ -149,10 +137,31 @@ fn in_lists_nested_ors_and_has_push_as_one_expression() {
                     table: DEALS,
                     property_filter: Some(Expr::and(
                         Expr::or(
-                            Expr::or(option(STAGE, WON), option(STAGE, LEAD)),
-                            entity(OWNER, "macro|sam@example.com"),
+                            Expr::or(
+                                Expr::Literal(PropertiesLiteral {
+                                    property_definition_id: STAGE,
+                                    entity_type: None,
+                                    value: PropertyMatchValue::SelectOption(WON)
+                                }),
+                                Expr::Literal(PropertiesLiteral {
+                                    property_definition_id: STAGE,
+                                    entity_type: None,
+                                    value: PropertyMatchValue::SelectOption(LEAD)
+                                })
+                            ),
+                            Expr::Literal(PropertiesLiteral {
+                                property_definition_id: OWNER,
+                                entity_type: None,
+                                value: PropertyMatchValue::EntityRef(
+                                    EntityRefId::new("macro|sam@example.com".into()).unwrap()
+                                )
+                            }),
                         ),
-                        option(TAGS, VIP),
+                        Expr::Literal(PropertiesLiteral {
+                            property_definition_id: TAGS,
+                            entity_type: None,
+                            value: PropertyMatchValue::SelectOption(VIP)
+                        }),
                     )),
                     key_hint: None,
                 },
@@ -254,7 +263,13 @@ fn count_per_select_group_needs_no_rows() {
                 },
                 query: GqlQuery::GroupSoup {
                     table: DEALS,
-                    property_filter: Some(entity(OWNER, "macro|sam@example.com")),
+                    property_filter: Some(Expr::Literal(PropertiesLiteral {
+                        property_definition_id: OWNER,
+                        entity_type: None,
+                        value: PropertyMatchValue::EntityRef(
+                            EntityRefId::new("macro|sam@example.com".into()).unwrap()
+                        )
+                    })),
                     group_by: STAGE,
                 },
                 needs: vec![],
@@ -307,7 +322,18 @@ fn any_other_aggregate_or_a_residual_filter_fetches_rows_and_folds() {
                 },
                 query: GqlQuery::Soup {
                     table: DEALS,
-                    property_filter: Some(Expr::or(option(STAGE, WON), option(STAGE, LEAD))),
+                    property_filter: Some(Expr::or(
+                        Expr::Literal(PropertiesLiteral {
+                            property_definition_id: STAGE,
+                            entity_type: None,
+                            value: PropertyMatchValue::SelectOption(WON)
+                        }),
+                        Expr::Literal(PropertiesLiteral {
+                            property_definition_id: STAGE,
+                            entity_type: None,
+                            value: PropertyMatchValue::SelectOption(LEAD)
+                        })
+                    )),
                     key_hint: None,
                 },
                 needs: vec![OWNER, AMOUNT, CLOSED_AT],
@@ -433,7 +459,11 @@ fn each_relation_gets_its_own_pushdown_and_needs() {
                 },
                 query: GqlQuery::Soup {
                     table: TASKS,
-                    property_filter: Some(option(PRIORITY, HIGH)),
+                    property_filter: Some(Expr::Literal(PropertiesLiteral {
+                        property_definition_id: PRIORITY,
+                        entity_type: None,
+                        value: PropertyMatchValue::SelectOption(HIGH)
+                    })),
                     key_hint: None,
                 },
                 needs: vec![ASSIGNEES, DEAL],
@@ -456,7 +486,11 @@ fn each_relation_gets_its_own_pushdown_and_needs() {
                 // The pushed literal names the property, not the key.
                 query: GqlQuery::Soup {
                     table: DEALS,
-                    property_filter: Some(option(STAGE, WON)),
+                    property_filter: Some(Expr::Literal(PropertiesLiteral {
+                        property_definition_id: STAGE,
+                        entity_type: None,
+                        value: PropertyMatchValue::SelectOption(WON)
+                    })),
                     key_hint: None,
                 },
                 needs: vec![deals_amount, row_id_key(DEALS)],

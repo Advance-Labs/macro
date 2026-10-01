@@ -16,15 +16,6 @@ const FIFTH: Uuid = Uuid::from_u128(0x105);
 const SIXTH: Uuid = Uuid::from_u128(0x106);
 const NOT_AN_OPTION: Uuid = Uuid::from_u128(0x999);
 
-fn board_layout(lanes: Vec<Lane>, hide_empty_lanes: bool) -> ViewLayout {
-    ViewLayout::Board {
-        group_by: STATUS_PLACEMENT,
-        lanes,
-        card_fields: vec![SUMMARY_PLACEMENT],
-        hide_empty_lanes,
-    }
-}
-
 /// The rows a view's read found, in its order: each row's status cell.
 fn outcome(rows: &[(Uuid, Option<Cell>)]) -> Outcome {
     Outcome {
@@ -154,7 +145,15 @@ fn cards_sit_in_their_lanes_in_hand_arranged_order() {
 
 #[test]
 fn unpositioned_cards_follow_positioned_ones_by_row_id() {
-    let view = issues_view(ViewQuery::default(), board_layout(vec![], false));
+    let view = issues_view(
+        ViewQuery::default(),
+        ViewLayout::Board {
+            group_by: STATUS_PLACEMENT,
+            lanes: vec![],
+            card_fields: vec![SUMMARY_PLACEMENT],
+            hide_empty_lanes: false,
+        },
+    );
     let rows = outcome(&[
         (THIRD, Some(Cell::Options(vec![TODO]))),
         (SECOND, Some(Cell::Options(vec![TODO]))),
@@ -196,7 +195,12 @@ fn a_sorted_view_keeps_the_read_order_in_every_lane() {
                 direction: SortDirection::Descending,
             }],
         },
-        board_layout(vec![], false),
+        ViewLayout::Board {
+            group_by: STATUS_PLACEMENT,
+            lanes: vec![],
+            card_fields: vec![SUMMARY_PLACEMENT],
+            hide_empty_lanes: false,
+        },
     );
     let rows = outcome(&[
         (THIRD, Some(Cell::Options(vec![TODO]))),
@@ -306,7 +310,15 @@ fn listed_lanes_come_first_and_keep_their_hidden_flag() {
     ];
 
     for (case, lanes, hide_empty_lanes, expected) in cases {
-        let view = issues_view(ViewQuery::default(), board_layout(lanes, hide_empty_lanes));
+        let view = issues_view(
+            ViewQuery::default(),
+            ViewLayout::Board {
+                group_by: STATUS_PLACEMENT,
+                lanes,
+                card_fields: vec![SUMMARY_PLACEMENT],
+                hide_empty_lanes,
+            },
+        );
         let rows = outcome(&[(FIRST, Some(Cell::Options(vec![TODO])))]);
 
         let board = board(&view, &issues_catalog(), &rows, &[]).unwrap();
@@ -325,7 +337,15 @@ fn listed_lanes_come_first_and_keep_their_hidden_flag() {
 
 #[test]
 fn an_empty_options_cell_is_a_card_without_an_option() {
-    let view = issues_view(ViewQuery::default(), board_layout(vec![], false));
+    let view = issues_view(
+        ViewQuery::default(),
+        ViewLayout::Board {
+            group_by: STATUS_PLACEMENT,
+            lanes: vec![],
+            card_fields: vec![SUMMARY_PLACEMENT],
+            hide_empty_lanes: false,
+        },
+    );
     let rows = outcome(&[(FIRST, Some(Cell::Options(vec![])))]);
 
     let board = board(&view, &issues_catalog(), &rows, &[]).unwrap();
@@ -350,7 +370,15 @@ fn only_a_board_view_of_a_visible_table_lays_out() {
 
     let elsewhere = models_databases::views::DatabaseView {
         table_id: DEALS,
-        ..issues_view(ViewQuery::default(), board_layout(vec![], false))
+        ..issues_view(
+            ViewQuery::default(),
+            ViewLayout::Board {
+                group_by: STATUS_PLACEMENT,
+                lanes: vec![],
+                card_fields: vec![SUMMARY_PLACEMENT],
+                hide_empty_lanes: false,
+            },
+        )
     };
     assert_eq!(
         board(&elsewhere, &issues_catalog(), &outcome(&[]), &[]),

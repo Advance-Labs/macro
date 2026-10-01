@@ -26,7 +26,28 @@ fn grouped_aggregate_with_mixed_where() {
             source: TableSource::Database,
         }],
         joins: vec![],
-        bindings: vec![],
+        bindings: vec![
+            Binding {
+                key: OWNER,
+                relation: 0,
+                column: Some(OWNER),
+            },
+            Binding {
+                key: AMOUNT,
+                relation: 0,
+                column: Some(AMOUNT),
+            },
+            Binding {
+                key: STAGE,
+                relation: 0,
+                column: Some(STAGE),
+            },
+            Binding {
+                key: CLOSED_AT,
+                relation: 0,
+                column: Some(CLOSED_AT),
+            },
+        ],
         labels: vec![],
         items: vec![
             SelectItem::Column(OWNER),
@@ -70,22 +91,7 @@ fn grouped_aggregate_with_mixed_where() {
         offset: None,
     });
 
-    assert_eq!(
-        without_bindings(resolve(&catalog(), parse(sql).unwrap()).unwrap()),
-        expected
-    );
-}
-
-/// The bindings are the scope's bookkeeping; the literal tests check the
-/// rest.
-fn without_bindings(query: Query) -> Query {
-    match query {
-        Query::Select(select) => Query::Select(SelectQuery {
-            bindings: vec![],
-            ..select
-        }),
-        other => other,
-    }
+    assert_eq!(resolve(&catalog(), parse(sql).unwrap()).unwrap(), expected);
 }
 
 #[test]
@@ -111,7 +117,48 @@ fn star_expands_and_every_column_kind_types_its_literal() {
             source: TableSource::Database,
         }],
         joins: vec![],
-        bindings: vec![],
+        bindings: vec![
+            Binding {
+                key: NAME,
+                relation: 0,
+                column: Some(NAME),
+            },
+            Binding {
+                key: AMOUNT,
+                relation: 0,
+                column: Some(AMOUNT),
+            },
+            Binding {
+                key: STAGE,
+                relation: 0,
+                column: Some(STAGE),
+            },
+            Binding {
+                key: CLOSED_AT,
+                relation: 0,
+                column: Some(CLOSED_AT),
+            },
+            Binding {
+                key: OWNER,
+                relation: 0,
+                column: Some(OWNER),
+            },
+            Binding {
+                key: TAGS,
+                relation: 0,
+                column: Some(TAGS),
+            },
+            Binding {
+                key: DONE,
+                relation: 0,
+                column: Some(DONE),
+            },
+            Binding {
+                key: WEBSITE,
+                relation: 0,
+                column: Some(WEBSITE),
+            },
+        ],
         labels: vec![],
         items: vec![
             SelectItem::Column(NAME),
@@ -176,15 +223,13 @@ fn star_expands_and_every_column_kind_types_its_literal() {
     });
 
     assert_eq!(
-        without_bindings(
-            resolve(
-                &Catalog {
-                    tables: catalog().tables.into_iter().take(2).collect(),
-                },
-                parse(sql).unwrap()
-            )
-            .unwrap()
-        ),
+        resolve(
+            &Catalog {
+                tables: catalog().tables.into_iter().take(2).collect(),
+            },
+            parse(sql).unwrap()
+        )
+        .unwrap(),
         expected
     );
 }
@@ -201,7 +246,18 @@ fn order_by_aggregate_resolves_to_its_select_item() {
             source: TableSource::Database,
         }],
         joins: vec![],
-        bindings: vec![],
+        bindings: vec![
+            Binding {
+                key: STAGE,
+                relation: 0,
+                column: Some(STAGE),
+            },
+            Binding {
+                key: CLOSED_AT,
+                relation: 0,
+                column: Some(CLOSED_AT),
+            },
+        ],
         labels: vec![],
         items: vec![
             SelectItem::Column(STAGE),
@@ -226,10 +282,7 @@ fn order_by_aggregate_resolves_to_its_select_item() {
         offset: None,
     });
 
-    assert_eq!(
-        without_bindings(resolve(&catalog(), parse(sql).unwrap()).unwrap()),
-        expected
-    );
+    assert_eq!(resolve(&catalog(), parse(sql).unwrap()).unwrap(), expected);
 }
 
 #[test]
