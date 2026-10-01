@@ -72,19 +72,30 @@ fn apart_from_the_catalog(types: Types) -> Types {
 /// `specta_serde::Format` refuses every `skip_serializing_if`, because an
 /// omission on write alone would make the two directions differ. A field
 /// that is also `default` may be absent both ways, so it is one optional
-/// field and the attribute says nothing more; drop it there. A field without
-/// `default` keeps it, and the export fails on it.
+/// field and the attribute says nothing more; drop it there, in a struct or
+/// in an enum variant. A field without `default` keeps it, and the export
+/// fails on it.
 fn symmetric_omissions(types: Types) -> Types {
     types.map(|mut named| {
-        if let Some(DataType::Struct(structure)) = &mut named.ty
-            && let Fields::Named(fields) = &mut structure.fields
-        {
-            for (_, field) in &mut fields.fields {
-                if field.attributes.contains_key(FIELD_DEFAULT) {
-                    field.attributes.remove(FIELD_SKIP_SERIALIZING_IF);
+        match &mut named.ty {
+            Some(DataType::Struct(structure)) => drop_symmetric_omissions(&mut structure.fields),
+            Some(DataType::Enum(enumeration)) => {
+                for (_, variant) in &mut enumeration.variants {
+                    drop_symmetric_omissions(&mut variant.fields);
                 }
             }
+            _ => {}
         }
         named
     })
+}
+
+fn drop_symmetric_omissions(fields: &mut Fields) {
+    if let Fields::Named(fields) = fields {
+        for (_, field) in &mut fields.fields {
+            if field.attributes.contains_key(FIELD_DEFAULT) {
+                field.attributes.remove(FIELD_SKIP_SERIALIZING_IF);
+            }
+        }
+    }
 }

@@ -171,6 +171,18 @@ impl<P: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore for PgDefinit
         Ok(created)
     }
 
+    #[tracing::instrument(skip(self, viewer), err)]
+    async fn editable_definitions(
+        &self,
+        viewer: &Viewer,
+        ids: &[PropertyDefinitionId],
+    ) -> Result<Vec<PropertyDefinitionId>, Self::Err> {
+        self.properties
+            .get_editable_property_definition_ids(ids, viewer.user_id.as_ref())
+            .await
+            .map_err(PgDefinitionStoreError::Properties)
+    }
+
     #[tracing::instrument(skip(self), err)]
     async fn definitions(
         &self,

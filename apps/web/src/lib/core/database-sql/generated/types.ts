@@ -226,6 +226,46 @@ export type DatabaseOp =
        *  first.
        */
       clearInvalid?: boolean;
+    }
+  /**
+   *  Relabel or recolour one option of a select or tag column. Every cell
+   *  holding it keeps it. A column bound to a property shared outside the
+   *  database changes wherever that property is used, so it takes the
+   *  right to edit that property.
+   */
+  | {
+      kind: 'update_option';
+      /**  The table. */
+      table: string;
+      /**  The select or tag column. */
+      column: string;
+      /**  The option. */
+      option: string;
+      /**
+       *  Its new label; left out, it keeps its own. Labels are unique
+       *  within a column, ignoring case.
+       */
+      label?: string | null;
+      /**
+       *  Its new colour, or `null` to clear it; left out, it keeps its own.
+       *  A tag option always has one.
+       */
+      color?: OptionColor | null;
+    }
+  /**
+   *  Remove one option of a select or tag column, and take it out of every
+   *  cell holding it: a single-valued cell is emptied, a multi-valued one
+   *  keeps its other options. Like [`DatabaseOp::UpdateOption`], an option
+   *  of a shared property goes everywhere it is used.
+   */
+  | {
+      kind: 'delete_option';
+      /**  The table. */
+      table: string;
+      /**  The select or tag column. */
+      column: string;
+      /**  The option. */
+      option: string;
     };
 
 /**  One database and its tables, in order. */
@@ -447,7 +487,43 @@ export type OpResult =
       clearedCells: number;
       /**  Cells that held several values and kept only their first. */
       trimmedCells: number;
+    }
+  /**  What an option change or removal did. */
+  | {
+      kind: 'option_changed';
+      /**  The table's version after the change. */
+      tableVersion: TableVersion;
     };
+
+/**
+ *  A colour select and tag options take, from the palette the tag picker
+ *  renders.
+ */
+export type OptionColor =
+  /**  Red (`#E5484D`). */
+  | 'red'
+  /**  Tomato (`#E54D2E`). */
+  | 'tomato'
+  /**  Orange (`#F76B15`). */
+  | 'orange'
+  /**  Amber (`#FFB224`). */
+  | 'amber'
+  /**  Yellow (`#F5D90A`). */
+  | 'yellow'
+  /**  Green (`#46A758`). */
+  | 'green'
+  /**  Teal (`#12A594`). */
+  | 'teal'
+  /**  Blue (`#0091FF`). */
+  | 'blue'
+  /**  Indigo (`#3E63DD`). */
+  | 'indigo'
+  /**  Purple (`#8E4EC6`). */
+  | 'purple'
+  /**  Pink (`#E93D82`). */
+  | 'pink'
+  /**  Gray (`#889096`). */
+  | 'gray';
 
 /**  A select option, by its id or by its label. */
 export type OptionRef =

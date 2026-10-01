@@ -305,6 +305,80 @@ pub async fn update_property_option(
     }
 }
 
+/// Changes one option of a definition in place: its value when `value` is
+/// given, its colour (`None` clears it) when `color` is.
+pub async fn patch_property_option(
+    executor: impl PgExecutor<'_>,
+    property_definition_id: Uuid,
+    option_id: Uuid,
+    value: Option<PropertyOptionValue>,
+    color: Option<Option<String>>,
+) -> anyhow::Result<UpdatePropertyOptionOutcome> {
+    let (number_value, string_value) = value
+        .as_ref()
+        .map_or((None, None), PropertyOptionValue::to_db_values);
+    let result = sqlx::query_as!(
+        db::PropertyOption,
+        r#"
+        UPDATE property_options
+        SET number_value = CASE WHEN $3 THEN $4 ELSE number_value END,
+            string_value = CASE WHEN $3 THEN $5 ELSE string_value END,
+            color = CASE WHEN $6 THEN $7 ELSE color END,
+            updated_at = NOW()
+        WHERE id = $2 AND property_definition_id = $1
+        RETURNING
+            id,
+            property_definition_id,
+            display_order,
+            number_value,
+            string_value,
+            color,
+            created_at,
+            updated_at
+        "#,
+        property_definition_id,
+        option_id,
+        value.is_some(),
+        number_value,
+        string_value,
+        color.is_some(),
+        color.flatten(),
+    )
+    .fetch_optional(executor)
+    .await;
+
+    match result {
+        Ok(Some(row)) => Ok(UpdatePropertyOptionOutcome::Updated(row.try_into()?)),
+        Ok(None) => Ok(UpdatePropertyOptionOutcome::NotFound),
+        Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
+            Ok(UpdatePropertyOptionOutcome::DuplicateValue)
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Empties the cells of database rows a definition's option removal left
+/// with no option, the way clearing a cell does, so a single-select cell
+/// reads as empty rather than as an empty list.
+pub async fn clear_emptied_database_row_values(
+    executor: impl PgExecutor<'_>,
+    property_definition_id: Uuid,
+) -> anyhow::Result<()> {
+    sqlx::query!(
+        r#"
+        UPDATE entity_properties
+        SET values = 'null'::jsonb, updated_at = NOW()
+        WHERE property_definition_id = $1
+          AND entity_type = 'DATABASE_ROW'
+          AND values -> 'value' = '[]'::jsonb
+        "#,
+        property_definition_id,
+    )
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
 /// Deletes a property option and strips its id from every entity value that
 /// references it, atomically. Without the cleanup a stored value keeps the
 /// dead id and a later set-value that echoes the full id list fails option
@@ -325,7 +399,7 @@ pub async fn delete_property_option(
 
 /// Deletes the given options in one statement each for the value cleanup and
 /// the delete. Returns how many options were deleted.
-async fn delete_options_in_tx(
+pub(crate) async fn delete_options_in_tx(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     property_definition_id: Uuid,
     option_ids: &[Uuid],

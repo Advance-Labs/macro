@@ -529,8 +529,10 @@ impl OpsSink for Api {
                         "deleting tasks is not wired here; trash it in the app".into(),
                     ));
                 }
-                DatabaseOp::ChangeColumnType { .. } => {
-                    return Err(WriteError("task properties keep their types here".into()));
+                _ => {
+                    return Err(WriteError(
+                        "only row writes are wired here; change the schema in the app".into(),
+                    ));
                 }
             };
             results.push(OpResult::RowsWritten {

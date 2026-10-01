@@ -6,6 +6,8 @@
  */
 import type { DatabaseOpOneOf } from './databaseOpOneOf';
 import type { DatabaseOpOneOfFive } from './databaseOpOneOfFive';
+import type { DatabaseOpOneOfNine } from './databaseOpOneOfNine';
+import type { DatabaseOpOneOfOnetwo } from './databaseOpOneOfOnetwo';
 import type { DatabaseOpOneOfSeven } from './databaseOpOneOfSeven';
 import type { DatabaseOpOneOfThree } from './databaseOpOneOfThree';
 
@@ -17,4 +19,6 @@ export type DatabaseOp =
   | DatabaseOpOneOf
   | DatabaseOpOneOfThree
   | DatabaseOpOneOfFive
-  | DatabaseOpOneOfSeven;
+  | DatabaseOpOneOfSeven
+  | DatabaseOpOneOfNine
+  | DatabaseOpOneOfOnetwo;

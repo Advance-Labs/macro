@@ -419,9 +419,10 @@ export type ReminderEntityType =
   | 'call'
   | 'calendar_event';
 /**
- * A tag color from the fixed palette.
+ * A colour select and tag options take, from the palette the tag picker
+ * renders.
  */
-export type TagColor =
+export type OptionColor =
   | 'red'
   | 'tomato'
   | 'orange'
@@ -3663,7 +3664,7 @@ export interface CreateTag {
    * The tag's label, e.g. "Urgent" or "Follow-up".
    */
   label: string;
-  color: TagColor;
+  color: OptionColor;
   scope?: TagScope & string;
 }
 /**
@@ -4025,7 +4026,7 @@ export interface EditTag {
   /**
    * A new color for the tag, chosen from the fixed tag palette. Omit to keep the current color.
    */
-  color?: TagColor | null;
+  color?: OptionColor | null;
 }
 /**
  * Response from the [`EditTag`] tool.

@@ -10,8 +10,9 @@ pub mod cast;
 mod ids;
 mod ops;
 
-pub use ids::{ColumnId, DatabaseId, RowId, TableId, TableVersion};
+pub use ids::{ColumnId, DatabaseId, OptionId, RowId, TableId, TableVersion};
 pub use ops::{
     CellValue, CellWrite, ColumnKind, DatabaseOp, EntityKind, EntityRef, OpResult, OptionRef,
     RowChange, RowChanges,
 };
+pub use option_palette::OptionColor;

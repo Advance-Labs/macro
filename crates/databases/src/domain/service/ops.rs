@@ -5,6 +5,7 @@
 use models_databases::{
     CellValue, CellWrite, ColumnKind, DatabaseOp, OpResult, OptionRef, RowChanges,
 };
+use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
 use models_properties::service::property_value::PropertyValue;
 use models_properties::shared::EntityReference;
 
@@ -12,8 +13,7 @@ use super::column_types::is_complete_url;
 use super::*;
 use crate::domain::catalog::{ColumnEntry, entity_type};
 use crate::domain::models::{
-    CellChanges, NewOption, OpRefusal, PropertyDefinitionId, RowId, RowWrite, RowWrites,
-    RowWritesOutcome,
+    CellChanges, NewOption, OpRefusal, PropertyDefinitionId, RowId, Write, Writes, WritesOutcome,
 };
 
 /// Most rows one request inserts, updates and deletes in total.
@@ -44,7 +44,7 @@ where
             return Err(DatabaseError::NotFound);
         }
         for (index, op) in ops.iter().enumerate() {
-            let table = op_table(op);
+            let table = op.table();
             if !entries.iter().any(|entry| entry.table.id == table) {
                 return Err(refuse(
                     index,
@@ -103,10 +103,15 @@ where
             }]);
         }
 
+        let editable = self
+            .editable_shared_definitions(&entries, database_id, &viewer, &ops)
+            .await?;
         let mut planner = Planner {
             entries: &entries,
+            database_id,
+            editable: &editable,
             options: Vec::new(),
-            created: HashMap::new(),
+            labels: HashMap::new(),
             related: Vec::new(),
             written_rows: 0,
         };
@@ -115,7 +120,7 @@ where
             .enumerate()
             .map(|(index, op)| planner.write(index, op))
             .collect::<Result<Vec<_>, _>>()?;
-        let row_writes = RowWrites {
+        let row_writes = Writes {
             created_by: viewer.user_id.as_ref().to_string(),
             options: planner.options,
             writes,
@@ -127,16 +132,32 @@ where
         };
         let (inserted, table_versions) = match self
             .cells
-            .apply_row_writes(&row_writes)
+            .apply_writes(&row_writes)
             .await
             .map_err(repo_err)?
         {
-            RowWritesOutcome::Applied {
+            WritesOutcome::Applied {
                 inserted,
                 table_versions,
             } => (inserted, table_versions),
-            RowWritesOutcome::TableNotFound(_) => return Err(DatabaseError::NotFound),
-            RowWritesOutcome::MissingRow { write, row } => {
+            WritesOutcome::TableNotFound(_) => return Err(DatabaseError::NotFound),
+            WritesOutcome::MissingOption { write } => {
+                return Err(refuse(
+                    write,
+                    None,
+                    option_column(&ops[write]),
+                    "the option was removed by someone else; refresh and try again",
+                ));
+            }
+            WritesOutcome::OptionLabelTaken { write } => {
+                return Err(refuse(
+                    write,
+                    None,
+                    option_column(&ops[write]),
+                    "another option took that label first; refresh and try again",
+                ));
+            }
+            WritesOutcome::MissingRow { write, row } => {
                 return Err(refuse(
                     write,
                     row_index(&ops[write], row),
@@ -144,7 +165,7 @@ where
                     format!("no row {row} in this table"),
                 ));
             }
-            RowWritesOutcome::MissingRelatedRow(row) => {
+            WritesOutcome::MissingRelatedRow(row) => {
                 let origin = planner
                     .related
                     .iter()
@@ -177,15 +198,60 @@ where
             .writes
             .iter()
             .zip(inserted)
-            .map(|(write, inserted)| OpResult::RowsWritten {
-                table_version: table_versions
+            .map(|(write, inserted)| {
+                let table_version = table_versions
                     .get(&write.table_id())
                     .copied()
-                    .unwrap_or_else(|| current_version(&entries, write.table_id())),
-                inserted,
-                affected: count(write.affected()),
+                    .unwrap_or_else(|| current_version(&entries, write.table_id()));
+                match write {
+                    Write::InsertRows { .. }
+                    | Write::UpdateRows { .. }
+                    | Write::DeleteRows { .. } => OpResult::RowsWritten {
+                        table_version,
+                        inserted,
+                        affected: count(write.affected()),
+                    },
+                    Write::UpdateOption { .. } | Write::DeleteOption { .. } => {
+                        OpResult::OptionChanged { table_version }
+                    }
+                }
             })
             .collect())
+    }
+
+    /// The definitions shared beyond the database whose options the batch
+    /// changes, and which of them the viewer may change: a shared property
+    /// changes wherever it is used, so the database's edit grant is not
+    /// enough on its own.
+    async fn editable_shared_definitions(
+        &self,
+        entries: &[TableEntry],
+        database_id: DatabaseId,
+        viewer: &Viewer,
+        ops: &[DatabaseOp],
+    ) -> Result<Vec<PropertyDefinitionId>, DatabaseError> {
+        let shared: Vec<PropertyDefinitionId> = ops
+            .iter()
+            .filter_map(|op| match op {
+                DatabaseOp::UpdateOption { table, column, .. }
+                | DatabaseOp::DeleteOption { table, column, .. } => entries
+                    .iter()
+                    .find(|entry| entry.table.id == *table)?
+                    .columns
+                    .iter()
+                    .find(|entry| entry.column.id == *column)
+                    .filter(|entry| entry.shared_outside(database_id))
+                    .map(|entry| entry.definition.definition.id),
+                _ => None,
+            })
+            .collect();
+        if shared.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.definitions
+            .editable_definitions(viewer, &shared)
+            .await
+            .map_err(repo_err)
     }
 }
 
@@ -203,12 +269,13 @@ fn refuse(
     })
 }
 
-fn op_table(op: &DatabaseOp) -> TableId {
+/// The column an option op names.
+fn option_column(op: &DatabaseOp) -> Option<ColumnId> {
     match op {
-        DatabaseOp::InsertRows { table, .. }
-        | DatabaseOp::UpdateRows { table, .. }
-        | DatabaseOp::DeleteRows { table, .. }
-        | DatabaseOp::ChangeColumnType { table, .. } => *table,
+        DatabaseOp::UpdateOption { column, .. } | DatabaseOp::DeleteOption { column, .. } => {
+            Some(*column)
+        }
+        _ => None,
     }
 }
 
@@ -236,7 +303,10 @@ fn row_index(op: &DatabaseOp, row: RowId) -> Option<usize> {
             changes: RowChanges::PerRow { rows },
             ..
         } => rows.iter().position(|change| change.row == row),
-        DatabaseOp::InsertRows { .. } | DatabaseOp::ChangeColumnType { .. } => None,
+        DatabaseOp::InsertRows { .. }
+        | DatabaseOp::ChangeColumnType { .. }
+        | DatabaseOp::UpdateOption { .. }
+        | DatabaseOp::DeleteOption { .. } => None,
     }
 }
 
@@ -287,13 +357,17 @@ struct RelatedRow {
     column: ColumnId,
 }
 
-/// Turns ops into row writes against one database's catalog, collecting the
+/// Turns ops into writes against one database's catalog, collecting the
 /// options they create and the rows their relation cells point at.
 struct Planner<'a> {
     entries: &'a [TableEntry],
+    database_id: DatabaseId,
+    /// The shared definitions whose options the viewer may change.
+    editable: &'a [PropertyDefinitionId],
     options: Vec<NewOption>,
-    /// Options created so far, per definition, by the key labels match on.
-    created: HashMap<PropertyDefinitionId, Vec<(String, Uuid)>>,
+    /// The options of each definition an op has looked at, with their
+    /// labels, as the ops planned so far leave them.
+    labels: HashMap<PropertyDefinitionId, Vec<(Uuid, String)>>,
     related: Vec<RelatedRow>,
     written_rows: usize,
 }
@@ -314,8 +388,8 @@ impl Place {
 }
 
 impl Planner<'_> {
-    fn write(&mut self, index: usize, op: &DatabaseOp) -> Result<RowWrite, DatabaseError> {
-        let table = op_table(op);
+    fn write(&mut self, index: usize, op: &DatabaseOp) -> Result<Write, DatabaseError> {
+        let table = op.table();
         let entry = self
             .entries
             .iter()
@@ -332,7 +406,9 @@ impl Planner<'_> {
                 changes: RowChanges::PerRow { rows },
                 ..
             } => rows.len(),
-            DatabaseOp::ChangeColumnType { .. } => 0,
+            DatabaseOp::ChangeColumnType { .. }
+            | DatabaseOp::UpdateOption { .. }
+            | DatabaseOp::DeleteOption { .. } => 0,
         };
         self.written_rows += rows;
         if self.written_rows > MAX_WRITTEN_ROWS {
@@ -363,7 +439,7 @@ impl Planner<'_> {
                             .collect())
                     })
                     .collect::<Result<_, DatabaseError>>()?;
-                Ok(RowWrite::Insert {
+                Ok(Write::InsertRows {
                     table_id: table,
                     rows,
                 })
@@ -374,7 +450,7 @@ impl Planner<'_> {
                 ..
             } => {
                 let cells = self.cells(entry, index, None, cells, *create_missing_options)?;
-                Ok(RowWrite::Update {
+                Ok(Write::UpdateRows {
                     table_id: table,
                     rows: rows.iter().map(|row| (*row, cells.clone())).collect(),
                 })
@@ -383,7 +459,7 @@ impl Planner<'_> {
                 changes: RowChanges::PerRow { rows },
                 create_missing_options,
                 ..
-            } => Ok(RowWrite::Update {
+            } => Ok(Write::UpdateRows {
                 table_id: table,
                 rows: rows
                     .iter()
@@ -411,7 +487,7 @@ impl Planner<'_> {
                         ));
                     }
                 }
-                Ok(RowWrite::Delete {
+                Ok(Write::DeleteRows {
                     table_id: table,
                     rows: rows.clone(),
                 })
@@ -422,7 +498,155 @@ impl Planner<'_> {
                 Some(*column),
                 "a column type change is applied on its own",
             )),
+            DatabaseOp::UpdateOption {
+                column,
+                option,
+                label,
+                color,
+                ..
+            } => {
+                let place = Place {
+                    op: index,
+                    row: None,
+                    column: *column,
+                };
+                let column = self.option_column(entry, place)?;
+                self.known_option(place, column, *option)?;
+                let value = label
+                    .as_deref()
+                    .map(|label| self.relabel(place, column, *option, label))
+                    .transpose()?;
+                let color = match color {
+                    Some(None) if column.definition.definition.data_type == DataType::Tag => {
+                        return Err(
+                            place.refuse("a tag option always has a colour; pick another instead")
+                        );
+                    }
+                    Some(color) => Some(color.map(|color| color.hex().to_string())),
+                    None => None,
+                };
+                Ok(Write::UpdateOption {
+                    table_id: table,
+                    tables: self.tables_binding(column),
+                    definition_id: column.definition.definition.id,
+                    option_id: *option,
+                    value,
+                    color,
+                })
+            }
+            DatabaseOp::DeleteOption { column, option, .. } => {
+                let place = Place {
+                    op: index,
+                    row: None,
+                    column: *column,
+                };
+                let column = self.option_column(entry, place)?;
+                self.known_option(place, column, *option)?;
+                self.labels_of(&column.definition)
+                    .retain(|(id, _)| id != option);
+                Ok(Write::DeleteOption {
+                    table_id: table,
+                    tables: self.tables_binding(column),
+                    definition_id: column.definition.definition.id,
+                    option_id: *option,
+                })
+            }
         }
+    }
+
+    /// The column an option op names, which must hold options the viewer
+    /// may change.
+    fn option_column<'entry>(
+        &self,
+        entry: &'entry TableEntry,
+        place: Place,
+    ) -> Result<&'entry ColumnEntry, DatabaseError> {
+        let column = entry
+            .columns
+            .iter()
+            .find(|column| column.column.id == place.column)
+            .ok_or_else(|| place.refuse("no such column in this table"))?;
+        let definition = &column.definition.definition;
+        if !takes_options(definition.data_type) {
+            return Err(place.refuse(format!(
+                "\"{}\" is a {} column; only select and tag columns have options",
+                column.name(),
+                column_kind_name(column)
+            )));
+        }
+        if column.shared_outside(self.database_id) && !self.editable.contains(&definition.id) {
+            return Err(place.refuse(format!(
+                "\"{}\" is a property shared beyond this database, and you may not change its \
+                 options",
+                column.name()
+            )));
+        }
+        Ok(column)
+    }
+
+    /// Check the column has the option, as the ops so far leave it.
+    fn known_option(
+        &mut self,
+        place: Place,
+        column: &ColumnEntry,
+        option: Uuid,
+    ) -> Result<(), DatabaseError> {
+        if self
+            .labels_of(&column.definition)
+            .iter()
+            .any(|(id, _)| *id == option)
+        {
+            Ok(())
+        } else {
+            Err(place.refuse(format!("no option {option} on \"{}\"", column.name())))
+        }
+    }
+
+    /// The value an option's new label stores, checked as a new option's
+    /// would be against the column's other options.
+    fn relabel(
+        &mut self,
+        place: Place,
+        column: &ColumnEntry,
+        option: Uuid,
+        label: &str,
+    ) -> Result<PropertyOptionValue, DatabaseError> {
+        let data_type = column.definition.definition.data_type;
+        let labels = self.labels_of(&column.definition);
+        let others: Vec<String> = labels
+            .iter()
+            .filter(|(id, _)| *id != option)
+            .map(|(_, label)| label.clone())
+            .collect();
+        let value = validate_option_labels(data_type, &[label.to_string()], &others)
+            .map_err(|error| match error {
+                DatabaseError::InvalidSchemaOperation(reason) => place.refuse(reason),
+                other => other,
+            })?
+            .into_iter()
+            .next()
+            .ok_or_else(|| {
+                place.refuse(format!(
+                    "`{}` is already an option of \"{}\"",
+                    label.trim(),
+                    column.name()
+                ))
+            })?;
+        if let Some((_, current)) = labels.iter_mut().find(|(id, _)| *id == option) {
+            *current = catalog::option_display(&value);
+        }
+        Ok(value)
+    }
+
+    /// Every table of the database whose columns bind the column's
+    /// definition.
+    fn tables_binding(&self, column: &ColumnEntry) -> Vec<TableId> {
+        let definition = column.definition.definition.id;
+        self.entries
+            .iter()
+            .filter(|entry| entry.column_for(definition).is_some())
+            .map(|entry| entry.table.id)
+            .collect()
     }
 
     /// One row's cells as stored values; `None` empties a cell.
@@ -594,10 +818,10 @@ impl Planner<'_> {
         let data_type = definition.definition.data_type;
         let label = match option {
             OptionRef::Id(id) => {
-                return if definition
-                    .property_options
+                return if self
+                    .labels_of(definition)
                     .iter()
-                    .any(|option| option.id == *id)
+                    .any(|(option, _)| option == id)
                 {
                     Ok(*id)
                 } else {
@@ -607,15 +831,11 @@ impl Planner<'_> {
             OptionRef::Label(label) => label,
         };
         let key = label_key(data_type, label);
-        let existing = catalog::option_labels(definition);
-        if let Some((id, _)) = existing
+        if let Some((id, _)) = self
+            .labels_of(definition)
             .iter()
             .find(|(_, existing)| label_key(data_type, existing) == key)
         {
-            return Ok(*id);
-        }
-        let created = self.created.entry(definition.definition.id).or_default();
-        if let Some((_, id)) = created.iter().find(|(created, _)| *created == key) {
             return Ok(*id);
         }
         if !create_missing_options {
@@ -633,13 +853,26 @@ impl Planner<'_> {
             .next()
             .ok_or_else(|| place.refuse("an option label must not be empty"))?;
         let id = macro_uuid::generate_uuid_v7();
-        created.push((key, id));
+        self.labels_of(definition)
+            .push((id, catalog::option_display(&value)));
         self.options.push(NewOption {
             definition_id: definition.definition.id,
             id,
             value,
         });
         Ok(id)
+    }
+}
+
+impl Planner<'_> {
+    /// The options of a definition as the ops planned so far leave them.
+    fn labels_of(
+        &mut self,
+        definition: &PropertyDefinitionWithOptions,
+    ) -> &mut Vec<(Uuid, String)> {
+        self.labels
+            .entry(definition.definition.id)
+            .or_insert_with(|| catalog::option_labels(definition))
     }
 }
 

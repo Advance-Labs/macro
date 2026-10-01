@@ -231,3 +231,96 @@ fn results_say_what_each_op_did_in_camel_case() {
         ])
     );
 }
+
+#[test]
+fn an_option_update_tells_a_missing_colour_from_a_cleared_one() {
+    let option = Uuid::from_u128(0x0b7);
+    let read = |body| serde_json::from_value::<DatabaseOp>(body).unwrap();
+
+    assert_eq!(
+        read(json!({
+            "kind": "update_option",
+            "table": TABLE,
+            "column": STATUS,
+            "option": option,
+            "label": "Maybe",
+        })),
+        DatabaseOp::UpdateOption {
+            table: TABLE,
+            column: STATUS,
+            option,
+            label: Some("Maybe".into()),
+            color: None,
+        }
+    );
+    assert_eq!(
+        read(json!({
+            "kind": "update_option",
+            "table": TABLE,
+            "column": STATUS,
+            "option": option,
+            "color": null,
+        })),
+        DatabaseOp::UpdateOption {
+            table: TABLE,
+            column: STATUS,
+            option,
+            label: None,
+            color: Some(None),
+        }
+    );
+    assert_eq!(
+        read(json!({
+            "kind": "update_option",
+            "table": TABLE,
+            "column": STATUS,
+            "option": option,
+            "color": "teal",
+        })),
+        DatabaseOp::UpdateOption {
+            table: TABLE,
+            column: STATUS,
+            option,
+            label: None,
+            color: Some(Some(OptionColor::Teal)),
+        }
+    );
+    assert_eq!(
+        serde_json::to_value(DatabaseOp::UpdateOption {
+            table: TABLE,
+            column: STATUS,
+            option,
+            label: None,
+            color: Some(None),
+        })
+        .unwrap(),
+        json!({
+            "kind": "update_option",
+            "table": TABLE,
+            "column": STATUS,
+            "option": option,
+            "color": null,
+        })
+    );
+}
+
+#[test]
+fn an_option_removal_names_its_table_column_and_option() {
+    let option = Uuid::from_u128(0x0b7);
+    let op: DatabaseOp = serde_json::from_value(json!({
+        "kind": "delete_option",
+        "table": TABLE,
+        "column": STATUS,
+        "option": option,
+    }))
+    .unwrap();
+    assert_eq!(
+        op,
+        DatabaseOp::DeleteOption {
+            table: TABLE,
+            column: STATUS,
+            option,
+        }
+    );
+    assert_eq!(op.table(), TABLE);
+}

@@ -29,8 +29,8 @@ use crate::domain::models::{
     ChangeColumnType, ColumnCast, ColumnReplacement, ColumnSchemaOutcome, ColumnTypeChangeOutcome,
 };
 use crate::domain::models::{
-    QueryDefinition, QueryId, RowWrites, RowWritesOutcome, SavedQuery, SavedQueryError,
-    TableDeletion, TableOrderOutcome,
+    QueryDefinition, QueryId, SavedQuery, SavedQueryError, TableDeletion, TableOrderOutcome,
+    Writes, WritesOutcome,
 };
 use models_databases::{DatabaseOp, OpResult};
 
@@ -261,15 +261,16 @@ pub trait CellStore: Send + Sync + 'static {
     /// Remove every cell of a row.
     fn clear(&self, row: RowId) -> impl Future<Output = Result<(), Self::Err>> + Send;
 
-    /// Apply a request's row writes in one transaction, row identities and
-    /// cells together: each written table is locked and checked live, each
-    /// updated or deleted row checked to belong to its table, each related
-    /// row to its target table, and each changed table's version bumped
-    /// once. Anything but [`RowWritesOutcome::Applied`] wrote nothing.
-    fn apply_row_writes(
+    /// Apply a request's writes in one transaction, row identities, cells
+    /// and options together: each written table is locked and checked live,
+    /// each updated or deleted row checked to belong to its table, each
+    /// related row to its target table, each changed option to its
+    /// definition, and each changed table's version bumped once. Anything
+    /// but [`WritesOutcome::Applied`] wrote nothing.
+    fn apply_writes(
         &self,
-        writes: &RowWrites,
-    ) -> impl Future<Output = Result<RowWritesOutcome, Self::Err>> + Send;
+        writes: &Writes,
+    ) -> impl Future<Output = Result<WritesOutcome, Self::Err>> + Send;
 }
 
 /// Which databases a viewer can reach, as `entity_access` answers it: the
@@ -338,6 +339,15 @@ pub trait ColumnDefinitionStore: Send + Sync + 'static {
         &self,
         ids: &[PropertyDefinitionId],
     ) -> impl Future<Output = Result<Vec<PropertyDefinitionWithOptions>, Self::Err>> + Send;
+
+    /// The definitions among `ids` the viewer may change as the properties
+    /// system decides it for definitions outside any database: their own, or
+    /// a team's they belong to; never a system one.
+    fn editable_definitions(
+        &self,
+        viewer: &Viewer,
+        ids: &[PropertyDefinitionId],
+    ) -> impl Future<Output = Result<Vec<PropertyDefinitionId>, Self::Err>> + Send;
 }
 
 /// Liveness: tell open clients a table changed.

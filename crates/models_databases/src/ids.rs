@@ -11,6 +11,8 @@ pub type TableId = Uuid;
 pub type ColumnId = Uuid;
 /// Identifier of a row.
 pub type RowId = Uuid;
+/// Identifier of an option of a select or tag column.
+pub type OptionId = Uuid;
 
 /// Monotonic per-table version, bumped on every row/column/link mutation.
 ///

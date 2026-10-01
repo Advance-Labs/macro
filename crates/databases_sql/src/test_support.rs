@@ -200,6 +200,7 @@ pub(crate) fn column(
             property_options: Vec::new(),
         },
         writable: true,
+        shared_outside_database: true,
     }
 }
 
@@ -328,6 +329,7 @@ impl DatabasesService for FakeDatabases {
                     cleared_cells: 1,
                     trimmed_cells: 0,
                 },
+                other => panic!("a statement sends no {other:?}"),
             })
             .collect())
     }

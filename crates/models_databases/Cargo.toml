@@ -9,6 +9,7 @@ version = "0.1.0"
 # wasm-safe, so it takes no workspace-hack dependency (see .config/hakari.toml).
 [dependencies]
 chrono = { workspace = true }
+option_palette = { path = "../option_palette" }
 serde = { workspace = true }
 specta = { workspace = true, features = ["chrono", "uuid"] }
 utoipa = { workspace = true }

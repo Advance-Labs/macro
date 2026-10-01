@@ -6,6 +6,8 @@ use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::service::property_value::PropertyValue;
 use uuid::Uuid;
 
+use super::model::UpdatePropertyOptionOutcome;
+
 /// Lets a composition root write entity properties and select options within
 /// an owning use case's transaction. The transaction stays opaque; adapters
 /// choose its implementation.
@@ -24,6 +26,28 @@ pub trait DatabaseCellWriter: Send + Sync + 'static {
         property_definition_id: Uuid,
         options: &[(Uuid, PropertyOptionValue)],
     ) -> impl Future<Output = Result<(), Self::Err>> + Send;
+
+    /// Change one option of a definition in place: its value when `value`
+    /// is given, its colour (`None` clears it) when `color` is. Every entity
+    /// holding the option keeps it.
+    fn update_option_in(
+        &self,
+        transaction: &mut Self::Transaction,
+        property_definition_id: Uuid,
+        option_id: Uuid,
+        value: Option<PropertyOptionValue>,
+        color: Option<Option<String>>,
+    ) -> impl Future<Output = Result<UpdatePropertyOptionOutcome, Self::Err>> + Send;
+
+    /// Remove one option of a definition and take its id out of every
+    /// entity value holding it; a database row's cell left with no option is
+    /// emptied. `false` when the definition has no such option.
+    fn delete_option_in(
+        &self,
+        transaction: &mut Self::Transaction,
+        property_definition_id: Uuid,
+        option_id: Uuid,
+    ) -> impl Future<Output = Result<bool, Self::Err>> + Send;
 
     /// Set one entity property, or with `None` clear its value.
     fn upsert_entity_property_in(

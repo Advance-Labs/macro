@@ -358,7 +358,7 @@ pub struct Viewer {
     pub acting_bot: Option<BotId>,
 }
 
-// ===== Batched row writes =====
+// ===== Batched writes =====
 
 /// A select option an op names by a label its column does not have yet,
 /// under an id minted before anything is written.
@@ -375,79 +375,143 @@ pub struct NewOption {
 /// Cells of one row to set, or with `None` to clear, by definition.
 pub type CellChanges = Vec<(PropertyDefinitionId, Option<PropertyValue>)>;
 
-/// One op's row writes, every cell already checked against its column.
+/// One op's writes, every value already checked against its column.
 #[derive(Debug, Clone, PartialEq)]
-pub enum RowWrite {
+pub enum Write {
     /// Append rows, in order, with the cells each starts with.
-    Insert {
+    InsertRows {
         /// The table.
         table_id: TableId,
         /// One entry per new row.
         rows: Vec<Vec<(PropertyDefinitionId, PropertyValue)>>,
     },
     /// Set (or, with `None`, clear) cells of existing rows of the table.
-    Update {
+    UpdateRows {
         /// The table the rows must belong to.
         table_id: TableId,
         /// Each row with its cells.
         rows: Vec<(RowId, CellChanges)>,
     },
     /// Remove rows of the table with their cells.
-    Delete {
+    DeleteRows {
         /// The table the rows must belong to.
         table_id: TableId,
         /// The rows.
         rows: Vec<RowId>,
     },
+    /// Change one option of a definition in place; every cell holding it
+    /// keeps it.
+    UpdateOption {
+        /// The table the op named.
+        table_id: TableId,
+        /// Every table of the database binding the definition, the op's
+        /// own among them: each sees the option change.
+        tables: Vec<TableId>,
+        /// The definition.
+        definition_id: PropertyDefinitionId,
+        /// The option.
+        option_id: Uuid,
+        /// Its new value, when its label changes.
+        value: Option<PropertyOptionValue>,
+        /// Its new colour, as stored, or `None` to clear it; when it changes.
+        color: Option<Option<String>>,
+    },
+    /// Remove one option of a definition and take it out of every cell
+    /// holding it, emptying the cells left with nothing.
+    DeleteOption {
+        /// The table the op named.
+        table_id: TableId,
+        /// Every table of the database binding the definition, the op's
+        /// own among them.
+        tables: Vec<TableId>,
+        /// The definition.
+        definition_id: PropertyDefinitionId,
+        /// The option.
+        option_id: Uuid,
+    },
 }
 
-impl RowWrite {
-    /// The table the write lands in.
+impl Write {
+    /// The table the op named.
     pub fn table_id(&self) -> TableId {
         match self {
-            RowWrite::Insert { table_id, .. }
-            | RowWrite::Update { table_id, .. }
-            | RowWrite::Delete { table_id, .. } => *table_id,
+            Write::InsertRows { table_id, .. }
+            | Write::UpdateRows { table_id, .. }
+            | Write::DeleteRows { table_id, .. }
+            | Write::UpdateOption { table_id, .. }
+            | Write::DeleteOption { table_id, .. } => *table_id,
         }
     }
 
-    /// How many rows it inserts, updates or deletes.
+    /// The tables whose versions the write bumps when it changes anything.
+    pub fn versioned_tables(&self) -> &[TableId] {
+        match self {
+            Write::InsertRows { table_id, .. }
+            | Write::UpdateRows { table_id, .. }
+            | Write::DeleteRows { table_id, .. } => std::slice::from_ref(table_id),
+            Write::UpdateOption { tables, .. } | Write::DeleteOption { tables, .. } => tables,
+        }
+    }
+
+    /// How many rows it inserts, updates or deletes; none for an option
+    /// change.
     pub fn affected(&self) -> usize {
         match self {
-            RowWrite::Insert { rows, .. } => rows.len(),
-            RowWrite::Update { rows, .. } => rows.len(),
-            RowWrite::Delete { rows, .. } => rows.len(),
+            Write::InsertRows { rows, .. } => rows.len(),
+            Write::UpdateRows { rows, .. } => rows.len(),
+            Write::DeleteRows { rows, .. } => rows.len(),
+            Write::UpdateOption { .. } | Write::DeleteOption { .. } => 0,
+        }
+    }
+
+    /// Whether it changes anything, and so bumps its tables' versions.
+    pub fn changes(&self) -> bool {
+        match self {
+            Write::InsertRows { .. } | Write::UpdateRows { .. } | Write::DeleteRows { .. } => {
+                self.affected() > 0
+            }
+            Write::UpdateOption { .. } | Write::DeleteOption { .. } => true,
         }
     }
 }
 
-/// A request's row writes, applied in one transaction: every write, option
+/// A request's writes, applied in one transaction: every write, option
 /// and version bump commits, or none does.
 #[derive(Debug, Clone, PartialEq)]
-pub struct RowWrites {
+pub struct Writes {
     /// Who the inserted rows are created by.
     pub created_by: String,
     /// Options to create before any cell names them.
     pub options: Vec<NewOption>,
     /// The writes, in the order the ops were sent.
-    pub writes: Vec<RowWrite>,
+    pub writes: Vec<Write>,
     /// Rows relation cells point at, each with the table it must belong to.
     pub related_rows: Vec<(TableId, RowId)>,
 }
 
-/// What applying [`RowWrites`] did. Anything but `Applied` wrote nothing.
+/// What applying [`Writes`] did. Anything but `Applied` wrote nothing.
 #[derive(Debug, Clone, PartialEq)]
-pub enum RowWritesOutcome {
+pub enum WritesOutcome {
     /// Everything committed.
     Applied {
         /// Per write, the rows it inserted; empty for updates and deletes.
         inserted: Vec<Vec<RowId>>,
-        /// The new version of every table a write changed a row of, bumped
-        /// once.
+        /// The new version of every table a write changed, bumped once.
         table_versions: HashMap<TableId, TableVersion>,
     },
     /// A written table is gone, or its database is trashed.
     TableNotFound(TableId),
+    /// A write named an option its definition no longer has.
+    MissingOption {
+        /// The write's index.
+        write: usize,
+    },
+    /// A write gave an option a label another option of its definition
+    /// took first.
+    OptionLabelTaken {
+        /// The write's index.
+        write: usize,
+    },
     /// A write named a row its table does not have.
     MissingRow {
         /// The write's index.
@@ -662,6 +726,10 @@ pub struct ColumnDetail {
         models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions,
     /// Whether SQL may write this column.
     pub writable: bool,
+    /// Whether the definition belongs to something beyond this database (a
+    /// person's, a team's or a system property), so changing its options
+    /// changes them everywhere that property is used.
+    pub shared_outside_database: bool,
 }
 
 // ===== Awareness =====

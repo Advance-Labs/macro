@@ -8,7 +8,7 @@ use models_databases::{ColumnKind, EntityKind};
 use models_permissions::share_permission::access_level::AccessLevel;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
 use models_properties::service::property_option::PropertyOptionValue;
-use models_properties::shared::DataType;
+use models_properties::shared::{DataType, PropertyOwner};
 use uuid::Uuid;
 
 use crate::domain::models::{
@@ -59,6 +59,15 @@ impl ColumnEntry {
     /// Whether a cell holds several values.
     pub fn is_multi(&self) -> bool {
         self.definition.definition.is_multi_select || self.is_relation()
+    }
+
+    /// Whether the definition belongs to something beyond `database_id`, so
+    /// a change to it shows wherever else it is used.
+    pub fn shared_outside(&self, database_id: DatabaseId) -> bool {
+        !matches!(
+            self.definition.definition.owner,
+            PropertyOwner::Database { database_id: owner } if owner == database_id
+        )
     }
 }
 

@@ -199,6 +199,20 @@ impl PropertiesRepo for PropertiesPgRepo {
     }
 
     #[tracing::instrument(skip(self), err)]
+    async fn get_editable_property_definition_ids(
+        &self,
+        property_definition_ids: &[Uuid],
+        user_id: &str,
+    ) -> Result<Vec<Uuid>, Self::Err> {
+        property_definition_queries::get_editable_property_definition_ids(
+            &self.pool,
+            property_definition_ids,
+            user_id,
+        )
+        .await
+    }
+
+    #[tracing::instrument(skip(self), err)]
     async fn get_property_definitions_with_options(
         &self,
         property_definition_ids: &[Uuid],

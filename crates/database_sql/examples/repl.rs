@@ -379,8 +379,8 @@ impl OpsSink for Memory {
                     stored.retain(|row| !rows.contains(&row.id));
                     (Vec::new(), rows.len())
                 }
-                DatabaseOp::ChangeColumnType { .. } => {
-                    return Err(WriteError("the REPL's columns keep their types".into()));
+                _ => {
+                    return Err(WriteError("the REPL's schema is fixed".into()));
                 }
             };
             results.push(OpResult::RowsWritten {

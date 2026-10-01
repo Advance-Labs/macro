@@ -1,0 +1,19 @@
+[package]
+edition = "2024"
+name = "option_palette"
+publish = false
+version = "0.1.0"
+
+# The colours select and tag options take. Shared by the properties system,
+# its agent tools and the databases ops, which also run in the browser, so it
+# stays wasm-safe and takes no workspace-hack dependency (see
+# .config/hakari.toml).
+[dependencies]
+schemars = { workspace = true }
+serde = { workspace = true }
+specta = { workspace = true }
+strum = { workspace = true }
+utoipa = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

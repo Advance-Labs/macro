@@ -384,7 +384,7 @@ async fn an_unknown_label_is_refused_without_creating_options() {
         2
     );
     assert_eq!(w.rows[&seeded.table_id].len(), 1);
-    assert_eq!(w.row_write_batches, 0);
+    assert_eq!(w.write_batches, 0);
     drop(w);
     assert_eq!(table_version(&seeded.world, seeded.table_id), before);
 }
@@ -446,7 +446,7 @@ async fn an_op_on_another_databases_table_refuses_the_batch_before_anything_is_w
         }
     );
     let w = seeded.world.lock().unwrap();
-    assert_eq!(w.row_write_batches, 0);
+    assert_eq!(w.write_batches, 0);
     assert_eq!(w.rows[&seeded.table_id].len(), 1);
     assert!(w.rows.get(&other_table).is_none_or(Vec::is_empty));
     assert_eq!(w.published.len(), published_before);
@@ -820,7 +820,7 @@ async fn a_type_change_is_sent_on_its_own() {
                 .into(),
         }
     );
-    assert_eq!(seeded.world.lock().unwrap().row_write_batches, 0);
+    assert_eq!(seeded.world.lock().unwrap().write_batches, 0);
 }
 
 #[tokio::test]
@@ -871,7 +871,7 @@ async fn a_batch_bumps_each_table_once_and_announces_it_once() {
         OpResult::RowsWritten { table_version, .. } if *table_version == after
     )));
     let w = seeded.world.lock().unwrap();
-    assert_eq!(w.row_write_batches, 1);
+    assert_eq!(w.write_batches, 1);
     assert_eq!(
         &w.published[published_before..],
         &[(seeded.table_id, after)]

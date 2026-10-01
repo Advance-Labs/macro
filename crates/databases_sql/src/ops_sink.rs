@@ -38,7 +38,7 @@ where
         let receipt = receipt::<EditAccessLevel, _>(self.entity_access, self.viewer, database)
             .await
             .map_err(|_| WriteError(format!("the user cannot edit database {database}")))?;
-        let tables: Vec<TableId> = ops.iter().map(op_table).collect();
+        let tables: Vec<TableId> = ops.iter().map(DatabaseOp::table).collect();
         let results = self
             .databases
             .apply_ops(receipt, self.viewer.clone(), ops)
@@ -46,9 +46,7 @@ where
             .map_err(write_error)?;
         let mut versions = self.versions.lock().expect("version log");
         for (table, result) in tables.into_iter().zip(&results) {
-            let (OpResult::RowsWritten { table_version, .. }
-            | OpResult::ColumnTyped { table_version, .. }) = result;
-            versions.insert(table, *table_version);
+            versions.insert(table, result.table_version());
         }
         Ok(results)
     }
@@ -70,13 +68,4 @@ fn write_error(error: DatabaseError) -> WriteError {
             "the write could not be applied".into()
         }
     })
-}
-
-fn op_table(op: &DatabaseOp) -> TableId {
-    match op {
-        DatabaseOp::InsertRows { table, .. }
-        | DatabaseOp::UpdateRows { table, .. }
-        | DatabaseOp::DeleteRows { table, .. }
-        | DatabaseOp::ChangeColumnType { table, .. } => *table,
-    }
 }

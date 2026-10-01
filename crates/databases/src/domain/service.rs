@@ -345,11 +345,13 @@ where
     }
 
     fn table_detail(entry: TableEntry) -> TableDetail {
+        let database_id = entry.database.id;
         let columns = entry
             .columns
             .into_iter()
             .map(|column| ColumnDetail {
                 sql_name: catalog::sql_identifier(column.name()),
+                shared_outside_database: column.shared_outside(database_id),
                 column: column.column,
                 definition: column.definition,
                 writable: column.writable,

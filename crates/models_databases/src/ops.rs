@@ -4,10 +4,11 @@
 mod test;
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use option_palette::OptionColor;
+use serde::{Deserialize, Deserializer, Serialize};
 use uuid::Uuid;
 
-use crate::ids::{ColumnId, DatabaseId, RowId, TableId, TableVersion};
+use crate::ids::{ColumnId, DatabaseId, OptionId, RowId, TableId, TableVersion};
 
 /// One write to a database's data. A request's ops apply together or not at
 /// all, and every op names a table of the database the request is for.
@@ -69,6 +70,76 @@ pub enum DatabaseOp {
         #[serde(default)]
         clear_invalid: bool,
     },
+    /// Relabel or recolour one option of a select or tag column. Every cell
+    /// holding it keeps it. A column bound to a property shared outside the
+    /// database changes wherever that property is used, so it takes the
+    /// right to edit that property.
+    UpdateOption {
+        /// The table.
+        #[schema(value_type = Uuid)]
+        table: TableId,
+        /// The select or tag column.
+        #[schema(value_type = Uuid)]
+        column: ColumnId,
+        /// The option.
+        #[schema(value_type = Uuid)]
+        option: OptionId,
+        /// Its new label; left out, it keeps its own. Labels are unique
+        /// within a column, ignoring case.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schema(nullable = false)]
+        #[specta(optional)]
+        label: Option<String>,
+        /// Its new colour, or `null` to clear it; left out, it keeps its own.
+        /// A tag option always has one.
+        #[serde(
+            default,
+            deserialize_with = "present",
+            skip_serializing_if = "Option::is_none"
+        )]
+        #[schema(value_type = Option<OptionColor>)]
+        #[specta(type = Option<OptionColor>, optional)]
+        color: Option<Option<OptionColor>>,
+    },
+    /// Remove one option of a select or tag column, and take it out of every
+    /// cell holding it: a single-valued cell is emptied, a multi-valued one
+    /// keeps its other options. Like [`DatabaseOp::UpdateOption`], an option
+    /// of a shared property goes everywhere it is used.
+    DeleteOption {
+        /// The table.
+        #[schema(value_type = Uuid)]
+        table: TableId,
+        /// The select or tag column.
+        #[schema(value_type = Uuid)]
+        column: ColumnId,
+        /// The option.
+        #[schema(value_type = Uuid)]
+        option: OptionId,
+    },
+}
+
+impl DatabaseOp {
+    /// The table the op names.
+    pub fn table(&self) -> TableId {
+        match self {
+            DatabaseOp::InsertRows { table, .. }
+            | DatabaseOp::UpdateRows { table, .. }
+            | DatabaseOp::DeleteRows { table, .. }
+            | DatabaseOp::ChangeColumnType { table, .. }
+            | DatabaseOp::UpdateOption { table, .. }
+            | DatabaseOp::DeleteOption { table, .. } => *table,
+        }
+    }
+}
+
+/// A field that is `Some` whenever it is present, so `null` reads as
+/// `Some(None)` and a missing one, by `default`, as `None`.
+fn present<'de, Value, D>(deserializer: D) -> Result<Option<Value>, D::Error>
+where
+    Value: Deserialize<'de>,
+    D: Deserializer<'de>,
+{
+    Value::deserialize(deserializer).map(Some)
 }
 
 /// One cell of a row: which column, and its new value.
@@ -279,4 +350,21 @@ pub enum OpResult {
         /// Cells that held several values and kept only their first.
         trimmed_cells: u32,
     },
+    /// What an option change or removal did.
+    #[serde(rename_all = "camelCase")]
+    OptionChanged {
+        /// The table's version after the change.
+        table_version: TableVersion,
+    },
+}
+
+impl OpResult {
+    /// The version of the op's table once the request committed.
+    pub fn table_version(&self) -> TableVersion {
+        match self {
+            OpResult::RowsWritten { table_version, .. }
+            | OpResult::ColumnTyped { table_version, .. }
+            | OpResult::OptionChanged { table_version } => *table_version,
+        }
+    }
 }

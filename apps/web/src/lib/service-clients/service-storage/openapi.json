@@ -22495,7 +22495,13 @@
       "ColumnDetail": {
         "type": "object",
         "description": "One column placement with the definition behind it.",
-        "required": ["column", "sql_name", "definition", "writable"],
+        "required": [
+          "column",
+          "sql_name",
+          "definition",
+          "writable",
+          "shared_outside_database"
+        ],
         "properties": {
           "column": {
             "$ref": "#/components/schemas/Column",
@@ -22504,6 +22510,10 @@
           "definition": {
             "$ref": "#/components/schemas/PropertyDefinitionWithOptions",
             "description": "The bound definition (name, type, options)."
+          },
+          "shared_outside_database": {
+            "type": "boolean",
+            "description": "Whether the definition belongs to something beyond this database (a\nperson's, a team's or a system property), so changing its options\nchanges them everywhere that property is used."
           },
           "sql_name": {
             "type": "string",
@@ -24665,6 +24675,73 @@
               "to": {
                 "$ref": "#/components/schemas/ColumnKind",
                 "description": "The type it becomes."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Relabel or recolour one option of a select or tag column. Every cell\nholding it keeps it. A column bound to a property shared outside the\ndatabase changes wherever that property is used, so it takes the\nright to edit that property.",
+            "required": ["table", "column", "option", "kind"],
+            "properties": {
+              "color": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OptionColor",
+                    "description": "Its new colour, or `null` to clear it; left out, it keeps its own.\nA tag option always has one."
+                  }
+                ]
+              },
+              "column": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The select or tag column."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["update_option"]
+              },
+              "label": {
+                "type": "string",
+                "description": "Its new label; left out, it keeps its own. Labels are unique\nwithin a column, ignoring case."
+              },
+              "option": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The option."
+              },
+              "table": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The table."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Remove one option of a select or tag column, and take it out of every\ncell holding it: a single-valued cell is emptied, a multi-valued one\nkeeps its other options. Like [`DatabaseOp::UpdateOption`], an option\nof a shared property goes everywhere it is used.",
+            "required": ["table", "column", "option", "kind"],
+            "properties": {
+              "column": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The select or tag column."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["delete_option"]
+              },
+              "option": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The option."
+              },
+              "table": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The table."
               }
             }
           }
@@ -30116,9 +30193,42 @@
                 "minimum": 0
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "What an option change or removal did.",
+            "required": ["tableVersion", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["option_changed"]
+              },
+              "tableVersion": {
+                "$ref": "#/components/schemas/TableVersion",
+                "description": "The table's version after the change."
+              }
+            }
           }
         ],
         "description": "What one op did, in the order the ops were sent."
+      },
+      "OptionColor": {
+        "type": "string",
+        "description": "A colour select and tag options take, from the palette the tag picker\nrenders.",
+        "enum": [
+          "red",
+          "tomato",
+          "orange",
+          "amber",
+          "yellow",
+          "green",
+          "teal",
+          "blue",
+          "indigo",
+          "purple",
+          "pink",
+          "gray"
+        ]
       },
       "OptionRef": {
         "oneOf": [

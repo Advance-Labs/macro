@@ -116,6 +116,7 @@ impl OpsSink for FakeSink {
                     cleared_cells: 2,
                     trimmed_cells: 0,
                 },
+                other => panic!("a statement sends no {other:?}"),
             })
             .collect())
     }

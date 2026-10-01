@@ -504,6 +504,32 @@ pub async fn get_bindable_property_definition(
     Ok(row.map(PropertyDefinition::from))
 }
 
+/// The definitions among `property_definition_ids` the user owns, directly
+/// or through a team they belong to; never a system or database-owned one.
+#[tracing::instrument(skip(pool), err)]
+pub async fn get_editable_property_definition_ids(
+    pool: &Pool<Postgres>,
+    property_definition_ids: &[Uuid],
+    user_id: &str,
+) -> anyhow::Result<Vec<Uuid>> {
+    Ok(sqlx::query_scalar!(
+        r#"
+        SELECT id
+        FROM property_definitions
+        WHERE id = ANY($1)
+          AND NOT is_system
+          AND (
+            user_id = $2
+            OR team_id IN (SELECT team_id FROM team_user WHERE user_id = $2)
+          )
+        "#,
+        property_definition_ids,
+        user_id,
+    )
+    .fetch_all(pool)
+    .await?)
+}
+
 /// Definitions by id with their options, database-owned ones included.
 /// Missing ids are skipped. Authorization is the caller's.
 #[tracing::instrument(skip(pool), err)]

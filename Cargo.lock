@@ -12013,6 +12013,7 @@ name = "models_databases"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "option_palette",
  "serde",
  "serde_json",
  "specta",
@@ -12122,11 +12123,13 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "document_sub_type",
+ "option_palette",
  "schemars 1.2.1",
  "serde",
  "serde_json",
  "serde_with",
  "sqlx",
+ "strum 0.27.2",
  "thiserror 2.0.18",
  "tracing",
  "utoipa",
@@ -13221,6 +13224,18 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
+]
+
+[[package]]
+name = "option_palette"
+version = "0.1.0"
+dependencies = [
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "specta",
+ "strum 0.27.2",
+ "utoipa",
 ]
 
 [[package]]
@@ -14427,6 +14442,7 @@ dependencies = [
  "models_permissions",
  "models_properties",
  "notification",
+ "option_palette",
  "rootcause",
  "schemars 1.2.1",
  "serde",

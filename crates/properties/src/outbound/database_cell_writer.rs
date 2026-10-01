@@ -9,6 +9,7 @@ use super::entity_property_queries;
 use super::properties_pg_repo::PropertiesPgRepo;
 use super::property_option_queries;
 use crate::domain::database_cell_writer::DatabaseCellWriter;
+use crate::domain::model::UpdatePropertyOptionOutcome;
 
 /// A cell or option write failed; the caller's transaction is to be dropped.
 #[derive(Debug, thiserror::Error)]
@@ -50,6 +51,44 @@ impl DatabaseCellWriter for PropertiesPgRepo {
             .await?;
         }
         Ok(())
+    }
+
+    async fn update_option_in(
+        &self,
+        transaction: &mut Self::Transaction,
+        property_definition_id: Uuid,
+        option_id: Uuid,
+        value: Option<PropertyOptionValue>,
+        color: Option<Option<String>>,
+    ) -> Result<UpdatePropertyOptionOutcome, Self::Err> {
+        Ok(property_option_queries::patch_property_option(
+            &mut **transaction,
+            property_definition_id,
+            option_id,
+            value,
+            color,
+        )
+        .await?)
+    }
+
+    async fn delete_option_in(
+        &self,
+        transaction: &mut Self::Transaction,
+        property_definition_id: Uuid,
+        option_id: Uuid,
+    ) -> Result<bool, Self::Err> {
+        let deleted = property_option_queries::delete_options_in_tx(
+            transaction,
+            property_definition_id,
+            &[option_id],
+        )
+        .await?;
+        property_option_queries::clear_emptied_database_row_values(
+            &mut **transaction,
+            property_definition_id,
+        )
+        .await?;
+        Ok(deleted == 1)
     }
 
     async fn upsert_entity_property_in(

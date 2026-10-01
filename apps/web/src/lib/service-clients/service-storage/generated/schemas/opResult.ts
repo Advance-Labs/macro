@@ -5,9 +5,10 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { OpResultOneOf } from './opResultOneOf';
+import type { OpResultOneOfFive } from './opResultOneOfFive';
 import type { OpResultOneOfThree } from './opResultOneOfThree';
 
 /**
  * What one op did, in the order the ops were sent.
  */
-export type OpResult = OpResultOneOf | OpResultOneOfThree;
+export type OpResult = OpResultOneOf | OpResultOneOfThree | OpResultOneOfFive;

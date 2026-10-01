@@ -114,6 +114,15 @@ pub trait PropertiesRepo: Send + Sync + 'static {
         database_id: Uuid,
     ) -> impl Future<Output = Result<Option<PropertyDefinition>, Self::Err>> + Send;
 
+    /// The definitions among `property_definition_ids` a user may change:
+    /// their own, or one of their teams'. Never a system one, nor one a
+    /// database owns, whose changes are that database's to authorize.
+    fn get_editable_property_definition_ids(
+        &self,
+        property_definition_ids: &[Uuid],
+        user_id: &str,
+    ) -> impl Future<Output = Result<Vec<Uuid>, Self::Err>> + Send;
+
     /// Definitions by id with their options, database-owned ones included.
     /// Missing ids are skipped; authorization is the caller's.
     fn get_property_definitions_with_options(

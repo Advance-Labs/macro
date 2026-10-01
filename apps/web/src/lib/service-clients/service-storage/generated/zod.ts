@@ -6647,6 +6647,11 @@ export const getDatabaseResponse = zod
                       .describe(
                         'Property definition with its associated options (service representation).'
                       ),
+                    shared_outside_database: zod
+                      .boolean()
+                      .describe(
+                        "Whether the definition belongs to something beyond this database (a\nperson's, a team's or a system property), so changing its options\nchanges them everywhere that property is used."
+                      ),
                     sql_name: zod
                       .string()
                       .describe(
@@ -7438,6 +7443,55 @@ export const applyDatabaseOpsBody = zod
               .describe(
                 'Convert a column to another type, converting its cells. A value that\ndoes not fit refuses the change unless `clearInvalid` empties it.'
               ),
+            zod
+              .object({
+                color: zod
+                  .union([
+                    zod.null(),
+                    zod
+                      .enum([
+                        'red',
+                        'tomato',
+                        'orange',
+                        'amber',
+                        'yellow',
+                        'green',
+                        'teal',
+                        'blue',
+                        'indigo',
+                        'purple',
+                        'pink',
+                        'gray',
+                      ])
+                      .describe(
+                        'A colour select and tag options take, from the palette the tag picker\nrenders.'
+                      ),
+                  ])
+                  .optional(),
+                column: zod.uuid().describe('The select or tag column.'),
+                kind: zod.enum(['update_option']),
+                label: zod
+                  .string()
+                  .optional()
+                  .describe(
+                    'Its new label; left out, it keeps its own. Labels are unique\nwithin a column, ignoring case.'
+                  ),
+                option: zod.uuid().describe('The option.'),
+                table: zod.uuid().describe('The table.'),
+              })
+              .describe(
+                'Relabel or recolour one option of a select or tag column. Every cell\nholding it keeps it. A column bound to a property shared outside the\ndatabase changes wherever that property is used, so it takes the\nright to edit that property.'
+              ),
+            zod
+              .object({
+                column: zod.uuid().describe('The select or tag column.'),
+                kind: zod.enum(['delete_option']),
+                option: zod.uuid().describe('The option.'),
+                table: zod.uuid().describe('The table.'),
+              })
+              .describe(
+                'Remove one option of a select or tag column, and take it out of every\ncell holding it: a single-valued cell is emptied, a multi-valued one\nkeeps its other options. Like [`DatabaseOp::UpdateOption`], an option\nof a shared property goes everywhere it is used.'
+              ),
           ])
           .describe(
             "One write to a database's data. A request's ops apply together or not at\nall, and every op names a table of the database the request is for."
@@ -7504,6 +7558,16 @@ export const applyDatabaseOpsResponse = zod
                   ),
               })
               .describe('What a column type change did.'),
+            zod
+              .object({
+                kind: zod.enum(['option_changed']),
+                tableVersion: zod
+                  .number()
+                  .describe(
+                    'Monotonic per-table version, bumped on every row\/column\/link mutation.\n\nThe cache key for query materializations and the invalidation signal for\nlive query chips.'
+                  ),
+              })
+              .describe('What an option change or removal did.'),
           ])
           .describe('What one op did, in the order the ops were sent.')
       )
@@ -8321,6 +8385,11 @@ export const inferDatabaseColumnTypeResponse = zod
           .describe(
             'Property definition with its associated options (service representation).'
           ),
+        shared_outside_database: zod
+          .boolean()
+          .describe(
+            "Whether the definition belongs to something beyond this database (a\nperson's, a team's or a system property), so changing its options\nchanges them everywhere that property is used."
+          ),
         sql_name: zod
           .string()
           .describe(
@@ -8549,6 +8618,11 @@ export const addDatabaseColumnOptionsResponse = zod
       })
       .describe(
         'Property definition with its associated options (service representation).'
+      ),
+    shared_outside_database: zod
+      .boolean()
+      .describe(
+        "Whether the definition belongs to something beyond this database (a\nperson's, a team's or a system property), so changing its options\nchanges them everywhere that property is used."
       ),
     sql_name: zod
       .string()

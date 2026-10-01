@@ -54,12 +54,16 @@ fn edit(database_id: DatabaseId) -> EntityAccessReceipt<EditAccessLevel> {
 }
 
 async fn insert_user(pool: &PgPool) {
+    insert_named_user(pool, USER).await;
+}
+
+async fn insert_named_user(pool: &PgPool, user: &str) {
     let id = macro_uuid::generate_uuid_v7();
-    sqlx::query!(r#"INSERT INTO macro_user (id, username, email, stripe_customer_id) VALUES ($1, $2, $2, $2)"#, id, USER)
+    sqlx::query!(r#"INSERT INTO macro_user (id, username, email, stripe_customer_id) VALUES ($1, $2, $2, $2)"#, id, user)
         .execute(pool).await.unwrap();
     sqlx::query!(
         r#"INSERT INTO "User" (id, email, macro_user_id) VALUES ($1, $1, $2)"#,
-        USER,
+        user,
         id
     )
     .execute(pool)
@@ -732,4 +736,180 @@ async fn a_type_change_through_ops_converts_like_change_column_type(pool: PgPool
             .get(&inserted[1])
             .is_none_or(|row| !row.contains_key(&number))
     );
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn an_option_is_relabelled_and_recoloured_in_place(pool: PgPool) {
+    let guests = guests(&pool).await;
+    let service = build_service(pool.clone(), NoOpTableEventPublisher, NoopMacroEventBroker);
+    let definitions = PgDefinitionStore::new(PropertiesPgRepo::new(pool.clone()));
+    let going = definitions
+        .definitions(&[guests.status_definition])
+        .await
+        .unwrap()
+        .remove(0)
+        .property_options[0]
+        .id;
+    let before = version(&pool, guests.table_id).await;
+
+    let results = service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::UpdateOption {
+                table: guests.table_id,
+                column: guests.status,
+                option: going,
+                label: Some("Attending".into()),
+                color: Some(Some(models_databases::OptionColor::Pink)),
+            }],
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        results,
+        vec![OpResult::OptionChanged {
+            table_version: TableVersion(before.0 + 1),
+        }]
+    );
+    let option = definitions
+        .definitions(&[guests.status_definition])
+        .await
+        .unwrap()
+        .remove(0)
+        .property_options
+        .remove(0);
+    assert_eq!(
+        (option.id, option.value, option.color),
+        (
+            going,
+            PropertyOptionValue::String("Attending".into()),
+            Some("#E93D82".into())
+        )
+    );
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn a_removed_option_leaves_its_cells_empty_and_the_others_alone(pool: PgPool) {
+    let guests = guests(&pool).await;
+    let service = build_service(pool.clone(), NoOpTableEventPublisher, NoopMacroEventBroker);
+    let inserted = service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::InsertRows {
+                table: guests.table_id,
+                rows: vec![
+                    vec![CellWrite {
+                        column: guests.status,
+                        value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
+                    }],
+                    vec![CellWrite {
+                        column: guests.status,
+                        value: CellValue::Options(vec![OptionRef::Label("Maybe".into())]),
+                    }],
+                ],
+                create_missing_options: true,
+            }],
+        )
+        .await
+        .unwrap();
+    let [OpResult::RowsWritten { inserted, .. }] = inserted.as_slice() else {
+        panic!("expected one insert, got {inserted:?}");
+    };
+    let definitions = PgDefinitionStore::new(PropertiesPgRepo::new(pool.clone()));
+    let options = definitions
+        .definitions(&[guests.status_definition])
+        .await
+        .unwrap()
+        .remove(0)
+        .property_options;
+    let (going, maybe) = (options[0].id, options[1].id);
+
+    service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::DeleteOption {
+                table: guests.table_id,
+                column: guests.status,
+                option: going,
+            }],
+        )
+        .await
+        .unwrap();
+
+    let remaining: Vec<Uuid> = definitions
+        .definitions(&[guests.status_definition])
+        .await
+        .unwrap()
+        .remove(0)
+        .property_options
+        .iter()
+        .map(|option| option.id)
+        .collect();
+    assert_eq!(remaining, vec![maybe]);
+    let stored = cells(&pool).cells(inserted).await.unwrap();
+    assert_eq!(
+        stored
+            .get(&inserted[0])
+            .and_then(|row| row.get(&guests.status_definition)),
+        None
+    );
+    assert_eq!(
+        stored[&inserted[1]][&guests.status_definition],
+        PropertyValue::SelectOption(vec![maybe])
+    );
+    let emptied = sqlx::query_scalar!(
+        r#"SELECT values AS "values: serde_json::Value" FROM entity_properties
+           WHERE entity_id = $1 AND property_definition_id = $2"#,
+        inserted[0].to_string(),
+        guests.status_definition,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(emptied, Some(serde_json::Value::Null));
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn a_shared_property_is_editable_by_its_owner_alone(pool: PgPool) {
+    use properties::domain::model::PropertyDefinitionOwner;
+    use properties::domain::ports::PropertiesRepo;
+
+    insert_user(&pool).await;
+    insert_named_user(&pool, "macro|someone-else@macro.com").await;
+    let properties = PropertiesPgRepo::new(pool.clone());
+    let owner = MacroUserIdStr::parse_from_str(USER).unwrap();
+    let someone_else = MacroUserIdStr::parse_from_str("macro|someone-else@macro.com").unwrap();
+    let mine = properties
+        .create_property_definition(
+            PropertyDefinitionOwner::User(&owner),
+            "Budget",
+            DataType::SelectString,
+            false,
+            None,
+            vec![],
+        )
+        .await
+        .unwrap();
+    let theirs = properties
+        .create_property_definition(
+            PropertyDefinitionOwner::User(&someone_else),
+            "Budget",
+            DataType::SelectString,
+            false,
+            None,
+            vec![],
+        )
+        .await
+        .unwrap();
+
+    let editable = PgDefinitionStore::new(properties)
+        .editable_definitions(&viewer(), &[mine.id, theirs.id])
+        .await
+        .unwrap();
+
+    assert_eq!(editable, vec![mine.id]);
 }

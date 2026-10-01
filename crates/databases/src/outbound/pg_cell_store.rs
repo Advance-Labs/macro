@@ -1,20 +1,19 @@
 //! Cells as entity properties, through the properties crate's own Postgres
 //! adapter: the `entity_properties` table stays that crate's to write. A
-//! batch of row writes runs on one transaction that the row identities, the
-//! cells and the new select options all share.
+//! batch of writes runs on one transaction that the row identities, the
+//! cells and the select options all share.
 
 use std::collections::HashMap;
 
 use models_properties::service::property_value::PropertyValue;
 use models_properties::{EntityReference, EntityType};
 use properties::domain::database_cell_writer::DatabaseCellWriter;
+use properties::domain::model::UpdatePropertyOptionOutcome;
 use properties::domain::ports::PropertiesRepo;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::domain::models::{
-    PropertyDefinitionId, RowId, RowWrite, RowWrites, RowWritesOutcome, TableId,
-};
+use crate::domain::models::{PropertyDefinitionId, RowId, TableId, Write, Writes, WritesOutcome};
 use crate::domain::ports::CellStore;
 use crate::outbound::pg_databases_repo::rows;
 
@@ -127,17 +126,21 @@ where
     }
 
     #[tracing::instrument(err, skip(self, writes), fields(writes = writes.writes.len()))]
-    async fn apply_row_writes(&self, writes: &RowWrites) -> Result<RowWritesOutcome, Self::Err> {
+    async fn apply_writes(&self, writes: &Writes) -> Result<WritesOutcome, Self::Err> {
         // Returning before the commit drops the transaction, which rolls
         // everything back.
         let mut transaction = self.pool.begin().await?;
 
-        let mut tables: Vec<TableId> = writes.writes.iter().map(RowWrite::table_id).collect();
+        let mut tables: Vec<TableId> = writes
+            .writes
+            .iter()
+            .flat_map(|write| write.versioned_tables().iter().copied())
+            .collect();
         tables.sort();
         tables.dedup();
         let live = rows::lock_live_tables(&mut *transaction, &tables).await?;
         if let Some(gone) = tables.iter().find(|table| !live.contains(table)) {
-            return Ok(RowWritesOutcome::TableNotFound(*gone));
+            return Ok(WritesOutcome::TableNotFound(*gone));
         }
 
         let mut options: Vec<(PropertyDefinitionId, Vec<_>)> = Vec::new();
@@ -161,7 +164,7 @@ where
         let mut inserted = Vec::with_capacity(writes.writes.len());
         for (index, write) in writes.writes.iter().enumerate() {
             match write {
-                RowWrite::Insert { table_id, rows } => {
+                Write::InsertRows { table_id, rows } => {
                     let Some(minted) = rows::append_rows(
                         &mut transaction,
                         *table_id,
@@ -170,7 +173,7 @@ where
                     )
                     .await?
                     else {
-                        return Ok(RowWritesOutcome::TableNotFound(*table_id));
+                        return Ok(WritesOutcome::TableNotFound(*table_id));
                     };
                     let mut valued = Vec::new();
                     for (row, cells) in minted.iter().zip(rows) {
@@ -192,11 +195,11 @@ where
                     rows::settle_inference(&mut *transaction, *table_id, &valued).await?;
                     inserted.push(minted.into_iter().map(|row| row.id).collect());
                 }
-                RowWrite::Update { table_id, rows } => {
+                Write::UpdateRows { table_id, rows } => {
                     let named: Vec<RowId> = rows.iter().map(|(row, _)| *row).collect();
                     let owned = rows::lock_rows(&mut *transaction, *table_id, &named).await?;
                     if let Some(row) = named.iter().find(|row| !owned.contains(row)) {
-                        return Ok(RowWritesOutcome::MissingRow {
+                        return Ok(WritesOutcome::MissingRow {
                             write: index,
                             row: *row,
                         });
@@ -221,10 +224,10 @@ where
                     rows::settle_inference(&mut *transaction, *table_id, &valued).await?;
                     inserted.push(Vec::new());
                 }
-                RowWrite::Delete { table_id, rows } => {
+                Write::DeleteRows { table_id, rows } => {
                     for row in rows {
                         if !rows::delete_row(&mut *transaction, *table_id, *row).await? {
-                            return Ok(RowWritesOutcome::MissingRow {
+                            return Ok(WritesOutcome::MissingRow {
                                 write: index,
                                 row: *row,
                             });
@@ -233,6 +236,50 @@ where
                             .delete_entity_properties_in(&mut transaction, &row_entity(*row))
                             .await
                             .map_err(cells_error)?;
+                    }
+                    inserted.push(Vec::new());
+                }
+                Write::UpdateOption {
+                    definition_id,
+                    option_id,
+                    value,
+                    color,
+                    ..
+                } => {
+                    match self
+                        .properties
+                        .update_option_in(
+                            &mut transaction,
+                            *definition_id,
+                            *option_id,
+                            value.clone(),
+                            color.clone(),
+                        )
+                        .await
+                        .map_err(cells_error)?
+                    {
+                        UpdatePropertyOptionOutcome::Updated(_) => {}
+                        UpdatePropertyOptionOutcome::NotFound => {
+                            return Ok(WritesOutcome::MissingOption { write: index });
+                        }
+                        UpdatePropertyOptionOutcome::DuplicateValue => {
+                            return Ok(WritesOutcome::OptionLabelTaken { write: index });
+                        }
+                    }
+                    inserted.push(Vec::new());
+                }
+                Write::DeleteOption {
+                    definition_id,
+                    option_id,
+                    ..
+                } => {
+                    if !self
+                        .properties
+                        .delete_option_in(&mut transaction, *definition_id, *option_id)
+                        .await
+                        .map_err(cells_error)?
+                    {
+                        return Ok(WritesOutcome::MissingOption { write: index });
                     }
                     inserted.push(Vec::new());
                 }
@@ -249,7 +296,7 @@ where
         for (table, named) in &related {
             let held = rows::hold_rows(&mut *transaction, *table, named).await?;
             if let Some(row) = named.iter().find(|row| !held.contains(row)) {
-                return Ok(RowWritesOutcome::MissingRelatedRow(*row));
+                return Ok(WritesOutcome::MissingRelatedRow(*row));
             }
         }
 
@@ -258,14 +305,14 @@ where
             let changed = writes
                 .writes
                 .iter()
-                .any(|write| write.table_id() == table && write.affected() > 0);
+                .any(|write| write.changes() && write.versioned_tables().contains(&table));
             if changed {
                 let version = rows::bump_table_version(&mut *transaction, table).await?;
                 table_versions.insert(table, version);
             }
         }
         transaction.commit().await?;
-        Ok(RowWritesOutcome::Applied {
+        Ok(WritesOutcome::Applied {
             inserted,
             table_versions,
         })
