@@ -211,8 +211,8 @@ where
             })?;
         let mut bins: Vec<Bin> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
-        // A group lists its items in order; only its first carries the bin.
-        for item in items.filter(|item| item.index_in_group == 0) {
+        // Soup numbers a group's items from 1; only its first carries the bin.
+        for item in items.filter(|item| item.index_in_group == 1) {
             if !seen.insert(item.key.clone()) {
                 return Err(SoupSourceError::RepeatedGroup { key: item.key });
             }

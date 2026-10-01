@@ -625,13 +625,21 @@ impl SoupService for FakeSoup {
                 }
             }
         }
+        // As Soup answers: up to ten items a group, numbered from 1.
         Ok(bins
             .into_iter()
-            .map(|(key, members)| ItemGroupingInfo {
-                key,
-                total_group_count: members.len(),
-                index_in_group: 0,
-                item: soup_item(members[0]),
+            .flat_map(|(key, members)| {
+                let total_group_count = members.len();
+                members
+                    .into_iter()
+                    .take(10)
+                    .enumerate()
+                    .map(move |(index, member)| ItemGroupingInfo {
+                        key: key.clone(),
+                        total_group_count,
+                        index_in_group: index + 1,
+                        item: soup_item(member),
+                    })
             })
             .collect::<Vec<_>>()
             .into_iter())

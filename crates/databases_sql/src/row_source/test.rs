@@ -203,7 +203,8 @@ impl SoupService for ReplaySoup {
                     Some(other) => panic!("Soup does not group by {other:?}"),
                 },
                 total_group_count: bin.count as usize,
-                index_in_group: 0,
+                // Soup numbers a group's items from 1.
+                index_in_group: 1,
                 item: soup_row(&Row {
                     id: Uuid::new_v4(),
                     position: None,
