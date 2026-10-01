@@ -5,11 +5,13 @@
 mod test;
 
 mod initiative;
+mod ordered_documents;
 
 use initiative::initiative_top_clause;
 pub(in crate::outbound::pg_soup_repo) use initiative::{
     build_initiative_filter, initiative_access_clause, initiative_opted_in,
 };
+use ordered_documents::{PROBE_ALL_FALLBACK, ordered_document_strategy};
 
 #[cfg(test)]
 use item_filters::ast::initiative::InitiativeLiteral;
@@ -1344,6 +1346,15 @@ fn build_query(
     exclude_frecency: bool,
     sort_method: SimpleSortMethod,
 ) -> QueryBuilder<'_, Postgres> {
+    build_query_with(filter_ast, exclude_frecency, sort_method, true)
+}
+
+fn build_query_with(
+    filter_ast: &EntityFilterAst,
+    exclude_frecency: bool,
+    sort_method: SimpleSortMethod,
+    allow_ordered_documents: bool,
+) -> QueryBuilder<'_, Postgres> {
     let mut builder = sqlx::QueryBuilder::new(PREFIX);
 
     let include_initiatives = initiative_opted_in(filter_ast.initiative_filter.as_deref())
@@ -1439,6 +1450,15 @@ fn build_query(
         build_notification_items_cte(&mut builder, predicate, &item_types);
     }
 
+    let ordered_documents = if allow_ordered_documents && include_documents {
+        ordered_document_strategy(filter_ast, exclude_frecency, sort_method)
+    } else {
+        None
+    };
+    if let Some(ordered) = &ordered_documents {
+        builder.push(&ordered.ctes);
+    }
+
     // TopItems CTE: lightweight id + sort_ts with filters, cursor, and limit
     builder.push("TopItems AS (");
     builder.push("SELECT all_items.item_type, all_items.id, all_items.sort_ts FROM (");
@@ -1447,6 +1467,10 @@ fn build_query(
 
     if include_documents {
         push_union_separator(&mut builder, &mut needs_separator);
+        if let Some(ordered) = &ordered_documents {
+            builder.push(&ordered.arm);
+            builder.push(" UNION ALL ");
+        }
         // Document top clause (lightweight). The document_sub_type join is
         // only needed by filters that reference `dt` (Importance / CBM);
         // SubType literals render as their own EXISTS probes.
@@ -1459,6 +1483,9 @@ fn build_query(
             builder.push(DOCUMENT_TASK_PROPERTY_JOINS);
         }
         builder.push(document_top_where_clause(sort_method));
+        if ordered_documents.is_some() {
+            builder.push(PROBE_ALL_FALLBACK);
+        }
         builder.push(build_document_filter(document_filter));
         builder.push(build_properties_filter(
             filter_ast.properties_filter.as_deref(),
