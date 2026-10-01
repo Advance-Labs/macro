@@ -5346,6 +5346,50 @@ dependencies = [
 ]
 
 [[package]]
+name = "databases"
+version = "0.1.0"
+dependencies = [
+ "activity",
+ "ai_toolset",
+ "anyhow",
+ "async-trait",
+ "axum",
+ "bot_id",
+ "chrono",
+ "connection_gateway_client",
+ "entity_access",
+ "entity_access_db_utils",
+ "entity_mutation",
+ "macro_authorization",
+ "macro_db_migrator",
+ "macro_event_broker",
+ "macro_event_topics",
+ "macro_user_id",
+ "macro_uuid",
+ "model-entity",
+ "model-error-response",
+ "models_databases",
+ "models_permissions",
+ "models_properties",
+ "option_palette",
+ "properties",
+ "rootcause",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "thiserror 2.0.18",
+ "tokio",
+ "tower 0.5.3",
+ "tracing",
+ "url",
+ "utoipa",
+ "uuid",
+ "workspace-hack",
+]
+
+[[package]]
 name = "dataloss_prevention_handler"
 version = "0.1.0"
 dependencies = [
@@ -5933,6 +5977,7 @@ dependencies = [
  "cool_asserts",
  "cowlike",
  "crm",
+ "databases",
  "dictation",
  "document_sub_type",
  "documents",
@@ -5990,6 +6035,7 @@ dependencies = [
  "model_owner",
  "model_user",
  "models_bulk_upload",
+ "models_databases",
  "models_dcs",
  "models_opensearch",
  "models_pagination",

@@ -6328,6 +6328,3785 @@ export const putCrmTeamStagesResponse = zod
   .describe("The team's custom stage set.");
 
 /**
+ * @summary List the caller's databases.
+ */
+export const listDatabasesResponseItem = zod
+  .object({
+    database: zod
+      .object({
+        created_at: zod.iso.datetime({}).describe('Creation time.'),
+        id: zod.uuid().describe('Identifier.'),
+        name: zod.string().describe('Display name.'),
+        owner_id: zod.string().describe('Owning user.'),
+        trashed_at: zod.iso
+          .datetime({})
+          .nullable()
+          .describe('Set when trashed.'),
+      })
+      .describe(
+        'A database: a named collection of tables, owned and shared as one entity.'
+      ),
+    grant: zod
+      .enum(['view', 'comment', 'edit', 'owner'])
+      .describe('Ordered from least to most access top -> bottom'),
+    tables: zod
+      .array(
+        zod
+          .object({
+            database_id: zod.uuid().describe('Owning database.'),
+            id: zod.uuid().describe('Identifier.'),
+            name: zod
+              .string()
+              .describe(
+                "Display name; also the basis of the table's SQL name."
+              ),
+            position: zod
+              .string()
+              .describe('Fractional index for tab ordering.'),
+            version: zod
+              .number()
+              .describe(
+                "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+              ),
+          })
+          .describe('One table (tab) of a database.')
+      )
+      .describe(
+        "Tables in tab order, so discovery can find a table independently of\nthe containing database's display name."
+      ),
+  })
+  .describe('A database as listed for a viewer.');
+export const listDatabasesResponse = zod.array(listDatabasesResponseItem);
+
+/**
+ * @summary Create a database owned by the caller; its first table, "Table 1", holds a
+"Name" text column.
+ */
+export const createDatabaseBody = zod
+  .object({
+    name: zod.string().describe('Display name.'),
+  })
+  .describe('Request body for creating a database.');
+
+/**
+ * @summary Save an immutable query. Editing a question saves a new one.
+ */
+export const saveDatabaseQueryBody = zod
+  .object({
+    databaseId: zod
+      .uuid()
+      .optional()
+      .describe(
+        'The database whose tables win name resolution. The caller must be\nable to see it.'
+      ),
+    definition: zod
+      .object({
+        query: zod
+          .string()
+          .describe('A read-only SELECT in the databases dialect.'),
+        version: zod.literal(1),
+      })
+      .describe('A versioned query definition.'),
+  })
+  .describe('Request body for saving a query.');
+
+/**
+ * @summary A saved query's definition, for its creator or a viewer of its database.
+ */
+export const getDatabaseQueryParams = zod.object({
+  query_id: zod.uuid().describe('Saved query id'),
+});
+
+export const getDatabaseQueryResponse = zod
+  .object({
+    createdAt: zod.iso.datetime({}).describe('When it was saved.'),
+    createdBy: zod
+      .string()
+      .nullable()
+      .describe('Who saved it; `null` once that user is deleted.'),
+    databaseId: zod
+      .uuid()
+      .nullable()
+      .describe(
+        'The database whose tables win name resolution; `null` once that\ndatabase is deleted, or when none was given.'
+      ),
+    definition: zod
+      .object({
+        query: zod
+          .string()
+          .describe('A read-only SELECT in the databases dialect.'),
+        version: zod.literal(1),
+      })
+      .describe('A versioned query definition.'),
+    id: zod.uuid().describe('Identifier.'),
+  })
+  .describe('A stored, immutable query. Editing a question saves a new one.');
+
+/**
+ * @summary Create a small example once for the authenticated user, if they have no databases.
+ */
+export const ensureStarterHandlerResponse = zod
+  .object({
+    created: zod
+      .boolean()
+      .describe('Whether this request created the example.'),
+    databaseId: zod
+      .string()
+      .nullable()
+      .describe('Accessible starter database, if still present.'),
+    tableId: zod
+      .string()
+      .nullable()
+      .describe('Initial table, returned only on first creation.'),
+    viewId: zod
+      .string()
+      .nullable()
+      .describe('Initial board view, returned only on first creation.'),
+  })
+  .describe(
+    'Starter result. A missing database means the user already started or removed it.'
+  );
+
+/**
+ * @summary Schema detail of one database.
+ */
+export const getDatabaseParams = zod.object({
+  id: zod.uuid().describe('Database id'),
+});
+
+export const getDatabaseResponseTablesItemViewsItemLayoutColumnsItemWidthMin = 0;
+
+export const getDatabaseResponse = zod
+  .object({
+    database: zod
+      .object({
+        created_at: zod.iso.datetime({}).describe('Creation time.'),
+        id: zod.uuid().describe('Identifier.'),
+        name: zod.string().describe('Display name.'),
+        owner_id: zod.string().describe('Owning user.'),
+        trashed_at: zod.iso
+          .datetime({})
+          .nullable()
+          .describe('Set when trashed.'),
+      })
+      .describe(
+        'A database: a named collection of tables, owned and shared as one entity.'
+      ),
+    grant: zod
+      .enum(['view', 'comment', 'edit', 'owner'])
+      .describe('Ordered from least to most access top -> bottom'),
+    tables: zod
+      .array(
+        zod
+          .object({
+            columns: zod
+              .array(
+                zod
+                  .object({
+                    column: zod
+                      .object({
+                        config: zod.union([
+                          zod.null(),
+                          zod
+                            .object({
+                              database_id: zod
+                                .uuid()
+                                .describe('Target database.'),
+                              kind: zod.enum(['link']),
+                              table_id: zod.uuid().describe('Target table.'),
+                            })
+                            .describe(
+                              'A relation column: its cells reference rows of another table.'
+                            )
+                            .describe(
+                              'Column-kind specific configuration stored on the placement.'
+                            ),
+                        ]),
+                        display_name: zod
+                          .string()
+                          .nullable()
+                          .describe(
+                            "The placement's own label, which also names it in SQL; `None` shows\nthe definition's name."
+                          ),
+                        id: zod.uuid().describe('Identifier of the placement.'),
+                        infer_type: zod
+                          .boolean()
+                          .describe(
+                            "Whether the first nonempty value may settle this new text column's type."
+                          ),
+                        position: zod
+                          .string()
+                          .describe('Fractional index for column ordering.'),
+                        property_definition_id: zod
+                          .uuid()
+                          .describe('The bound property definition.'),
+                        table_id: zod
+                          .uuid()
+                          .describe('Table the column appears on.'),
+                      })
+                      .describe(
+                        'A column: the placement of a property definition on a table.\n\nThe definition carries name, [`DataType`], multi-select flag, and options;\nthis carries only where it appears and column-kind configuration.'
+                      ),
+                    definition: zod
+                      .object({
+                        definition: zod
+                          .object({
+                            created_at: zod.iso.datetime({}),
+                            data_type: zod
+                              .enum([
+                                'BOOLEAN',
+                                'DATE',
+                                'NUMBER',
+                                'STRING',
+                                'SELECT_NUMBER',
+                                'SELECT_STRING',
+                                'TAG',
+                                'ENTITY',
+                                'LINK',
+                              ])
+                              .describe(
+                                'Data type for property values, determining storage and validation.'
+                              ),
+                            display_name: zod.string(),
+                            id: zod.uuid(),
+                            is_metadata: zod
+                              .boolean()
+                              .describe(
+                                'Flag to indicate if this is a system-generated metadata property.\nNot stored in database - computed at service layer.'
+                              ),
+                            is_multi_select: zod.boolean(),
+                            is_system: zod
+                              .boolean()
+                              .describe(
+                                'Flag to indicate if this is a system property (stored in DB).'
+                              ),
+                            owner: zod
+                              .union([
+                                zod
+                                  .object({
+                                    scope: zod.enum(['user']),
+                                    user_id: zod.string(),
+                                  })
+                                  .describe('User-scoped property.'),
+                                zod
+                                  .object({
+                                    scope: zod.enum(['team']),
+                                    team_id: zod.uuid(),
+                                  })
+                                  .describe('Team-scoped property.'),
+                                zod
+                                  .object({
+                                    database_id: zod.uuid(),
+                                    scope: zod.enum(['database']),
+                                  })
+                                  .describe(
+                                    'Database-scoped property: the definition is a column of one Macro\ndatabase and is invisible to the shared user\/team property namespace.'
+                                  ),
+                                zod
+                                  .object({
+                                    scope: zod.enum(['system']),
+                                  })
+                                  .describe(
+                                    'System-owned property (no user, team, or database owner).'
+                                  ),
+                              ])
+                              .describe(
+                                'Defines who owns a property - user-scoped, team-scoped, database-scoped, or system.'
+                              ),
+                            specific_entity_type: zod.union([
+                              zod.null(),
+                              zod
+                                .enum([
+                                  'CALENDAR_EVENT',
+                                  'CALL_RECORD',
+                                  'CHANNEL',
+                                  'CHAT',
+                                  'COMPANY',
+                                  'DATABASE_ROW',
+                                  'DOCUMENT',
+                                  'INITIATIVE',
+                                  'PROJECT',
+                                  'TASK',
+                                  'THREAD',
+                                  'USER',
+                                ])
+                                .describe(
+                                  'Type of entity that can be referenced by entity properties.'
+                                ),
+                            ]),
+                            updated_at: zod.iso.datetime({}),
+                          })
+                          .describe(
+                            'Property definition model (service representation).'
+                          ),
+                        property_options: zod.array(
+                          zod
+                            .object({
+                              color: zod.string().nullable(),
+                              created_at: zod.iso.datetime({}),
+                              display_order: zod.number(),
+                              id: zod.uuid(),
+                              property_definition_id: zod.uuid(),
+                              updated_at: zod.iso.datetime({}),
+                              value: zod
+                                .union([
+                                  zod
+                                    .object({
+                                      type: zod.enum(['string']),
+                                      value: zod
+                                        .string()
+                                        .describe(
+                                          'String value for SelectString properties'
+                                        ),
+                                    })
+                                    .describe(
+                                      'String value for SelectString properties'
+                                    ),
+                                  zod
+                                    .object({
+                                      type: zod.enum(['number']),
+                                      value: zod
+                                        .number()
+                                        .describe(
+                                          'Number value for SelectNumber properties'
+                                        ),
+                                    })
+                                    .describe(
+                                      'Number value for SelectNumber properties'
+                                    ),
+                                ])
+                                .describe(
+                                  'The value of a property option - either a string or a number.'
+                                ),
+                            })
+                            .describe(
+                              'A selectable option for select-type properties (service representation).'
+                            )
+                        ),
+                      })
+                      .describe(
+                        'Property definition with its associated options (service representation).'
+                      ),
+                    shared_outside_database: zod
+                      .boolean()
+                      .describe(
+                        "Whether the definition belongs to something beyond this database (a\nperson's, a team's or a system property), so changing its options\nchanges them everywhere that property is used."
+                      ),
+                    sql_name: zod
+                      .string()
+                      .describe(
+                        'The name SQL refers to the column by: its display name, quoted.'
+                      ),
+                    writable: zod
+                      .boolean()
+                      .describe('Whether SQL may write this column.'),
+                  })
+                  .describe(
+                    'One column placement with the definition behind it.'
+                  )
+              )
+              .describe('Columns in display order.'),
+            sql_name: zod
+              .string()
+              .describe(
+                'The name SQL refers to the table by: its display name quoted and\nqualified by the database\'s (`FROM \"Plans\".\"Table 1\"`).'
+              ),
+            table: zod
+              .object({
+                database_id: zod.uuid().describe('Owning database.'),
+                id: zod.uuid().describe('Identifier.'),
+                name: zod
+                  .string()
+                  .describe(
+                    "Display name; also the basis of the table's SQL name."
+                  ),
+                position: zod
+                  .string()
+                  .describe('Fractional index for tab ordering.'),
+                version: zod
+                  .number()
+                  .describe(
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+                  ),
+              })
+              .describe('One table (tab) of a database.'),
+            views: zod
+              .array(
+                zod
+                  .object({
+                    createdAt: zod.iso
+                      .datetime({})
+                      .describe('When it was created.'),
+                    databaseId: zod
+                      .uuid()
+                      .describe('The database the table belongs to.'),
+                    id: zod.uuid().describe('The view.'),
+                    layout: zod
+                      .union([
+                        zod
+                          .object({
+                            columns: zod
+                              .array(
+                                zod
+                                  .object({
+                                    column: zod.uuid().describe('The column.'),
+                                    hidden: zod
+                                      .boolean()
+                                      .optional()
+                                      .describe('Whether it is hidden.'),
+                                    width: zod
+                                      .number()
+                                      .min(
+                                        getDatabaseResponseTablesItemViewsItemLayoutColumnsItemWidthMin
+                                      )
+                                      .nullable()
+                                      .describe(
+                                        'Its width in pixels; the default when unset.'
+                                      ),
+                                  })
+                                  .describe(
+                                    'How one column shows in a table layout.'
+                                  )
+                              )
+                              .describe(
+                                "How columns show, in display order. A column left out shows\nafter the listed ones, in the table's order."
+                              ),
+                            kind: zod.enum(['table']),
+                          })
+                          .describe('A grid with a row per row.'),
+                        zod
+                          .object({
+                            cardFields: zod
+                              .array(zod.uuid())
+                              .describe('The columns a card shows, in order.'),
+                            groupBy: zod
+                              .uuid()
+                              .describe(
+                                'The single-select column whose options are the lanes; moving a\ncard to another lane sets this column.'
+                              ),
+                            hideEmptyLanes: zod
+                              .boolean()
+                              .describe(
+                                'Whether a lane with no cards is hidden.'
+                              ),
+                            kind: zod.enum(['board']),
+                            lanes: zod
+                              .array(
+                                zod
+                                  .object({
+                                    hidden: zod
+                                      .boolean()
+                                      .optional()
+                                      .describe('Whether it is hidden.'),
+                                    option: zod
+                                      .uuid()
+                                      .nullable()
+                                      .describe(
+                                        'The option the lane holds the cards of; `null` for cards without one.'
+                                      ),
+                                  })
+                                  .describe(
+                                    'How one lane shows in a board layout.'
+                                  )
+                              )
+                              .describe(
+                                "How lanes show, in display order. A lane left out shows after the\nlisted ones, options in the column's order; the lane of cards\nwithout an option first."
+                              ),
+                          })
+                          .describe(
+                            'Cards in lanes, one lane per option of a single-select column plus\none for cards without one. A multi-select column cannot group a\nboard: a card is in exactly one lane, so a card in several would need\na place in each.'
+                          ),
+                      ])
+                      .describe('How a view draws its rows.'),
+                    name: zod
+                      .string()
+                      .describe(
+                        "Its name, unique among the table's views ignoring case."
+                      ),
+                    position: zod
+                      .string()
+                      .describe(
+                        "Where it sorts among the table's views: a fractional key."
+                      ),
+                    query: zod
+                      .object({
+                        filter: zod.union([
+                          zod.null(),
+                          zod
+                            .object({
+                              conditions: zod
+                                .array(
+                                  zod
+                                    .union([
+                                      zod
+                                        .object({
+                                          column: zod
+                                            .uuid()
+                                            .describe('The column tested.'),
+                                          test: zod
+                                            .union([
+                                              zod
+                                                .object({
+                                                  kind: zod.enum(['presence']),
+                                                  operator: zod
+                                                    .enum([
+                                                      'isEmpty',
+                                                      'isNotEmpty',
+                                                    ])
+                                                    .describe(
+                                                      'Whether a cell is empty.'
+                                                    ),
+                                                })
+                                                .describe(
+                                                  'Whether the cell is empty; fits a column of any type.'
+                                                ),
+                                              zod
+                                                .object({
+                                                  kind: zod.enum(['text']),
+                                                  operator: zod
+                                                    .enum([
+                                                      'is',
+                                                      'isNot',
+                                                      'contains',
+                                                      'doesNotContain',
+                                                      'startsWith',
+                                                      'endsWith',
+                                                    ])
+                                                    .describe(
+                                                      'How a text cell compares to a text.'
+                                                    ),
+                                                  value: zod
+                                                    .string()
+                                                    .describe(
+                                                      'The text compared against, ignoring case for the containment\ntests.'
+                                                    ),
+                                                })
+                                                .describe(
+                                                  'A text or link column.'
+                                                ),
+                                              zod
+                                                .object({
+                                                  kind: zod.enum(['number']),
+                                                  operator: zod
+                                                    .enum([
+                                                      'is',
+                                                      'isNot',
+                                                      'greaterThan',
+                                                      'greaterThanOrEqual',
+                                                      'lessThan',
+                                                      'lessThanOrEqual',
+                                                    ])
+                                                    .describe(
+                                                      'How a number cell compares to a number.'
+                                                    ),
+                                                  value: zod
+                                                    .number()
+                                                    .describe(
+                                                      'The number compared against; finite.'
+                                                    ),
+                                                })
+                                                .describe('A number column.'),
+                                              zod
+                                                .object({
+                                                  kind: zod.enum(['date']),
+                                                  operator: zod
+                                                    .enum([
+                                                      'before',
+                                                      'after',
+                                                      'onOrBefore',
+                                                      'onOrAfter',
+                                                    ])
+                                                    .describe(
+                                                      'How a date cell compares to a date-time.'
+                                                    ),
+                                                  value: zod.iso
+                                                    .datetime({})
+                                                    .describe(
+                                                      'The date-time compared against.'
+                                                    ),
+                                                })
+                                                .describe('A date column.'),
+                                              zod
+                                                .object({
+                                                  checked: zod
+                                                    .boolean()
+                                                    .describe(
+                                                      'Whether the box is checked.'
+                                                    ),
+                                                  kind: zod.enum(['checkbox']),
+                                                })
+                                                .describe(
+                                                  'A checkbox column. An unchecked box and an empty cell are the same.'
+                                                ),
+                                              zod
+                                                .object({
+                                                  kind: zod.enum(['options']),
+                                                  operator: zod
+                                                    .enum([
+                                                      'isAnyOf',
+                                                      'isNoneOf',
+                                                      'hasAny',
+                                                      'hasAll',
+                                                      'hasNone',
+                                                    ])
+                                                    .describe(
+                                                      "How a cell's options or references relate to a set of them. The first\ntwo fit a column holding one value, the last three one holding several."
+                                                    ),
+                                                  options: zod
+                                                    .array(zod.uuid())
+                                                    .describe(
+                                                      'Options of the column; at least one.'
+                                                    ),
+                                                })
+                                                .describe(
+                                                  'A select or tag column.'
+                                                ),
+                                              zod
+                                                .object({
+                                                  entities: zod
+                                                    .array(zod.string())
+                                                    .describe(
+                                                      "Entity ids, or for a relation the related rows' ids; at least\none."
+                                                    ),
+                                                  kind: zod.enum(['entities']),
+                                                  operator: zod
+                                                    .enum([
+                                                      'isAnyOf',
+                                                      'isNoneOf',
+                                                      'hasAny',
+                                                      'hasAll',
+                                                      'hasNone',
+                                                    ])
+                                                    .describe(
+                                                      "How a cell's options or references relate to a set of them. The first\ntwo fit a column holding one value, the last three one holding several."
+                                                    ),
+                                                })
+                                                .describe(
+                                                  'A reference or relation column.'
+                                                ),
+                                            ])
+                                            .describe(
+                                              "What a column's cell must be, by the kind of value the column holds."
+                                            ),
+                                        })
+                                        .describe(
+                                          "A test of one column's cells."
+                                        )
+                                        .and(
+                                          zod.object({
+                                            kind: zod.enum(['condition']),
+                                          })
+                                        )
+                                        .describe('A test of one column.'),
+                                      zod
+                                        .unknown()
+                                        .and(
+                                          zod.object({
+                                            kind: zod.enum(['group']),
+                                          })
+                                        )
+                                        .describe('A nested group.'),
+                                    ])
+                                    .describe(
+                                      'One entry of a group: a condition, or a group of its own.'
+                                    )
+                                )
+                                .describe(
+                                  'The conditions and nested groups. A group without any keeps every\nrow.'
+                                ),
+                              conjunction: zod
+                                .enum(['and', 'or'])
+                                .describe("How a group's conditions combine."),
+                            })
+                            .describe('Conditions joined by one conjunction.'),
+                        ]),
+                        sort: zod
+                          .array(
+                            zod
+                              .object({
+                                column: zod
+                                  .uuid()
+                                  .describe('The column sorted on.'),
+                                direction: zod
+                                  .enum(['ascending', 'descending'])
+                                  .describe(
+                                    'A sort direction. Empty cells sort last either way.'
+                                  ),
+                              })
+                              .describe('One sort key.')
+                          )
+                          .optional()
+                          .describe(
+                            "The sort keys, first key first. Rows the keys leave tied keep the\ntable's own order; with no keys, the table's order is the view's."
+                          ),
+                      })
+                      .describe(
+                        'Which rows of the table a view shows, and in what order: a filter and a\nsort, nothing that joins, groups or reshapes rows.'
+                      ),
+                    tableId: zod.uuid().describe('The table it shows.'),
+                    updatedAt: zod.iso
+                      .datetime({})
+                      .describe('When it last changed.'),
+                  })
+                  .describe('A view of one table, as stored.')
+              )
+              .describe("The table's views, in their order."),
+          })
+          .describe('One table with its columns and SQL name.')
+      )
+      .describe('Tables in tab order.'),
+  })
+  .describe(
+    'Everything a client needs to render and edit one database: tables,\ncolumn placements with their definitions, and the SQL names the query\nsurface exposes them under.'
+  );
+
+/**
+ * @summary Tell a database's other viewers where the caller is.
+ */
+export const shareDatabaseAwarenessParams = zod.object({
+  id: zod.uuid().describe('Database id'),
+});
+
+export const shareDatabaseAwarenessBody = zod
+  .object({
+    columnId: zod
+      .uuid()
+      .optional()
+      .describe('The column placement of the focused cell, if any.'),
+    editing: zod
+      .boolean()
+      .optional()
+      .describe('Whether the cell is open for editing.'),
+    left: zod
+      .boolean()
+      .optional()
+      .describe(
+        'Whether the viewer left the database; other viewers drop their state.'
+      ),
+    rowId: zod
+      .uuid()
+      .optional()
+      .describe('The row of the focused cell, if any.'),
+    tableId: zod.uuid().describe('The table the viewer is looking at.'),
+  })
+  .describe(
+    'Where one viewer is inside a database right now: ephemeral, relayed to\nthe other viewers and never stored. A missing row or column means the\nviewer is on the table but on no cell.'
+  );
+
+/**
+ * @summary Import a new table and every row atomically; retries carry the same request ID.
+ */
+export const importDatabaseTableParams = zod.object({
+  id: zod.uuid(),
+});
+
+export const importDatabaseTableBody = zod
+  .object({
+    columns: zod
+      .array(zod.string())
+      .describe('Header names, in order. All imported values remain text.'),
+    name: zod.string().describe("New table's display name."),
+    requestId: zod
+      .uuid()
+      .describe('Stable key for this import, retained through retries.'),
+    rows: zod
+      .array(zod.array(zod.string()))
+      .describe('Rectangular text rows. Empty fields are preserved.'),
+  })
+  .describe(
+    'An import is identified once, before sending, so retries cannot duplicate rows.'
+  );
+
+export const importDatabaseTableResponse = zod
+  .object({
+    database_id: zod.uuid().describe('Owning database.'),
+    id: zod.uuid().describe('Identifier.'),
+    name: zod
+      .string()
+      .describe("Display name; also the basis of the table's SQL name."),
+    position: zod.string().describe('Fractional index for tab ordering.'),
+    version: zod
+      .number()
+      .describe(
+        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+      ),
+  })
+  .describe('One table (tab) of a database.');
+
+/**
+ * @summary Apply a batch of typed ops: insert, update and delete rows, or change a
+column's type. Row ops are last-write-wins. A refused op, named by its
+index (and row and column where relevant), leaves the whole batch
+unwritten.
+ */
+export const applyDatabaseOpsParams = zod.object({
+  id: zod.uuid().describe('Database id'),
+});
+
+export const applyDatabaseOpsBodyOpsItemViewLayoutColumnsItemWidthMin = 0;
+
+export const applyDatabaseOpsBodyOpsItemLayoutColumnsItemWidthMin = 0;
+
+export const applyDatabaseOpsBody = zod
+  .object({
+    ops: zod
+      .array(
+        zod
+          .union([
+            zod
+              .object({
+                createMissingOptions: zod
+                  .boolean()
+                  .optional()
+                  .describe(
+                    'Create a select option for a label the column does not have yet,\ninstead of refusing the op.'
+                  ),
+                kind: zod.enum(['insert_rows']),
+                rows: zod
+                  .array(
+                    zod.array(
+                      zod
+                        .object({
+                          column: zod.uuid().describe('The column placement.'),
+                          value: zod
+                            .union([
+                              zod
+                                .object({
+                                  type: zod.enum(['text']),
+                                  value: zod.string().describe('Free text.'),
+                                })
+                                .describe('Free text.'),
+                              zod
+                                .object({
+                                  type: zod.enum(['number']),
+                                  value: zod
+                                    .number()
+                                    .describe('A finite number.'),
+                                })
+                                .describe('A finite number.'),
+                              zod
+                                .object({
+                                  type: zod.enum(['boolean']),
+                                  value: zod.boolean().describe('A checkbox.'),
+                                })
+                                .describe('A checkbox.'),
+                              zod
+                                .object({
+                                  type: zod.enum(['date']),
+                                  value: zod.iso
+                                    .datetime({})
+                                    .describe('A date-time.'),
+                                })
+                                .describe('A date-time.'),
+                              zod
+                                .object({
+                                  type: zod.enum(['link']),
+                                  value: zod
+                                    .array(zod.string())
+                                    .describe(
+                                      'Complete http or https URLs; at most one for a single-valued column.'
+                                    ),
+                                })
+                                .describe(
+                                  'Complete http or https URLs; at most one for a single-valued column.'
+                                ),
+                              zod
+                                .object({
+                                  type: zod.enum(['options']),
+                                  value: zod
+                                    .array(
+                                      zod
+                                        .union([
+                                          zod
+                                            .object({
+                                              id: zod
+                                                .uuid()
+                                                .describe(
+                                                  'An option the column has.'
+                                                ),
+                                            })
+                                            .describe(
+                                              'An option the column has.'
+                                            ),
+                                          zod
+                                            .object({
+                                              label: zod
+                                                .string()
+                                                .describe(
+                                                  "An option's label, matched without regard to case. An unknown label\nis refused unless the op creates missing options."
+                                                ),
+                                            })
+                                            .describe(
+                                              "An option's label, matched without regard to case. An unknown label\nis refused unless the op creates missing options."
+                                            ),
+                                        ])
+                                        .describe(
+                                          'A select option, by its id or by its label.'
+                                        )
+                                    )
+                                    .describe(
+                                      'Options of a select or tag column; at most one for a single-valued\ncolumn.'
+                                    ),
+                                })
+                                .describe(
+                                  'Options of a select or tag column; at most one for a single-valued\ncolumn.'
+                                ),
+                              zod
+                                .object({
+                                  type: zod.enum(['entities']),
+                                  value: zod
+                                    .array(
+                                      zod
+                                        .object({
+                                          entityId: zod
+                                            .string()
+                                            .describe("The entity's id."),
+                                          entityType: zod
+                                            .enum([
+                                              'USER',
+                                              'DOCUMENT',
+                                              'TASK',
+                                              'COMPANY',
+                                              'CALL_RECORD',
+                                              'CHANNEL',
+                                              'CHAT',
+                                              'PROJECT',
+                                              'THREAD',
+                                              'CALENDAR_EVENT',
+                                              'INITIATIVE',
+                                            ])
+                                            .describe(
+                                              'A kind of Macro entity a reference column can point at.'
+                                            ),
+                                        })
+                                        .describe(
+                                          'A reference to one Macro entity.'
+                                        )
+                                    )
+                                    .describe(
+                                      'References to Macro entities of the kind the column points at; at\nmost one for a single-valued column.'
+                                    ),
+                                })
+                                .describe(
+                                  'References to Macro entities of the kind the column points at; at\nmost one for a single-valued column.'
+                                ),
+                              zod
+                                .object({
+                                  type: zod.enum(['rows']),
+                                  value: zod
+                                    .array(zod.uuid())
+                                    .describe(
+                                      'Rows of the table a relation column points at.'
+                                    ),
+                                })
+                                .describe(
+                                  'Rows of the table a relation column points at.'
+                                ),
+                              zod
+                                .object({
+                                  type: zod.enum(['clear']),
+                                })
+                                .describe('No value: the cell is emptied.'),
+                            ])
+                            .describe(
+                              "A cell's value. It must fit the column's type: text for a text column,\noptions of the column for a select, and so on."
+                            ),
+                        })
+                        .describe(
+                          'One cell of a row: which column, and its new value.'
+                        )
+                    )
+                  )
+                  .describe(
+                    'One entry per new row: the cells it starts with. Columns left out\nstart empty.'
+                  ),
+                table: zod.uuid().describe('The table.'),
+              })
+              .describe(
+                'Append rows to a table, in order, each with the cells it starts with.'
+              ),
+            zod
+              .object({
+                changes: zod
+                  .union([
+                    zod
+                      .object({
+                        cells: zod
+                          .array(
+                            zod
+                              .object({
+                                column: zod
+                                  .uuid()
+                                  .describe('The column placement.'),
+                                value: zod
+                                  .union([
+                                    zod
+                                      .object({
+                                        type: zod.enum(['text']),
+                                        value: zod
+                                          .string()
+                                          .describe('Free text.'),
+                                      })
+                                      .describe('Free text.'),
+                                    zod
+                                      .object({
+                                        type: zod.enum(['number']),
+                                        value: zod
+                                          .number()
+                                          .describe('A finite number.'),
+                                      })
+                                      .describe('A finite number.'),
+                                    zod
+                                      .object({
+                                        type: zod.enum(['boolean']),
+                                        value: zod
+                                          .boolean()
+                                          .describe('A checkbox.'),
+                                      })
+                                      .describe('A checkbox.'),
+                                    zod
+                                      .object({
+                                        type: zod.enum(['date']),
+                                        value: zod.iso
+                                          .datetime({})
+                                          .describe('A date-time.'),
+                                      })
+                                      .describe('A date-time.'),
+                                    zod
+                                      .object({
+                                        type: zod.enum(['link']),
+                                        value: zod
+                                          .array(zod.string())
+                                          .describe(
+                                            'Complete http or https URLs; at most one for a single-valued column.'
+                                          ),
+                                      })
+                                      .describe(
+                                        'Complete http or https URLs; at most one for a single-valued column.'
+                                      ),
+                                    zod
+                                      .object({
+                                        type: zod.enum(['options']),
+                                        value: zod
+                                          .array(
+                                            zod
+                                              .union([
+                                                zod
+                                                  .object({
+                                                    id: zod
+                                                      .uuid()
+                                                      .describe(
+                                                        'An option the column has.'
+                                                      ),
+                                                  })
+                                                  .describe(
+                                                    'An option the column has.'
+                                                  ),
+                                                zod
+                                                  .object({
+                                                    label: zod
+                                                      .string()
+                                                      .describe(
+                                                        "An option's label, matched without regard to case. An unknown label\nis refused unless the op creates missing options."
+                                                      ),
+                                                  })
+                                                  .describe(
+                                                    "An option's label, matched without regard to case. An unknown label\nis refused unless the op creates missing options."
+                                                  ),
+                                              ])
+                                              .describe(
+                                                'A select option, by its id or by its label.'
+                                              )
+                                          )
+                                          .describe(
+                                            'Options of a select or tag column; at most one for a single-valued\ncolumn.'
+                                          ),
+                                      })
+                                      .describe(
+                                        'Options of a select or tag column; at most one for a single-valued\ncolumn.'
+                                      ),
+                                    zod
+                                      .object({
+                                        type: zod.enum(['entities']),
+                                        value: zod
+                                          .array(
+                                            zod
+                                              .object({
+                                                entityId: zod
+                                                  .string()
+                                                  .describe("The entity's id."),
+                                                entityType: zod
+                                                  .enum([
+                                                    'USER',
+                                                    'DOCUMENT',
+                                                    'TASK',
+                                                    'COMPANY',
+                                                    'CALL_RECORD',
+                                                    'CHANNEL',
+                                                    'CHAT',
+                                                    'PROJECT',
+                                                    'THREAD',
+                                                    'CALENDAR_EVENT',
+                                                    'INITIATIVE',
+                                                  ])
+                                                  .describe(
+                                                    'A kind of Macro entity a reference column can point at.'
+                                                  ),
+                                              })
+                                              .describe(
+                                                'A reference to one Macro entity.'
+                                              )
+                                          )
+                                          .describe(
+                                            'References to Macro entities of the kind the column points at; at\nmost one for a single-valued column.'
+                                          ),
+                                      })
+                                      .describe(
+                                        'References to Macro entities of the kind the column points at; at\nmost one for a single-valued column.'
+                                      ),
+                                    zod
+                                      .object({
+                                        type: zod.enum(['rows']),
+                                        value: zod
+                                          .array(zod.uuid())
+                                          .describe(
+                                            'Rows of the table a relation column points at.'
+                                          ),
+                                      })
+                                      .describe(
+                                        'Rows of the table a relation column points at.'
+                                      ),
+                                    zod
+                                      .object({
+                                        type: zod.enum(['clear']),
+                                      })
+                                      .describe(
+                                        'No value: the cell is emptied.'
+                                      ),
+                                  ])
+                                  .describe(
+                                    "A cell's value. It must fit the column's type: text for a text column,\noptions of the column for a select, and so on."
+                                  ),
+                              })
+                              .describe(
+                                'One cell of a row: which column, and its new value.'
+                              )
+                          )
+                          .describe('The cells each of them gets.'),
+                        kind: zod.enum(['uniform']),
+                        rows: zod.array(zod.uuid()).describe('The rows.'),
+                      })
+                      .describe('The same cells on every row.'),
+                    zod
+                      .object({
+                        kind: zod.enum(['per_row']),
+                        rows: zod
+                          .array(
+                            zod
+                              .object({
+                                cells: zod
+                                  .array(
+                                    zod
+                                      .object({
+                                        column: zod
+                                          .uuid()
+                                          .describe('The column placement.'),
+                                        value: zod
+                                          .union([
+                                            zod
+                                              .object({
+                                                type: zod.enum(['text']),
+                                                value: zod
+                                                  .string()
+                                                  .describe('Free text.'),
+                                              })
+                                              .describe('Free text.'),
+                                            zod
+                                              .object({
+                                                type: zod.enum(['number']),
+                                                value: zod
+                                                  .number()
+                                                  .describe('A finite number.'),
+                                              })
+                                              .describe('A finite number.'),
+                                            zod
+                                              .object({
+                                                type: zod.enum(['boolean']),
+                                                value: zod
+                                                  .boolean()
+                                                  .describe('A checkbox.'),
+                                              })
+                                              .describe('A checkbox.'),
+                                            zod
+                                              .object({
+                                                type: zod.enum(['date']),
+                                                value: zod.iso
+                                                  .datetime({})
+                                                  .describe('A date-time.'),
+                                              })
+                                              .describe('A date-time.'),
+                                            zod
+                                              .object({
+                                                type: zod.enum(['link']),
+                                                value: zod
+                                                  .array(zod.string())
+                                                  .describe(
+                                                    'Complete http or https URLs; at most one for a single-valued column.'
+                                                  ),
+                                              })
+                                              .describe(
+                                                'Complete http or https URLs; at most one for a single-valued column.'
+                                              ),
+                                            zod
+                                              .object({
+                                                type: zod.enum(['options']),
+                                                value: zod
+                                                  .array(
+                                                    zod
+                                                      .union([
+                                                        zod
+                                                          .object({
+                                                            id: zod
+                                                              .uuid()
+                                                              .describe(
+                                                                'An option the column has.'
+                                                              ),
+                                                          })
+                                                          .describe(
+                                                            'An option the column has.'
+                                                          ),
+                                                        zod
+                                                          .object({
+                                                            label: zod
+                                                              .string()
+                                                              .describe(
+                                                                "An option's label, matched without regard to case. An unknown label\nis refused unless the op creates missing options."
+                                                              ),
+                                                          })
+                                                          .describe(
+                                                            "An option's label, matched without regard to case. An unknown label\nis refused unless the op creates missing options."
+                                                          ),
+                                                      ])
+                                                      .describe(
+                                                        'A select option, by its id or by its label.'
+                                                      )
+                                                  )
+                                                  .describe(
+                                                    'Options of a select or tag column; at most one for a single-valued\ncolumn.'
+                                                  ),
+                                              })
+                                              .describe(
+                                                'Options of a select or tag column; at most one for a single-valued\ncolumn.'
+                                              ),
+                                            zod
+                                              .object({
+                                                type: zod.enum(['entities']),
+                                                value: zod
+                                                  .array(
+                                                    zod
+                                                      .object({
+                                                        entityId: zod
+                                                          .string()
+                                                          .describe(
+                                                            "The entity's id."
+                                                          ),
+                                                        entityType: zod
+                                                          .enum([
+                                                            'USER',
+                                                            'DOCUMENT',
+                                                            'TASK',
+                                                            'COMPANY',
+                                                            'CALL_RECORD',
+                                                            'CHANNEL',
+                                                            'CHAT',
+                                                            'PROJECT',
+                                                            'THREAD',
+                                                            'CALENDAR_EVENT',
+                                                            'INITIATIVE',
+                                                          ])
+                                                          .describe(
+                                                            'A kind of Macro entity a reference column can point at.'
+                                                          ),
+                                                      })
+                                                      .describe(
+                                                        'A reference to one Macro entity.'
+                                                      )
+                                                  )
+                                                  .describe(
+                                                    'References to Macro entities of the kind the column points at; at\nmost one for a single-valued column.'
+                                                  ),
+                                              })
+                                              .describe(
+                                                'References to Macro entities of the kind the column points at; at\nmost one for a single-valued column.'
+                                              ),
+                                            zod
+                                              .object({
+                                                type: zod.enum(['rows']),
+                                                value: zod
+                                                  .array(zod.uuid())
+                                                  .describe(
+                                                    'Rows of the table a relation column points at.'
+                                                  ),
+                                              })
+                                              .describe(
+                                                'Rows of the table a relation column points at.'
+                                              ),
+                                            zod
+                                              .object({
+                                                type: zod.enum(['clear']),
+                                              })
+                                              .describe(
+                                                'No value: the cell is emptied.'
+                                              ),
+                                          ])
+                                          .describe(
+                                            "A cell's value. It must fit the column's type: text for a text column,\noptions of the column for a select, and so on."
+                                          ),
+                                      })
+                                      .describe(
+                                        'One cell of a row: which column, and its new value.'
+                                      )
+                                  )
+                                  .describe('Its new cells.'),
+                                row: zod.uuid().describe('The row.'),
+                              })
+                              .describe(
+                                "One row's cells in a [`RowChanges::PerRow`] update."
+                              )
+                          )
+                          .describe('The rows and their cells, in order.'),
+                      })
+                      .describe('Each row its own cells.'),
+                  ])
+                  .describe('Which rows an update writes, and with what.'),
+                createMissingOptions: zod
+                  .boolean()
+                  .optional()
+                  .describe(
+                    'Create a select option for a label the column does not have yet,\ninstead of refusing the op.'
+                  ),
+                kind: zod.enum(['update_rows']),
+                table: zod.uuid().describe('The table the rows belong to.'),
+              })
+              .describe(
+                'Write cells of existing rows. Last write wins: there is no version\ncheck.'
+              ),
+            zod
+              .object({
+                kind: zod.enum(['delete_rows']),
+                rows: zod
+                  .array(zod.uuid())
+                  .describe('The rows, each named once.'),
+                table: zod.uuid().describe('The table the rows belong to.'),
+              })
+              .describe('Remove rows and their cells.'),
+            zod
+              .object({
+                clearInvalid: zod
+                  .boolean()
+                  .optional()
+                  .describe(
+                    'Empty the cells whose value does not fit, instead of refusing; a\ncell with several values going to a single-valued type keeps its\nfirst.'
+                  ),
+                column: zod
+                  .uuid()
+                  .describe(
+                    'The column placement; its id survives the change.'
+                  ),
+                kind: zod.enum(['change_column_type']),
+                table: zod.uuid().describe('The table.'),
+                to: zod
+                  .union([
+                    zod
+                      .object({
+                        type: zod.enum(['text']),
+                      })
+                      .describe('Free text.'),
+                    zod
+                      .object({
+                        type: zod.enum(['number']),
+                      })
+                      .describe('A number.'),
+                    zod
+                      .object({
+                        type: zod.enum(['boolean']),
+                      })
+                      .describe('A checkbox.'),
+                    zod
+                      .object({
+                        type: zod.enum(['date']),
+                      })
+                      .describe('A date-time.'),
+                    zod
+                      .object({
+                        type: zod.enum(['link']),
+                      })
+                      .describe('A URL.'),
+                    zod
+                      .object({
+                        multi: zod
+                          .boolean()
+                          .describe('Whether a cell holds several options.'),
+                        type: zod.enum(['select']),
+                      })
+                      .describe('Text options.'),
+                    zod
+                      .object({
+                        multi: zod
+                          .boolean()
+                          .describe('Whether a cell holds several options.'),
+                        type: zod.enum(['select_number']),
+                      })
+                      .describe('Numeric options.'),
+                    zod
+                      .object({
+                        type: zod.enum(['tag']),
+                      })
+                      .describe('Colored labels; always several per cell.'),
+                    zod
+                      .object({
+                        multi: zod
+                          .boolean()
+                          .describe('Whether a cell holds several references.'),
+                        target: zod
+                          .enum([
+                            'USER',
+                            'DOCUMENT',
+                            'TASK',
+                            'COMPANY',
+                            'CALL_RECORD',
+                            'CHANNEL',
+                            'CHAT',
+                            'PROJECT',
+                            'THREAD',
+                            'CALENDAR_EVENT',
+                            'INITIATIVE',
+                          ])
+                          .describe(
+                            'A kind of Macro entity a reference column can point at.'
+                          ),
+                        type: zod.enum(['entity']),
+                      })
+                      .describe('References to Macro entities.'),
+                    zod
+                      .object({
+                        database: zod
+                          .uuid()
+                          .describe('The database of the related table.'),
+                        table: zod.uuid().describe('The related table.'),
+                        type: zod.enum(['relation']),
+                      })
+                      .describe('Rows of another table.'),
+                  ])
+                  .describe('A type a column can have.'),
+              })
+              .describe(
+                'Convert a column to another type, converting its cells. A value that\ndoes not fit refuses the change unless `clearInvalid` empties it.'
+              ),
+            zod
+              .object({
+                color: zod
+                  .union([
+                    zod.null(),
+                    zod
+                      .enum([
+                        'red',
+                        'tomato',
+                        'orange',
+                        'amber',
+                        'yellow',
+                        'green',
+                        'teal',
+                        'blue',
+                        'indigo',
+                        'purple',
+                        'pink',
+                        'gray',
+                      ])
+                      .describe(
+                        'A colour select and tag options take, from the palette the tag picker\nrenders.'
+                      ),
+                  ])
+                  .optional(),
+                column: zod.uuid().describe('The select or tag column.'),
+                kind: zod.enum(['update_option']),
+                label: zod
+                  .string()
+                  .optional()
+                  .describe(
+                    'Its new label; left out, it keeps its own. Labels are unique\nwithin a column, ignoring case.'
+                  ),
+                option: zod.uuid().describe('The option.'),
+                table: zod.uuid().describe('The table.'),
+              })
+              .describe(
+                'Relabel or recolour one option of a select or tag column. Every cell\nholding it keeps it. A column bound to a property shared outside the\ndatabase changes wherever that property is used, so it takes the\nright to edit that property.'
+              ),
+            zod
+              .object({
+                column: zod.uuid().describe('The select or tag column.'),
+                kind: zod.enum(['delete_option']),
+                option: zod.uuid().describe('The option.'),
+                table: zod.uuid().describe('The table.'),
+              })
+              .describe(
+                'Remove one option of a select or tag column, and take it out of every\ncell holding it: a single-valued cell is emptied, a multi-valued one\nkeeps its other options. Like [`DatabaseOp::UpdateOption`], an option\nof a shared property goes everywhere it is used.'
+              ),
+            zod
+              .object({
+                kind: zod.enum(['create_view']),
+                table: zod.uuid().describe('The table.'),
+                view: zod
+                  .object({
+                    layout: zod
+                      .union([
+                        zod
+                          .object({
+                            columns: zod
+                              .array(
+                                zod
+                                  .object({
+                                    column: zod.uuid().describe('The column.'),
+                                    hidden: zod
+                                      .boolean()
+                                      .optional()
+                                      .describe('Whether it is hidden.'),
+                                    width: zod
+                                      .number()
+                                      .min(
+                                        applyDatabaseOpsBodyOpsItemViewLayoutColumnsItemWidthMin
+                                      )
+                                      .nullable()
+                                      .describe(
+                                        'Its width in pixels; the default when unset.'
+                                      ),
+                                  })
+                                  .describe(
+                                    'How one column shows in a table layout.'
+                                  )
+                              )
+                              .describe(
+                                "How columns show, in display order. A column left out shows\nafter the listed ones, in the table's order."
+                              ),
+                            kind: zod.enum(['table']),
+                          })
+                          .describe('A grid with a row per row.'),
+                        zod
+                          .object({
+                            cardFields: zod
+                              .array(zod.uuid())
+                              .describe('The columns a card shows, in order.'),
+                            groupBy: zod
+                              .uuid()
+                              .describe(
+                                'The single-select column whose options are the lanes; moving a\ncard to another lane sets this column.'
+                              ),
+                            hideEmptyLanes: zod
+                              .boolean()
+                              .describe(
+                                'Whether a lane with no cards is hidden.'
+                              ),
+                            kind: zod.enum(['board']),
+                            lanes: zod
+                              .array(
+                                zod
+                                  .object({
+                                    hidden: zod
+                                      .boolean()
+                                      .optional()
+                                      .describe('Whether it is hidden.'),
+                                    option: zod
+                                      .uuid()
+                                      .nullable()
+                                      .describe(
+                                        'The option the lane holds the cards of; `null` for cards without one.'
+                                      ),
+                                  })
+                                  .describe(
+                                    'How one lane shows in a board layout.'
+                                  )
+                              )
+                              .describe(
+                                "How lanes show, in display order. A lane left out shows after the\nlisted ones, options in the column's order; the lane of cards\nwithout an option first."
+                              ),
+                          })
+                          .describe(
+                            'Cards in lanes, one lane per option of a single-select column plus\none for cards without one. A multi-select column cannot group a\nboard: a card is in exactly one lane, so a card in several would need\na place in each.'
+                          ),
+                      ])
+                      .describe('How a view draws its rows.'),
+                    name: zod.string().describe('Its name.'),
+                    query: zod
+                      .object({
+                        filter: zod.union([
+                          zod.null(),
+                          zod
+                            .object({
+                              conditions: zod
+                                .array(
+                                  zod
+                                    .union([
+                                      zod
+                                        .object({
+                                          column: zod
+                                            .uuid()
+                                            .describe('The column tested.'),
+                                          test: zod
+                                            .union([
+                                              zod
+                                                .object({
+                                                  kind: zod.enum(['presence']),
+                                                  operator: zod
+                                                    .enum([
+                                                      'isEmpty',
+                                                      'isNotEmpty',
+                                                    ])
+                                                    .describe(
+                                                      'Whether a cell is empty.'
+                                                    ),
+                                                })
+                                                .describe(
+                                                  'Whether the cell is empty; fits a column of any type.'
+                                                ),
+                                              zod
+                                                .object({
+                                                  kind: zod.enum(['text']),
+                                                  operator: zod
+                                                    .enum([
+                                                      'is',
+                                                      'isNot',
+                                                      'contains',
+                                                      'doesNotContain',
+                                                      'startsWith',
+                                                      'endsWith',
+                                                    ])
+                                                    .describe(
+                                                      'How a text cell compares to a text.'
+                                                    ),
+                                                  value: zod
+                                                    .string()
+                                                    .describe(
+                                                      'The text compared against, ignoring case for the containment\ntests.'
+                                                    ),
+                                                })
+                                                .describe(
+                                                  'A text or link column.'
+                                                ),
+                                              zod
+                                                .object({
+                                                  kind: zod.enum(['number']),
+                                                  operator: zod
+                                                    .enum([
+                                                      'is',
+                                                      'isNot',
+                                                      'greaterThan',
+                                                      'greaterThanOrEqual',
+                                                      'lessThan',
+                                                      'lessThanOrEqual',
+                                                    ])
+                                                    .describe(
+                                                      'How a number cell compares to a number.'
+                                                    ),
+                                                  value: zod
+                                                    .number()
+                                                    .describe(
+                                                      'The number compared against; finite.'
+                                                    ),
+                                                })
+                                                .describe('A number column.'),
+                                              zod
+                                                .object({
+                                                  kind: zod.enum(['date']),
+                                                  operator: zod
+                                                    .enum([
+                                                      'before',
+                                                      'after',
+                                                      'onOrBefore',
+                                                      'onOrAfter',
+                                                    ])
+                                                    .describe(
+                                                      'How a date cell compares to a date-time.'
+                                                    ),
+                                                  value: zod.iso
+                                                    .datetime({})
+                                                    .describe(
+                                                      'The date-time compared against.'
+                                                    ),
+                                                })
+                                                .describe('A date column.'),
+                                              zod
+                                                .object({
+                                                  checked: zod
+                                                    .boolean()
+                                                    .describe(
+                                                      'Whether the box is checked.'
+                                                    ),
+                                                  kind: zod.enum(['checkbox']),
+                                                })
+                                                .describe(
+                                                  'A checkbox column. An unchecked box and an empty cell are the same.'
+                                                ),
+                                              zod
+                                                .object({
+                                                  kind: zod.enum(['options']),
+                                                  operator: zod
+                                                    .enum([
+                                                      'isAnyOf',
+                                                      'isNoneOf',
+                                                      'hasAny',
+                                                      'hasAll',
+                                                      'hasNone',
+                                                    ])
+                                                    .describe(
+                                                      "How a cell's options or references relate to a set of them. The first\ntwo fit a column holding one value, the last three one holding several."
+                                                    ),
+                                                  options: zod
+                                                    .array(zod.uuid())
+                                                    .describe(
+                                                      'Options of the column; at least one.'
+                                                    ),
+                                                })
+                                                .describe(
+                                                  'A select or tag column.'
+                                                ),
+                                              zod
+                                                .object({
+                                                  entities: zod
+                                                    .array(zod.string())
+                                                    .describe(
+                                                      "Entity ids, or for a relation the related rows' ids; at least\none."
+                                                    ),
+                                                  kind: zod.enum(['entities']),
+                                                  operator: zod
+                                                    .enum([
+                                                      'isAnyOf',
+                                                      'isNoneOf',
+                                                      'hasAny',
+                                                      'hasAll',
+                                                      'hasNone',
+                                                    ])
+                                                    .describe(
+                                                      "How a cell's options or references relate to a set of them. The first\ntwo fit a column holding one value, the last three one holding several."
+                                                    ),
+                                                })
+                                                .describe(
+                                                  'A reference or relation column.'
+                                                ),
+                                            ])
+                                            .describe(
+                                              "What a column's cell must be, by the kind of value the column holds."
+                                            ),
+                                        })
+                                        .describe(
+                                          "A test of one column's cells."
+                                        )
+                                        .and(
+                                          zod.object({
+                                            kind: zod.enum(['condition']),
+                                          })
+                                        )
+                                        .describe('A test of one column.'),
+                                      zod
+                                        .unknown()
+                                        .and(
+                                          zod.object({
+                                            kind: zod.enum(['group']),
+                                          })
+                                        )
+                                        .describe('A nested group.'),
+                                    ])
+                                    .describe(
+                                      'One entry of a group: a condition, or a group of its own.'
+                                    )
+                                )
+                                .describe(
+                                  'The conditions and nested groups. A group without any keeps every\nrow.'
+                                ),
+                              conjunction: zod
+                                .enum(['and', 'or'])
+                                .describe("How a group's conditions combine."),
+                            })
+                            .describe('Conditions joined by one conjunction.'),
+                        ]),
+                        sort: zod
+                          .array(
+                            zod
+                              .object({
+                                column: zod
+                                  .uuid()
+                                  .describe('The column sorted on.'),
+                                direction: zod
+                                  .enum(['ascending', 'descending'])
+                                  .describe(
+                                    'A sort direction. Empty cells sort last either way.'
+                                  ),
+                              })
+                              .describe('One sort key.')
+                          )
+                          .optional()
+                          .describe(
+                            "The sort keys, first key first. Rows the keys leave tied keep the\ntable's own order; with no keys, the table's order is the view's."
+                          ),
+                      })
+                      .optional()
+                      .describe(
+                        'Which rows of the table a view shows, and in what order: a filter and a\nsort, nothing that joins, groups or reshapes rows.'
+                      ),
+                  })
+                  .describe(
+                    "A view's contents as an op creates it; the server gives it its id,\nposition and times."
+                  ),
+              })
+              .describe('Add a view of the table, after its other views.'),
+            zod
+              .object({
+                kind: zod.enum(['update_view']),
+                layout: zod
+                  .union([
+                    zod
+                      .object({
+                        columns: zod
+                          .array(
+                            zod
+                              .object({
+                                column: zod.uuid().describe('The column.'),
+                                hidden: zod
+                                  .boolean()
+                                  .optional()
+                                  .describe('Whether it is hidden.'),
+                                width: zod
+                                  .number()
+                                  .min(
+                                    applyDatabaseOpsBodyOpsItemLayoutColumnsItemWidthMin
+                                  )
+                                  .nullable()
+                                  .describe(
+                                    'Its width in pixels; the default when unset.'
+                                  ),
+                              })
+                              .describe(
+                                'How one column shows in a table layout.'
+                              )
+                          )
+                          .describe(
+                            "How columns show, in display order. A column left out shows\nafter the listed ones, in the table's order."
+                          ),
+                        kind: zod.enum(['table']),
+                      })
+                      .describe('A grid with a row per row.'),
+                    zod
+                      .object({
+                        cardFields: zod
+                          .array(zod.uuid())
+                          .describe('The columns a card shows, in order.'),
+                        groupBy: zod
+                          .uuid()
+                          .describe(
+                            'The single-select column whose options are the lanes; moving a\ncard to another lane sets this column.'
+                          ),
+                        hideEmptyLanes: zod
+                          .boolean()
+                          .describe('Whether a lane with no cards is hidden.'),
+                        kind: zod.enum(['board']),
+                        lanes: zod
+                          .array(
+                            zod
+                              .object({
+                                hidden: zod
+                                  .boolean()
+                                  .optional()
+                                  .describe('Whether it is hidden.'),
+                                option: zod
+                                  .uuid()
+                                  .nullable()
+                                  .describe(
+                                    'The option the lane holds the cards of; `null` for cards without one.'
+                                  ),
+                              })
+                              .describe('How one lane shows in a board layout.')
+                          )
+                          .describe(
+                            "How lanes show, in display order. A lane left out shows after the\nlisted ones, options in the column's order; the lane of cards\nwithout an option first."
+                          ),
+                      })
+                      .describe(
+                        'Cards in lanes, one lane per option of a single-select column plus\none for cards without one. A multi-select column cannot group a\nboard: a card is in exactly one lane, so a card in several would need\na place in each.'
+                      ),
+                  ])
+                  .optional()
+                  .describe('How a view draws its rows.'),
+                name: zod.string().optional().describe('Its new name.'),
+                query: zod
+                  .object({
+                    filter: zod.union([
+                      zod.null(),
+                      zod
+                        .object({
+                          conditions: zod
+                            .array(
+                              zod
+                                .union([
+                                  zod
+                                    .object({
+                                      column: zod
+                                        .uuid()
+                                        .describe('The column tested.'),
+                                      test: zod
+                                        .union([
+                                          zod
+                                            .object({
+                                              kind: zod.enum(['presence']),
+                                              operator: zod
+                                                .enum(['isEmpty', 'isNotEmpty'])
+                                                .describe(
+                                                  'Whether a cell is empty.'
+                                                ),
+                                            })
+                                            .describe(
+                                              'Whether the cell is empty; fits a column of any type.'
+                                            ),
+                                          zod
+                                            .object({
+                                              kind: zod.enum(['text']),
+                                              operator: zod
+                                                .enum([
+                                                  'is',
+                                                  'isNot',
+                                                  'contains',
+                                                  'doesNotContain',
+                                                  'startsWith',
+                                                  'endsWith',
+                                                ])
+                                                .describe(
+                                                  'How a text cell compares to a text.'
+                                                ),
+                                              value: zod
+                                                .string()
+                                                .describe(
+                                                  'The text compared against, ignoring case for the containment\ntests.'
+                                                ),
+                                            })
+                                            .describe('A text or link column.'),
+                                          zod
+                                            .object({
+                                              kind: zod.enum(['number']),
+                                              operator: zod
+                                                .enum([
+                                                  'is',
+                                                  'isNot',
+                                                  'greaterThan',
+                                                  'greaterThanOrEqual',
+                                                  'lessThan',
+                                                  'lessThanOrEqual',
+                                                ])
+                                                .describe(
+                                                  'How a number cell compares to a number.'
+                                                ),
+                                              value: zod
+                                                .number()
+                                                .describe(
+                                                  'The number compared against; finite.'
+                                                ),
+                                            })
+                                            .describe('A number column.'),
+                                          zod
+                                            .object({
+                                              kind: zod.enum(['date']),
+                                              operator: zod
+                                                .enum([
+                                                  'before',
+                                                  'after',
+                                                  'onOrBefore',
+                                                  'onOrAfter',
+                                                ])
+                                                .describe(
+                                                  'How a date cell compares to a date-time.'
+                                                ),
+                                              value: zod.iso
+                                                .datetime({})
+                                                .describe(
+                                                  'The date-time compared against.'
+                                                ),
+                                            })
+                                            .describe('A date column.'),
+                                          zod
+                                            .object({
+                                              checked: zod
+                                                .boolean()
+                                                .describe(
+                                                  'Whether the box is checked.'
+                                                ),
+                                              kind: zod.enum(['checkbox']),
+                                            })
+                                            .describe(
+                                              'A checkbox column. An unchecked box and an empty cell are the same.'
+                                            ),
+                                          zod
+                                            .object({
+                                              kind: zod.enum(['options']),
+                                              operator: zod
+                                                .enum([
+                                                  'isAnyOf',
+                                                  'isNoneOf',
+                                                  'hasAny',
+                                                  'hasAll',
+                                                  'hasNone',
+                                                ])
+                                                .describe(
+                                                  "How a cell's options or references relate to a set of them. The first\ntwo fit a column holding one value, the last three one holding several."
+                                                ),
+                                              options: zod
+                                                .array(zod.uuid())
+                                                .describe(
+                                                  'Options of the column; at least one.'
+                                                ),
+                                            })
+                                            .describe(
+                                              'A select or tag column.'
+                                            ),
+                                          zod
+                                            .object({
+                                              entities: zod
+                                                .array(zod.string())
+                                                .describe(
+                                                  "Entity ids, or for a relation the related rows' ids; at least\none."
+                                                ),
+                                              kind: zod.enum(['entities']),
+                                              operator: zod
+                                                .enum([
+                                                  'isAnyOf',
+                                                  'isNoneOf',
+                                                  'hasAny',
+                                                  'hasAll',
+                                                  'hasNone',
+                                                ])
+                                                .describe(
+                                                  "How a cell's options or references relate to a set of them. The first\ntwo fit a column holding one value, the last three one holding several."
+                                                ),
+                                            })
+                                            .describe(
+                                              'A reference or relation column.'
+                                            ),
+                                        ])
+                                        .describe(
+                                          "What a column's cell must be, by the kind of value the column holds."
+                                        ),
+                                    })
+                                    .describe("A test of one column's cells.")
+                                    .and(
+                                      zod.object({
+                                        kind: zod.enum(['condition']),
+                                      })
+                                    )
+                                    .describe('A test of one column.'),
+                                  zod
+                                    .unknown()
+                                    .and(
+                                      zod.object({
+                                        kind: zod.enum(['group']),
+                                      })
+                                    )
+                                    .describe('A nested group.'),
+                                ])
+                                .describe(
+                                  'One entry of a group: a condition, or a group of its own.'
+                                )
+                            )
+                            .describe(
+                              'The conditions and nested groups. A group without any keeps every\nrow.'
+                            ),
+                          conjunction: zod
+                            .enum(['and', 'or'])
+                            .describe("How a group's conditions combine."),
+                        })
+                        .describe('Conditions joined by one conjunction.'),
+                    ]),
+                    sort: zod
+                      .array(
+                        zod
+                          .object({
+                            column: zod
+                              .uuid()
+                              .describe('The column sorted on.'),
+                            direction: zod
+                              .enum(['ascending', 'descending'])
+                              .describe(
+                                'A sort direction. Empty cells sort last either way.'
+                              ),
+                          })
+                          .describe('One sort key.')
+                      )
+                      .optional()
+                      .describe(
+                        "The sort keys, first key first. Rows the keys leave tied keep the\ntable's own order; with no keys, the table's order is the view's."
+                      ),
+                  })
+                  .optional()
+                  .describe(
+                    'Which rows of the table a view shows, and in what order: a filter and a\nsort, nothing that joins, groups or reshapes rows.'
+                  ),
+                table: zod.uuid().describe("The view's table."),
+                view: zod.uuid().describe('The view.'),
+              })
+              .describe(
+                "Change a view's name, query or layout; what is left out stays."
+              ),
+            zod
+              .object({
+                kind: zod.enum(['delete_view']),
+                table: zod.uuid().describe("The view's table."),
+                view: zod.uuid().describe('The view.'),
+              })
+              .describe('Remove a view, with where its cards were.'),
+            zod
+              .object({
+                kind: zod.enum(['reorder_views']),
+                order: zod
+                  .array(zod.uuid())
+                  .describe('Its views, in their new order.'),
+                table: zod.uuid().describe('The table.'),
+              })
+              .describe(
+                "Set the order of a table's views: `order` names every one of them\nonce."
+              ),
+            zod
+              .object({
+                after: zod
+                  .uuid()
+                  .nullish()
+                  .describe(
+                    'The card that ends up just after it, if any. Given with `before`,\nit must be the card right after `before`; with neither, the card\ngoes to the end of the lane.'
+                  ),
+                before: zod
+                  .uuid()
+                  .nullish()
+                  .describe(
+                    'The card that ends up just before it (it lands right after this\none), if any.'
+                  ),
+                kind: zod.enum(['move_card']),
+                lane: zod
+                  .uuid()
+                  .nullable()
+                  .describe(
+                    "The lane it goes to: an option of the board's column, or `null`\nfor the lane of cards without one."
+                  ),
+                row: zod.uuid().describe("The card's row."),
+                table: zod.uuid().describe("The view's table."),
+                view: zod.uuid().describe('The board.'),
+              })
+              .describe(
+                "Move a board's card: into a lane, which sets the row's grouping cell\nto the lane's option (or empties it for the lane without one), and to\na place there, between two of its cards. Only an unsorted board's\ncards move by hand."
+              ),
+          ])
+          .describe(
+            "One write to a database's data. A request's ops apply together or not at\nall, and every op names a table of the database the request is for."
+          )
+      )
+      .describe(
+        'The ops, in the order they apply. Every one names a table of this\ndatabase; a column type change is sent on its own.'
+      ),
+  })
+  .describe('A batch of ops for one database, applied together or not at all.');
+
+export const applyDatabaseOpsResponseResultsItemAffectedMin = 0;
+
+export const applyDatabaseOpsResponseResultsItemClearedCellsMin = 0;
+
+export const applyDatabaseOpsResponseResultsItemTrimmedCellsMin = 0;
+
+export const applyDatabaseOpsResponseResultsItemViewLayoutColumnsItemWidthMin = 0;
+
+export const applyDatabaseOpsResponse = zod
+  .object({
+    results: zod
+      .array(
+        zod
+          .union([
+            zod
+              .object({
+                affected: zod
+                  .number()
+                  .min(applyDatabaseOpsResponseResultsItemAffectedMin)
+                  .describe(
+                    'How many rows the op inserted, updated or deleted.'
+                  ),
+                inserted: zod
+                  .array(zod.uuid())
+                  .describe(
+                    'The rows an insert created, in the order they were sent; empty\nfor an update or a delete.'
+                  ),
+                kind: zod.enum(['rows_written']),
+                tableVersion: zod
+                  .number()
+                  .describe(
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+                  ),
+              })
+              .describe('What an insert, update or delete did.'),
+            zod
+              .object({
+                clearedCells: zod
+                  .number()
+                  .min(applyDatabaseOpsResponseResultsItemClearedCellsMin)
+                  .describe(
+                    'Cells emptied because their value did not fit the new type.'
+                  ),
+                kind: zod.enum(['column_typed']),
+                tableVersion: zod
+                  .number()
+                  .describe(
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+                  ),
+                trimmedCells: zod
+                  .number()
+                  .min(applyDatabaseOpsResponseResultsItemTrimmedCellsMin)
+                  .describe(
+                    'Cells that held several values and kept only their first.'
+                  ),
+              })
+              .describe('What a column type change did.'),
+            zod
+              .object({
+                kind: zod.enum(['option_changed']),
+                tableVersion: zod
+                  .number()
+                  .describe(
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+                  ),
+              })
+              .describe('What an option change or removal did.'),
+            zod
+              .object({
+                kind: zod.enum(['view_written']),
+                tableVersion: zod
+                  .number()
+                  .describe(
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+                  ),
+                view: zod
+                  .object({
+                    createdAt: zod.iso
+                      .datetime({})
+                      .describe('When it was created.'),
+                    databaseId: zod
+                      .uuid()
+                      .describe('The database the table belongs to.'),
+                    id: zod.uuid().describe('The view.'),
+                    layout: zod
+                      .union([
+                        zod
+                          .object({
+                            columns: zod
+                              .array(
+                                zod
+                                  .object({
+                                    column: zod.uuid().describe('The column.'),
+                                    hidden: zod
+                                      .boolean()
+                                      .optional()
+                                      .describe('Whether it is hidden.'),
+                                    width: zod
+                                      .number()
+                                      .min(
+                                        applyDatabaseOpsResponseResultsItemViewLayoutColumnsItemWidthMin
+                                      )
+                                      .nullable()
+                                      .describe(
+                                        'Its width in pixels; the default when unset.'
+                                      ),
+                                  })
+                                  .describe(
+                                    'How one column shows in a table layout.'
+                                  )
+                              )
+                              .describe(
+                                "How columns show, in display order. A column left out shows\nafter the listed ones, in the table's order."
+                              ),
+                            kind: zod.enum(['table']),
+                          })
+                          .describe('A grid with a row per row.'),
+                        zod
+                          .object({
+                            cardFields: zod
+                              .array(zod.uuid())
+                              .describe('The columns a card shows, in order.'),
+                            groupBy: zod
+                              .uuid()
+                              .describe(
+                                'The single-select column whose options are the lanes; moving a\ncard to another lane sets this column.'
+                              ),
+                            hideEmptyLanes: zod
+                              .boolean()
+                              .describe(
+                                'Whether a lane with no cards is hidden.'
+                              ),
+                            kind: zod.enum(['board']),
+                            lanes: zod
+                              .array(
+                                zod
+                                  .object({
+                                    hidden: zod
+                                      .boolean()
+                                      .optional()
+                                      .describe('Whether it is hidden.'),
+                                    option: zod
+                                      .uuid()
+                                      .nullable()
+                                      .describe(
+                                        'The option the lane holds the cards of; `null` for cards without one.'
+                                      ),
+                                  })
+                                  .describe(
+                                    'How one lane shows in a board layout.'
+                                  )
+                              )
+                              .describe(
+                                "How lanes show, in display order. A lane left out shows after the\nlisted ones, options in the column's order; the lane of cards\nwithout an option first."
+                              ),
+                          })
+                          .describe(
+                            'Cards in lanes, one lane per option of a single-select column plus\none for cards without one. A multi-select column cannot group a\nboard: a card is in exactly one lane, so a card in several would need\na place in each.'
+                          ),
+                      ])
+                      .describe('How a view draws its rows.'),
+                    name: zod
+                      .string()
+                      .describe(
+                        "Its name, unique among the table's views ignoring case."
+                      ),
+                    position: zod
+                      .string()
+                      .describe(
+                        "Where it sorts among the table's views: a fractional key."
+                      ),
+                    query: zod
+                      .object({
+                        filter: zod.union([
+                          zod.null(),
+                          zod
+                            .object({
+                              conditions: zod
+                                .array(
+                                  zod
+                                    .union([
+                                      zod
+                                        .object({
+                                          column: zod
+                                            .uuid()
+                                            .describe('The column tested.'),
+                                          test: zod
+                                            .union([
+                                              zod
+                                                .object({
+                                                  kind: zod.enum(['presence']),
+                                                  operator: zod
+                                                    .enum([
+                                                      'isEmpty',
+                                                      'isNotEmpty',
+                                                    ])
+                                                    .describe(
+                                                      'Whether a cell is empty.'
+                                                    ),
+                                                })
+                                                .describe(
+                                                  'Whether the cell is empty; fits a column of any type.'
+                                                ),
+                                              zod
+                                                .object({
+                                                  kind: zod.enum(['text']),
+                                                  operator: zod
+                                                    .enum([
+                                                      'is',
+                                                      'isNot',
+                                                      'contains',
+                                                      'doesNotContain',
+                                                      'startsWith',
+                                                      'endsWith',
+                                                    ])
+                                                    .describe(
+                                                      'How a text cell compares to a text.'
+                                                    ),
+                                                  value: zod
+                                                    .string()
+                                                    .describe(
+                                                      'The text compared against, ignoring case for the containment\ntests.'
+                                                    ),
+                                                })
+                                                .describe(
+                                                  'A text or link column.'
+                                                ),
+                                              zod
+                                                .object({
+                                                  kind: zod.enum(['number']),
+                                                  operator: zod
+                                                    .enum([
+                                                      'is',
+                                                      'isNot',
+                                                      'greaterThan',
+                                                      'greaterThanOrEqual',
+                                                      'lessThan',
+                                                      'lessThanOrEqual',
+                                                    ])
+                                                    .describe(
+                                                      'How a number cell compares to a number.'
+                                                    ),
+                                                  value: zod
+                                                    .number()
+                                                    .describe(
+                                                      'The number compared against; finite.'
+                                                    ),
+                                                })
+                                                .describe('A number column.'),
+                                              zod
+                                                .object({
+                                                  kind: zod.enum(['date']),
+                                                  operator: zod
+                                                    .enum([
+                                                      'before',
+                                                      'after',
+                                                      'onOrBefore',
+                                                      'onOrAfter',
+                                                    ])
+                                                    .describe(
+                                                      'How a date cell compares to a date-time.'
+                                                    ),
+                                                  value: zod.iso
+                                                    .datetime({})
+                                                    .describe(
+                                                      'The date-time compared against.'
+                                                    ),
+                                                })
+                                                .describe('A date column.'),
+                                              zod
+                                                .object({
+                                                  checked: zod
+                                                    .boolean()
+                                                    .describe(
+                                                      'Whether the box is checked.'
+                                                    ),
+                                                  kind: zod.enum(['checkbox']),
+                                                })
+                                                .describe(
+                                                  'A checkbox column. An unchecked box and an empty cell are the same.'
+                                                ),
+                                              zod
+                                                .object({
+                                                  kind: zod.enum(['options']),
+                                                  operator: zod
+                                                    .enum([
+                                                      'isAnyOf',
+                                                      'isNoneOf',
+                                                      'hasAny',
+                                                      'hasAll',
+                                                      'hasNone',
+                                                    ])
+                                                    .describe(
+                                                      "How a cell's options or references relate to a set of them. The first\ntwo fit a column holding one value, the last three one holding several."
+                                                    ),
+                                                  options: zod
+                                                    .array(zod.uuid())
+                                                    .describe(
+                                                      'Options of the column; at least one.'
+                                                    ),
+                                                })
+                                                .describe(
+                                                  'A select or tag column.'
+                                                ),
+                                              zod
+                                                .object({
+                                                  entities: zod
+                                                    .array(zod.string())
+                                                    .describe(
+                                                      "Entity ids, or for a relation the related rows' ids; at least\none."
+                                                    ),
+                                                  kind: zod.enum(['entities']),
+                                                  operator: zod
+                                                    .enum([
+                                                      'isAnyOf',
+                                                      'isNoneOf',
+                                                      'hasAny',
+                                                      'hasAll',
+                                                      'hasNone',
+                                                    ])
+                                                    .describe(
+                                                      "How a cell's options or references relate to a set of them. The first\ntwo fit a column holding one value, the last three one holding several."
+                                                    ),
+                                                })
+                                                .describe(
+                                                  'A reference or relation column.'
+                                                ),
+                                            ])
+                                            .describe(
+                                              "What a column's cell must be, by the kind of value the column holds."
+                                            ),
+                                        })
+                                        .describe(
+                                          "A test of one column's cells."
+                                        )
+                                        .and(
+                                          zod.object({
+                                            kind: zod.enum(['condition']),
+                                          })
+                                        )
+                                        .describe('A test of one column.'),
+                                      zod
+                                        .unknown()
+                                        .and(
+                                          zod.object({
+                                            kind: zod.enum(['group']),
+                                          })
+                                        )
+                                        .describe('A nested group.'),
+                                    ])
+                                    .describe(
+                                      'One entry of a group: a condition, or a group of its own.'
+                                    )
+                                )
+                                .describe(
+                                  'The conditions and nested groups. A group without any keeps every\nrow.'
+                                ),
+                              conjunction: zod
+                                .enum(['and', 'or'])
+                                .describe("How a group's conditions combine."),
+                            })
+                            .describe('Conditions joined by one conjunction.'),
+                        ]),
+                        sort: zod
+                          .array(
+                            zod
+                              .object({
+                                column: zod
+                                  .uuid()
+                                  .describe('The column sorted on.'),
+                                direction: zod
+                                  .enum(['ascending', 'descending'])
+                                  .describe(
+                                    'A sort direction. Empty cells sort last either way.'
+                                  ),
+                              })
+                              .describe('One sort key.')
+                          )
+                          .optional()
+                          .describe(
+                            "The sort keys, first key first. Rows the keys leave tied keep the\ntable's own order; with no keys, the table's order is the view's."
+                          ),
+                      })
+                      .describe(
+                        'Which rows of the table a view shows, and in what order: a filter and a\nsort, nothing that joins, groups or reshapes rows.'
+                      ),
+                    tableId: zod.uuid().describe('The table it shows.'),
+                    updatedAt: zod.iso
+                      .datetime({})
+                      .describe('When it last changed.'),
+                  })
+                  .describe('A view of one table, as stored.'),
+              })
+              .describe('The view a creation or change left.'),
+            zod
+              .object({
+                kind: zod.enum(['view_deleted']),
+                tableVersion: zod
+                  .number()
+                  .describe(
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+                  ),
+              })
+              .describe("A view's removal."),
+            zod
+              .object({
+                kind: zod.enum(['views_reordered']),
+                positions: zod
+                  .array(
+                    zod
+                      .object({
+                        position: zod.string().describe('Its key.'),
+                        view: zod.uuid().describe('The view.'),
+                      })
+                      .describe("A view's place among its table's views.")
+                  )
+                  .describe("Every view's key, in their new order."),
+                tableVersion: zod
+                  .number()
+                  .describe(
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+                  ),
+              })
+              .describe("The table's views' new places."),
+            zod
+              .object({
+                kind: zod.enum(['card_moved']),
+                positions: zod
+                  .array(
+                    zod
+                      .object({
+                        lane: zod
+                          .uuid()
+                          .nullable()
+                          .describe(
+                            "The lane: an option of the board's column, `null` for the lane of\ncards without one."
+                          ),
+                        position: zod
+                          .string()
+                          .describe("The card's key in that lane."),
+                        row: zod.uuid().describe("The card's row."),
+                      })
+                      .describe(
+                        'Where one card sits on a board: its lane, and its fractional key there.\nA card whose row has since moved to another lane has no place until it is\nmoved again.'
+                      )
+                  )
+                  .describe("The positions written, the moved card's last."),
+                tableVersion: zod
+                  .number()
+                  .describe(
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+                  ),
+              })
+              .describe(
+                'Where a moved card, and any card it needed placed first, now sit.'
+              ),
+          ])
+          .describe('What one op did, in the order the ops were sent.')
+      )
+      .describe('One result per op, in the order the ops were sent.'),
+  })
+  .describe('What each op of a batch did.');
+
+/**
+ * @summary Read recipients for a database owned by the caller. Link and team
+sharing are always `null`: databases do not support them yet.
+ */
+export const getDatabasePermissionsParams = zod.object({
+  id: zod.uuid(),
+});
+
+export const getDatabasePermissionsResponse = zod.object({
+  channelSharePermissions: zod
+    .array(
+      zod
+        .object({
+          access_level: zod
+            .enum(['view', 'comment', 'edit', 'owner'])
+            .describe('Ordered from least to most access top -> bottom'),
+          channel_id: zod.string().describe('The channel id'),
+        })
+        .describe('The channel share permission')
+    )
+    .nullish()
+    .describe('The channel share permissions for the item'),
+  id: zod.string().describe('The share permission id'),
+  linkShare: zod
+    .union([
+      zod.null(),
+      zod
+        .enum(['PUBLIC', 'TEAM'])
+        .describe('Defines who can access an item through its share link.'),
+    ])
+    .optional(),
+  linkShareAccessLevel: zod
+    .union([
+      zod.null(),
+      zod
+        .enum(['view', 'comment', 'edit', 'owner'])
+        .describe('Ordered from least to most access top -> bottom'),
+    ])
+    .optional(),
+  owner: zod.string().describe('The owner of the item'),
+  teamShareAccessLevel: zod
+    .union([
+      zod.null(),
+      zod
+        .enum(['view', 'comment', 'edit', 'owner'])
+        .describe('Ordered from least to most access top -> bottom'),
+    ])
+    .optional(),
+});
+
+/**
+ * @summary Update channel recipients after proving database ownership. Turning on
+link or team sharing is refused; ownership cannot be changed here.
+ */
+export const updateDatabasePermissionsParams = zod.object({
+  id: zod.uuid(),
+});
+
+export const updateDatabasePermissionsBody = zod.object({
+  channelSharePermissions: zod
+    .array(
+      zod.object({
+        accessLevel: zod
+          .union([
+            zod.null(),
+            zod
+              .enum(['view', 'comment', 'edit', 'owner'])
+              .describe('Ordered from least to most access top -> bottom'),
+          ])
+          .optional(),
+        channelId: zod.string().describe('The channel id'),
+        operation: zod.enum(['add', 'remove', 'replace']),
+      })
+    )
+    .nullish()
+    .describe('Any channel share permissions to be created\/updated\/removed'),
+  linkShare: zod
+    .union([
+      zod.null(),
+      zod
+        .enum(['PUBLIC', 'TEAM'])
+        .describe('Defines who can access an item through its share link.'),
+    ])
+    .optional(),
+  linkShareAccessLevel: zod
+    .union([
+      zod.null(),
+      zod
+        .enum(['view', 'comment', 'edit', 'owner'])
+        .describe('Ordered from least to most access top -> bottom'),
+    ])
+    .optional(),
+  teamShareAccessLevel: zod
+    .union([
+      zod.null(),
+      zod
+        .enum(['view', 'comment', 'edit', 'owner'])
+        .describe('Ordered from least to most access top -> bottom'),
+    ])
+    .optional(),
+});
+
+export const updateDatabasePermissionsResponse = zod.object({
+  channelSharePermissions: zod
+    .array(
+      zod
+        .object({
+          access_level: zod
+            .enum(['view', 'comment', 'edit', 'owner'])
+            .describe('Ordered from least to most access top -> bottom'),
+          channel_id: zod.string().describe('The channel id'),
+        })
+        .describe('The channel share permission')
+    )
+    .nullish()
+    .describe('The channel share permissions for the item'),
+  id: zod.string().describe('The share permission id'),
+  linkShare: zod
+    .union([
+      zod.null(),
+      zod
+        .enum(['PUBLIC', 'TEAM'])
+        .describe('Defines who can access an item through its share link.'),
+    ])
+    .optional(),
+  linkShareAccessLevel: zod
+    .union([
+      zod.null(),
+      zod
+        .enum(['view', 'comment', 'edit', 'owner'])
+        .describe('Ordered from least to most access top -> bottom'),
+    ])
+    .optional(),
+  owner: zod.string().describe('The owner of the item'),
+  teamShareAccessLevel: zod
+    .union([
+      zod.null(),
+      zod
+        .enum(['view', 'comment', 'edit', 'owner'])
+        .describe('Ordered from least to most access top -> bottom'),
+    ])
+    .optional(),
+});
+
+/**
+ * @summary Create a table in a database.
+ */
+export const createDatabaseTableParams = zod.object({
+  id: zod.uuid().describe('Database id'),
+});
+
+export const createDatabaseTableBody = zod
+  .object({
+    name: zod.string().describe('Display name.'),
+  })
+  .describe('Request body for creating a table.');
+
+/**
+ * @summary Set the order of a database's tables (its tabs).
+ */
+export const reorderDatabaseTablesParams = zod.object({
+  id: zod.uuid().describe('Database id'),
+});
+
+export const reorderDatabaseTablesBody = zod
+  .object({
+    tableIds: zod
+      .array(zod.uuid())
+      .describe(
+        'Every table of the database, exactly once, in the new left-to-right order.'
+      ),
+  })
+  .describe('A complete tab order, identified by stable table IDs.');
+
+export const reorderDatabaseTablesResponseItem = zod
+  .object({
+    database_id: zod.uuid().describe('Owning database.'),
+    id: zod.uuid().describe('Identifier.'),
+    name: zod
+      .string()
+      .describe("Display name; also the basis of the table's SQL name."),
+    position: zod.string().describe('Fractional index for tab ordering.'),
+    version: zod
+      .number()
+      .describe(
+        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+      ),
+  })
+  .describe('One table (tab) of a database.');
+export const reorderDatabaseTablesResponse = zod.array(
+  reorderDatabaseTablesResponseItem
+);
+
+/**
+ * @summary Delete a table with its rows and columns. A database keeps at least one.
+ */
+export const deleteDatabaseTableParams = zod.object({
+  id: zod.uuid().describe('Database id'),
+  table_id: zod.uuid().describe('Table id'),
+});
+
+/**
+ * @summary Rename a table in a database.
+ */
+export const renameDatabaseTableParams = zod.object({
+  id: zod.uuid().describe('Database id'),
+  table_id: zod.uuid().describe('Table id'),
+});
+
+export const renameDatabaseTableBody = zod
+  .object({
+    name: zod.string().describe('New display name.'),
+    previousName: zod
+      .string()
+      .describe('Name shown when the rename editor opened.'),
+  })
+  .describe(
+    'Request body for renaming a table without overwriting a concurrent rename.'
+  );
+
+export const renameDatabaseTableResponse = zod
+  .object({
+    database_id: zod.uuid().describe('Owning database.'),
+    id: zod.uuid().describe('Identifier.'),
+    name: zod
+      .string()
+      .describe("Display name; also the basis of the table's SQL name."),
+    position: zod.string().describe('Fractional index for tab ordering.'),
+    version: zod
+      .number()
+      .describe(
+        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+      ),
+  })
+  .describe('One table (tab) of a database.');
+
+/**
+ * @summary Add a column to a table.
+ */
+export const createDatabaseColumnParams = zod.object({
+  id: zod.uuid().describe('Database id'),
+  table_id: zod.uuid().describe('Table id'),
+});
+
+export const createDatabaseColumnBody = zod
+  .object({
+    binding: zod
+      .union([
+        zod
+          .object({
+            dataType: zod
+              .enum([
+                'BOOLEAN',
+                'DATE',
+                'NUMBER',
+                'STRING',
+                'SELECT_NUMBER',
+                'SELECT_STRING',
+                'TAG',
+                'ENTITY',
+                'LINK',
+              ])
+              .describe(
+                'Data type for property values, determining storage and validation.'
+              ),
+            isMultiSelect: zod
+              .boolean()
+              .optional()
+              .describe('Whether the column holds multiple values.'),
+            kind: zod.enum(['new']),
+            name: zod.string().describe('Column display name.'),
+            options: zod
+              .array(zod.string())
+              .optional()
+              .describe(
+                'For a select or tag column, the labels SQL will accept. A select\ncolumn created without any accepts nothing until options are added.'
+              ),
+          })
+          .describe('Create a fresh definition scoped to the database.'),
+        zod
+          .object({
+            kind: zod.enum(['existing']),
+            propertyDefinitionId: zod
+              .uuid()
+              .describe('The definition to bind.'),
+          })
+          .describe('Bind an existing user\/team\/system definition.'),
+      ])
+      .describe('How a new column obtains its definition.'),
+    inferType: zod
+      .boolean()
+      .optional()
+      .describe('Infer the first value type of a newly owned text column.'),
+    linkToDatabaseId: zod
+      .uuid()
+      .optional()
+      .describe('Database of the linked table (defaults to this database).'),
+    linkToTableId: zod
+      .uuid()
+      .optional()
+      .describe('Link this column to another table (many-to-many).'),
+  })
+  .describe('Request body for creating a column.');
+
+/**
+ * @summary Persist the order of every column in a table.
+ */
+export const reorderDatabaseColumnsParams = zod.object({
+  id: zod.uuid(),
+  table_id: zod.uuid(),
+});
+
+export const reorderDatabaseColumnsBody = zod
+  .object({
+    baseVersion: zod
+      .number()
+      .describe(
+        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+      ),
+    columnIds: zod.array(zod.uuid()).describe('Every column, exactly once.'),
+  })
+  .describe('A complete placement order, identified by stable column IDs.');
+
+export const reorderDatabaseColumnsResponse = zod
+  .object({
+    table_versions: zod
+      .record(
+        zod.string(),
+        zod
+          .number()
+          .describe(
+            "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+          )
+      )
+      .describe('Includes the related table when a relation column goes.'),
+  })
+  .describe('Table versions changed by a placement deletion or reorder.');
+
+/**
+ * @summary Delete one placement and its cells, preserving shared definitions.
+ */
+export const deleteDatabaseColumnParams = zod.object({
+  id: zod.uuid(),
+  table_id: zod.uuid(),
+  column_id: zod.uuid(),
+});
+
+export const deleteDatabaseColumnBody = zod
+  .object({
+    baseVersion: zod
+      .number()
+      .describe(
+        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+      ),
+  })
+  .describe('Guard a column deletion against concurrent writes.');
+
+export const deleteDatabaseColumnResponse = zod
+  .object({
+    table_versions: zod
+      .record(
+        zod.string(),
+        zod
+          .number()
+          .describe(
+            "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+          )
+      )
+      .describe('Includes the related table when a relation column goes.'),
+  })
+  .describe('Table versions changed by a placement deletion or reorder.');
+
+/**
+ * @summary Rename a column's label in this table.
+ */
+export const renameDatabaseColumnParams = zod.object({
+  id: zod.uuid().describe('Database id'),
+  table_id: zod.uuid().describe('Table id'),
+  column_id: zod.uuid().describe('Column id'),
+});
+
+export const renameDatabaseColumnBody = zod
+  .object({
+    name: zod.string().describe('New display name.'),
+    previousName: zod
+      .string()
+      .describe('Label shown when the rename editor opened.'),
+  })
+  .describe(
+    "Rename one column placement without changing its property's SQL identifier."
+  );
+
+export const renameDatabaseColumnResponse = zod
+  .object({
+    column: zod
+      .object({
+        config: zod.union([
+          zod.null(),
+          zod
+            .object({
+              database_id: zod.uuid().describe('Target database.'),
+              kind: zod.enum(['link']),
+              table_id: zod.uuid().describe('Target table.'),
+            })
+            .describe(
+              'A relation column: its cells reference rows of another table.'
+            )
+            .describe(
+              'Column-kind specific configuration stored on the placement.'
+            ),
+        ]),
+        display_name: zod
+          .string()
+          .nullable()
+          .describe(
+            "The placement's own label, which also names it in SQL; `None` shows\nthe definition's name."
+          ),
+        id: zod.uuid().describe('Identifier of the placement.'),
+        infer_type: zod
+          .boolean()
+          .describe(
+            "Whether the first nonempty value may settle this new text column's type."
+          ),
+        position: zod
+          .string()
+          .describe('Fractional index for column ordering.'),
+        property_definition_id: zod
+          .uuid()
+          .describe('The bound property definition.'),
+        table_id: zod.uuid().describe('Table the column appears on.'),
+      })
+      .describe(
+        'A column: the placement of a property definition on a table.\n\nThe definition carries name, [`DataType`], multi-select flag, and options;\nthis carries only where it appears and column-kind configuration.'
+      ),
+    table_version: zod
+      .number()
+      .describe(
+        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+      ),
+  })
+  .describe(
+    "A renamed placement and its table's version after the atomic update."
+  );
+
+/**
+ * @summary What changing one column to each type of the type menu would do to its
+values: safe, checked (with how many values would not convert and a few
+of them), or never (with why). Changes nothing.
+ */
+export const listDatabaseColumnCastsParams = zod.object({
+  id: zod.uuid(),
+  table_id: zod.uuid(),
+  column_id: zod.uuid(),
+});
+
+export const listDatabaseColumnCastsResponseFailuresMin = 0;
+
+export const listDatabaseColumnCastsResponseItem = zod
+  .object({
+    cast: zod
+      .enum(['safe', 'checked', 'never'])
+      .describe("Whether a column's values convert to a type."),
+    data_type: zod
+      .enum([
+        'BOOLEAN',
+        'DATE',
+        'NUMBER',
+        'STRING',
+        'SELECT_NUMBER',
+        'SELECT_STRING',
+        'TAG',
+        'ENTITY',
+        'LINK',
+      ])
+      .describe(
+        'Data type for property values, determining storage and validation.'
+      ),
+    examples: zod
+      .array(zod.string())
+      .describe('Up to three of the values that would not convert.'),
+    failures: zod
+      .number()
+      .min(listDatabaseColumnCastsResponseFailuresMin)
+      .describe('For a `checked` cast, how many cells would not convert.'),
+    is_multi_select: zod
+      .boolean()
+      .describe('Whether the target holds several values.'),
+    reason: zod
+      .string()
+      .nullable()
+      .describe('Why nothing converts, for a `never` cast.'),
+    relation: zod
+      .boolean()
+      .describe("Whether the target is a relation to another table's rows."),
+    specific_entity_type: zod.union([
+      zod.null(),
+      zod
+        .enum([
+          'CALENDAR_EVENT',
+          'CALL_RECORD',
+          'CHANNEL',
+          'CHAT',
+          'COMPANY',
+          'DATABASE_ROW',
+          'DOCUMENT',
+          'INITIATIVE',
+          'PROJECT',
+          'TASK',
+          'THREAD',
+          'USER',
+        ])
+        .describe(
+          'Type of entity that can be referenced by entity properties.'
+        ),
+    ]),
+    summary: zod
+      .string()
+      .nullable()
+      .describe(
+        "For a `checked` cast with failures, what is wrong with them, as in\n`3 values aren't numbers`."
+      ),
+  })
+  .describe(
+    'What changing a column to one type would do to its values: the dry run\nof a type change, for one target.'
+  );
+export const listDatabaseColumnCastsResponse = zod.array(
+  listDatabaseColumnCastsResponseItem
+);
+
+/**
+ * @summary Settle a new empty text column's type.
+ */
+export const inferDatabaseColumnTypeParams = zod.object({
+  id: zod.uuid().describe('Database id'),
+  table_id: zod.uuid().describe('Table id'),
+  column_id: zod.uuid().describe('Column id'),
+});
+
+export const inferDatabaseColumnTypeBody = zod
+  .object({
+    baseVersion: zod
+      .number()
+      .describe(
+        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+      ),
+    dataType: zod
+      .enum([
+        'BOOLEAN',
+        'DATE',
+        'NUMBER',
+        'STRING',
+        'SELECT_NUMBER',
+        'SELECT_STRING',
+        'TAG',
+        'ENTITY',
+        'LINK',
+      ])
+      .describe(
+        'Data type for property values, determining storage and validation.'
+      ),
+    specificEntityType: zod
+      .union([
+        zod.null(),
+        zod
+          .enum([
+            'CALENDAR_EVENT',
+            'CALL_RECORD',
+            'CHANNEL',
+            'CHAT',
+            'COMPANY',
+            'DATABASE_ROW',
+            'DOCUMENT',
+            'INITIATIVE',
+            'PROJECT',
+            'TASK',
+            'THREAD',
+            'USER',
+          ])
+          .describe(
+            'Type of entity that can be referenced by entity properties.'
+          ),
+      ])
+      .optional(),
+  })
+  .describe("Request to settle an empty column's first-value type.");
+
+export const inferDatabaseColumnTypeResponse = zod
+  .object({
+    column: zod
+      .object({
+        column: zod
+          .object({
+            config: zod.union([
+              zod.null(),
+              zod
+                .object({
+                  database_id: zod.uuid().describe('Target database.'),
+                  kind: zod.enum(['link']),
+                  table_id: zod.uuid().describe('Target table.'),
+                })
+                .describe(
+                  'A relation column: its cells reference rows of another table.'
+                )
+                .describe(
+                  'Column-kind specific configuration stored on the placement.'
+                ),
+            ]),
+            display_name: zod
+              .string()
+              .nullable()
+              .describe(
+                "The placement's own label, which also names it in SQL; `None` shows\nthe definition's name."
+              ),
+            id: zod.uuid().describe('Identifier of the placement.'),
+            infer_type: zod
+              .boolean()
+              .describe(
+                "Whether the first nonempty value may settle this new text column's type."
+              ),
+            position: zod
+              .string()
+              .describe('Fractional index for column ordering.'),
+            property_definition_id: zod
+              .uuid()
+              .describe('The bound property definition.'),
+            table_id: zod.uuid().describe('Table the column appears on.'),
+          })
+          .describe(
+            'A column: the placement of a property definition on a table.\n\nThe definition carries name, [`DataType`], multi-select flag, and options;\nthis carries only where it appears and column-kind configuration.'
+          ),
+        definition: zod
+          .object({
+            definition: zod
+              .object({
+                created_at: zod.iso.datetime({}),
+                data_type: zod
+                  .enum([
+                    'BOOLEAN',
+                    'DATE',
+                    'NUMBER',
+                    'STRING',
+                    'SELECT_NUMBER',
+                    'SELECT_STRING',
+                    'TAG',
+                    'ENTITY',
+                    'LINK',
+                  ])
+                  .describe(
+                    'Data type for property values, determining storage and validation.'
+                  ),
+                display_name: zod.string(),
+                id: zod.uuid(),
+                is_metadata: zod
+                  .boolean()
+                  .describe(
+                    'Flag to indicate if this is a system-generated metadata property.\nNot stored in database - computed at service layer.'
+                  ),
+                is_multi_select: zod.boolean(),
+                is_system: zod
+                  .boolean()
+                  .describe(
+                    'Flag to indicate if this is a system property (stored in DB).'
+                  ),
+                owner: zod
+                  .union([
+                    zod
+                      .object({
+                        scope: zod.enum(['user']),
+                        user_id: zod.string(),
+                      })
+                      .describe('User-scoped property.'),
+                    zod
+                      .object({
+                        scope: zod.enum(['team']),
+                        team_id: zod.uuid(),
+                      })
+                      .describe('Team-scoped property.'),
+                    zod
+                      .object({
+                        database_id: zod.uuid(),
+                        scope: zod.enum(['database']),
+                      })
+                      .describe(
+                        'Database-scoped property: the definition is a column of one Macro\ndatabase and is invisible to the shared user\/team property namespace.'
+                      ),
+                    zod
+                      .object({
+                        scope: zod.enum(['system']),
+                      })
+                      .describe(
+                        'System-owned property (no user, team, or database owner).'
+                      ),
+                  ])
+                  .describe(
+                    'Defines who owns a property - user-scoped, team-scoped, database-scoped, or system.'
+                  ),
+                specific_entity_type: zod.union([
+                  zod.null(),
+                  zod
+                    .enum([
+                      'CALENDAR_EVENT',
+                      'CALL_RECORD',
+                      'CHANNEL',
+                      'CHAT',
+                      'COMPANY',
+                      'DATABASE_ROW',
+                      'DOCUMENT',
+                      'INITIATIVE',
+                      'PROJECT',
+                      'TASK',
+                      'THREAD',
+                      'USER',
+                    ])
+                    .describe(
+                      'Type of entity that can be referenced by entity properties.'
+                    ),
+                ]),
+                updated_at: zod.iso.datetime({}),
+              })
+              .describe('Property definition model (service representation).'),
+            property_options: zod.array(
+              zod
+                .object({
+                  color: zod.string().nullable(),
+                  created_at: zod.iso.datetime({}),
+                  display_order: zod.number(),
+                  id: zod.uuid(),
+                  property_definition_id: zod.uuid(),
+                  updated_at: zod.iso.datetime({}),
+                  value: zod
+                    .union([
+                      zod
+                        .object({
+                          type: zod.enum(['string']),
+                          value: zod
+                            .string()
+                            .describe(
+                              'String value for SelectString properties'
+                            ),
+                        })
+                        .describe('String value for SelectString properties'),
+                      zod
+                        .object({
+                          type: zod.enum(['number']),
+                          value: zod
+                            .number()
+                            .describe(
+                              'Number value for SelectNumber properties'
+                            ),
+                        })
+                        .describe('Number value for SelectNumber properties'),
+                    ])
+                    .describe(
+                      'The value of a property option - either a string or a number.'
+                    ),
+                })
+                .describe(
+                  'A selectable option for select-type properties (service representation).'
+                )
+            ),
+          })
+          .describe(
+            'Property definition with its associated options (service representation).'
+          ),
+        shared_outside_database: zod
+          .boolean()
+          .describe(
+            "Whether the definition belongs to something beyond this database (a\nperson's, a team's or a system property), so changing its options\nchanges them everywhere that property is used."
+          ),
+        sql_name: zod
+          .string()
+          .describe(
+            'The name SQL refers to the column by: its display name, quoted.'
+          ),
+        writable: zod.boolean().describe('Whether SQL may write this column.'),
+      })
+      .describe('One column placement with the definition behind it.'),
+    table_version: zod
+      .number()
+      .describe(
+        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+      ),
+  })
+  .describe(
+    'Settled schema and the version against which its first value can be written.'
+  );
+
+/**
+ * @summary Add options to a select column.
+ */
+export const addDatabaseColumnOptionsParams = zod.object({
+  id: zod.uuid().describe('Database id'),
+  table_id: zod.uuid().describe('Table id'),
+  column_id: zod.uuid().describe('Column id'),
+});
+
+export const addDatabaseColumnOptionsBody = zod
+  .object({
+    labels: zod
+      .array(zod.string())
+      .describe(
+        'Display labels to add. Labels the column already has are ignored.'
+      ),
+  })
+  .describe('Request body for adding options to a select column.');
+
+export const addDatabaseColumnOptionsResponse = zod
+  .object({
+    column: zod
+      .object({
+        config: zod.union([
+          zod.null(),
+          zod
+            .object({
+              database_id: zod.uuid().describe('Target database.'),
+              kind: zod.enum(['link']),
+              table_id: zod.uuid().describe('Target table.'),
+            })
+            .describe(
+              'A relation column: its cells reference rows of another table.'
+            )
+            .describe(
+              'Column-kind specific configuration stored on the placement.'
+            ),
+        ]),
+        display_name: zod
+          .string()
+          .nullable()
+          .describe(
+            "The placement's own label, which also names it in SQL; `None` shows\nthe definition's name."
+          ),
+        id: zod.uuid().describe('Identifier of the placement.'),
+        infer_type: zod
+          .boolean()
+          .describe(
+            "Whether the first nonempty value may settle this new text column's type."
+          ),
+        position: zod
+          .string()
+          .describe('Fractional index for column ordering.'),
+        property_definition_id: zod
+          .uuid()
+          .describe('The bound property definition.'),
+        table_id: zod.uuid().describe('Table the column appears on.'),
+      })
+      .describe(
+        'A column: the placement of a property definition on a table.\n\nThe definition carries name, [`DataType`], multi-select flag, and options;\nthis carries only where it appears and column-kind configuration.'
+      ),
+    definition: zod
+      .object({
+        definition: zod
+          .object({
+            created_at: zod.iso.datetime({}),
+            data_type: zod
+              .enum([
+                'BOOLEAN',
+                'DATE',
+                'NUMBER',
+                'STRING',
+                'SELECT_NUMBER',
+                'SELECT_STRING',
+                'TAG',
+                'ENTITY',
+                'LINK',
+              ])
+              .describe(
+                'Data type for property values, determining storage and validation.'
+              ),
+            display_name: zod.string(),
+            id: zod.uuid(),
+            is_metadata: zod
+              .boolean()
+              .describe(
+                'Flag to indicate if this is a system-generated metadata property.\nNot stored in database - computed at service layer.'
+              ),
+            is_multi_select: zod.boolean(),
+            is_system: zod
+              .boolean()
+              .describe(
+                'Flag to indicate if this is a system property (stored in DB).'
+              ),
+            owner: zod
+              .union([
+                zod
+                  .object({
+                    scope: zod.enum(['user']),
+                    user_id: zod.string(),
+                  })
+                  .describe('User-scoped property.'),
+                zod
+                  .object({
+                    scope: zod.enum(['team']),
+                    team_id: zod.uuid(),
+                  })
+                  .describe('Team-scoped property.'),
+                zod
+                  .object({
+                    database_id: zod.uuid(),
+                    scope: zod.enum(['database']),
+                  })
+                  .describe(
+                    'Database-scoped property: the definition is a column of one Macro\ndatabase and is invisible to the shared user\/team property namespace.'
+                  ),
+                zod
+                  .object({
+                    scope: zod.enum(['system']),
+                  })
+                  .describe(
+                    'System-owned property (no user, team, or database owner).'
+                  ),
+              ])
+              .describe(
+                'Defines who owns a property - user-scoped, team-scoped, database-scoped, or system.'
+              ),
+            specific_entity_type: zod.union([
+              zod.null(),
+              zod
+                .enum([
+                  'CALENDAR_EVENT',
+                  'CALL_RECORD',
+                  'CHANNEL',
+                  'CHAT',
+                  'COMPANY',
+                  'DATABASE_ROW',
+                  'DOCUMENT',
+                  'INITIATIVE',
+                  'PROJECT',
+                  'TASK',
+                  'THREAD',
+                  'USER',
+                ])
+                .describe(
+                  'Type of entity that can be referenced by entity properties.'
+                ),
+            ]),
+            updated_at: zod.iso.datetime({}),
+          })
+          .describe('Property definition model (service representation).'),
+        property_options: zod.array(
+          zod
+            .object({
+              color: zod.string().nullable(),
+              created_at: zod.iso.datetime({}),
+              display_order: zod.number(),
+              id: zod.uuid(),
+              property_definition_id: zod.uuid(),
+              updated_at: zod.iso.datetime({}),
+              value: zod
+                .union([
+                  zod
+                    .object({
+                      type: zod.enum(['string']),
+                      value: zod
+                        .string()
+                        .describe('String value for SelectString properties'),
+                    })
+                    .describe('String value for SelectString properties'),
+                  zod
+                    .object({
+                      type: zod.enum(['number']),
+                      value: zod
+                        .number()
+                        .describe('Number value for SelectNumber properties'),
+                    })
+                    .describe('Number value for SelectNumber properties'),
+                ])
+                .describe(
+                  'The value of a property option - either a string or a number.'
+                ),
+            })
+            .describe(
+              'A selectable option for select-type properties (service representation).'
+            )
+        ),
+      })
+      .describe(
+        'Property definition with its associated options (service representation).'
+      ),
+    shared_outside_database: zod
+      .boolean()
+      .describe(
+        "Whether the definition belongs to something beyond this database (a\nperson's, a team's or a system property), so changing its options\nchanges them everywhere that property is used."
+      ),
+    sql_name: zod
+      .string()
+      .describe(
+        'The name SQL refers to the column by: its display name, quoted.'
+      ),
+    writable: zod.boolean().describe('Whether SQL may write this column.'),
+  })
+  .describe('One column placement with the definition behind it.');
+
+/**
+ * @summary Change one column's type. A value that does not fit refuses the whole
+change, naming how many and quoting a few, unless `clearInvalid` is set.
+ */
+export const changeDatabaseColumnTypeParams = zod.object({
+  id: zod.uuid(),
+  table_id: zod.uuid(),
+  column_id: zod.uuid(),
+});
+
+export const changeDatabaseColumnTypeBody = zod
+  .object({
+    baseVersion: zod
+      .number()
+      .describe(
+        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+      ),
+    clearInvalid: zod
+      .boolean()
+      .optional()
+      .describe(
+        'Empty the values that do not fit the new type instead of refusing the\nchange; a cell with several values keeps its first.'
+      ),
+    dataType: zod
+      .enum([
+        'BOOLEAN',
+        'DATE',
+        'NUMBER',
+        'STRING',
+        'SELECT_NUMBER',
+        'SELECT_STRING',
+        'TAG',
+        'ENTITY',
+        'LINK',
+      ])
+      .describe(
+        'Data type for property values, determining storage and validation.'
+      ),
+    isMultiSelect: zod
+      .boolean()
+      .optional()
+      .describe(
+        'Whether select, link or entity values may hold multiple items.'
+      ),
+    linkToDatabaseId: zod
+      .uuid()
+      .nullish()
+      .describe('Related database; defaults to the current database.'),
+    linkToTableId: zod
+      .uuid()
+      .nullish()
+      .describe('Related table, when choosing a database-row relationship.'),
+    specificEntityType: zod
+      .union([
+        zod.null(),
+        zod
+          .enum([
+            'CALENDAR_EVENT',
+            'CALL_RECORD',
+            'CHANNEL',
+            'CHAT',
+            'COMPANY',
+            'DATABASE_ROW',
+            'DOCUMENT',
+            'INITIATIVE',
+            'PROJECT',
+            'TASK',
+            'THREAD',
+            'USER',
+          ])
+          .describe(
+            'Type of entity that can be referenced by entity properties.'
+          ),
+      ])
+      .optional(),
+  })
+  .describe(
+    'Explicit column type configuration. Existing values must convert without\nloss, unless `clearInvalid` empties the ones that do not.'
+  );
+
+export const changeDatabaseColumnTypeResponseClearedCellsMin = 0;
+
+export const changeDatabaseColumnTypeResponseTrimmedCellsMin = 0;
+
+export const changeDatabaseColumnTypeResponse = zod
+  .object({
+    cleared_cells: zod
+      .number()
+      .min(changeDatabaseColumnTypeResponseClearedCellsMin)
+      .describe('Cells emptied because their value did not fit the new type.'),
+    table_versions: zod
+      .record(
+        zod.string(),
+        zod
+          .number()
+          .describe(
+            "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+          )
+      )
+      .describe(
+        "The table's version after the change; unchanged when the column\nalready had the type."
+      ),
+    trimmed_cells: zod
+      .number()
+      .min(changeDatabaseColumnTypeResponseTrimmedCellsMin)
+      .describe('Cells that held several values and kept only their first.'),
+  })
+  .describe('What a column type change did.');
+
+/**
+ * @summary Where a board's cards sit, for drawing it: the views come with the
+database's detail, their cards' places from here.
+ */
+export const getDatabaseViewPositionsParams = zod.object({
+  id: zod.uuid().describe('Database id'),
+  view_id: zod.uuid().describe('View id'),
+});
+
+export const getDatabaseViewPositionsResponse = zod
+  .object({
+    positions: zod
+      .array(
+        zod
+          .object({
+            lane: zod
+              .uuid()
+              .nullable()
+              .describe(
+                "The lane: an option of the board's column, `null` for the lane of\ncards without one."
+              ),
+            position: zod.string().describe("The card's key in that lane."),
+            row: zod.uuid().describe("The card's row."),
+          })
+          .describe(
+            'Where one card sits on a board: its lane, and its fractional key there.\nA card whose row has since moved to another lane has no place until it is\nmoved again.'
+          )
+      )
+      .describe(
+        "The places of the cards that have one: each card's lane and its key\nthere. Cards without a place show after the placed ones of their\nlane, oldest first."
+      ),
+  })
+  .describe("Where a board's cards sit.");
+
+/**
  * Available to every signed-in user on every plan; does not consume chat
 credits. Audio and transcripts are never persisted.
  * @summary Transcribe a transient recording with OpenAI Whisper.

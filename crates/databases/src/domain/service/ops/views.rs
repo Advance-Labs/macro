@@ -1,0 +1,424 @@
+//! The view ops: creating, changing, removing and ordering views, and moving
+//! a board's cards, each checked against what earlier ops leave.
+
+use std::collections::{HashMap, HashSet};
+
+use models_databases::position::{key_between, keys_between};
+use models_databases::views::{
+    CardPosition, DatabaseView, NewView, ViewId, ViewLayout, ViewPosition, ViewQuery, arrange_lane,
+    check, place_card,
+};
+use models_databases::{DatabaseOp, OptionId};
+use models_properties::service::property_value::PropertyValue;
+
+use super::{Planner, refuse};
+use crate::domain::catalog::{ColumnEntry, TableEntry, schema_columns};
+use crate::domain::models::{DatabaseError, PropertyDefinitionId, RowId, TableId, Write};
+use crate::domain::service::{same_name, validate_name};
+
+/// Where one board's cards are: each row of its table with its lane (the
+/// option its grouping cell holds) and, when it was placed in that lane, its
+/// key there.
+#[derive(Debug, Clone)]
+pub(super) struct Board {
+    /// The definition of the column the board was loaded grouped by.
+    pub(super) grouping: PropertyDefinitionId,
+    pub(super) cards: HashMap<RowId, (Option<OptionId>, Option<String>)>,
+}
+
+impl Board {
+    /// A board's cards from its table's rows, their grouping cells, and the
+    /// places stored for it. A place stored for another lane than the row's
+    /// is no place: the row has moved since.
+    pub(super) fn new(
+        grouping: PropertyDefinitionId,
+        rows: &[RowId],
+        cells: &HashMap<RowId, PropertyValue>,
+        positions: &[CardPosition],
+    ) -> Self {
+        let cards = rows
+            .iter()
+            .map(|row| {
+                let lane = match cells.get(row) {
+                    Some(PropertyValue::SelectOption(options)) => options.first().copied(),
+                    _ => None,
+                };
+                let position = positions
+                    .iter()
+                    .find(|placed| placed.row == *row && placed.lane == lane)
+                    .map(|placed| placed.position.clone());
+                (*row, (lane, position))
+            })
+            .collect();
+        Self { grouping, cards }
+    }
+
+    /// One lane's cards other than `except`, in board order.
+    fn lane(&self, lane: Option<OptionId>, except: RowId) -> Vec<(RowId, Option<String>)> {
+        let mut cards: Vec<(RowId, Option<String>)> = self
+            .cards
+            .iter()
+            .filter(|(row, (card_lane, _))| **row != except && *card_lane == lane)
+            .map(|(row, (_, position))| (*row, position.clone()))
+            .collect();
+        arrange_lane(&mut cards);
+        cards
+    }
+}
+
+/// What a `MoveCard` asks: which card of which board goes to which lane,
+/// next to which neighbour.
+struct CardMove {
+    view: ViewId,
+    row: RowId,
+    lane: Option<OptionId>,
+    before: Option<RowId>,
+    after: Option<RowId>,
+}
+
+impl Planner<'_> {
+    pub(super) fn view_write(
+        &mut self,
+        index: usize,
+        entry: &TableEntry,
+        op: &DatabaseOp,
+    ) -> Result<Write, DatabaseError> {
+        let table = entry.table.id;
+        match op {
+            DatabaseOp::CreateView { view, .. } => {
+                let NewView {
+                    name,
+                    query,
+                    layout,
+                } = view;
+                let name = self.view_name(index, entry, None, name)?;
+                self.check_view(index, entry, query, layout)?;
+                let now = self.now;
+                let views = self.views_of(entry);
+                let position = key_between(views.last().map(|view| view.position.as_str()), None)
+                    .map_err(|error| refuse(index, None, None, error.to_string()))?;
+                let view = DatabaseView {
+                    id: macro_uuid::generate_uuid_v7(),
+                    database_id: entry.database.id,
+                    table_id: table,
+                    name,
+                    position,
+                    query: query.clone(),
+                    layout: layout.clone(),
+                    created_at: now,
+                    updated_at: now,
+                };
+                views.push(view.clone());
+                Ok(Write::CreateView { view })
+            }
+            DatabaseOp::UpdateView {
+                view: id,
+                name,
+                query,
+                layout,
+                ..
+            } => {
+                let current = self.view(index, entry, *id)?.clone();
+                let name = match name {
+                    Some(name) => self.view_name(index, entry, Some(*id), name)?,
+                    None => current.name.clone(),
+                };
+                let query = query.clone().unwrap_or_else(|| current.query.clone());
+                let layout = layout.clone().unwrap_or_else(|| current.layout.clone());
+                self.check_view(index, entry, &query, &layout)?;
+                let regrouped = current.layout.group_by() != layout.group_by();
+                let view = DatabaseView {
+                    name,
+                    query,
+                    layout,
+                    updated_at: self.now,
+                    ..current
+                };
+                self.replace_view(entry, view.clone());
+                Ok(Write::UpdateView { view, regrouped })
+            }
+            DatabaseOp::DeleteView { view: id, .. } => {
+                self.view(index, entry, *id)?;
+                self.views_of(entry).retain(|view| view.id != *id);
+                Ok(Write::DeleteView {
+                    table_id: table,
+                    view_id: *id,
+                })
+            }
+            DatabaseOp::ReorderViews { order, .. } => {
+                let views = self.views_of(entry);
+                let current: HashSet<ViewId> = views.iter().map(|view| view.id).collect();
+                let named: HashSet<ViewId> = order.iter().copied().collect();
+                if named.len() != order.len() || named != current {
+                    return Err(refuse(
+                        index,
+                        None,
+                        None,
+                        "the order must name every view of this table exactly once",
+                    ));
+                }
+                let keys = keys_between(None, None, order.len())
+                    .map_err(|error| refuse(index, None, None, error.to_string()))?;
+                let positions: Vec<ViewPosition> = order
+                    .iter()
+                    .zip(keys)
+                    .map(|(view, position)| ViewPosition {
+                        view: *view,
+                        position,
+                    })
+                    .collect();
+                for view in views.iter_mut() {
+                    if let Some(placed) = positions.iter().find(|placed| placed.view == view.id) {
+                        view.position = placed.position.clone();
+                    }
+                }
+                views.sort_by(|left, right| left.position.cmp(&right.position));
+                Ok(Write::OrderViews {
+                    table_id: table,
+                    positions,
+                })
+            }
+            DatabaseOp::MoveCard {
+                view,
+                row,
+                lane,
+                before,
+                after,
+                ..
+            } => self.move_card(
+                index,
+                entry,
+                CardMove {
+                    view: *view,
+                    row: *row,
+                    lane: *lane,
+                    before: *before,
+                    after: *after,
+                },
+            ),
+            _ => Err(refuse(index, None, None, "not a view op")),
+        }
+    }
+
+    fn move_card(
+        &mut self,
+        index: usize,
+        entry: &TableEntry,
+        CardMove {
+            view,
+            row,
+            lane,
+            before,
+            after,
+        }: CardMove,
+    ) -> Result<Write, DatabaseError> {
+        let board = self.view(index, entry, view)?.clone();
+        let ViewLayout::Board { group_by, .. } = board.layout else {
+            return Err(refuse(
+                index,
+                None,
+                None,
+                format!(
+                    "\"{}\" is a table view; only a board's cards move",
+                    board.name
+                ),
+            ));
+        };
+        if !board.query.sort.is_empty() {
+            return Err(refuse(
+                index,
+                None,
+                None,
+                format!(
+                    "\"{}\" is sorted, so its cards keep the sort's order; remove the sort to \
+                     arrange them by hand",
+                    board.name
+                ),
+            ));
+        }
+        let column = grouping_column(entry, group_by)
+            .ok_or_else(|| refuse(index, None, Some(group_by), "no such column in this table"))?;
+        if let Some(option) = lane
+            && !self
+                .labels_of(&column.definition)
+                .iter()
+                .any(|(id, _)| *id == option)
+        {
+            return Err(refuse(
+                index,
+                None,
+                Some(group_by),
+                format!("no option {option} on \"{}\"", column.name()),
+            ));
+        }
+        let definition = column.definition.definition.id;
+        let state = self
+            .boards
+            .get_mut(&view)
+            .filter(|state| state.grouping == definition)
+            .ok_or_else(|| {
+                refuse(
+                    index,
+                    None,
+                    None,
+                    "the board was regrouped by this request; move its cards in another",
+                )
+            })?;
+        if !state.cards.contains_key(&row) {
+            return Err(refuse(
+                index,
+                None,
+                None,
+                format!("no row {row} in this table"),
+            ));
+        }
+        let placed = place_card(&state.lane(lane, row), row, before, after)
+            .map_err(|error| refuse(index, None, None, error.to_string()))?;
+        let positions: Vec<CardPosition> = placed
+            .into_iter()
+            .map(|(card, position)| {
+                state.cards.insert(card, (lane, Some(position.clone())));
+                CardPosition {
+                    row: card,
+                    lane,
+                    position,
+                }
+            })
+            .collect();
+        Ok(Write::MoveCard {
+            table_id: entry.table.id,
+            view_id: view,
+            row,
+            positions,
+            cell: (
+                definition,
+                lane.map(|option| PropertyValue::SelectOption(vec![option])),
+            ),
+        })
+    }
+
+    /// The views of a table as the ops so far leave them, in their order.
+    pub(super) fn views_of(&mut self, entry: &TableEntry) -> &mut Vec<DatabaseView> {
+        self.views
+            .entry(entry.table.id)
+            .or_insert_with(|| entry.views.clone())
+    }
+
+    fn view(
+        &mut self,
+        index: usize,
+        entry: &TableEntry,
+        id: ViewId,
+    ) -> Result<&DatabaseView, DatabaseError> {
+        self.views_of(entry)
+            .iter()
+            .find(|view| view.id == id)
+            .ok_or_else(|| refuse(index, None, None, format!("no view {id} on this table")))
+    }
+
+    fn replace_view(&mut self, entry: &TableEntry, view: DatabaseView) {
+        if let Some(current) = self
+            .views_of(entry)
+            .iter_mut()
+            .find(|current| current.id == view.id)
+        {
+            *current = view;
+        }
+    }
+
+    /// A view's name, trimmed, checked to be unique among the table's other
+    /// views ignoring case.
+    fn view_name(
+        &mut self,
+        index: usize,
+        entry: &TableEntry,
+        view: Option<ViewId>,
+        name: &str,
+    ) -> Result<String, DatabaseError> {
+        let name = validate_name(name).map_err(|error| match error {
+            DatabaseError::InvalidSchemaOperation(reason) => {
+                refuse(index, None, None, format!("a view's {reason}"))
+            }
+            other => other,
+        })?;
+        if self
+            .views_of(entry)
+            .iter()
+            .any(|other| Some(other.id) != view && same_name(&other.name, &name))
+        {
+            return Err(refuse(
+                index,
+                None,
+                None,
+                format!("a view named `{name}` already exists on this table"),
+            ));
+        }
+        Ok(name)
+    }
+
+    /// Check a view against its table, with the options the ops so far
+    /// leave its columns.
+    fn check_view(
+        &mut self,
+        index: usize,
+        entry: &TableEntry,
+        query: &ViewQuery,
+        layout: &ViewLayout,
+    ) -> Result<(), DatabaseError> {
+        let mut columns = schema_columns(entry);
+        for (column, schema) in entry.columns.iter().zip(&mut columns) {
+            if !schema.options.is_empty() || column.takes_options() {
+                schema.options = self
+                    .labels_of(&column.definition)
+                    .iter()
+                    .map(|(id, _)| *id)
+                    .collect();
+            }
+        }
+        check(query, layout, &columns)
+            .map_err(|problem| refuse(index, None, None, problem.to_string()))
+    }
+
+    /// The views of the tables binding `definition` that name `option`,
+    /// without it, as the ops so far leave them.
+    pub(super) fn views_without_option(
+        &mut self,
+        tables: &[TableId],
+        definition: PropertyDefinitionId,
+        option: OptionId,
+    ) -> Vec<DatabaseView> {
+        let entries = self.entries;
+        let mut rewritten = Vec::new();
+        for entry in entries
+            .iter()
+            .filter(|entry| tables.contains(&entry.table.id))
+        {
+            let Some(column) = entry.column_for(definition).map(|column| column.column.id) else {
+                continue;
+            };
+            let now = self.now;
+            for view in self.views_of(entry).iter_mut() {
+                let query = view.query.without_option(column, option);
+                let layout = view.layout.without_option(column, option);
+                if query != view.query || layout != view.layout {
+                    view.query = query;
+                    view.layout = layout;
+                    view.updated_at = now;
+                    rewritten.push(view.clone());
+                }
+            }
+        }
+        rewritten
+    }
+}
+
+/// The column a board groups by.
+fn grouping_column(
+    entry: &TableEntry,
+    group_by: models_databases::ColumnId,
+) -> Option<&ColumnEntry> {
+    entry
+        .columns
+        .iter()
+        .find(|column| column.column.id == group_by)
+}

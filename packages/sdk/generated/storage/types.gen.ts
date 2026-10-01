@@ -72,6 +72,16 @@ export type ActiveMeetingsResponse = {
 export type ActivityType = 'view' | 'interact';
 
 /**
+ * Request body for adding options to a select column.
+ */
+export type AddColumnOptionsRequest = {
+    /**
+     * Display labels to add. Labels the column already has are ignored.
+     */
+    labels: Array<string>;
+};
+
+/**
  * Request body for favoriting an entity.
  */
 export type AddFavoriteRequest = {
@@ -1161,6 +1171,27 @@ export type ApiThreadReply = {
 };
 
 /**
+ * A batch of ops for one database, applied together or not at all.
+ */
+export type ApplyOpsRequest = {
+    /**
+     * The ops, in the order they apply. Every one names a table of this
+     * database; a column type change is sent on its own.
+     */
+    ops: Array<DatabaseOp>;
+};
+
+/**
+ * What each op of a batch did.
+ */
+export type ApplyOpsResponse = {
+    /**
+     * One result per op, in the order the ops were sent.
+     */
+    results: Array<OpResult>;
+};
+
+/**
  * Request to approve a pairing and register the harness.
  */
 export type ApprovePairingRequest = {
@@ -1249,6 +1280,57 @@ export type AttachmentChange = {
  * RSVP state for an attendee.
  */
 export type AttendeeResponseStatus = 'needs_action' | 'accepted' | 'declined' | 'tentative';
+
+/**
+ * Where one viewer is inside a database right now: ephemeral, relayed to
+ * the other viewers and never stored. A missing row or column means the
+ * viewer is on the table but on no cell.
+ */
+export type Awareness = {
+    /**
+     * The column placement of the focused cell, if any.
+     */
+    columnId?: string;
+    /**
+     * Whether the cell is open for editing.
+     */
+    editing?: boolean;
+    /**
+     * Whether the viewer left the database; other viewers drop their state.
+     */
+    left?: boolean;
+    /**
+     * The row of the focused cell, if any.
+     */
+    rowId?: string;
+    /**
+     * The table the viewer is looking at.
+     */
+    tableId: string;
+};
+
+/**
+ * The [`AWARENESS_MESSAGE_TYPE`] payload: one viewer's awareness, stamped
+ * when the server relayed it so receivers can drop older relays.
+ */
+export type AwarenessRelay = {
+    /**
+     * The database the viewer is in.
+     */
+    databaseId: string;
+    /**
+     * When the server relayed it, in milliseconds since the Unix epoch.
+     */
+    relayedAt: number;
+    /**
+     * Where the viewer is.
+     */
+    state: Awareness;
+    /**
+     * The viewer.
+     */
+    userId: string;
+};
 
 export type BTreeMap = {
     [key: string]: string;
@@ -2266,6 +2348,137 @@ export type CallTokenResponse = {
 };
 
 /**
+ * Where one card sits on a board: its lane, and its fractional key there.
+ * A card whose row has since moved to another lane has no place until it is
+ * moved again.
+ */
+export type CardPosition = {
+    /**
+     * The lane: an option of the board's column, `null` for the lane of
+     * cards without one.
+     */
+    lane: string | null;
+    /**
+     * The card's key in that lane.
+     */
+    position: string;
+    /**
+     * The card's row.
+     */
+    row: string;
+};
+
+/**
+ * Whether a column's values convert to a type.
+ */
+export type CastVerdict = 'safe' | 'checked' | 'never';
+
+/**
+ * A cell's value. It must fit the column's type: text for a text column,
+ * options of the column for a select, and so on.
+ */
+export type CellValue = {
+    type: 'text';
+    /**
+     * Free text.
+     */
+    value: string;
+} | {
+    type: 'number';
+    /**
+     * A finite number.
+     */
+    value: number;
+} | {
+    type: 'boolean';
+    /**
+     * A checkbox.
+     */
+    value: boolean;
+} | {
+    type: 'date';
+    /**
+     * A date-time.
+     */
+    value: string;
+} | {
+    type: 'link';
+    /**
+     * Complete http or https URLs; at most one for a single-valued column.
+     */
+    value: Array<string>;
+} | {
+    type: 'options';
+    /**
+     * Options of a select or tag column; at most one for a single-valued
+     * column.
+     */
+    value: Array<OptionRef>;
+} | {
+    type: 'entities';
+    /**
+     * References to Macro entities of the kind the column points at; at
+     * most one for a single-valued column.
+     */
+    value: Array<EntityRef>;
+} | {
+    type: 'rows';
+    /**
+     * Rows of the table a relation column points at.
+     */
+    value: Array<string>;
+} | {
+    type: 'clear';
+};
+
+/**
+ * One cell of a row: which column, and its new value.
+ */
+export type CellWrite = {
+    /**
+     * The column placement.
+     */
+    column: string;
+    /**
+     * The value, or [`CellValue::Clear`] to empty the cell.
+     */
+    value: CellValue;
+};
+
+/**
+ * Explicit column type configuration. Existing values must convert without
+ * loss, unless `clearInvalid` empties the ones that do not.
+ */
+export type ChangeColumnTypeRequest = {
+    /**
+     * Table version shown when the type menu opened.
+     */
+    baseVersion: TableVersion;
+    /**
+     * Empty the values that do not fit the new type instead of refusing the
+     * change; a cell with several values keeps its first.
+     */
+    clearInvalid?: boolean;
+    /**
+     * Requested property type.
+     */
+    dataType: DataType;
+    /**
+     * Whether select, link or entity values may hold multiple items.
+     */
+    isMultiSelect?: boolean;
+    /**
+     * Related database; defaults to the current database.
+     */
+    linkToDatabaseId?: string | null;
+    /**
+     * Related table, when choosing a database-row relationship.
+     */
+    linkToTableId?: string | null;
+    specificEntityType?: null | EntityType;
+};
+
+/**
  * Channel metadata in soup payloads.
  */
 export type Channel = {
@@ -3176,6 +3389,237 @@ export type CollabSurfaceTokenResponse = {
     token: string;
 };
 
+/**
+ * A column: the placement of a property definition on a table.
+ *
+ * The definition carries name, [`DataType`], multi-select flag, and options;
+ * this carries only where it appears and column-kind configuration.
+ */
+export type Column = {
+    config: null | ColumnConfig;
+    /**
+     * The placement's own label, which also names it in SQL; `None` shows
+     * the definition's name.
+     */
+    display_name: string | null;
+    /**
+     * Identifier of the placement.
+     */
+    id: string;
+    /**
+     * Whether the first nonempty value may settle this new text column's type.
+     */
+    infer_type: boolean;
+    /**
+     * Fractional index for column ordering.
+     */
+    position: string;
+    /**
+     * The bound property definition.
+     */
+    property_definition_id: string;
+    /**
+     * Table the column appears on.
+     */
+    table_id: string;
+};
+
+/**
+ * How a new column obtains its definition.
+ */
+export type ColumnBindingRequest = {
+    /**
+     * Value type.
+     */
+    dataType: DataType;
+    /**
+     * Whether the column holds multiple values.
+     */
+    isMultiSelect?: boolean;
+    kind: 'new';
+    /**
+     * Column display name.
+     */
+    name: string;
+    /**
+     * For a select or tag column, the labels SQL will accept. A select
+     * column created without any accepts nothing until options are added.
+     */
+    options?: Array<string>;
+} | {
+    kind: 'existing';
+    /**
+     * The definition to bind.
+     */
+    propertyDefinitionId: string;
+};
+
+/**
+ * What changing a column to one type would do to its values: the dry run
+ * of a type change, for one target.
+ */
+export type ColumnCast = {
+    /**
+     * Whether the values convert.
+     */
+    cast: CastVerdict;
+    /**
+     * The target property type.
+     */
+    data_type: DataType;
+    /**
+     * Up to three of the values that would not convert.
+     */
+    examples: Array<string>;
+    /**
+     * For a `checked` cast, how many cells would not convert.
+     */
+    failures: number;
+    /**
+     * Whether the target holds several values.
+     */
+    is_multi_select: boolean;
+    /**
+     * Why nothing converts, for a `never` cast.
+     */
+    reason: string | null;
+    /**
+     * Whether the target is a relation to another table's rows.
+     */
+    relation: boolean;
+    specific_entity_type: null | EntityType;
+    /**
+     * For a `checked` cast with failures, what is wrong with them, as in
+     * `3 values aren't numbers`.
+     */
+    summary: string | null;
+};
+
+/**
+ * A relation column: its cells reference rows of another table.
+ */
+export type ColumnConfig = {
+    /**
+     * Target database.
+     */
+    database_id: string;
+    kind: 'link';
+    /**
+     * Target table.
+     */
+    table_id: string;
+};
+
+/**
+ * One column placement with the definition behind it.
+ */
+export type ColumnDetail = {
+    /**
+     * The placement.
+     */
+    column: Column;
+    /**
+     * The bound definition (name, type, options).
+     */
+    definition: PropertyDefinitionWithOptions;
+    /**
+     * Whether the definition belongs to something beyond this database (a
+     * person's, a team's or a system property), so changing its options
+     * changes them everywhere that property is used.
+     */
+    shared_outside_database: boolean;
+    /**
+     * The name SQL refers to the column by: its display name, quoted.
+     */
+    sql_name: string;
+    /**
+     * Whether SQL may write this column.
+     */
+    writable: boolean;
+};
+
+/**
+ * A type a column can have.
+ */
+export type ColumnKind = {
+    type: 'text';
+} | {
+    type: 'number';
+} | {
+    type: 'boolean';
+} | {
+    type: 'date';
+} | {
+    type: 'link';
+} | {
+    /**
+     * Whether a cell holds several options.
+     */
+    multi: boolean;
+    type: 'select';
+} | {
+    /**
+     * Whether a cell holds several options.
+     */
+    multi: boolean;
+    type: 'select_number';
+} | {
+    type: 'tag';
+} | {
+    /**
+     * Whether a cell holds several references.
+     */
+    multi: boolean;
+    /**
+     * What the references point at.
+     */
+    target: EntityKind;
+    type: 'entity';
+} | {
+    /**
+     * The database of the related table.
+     */
+    database: string;
+    /**
+     * The related table.
+     */
+    table: string;
+    type: 'relation';
+};
+
+/**
+ * Table versions changed by a placement deletion or reorder.
+ */
+export type ColumnSchemaOutcome = {
+    /**
+     * Includes the related table when a relation column goes.
+     */
+    table_versions: {
+        [key: string]: TableVersion;
+    };
+};
+
+/**
+ * What a column type change did.
+ */
+export type ColumnTypeChangeOutcome = {
+    /**
+     * Cells emptied because their value did not fit the new type.
+     */
+    cleared_cells: number;
+    /**
+     * The table's version after the change; unchanged when the column
+     * already had the type.
+     */
+    table_versions: {
+        [key: string]: TableVersion;
+    };
+    /**
+     * Cells that held several values and kept only their first.
+     */
+    trimmed_cells: number;
+};
+
 export type Comment = {
     commentId: number;
     createdAt?: string | null;
@@ -3209,6 +3653,11 @@ export type CommentThread = {
  * so an unrelated edit never disturbs it.
  */
 export type ConferenceProvider = 'google_meet' | 'other';
+
+/**
+ * How a group's conditions combine.
+ */
+export type Conjunction = 'and' | 'or';
 
 /**
  * Query parameters for the copy document endpoint.
@@ -3477,6 +3926,38 @@ export type CreateChannelScopedBotResponse = {
     token: BotToken;
 };
 
+/**
+ * Request body for creating a column.
+ */
+export type CreateColumnRequest = {
+    /**
+     * Definition source.
+     */
+    binding: ColumnBindingRequest;
+    /**
+     * Infer the first value type of a newly owned text column.
+     */
+    inferType?: boolean;
+    /**
+     * Database of the linked table (defaults to this database).
+     */
+    linkToDatabaseId?: string;
+    /**
+     * Link this column to another table (many-to-many).
+     */
+    linkToTableId?: string;
+};
+
+/**
+ * Response for a created column.
+ */
+export type CreateColumnResponse = {
+    /**
+     * Identifier of the new column placement.
+     */
+    columnId: string;
+};
+
 export type CreateCommentRequest = {
     anchor?: null | AnchorRequest;
     mentions?: null | Mentions;
@@ -3542,6 +4023,16 @@ export type CreateCrmContactRequest = {
     email: string;
     /**
      * Display name for the contact.
+     */
+    name: string;
+};
+
+/**
+ * Request body for creating a database.
+ */
+export type CreateDatabaseRequest = {
+    /**
+     * Display name.
      */
     name: string;
 };
@@ -3887,6 +4378,16 @@ export type CreateSnippetResponse = {
      * The document ID of the created snippet.
      */
     documentId: string;
+};
+
+/**
+ * Request body for creating a table.
+ */
+export type CreateTableRequest = {
+    /**
+     * Display name.
+     */
+    name: string;
 };
 
 /**
@@ -4492,8 +4993,295 @@ export type CustomSpeakerAssignment = {
  */
 export type DataType = 'BOOLEAN' | 'DATE' | 'NUMBER' | 'STRING' | 'SELECT_NUMBER' | 'SELECT_STRING' | 'TAG' | 'ENTITY' | 'LINK';
 
+/**
+ * A database: a named collection of tables, owned and shared as one entity.
+ */
+export type Database = {
+    /**
+     * Creation time.
+     */
+    created_at: string;
+    /**
+     * Identifier.
+     */
+    id: string;
+    /**
+     * Display name.
+     */
+    name: string;
+    /**
+     * Owning user.
+     */
+    owner_id: string;
+    /**
+     * Set when trashed.
+     */
+    trashed_at: string | null;
+};
+
+/**
+ * Everything a client needs to render and edit one database: tables,
+ * column placements with their definitions, and the SQL names the query
+ * surface exposes them under.
+ */
+export type DatabaseDetail = {
+    /**
+     * The database.
+     */
+    database: Database;
+    /**
+     * The viewer's access.
+     */
+    grant: AccessLevel;
+    /**
+     * Tables in tab order.
+     */
+    tables: Array<TableDetail>;
+};
+
+/**
+ * One write to a database's data. A request's ops apply together or not at
+ * all, and every op names a table of the database the request is for.
+ */
+export type DatabaseOp = {
+    /**
+     * Create a select option for a label the column does not have yet,
+     * instead of refusing the op.
+     */
+    createMissingOptions?: boolean;
+    kind: 'insert_rows';
+    /**
+     * One entry per new row: the cells it starts with. Columns left out
+     * start empty.
+     */
+    rows: Array<Array<CellWrite>>;
+    /**
+     * The table.
+     */
+    table: string;
+} | {
+    /**
+     * Which rows get which cells.
+     */
+    changes: RowChanges;
+    /**
+     * Create a select option for a label the column does not have yet,
+     * instead of refusing the op.
+     */
+    createMissingOptions?: boolean;
+    kind: 'update_rows';
+    /**
+     * The table the rows belong to.
+     */
+    table: string;
+} | {
+    kind: 'delete_rows';
+    /**
+     * The rows, each named once.
+     */
+    rows: Array<string>;
+    /**
+     * The table the rows belong to.
+     */
+    table: string;
+} | {
+    /**
+     * Empty the cells whose value does not fit, instead of refusing; a
+     * cell with several values going to a single-valued type keeps its
+     * first.
+     */
+    clearInvalid?: boolean;
+    /**
+     * The column placement; its id survives the change.
+     */
+    column: string;
+    kind: 'change_column_type';
+    /**
+     * The table.
+     */
+    table: string;
+    /**
+     * The type it becomes.
+     */
+    to: ColumnKind;
+} | {
+    color?: null | OptionColor;
+    /**
+     * The select or tag column.
+     */
+    column: string;
+    kind: 'update_option';
+    /**
+     * Its new label; left out, it keeps its own. Labels are unique
+     * within a column, ignoring case.
+     */
+    label?: string;
+    /**
+     * The option.
+     */
+    option: string;
+    /**
+     * The table.
+     */
+    table: string;
+} | {
+    /**
+     * The select or tag column.
+     */
+    column: string;
+    kind: 'delete_option';
+    /**
+     * The option.
+     */
+    option: string;
+    /**
+     * The table.
+     */
+    table: string;
+} | {
+    kind: 'create_view';
+    /**
+     * The table.
+     */
+    table: string;
+    /**
+     * What it shows and how.
+     */
+    view: NewView;
+} | {
+    kind: 'update_view';
+    /**
+     * Its new layout. A board grouped by another column forgets where
+     * its cards were.
+     */
+    layout?: ViewLayout;
+    /**
+     * Its new name.
+     */
+    name?: string;
+    /**
+     * Its new query.
+     */
+    query?: ViewQuery;
+    /**
+     * The view's table.
+     */
+    table: string;
+    /**
+     * The view.
+     */
+    view: string;
+} | {
+    kind: 'delete_view';
+    /**
+     * The view's table.
+     */
+    table: string;
+    /**
+     * The view.
+     */
+    view: string;
+} | {
+    kind: 'reorder_views';
+    /**
+     * Its views, in their new order.
+     */
+    order: Array<string>;
+    /**
+     * The table.
+     */
+    table: string;
+} | {
+    /**
+     * The card that ends up just after it, if any. Given with `before`,
+     * it must be the card right after `before`; with neither, the card
+     * goes to the end of the lane.
+     */
+    after?: string | null;
+    /**
+     * The card that ends up just before it (it lands right after this
+     * one), if any.
+     */
+    before?: string | null;
+    kind: 'move_card';
+    /**
+     * The lane it goes to: an option of the board's column, or `null`
+     * for the lane of cards without one.
+     */
+    lane: string | null;
+    /**
+     * The card's row.
+     */
+    row: string;
+    /**
+     * The view's table.
+     */
+    table: string;
+    /**
+     * The board.
+     */
+    view: string;
+};
+
+/**
+ * A view of one table, as stored.
+ */
+export type DatabaseView = {
+    /**
+     * When it was created.
+     */
+    createdAt: string;
+    /**
+     * The database the table belongs to.
+     */
+    databaseId: string;
+    /**
+     * The view.
+     */
+    id: string;
+    /**
+     * How it draws them.
+     */
+    layout: ViewLayout;
+    /**
+     * Its name, unique among the table's views ignoring case.
+     */
+    name: string;
+    /**
+     * Where it sorts among the table's views: a fractional key.
+     */
+    position: string;
+    /**
+     * Which rows it shows, in what order.
+     */
+    query: ViewQuery;
+    /**
+     * The table it shows.
+     */
+    tableId: string;
+    /**
+     * When it last changed.
+     */
+    updatedAt: string;
+};
+
+/**
+ * How a date cell compares to a date-time.
+ */
+export type DateOperator = 'before' | 'after' | 'onOrBefore' | 'onOrAfter';
+
 export type DeleteAnchorInfo = AnchorId & {
     deleted: boolean;
+};
+
+/**
+ * Guard a column deletion against concurrent writes.
+ */
+export type DeleteColumnRequest = {
+    /**
+     * Table version shown in the confirmation.
+     */
+    baseVersion: TableVersion;
 };
 
 export type DeleteCommentRequest = {
@@ -5543,6 +6331,11 @@ export type EntityFilters = {
 };
 
 /**
+ * A kind of Macro entity a reference column can point at.
+ */
+export type EntityKind = 'USER' | 'DOCUMENT' | 'TASK' | 'COMPANY' | 'CALL_RECORD' | 'CHANNEL' | 'CHAT' | 'PROJECT' | 'THREAD' | 'CALENDAR_EVENT' | 'INITIATIVE';
+
+/**
  * A user's permission for an entity, discriminated by entity kind.
  *
  * Items (documents, chats, projects, threads) use access levels.
@@ -5578,6 +6371,20 @@ export type EntityPermissionResponse = {
     status: 'access';
 } | {
     status: 'no_access';
+};
+
+/**
+ * A reference to one Macro entity.
+ */
+export type EntityRef = {
+    /**
+     * The entity's id.
+     */
+    entityId: string;
+    /**
+     * What kind of entity it is; it must be the kind the column points at.
+     */
+    entityType: EntityKind;
 };
 
 /**
@@ -5827,6 +6634,113 @@ export type FileTypeUpdate = {
      */
     set: FileType;
 } | 'clear';
+
+/**
+ * A test of one column's cells.
+ */
+export type FilterCondition = {
+    /**
+     * The column tested.
+     */
+    column: string;
+    /**
+     * What its cell must be. The test's kind must fit the column's type.
+     */
+    test: FilterTest;
+};
+
+/**
+ * Conditions joined by one conjunction.
+ */
+export type FilterGroup = {
+    /**
+     * The conditions and nested groups. A group without any keeps every
+     * row.
+     */
+    conditions: Array<FilterNode>;
+    /**
+     * Whether every condition must hold, or any one.
+     */
+    conjunction: Conjunction;
+};
+
+/**
+ * One entry of a group: a condition, or a group of its own.
+ */
+export type FilterNode = (FilterCondition & {
+    kind: 'condition';
+}) | (FilterGroup & {
+    kind: 'group';
+});
+
+/**
+ * What a column's cell must be, by the kind of value the column holds.
+ */
+export type FilterTest = {
+    kind: 'presence';
+    /**
+     * Empty, or not.
+     */
+    operator: PresenceOperator;
+} | {
+    kind: 'text';
+    /**
+     * How the cell compares.
+     */
+    operator: TextOperator;
+    /**
+     * The text compared against, ignoring case for the containment
+     * tests.
+     */
+    value: string;
+} | {
+    kind: 'number';
+    /**
+     * How the cell compares.
+     */
+    operator: NumberOperator;
+    /**
+     * The number compared against; finite.
+     */
+    value: number;
+} | {
+    kind: 'date';
+    /**
+     * How the cell compares.
+     */
+    operator: DateOperator;
+    /**
+     * The date-time compared against.
+     */
+    value: string;
+} | {
+    /**
+     * Whether the box is checked.
+     */
+    checked: boolean;
+    kind: 'checkbox';
+} | {
+    kind: 'options';
+    /**
+     * How the cell's options relate to these.
+     */
+    operator: SetOperator;
+    /**
+     * Options of the column; at least one.
+     */
+    options: Array<string>;
+} | {
+    /**
+     * Entity ids, or for a relation the related rows' ids; at least
+     * one.
+     */
+    entities: Array<string>;
+    kind: 'entities';
+    /**
+     * How the cell's references relate to these.
+     */
+    operator: SetOperator;
+};
 
 export type FolderItem = {
     fileType?: null | FileType;
@@ -6694,6 +7608,28 @@ export type HashMap = {
 export type HighlightType = 1 | 2 | 3;
 
 /**
+ * An import is identified once, before sending, so retries cannot duplicate rows.
+ */
+export type ImportTable = {
+    /**
+     * Header names, in order. All imported values remain text.
+     */
+    columns: Array<string>;
+    /**
+     * New table's display name.
+     */
+    name: string;
+    /**
+     * Stable key for this import, retained through retries.
+     */
+    requestId: string;
+    /**
+     * Rectangular text rows. Empty fields are preserved.
+     */
+    rows: Array<Array<string>>;
+};
+
+/**
  * Display attribution for a comment imported from an external document.
  */
 export type ImportedAuthor = {
@@ -6720,6 +7656,35 @@ export type InFlightTurnSummary = {
      * Position in the session's log.
      */
     turn: number;
+};
+
+/**
+ * Settled schema and the version against which its first value can be written.
+ */
+export type InferColumnTypeOutcome = {
+    /**
+     * Updated placement, property definition, and SQL name.
+     */
+    column: ColumnDetail;
+    /**
+     * Version after settling the column.
+     */
+    table_version: TableVersion;
+};
+
+/**
+ * Request to settle an empty column's first-value type.
+ */
+export type InferColumnTypeRequest = {
+    /**
+     * Table version used when interpreting the first value.
+     */
+    baseVersion: TableVersion;
+    /**
+     * First-value type: STRING, NUMBER, or ENTITY.
+     */
+    dataType: DataType;
+    specificEntityType?: null | EntityType;
 };
 
 /**
@@ -6896,6 +7861,20 @@ export type ItemWithUserAccessLevel = {
 };
 
 /**
+ * How one lane shows in a board layout.
+ */
+export type Lane = {
+    /**
+     * Whether it is hidden.
+     */
+    hidden?: boolean;
+    /**
+     * The option the lane holds the cards of; `null` for cards without one.
+     */
+    option: string | null;
+};
+
+/**
  * Latest-message bundle for soup payloads.
  */
 export type LatestMessage = {
@@ -6928,6 +7907,25 @@ export type ListWebhooksResponse = {
      * The caller's webhooks, newest first. Signing secrets are omitted.
      */
     webhooks: Array<Webhook>;
+};
+
+/**
+ * A database as listed for a viewer.
+ */
+export type ListedDatabase = {
+    /**
+     * The database.
+     */
+    database: Database;
+    /**
+     * The viewer's access.
+     */
+    grant: AccessLevel;
+    /**
+     * Tables in tab order, so discovery can find a table independently of
+     * the containing database's display name.
+     */
+    tables: Array<Table>;
 };
 
 export type LocationResponseData = {
@@ -7521,6 +8519,25 @@ export type NewThreadAnchor = {
 };
 
 /**
+ * A view's contents as an op creates it; the server gives it its id,
+ * position and times.
+ */
+export type NewView = {
+    /**
+     * How it draws them.
+     */
+    layout: ViewLayout;
+    /**
+     * Its name.
+     */
+    name: string;
+    /**
+     * Which rows it shows, in what order.
+     */
+    query?: ViewQuery;
+};
+
+/**
  * Notification-level filters that apply to an entity type.
  */
 export type NotificationFilters = {
@@ -7535,6 +8552,131 @@ export type NotificationFilters = {
  * The mutually exclusive lifecycle states of a user's notification.
  */
 export type NotificationState = 'unseen' | 'seen' | 'done';
+
+/**
+ * How a number cell compares to a number.
+ */
+export type NumberOperator = 'is' | 'isNot' | 'greaterThan' | 'greaterThanOrEqual' | 'lessThan' | 'lessThanOrEqual';
+
+/**
+ * Why an op of a batch was refused. Nothing in the batch was written.
+ */
+export type OpRefusalResponse = {
+    /**
+     * The column placement at fault, when one is.
+     */
+    column: string | null;
+    /**
+     * What is wrong.
+     */
+    message: string;
+    /**
+     * The refused op's index in the request.
+     */
+    op: number;
+    /**
+     * The row's index within the op, when one row is at fault.
+     */
+    row: number | null;
+};
+
+/**
+ * What one op did, in the order the ops were sent.
+ */
+export type OpResult = {
+    /**
+     * How many rows the op inserted, updated or deleted.
+     */
+    affected: number;
+    /**
+     * The rows an insert created, in the order they were sent; empty
+     * for an update or a delete.
+     */
+    inserted: Array<string>;
+    kind: 'rows_written';
+    /**
+     * The table's version once the request committed.
+     */
+    tableVersion: TableVersion;
+} | {
+    /**
+     * Cells emptied because their value did not fit the new type.
+     */
+    clearedCells: number;
+    kind: 'column_typed';
+    /**
+     * The table's version after the change.
+     */
+    tableVersion: TableVersion;
+    /**
+     * Cells that held several values and kept only their first.
+     */
+    trimmedCells: number;
+} | {
+    kind: 'option_changed';
+    /**
+     * The table's version after the change.
+     */
+    tableVersion: TableVersion;
+} | {
+    kind: 'view_written';
+    /**
+     * The table's version after the change.
+     */
+    tableVersion: TableVersion;
+    /**
+     * The view as stored.
+     */
+    view: DatabaseView;
+} | {
+    kind: 'view_deleted';
+    /**
+     * The table's version after the change.
+     */
+    tableVersion: TableVersion;
+} | {
+    kind: 'views_reordered';
+    /**
+     * Every view's key, in their new order.
+     */
+    positions: Array<ViewPosition>;
+    /**
+     * The table's version after the change.
+     */
+    tableVersion: TableVersion;
+} | {
+    kind: 'card_moved';
+    /**
+     * The positions written, the moved card's last.
+     */
+    positions: Array<CardPosition>;
+    /**
+     * The table's version after the change.
+     */
+    tableVersion: TableVersion;
+};
+
+/**
+ * A colour select and tag options take, from the palette the tag picker
+ * renders.
+ */
+export type OptionColor = 'red' | 'tomato' | 'orange' | 'amber' | 'yellow' | 'green' | 'teal' | 'blue' | 'indigo' | 'purple' | 'pink' | 'gray';
+
+/**
+ * A select option, by its id or by its label.
+ */
+export type OptionRef = {
+    /**
+     * An option the column has.
+     */
+    id: string;
+} | {
+    /**
+     * An option's label, matched without regard to case. An unknown label
+     * is refused unless the op creates missing options.
+     */
+    label: string;
+};
 
 /**
  * A pending pairing, as shown to the approving user.
@@ -8040,6 +9182,11 @@ export type PreSaveDocumentResponseData = {
     presignedUrls: Array<PresignedUrl>;
 };
 
+/**
+ * Whether a cell is empty.
+ */
+export type PresenceOperator = 'isEmpty' | 'isNotEmpty';
+
 export type PresignedUrl = {
     /**
      * The presigned url used to upload the sha
@@ -8172,6 +9319,14 @@ export type PropertyDefinition = {
 };
 
 /**
+ * Property definition with its associated options (service representation).
+ */
+export type PropertyDefinitionWithOptions = {
+    definition: PropertyDefinition;
+    property_options: Array<PropertyOption>;
+};
+
+/**
  * A single property-based filter condition.
  *
  * Each filter targets a specific property definition on entities of a given type,
@@ -8211,6 +9366,36 @@ export type PropertyInput = {
      * The value to set for the property.
      */
     value: SetPropertyValue;
+};
+
+/**
+ * A selectable option for select-type properties (service representation).
+ */
+export type PropertyOption = {
+    color: string | null;
+    created_at: string;
+    display_order: number;
+    id: string;
+    property_definition_id: string;
+    updated_at: string;
+    value: PropertyOptionValue;
+};
+
+/**
+ * The value of a property option - either a string or a number.
+ */
+export type PropertyOptionValue = {
+    type: 'string';
+    /**
+     * String value for SelectString properties
+     */
+    value: string;
+} | {
+    type: 'number';
+    /**
+     * Number value for SelectNumber properties
+     */
+    value: number;
 };
 
 /**
@@ -8287,6 +9472,17 @@ export type PropertyValue = {
      * Multi-select: {"type": "Link", "value": ["https://example.com", "https://other.com"]} (length 0+)
      */
     value: Array<string>;
+};
+
+/**
+ * A versioned query definition.
+ */
+export type QueryDefinition = {
+    /**
+     * A read-only SELECT in the databases dialect.
+     */
+    query: string;
+    version: 1;
 };
 
 /**
@@ -8465,6 +9661,62 @@ export type RenameChannelLabelRequest = {
 };
 
 /**
+ * A renamed placement and its table's version after the atomic update.
+ */
+export type RenameColumnOutcome = {
+    /**
+     * The placement with its new display label; IDs and binding are preserved.
+     */
+    column: Column;
+    /**
+     * Monotonic table version used to reconcile concurrent client refreshes.
+     */
+    table_version: TableVersion;
+};
+
+/**
+ * Rename one column placement without changing its property's SQL identifier.
+ */
+export type RenameColumnRequest = {
+    /**
+     * New display name.
+     */
+    name: string;
+    /**
+     * Label shown when the rename editor opened.
+     */
+    previousName: string;
+};
+
+/**
+ * Request body for renaming a table without overwriting a concurrent rename.
+ */
+export type RenameTableRequest = {
+    /**
+     * New display name.
+     */
+    name: string;
+    /**
+     * Name shown when the rename editor opened.
+     */
+    previousName: string;
+};
+
+/**
+ * A complete placement order, identified by stable column IDs.
+ */
+export type ReorderColumnsRequest = {
+    /**
+     * Table version used to build the order.
+     */
+    baseVersion: TableVersion;
+    /**
+     * Every column, exactly once.
+     */
+    columnIds: Array<string>;
+};
+
+/**
  * Request body for reordering favorites.
  */
 export type ReorderFavoritesRequest = {
@@ -8487,6 +9739,16 @@ export type ReorderPinRequest = {
      * The type of the pin
      */
     pinnedItemType: string;
+};
+
+/**
+ * A complete tab order, identified by stable table IDs.
+ */
+export type ReorderTablesRequest = {
+    /**
+     * Every table of the database, exactly once, in the new left-to-right order.
+     */
+    tableIds: Array<string>;
 };
 
 /**
@@ -8521,6 +9783,41 @@ export type RingStatusResponse = {
      * The ring status for the authenticated user.
      */
     status: RingStatus;
+};
+
+/**
+ * One row's cells in a [`RowChanges::PerRow`] update.
+ */
+export type RowChange = {
+    /**
+     * Its new cells.
+     */
+    cells: Array<CellWrite>;
+    /**
+     * The row.
+     */
+    row: string;
+};
+
+/**
+ * Which rows an update writes, and with what.
+ */
+export type RowChanges = {
+    /**
+     * The cells each of them gets.
+     */
+    cells: Array<CellWrite>;
+    kind: 'uniform';
+    /**
+     * The rows.
+     */
+    rows: Array<string>;
+} | {
+    kind: 'per_row';
+    /**
+     * The rows and their cells, in order.
+     */
+    rows: Array<RowChange>;
 };
 
 export type S3ObjectInfo = {
@@ -8579,6 +9876,48 @@ export type SaveDocumentResponseData = {
      * If the document is an editable file, we provide a presigned url to save the updated file to.
      */
     presignedUrl?: string | null;
+};
+
+/**
+ * Request body for saving a query.
+ */
+export type SaveQueryRequest = {
+    /**
+     * The database whose tables win name resolution. The caller must be
+     * able to see it.
+     */
+    databaseId?: string;
+    /**
+     * What the query asks: `{"version": 1, "query": "<SELECT>"}`.
+     */
+    definition: QueryDefinition;
+};
+
+/**
+ * A stored, immutable query. Editing a question saves a new one.
+ */
+export type SavedQuery = {
+    /**
+     * When it was saved.
+     */
+    createdAt: string;
+    /**
+     * Who saved it; `null` once that user is deleted.
+     */
+    createdBy: string | null;
+    /**
+     * The database whose tables win name resolution; `null` once that
+     * database is deleted, or when none was given.
+     */
+    databaseId: string | null;
+    /**
+     * What it asks.
+     */
+    definition: QueryDefinition;
+    /**
+     * Identifier.
+     */
+    id: string;
 };
 
 /**
@@ -8807,6 +10146,12 @@ export type SetEmailSyncRequest = {
 };
 
 /**
+ * How a cell's options or references relate to a set of them. The first
+ * two fit a column holding one value, the last three one holding several.
+ */
+export type SetOperator = 'isAnyOf' | 'isNoneOf' | 'hasAny' | 'hasAll' | 'hasNone';
+
+/**
  * Type-safe enum for setting entity property values - provides compile-time validation.
  */
 export type SetPropertyValue = {
@@ -8914,6 +10259,25 @@ export type SmartTagPreview = {
      * Number of matching channels the caller participates in, including overflow.
      */
     totalCount: number;
+};
+
+/**
+ * A sort direction. Empty cells sort last either way.
+ */
+export type SortDirection = 'ascending' | 'descending';
+
+/**
+ * One sort key.
+ */
+export type SortKey = {
+    /**
+     * The column sorted on.
+     */
+    column: string;
+    /**
+     * Which way.
+     */
+    direction: SortDirection;
 };
 
 /**
@@ -10301,6 +11665,28 @@ export type SoupThreadReply = {
 };
 
 /**
+ * Starter result. A missing database means the user already started or removed it.
+ */
+export type StarterDatabase = {
+    /**
+     * Whether this request created the example.
+     */
+    created: boolean;
+    /**
+     * Accessible starter database, if still present.
+     */
+    databaseId: string | null;
+    /**
+     * Initial table, returned only on first creation.
+     */
+    tableId: string | null;
+    /**
+     * Initial board view, returned only on first creation.
+     */
+    viewId: string | null;
+};
+
+/**
  * The deterministic starter document ids for the current user.
  */
 export type StarterDocumentsResponse = {
@@ -10355,6 +11741,80 @@ export type SystemSkillSummary = {
      */
     name: string;
 };
+
+/**
+ * One table (tab) of a database.
+ */
+export type Table = {
+    /**
+     * Owning database.
+     */
+    database_id: string;
+    /**
+     * Identifier.
+     */
+    id: string;
+    /**
+     * Display name; also the basis of the table's SQL name.
+     */
+    name: string;
+    /**
+     * Fractional index for tab ordering.
+     */
+    position: string;
+    /**
+     * Current version.
+     */
+    version: TableVersion;
+};
+
+/**
+ * The [`TABLE_CHANGED_MESSAGE_TYPE`] payload: one table's new version.
+ */
+export type TableChanged = {
+    /**
+     * The database the table belongs to.
+     */
+    databaseId: string;
+    /**
+     * The table that changed.
+     */
+    tableId: string;
+    /**
+     * The table's version after the write.
+     */
+    version: TableVersion;
+};
+
+/**
+ * One table with its columns and SQL name.
+ */
+export type TableDetail = {
+    /**
+     * Columns in display order.
+     */
+    columns: Array<ColumnDetail>;
+    /**
+     * The name SQL refers to the table by: its display name quoted and
+     * qualified by the database's (`FROM "Plans"."Table 1"`).
+     */
+    sql_name: string;
+    /**
+     * The table.
+     */
+    table: Table;
+    /**
+     * The table's views, in their order.
+     */
+    views: Array<DatabaseView>;
+};
+
+/**
+ * Monotonic per-table version, bumped once by every committed change to a
+ * table's schema or rows. Schema edits name the version they were made
+ * against, and change events carry the new one.
+ */
+export type TableVersion = number;
 
 /**
  * How multiple `tag_option_ids` combine when filtering.
@@ -10412,6 +11872,11 @@ export type TeamOutOfOfficeResponse = {
  * Ordered least to most privileged so comparisons reflect access strength.
  */
 export type TeamRole = 'member' | 'admin' | 'owner';
+
+/**
+ * How a text cell compares to a text.
+ */
+export type TextOperator = 'is' | 'isNot' | 'contains' | 'doesNotContain' | 'startsWith' | 'endsWith';
 
 export type Thread = {
     createdAt?: string | null;
@@ -11101,9 +12566,99 @@ export type View = {
     userId: string;
 };
 
+/**
+ * How one column shows in a table layout.
+ */
+export type ViewColumn = {
+    /**
+     * The column.
+     */
+    column: string;
+    /**
+     * Whether it is hidden.
+     */
+    hidden?: boolean;
+    /**
+     * Its width in pixels; the default when unset.
+     */
+    width: number | null;
+};
+
+/**
+ * How a view draws its rows.
+ */
+export type ViewLayout = {
+    /**
+     * How columns show, in display order. A column left out shows
+     * after the listed ones, in the table's order.
+     */
+    columns: Array<ViewColumn>;
+    kind: 'table';
+} | {
+    /**
+     * The columns a card shows, in order.
+     */
+    cardFields: Array<string>;
+    /**
+     * The single-select column whose options are the lanes; moving a
+     * card to another lane sets this column.
+     */
+    groupBy: string;
+    /**
+     * Whether a lane with no cards is hidden.
+     */
+    hideEmptyLanes: boolean;
+    kind: 'board';
+    /**
+     * How lanes show, in display order. A lane left out shows after the
+     * listed ones, options in the column's order; the lane of cards
+     * without an option first.
+     */
+    lanes: Array<Lane>;
+};
+
 export type ViewPatch = {
     config?: unknown;
     name?: string | null;
+};
+
+/**
+ * A view's place among its table's views.
+ */
+export type ViewPosition = {
+    /**
+     * Its key.
+     */
+    position: string;
+    /**
+     * The view.
+     */
+    view: string;
+};
+
+/**
+ * Where a board's cards sit.
+ */
+export type ViewPositionsResponse = {
+    /**
+     * The places of the cards that have one: each card's lane and its key
+     * there. Cards without a place show after the placed ones of their
+     * lane, oldest first.
+     */
+    positions: Array<CardPosition>;
+};
+
+/**
+ * Which rows of the table a view shows, and in what order: a filter and a
+ * sort, nothing that joins, groups or reshapes rows.
+ */
+export type ViewQuery = {
+    filter: null | FilterGroup;
+    /**
+     * The sort keys, first key first. Rows the keys leave tied keep the
+     * table's own order; with no keys, the table's order is the view's.
+     */
+    sort?: Array<SortKey>;
 };
 
 export type ViewsResponse = {
@@ -14268,6 +15823,766 @@ export type PutCrmTeamStagesResponses = {
 };
 
 export type PutCrmTeamStagesResponse = PutCrmTeamStagesResponses[keyof PutCrmTeamStagesResponses];
+
+export type ListDatabasesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/databases';
+};
+
+export type ListDatabasesErrors = {
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type ListDatabasesError = ListDatabasesErrors[keyof ListDatabasesErrors];
+
+export type ListDatabasesResponses = {
+    200: Array<ListedDatabase>;
+};
+
+export type ListDatabasesResponse = ListDatabasesResponses[keyof ListDatabasesResponses];
+
+export type CreateDatabaseData = {
+    body: CreateDatabaseRequest;
+    path?: never;
+    query?: never;
+    url: '/databases';
+};
+
+export type CreateDatabaseErrors = {
+    400: ErrorResponse;
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type CreateDatabaseError = CreateDatabaseErrors[keyof CreateDatabaseErrors];
+
+export type CreateDatabaseResponses = {
+    201: Database;
+};
+
+export type CreateDatabaseResponse = CreateDatabaseResponses[keyof CreateDatabaseResponses];
+
+export type SaveDatabaseQueryData = {
+    body: SaveQueryRequest;
+    path?: never;
+    query?: never;
+    url: '/databases/queries';
+};
+
+export type SaveDatabaseQueryErrors = {
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * The database is missing or not visible
+     */
+    404: ErrorResponse;
+    /**
+     * The query is too long
+     */
+    422: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type SaveDatabaseQueryError = SaveDatabaseQueryErrors[keyof SaveDatabaseQueryErrors];
+
+export type SaveDatabaseQueryResponses = {
+    201: SavedQuery;
+};
+
+export type SaveDatabaseQueryResponse = SaveDatabaseQueryResponses[keyof SaveDatabaseQueryResponses];
+
+export type GetDatabaseQueryData = {
+    body?: never;
+    path: {
+        /**
+         * Saved query id
+         */
+        query_id: string;
+    };
+    query?: never;
+    url: '/databases/queries/{query_id}';
+};
+
+export type GetDatabaseQueryErrors = {
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * Missing, or not readable by the caller
+     */
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetDatabaseQueryError = GetDatabaseQueryErrors[keyof GetDatabaseQueryErrors];
+
+export type GetDatabaseQueryResponses = {
+    200: SavedQuery;
+};
+
+export type GetDatabaseQueryResponse = GetDatabaseQueryResponses[keyof GetDatabaseQueryResponses];
+
+export type EnsureStarterHandlerData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/databases/starter';
+};
+
+export type EnsureStarterHandlerErrors = {
+    /**
+     * Authentication required
+     */
+    401: unknown;
+    /**
+     * Provisioning failed; safe to retry
+     */
+    500: unknown;
+};
+
+export type EnsureStarterHandlerResponses = {
+    200: StarterDatabase;
+};
+
+export type EnsureStarterHandlerResponse = EnsureStarterHandlerResponses[keyof EnsureStarterHandlerResponses];
+
+export type GetDatabaseData = {
+    body?: never;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/databases/{id}';
+};
+
+export type GetDatabaseErrors = {
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * No access to the database
+     */
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetDatabaseError = GetDatabaseErrors[keyof GetDatabaseErrors];
+
+export type GetDatabaseResponses = {
+    200: DatabaseDetail;
+};
+
+export type GetDatabaseResponse = GetDatabaseResponses[keyof GetDatabaseResponses];
+
+export type ShareDatabaseAwarenessData = {
+    body: Awareness;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/awareness';
+};
+
+export type ShareDatabaseAwarenessErrors = {
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * No access to the database
+     */
+    403: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type ShareDatabaseAwarenessError = ShareDatabaseAwarenessErrors[keyof ShareDatabaseAwarenessErrors];
+
+export type ShareDatabaseAwarenessResponses = {
+    /**
+     * Relayed to the database's other viewers
+     */
+    204: void;
+};
+
+export type ShareDatabaseAwarenessResponse = ShareDatabaseAwarenessResponses[keyof ShareDatabaseAwarenessResponses];
+
+export type ImportDatabaseTableData = {
+    body: ImportTable;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/import';
+};
+
+export type ImportDatabaseTableErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type ImportDatabaseTableError = ImportDatabaseTableErrors[keyof ImportDatabaseTableErrors];
+
+export type ImportDatabaseTableResponses = {
+    200: Table;
+};
+
+export type ImportDatabaseTableResponse = ImportDatabaseTableResponses[keyof ImportDatabaseTableResponses];
+
+export type ApplyDatabaseOpsData = {
+    body: ApplyOpsRequest;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/ops';
+};
+
+export type ApplyDatabaseOpsErrors = {
+    /**
+     * An op was refused; nothing was written
+     */
+    400: OpRefusalResponse;
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * No edit access to the database
+     */
+    403: ErrorResponse;
+    404: ErrorResponse;
+    /**
+     * A column type change raced another schema change
+     */
+    409: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type ApplyDatabaseOpsError = ApplyDatabaseOpsErrors[keyof ApplyDatabaseOpsErrors];
+
+export type ApplyDatabaseOpsResponses = {
+    200: ApplyOpsResponse;
+};
+
+export type ApplyDatabaseOpsResponse = ApplyDatabaseOpsResponses[keyof ApplyDatabaseOpsResponses];
+
+export type GetDatabasePermissionsData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/permissions';
+};
+
+export type GetDatabasePermissionsErrors = {
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetDatabasePermissionsError = GetDatabasePermissionsErrors[keyof GetDatabasePermissionsErrors];
+
+export type GetDatabasePermissionsResponses = {
+    200: SharePermissionV2;
+};
+
+export type GetDatabasePermissionsResponse = GetDatabasePermissionsResponses[keyof GetDatabasePermissionsResponses];
+
+export type UpdateDatabasePermissionsData = {
+    body: UpdateSharePermissionRequestV2;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/permissions';
+};
+
+export type UpdateDatabasePermissionsErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type UpdateDatabasePermissionsError = UpdateDatabasePermissionsErrors[keyof UpdateDatabasePermissionsErrors];
+
+export type UpdateDatabasePermissionsResponses = {
+    200: SharePermissionV2;
+};
+
+export type UpdateDatabasePermissionsResponse = UpdateDatabasePermissionsResponses[keyof UpdateDatabasePermissionsResponses];
+
+export type CreateDatabaseTableData = {
+    body: CreateTableRequest;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables';
+};
+
+export type CreateDatabaseTableErrors = {
+    400: ErrorResponse;
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * No edit access to the database
+     */
+    403: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type CreateDatabaseTableError = CreateDatabaseTableErrors[keyof CreateDatabaseTableErrors];
+
+export type CreateDatabaseTableResponses = {
+    201: Table;
+};
+
+export type CreateDatabaseTableResponse = CreateDatabaseTableResponses[keyof CreateDatabaseTableResponses];
+
+export type ReorderDatabaseTablesData = {
+    body: ReorderTablesRequest;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/order';
+};
+
+export type ReorderDatabaseTablesErrors = {
+    /**
+     * The order does not name every table exactly once
+     */
+    400: ErrorResponse;
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    /**
+     * The database's tables changed while the order was written
+     */
+    409: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type ReorderDatabaseTablesError = ReorderDatabaseTablesErrors[keyof ReorderDatabaseTablesErrors];
+
+export type ReorderDatabaseTablesResponses = {
+    /**
+     * The tables in their new order
+     */
+    200: Array<Table>;
+};
+
+export type ReorderDatabaseTablesResponse = ReorderDatabaseTablesResponses[keyof ReorderDatabaseTablesResponses];
+
+export type DeleteDatabaseTableData = {
+    body?: never;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+        /**
+         * Table id
+         */
+        table_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/{table_id}';
+};
+
+export type DeleteDatabaseTableErrors = {
+    /**
+     * The last table, or a relation still points at it
+     */
+    400: ErrorResponse;
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type DeleteDatabaseTableError = DeleteDatabaseTableErrors[keyof DeleteDatabaseTableErrors];
+
+export type DeleteDatabaseTableResponses = {
+    /**
+     * Deleted
+     */
+    204: void;
+};
+
+export type DeleteDatabaseTableResponse = DeleteDatabaseTableResponses[keyof DeleteDatabaseTableResponses];
+
+export type RenameDatabaseTableData = {
+    body: RenameTableRequest;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+        /**
+         * Table id
+         */
+        table_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/{table_id}';
+};
+
+export type RenameDatabaseTableErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type RenameDatabaseTableError = RenameDatabaseTableErrors[keyof RenameDatabaseTableErrors];
+
+export type RenameDatabaseTableResponses = {
+    200: Table;
+};
+
+export type RenameDatabaseTableResponse = RenameDatabaseTableResponses[keyof RenameDatabaseTableResponses];
+
+export type CreateDatabaseColumnData = {
+    body: CreateColumnRequest;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+        /**
+         * Table id
+         */
+        table_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/{table_id}/columns';
+};
+
+export type CreateDatabaseColumnErrors = {
+    400: ErrorResponse;
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * No edit access to the database
+     */
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type CreateDatabaseColumnError = CreateDatabaseColumnErrors[keyof CreateDatabaseColumnErrors];
+
+export type CreateDatabaseColumnResponses = {
+    201: CreateColumnResponse;
+};
+
+export type CreateDatabaseColumnResponse = CreateDatabaseColumnResponses[keyof CreateDatabaseColumnResponses];
+
+export type ReorderDatabaseColumnsData = {
+    body: ReorderColumnsRequest;
+    path: {
+        id: string;
+        table_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/{table_id}/columns/order';
+};
+
+export type ReorderDatabaseColumnsErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    409: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type ReorderDatabaseColumnsError = ReorderDatabaseColumnsErrors[keyof ReorderDatabaseColumnsErrors];
+
+export type ReorderDatabaseColumnsResponses = {
+    200: ColumnSchemaOutcome;
+};
+
+export type ReorderDatabaseColumnsResponse = ReorderDatabaseColumnsResponses[keyof ReorderDatabaseColumnsResponses];
+
+export type DeleteDatabaseColumnData = {
+    body: DeleteColumnRequest;
+    path: {
+        id: string;
+        table_id: string;
+        column_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/{table_id}/columns/{column_id}';
+};
+
+export type DeleteDatabaseColumnErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    409: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type DeleteDatabaseColumnError = DeleteDatabaseColumnErrors[keyof DeleteDatabaseColumnErrors];
+
+export type DeleteDatabaseColumnResponses = {
+    200: ColumnSchemaOutcome;
+};
+
+export type DeleteDatabaseColumnResponse = DeleteDatabaseColumnResponses[keyof DeleteDatabaseColumnResponses];
+
+export type RenameDatabaseColumnData = {
+    body: RenameColumnRequest;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+        /**
+         * Table id
+         */
+        table_id: string;
+        /**
+         * Column id
+         */
+        column_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/{table_id}/columns/{column_id}';
+};
+
+export type RenameDatabaseColumnErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type RenameDatabaseColumnError = RenameDatabaseColumnErrors[keyof RenameDatabaseColumnErrors];
+
+export type RenameDatabaseColumnResponses = {
+    200: RenameColumnOutcome;
+};
+
+export type RenameDatabaseColumnResponse = RenameDatabaseColumnResponses[keyof RenameDatabaseColumnResponses];
+
+export type ListDatabaseColumnCastsData = {
+    body?: never;
+    path: {
+        id: string;
+        table_id: string;
+        column_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/{table_id}/columns/{column_id}/casts';
+};
+
+export type ListDatabaseColumnCastsErrors = {
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type ListDatabaseColumnCastsError = ListDatabaseColumnCastsErrors[keyof ListDatabaseColumnCastsErrors];
+
+export type ListDatabaseColumnCastsResponses = {
+    200: Array<ColumnCast>;
+};
+
+export type ListDatabaseColumnCastsResponse = ListDatabaseColumnCastsResponses[keyof ListDatabaseColumnCastsResponses];
+
+export type InferDatabaseColumnTypeData = {
+    body: InferColumnTypeRequest;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+        /**
+         * Table id
+         */
+        table_id: string;
+        /**
+         * Column id
+         */
+        column_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/{table_id}/columns/{column_id}/infer-type';
+};
+
+export type InferDatabaseColumnTypeErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    409: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type InferDatabaseColumnTypeError = InferDatabaseColumnTypeErrors[keyof InferDatabaseColumnTypeErrors];
+
+export type InferDatabaseColumnTypeResponses = {
+    200: InferColumnTypeOutcome;
+};
+
+export type InferDatabaseColumnTypeResponse = InferDatabaseColumnTypeResponses[keyof InferDatabaseColumnTypeResponses];
+
+export type AddDatabaseColumnOptionsData = {
+    body: AddColumnOptionsRequest;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+        /**
+         * Table id
+         */
+        table_id: string;
+        /**
+         * Column id
+         */
+        column_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/{table_id}/columns/{column_id}/options';
+};
+
+export type AddDatabaseColumnOptionsErrors = {
+    /**
+     * Not a select column, or an invalid label
+     */
+    400: ErrorResponse;
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * No edit access to the database
+     */
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type AddDatabaseColumnOptionsError = AddDatabaseColumnOptionsErrors[keyof AddDatabaseColumnOptionsErrors];
+
+export type AddDatabaseColumnOptionsResponses = {
+    200: ColumnDetail;
+};
+
+export type AddDatabaseColumnOptionsResponse = AddDatabaseColumnOptionsResponses[keyof AddDatabaseColumnOptionsResponses];
+
+export type ChangeDatabaseColumnTypeData = {
+    body: ChangeColumnTypeRequest;
+    path: {
+        id: string;
+        table_id: string;
+        column_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/{table_id}/columns/{column_id}/type';
+};
+
+export type ChangeDatabaseColumnTypeErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    403: ErrorResponse;
+    404: ErrorResponse;
+    409: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type ChangeDatabaseColumnTypeError = ChangeDatabaseColumnTypeErrors[keyof ChangeDatabaseColumnTypeErrors];
+
+export type ChangeDatabaseColumnTypeResponses = {
+    200: ColumnTypeChangeOutcome;
+};
+
+export type ChangeDatabaseColumnTypeResponse = ChangeDatabaseColumnTypeResponses[keyof ChangeDatabaseColumnTypeResponses];
+
+export type GetDatabaseViewPositionsData = {
+    body?: never;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+        /**
+         * View id
+         */
+        view_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/views/{view_id}/positions';
+};
+
+export type GetDatabaseViewPositionsErrors = {
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * No access to the database
+     */
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetDatabaseViewPositionsError = GetDatabaseViewPositionsErrors[keyof GetDatabaseViewPositionsErrors];
+
+export type GetDatabaseViewPositionsResponses = {
+    200: ViewPositionsResponse;
+};
+
+export type GetDatabaseViewPositionsResponse = GetDatabaseViewPositionsResponses[keyof GetDatabaseViewPositionsResponses];
 
 export type TranscribeDictationData = {
     /**

@@ -1,0 +1,43 @@
+use super::*;
+use crate::domain::models::TableDeletion;
+
+impl<Properties> PgDatabasesRepo<Properties> {
+    pub(super) async fn delete_table_and_rows(
+        &self,
+        table: &Table,
+    ) -> Result<TableDeletion, PgDatabasesRepoError> {
+        let mut transaction = self.pool.begin().await?;
+        // The database lock serializes table creation, renames and deletes,
+        // so two concurrent deletes cannot both see a second table.
+        if !rows::lock_live_database(&mut *transaction, table.database_id).await? {
+            return Ok(TableDeletion::NotFound);
+        }
+        let tables = sqlx::query_scalar!(
+            "SELECT id FROM database_tables WHERE database_id = $1",
+            table.database_id
+        )
+        .fetch_all(&mut *transaction)
+        .await?;
+        if !tables.contains(&table.id) {
+            return Ok(TableDeletion::NotFound);
+        }
+        if tables.len() <= 1 {
+            return Ok(TableDeletion::LastTable);
+        }
+        // Columns, rows and views go with the table through their foreign
+        // keys, and the rows' cells with them by trigger.
+        let deleted = sqlx::query!(
+            "DELETE FROM database_tables WHERE id = $1 AND database_id = $2",
+            table.id,
+            table.database_id
+        )
+        .execute(&mut *transaction)
+        .await?;
+        if deleted.rows_affected() != 1 {
+            transaction.rollback().await?;
+            return Ok(TableDeletion::NotFound);
+        }
+        transaction.commit().await?;
+        Ok(TableDeletion::Deleted)
+    }
+}

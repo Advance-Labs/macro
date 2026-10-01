@@ -34,6 +34,7 @@ members = [
   "crates/cursor_cloud_agents",
   "crates/claude_cloud_agents",
   "crates/database_sql",
+  "crates/databases",
   "crates/models_databases",
   "crates/embedding",
   "crates/image_generation",
