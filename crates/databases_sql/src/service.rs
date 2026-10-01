@@ -1,33 +1,32 @@
 //! Running a statement as a viewer: build their catalog, compile against it,
-//! refuse what they may not write, and drive the engine over Soup and the
-//! databases service.
+//! refuse what they may not write, and drive the engine.
 
 #[cfg(test)]
 mod test;
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use contacts::domain::ports::ContactsService;
-use database_sql::resolve::Query;
+use database_sql::resolve::{CompileError, Query};
+use database_sql::run::RunError;
 use databases::domain::models::{
     DatabaseError, DatabaseId, QueryDefinition, SavedQuery, SavedQueryError, TableId, TableVersion,
     Viewer,
 };
 use databases::domain::ports::DatabasesService;
 use entity_access::domain::models::{
-    AccessError, AccessLevel, BotAccessScope, EntityAccessReceipt, EntityType, RequiredPermission,
+    AccessError, BotAccessScope, EditAccessLevel, EntityAccessReceipt, EntityType,
+    RequiredPermission,
 };
 use entity_access::domain::ports::EntityAccessService;
+use models_databases::MAX_STATEMENT_LENGTH;
 use soup::domain::ports::SoupService;
 
 use crate::catalog::ViewerCatalog;
 use crate::ops_sink::ReceiptOpsSink;
 use crate::outcome::{SqlOutcome, shape};
 use crate::row_source::SoupRowSource;
-
-/// Longest accepted statement text.
-const MAX_SQL_LEN: usize = 256 * 1024;
 
 /// SQL over the databases a viewer can reach. Reads go through Soup and the
 /// viewer's contacts; writes go through the databases service's ops.
@@ -66,13 +65,24 @@ pub struct SqlRequest {
 /// Why a statement did not run.
 #[derive(Debug, thiserror::Error)]
 pub enum SqlError {
-    /// The statement did not compile, or a step of it failed; the engine's
-    /// message, verbatim.
-    #[error("{0}")]
-    Sql(String),
-    /// The statement writes where the viewer may not.
-    #[error("{0}")]
-    ReadOnly(String),
+    /// The statement did not compile.
+    #[error(transparent)]
+    Compile(#[from] CompileError),
+    /// A step of the statement failed.
+    #[error(transparent)]
+    Run(#[from] RunError),
+    /// A read-only query was asked to write.
+    #[error("queries cannot change data")]
+    ReadOnlyQuery,
+    /// A saved query must be a read.
+    #[error("a saved query must be a SELECT; it cannot change data")]
+    SavedQueryNotSelect,
+    /// The viewer may read the table but not write it.
+    #[error("table {table} is read-only")]
+    TableReadOnly {
+        /// The table's name.
+        table: String,
+    },
     /// A written table moved past the version the caller read.
     #[error("table {table_id} changed since it was read")]
     VersionConflict {
@@ -86,6 +96,13 @@ pub enum SqlError {
     /// it.
     #[error("not found")]
     NotFound,
+    /// The table a compiled write names is missing from the catalog it was
+    /// compiled against: the engine broke its own invariant.
+    #[error("table {table_id} is not in the catalog the statement compiled against")]
+    WrittenTableNotInCatalog {
+        /// The table.
+        table_id: TableId,
+    },
     /// A service the statement needed failed.
     #[error("the databases service failed")]
     Infrastructure(rootcause::Report),
@@ -154,21 +171,15 @@ where
         definition: QueryDefinition,
     ) -> Result<SavedQuery, SqlError> {
         let sql = definition.sql();
-        if sql.len() > MAX_SQL_LEN {
-            return Err(SqlError::TooLong);
-        }
         let catalog = self.catalog(&viewer, database_id).await?;
         if let Some(database_id) = database_id
             && !catalog.has_database(database_id)
         {
             return Err(SqlError::NotFound);
         }
-        let compiled = database_sql::compile(catalog.catalog(), sql)
-            .map_err(|error| SqlError::Sql(error.to_string()))?;
+        let compiled = database_sql::compile(catalog.catalog(), sql)?;
         if !matches!(compiled, Query::Select(_)) {
-            return Err(SqlError::ReadOnly(
-                "a saved query must be a SELECT; it cannot change data".into(),
-            ));
+            return Err(SqlError::SavedQueryNotSelect);
         }
         self.databases
             .save_query(viewer, database_id, definition)
@@ -186,25 +197,35 @@ where
         request: SqlRequest,
         mode: Mode,
     ) -> Result<SqlOutcome, SqlError> {
-        if request.sql.len() > MAX_SQL_LEN {
+        if request.sql.len() > MAX_STATEMENT_LENGTH {
             return Err(SqlError::TooLong);
         }
         let catalog = self.catalog(&viewer, request.scope).await?;
-        let query = database_sql::compile(catalog.catalog(), &request.sql)
-            .map_err(|error| SqlError::Sql(error.to_string()))?;
+        let query = database_sql::compile(catalog.catalog(), &request.sql)?;
+        let mut write_receipt = None;
         if let Some(table) = written_table(&query) {
             if mode == Mode::ReadOnly {
-                return Err(SqlError::ReadOnly("queries cannot change data".into()));
+                return Err(SqlError::ReadOnlyQuery);
             }
             let (database, detail) = catalog
                 .table(table)
-                .ok_or_else(|| SqlError::Sql(format!("no such table: {table}")))?;
-            if database.grant < AccessLevel::Edit {
-                return Err(SqlError::ReadOnly(format!(
-                    "table {} is read-only",
-                    detail.table.name
-                )));
-            }
+                .ok_or(SqlError::WrittenTableNotInCatalog { table_id: table })?;
+            let receipt = receipt::<EditAccessLevel, _>(
+                self.entity_access.as_ref(),
+                &viewer,
+                database.database.id,
+            )
+            .await
+            .map_err(|error| match error {
+                AccessError::Unauthorized | AccessError::UnauthorizedWithMessage(_) => {
+                    SqlError::TableReadOnly {
+                        table: detail.table.name.clone(),
+                    }
+                }
+                AccessError::NotFound(_) => SqlError::NotFound,
+                other => SqlError::Infrastructure(rootcause::Report::new(other).into_dynamic()),
+            })?;
+            write_receipt = Some((database.database.id, receipt));
             if request
                 .base_versions
                 .get(&table)
@@ -222,14 +243,16 @@ where
         };
         let sink = ReceiptOpsSink {
             databases: self.databases.as_ref(),
-            entity_access: self.entity_access.as_ref(),
+            receipt: write_receipt,
             viewer: &viewer,
             versions: Mutex::new(HashMap::new()),
         };
-        let outcome = database_sql::run(catalog.catalog(), &request.sql, &source, &sink)
-            .await
-            .map_err(|error| SqlError::Sql(error.to_string()))?;
-        let new_versions = sink.versions.into_inner().expect("version log");
+        let outcome = database_sql::run(catalog.catalog(), &request.sql, &source, &sink).await?;
+        // The lock only guards single inserts, so a poisoned map is still whole.
+        let new_versions = sink
+            .versions
+            .into_inner()
+            .unwrap_or_else(PoisonError::into_inner);
         Ok(shape(&catalog, &outcome, new_versions))
     }
 
@@ -244,7 +267,14 @@ where
             .await
             .map_err(|error| match error {
                 DatabaseError::Repo(report) => SqlError::Infrastructure(report),
-                other => SqlError::Infrastructure(rootcause::Report::new(other).into_dynamic()),
+                DatabaseError::NotFound | DatabaseError::Unauthorized => SqlError::NotFound,
+                // Refusals of a write: a listing returning one is a broken service.
+                other @ (DatabaseError::InvalidSchemaOperation(_)
+                | DatabaseError::InvalidSharing(_)
+                | DatabaseError::VersionConflict
+                | DatabaseError::InvalidOp(_)) => {
+                    SqlError::Infrastructure(rootcause::Report::new(other).into_dynamic())
+                }
             })?;
         Ok(ViewerCatalog::new(databases, scope))
     }
@@ -263,7 +293,7 @@ fn written_table(query: &Query) -> Option<TableId> {
 /// A receipt for `database_id` at level `Level`, minted for the viewer the
 /// way the HTTP routes and the agent tools mint it: for the acting agent on
 /// the user's behalf, or for the user.
-pub(crate) async fn receipt<Level, Access>(
+async fn receipt<Level, Access>(
     entity_access: &Access,
     viewer: &Viewer,
     database_id: DatabaseId,

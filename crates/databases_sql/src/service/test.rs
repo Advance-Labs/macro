@@ -1,3 +1,11 @@
+use chrono::{TimeZone, Utc};
+use databases::domain::models::{
+    Column, ColumnConfig, ColumnDetail, Database, DatabaseDetail, Table, TableDetail,
+};
+use models_properties::service::property_definition::PropertyDefinition;
+use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
+use models_properties::service::property_option::{PropertyOption, PropertyOptionValue};
+use models_properties::shared::PropertyOwner;
 use std::sync::{Arc, Mutex};
 
 use databases::domain::models::{QueryDefinition, TableVersion};
@@ -15,8 +23,7 @@ use database_sql::run::OutcomeKind;
 
 use crate::outcome::{ResultColumn, ResultSet};
 use crate::test_support::{
-    AppliedOps, OWNER, STRANGER, Shared, VIEWER, World, agent_for, column, database,
-    relation_column, row, row_literals, select_column, sql, table,
+    AppliedOps, OWNER, STRANGER, Shared, StoredRow, VIEWER, World, agent_for, row_literals, sql,
 };
 
 const OFFSITE: Uuid = Uuid::from_u128(0xdb01);
@@ -61,58 +68,270 @@ fn world() -> Shared {
     };
     Arc::new(Mutex::new(World {
         databases: vec![
-            database(
-                OFFSITE,
-                "Offsite",
-                vec![table(
-                    GUESTS,
-                    OFFSITE,
-                    "Guests",
-                    vec![
-                        column(NAME_COLUMN, NAME, "Name", DataType::String, false),
-                        select_column(
-                            STATUS_COLUMN,
-                            STATUS,
-                            "Status",
-                            &[(GOING, "Going"), (MAYBE, "Maybe")],
-                        ),
-                        relation_column(HALL_COLUMN, HALL, "Hall", VENUES, HALLS),
-                        column(CONTACT_COLUMN, CONTACT, "Contact", DataType::Entity, false),
+            DatabaseDetail {
+                database: Database {
+                    id: OFFSITE,
+                    name: "Offsite".into(),
+                    owner_id: OWNER.to_string(),
+                    created_at: Utc::now(),
+                    trashed_at: None,
+                },
+                grant: AccessLevel::Owner,
+                tables: vec![TableDetail {
+                    table: Table {
+                        id: GUESTS,
+                        database_id: OFFSITE,
+                        name: "Guests".into(),
+                        position: "80".into(),
+                        version: TableVersion(1),
+                    },
+                    sql_name: "\"Guests\"".into(),
+                    read_sql_name: "\"Guests\"".into(),
+                    columns: vec![
+                        ColumnDetail {
+                            column: Column {
+                                id: NAME_COLUMN,
+                                table_id: GUESTS,
+                                property_definition_id: NAME,
+                                position: "80".into(),
+                                config: None,
+                                display_name: None,
+                                infer_type: false,
+                            },
+                            sql_name: "\"Name\"".into(),
+                            definition: PropertyDefinitionWithOptions {
+                                definition: PropertyDefinition {
+                                    id: NAME,
+                                    owner: PropertyOwner::System,
+                                    display_name: "Name".into(),
+                                    data_type: DataType::String,
+                                    is_multi_select: false,
+                                    specific_entity_type: None,
+                                    created_at: Utc::now(),
+                                    updated_at: Utc::now(),
+                                    is_system: false,
+                                    is_metadata: false,
+                                },
+                                property_options: Vec::new(),
+                            },
+                            writable: true,
+                            shared_outside_database: true,
+                        },
+                        ColumnDetail {
+                            column: Column {
+                                id: STATUS_COLUMN,
+                                table_id: GUESTS,
+                                property_definition_id: STATUS,
+                                position: "8180".into(),
+                                config: None,
+                                display_name: None,
+                                infer_type: false,
+                            },
+                            sql_name: "\"Status\"".into(),
+                            definition: PropertyDefinitionWithOptions {
+                                definition: PropertyDefinition {
+                                    id: STATUS,
+                                    owner: PropertyOwner::System,
+                                    display_name: "Status".into(),
+                                    data_type: DataType::SelectString,
+                                    is_multi_select: false,
+                                    specific_entity_type: None,
+                                    created_at: Utc::now(),
+                                    updated_at: Utc::now(),
+                                    is_system: false,
+                                    is_metadata: false,
+                                },
+                                property_options: vec![
+                                    PropertyOption {
+                                        id: GOING,
+                                        property_definition_id: STATUS,
+                                        display_order: 0,
+                                        value: PropertyOptionValue::String("Going".into()),
+                                        color: None,
+                                        created_at: Utc::now(),
+                                        updated_at: Utc::now(),
+                                    },
+                                    PropertyOption {
+                                        id: MAYBE,
+                                        property_definition_id: STATUS,
+                                        display_order: 1,
+                                        value: PropertyOptionValue::String("Maybe".into()),
+                                        color: None,
+                                        created_at: Utc::now(),
+                                        updated_at: Utc::now(),
+                                    },
+                                ],
+                            },
+                            writable: true,
+                            shared_outside_database: true,
+                        },
+                        ColumnDetail {
+                            column: Column {
+                                id: HALL_COLUMN,
+                                table_id: GUESTS,
+                                property_definition_id: HALL,
+                                position: "8280".into(),
+                                config: Some(ColumnConfig::Link {
+                                    database_id: VENUES,
+                                    table_id: HALLS,
+                                }),
+                                display_name: None,
+                                infer_type: false,
+                            },
+                            sql_name: "\"Hall\"".into(),
+                            definition: PropertyDefinitionWithOptions {
+                                definition: PropertyDefinition {
+                                    id: HALL,
+                                    owner: PropertyOwner::System,
+                                    display_name: "Hall".into(),
+                                    data_type: DataType::Entity,
+                                    is_multi_select: true,
+                                    specific_entity_type: None,
+                                    created_at: Utc::now(),
+                                    updated_at: Utc::now(),
+                                    is_system: false,
+                                    is_metadata: false,
+                                },
+                                property_options: Vec::new(),
+                            },
+                            writable: true,
+                            shared_outside_database: true,
+                        },
+                        ColumnDetail {
+                            column: Column {
+                                id: CONTACT_COLUMN,
+                                table_id: GUESTS,
+                                property_definition_id: CONTACT,
+                                position: "8380".into(),
+                                config: None,
+                                display_name: None,
+                                infer_type: false,
+                            },
+                            sql_name: "\"Contact\"".into(),
+                            definition: PropertyDefinitionWithOptions {
+                                definition: PropertyDefinition {
+                                    id: CONTACT,
+                                    owner: PropertyOwner::System,
+                                    display_name: "Contact".into(),
+                                    data_type: DataType::Entity,
+                                    is_multi_select: false,
+                                    specific_entity_type: Some(models_properties::EntityType::User),
+                                    created_at: Utc::now(),
+                                    updated_at: Utc::now(),
+                                    is_system: false,
+                                    is_metadata: false,
+                                },
+                                property_options: Vec::new(),
+                            },
+                            writable: true,
+                            shared_outside_database: true,
+                        },
                     ],
-                )],
-            ),
-            database(
-                VENUES,
-                "Venues",
-                vec![table(
-                    HALLS,
-                    VENUES,
-                    "Halls",
-                    vec![column(
-                        HALL_NAME_COLUMN,
-                        HALL_NAME,
-                        "Name",
-                        DataType::String,
-                        false,
-                    )],
-                )],
-            ),
-            database(
-                SECRET,
-                "Secret",
-                vec![table(
-                    PLANS,
-                    SECRET,
-                    "Plans",
-                    vec![column(
-                        PLAN_NAME_COLUMN,
-                        PLAN_NAME,
-                        "Name",
-                        DataType::String,
-                        false,
-                    )],
-                )],
-            ),
+                    views: Vec::new(),
+                }],
+            },
+            DatabaseDetail {
+                database: Database {
+                    id: VENUES,
+                    name: "Venues".into(),
+                    owner_id: OWNER.to_string(),
+                    created_at: Utc::now(),
+                    trashed_at: None,
+                },
+                grant: AccessLevel::Owner,
+                tables: vec![TableDetail {
+                    table: Table {
+                        id: HALLS,
+                        database_id: VENUES,
+                        name: "Halls".into(),
+                        position: "80".into(),
+                        version: TableVersion(1),
+                    },
+                    sql_name: "\"Halls\"".into(),
+                    read_sql_name: "\"Halls\"".into(),
+                    columns: vec![ColumnDetail {
+                        column: Column {
+                            id: HALL_NAME_COLUMN,
+                            table_id: HALLS,
+                            property_definition_id: HALL_NAME,
+                            position: "80".into(),
+                            config: None,
+                            display_name: None,
+                            infer_type: false,
+                        },
+                        sql_name: "\"Name\"".into(),
+                        definition: PropertyDefinitionWithOptions {
+                            definition: PropertyDefinition {
+                                id: HALL_NAME,
+                                owner: PropertyOwner::System,
+                                display_name: "Name".into(),
+                                data_type: DataType::String,
+                                is_multi_select: false,
+                                specific_entity_type: None,
+                                created_at: Utc::now(),
+                                updated_at: Utc::now(),
+                                is_system: false,
+                                is_metadata: false,
+                            },
+                            property_options: Vec::new(),
+                        },
+                        writable: true,
+                        shared_outside_database: true,
+                    }],
+                    views: Vec::new(),
+                }],
+            },
+            DatabaseDetail {
+                database: Database {
+                    id: SECRET,
+                    name: "Secret".into(),
+                    owner_id: OWNER.to_string(),
+                    created_at: Utc::now(),
+                    trashed_at: None,
+                },
+                grant: AccessLevel::Owner,
+                tables: vec![TableDetail {
+                    table: Table {
+                        id: PLANS,
+                        database_id: SECRET,
+                        name: "Plans".into(),
+                        position: "80".into(),
+                        version: TableVersion(1),
+                    },
+                    sql_name: "\"Plans\"".into(),
+                    read_sql_name: "\"Plans\"".into(),
+                    columns: vec![ColumnDetail {
+                        column: Column {
+                            id: PLAN_NAME_COLUMN,
+                            table_id: PLANS,
+                            property_definition_id: PLAN_NAME,
+                            position: "80".into(),
+                            config: None,
+                            display_name: None,
+                            infer_type: false,
+                        },
+                        sql_name: "\"Name\"".into(),
+                        definition: PropertyDefinitionWithOptions {
+                            definition: PropertyDefinition {
+                                id: PLAN_NAME,
+                                owner: PropertyOwner::System,
+                                display_name: "Name".into(),
+                                data_type: DataType::String,
+                                is_multi_select: false,
+                                specific_entity_type: None,
+                                created_at: Utc::now(),
+                                updated_at: Utc::now(),
+                                is_system: false,
+                                is_metadata: false,
+                            },
+                            property_options: Vec::new(),
+                        },
+                        writable: true,
+                        shared_outside_database: true,
+                    }],
+                    views: Vec::new(),
+                }],
+            },
         ],
         grants: vec![
             (OWNER, OFFSITE, AccessLevel::Owner),
@@ -121,12 +340,13 @@ fn world() -> Shared {
             (STRANGER, SECRET, AccessLevel::Owner),
         ],
         rows: vec![
-            row(
-                MARIA,
-                GUESTS,
-                OFFSITE,
-                1,
-                vec![
+            StoredRow {
+                id: MARIA,
+                table_id: GUESTS,
+                database_id: OFFSITE,
+                position: "80".into(),
+                created_at: Utc.with_ymd_and_hms(2026, 9, 1, 9, 1, 0).unwrap(),
+                cells: vec![
                     (NAME, PropertyValue::Str("Maria".into())),
                     (STATUS, PropertyValue::SelectOption(vec![GOING])),
                     (
@@ -139,50 +359,39 @@ fn world() -> Shared {
                     ),
                     (CONTACT, reference("macro|maria@macro.com")),
                 ],
-            ),
-            row(
-                SAM,
-                GUESTS,
-                OFFSITE,
-                2,
-                vec![
+            },
+            StoredRow {
+                id: SAM,
+                table_id: GUESTS,
+                database_id: OFFSITE,
+                position: "8180".into(),
+                created_at: Utc.with_ymd_and_hms(2026, 9, 1, 9, 2, 0).unwrap(),
+                cells: vec![
                     (NAME, PropertyValue::Str("Sam".into())),
                     (STATUS, PropertyValue::SelectOption(vec![MAYBE])),
                 ],
-            ),
-            row(
-                BALLROOM,
-                HALLS,
-                VENUES,
-                3,
-                vec![(HALL_NAME, PropertyValue::Str("Ballroom".into()))],
-            ),
-            row(
-                LAUNCH,
-                PLANS,
-                SECRET,
-                4,
-                vec![(PLAN_NAME, PropertyValue::Str("Launch".into()))],
-            ),
+            },
+            StoredRow {
+                id: BALLROOM,
+                table_id: HALLS,
+                database_id: VENUES,
+                position: "8280".into(),
+                created_at: Utc.with_ymd_and_hms(2026, 9, 1, 9, 3, 0).unwrap(),
+                cells: vec![(HALL_NAME, PropertyValue::Str("Ballroom".into()))],
+            },
+            StoredRow {
+                id: LAUNCH,
+                table_id: PLANS,
+                database_id: SECRET,
+                position: "8380".into(),
+                created_at: Utc.with_ymd_and_hms(2026, 9, 1, 9, 4, 0).unwrap(),
+                cells: vec![(PLAN_NAME, PropertyValue::Str("Launch".into()))],
+            },
         ],
         contacts: vec!["macro|maria@macro.com", "macro|sam@macro.com"],
         ..World::default()
     }))
 }
-
-fn read(sql: &str) -> SqlRequest {
-    SqlRequest {
-        sql: sql.to_string(),
-        scope: None,
-        base_versions: HashMap::new(),
-    }
-}
-
-fn result(outcome: &SqlOutcome) -> &crate::outcome::ResultSet {
-    outcome.result.as_ref().expect("a SELECT has a result")
-}
-
-// ---- permissions -------------------------------------------------------------
 
 #[tokio::test]
 async fn a_strangers_database_is_not_in_the_catalog() {
@@ -190,29 +399,40 @@ async fn a_strangers_database_is_not_in_the_catalog() {
     let error = sql(&world)
         .execute(
             agent_for(OWNER),
-            read("SELECT \"Name\" FROM \"Secret\".\"Plans\""),
+            SqlRequest {
+                sql: "SELECT \"Name\" FROM \"Secret\".\"Plans\"".into(),
+                scope: None,
+                base_versions: HashMap::new(),
+            },
         )
         .await
         .expect_err("the owner holds no grant on Secret");
 
-    let SqlError::Sql(message) = error else {
-        panic!("a missing table is a SQL error: {error:?}");
+    let SqlError::Compile(compile_error) = error else {
+        panic!("a missing table does not compile: {error:?}");
     };
-    assert!(message.contains("unknown table"), "{message}");
+    assert!(
+        compile_error.to_string().contains("unknown table"),
+        "{compile_error}"
+    );
     assert!(world.lock().unwrap().soup_reads.is_empty());
 
     let outcome = sql(&world)
         .execute(
             agent_for(STRANGER),
-            read("SELECT \"Name\" FROM \"Secret\".\"Plans\""),
+            SqlRequest {
+                sql: "SELECT \"Name\" FROM \"Secret\".\"Plans\"".into(),
+                scope: None,
+                base_versions: HashMap::new(),
+            },
         )
         .await
         .expect("the stranger reads their own table");
     assert_eq!(
-        result(&outcome).rows,
+        outcome.result.as_ref().unwrap().rows,
         vec![vec![Some(Cell::Text("Launch".into()))]]
     );
-    assert_eq!(result(&outcome).row_ids, vec![LAUNCH]);
+    assert_eq!(outcome.result.as_ref().unwrap().row_ids, vec![LAUNCH]);
 }
 
 #[tokio::test]
@@ -221,15 +441,22 @@ async fn a_view_only_database_cannot_be_written() {
     let error = sql(&world)
         .execute(
             agent_for(VIEWER),
-            read("UPDATE \"Offsite\".\"Guests\" SET \"Status\" = 'Going' WHERE \"Name\" = 'Sam'"),
+            SqlRequest {
+                sql:
+                    "UPDATE \"Offsite\".\"Guests\" SET \"Status\" = 'Going' WHERE \"Name\" = 'Sam'"
+                        .into(),
+                scope: None,
+                base_versions: HashMap::new(),
+            },
         )
         .await
         .expect_err("a view grant does not write");
 
-    let SqlError::ReadOnly(message) = error else {
-        panic!("a view grant reads as read-only: {error:?}");
-    };
-    assert_eq!(message, "table Guests is read-only");
+    assert!(
+        matches!(&error, SqlError::TableReadOnly { table } if table == "Guests"),
+        "{error:?}"
+    );
+    assert_eq!(error.to_string(), "table Guests is read-only");
     let world = world.lock().unwrap();
     assert!(world.applied.is_empty());
     assert!(world.soup_reads.is_empty());
@@ -241,7 +468,13 @@ async fn a_write_is_applied_under_an_edit_receipt_for_its_database() {
     let outcome = sql(&world)
         .execute(
             agent_for(OWNER),
-            read("UPDATE \"Offsite\".\"Guests\" SET \"Status\" = 'Going' WHERE \"Name\" = 'Sam'"),
+            SqlRequest {
+                sql:
+                    "UPDATE \"Offsite\".\"Guests\" SET \"Status\" = 'Going' WHERE \"Name\" = 'Sam'"
+                        .into(),
+                scope: None,
+                base_versions: HashMap::new(),
+            },
         )
         .await
         .expect("the owner writes");
@@ -279,17 +512,24 @@ async fn a_cross_database_join_only_sees_databases_the_viewer_can_reach() {
 
     let world = world();
     let outcome = sql(&world)
-        .execute(agent_for(OWNER), read(join))
+        .execute(
+            agent_for(OWNER),
+            SqlRequest {
+                sql: join.into(),
+                scope: None,
+                base_versions: HashMap::new(),
+            },
+        )
         .await
         .expect("the owner reaches both databases");
     assert_eq!(
-        result(&outcome).rows,
+        outcome.result.as_ref().unwrap().rows,
         vec![vec![
             Some(Cell::Text("Maria".into())),
             Some(Cell::Text("Ballroom".into())),
         ]]
     );
-    assert_eq!(result(&outcome).row_ids, vec![MARIA]);
+    assert_eq!(outcome.result.as_ref().unwrap().row_ids, vec![MARIA]);
     let reads: Vec<Vec<DatabaseRowLiteral>> = world
         .lock()
         .unwrap()
@@ -310,11 +550,18 @@ async fn a_cross_database_join_only_sees_databases_the_viewer_can_reach() {
 
     let world = self::world();
     let error = sql(&world)
-        .execute(agent_for(VIEWER), read(join))
+        .execute(
+            agent_for(VIEWER),
+            SqlRequest {
+                sql: join.into(),
+                scope: None,
+                base_versions: HashMap::new(),
+            },
+        )
         .await
         .expect_err("the viewer holds no grant on Venues");
     assert!(
-        matches!(&error, SqlError::Sql(message) if message.contains("unknown table")),
+        matches!(&error, SqlError::Compile(compile_error) if compile_error.to_string().contains("unknown table")),
         "{error:?}"
     );
     assert!(world.lock().unwrap().soup_reads.is_empty());
@@ -322,20 +569,21 @@ async fn a_cross_database_join_only_sees_databases_the_viewer_can_reach() {
     let error = sql(&world)
         .execute(
             agent_for(OWNER),
-            read(
-                "SELECT g.\"Name\" FROM \"Offsite\".\"Guests\" g \
-                 JOIN \"Secret\".\"Plans\" p ON g.\"Name\" = p.\"Name\"",
-            ),
+            SqlRequest {
+                sql: "SELECT g.\"Name\" FROM \"Offsite\".\"Guests\" g \
+                 JOIN \"Secret\".\"Plans\" p ON g.\"Name\" = p.\"Name\""
+                    .into(),
+                scope: None,
+                base_versions: HashMap::new(),
+            },
         )
         .await
         .expect_err("the owner holds no grant on Secret");
     assert!(
-        matches!(&error, SqlError::Sql(message) if message.contains("unknown table")),
+        matches!(&error, SqlError::Compile(compile_error) if compile_error.to_string().contains("unknown table")),
         "{error:?}"
     );
 }
-
-// ---- reads -------------------------------------------------------------------
 
 #[tokio::test]
 async fn a_read_answers_typed_cells_with_what_renders_them() {
@@ -343,13 +591,13 @@ async fn a_read_answers_typed_cells_with_what_renders_them() {
     let outcome = sql(&world)
         .execute(
             agent_for(VIEWER),
-            read("SELECT \"Name\", \"Status\", \"Contact\" FROM \"Offsite\".\"Guests\" WHERE \"Status\" = 'Going'"),
+            SqlRequest { sql: "SELECT \"Name\", \"Status\", \"Contact\" FROM \"Offsite\".\"Guests\" WHERE \"Status\" = 'Going'".into(), scope: None, base_versions: HashMap::new() },
         )
         .await
         .expect("the viewer reads");
 
     assert_eq!(
-        result(&outcome),
+        outcome.result.as_ref().unwrap(),
         &ResultSet {
             columns: vec![
                 ResultColumn {
@@ -407,13 +655,17 @@ async fn a_relation_column_names_the_table_its_rows_belong_to() {
     let outcome = sql(&world)
         .execute(
             agent_for(OWNER),
-            read("SELECT \"Hall\" FROM \"Offsite\".\"Guests\" WHERE \"Name\" = 'Maria'"),
+            SqlRequest {
+                sql: "SELECT \"Hall\" FROM \"Offsite\".\"Guests\" WHERE \"Name\" = 'Maria'".into(),
+                scope: None,
+                base_versions: HashMap::new(),
+            },
         )
         .await
         .expect("the owner reads");
 
     assert_eq!(
-        result(&outcome).columns,
+        outcome.result.as_ref().unwrap().columns,
         vec![ResultColumn {
             name: "Hall".into(),
             kind: OutcomeKind::Entity,
@@ -423,7 +675,7 @@ async fn a_relation_column_names_the_table_its_rows_belong_to() {
         }]
     );
     assert_eq!(
-        result(&outcome).rows,
+        outcome.result.as_ref().unwrap().rows,
         vec![vec![Some(Cell::Entities(vec![BALLROOM.to_string()]))]]
     );
 }
@@ -434,12 +686,12 @@ async fn a_count_per_option_is_read_as_soup_bins() {
     let outcome = sql(&world)
         .execute(
             agent_for(VIEWER),
-            read("SELECT \"Status\", COUNT(*) AS guests FROM \"Offsite\".\"Guests\" GROUP BY \"Status\""),
+            SqlRequest { sql: "SELECT \"Status\", COUNT(*) AS guests FROM \"Offsite\".\"Guests\" GROUP BY \"Status\"".into(), scope: None, base_versions: HashMap::new() },
         )
         .await
         .expect("the viewer counts");
 
-    let mut rows = result(&outcome).rows.clone();
+    let mut rows = outcome.result.as_ref().unwrap().rows.clone();
     rows.sort_by_key(|row| format!("{:?}", row[0]));
     assert_eq!(
         rows,
@@ -448,7 +700,7 @@ async fn a_count_per_option_is_read_as_soup_bins() {
             vec![Some(Cell::Options(vec![MAYBE])), Some(Cell::Number(1.0))],
         ]
     );
-    assert!(result(&outcome).row_ids.is_empty());
+    assert!(outcome.result.as_ref().unwrap().row_ids.is_empty());
 }
 
 #[tokio::test]
@@ -457,16 +709,19 @@ async fn people_are_the_viewers_contacts() {
     let outcome = sql(&world)
         .execute(
             agent_for(VIEWER),
-            read(
-                "SELECT g.\"Name\", p.email FROM \"Offsite\".\"Guests\" g \
-                 JOIN macro.people p ON g.\"Contact\" = p.id",
-            ),
+            SqlRequest {
+                sql: "SELECT g.\"Name\", p.email FROM \"Offsite\".\"Guests\" g \
+                 JOIN macro.people p ON g.\"Contact\" = p.id"
+                    .into(),
+                scope: None,
+                base_versions: HashMap::new(),
+            },
         )
         .await
         .expect("people join like any table");
 
     assert_eq!(
-        result(&outcome).rows,
+        outcome.result.as_ref().unwrap().rows,
         vec![vec![
             Some(Cell::Text("Maria".into())),
             Some(Cell::Text("maria@macro.com".into())),
@@ -485,7 +740,7 @@ async fn a_read_only_query_refuses_a_write_before_reading() {
         .await
         .expect_err("queries never write");
 
-    assert!(matches!(error, SqlError::ReadOnly(_)), "{error:?}");
+    assert!(matches!(error, SqlError::ReadOnlyQuery), "{error:?}");
     let world = world.lock().unwrap();
     assert!(world.soup_reads.is_empty());
     assert!(world.applied.is_empty());
@@ -519,7 +774,11 @@ async fn an_alter_column_reports_the_column_it_changed() {
     let outcome = sql(&world)
         .execute(
             agent_for(OWNER),
-            read("ALTER TABLE \"Offsite\".\"Guests\" ALTER COLUMN \"Status\" TYPE text"),
+            SqlRequest {
+                sql: "ALTER TABLE \"Offsite\".\"Guests\" ALTER COLUMN \"Status\" TYPE text".into(),
+                scope: None,
+                base_versions: HashMap::new(),
+            },
         )
         .await
         .expect("the owner retypes");
@@ -536,8 +795,6 @@ async fn an_alter_column_reports_the_column_it_changed() {
         })
     );
 }
-
-// ---- saved questions ---------------------------------------------------------
 
 #[tokio::test]
 async fn a_question_is_saved_once_it_compiles_as_a_select_in_its_database() {
@@ -570,7 +827,10 @@ async fn a_question_that_writes_or_does_not_compile_is_not_saved() {
         )
         .await
         .expect_err("a saved question never writes");
-    assert!(matches!(writes, SqlError::ReadOnly(_)), "{writes:?}");
+    assert!(
+        matches!(writes, SqlError::SavedQueryNotSelect),
+        "{writes:?}"
+    );
 
     let broken = sql(&world)
         .save_query(
@@ -582,7 +842,7 @@ async fn a_question_that_writes_or_does_not_compile_is_not_saved() {
         )
         .await
         .expect_err("a broken question is not saved");
-    assert!(matches!(broken, SqlError::Sql(_)), "{broken:?}");
+    assert!(matches!(broken, SqlError::Compile(_)), "{broken:?}");
 
     let hidden = sql(&world)
         .save_query(

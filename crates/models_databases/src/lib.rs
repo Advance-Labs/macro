@@ -14,3 +14,6 @@ pub use ops::{
     RowChange, RowChanges,
 };
 pub use option_palette::OptionColor;
+
+/// Longest SQL statement, run or saved, anywhere a statement is accepted.
+pub const MAX_STATEMENT_LENGTH: usize = 256 * 1024;
