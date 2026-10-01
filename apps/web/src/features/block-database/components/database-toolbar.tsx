@@ -4,7 +4,6 @@ import FunnelIcon from '@phosphor/funnel.svg';
 import KanbanIcon from '@phosphor/kanban.svg';
 import MagnifyingGlassIcon from '@phosphor/magnifying-glass.svg';
 import PlusIcon from '@phosphor/plus.svg';
-import SlidersHorizontalIcon from '@phosphor/sliders-horizontal.svg';
 import SortAscendingIcon from '@phosphor/sort-ascending.svg';
 import TableIcon from '@phosphor/table.svg';
 import XIcon from '@phosphor/x.svg';
@@ -20,21 +19,12 @@ import {
 import { Button } from '@ui/components/Button';
 import { DeleteDialog } from '@ui/components/DeleteDialog';
 import { InputGroup } from '@ui/components/InputGroup';
-import { ToggleSwitch } from '@ui/components/ToggleSwitch';
 import { Tooltip } from '@ui/components/Tooltip';
 import type { ResultAsync } from 'neverthrow';
-import { createSignal, For, Index, type JSX, Show } from 'solid-js';
+import { createSignal, Index, Show } from 'solid-js';
 import type { DatabaseViewColumn } from '../core/database-view';
 import { withSort } from '../core/view-query';
-import {
-  boardGroupColumns,
-  boardLayout,
-  laneLabel,
-  layoutColumns,
-  movedViewOrder,
-  withLaneHidden,
-  withLayoutColumn,
-} from '../core/views';
+import { movedViewOrder } from '../core/views';
 import {
   type DatabaseOpFailure,
   databaseOpMessage,
@@ -66,7 +56,6 @@ type DatabaseToolbarProps = {
   onDeleteView: (view: DatabaseView) => ResultAsync<void, DatabaseOpFailure>;
   /** Every stored view of the table, in its new order. */
   onReorderViews: (order: string[]) => void;
-  addColumn?: JSX.Element;
   onCreateRecord?: () => void;
   canCreateRecord?: boolean;
   creating?: boolean;
@@ -111,18 +100,6 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
     if (moved.some((view, index) => view !== order[index]))
       props.onReorderViews(moved);
   }
-  const groupColumn = () =>
-    props.columns.find((column) => column.id === board()?.groupBy);
-  const hiddenLanes = () => {
-    const column = groupColumn();
-    if (!column) return [];
-    return (board()?.lanes ?? [])
-      .filter((lane) => lane.hidden)
-      .map((lane) => ({
-        option: lane.option,
-        label: laneLabel(column, lane.option),
-      }));
-  };
   return (
     <div
       class="@container/view-toolbar shrink-0 border-b border-edge-muted bg-canvas-base [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-ink/50"
@@ -304,199 +281,6 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
               </InputGroup.Addon>
             </InputGroup>
           </Show>
-          <Show when={canChangeView()}>
-            <ToolbarPopover
-              label="View settings"
-              compact
-              icon={<SlidersHorizontalIcon class="size-3.5" />}
-            >
-              <div class="w-64 max-w-full">
-                <Show when={props.selectedViewId}>
-                  <p class="mb-2 text-xs font-medium">Layout</p>
-                  <div
-                    class="flex items-center gap-1 rounded-lg border border-edge-muted p-1"
-                    aria-label="View layout"
-                  >
-                    <LayoutButton
-                      label="Table"
-                      icon={<TableIcon class="size-4" />}
-                      pressed={layout().kind === 'table'}
-                      onClick={() => {
-                        if (layout().kind !== 'table')
-                          props.onChangeView({
-                            layout: { kind: 'table', columns: [] },
-                          });
-                      }}
-                    />
-                    <LayoutButton
-                      label="Board"
-                      icon={<KanbanIcon class="size-4" />}
-                      pressed={layout().kind === 'board'}
-                      disabled={!boardGroupColumns(props.columns).length}
-                      onClick={() => {
-                        const [first] = boardGroupColumns(props.columns);
-                        if (first && layout().kind !== 'board')
-                          props.onChangeView({
-                            layout: boardLayout(first.id, props.columns),
-                          });
-                      }}
-                    />
-                  </div>
-                </Show>
-                <Show when={board()}>
-                  {(current) => (
-                    <>
-                      <label class="mt-3 flex items-center justify-between gap-3 text-xs text-ink-muted">
-                        Group by
-                        <ViewSelect
-                          label="Group board by"
-                          value={current().groupBy}
-                          options={boardGroupColumns(props.columns).map(
-                            (column) => ({
-                              value: column.id,
-                              label: column.name,
-                            })
-                          )}
-                          onChange={(groupBy) =>
-                            props.onChangeView({
-                              layout: { ...current(), groupBy, lanes: [] },
-                            })
-                          }
-                        />
-                      </label>
-                      <ToggleSwitch
-                        class="mt-2 flex w-full flex-row-reverse justify-between gap-2.5 rounded-lg px-2 py-2 text-xs hover:bg-hover"
-                        label="Hide empty lanes"
-                        checked={current().hideEmptyLanes}
-                        onChange={(hideEmptyLanes) =>
-                          props.onChangeView({
-                            layout: { ...current(), hideEmptyLanes },
-                          })
-                        }
-                      />
-                      <Show when={hiddenLanes().length}>
-                        <p class="mt-2 px-2 text-xs font-medium">
-                          Hidden lanes
-                        </p>
-                        <For each={hiddenLanes()}>
-                          {(lane) => (
-                            <div class="flex items-center justify-between px-2 py-1 text-xs">
-                              <span class="truncate">{lane.label}</span>
-                              <Button
-                                size="xs"
-                                onClick={() =>
-                                  props.onChangeView({
-                                    layout: withLaneHidden(
-                                      current(),
-                                      lane.option,
-                                      false
-                                    ),
-                                  })
-                                }
-                              >
-                                Show
-                              </Button>
-                            </div>
-                          )}
-                        </For>
-                      </Show>
-                    </>
-                  )}
-                </Show>
-              </div>
-              <div class="mt-3 max-h-60 w-64 max-w-full overflow-auto border-t border-edge-muted pt-3">
-                <p class="px-2 pb-2 text-xs font-medium text-ink">
-                  {board() ? 'Card fields' : 'Columns'}
-                </p>
-                <Show
-                  when={board()}
-                  fallback={
-                    <For each={layoutColumns(layout(), props.columns)}>
-                      {(entry) => (
-                        <ColumnSwitch
-                          name={entry.column.name}
-                          checked={!entry.hidden}
-                          onChange={(visible) =>
-                            props.onChangeView({
-                              layout: withLayoutColumn(
-                                layout(),
-                                props.columns,
-                                entry.column.id,
-                                { hidden: !visible }
-                              ),
-                            })
-                          }
-                        />
-                      )}
-                    </For>
-                  }
-                >
-                  {(current) => (
-                    <For
-                      each={props.columns.filter(
-                        (column) => column.id !== current().groupBy
-                      )}
-                    >
-                      {(column) => (
-                        <ColumnSwitch
-                          name={column.name}
-                          checked={current().cardFields.includes(column.id)}
-                          onChange={(shown) =>
-                            props.onChangeView({
-                              layout: {
-                                ...current(),
-                                cardFields: shown
-                                  ? [...current().cardFields, column.id]
-                                  : current().cardFields.filter(
-                                      (id) => id !== column.id
-                                    ),
-                              },
-                            })
-                          }
-                        />
-                      )}
-                    </For>
-                  )}
-                </Show>
-                <Show when={!props.columns.length}>
-                  <p class="text-xs text-ink-muted">
-                    Add a column to get started.
-                  </p>
-                </Show>
-              </div>
-              <Show
-                when={layoutColumns(layout(), props.columns).some(
-                  (entry) => entry.hidden
-                )}
-              >
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  class="mt-2"
-                  onClick={() => {
-                    const current = layout();
-                    if (current.kind !== 'table') return;
-                    props.onChangeView({
-                      layout: {
-                        ...current,
-                        columns: current.columns.map((entry) => ({
-                          ...entry,
-                          hidden: false,
-                        })),
-                      },
-                    });
-                  }}
-                >
-                  Show all columns
-                </Button>
-              </Show>
-              <Show when={props.addColumn}>
-                <div class="mt-2 border-t border-edge-muted pt-3">
-                  {props.addColumn}
-                </div>
-              </Show>
-            </ToolbarPopover>
-          </Show>
           <div class="ml-1 flex shrink-0 items-center">
             <Show when={props.onCreateRecord && board()}>
               <Button
@@ -674,44 +458,6 @@ function ViewTab(props: {
         </ContextMenu>
       </Show>
     </div>
-  );
-}
-
-function LayoutButton(props: {
-  label: string;
-  icon: JSX.Element;
-  pressed: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={props.pressed}
-      disabled={props.disabled}
-      onClick={props.onClick}
-      class="flex h-9 flex-1 items-center justify-center gap-2 rounded-md text-xs text-ink-muted outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50 disabled:opacity-50"
-      classList={{ 'bg-hover font-medium text-ink': props.pressed }}
-    >
-      {props.icon}
-      {props.label}
-    </button>
-  );
-}
-
-function ColumnSwitch(props: {
-  name: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <ToggleSwitch
-      class="flex w-full flex-row-reverse justify-between gap-2.5 rounded-lg px-2 py-2 text-xs hover:bg-hover"
-      labelClass="min-w-0 flex-1 truncate"
-      label={<span title={props.name}>{props.name}</span>}
-      checked={props.checked}
-      onChange={props.onChange}
-    />
   );
 }
 

@@ -19,7 +19,7 @@ import type { ViewChange } from '../queries/views';
 
 /**
  * A view's columns as the table shows them, and the header actions that
- * change them: sorting, hiding, resizing, reordering and inserting.
+ * change them: sorting, resizing, reordering and inserting.
  */
 export function createColumnLayout(options: {
   view: Accessor<DatabaseView>;
@@ -68,16 +68,6 @@ export function createColumnLayout(options: {
               : 'descending'
         ),
       },
-    });
-  }
-  function hideColumn(columnId: string) {
-    options.changeView({
-      layout: withLayoutColumn(
-        options.view().layout,
-        options.columns(),
-        columnId,
-        { hidden: true }
-      ),
     });
   }
   function resizeColumn(columnId: string, width: number) {
@@ -199,7 +189,6 @@ export function createColumnLayout(options: {
     widths,
     schemaError,
     sort,
-    hideColumn,
     resizeColumn,
     forgetColumn,
     reorderColumn,

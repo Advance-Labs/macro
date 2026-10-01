@@ -56,7 +56,6 @@ import {
   updateDatabaseView,
   type ViewChange,
 } from '../queries/views';
-import { AddColumnMenu } from './AddColumnMenu';
 import { DatabaseGrid } from './DatabaseGrid';
 import { DatabaseSidePanelSections } from './sidepanel/DatabaseSidePanelSections';
 import { TopBar } from './TopBar';
@@ -421,17 +420,6 @@ const Block: Component = () => {
                               }
                               canCreateRecord={columns().length > 0}
                               creating={actions.pending()}
-                              addColumn={
-                                <Show when={canEdit()}>
-                                  <AddColumnMenu
-                                    databaseId={databaseId}
-                                    tableId={table().table.id}
-                                    columns={table().columns}
-                                    label="Add column"
-                                    onCreated={actions.focusColumn}
-                                  />
-                                </Show>
-                              }
                             />
                           )}
                         />

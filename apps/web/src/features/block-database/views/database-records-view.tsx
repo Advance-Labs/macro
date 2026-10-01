@@ -446,7 +446,9 @@ export function DatabaseRecordsView(props: {
               columns={columns()}
               positions={props.boardPositions}
               canEdit={props.canEdit}
-              onViewChange={props.onViewChange}
+              onViewChange={
+                !props.stored || props.canEdit ? props.onViewChange : undefined
+              }
               renderTextValue={props.renderTextValue}
               rowPending={controller.rowPending}
               createPending={controller.createPending}
@@ -499,7 +501,6 @@ export function DatabaseRecordsView(props: {
               onReorderColumn={columnLayout.reorderColumn}
               onRenameColumn={props.onRenameColumn}
               onSort={columnLayout.sort}
-              onHide={props.onViewChange ? columnLayout.hideColumn : undefined}
               onMove={props.onViewChange ? columnLayout.moveColumn : undefined}
               onInsertColumn={
                 props.canEdit && props.createColumn

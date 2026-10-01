@@ -224,14 +224,13 @@ describe('column header interactions', () => {
 
   it('keeps sort and view controls available without exposing rename to a viewer', async () => {
     const rename = vi.fn(() => okAsync(undefined));
-    const hide = vi.fn();
+    const sort = vi.fn();
     render(() => (
       <DatabaseColumnHeader
         column={column}
         canRename={false}
         onRename={rename}
-        onSort={vi.fn()}
-        onHide={hide}
+        onSort={sort}
       />
     ));
     const header = screen.getByRole('columnheader', { name: 'Name' });
@@ -246,10 +245,10 @@ describe('column header interactions', () => {
       screen.queryByRole('menuitem', { name: 'Rename column' })
     ).toBeNull();
     fireEvent(
-      screen.getByRole('menuitem', { name: 'Hide column' }),
+      screen.getByRole('menuitem', { name: 'Sort ascending' }),
       new MouseEvent('pointerup', { button: 0, bubbles: true })
     );
-    expect(hide).toHaveBeenCalledExactlyOnceWith('name');
+    expect(sort).toHaveBeenCalledExactlyOnceWith('name', 'asc');
     await waitFor(() =>
       expect(screen.queryByRole('menu', { hidden: true })).toBeNull()
     );

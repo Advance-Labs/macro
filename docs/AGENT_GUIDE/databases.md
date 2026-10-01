@@ -198,8 +198,7 @@ F2, or right-click it and choose **Rename view** to rename it in place (Enter sa
 Escape cancels). **Delete view** asks for confirmation; the records stay. Drag a tab
 to reorder the views.
 
-**Filter**, **Sort**, **Search**, and **View settings** sit at the right of the views
-row. In **Filter**, the first condition reads **Where**; the second row of a group
+**Filter**, **Sort**, and **Search** sit at the right of the views row. In **Filter**, the first condition reads **Where**; the second row of a group
 has the **And**/**Or** choice for that group. **Add condition** adds a test; **Add
 group** adds a nested group joined the other way, with its own **Add condition** and
 **Remove group**. Tests fit the column: text (contains, is, starts with…), numbers,
@@ -209,13 +208,17 @@ of** for a multi-select, picked as coloured pills), and emptiness for any column
 condition still being filled in is ignored and not saved. **Sort** orders by one or
 more columns, first first. **Search** matches text cells and option labels.
 
-**View settings** switches a stored view between Table and Board. A table view's
-**Columns** switches hide or show columns; dragging a column header's right edge
-sets its width, and both are saved in the view. Header menus offer sorting, **Move
-left**, **Move right**, and **Hide column**. On All records, moving a column moves it
-in the table for everyone; a stored view keeps its own column order. A board's
-settings choose **Group by**, the **Card fields** a card shows, **Hide empty lanes**,
-and list **Hidden lanes** with **Show** to bring one back.
+A view's layout, Table or Board, is chosen when the view is created. Columns
+cannot be hidden, and they are added only from **Add column** after the headers or
+a header's **Insert left**/**Insert right**. Dragging a column header's right edge
+sets its width, saved in the view. Header menus offer sorting, **Move left** and
+**Move right**. On All records, moving a column moves it in the table for everyone;
+a stored view keeps its own column order.
+
+A board's **Board menu** (the **⋯** above its lanes, for anyone who can change the
+view) holds its settings: **Group by** another single select, the **Card fields**
+a card shows, **Hide empty lanes**, and **Hidden lanes**, whose **Show …** items
+bring a hidden lane back.
 
 A board has a lane per option plus one for records without one. Drag a card within
 a lane or into another lane; it moves at once, and moving it to another lane also

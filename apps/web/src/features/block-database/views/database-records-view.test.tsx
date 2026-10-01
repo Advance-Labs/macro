@@ -25,7 +25,6 @@ import {
 } from 'neverthrow';
 import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DatabaseToolbar } from '../components/database-toolbar';
 import type { DatabaseWriteResult } from '../context/table-source';
 import type { DatabaseViewColumn } from '../core/database-view';
 import { allRecordsView } from '../core/views';
@@ -2151,7 +2150,7 @@ describe('database table view', () => {
     expect(fixture.view()).toEqual(selected);
   });
 
-  it('lets viewers move and hide columns while keeping every record accessible and restoring its layout', async () => {
+  it('lets viewers move columns while a hidden one stays readable in the record', async () => {
     const { source, setColumns, setTable } = createFakeRowsSource({
       columns,
       table: {
@@ -2200,22 +2199,6 @@ describe('database table view', () => {
         onViewChange={changeView}
         addColumn={() => null}
         boardPositions={unplacedCards}
-        renderToolbar={() => (
-          <DatabaseToolbar
-            columns={source.columns()}
-            views={[]}
-            view={view()}
-            canEdit={false}
-            search=""
-            onSearchChange={vi.fn()}
-            onSelectView={vi.fn()}
-            onChangeView={changeView}
-            onCreateView={vi.fn(() => okAsync(undefined))}
-            onRenameView={vi.fn(() => okAsync(undefined))}
-            onDeleteView={vi.fn(() => okAsync(undefined))}
-            onReorderViews={vi.fn()}
-          />
-        )}
       />
     ));
     const headers = () =>
@@ -2248,12 +2231,6 @@ describe('database table view', () => {
       ],
     });
 
-    openMenu('Name');
-    fireEvent.keyDown(
-      await screen.findByRole('menuitem', { name: 'Hide column' }),
-      { key: 'Enter' }
-    );
-    await waitFor(() => expect(headers()).toEqual(['Notes column menu']));
     fireEvent.click(screen.getByRole('button', { name: 'Open Plan launch' }));
     const record = await screen.findByRole('dialog');
     expect(
@@ -2265,19 +2242,6 @@ describe('database table view', () => {
     );
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
-    fireEvent.click(screen.getByRole('button', { name: 'View settings' }));
-    fireEvent.click(await screen.findByRole('switch', { name: 'Name' }));
-    await waitFor(() =>
-      expect(headers()).toEqual(['Notes column menu', 'Name column menu'])
-    );
-    expect(view().layout).toEqual({
-      kind: 'table',
-      columns: [
-        { column: 'notes', width: null, hidden: false },
-        { column: 'status', width: null, hidden: true },
-        { column: 'title', width: null, hidden: false },
-      ],
-    });
     expect(source.write).not.toHaveBeenCalled();
   });
 
