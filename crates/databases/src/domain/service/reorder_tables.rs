@@ -19,9 +19,7 @@ where
         let (database, tables) = self.database_for_edit(&receipt).await?;
         let expected: HashSet<_> = tables.iter().map(|table| table.id).collect();
         if ids.len() != expected.len() || ids.iter().copied().collect::<HashSet<_>>() != expected {
-            return Err(DatabaseError::InvalidSchemaOperation(
-                "The table order must include every table of this database exactly once.".into(),
-            ));
+            return Err(DatabaseError::from(SchemaError::IncompleteTableOrder));
         }
         let reordered = match self
             .repo
@@ -37,12 +35,8 @@ where
             receipt_attribution(&receipt),
             &reordered
                 .iter()
-                .map(|table| (table.id, table.database_id))
-                .collect(),
-            &reordered
-                .iter()
-                .map(|table| (table.id, table.version))
-                .collect(),
+                .map(|table| (table.database_id, table.id, table.version))
+                .collect::<Vec<_>>(),
         )
         .await;
         Ok(reordered)

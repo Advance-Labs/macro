@@ -2364,7 +2364,10 @@ async fn options_are_refused_on_a_column_that_cannot_hold_them() {
         .await
         .unwrap_err();
     assert!(
-        matches!(err, DatabaseError::InvalidSchemaOperation(ref m) if m.contains("select")),
+        matches!(
+            err,
+            DatabaseError::InvalidSchemaOperation(SchemaError::OptionsOnPlainColumn)
+        ),
         "{err:?}"
     );
 
@@ -2383,7 +2386,10 @@ async fn options_are_refused_on_a_column_that_cannot_hold_them() {
         .await
         .unwrap_err();
     assert!(
-        matches!(err, DatabaseError::InvalidSchemaOperation(ref m) if m.contains("options")),
+        matches!(
+            err,
+            DatabaseError::InvalidSchemaOperation(SchemaError::ColumnTakesNoOptions)
+        ),
         "{err:?}"
     );
 }
@@ -2419,7 +2425,7 @@ async fn numeric_select_options_are_parsed_as_numbers() {
         .await
         .unwrap_err();
     assert!(
-        matches!(err, DatabaseError::InvalidSchemaOperation(ref m) if m.contains("not a number")),
+        matches!(&err, DatabaseError::InvalidSchemaOperation(SchemaError::OptionNotNumber { label }) if label == "soon"),
         "{err:?}"
     );
 
@@ -2486,7 +2492,10 @@ async fn option_labels_are_validated() {
             .await
             .unwrap_err();
         assert!(
-            matches!(err, DatabaseError::InvalidSchemaOperation(ref m) if m.contains("empty")),
+            matches!(
+                err,
+                DatabaseError::InvalidSchemaOperation(SchemaError::EmptyOptionLabel)
+            ),
             "{err:?}"
         );
     }
@@ -2510,7 +2519,12 @@ async fn option_labels_are_validated() {
         .await
         .unwrap_err();
     assert!(
-        matches!(err, DatabaseError::InvalidSchemaOperation(ref m) if m.contains("at most")),
+        matches!(
+            err,
+            DatabaseError::InvalidSchemaOperation(SchemaError::OptionLabelTooLong {
+                max: MAX_OPTION_LABEL_LEN
+            })
+        ),
         "{err:?}"
     );
 }

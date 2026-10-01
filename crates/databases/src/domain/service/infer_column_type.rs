@@ -30,9 +30,7 @@ where
             DataType::String | DataType::Number | DataType::Entity
         ) || (cmd.data_type == DataType::Entity) != cmd.specific_entity_type.is_some()
         {
-            return Err(DatabaseError::InvalidSchemaOperation(
-                "Choose text, number, or an entity with its specific type.".into(),
-            ));
+            return Err(DatabaseError::from(SchemaError::UnsupportedInferredType));
         }
         // Resolve the complete response before committing. A later refresh
         // failure must never turn a committed schema operation into a failure.
@@ -52,9 +50,7 @@ where
             || definition.is_multi_select
             || !matches!(definition.owner, PropertyOwner::Database { database_id } if database_id == database.id)
         {
-            return Err(DatabaseError::InvalidSchemaOperation(
-                "Only a new empty text column can infer its first value's type.".into(),
-            ));
+            return Err(DatabaseError::from(SchemaError::InferenceNeedsEmptyText));
         }
         let replacement = if cmd.data_type == DataType::String {
             None
@@ -89,15 +85,13 @@ where
                     .repo
                     .table_versions(&[table.id])
                     .await
-                    .ok()
-                    .and_then(|versions| versions.get(&table.id).copied())
-                    .is_some_and(|current| current != table.version)
+                    .map_err(repo_err)?
+                    .get(&table.id)
+                    .is_some_and(|current| *current != table.version)
                 {
                     return Err(DatabaseError::VersionConflict);
                 }
-                return Err(DatabaseError::InvalidSchemaOperation(
-                    "The column already contains values or the table changed. Refresh and try again.".into(),
-                ));
+                return Err(DatabaseError::from(SchemaError::InferenceRaced));
             }
             // A transport failure can follow a committed transaction. Do not
             // delete the replacement when its commit outcome is uncertain.
@@ -110,8 +104,7 @@ where
         }
         self.publish(
             receipt_attribution(&receipt),
-            &HashMap::from([(table.id, database.id)]),
-            &HashMap::from([(table.id, version)]),
+            &[(database.id, table.id, version)],
         )
         .await;
         Ok(InferColumnTypeOutcome {

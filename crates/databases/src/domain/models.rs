@@ -13,6 +13,10 @@ use models_properties::shared::DataType;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+mod schema_error;
+
+pub use schema_error::{ConversionRefusal, Misfit, MisfitGroup, SchemaError, SharingError};
+
 // ===== Identifiers =====
 
 pub use models_databases::views::{CardPosition, DatabaseView, ViewId, ViewPosition};
@@ -848,13 +852,12 @@ pub enum DatabaseError {
     /// The caller lacks the permission the operation requires.
     #[error("unauthorized")]
     Unauthorized,
-    /// A schema operation was invalid (duplicate placement, bad binding, …).
+    /// A schema operation was refused.
     #[error("invalid schema operation: {0}")]
-    InvalidSchemaOperation(String),
-    /// A sharing change was invalid (a malformed channel grant, or a link or
-    /// team share databases do not support).
+    InvalidSchemaOperation(SchemaError),
+    /// A sharing change was refused.
     #[error("invalid sharing change: {0}")]
-    InvalidSharing(String),
+    InvalidSharing(SharingError),
     /// The schema changed after the client read its version.
     #[error("The table changed. Refresh before entering this value.")]
     VersionConflict,
@@ -862,8 +865,20 @@ pub enum DatabaseError {
     #[error("{0}")]
     InvalidOp(OpRefusal),
     /// Persistence failure.
-    #[error("repository error: {0:?}")]
+    #[error("repository error: {0}")]
     Repo(rootcause::Report),
+}
+
+impl From<SchemaError> for DatabaseError {
+    fn from(error: SchemaError) -> Self {
+        DatabaseError::InvalidSchemaOperation(error)
+    }
+}
+
+impl From<SharingError> for DatabaseError {
+    fn from(error: SharingError) -> Self {
+        DatabaseError::InvalidSharing(error)
+    }
 }
 
 /// Why a saved query could not be stored or read.
@@ -877,6 +892,6 @@ pub enum SavedQueryError {
     #[error("the query is too long")]
     TooLong,
     /// Persistence failure.
-    #[error("repository error: {0:?}")]
+    #[error("repository error: {0}")]
     Repo(rootcause::Report),
 }

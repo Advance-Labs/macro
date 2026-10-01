@@ -51,20 +51,17 @@ where
         if matches!(request.link_share, Some(Some(_)))
             || matches!(request.link_share_access_level, Some(Some(_)))
         {
-            return Err(DatabaseError::InvalidSharing(
-                "Databases cannot be shared by link yet.".into(),
-            ));
+            return Err(DatabaseError::from(SharingError::LinkShare));
         }
         if matches!(request.team_share_access_level, Some(Some(_))) {
-            return Err(DatabaseError::InvalidSharing(
-                "Databases cannot be shared with a team yet.".into(),
-            ));
+            return Err(DatabaseError::from(SharingError::TeamShare));
         }
         let grants = request.channel_share_permissions.unwrap_or_default();
         if grants.len() > MAX_CHANNEL_GRANTS_PER_UPDATE {
-            return Err(DatabaseError::InvalidSharing(format!(
-                "Share with at most {MAX_CHANNEL_GRANTS_PER_UPDATE} channels at a time."
-            )));
+            return Err(SharingError::TooManyChannels {
+                max: MAX_CHANNEL_GRANTS_PER_UPDATE,
+            }
+            .into());
         }
         let mut channels = HashSet::new();
         for grant in &grants {
@@ -73,9 +70,7 @@ where
                 || grant.access_level == Some(ShareAccessLevel::Owner)
                 || (grant.operation != UpdateOperation::Remove && grant.access_level.is_none())
             {
-                return Err(DatabaseError::InvalidSharing(
-                    "Choose a channel and view, comment, or edit access.".into(),
-                ));
+                return Err(DatabaseError::from(SharingError::InvalidChannelGrant));
             }
         }
         let database = self.database_by_receipt(&receipt).await?;

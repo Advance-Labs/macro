@@ -1,4 +1,5 @@
 use super::*;
+use crate::domain::models::SchemaError;
 
 mod fakes;
 
@@ -355,7 +356,7 @@ async fn a_refused_op_answers_where_it_was_refused() {
 #[tokio::test]
 async fn an_invalid_schema_operation_answers_its_reason_alone() {
     let (status, body) = error_body(DatabaseError::InvalidSchemaOperation(
-        "name must not be empty".into(),
+        SchemaError::EmptyName,
     ))
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);

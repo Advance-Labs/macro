@@ -8,17 +8,13 @@ use sha2::{Digest, Sha256};
 fn validate_import(request: &mut ImportTable) -> Result<ImportFingerprint, DatabaseError> {
     request.name = validate_name(&request.name)?;
     if request.columns.is_empty() || request.columns.len() > 100 || request.rows.len() > 10_000 {
-        return Err(DatabaseError::InvalidSchemaOperation(
-            "Import up to 100 columns and 10,000 rows.".into(),
-        ));
+        return Err(DatabaseError::from(SchemaError::ImportTooWide));
     }
     let mut names = HashSet::new();
     for name in &mut request.columns {
         *name = validate_name(name)?;
         if !names.insert(name.to_lowercase()) {
-            return Err(DatabaseError::InvalidSchemaOperation(
-                "Each column needs a distinct name.".into(),
-            ));
+            return Err(DatabaseError::from(SchemaError::DuplicateImportColumn));
         }
     }
     if request
@@ -26,9 +22,7 @@ fn validate_import(request: &mut ImportTable) -> Result<ImportFingerprint, Datab
         .iter()
         .any(|row| row.len() != request.columns.len())
     {
-        return Err(DatabaseError::InvalidSchemaOperation(
-            "Each row must match the CSV header.".into(),
-        ));
+        return Err(DatabaseError::from(SchemaError::RaggedImportRow));
     }
     if request
         .rows
@@ -36,15 +30,11 @@ fn validate_import(request: &mut ImportTable) -> Result<ImportFingerprint, Datab
         .flatten()
         .any(|value| value.contains('\0'))
     {
-        return Err(DatabaseError::InvalidSchemaOperation(
-            "The CSV contains null characters. Remove them before importing.".into(),
-        ));
+        return Err(DatabaseError::from(SchemaError::NullCharacterInImport));
     }
     let encoded = serde_json::to_vec(request).map_err(repo_err)?;
     if encoded.len() > 16 * 1024 * 1024 {
-        return Err(DatabaseError::InvalidSchemaOperation(
-            "The import is too large.".into(),
-        ));
+        return Err(DatabaseError::from(SchemaError::ImportTooLarge));
     }
     Ok(ImportFingerprint(format!("{:x}", Sha256::digest(encoded))))
 }
@@ -77,18 +67,14 @@ where
             return if previous == fingerprint {
                 Ok(table)
             } else {
-                Err(DatabaseError::InvalidSchemaOperation(
-                    "This import request changed. Start a new import.".into(),
-                ))
+                Err(DatabaseError::from(SchemaError::ImportRequestChanged))
             };
         }
         if tables
             .iter()
             .any(|table| same_name(&table.name, &request.name))
         {
-            return Err(DatabaseError::InvalidSchemaOperation(
-                "A table with this name already exists. Choose another name.".into(),
-            ));
+            return Err(DatabaseError::from(SchemaError::ImportNameTaken));
         }
         let mut definitions = Vec::new();
         for name in &request.columns {
@@ -146,18 +132,15 @@ where
             ImportOutcome::Created(table) | ImportOutcome::Replayed(table) => {
                 self.publish(
                     receipt_attribution(&receipt),
-                    &HashMap::from([(table.id, database.id)]),
-                    &HashMap::from([(table.id, table.version)]),
+                    &[(database.id, table.id, table.version)],
                 )
                 .await;
                 Ok(table)
             }
-            ImportOutcome::NameConflict => Err(DatabaseError::InvalidSchemaOperation(
-                "A table with this name already exists. Choose another name.".into(),
-            )),
-            ImportOutcome::KeyConflict => Err(DatabaseError::InvalidSchemaOperation(
-                "This import request changed. Start a new import.".into(),
-            )),
+            ImportOutcome::NameConflict => Err(DatabaseError::from(SchemaError::ImportNameTaken)),
+            ImportOutcome::KeyConflict => {
+                Err(DatabaseError::from(SchemaError::ImportRequestChanged))
+            }
             ImportOutcome::NotFound => Err(DatabaseError::NotFound),
         }
     }

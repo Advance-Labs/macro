@@ -42,8 +42,8 @@ use crate::domain::models::{
     AddColumnOptions, Awareness, ColumnBinding, ColumnConfig, ColumnDetail, ColumnId, CreateColumn,
     CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId,
     InferColumnType, InferColumnTypeOutcome, ListedDatabase, NewOption, PropertyDefinitionId,
-    RenameColumnOutcome, RowId, RowRef, Table, TableDetail, TableId, TableMutationOutcome,
-    TableVersion, Viewer,
+    RenameColumnOutcome, RowId, RowRef, SchemaError, SharingError, Table, TableDetail, TableId,
+    TableMutationOutcome, TableVersion, Viewer,
 };
 use crate::domain::models::{
     CardPosition, QueryDefinition, QueryId, SavedQuery, SavedQueryError, ViewId,
@@ -123,14 +123,10 @@ fn receipt_attribution<T: RequiredPermission>(
 fn validate_name(name: &str) -> Result<String, DatabaseError> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
-        return Err(DatabaseError::InvalidSchemaOperation(
-            "name must not be empty".into(),
-        ));
+        return Err(DatabaseError::from(SchemaError::EmptyName));
     }
     if trimmed.chars().count() > MAX_NAME_LEN {
-        return Err(DatabaseError::InvalidSchemaOperation(format!(
-            "name must be at most {MAX_NAME_LEN} characters"
-        )));
+        return Err(SchemaError::NameTooLong { max: MAX_NAME_LEN }.into());
     }
     Ok(trimmed.to_string())
 }
@@ -158,9 +154,10 @@ fn option_value(data_type: DataType, label: &str) -> Result<PropertyOptionValue,
     }
     match label.parse::<f64>() {
         Ok(number) if number.is_finite() => Ok(PropertyOptionValue::Number(number)),
-        _ => Err(DatabaseError::InvalidSchemaOperation(format!(
-            "`{label}` is not a number; the options of a numeric select column must be numbers"
-        ))),
+        _ => Err(SchemaError::OptionNotNumber {
+            label: label.to_string(),
+        }
+        .into()),
     }
 }
 
@@ -180,14 +177,13 @@ fn validate_option_labels(
     for label in labels {
         let trimmed = label.trim();
         if trimmed.is_empty() {
-            return Err(DatabaseError::InvalidSchemaOperation(
-                "an option label must not be empty".into(),
-            ));
+            return Err(DatabaseError::from(SchemaError::EmptyOptionLabel));
         }
         if trimmed.chars().count() > MAX_OPTION_LABEL_LEN {
-            return Err(DatabaseError::InvalidSchemaOperation(format!(
-                "an option label must be at most {MAX_OPTION_LABEL_LEN} characters"
-            )));
+            return Err(SchemaError::OptionLabelTooLong {
+                max: MAX_OPTION_LABEL_LEN,
+            }
+            .into());
         }
         let value = option_value(data_type, trimmed)?;
         // Compare on the label SQL will see: `2.0` and `2` are one numeric
@@ -388,14 +384,10 @@ where
     async fn publish(
         &self,
         attribution: Option<events::Attribution>,
-        database_of: &HashMap<TableId, DatabaseId>,
-        versions: &HashMap<TableId, TableVersion>,
+        changes: &[(DatabaseId, TableId, TableVersion)],
     ) {
         let mut changed_by_database: HashMap<DatabaseId, Vec<TableVersionChange>> = HashMap::new();
-        for (table_id, version) in versions {
-            let Some(database_id) = database_of.get(table_id) else {
-                continue;
-            };
+        for (database_id, table_id, version) in changes {
             changed_by_database
                 .entry(*database_id)
                 .or_default()
@@ -729,9 +721,9 @@ where
         }
         let name = validate_name(&cmd.name)?;
         if tables.iter().any(|t| same_name(&t.name, &name)) {
-            return Err(DatabaseError::InvalidSchemaOperation(format!(
-                "a table named `{name}` already exists in this database"
-            )));
+            return Err(DatabaseError::from(SchemaError::TableNameTaken {
+                name: name.clone(),
+            }));
         }
         let table = match self
             .repo
@@ -745,15 +737,14 @@ where
             TableMutationOutcome::Applied(table) => table,
             TableMutationOutcome::NotFound => return Err(DatabaseError::NotFound),
             TableMutationOutcome::Conflict => {
-                return Err(DatabaseError::InvalidSchemaOperation(format!(
-                    "a table named `{name}` already exists in this database"
-                )));
+                return Err(DatabaseError::from(SchemaError::TableNameTaken {
+                    name: name.clone(),
+                }));
             }
         };
         self.publish(
             receipt_attribution(&receipt),
-            &HashMap::from([(table.id, table.database_id)]),
-            &HashMap::from([(table.id, table.version)]),
+            &[(table.database_id, table.id, table.version)],
         )
         .await;
         Ok(table)
@@ -781,9 +772,9 @@ where
             .iter()
             .any(|other| other.id != table_id && same_name(&other.name, &name))
         {
-            return Err(DatabaseError::InvalidSchemaOperation(format!(
-                "a table named `{name}` already exists in this database"
-            )));
+            return Err(DatabaseError::from(SchemaError::TableNameTaken {
+                name: name.clone(),
+            }));
         }
         let renamed = match self
             .repo
@@ -793,15 +784,13 @@ where
         {
             TableMutationOutcome::Applied(table) => table,
             TableMutationOutcome::NotFound => return Err(DatabaseError::NotFound),
-            TableMutationOutcome::Conflict => return Err(DatabaseError::InvalidSchemaOperation(
-                "the table name changed or is already in use. Reopen Rename table and try again"
-                    .into(),
-            )),
+            TableMutationOutcome::Conflict => {
+                return Err(DatabaseError::from(SchemaError::TableRenameConflict));
+            }
         };
         self.publish(
             receipt_attribution(&receipt),
-            &HashMap::from([(table_id, renamed.database_id)]),
-            &HashMap::from([(table_id, renamed.version)]),
+            &[(renamed.database_id, table_id, renamed.version)],
         )
         .await;
         Ok(renamed)
@@ -864,9 +853,7 @@ where
                 .map_err(DatabaseError::Repo)?
                 .is_none()
             {
-                return Err(DatabaseError::InvalidSchemaOperation(
-                    "link target database is not accessible".into(),
-                ));
+                return Err(DatabaseError::from(SchemaError::LinkDatabaseInaccessible));
             }
             let target_tables = self
                 .repo
@@ -874,9 +861,7 @@ where
                 .await
                 .map_err(repo_err)?;
             if !target_tables.iter().any(|t| t.id == *table_id) {
-                return Err(DatabaseError::InvalidSchemaOperation(
-                    "link target table does not exist".into(),
-                ));
+                return Err(DatabaseError::from(SchemaError::LinkTableMissing));
             }
         }
 
@@ -888,9 +873,7 @@ where
                         if options.is_empty()
                 ))
         {
-            return Err(DatabaseError::InvalidSchemaOperation(
-                "Only a new plain text column can infer its first value's type.".into(),
-            ));
+            return Err(DatabaseError::from(SchemaError::InferenceNeedsPlainText));
         }
 
         // Effective display labels are unique per table (case-insensitive).
@@ -926,9 +909,7 @@ where
                 options,
             } => {
                 if !options.is_empty() && !takes_options(data_type) {
-                    return Err(DatabaseError::InvalidSchemaOperation(
-                        "options are only valid on select, select_number, and tag columns".into(),
-                    ));
+                    return Err(DatabaseError::from(SchemaError::OptionsOnPlainColumn));
                 }
                 // Validated before anything is written.
                 let values = validate_option_labels(data_type, &options, &[])?;
@@ -947,16 +928,14 @@ where
         if let ColumnBinding::NewDefinition { name, .. } = &binding
             && existing_names.iter().any(|n| same_name(n, name))
         {
-            return Err(DatabaseError::InvalidSchemaOperation(format!(
-                "a column named `{name}` already exists on this table"
-            )));
+            return Err(DatabaseError::from(SchemaError::ColumnNameTaken {
+                name: name.clone(),
+            }));
         }
         if let ColumnBinding::ExistingDefinition(id) = &binding
             && existing_ids.contains(id)
         {
-            return Err(DatabaseError::InvalidSchemaOperation(
-                "that property is already a column of this table".into(),
-            ));
+            return Err(DatabaseError::from(SchemaError::DefinitionAlreadyBound));
         }
 
         let definition_id = self
@@ -967,9 +946,7 @@ where
         let definition_id = match (definition_id, &binding) {
             (Some(definition_id), _) => definition_id,
             (None, ColumnBinding::ExistingDefinition(id)) => {
-                return Err(DatabaseError::InvalidSchemaOperation(format!(
-                    "property definition {id} not found"
-                )));
+                return Err(DatabaseError::from(SchemaError::DefinitionNotFound(*id)));
             }
             (None, ColumnBinding::NewDefinition { .. }) => {
                 return Err(DatabaseError::Repo(
@@ -999,8 +976,7 @@ where
             .map_err(repo_err)?;
         self.publish(
             receipt_attribution(&receipt),
-            &HashMap::from([(cmd.table_id, database.id)]),
-            &HashMap::from([(cmd.table_id, version)]),
+            &[(database.id, cmd.table_id, version)],
         )
         .await;
         Ok(column_id)
@@ -1095,9 +1071,7 @@ where
 
         let data_type = definition.definition.data_type;
         if !takes_options(data_type) {
-            return Err(DatabaseError::InvalidSchemaOperation(
-                "only select, select_number, and tag columns have options".into(),
-            ));
+            return Err(DatabaseError::from(SchemaError::ColumnTakesNoOptions));
         }
         let entry = catalog::ColumnEntry {
             column: column.clone(),
@@ -1112,9 +1086,10 @@ where
                 .map_err(repo_err)?
                 .contains(&definition.definition.id)
         {
-            return Err(DatabaseError::InvalidSchemaOperation(
-                ops::shared_options_refusal(entry.name()),
-            ));
+            return Err(SchemaError::SharedOptions {
+                column: entry.name().to_owned(),
+            }
+            .into());
         }
         let existing: Vec<String> = definition
             .property_options
@@ -1144,8 +1119,7 @@ where
                 .ok_or(DatabaseError::NotFound)?;
             self.publish(
                 receipt_attribution(&receipt),
-                &HashMap::from([(cmd.table_id, database.id)]),
-                &HashMap::from([(cmd.table_id, version)]),
+                &[(database.id, cmd.table_id, version)],
             )
             .await;
         }

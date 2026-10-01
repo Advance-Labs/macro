@@ -700,8 +700,9 @@ async fn removing_a_column_takes_it_out_of_views_unless_a_board_groups_by_it() {
     };
     assert_eq!(
         reason,
-        "The board \"Big parties\" groups its cards by this column; delete the board or group it \
-         by another column before removing it."
+        SchemaError::BoardGroupsByRemovedColumn {
+            board: "Big parties".into()
+        }
     );
 
     seeded

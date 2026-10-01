@@ -936,7 +936,7 @@ async fn adding_options_to_a_shared_property_takes_the_right_to_edit_it() {
     let DatabaseError::InvalidSchemaOperation(reason) = error else {
         panic!("expected a refused schema change, got {error:?}");
     };
-    assert_eq!(reason, SHARED_REFUSAL);
+    assert_eq!(reason.to_string(), SHARED_REFUSAL);
     assert_eq!(
         options(&seeded.world, priority.property_definition_id).len(),
         2

@@ -60,31 +60,22 @@ where
             });
         }
         if current != previous_name {
-            return Err(DatabaseError::InvalidSchemaOperation(
-                "This column was renamed elsewhere. Cancel and rename it again.".into(),
-            ));
+            return Err(DatabaseError::from(SchemaError::ColumnRenamedElsewhere));
         }
         if columns.iter().any(|other| {
             other.id != column_id && label(other).is_some_and(|label| same_name(&label, &name))
         }) {
-            return Err(DatabaseError::InvalidSchemaOperation(
-                "A column with this name already exists. Choose another name.".into(),
-            ));
+            return Err(DatabaseError::from(SchemaError::ColumnLabelTaken));
         }
         let outcome = self
             .repo
             .rename_column(table, column, &name)
             .await
             .map_err(repo_err)?
-            .ok_or_else(|| {
-                DatabaseError::InvalidSchemaOperation(
-                    "The table changed while renaming. Try again.".into(),
-                )
-            })?;
+            .ok_or_else(|| DatabaseError::from(SchemaError::TableChangedWhileRenaming))?;
         self.publish(
             receipt_attribution(&receipt),
-            &HashMap::from([(table_id, database.id)]),
-            &HashMap::from([(table_id, outcome.table_version)]),
+            &[(database.id, table_id, outcome.table_version)],
         )
         .await;
         Ok(outcome)

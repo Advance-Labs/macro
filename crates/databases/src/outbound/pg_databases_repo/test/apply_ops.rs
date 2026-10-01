@@ -696,7 +696,7 @@ async fn a_type_change_through_ops_converts_like_change_column_type(pool: PgPool
             op: 0,
             row: None,
             column: Some(guests.name),
-            reason,
+            reason: reason.to_string(),
         }
     );
 

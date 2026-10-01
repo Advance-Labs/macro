@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::domain::catalog::PropertyType;
-use crate::domain::models::RowId;
+use crate::domain::models::{ConversionRefusal, Misfit, MisfitGroup, RowId};
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
 use models_properties::service::property_value::PropertyValue;
 
@@ -18,54 +18,6 @@ const MAX_EXAMPLES: usize = 3;
 pub(super) enum ConvertedCell {
     Value(PropertyValue),
     Options(Vec<String>),
-}
-
-/// Why one cell's value does not fit the new type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Misfit {
-    NotText,
-    NotNumber,
-    NotDate,
-    NotCheckbox,
-    NotUrl,
-    NotOption,
-    OptionInOtherCase,
-    OtherReference,
-    SeveralValues,
-}
-
-impl Misfit {
-    /// What is counted: values, or cells for a cell with several values.
-    fn noun(self, one: bool) -> &'static str {
-        match (self, one) {
-            (Misfit::SeveralValues, true) => "cell",
-            (Misfit::SeveralValues, false) => "cells",
-            (_, true) => "value",
-            (_, false) => "values",
-        }
-    }
-
-    /// What is wrong with them.
-    fn predicate(self, one: bool) -> &'static str {
-        let (singular, plural) = match self {
-            Misfit::NotText => ("can't be written as text", "can't be written as text"),
-            Misfit::NotNumber => ("isn't a number", "aren't numbers"),
-            Misfit::NotDate => ("isn't a date", "aren't dates"),
-            Misfit::NotCheckbox => ("isn't true or false", "aren't true or false"),
-            Misfit::NotUrl => ("isn't a complete URL", "aren't complete URLs"),
-            Misfit::NotOption => ("can't be an option", "can't be options"),
-            Misfit::OptionInOtherCase => (
-                "differs from another only in capitalization",
-                "differ from others only in capitalization",
-            ),
-            Misfit::OtherReference => (
-                "points at a different kind of item",
-                "point at a different kind of item",
-            ),
-            Misfit::SeveralValues => ("has more than one value", "have more than one value"),
-        };
-        if one { singular } else { plural }
-    }
 }
 
 /// Converts the cells of one column to one target type.
@@ -140,7 +92,7 @@ impl<'a> Converter<'a> {
     pub fn examples(&self) -> Vec<String> {
         self.groups()
             .into_iter()
-            .flat_map(|(_, _, examples)| examples)
+            .flat_map(|group| group.examples)
             .collect()
     }
 
@@ -150,77 +102,41 @@ impl<'a> Converter<'a> {
         (!groups.is_empty()).then(|| {
             groups
                 .iter()
-                .map(|(misfit, count, _)| {
-                    let one = *count == 1;
-                    format!("{count} {} {}", misfit.noun(one), misfit.predicate(one))
-                })
+                .map(MisfitGroup::summary)
                 .collect::<Vec<_>>()
                 .join(", ")
         })
     }
 
-    /// Why the change is refused, naming the column, the misfits, and the
-    /// way forward; `None` when every cell fit.
-    pub fn refusal(&self, column: &str) -> Option<String> {
+    /// Why the change is refused; `None` when every cell fit.
+    pub fn refusal(&self, column: &str) -> Option<ConversionRefusal> {
         let groups = self.groups();
-        if groups.is_empty() {
-            return None;
-        }
-        let mut sentences: Vec<String> = groups
-            .iter()
-            .map(|(misfit, count, examples)| {
-                let one = *count == 1;
-                let quoted: Vec<String> = examples
-                    .iter()
-                    .map(|example| format!("'{example}'"))
-                    .collect();
-                format!(
-                    "{count} {} in \"{column}\" {}: {}.",
-                    misfit.noun(one),
-                    misfit.predicate(one),
-                    quoted.join(", ")
-                )
-            })
-            .collect();
-        let one = self.misfits.len() == 1;
-        let several =
-            |(misfit, _, _): &(Misfit, usize, Vec<String>)| *misfit == Misfit::SeveralValues;
-        sentences.push(
-            match (groups.iter().any(several), groups.iter().all(several), one) {
-                (false, _, true) => "Fix it, or convert with clearing to empty it.",
-                (false, _, false) => "Fix them, or convert with clearing to empty them.",
-                (true, true, true) => {
-                    "Fix it, or convert with clearing to keep only its first value."
-                }
-                (true, true, false) => {
-                    "Fix them, or convert with clearing to keep only their first values."
-                }
-                (true, false, _) => {
-                    "Fix them, or convert with clearing: values that don't fit are emptied, and \
-                     cells with several values keep their first."
-                }
-            }
-            .to_owned(),
-        );
-        Some(sentences.join(" "))
+        (!groups.is_empty()).then(|| ConversionRefusal {
+            column: column.to_owned(),
+            groups,
+        })
     }
 
     /// The misfits by kind, in the order each kind first came: its count and
     /// up to three examples.
-    fn groups(&self) -> Vec<(Misfit, usize, Vec<String>)> {
-        let mut groups: Vec<(Misfit, usize, Vec<String>)> = Vec::new();
+    fn groups(&self) -> Vec<MisfitGroup> {
+        let mut groups: Vec<MisfitGroup> = Vec::new();
         for (misfit, example) in &self.misfits {
-            let index = match groups.iter().position(|(kind, _, _)| kind == misfit) {
+            let index = match groups.iter().position(|group| group.misfit == *misfit) {
                 Some(index) => index,
                 None => {
-                    groups.push((*misfit, 0, Vec::new()));
+                    groups.push(MisfitGroup {
+                        misfit: *misfit,
+                        count: 0,
+                        examples: Vec::new(),
+                    });
                     groups.len() - 1
                 }
             };
-            let (_, count, examples) = &mut groups[index];
-            *count += 1;
-            if examples.len() < MAX_EXAMPLES {
-                examples.push(example.clone());
+            let group = &mut groups[index];
+            group.count += 1;
+            if group.examples.len() < MAX_EXAMPLES {
+                group.examples.push(example.clone());
             }
         }
         groups

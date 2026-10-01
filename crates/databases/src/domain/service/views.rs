@@ -52,12 +52,14 @@ pub(super) fn views_without_column(
     views: &[DatabaseView],
     column: ColumnId,
     now: DateTime<Utc>,
-) -> Result<Vec<DatabaseView>, DatabaseError> {
+) -> Result<Vec<DatabaseView>, SchemaError> {
     views
         .iter()
         .filter_map(|view| {
             let Some(layout) = view.layout.without_column(column) else {
-                return Some(Err(grouped_by(view, "removing it")));
+                return Some(Err(SchemaError::BoardGroupsByRemovedColumn {
+                    board: view.name.clone(),
+                }));
             };
             let query = view.query.without_column(column);
             (query != view.query || layout != view.layout).then(|| {
@@ -79,12 +81,14 @@ pub(super) fn views_without_tests_of(
     views: &[DatabaseView],
     column: ColumnId,
     now: DateTime<Utc>,
-) -> Result<Vec<DatabaseView>, DatabaseError> {
+) -> Result<Vec<DatabaseView>, SchemaError> {
     views
         .iter()
         .filter_map(|view| {
             if view.layout.group_by() == Some(column) {
-                return Some(Err(grouped_by(view, "changing its type")));
+                return Some(Err(SchemaError::BoardGroupsByRetypedColumn {
+                    board: view.name.clone(),
+                }));
             }
             let query = view.query.without_tests_of(column);
             (query != view.query).then(|| {
@@ -96,12 +100,4 @@ pub(super) fn views_without_tests_of(
             })
         })
         .collect()
-}
-
-fn grouped_by(view: &DatabaseView, change: &str) -> DatabaseError {
-    DatabaseError::InvalidSchemaOperation(format!(
-        "The board \"{}\" groups its cards by this column; delete the board or group it by \
-         another column before {change}.",
-        view.name
-    ))
 }

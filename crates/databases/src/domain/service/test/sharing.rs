@@ -130,7 +130,10 @@ async fn link_and_team_sharing_read_as_off_and_cannot_be_turned_on() {
         )
         .await;
     assert!(
-        matches!(&link, Err(DatabaseError::InvalidSharing(message)) if message.contains("link")),
+        matches!(
+            &link,
+            Err(DatabaseError::InvalidSharing(SharingError::LinkShare))
+        ),
         "{link:?}"
     );
     let team = svc
@@ -147,7 +150,10 @@ async fn link_and_team_sharing_read_as_off_and_cannot_be_turned_on() {
         )
         .await;
     assert!(
-        matches!(&team, Err(DatabaseError::InvalidSharing(message)) if message.contains("team")),
+        matches!(
+            &team,
+            Err(DatabaseError::InvalidSharing(SharingError::TeamShare))
+        ),
         "{team:?}"
     );
 

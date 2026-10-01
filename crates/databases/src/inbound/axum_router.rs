@@ -870,7 +870,7 @@ impl IntoResponse for DatabaseError {
             DatabaseError::InvalidOp(refusal) => {
                 return (status, Json(OpRefusalResponse::from(refusal))).into_response();
             }
-            DatabaseError::InvalidSchemaOperation(reason) => reason,
+            DatabaseError::InvalidSchemaOperation(reason) => reason.to_string(),
             DatabaseError::Repo(_) => {
                 tracing::error!(error = ?self, "databases internal server error");
                 "internal server error".to_string()

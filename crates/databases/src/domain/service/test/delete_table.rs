@@ -60,7 +60,10 @@ async fn deleting_a_table_removes_its_rows_cells_and_columns() {
         .await
         .unwrap_err();
     assert!(
-        matches!(&last, DatabaseError::InvalidSchemaOperation(message) if message.contains("only table")),
+        matches!(
+            &last,
+            DatabaseError::InvalidSchemaOperation(SchemaError::LastTable)
+        ),
         "{last:?}"
     );
     assert_eq!(world.lock().unwrap().tables.len(), 1);
@@ -125,8 +128,8 @@ async fn a_table_another_table_relates_to_is_not_deleted() {
     assert!(
         matches!(
             &error,
-            DatabaseError::InvalidSchemaOperation(message)
-                if message == "Column `Guest` of table `Invites` relates to rows of `Guests`. Delete that column first."
+            DatabaseError::InvalidSchemaOperation(SchemaError::TableIsRelated { column, source_table, table })
+                if column == "Guest" && source_table == "Invites" && table == "Guests"
         ),
         "{error:?}"
     );

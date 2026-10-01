@@ -1,14 +1,6 @@
 use super::*;
 use crate::domain::models::TableDeletion;
 
-fn last_table() -> DatabaseError {
-    DatabaseError::InvalidSchemaOperation(
-        "This is the database's only table, and a database keeps at least one. Add another \
-         table first, or delete the whole database instead."
-            .into(),
-    )
-}
-
 impl<Repo, Defs, Cells, Events, Access, Broker>
     DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
 where
@@ -30,7 +22,7 @@ where
             .find(|table| table.id == table_id)
             .ok_or(DatabaseError::NotFound)?;
         if tables.len() == 1 {
-            return Err(last_table());
+            return Err(SchemaError::LastTable.into());
         }
         // A relation into the table would be left holding ids of rows that
         // no longer exist.
@@ -55,32 +47,41 @@ where
                 .into_iter()
                 .next()
                 .map(|definition| definition.definition.display_name);
-            let column_name = relation
+            let column = relation
                 .display_name
                 .clone()
                 .or(definition_name)
-                .unwrap_or_default();
+                .ok_or_else(|| {
+                    DatabaseError::Repo(
+                        rootcause::report!("a relation column's definition is missing")
+                            .into_dynamic(),
+                    )
+                })?;
             let source_table = tables
                 .iter()
                 .find(|other| other.id == relation.table_id)
-                .map(|other| other.name.as_str())
-                .unwrap_or_default();
-            return Err(DatabaseError::InvalidSchemaOperation(format!(
-                "Column `{column_name}` of table `{source_table}` relates to rows of `{}`. Delete \
-                 that column first.",
-                table.name
-            )));
+                .map(|other| other.name.clone())
+                .ok_or_else(|| {
+                    DatabaseError::Repo(
+                        rootcause::report!("a relation column's table is missing").into_dynamic(),
+                    )
+                })?;
+            return Err(SchemaError::TableIsRelated {
+                column,
+                source_table,
+                table: table.name.clone(),
+            }
+            .into());
         }
 
         match self.repo.delete_table(table).await.map_err(repo_err)? {
             TableDeletion::Deleted => {}
             TableDeletion::NotFound => return Err(DatabaseError::NotFound),
-            TableDeletion::LastTable => return Err(last_table()),
+            TableDeletion::LastTable => return Err(SchemaError::LastTable.into()),
         }
         self.publish(
             receipt_attribution(&receipt),
-            &HashMap::from([(table_id, database.id)]),
-            &HashMap::from([(table_id, table.version)]),
+            &[(database.id, table_id, table.version)],
         )
         .await;
         Ok(())
