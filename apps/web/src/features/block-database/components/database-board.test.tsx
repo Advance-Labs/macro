@@ -753,6 +753,65 @@ describe('database board', () => {
     expect(onAddGroup).not.toHaveBeenCalled();
   });
 
+  it('refuses a new group matching an existing option label once both are trimmed', () => {
+    const status: DatabaseViewColumn = {
+      id: 'status',
+      name: 'Status',
+      dataType: 'SELECT_STRING',
+      isMultiSelect: false,
+      options: [{ id: 'done', label: 'Done ', color: null }],
+      writable: true,
+    };
+    const onAddGroup = vi.fn(
+      async (
+        _label: string
+      ): Promise<Result<void, ResultError<DatabaseSchemaErrorCode>[]>> =>
+        ok(undefined)
+    );
+    render(() => (
+      <DatabaseBoard
+        rows={[]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          status,
+        ]}
+        board={{
+          lanes: [{ option: 'done', hidden: false, cards: [] }],
+        }}
+        layout={{
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={status}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={vi.fn()}
+        onCreate={vi.fn(async () => true)}
+        onAddGroup={onAddGroup}
+      />
+    ));
+    fireEvent.click(screen.getByRole('button', { name: 'New group' }));
+    fireEvent.input(screen.getByRole('textbox', { name: 'New group name' }), {
+      target: { value: '  DONE  ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add group' }));
+    expect(screen.getByRole('alert').textContent).toBe(
+      'A group with this name already exists.'
+    );
+    expect(onAddGroup).not.toHaveBeenCalled();
+  });
+
   it('validates numeric groups and sends their canonical labels', async () => {
     const amount: DatabaseViewColumn = {
       id: 'amount',

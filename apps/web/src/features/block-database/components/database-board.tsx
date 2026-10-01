@@ -35,6 +35,7 @@ import {
   type DatabaseViewColumn,
   databaseCellValues,
 } from '../core/database-view';
+import { isDatabaseNameTaken } from '../core/property-creation';
 import {
   type DatabaseRow,
   formatCellValue,
@@ -43,6 +44,7 @@ import {
   titleColumn,
 } from '../core/table';
 import { laneLabel } from '../core/views';
+import { isOptionColumn } from './option-column';
 import { OptionEditor } from './option-editor';
 import { PropertyIcon } from './property-icon';
 import { SelectPill } from './select-pill';
@@ -541,8 +543,9 @@ function NewBoardGroup(props: {
         ? String(Number(entered))
         : entered;
     if (
-      props.column.options.some(
-        (option) => option.label.toLowerCase() === label.toLowerCase()
+      isDatabaseNameTaken(
+        label,
+        props.column.options.map((option) => option.label)
       )
     ) {
       setError('A group with this name already exists.');
@@ -699,11 +702,7 @@ function BoardCard(props: {
                     class="size-3 shrink-0 text-ink-placeholder"
                   />
                   <Show
-                    when={
-                      !column.relation &&
-                      (column.dataType.startsWith('SELECT_') ||
-                        column.dataType === 'TAG')
-                    }
+                    when={isOptionColumn(column)}
                     fallback={
                       <span class="truncate text-xs text-ink-muted">
                         {formatCellValue(
