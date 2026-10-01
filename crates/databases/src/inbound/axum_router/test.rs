@@ -195,3 +195,64 @@ async fn view_access_cannot_apply_ops() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(*service.applied.lock().unwrap(), 1);
 }
+
+async fn error_body(error: DatabaseError) -> (StatusCode, serde_json::Value) {
+    let response = error.into_response();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (status, serde_json::from_slice(&bytes).unwrap())
+}
+
+#[tokio::test]
+async fn a_refused_op_answers_where_it_was_refused() {
+    let column = Uuid::from_u128(0xc01);
+    let (status, body) = error_body(DatabaseError::InvalidOp(crate::domain::models::OpRefusal {
+        op: 1,
+        row: Some(2),
+        column: Some(column),
+        reason: "\"soon\" is not a number".into(),
+    }))
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        body,
+        serde_json::json!({
+            "message": "\"soon\" is not a number",
+            "op": 1,
+            "row": 2,
+            "column": column,
+        })
+    );
+
+    let (_, body) = error_body(DatabaseError::InvalidOp(crate::domain::models::OpRefusal {
+        op: 0,
+        row: None,
+        column: None,
+        reason: "table is not in this database".into(),
+    }))
+    .await;
+    assert_eq!(
+        body,
+        serde_json::json!({
+            "message": "table is not in this database",
+            "op": 0,
+            "row": null,
+            "column": null,
+        })
+    );
+}
+
+#[tokio::test]
+async fn an_invalid_schema_operation_answers_its_reason_alone() {
+    let (status, body) = error_body(DatabaseError::InvalidSchemaOperation(
+        "name must not be empty".into(),
+    ))
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        body,
+        serde_json::json!({"message": "name must not be empty"})
+    );
+}

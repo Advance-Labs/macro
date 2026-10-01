@@ -62,6 +62,7 @@ use crate::domain::models::{
     TableVersion, Viewer,
 };
 use crate::domain::ports::DatabasesService;
+use ops::OpRefusalResponse;
 
 /// Largest table import accepted, in bytes.
 const MAX_IMPORT_BODY_BYTES: usize = 16 * 1024 * 1024;
@@ -858,7 +859,11 @@ impl IntoResponse for DatabaseError {
             | DatabaseError::InvalidOp(_) => StatusCode::BAD_REQUEST,
             DatabaseError::Repo(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
-        let message = match &self {
+        let message = match self {
+            DatabaseError::InvalidOp(refusal) => {
+                return (status, Json(OpRefusalResponse::from(refusal))).into_response();
+            }
+            DatabaseError::InvalidSchemaOperation(reason) => reason,
             DatabaseError::Repo(_) => {
                 tracing::error!(error = ?self, "databases internal server error");
                 "internal server error".to_string()

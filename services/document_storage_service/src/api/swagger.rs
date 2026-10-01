@@ -86,6 +86,7 @@ use databases::domain::models::{
 };
 use databases::inbound::axum_router::ops::{
     ApplyOpsRequest as DatabaseApplyOpsRequest, ApplyOpsResponse as DatabaseApplyOpsResponse,
+    OpRefusalResponse as DatabaseOpRefusalResponse,
 };
 use databases::inbound::axum_router::{
     AddColumnOptionsRequest as DatabaseAddColumnOptionsRequest,
@@ -625,6 +626,7 @@ use utoipa::OpenApi;
             DatabaseAwareness,
             DatabaseApplyOpsRequest,
             DatabaseApplyOpsResponse,
+            DatabaseOpRefusalResponse,
             DatabaseOp,
             DatabaseCellWrite,
             DatabaseCellValue,

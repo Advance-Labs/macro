@@ -35,6 +35,7 @@ pub struct Database {
     /// Creation time.
     pub created_at: DateTime<Utc>,
     /// Set when trashed.
+    #[schema(required = true)]
     pub trashed_at: Option<DateTime<Utc>>,
 }
 
@@ -73,13 +74,16 @@ pub struct Column {
     /// Fractional index for column ordering.
     pub position: String,
     /// Column-kind specific configuration.
+    #[schema(required = true)]
     pub config: Option<ColumnConfig>,
     /// Optional label for this placement. The property's name still defines
     /// its SQL identifier, so renaming a column does not break saved queries.
     #[serde(default)]
+    #[schema(required = true)]
     pub display_name: Option<String>,
     /// Whether the first nonempty value may settle this new text column's type.
     #[serde(default)]
+    #[schema(required = true)]
     pub infer_type: bool,
 }
 
@@ -137,18 +141,20 @@ pub struct ColumnCast {
     /// Whether the target holds several values.
     pub is_multi_select: bool,
     /// The target's entity kind, for a reference column.
-    #[schema(value_type = Option<models_properties::EntityType>)]
+    #[schema(required = true, value_type = Option<models_properties::EntityType>)]
     pub specific_entity_type: Option<models_properties::EntityType>,
     /// Whether the target is a relation to another table's rows.
     pub relation: bool,
     /// Whether the values convert.
     pub cast: CastVerdict,
     /// Why nothing converts, for a `never` cast.
+    #[schema(required = true)]
     pub reason: Option<String>,
     /// For a `checked` cast, how many cells would not convert.
     pub failures: usize,
     /// For a `checked` cast with failures, what is wrong with them, as in
     /// `3 values aren't numbers`.
+    #[schema(required = true)]
     pub summary: Option<String>,
     /// Up to three of the values that would not convert.
     pub examples: Vec<String>,
@@ -579,7 +585,7 @@ pub struct SavedQuery {
     pub definition: QueryDefinition,
     /// The database whose tables win name resolution; `null` once that
     /// database is deleted, or when none was given.
-    #[schema(value_type = Option<Uuid>)]
+    #[schema(required = true, value_type = Option<Uuid>)]
     pub database_id: Option<DatabaseId>,
     /// Who saved it.
     pub created_by: String,

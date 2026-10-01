@@ -1,4 +1,6 @@
 use models_databases::{DatabaseOp, OpResult};
+
+use crate::domain::models::OpRefusal;
 use serde::Serialize;
 
 use super::*;
@@ -20,6 +22,33 @@ pub struct ApplyOpsResponse {
     pub results: Vec<OpResult>,
 }
 
+/// Why an op of a batch was refused. Nothing in the batch was written.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OpRefusalResponse {
+    /// What is wrong.
+    pub message: String,
+    /// The refused op's index in the request.
+    pub op: usize,
+    /// The row's index within the op, when one row is at fault.
+    #[schema(required = true)]
+    pub row: Option<usize>,
+    /// The column placement at fault, when one is.
+    #[schema(required = true, value_type = Option<Uuid>)]
+    pub column: Option<ColumnId>,
+}
+
+impl From<OpRefusal> for OpRefusalResponse {
+    fn from(refusal: OpRefusal) -> Self {
+        Self {
+            message: refusal.reason,
+            op: refusal.op,
+            row: refusal.row,
+            column: refusal.column,
+        }
+    }
+}
+
 /// Apply a batch of typed ops: insert, update and delete rows, or change a
 /// column's type. Row ops are last-write-wins. A refused op, named by its
 /// index (and row and column where relevant), leaves the whole batch
@@ -33,7 +62,7 @@ pub struct ApplyOpsResponse {
     request_body = ApplyOpsRequest,
     responses(
         (status = 200, body = ApplyOpsResponse),
-        (status = 400, description = "An op was refused; nothing was written", body = ErrorResponse),
+        (status = 400, description = "An op was refused; nothing was written", body = OpRefusalResponse),
         (status = 401, description = "Missing or invalid credentials", body = ErrorResponse),
         (status = 403, description = "No edit access to the database", body = ErrorResponse),
         (status = 404, body = ErrorResponse),

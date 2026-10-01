@@ -13,13 +13,13 @@ use super::models::{DatabaseError, DatabaseId, TableId, Viewer};
 #[serde(rename_all = "camelCase")]
 pub struct StarterDatabase {
     /// Accessible starter database, if still present.
-    #[schema(value_type = Option<String>)]
+    #[schema(required = true, value_type = Option<String>)]
     pub database_id: Option<DatabaseId>,
     /// Initial table, returned only on first creation.
-    #[schema(value_type = Option<String>)]
+    #[schema(required = true, value_type = Option<String>)]
     pub table_id: Option<TableId>,
     /// Initial board view, returned only on first creation.
-    #[schema(value_type = Option<String>)]
+    #[schema(required = true, value_type = Option<String>)]
     pub view_id: Option<Uuid>,
     /// Whether this request created the example.
     pub created: bool,
