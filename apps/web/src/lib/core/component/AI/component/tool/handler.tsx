@@ -59,6 +59,7 @@ import {
   listImportEntitiesHandler,
 } from './ImportTools';
 import { initiativeToolHandlers } from './Initiatives';
+import { LegacyGeneratedImage } from './LegacyGeneratedImage';
 import { listEntitiesHandler } from './ListEntities';
 import { listInboxesHandler } from './ListInboxes';
 import { listLabelsHandler } from './ListLabels';
@@ -303,25 +304,32 @@ export function RenderTool(props: ToolProps) {
   });
 
   return (
-    <ToolErrorContext.Provider
-      value={() => (props.isComplete && !response() ? 'failed' : undefined)}
+    <LegacyGeneratedImage
+      name={props.name}
+      response={
+        props.response?.name === props.name ? props.response.json : undefined
+      }
     >
-      <Show
-        when={isToolShown(tool.name, databasesEnabled().enabled)}
-        fallback={<DatabaseToolPlaceholder />}
+      <ToolErrorContext.Provider
+        value={() => (props.isComplete && !response() ? 'failed' : undefined)}
       >
-        <Dynamic
-          component={handler.render}
-          {...context}
-          response={response()}
-          renderContext={{
-            isStreaming: props.renderContext.renderContext.isStreaming,
-            grouped: props.renderContext.renderContext.grouped,
-            followedBy: props.renderContext.renderContext.followedBy,
-          }}
-        />
-      </Show>
-    </ToolErrorContext.Provider>
+        <Show
+          when={isToolShown(tool.name, databasesEnabled().enabled)}
+          fallback={<DatabaseToolPlaceholder />}
+        >
+          <Dynamic
+            component={handler.render}
+            {...context}
+            response={response()}
+            renderContext={{
+              isStreaming: props.renderContext.renderContext.isStreaming,
+              grouped: props.renderContext.renderContext.grouped,
+              followedBy: props.renderContext.renderContext.followedBy,
+            }}
+          />
+        </Show>
+      </ToolErrorContext.Provider>
+    </LegacyGeneratedImage>
   );
 }
 

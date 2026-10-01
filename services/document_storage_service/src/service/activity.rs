@@ -14,6 +14,7 @@ use documents_hex::domain::events::DocumentMacroEvent;
 use email::domain::events::EmailMacroEvent;
 use initiative::domain::events::InitiativeMacroEvent;
 use macro_event_broker::MacroEvent as _;
+use messages::outbound::broker::MessageMacroEvent;
 use projects_hex::domain::events::ProjectMacroEvent;
 use properties::domain::events::PropertyMacroEvent;
 
@@ -25,6 +26,7 @@ mod source {
         ActivitySourceEvent:
             DocumentMacroEvent,
             ChannelMacroEvent,
+            MessageMacroEvent,
             ChatMacroEvent,
             ProjectMacroEvent,
             EmailMacroEvent,
@@ -58,6 +60,10 @@ pub(crate) async fn ingest(
             .await
         }
         ActivitySourceEvent::ChannelMacroEvent(e) => arm(e.event()),
+        ActivitySourceEvent::MessageMacroEvent(e) => {
+            let envelope = e.event();
+            channels::domain::activity::ingest_message_event(envelope.event_id, &envelope.event)
+        }
         ActivitySourceEvent::ChatMacroEvent(e) => arm(e.event()),
         ActivitySourceEvent::ProjectMacroEvent(e) => arm(e.event()),
         ActivitySourceEvent::EmailMacroEvent(e) => arm(e.event()),

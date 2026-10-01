@@ -21,6 +21,7 @@ import { CommentNode } from './nodes/CommentNode';
 import { CompletionNode } from './nodes/CompletionNode';
 import { ConnectAppNode } from './nodes/ConnectAppNode';
 import { ContactMentionNode } from './nodes/ContactMentionNode';
+import { CursorSystemNotificationNode } from './nodes/CursorSystemNotificationNode';
 import { CustomCodeNode } from './nodes/CustomCodeNode';
 import { DatabaseQueryNode } from './nodes/DatabaseQueryNode';
 import { DateMentionNode } from './nodes/DateMentionNode';
@@ -120,6 +121,7 @@ export const SupportedNodeTypes = [
   AwaitNode,
   MagicChipNode,
   AgentContextNode,
+  CursorSystemNotificationNode,
 ] as const;
 
 export const NodeReplacements: LexicalNodeReplacement[] = [

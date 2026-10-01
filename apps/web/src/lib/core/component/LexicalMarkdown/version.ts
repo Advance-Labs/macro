@@ -24,11 +24,7 @@
  * Version 4.2 - Sep 2026. ConnectAppNode: optional `target` (connections | harness) so the chip can connect Cursor.
  * Version 4.3 - Sep 2026. ReplyTargetNode references a message parent (channel or document) instead of a channel id.
  * Version 4.4 - Sep 2026. Expanded agent session mentions are block decorators with node selection.
- * Version 5.0 - Sep 2026. Added source-only DatabaseQueryNode for live scalar and table answers.
- * Version 5.1 - Sep 2026. DatabaseQueryNode remembers the table selected for questions.
- * Version 5.2 - Sep 2026. DatabaseQueryNode persists live bar, line and pie chart settings.
- * Version 5.3 - Sep 2026. DatabaseQueryNode persists a concise, editable answer title.
- * Version 6.0 - Sep 2026. DatabaseQueryNode points at a saved query (`queryId`) instead of inlining SQL.
- * Version 6.1 - Sep 2026. DatabaseQueryNode adds area and scatter charts, and optional chart `color` and `stack`.
+ * Version 5.0 - Sep 2026. Added CursorSystemNotificationNode (Cursor `<system_notification>` event cards).
+ * Version 6.0 - Oct 2026. Added source-only DatabaseQueryNode: a live database answer pointing at a saved query (`queryId`), with its table, title, and table or chart display (bar, line, area, scatter, pie; optional `color` and `stack`).
  */
-export const MARKDOWN_VERSION_COUNTER = 6.1;
+export const MARKDOWN_VERSION_COUNTER = 6.0;

@@ -17,6 +17,7 @@ import {
   type ClassedBlockNode,
   type ConnectAppNode,
   type ContactMentionNode,
+  type CursorSystemNotificationNode,
   type DatabaseQueryNode,
   type DateMentionNode,
   DEFAULT_LANGUAGE,
@@ -83,6 +84,7 @@ import { AgentSessionMention as AgentSessionMentionDecorator } from '../decorato
 import { Await as AwaitDecorator } from '../decorator/Await';
 import { ConnectApp as ConnectAppDecorator } from '../decorator/ConnectApp';
 import { ContactMention as ContactMentionDecorator } from '../decorator/ContactMention';
+import { CursorSystemNotification as CursorSystemNotificationDecorator } from '../decorator/CursorSystemNotification';
 import { DatabaseQuery as DatabaseQueryDecorator } from '../decorator/DatabaseQuery';
 import { DateMention as DateMentionDecorator } from '../decorator/DateMention';
 import { DocumentCard as DocumentCardDecorator } from '../decorator/DocumentCard';
@@ -575,6 +577,19 @@ const ReplyTarget: TypedRenderableEntity<ReplyTargetNode> = {
   ),
 };
 
+const CursorSystemNotification: TypedRenderableEntity<CursorSystemNotificationNode> =
+  {
+    guard: (node: LexicalNode): node is CursorSystemNotificationNode =>
+      node.__type === 'system-notification',
+    render: (props) => (
+      <CursorSystemNotificationDecorator
+        {...props.node.exportComponentProps()}
+        key={props.node.getKey()}
+        theme={props.theme}
+      />
+    ),
+  };
+
 const MagicChip: TypedRenderableEntity<MagicChipNode> = {
   guard: (node: LexicalNode): node is MagicChipNode =>
     node.__type === 'magic-chip',
@@ -941,6 +956,7 @@ const InlineEntities: RenderableEntity[] = [
   eraseRenderableEntity(Await),
   eraseRenderableEntity(AgentContext),
   eraseRenderableEntity(ReplyTarget),
+  eraseRenderableEntity(CursorSystemNotification),
   eraseRenderableEntity(MagicChip),
   eraseRenderableEntity(Snapshot),
   eraseRenderableEntity(Image),

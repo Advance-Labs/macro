@@ -17,6 +17,10 @@ import type {
   ContactMentionNode,
 } from './nodes/ContactMentionNode';
 import type {
+  CursorSystemNotificationDecoratorProps,
+  CursorSystemNotificationNode,
+} from './nodes/CursorSystemNotificationNode';
+import type {
   DatabaseQueryDecoratorProps,
   DatabaseQueryNode,
 } from './nodes/DatabaseQueryNode';
@@ -202,6 +206,10 @@ export interface NodeDecoratorMap {
   MagicChipNode: {
     klass: typeof MagicChipNode;
     props: MagicChipDecoratorProps;
+  };
+  CursorSystemNotificationNode: {
+    klass: typeof CursorSystemNotificationNode;
+    props: CursorSystemNotificationDecoratorProps;
   };
 }
 
