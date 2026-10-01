@@ -9,6 +9,7 @@ import {
   $isDatabaseQueryNode,
   type DatabaseQueryData,
   databaseQueryMarkdown,
+  parseDatabaseQueryData,
 } from '../nodes/DatabaseQueryNode';
 import { $isUnknownMentionNode } from '../nodes/UnknownMentionNode';
 import { ALL_TRANSFORMERS } from '../transformers';
@@ -95,6 +96,70 @@ describe('database query node', () => {
       expect(exported(restored)).toBe(databaseQueryMarkdown(chart));
     }
   );
+  it.each(['area', 'scatter'] as const)(
+    'round-trips a %s chart with its color split and stacking',
+    (displayMode) => {
+      const chart = {
+        ...source,
+        displayMode,
+        chart: { x: 'Month', y: ['Tickets'], color: 'Team', stack: true },
+      };
+      const editor = parse(databaseQueryMarkdown(chart));
+      editor.getEditorState().read(() => {
+        const node = $getRoot().getFirstChild();
+        if (!$isDatabaseQueryNode(node)) throw new Error('Expected chart node');
+        expect(node.exportComponentProps()).toEqual(chart);
+      });
+      const restored = createEditor({ nodes: SupportedNodeTypes });
+      restored.setEditorState(
+        restored.parseEditorState(
+          JSON.stringify(editor.getEditorState().toJSON())
+        )
+      );
+      expect(exported(restored)).toBe(databaseQueryMarkdown(chart));
+    }
+  );
+  it('reads a chart saved before color and stack exactly as it was written', () => {
+    const saved =
+      '<m-db-query>{"queryId":"0e110000-0000-0000-0000-000000000001","databaseId":"0dbb0000-0000-0000-0000-000000000001","title":"Invites per party","prompt":"Invites per party","displayMode":"bar","chart":{"x":"party","y":["invites"]}}</m-db-query>';
+    const editor = parse(saved);
+    editor.getEditorState().read(() => {
+      const node = $getRoot().getFirstChild();
+      if (!$isDatabaseQueryNode(node)) throw new Error('Expected chart node');
+      expect(node.exportComponentProps()).toEqual({
+        queryId: '0e110000-0000-0000-0000-000000000001',
+        databaseId: '0dbb0000-0000-0000-0000-000000000001',
+        title: 'Invites per party',
+        prompt: 'Invites per party',
+        displayMode: 'bar',
+        chart: { x: 'party', y: ['invites'] },
+      });
+    });
+    expect(exported(editor)).toBe(saved);
+  });
+  it('drops renderer options and a false stack from a saved chart', () => {
+    expect(
+      parseDatabaseQueryData({
+        queryId: 'q',
+        prompt: 'Tickets',
+        displayMode: 'bar',
+        chart: {
+          x: 'Month',
+          y: ['Tickets'],
+          stack: false,
+          marks: [{ type: 'barY' }],
+        },
+      })?.chart
+    ).toEqual({ x: 'Month', y: ['Tickets'] });
+    expect(
+      parseDatabaseQueryData({
+        queryId: 'q',
+        prompt: 'Tickets',
+        displayMode: 'bar',
+        chart: { x: 'Month', y: ['Tickets', 'Hours'], color: 'Team' },
+      })
+    ).toBeUndefined();
+  });
   it('preserves older answers without table metadata', () => {
     const legacy = { ...source };
     delete legacy.tableId;

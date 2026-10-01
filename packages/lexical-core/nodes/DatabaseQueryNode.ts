@@ -15,13 +15,26 @@ import { $applyIdFromSerialized } from '../plugins/nodeIdPlugin';
 import { $createUnknownMentionNode } from './UnknownMentionNode';
 
 export const DATABASE_QUERY_TAG = 'm-db-query';
-export type DatabaseQueryDisplayMode =
-  | 'scalar'
-  | 'table'
-  | 'bar'
-  | 'line'
-  | 'pie';
-export type DatabaseQueryChart = { x: string; y: string[]; title?: string };
+const DISPLAY_MODES = [
+  'scalar',
+  'table',
+  'bar',
+  'line',
+  'area',
+  'scatter',
+  'pie',
+] as const;
+export type DatabaseQueryDisplayMode = (typeof DISPLAY_MODES)[number];
+/** Column aliases and plain choices; never renderer options. */
+export type DatabaseQueryChart = {
+  x: string;
+  y: string[];
+  title?: string;
+  /** A column whose values split the one `y` series into groups. */
+  color?: string;
+  /** Stack bar or area series. */
+  stack?: boolean;
+};
 /** Points at an immutable saved query; the SQL lives on the server. */
 export type DatabaseQueryData = {
   /** Empty while the question is still a draft. */
@@ -55,9 +68,7 @@ export function parseDatabaseQueryData(
       typeof record.databaseId !== 'string') ||
     (record.tableId !== undefined && typeof record.tableId !== 'string') ||
     (record.title !== undefined && typeof record.title !== 'string') ||
-    !['scalar', 'table', 'bar', 'line', 'pie'].includes(
-      String(record.displayMode)
-    )
+    !DISPLAY_MODES.some((mode) => mode === record.displayMode)
   )
     return;
   let chart: DatabaseQueryChart | undefined;
@@ -65,6 +76,14 @@ export function parseDatabaseQueryData(
     if (!record.chart || typeof record.chart !== 'object') return;
     const config = record.chart as Record<string, unknown>;
     if (
+      (config.color !== undefined &&
+        (typeof config.color !== 'string' ||
+          !config.color.trim() ||
+          config.color === config.x ||
+          !Array.isArray(config.y) ||
+          config.y.length !== 1 ||
+          config.y.includes(config.color))) ||
+      (config.stack !== undefined && typeof config.stack !== 'boolean') ||
       typeof config.x !== 'string' ||
       !config.x.trim() ||
       !Array.isArray(config.y) ||
@@ -80,6 +99,8 @@ export function parseDatabaseQueryData(
       x: config.x,
       y: [...config.y],
       ...(config.title ? { title: config.title as string } : {}),
+      ...(config.color ? { color: config.color as string } : {}),
+      ...(config.stack ? { stack: true } : {}),
     };
   }
   return {
