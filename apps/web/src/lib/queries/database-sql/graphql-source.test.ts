@@ -83,7 +83,7 @@ function row(
   };
 }
 
-const acme = row(ACME, DEALS, '000000000001', [
+const acme = row(ACME, DEALS, '80', [
   property(NAME, {
     __typename: 'GraphqlStringPropertyValue',
     stringValue: 'Acme',
@@ -103,7 +103,7 @@ const acme = row(ACME, DEALS, '000000000001', [
     ],
   }),
 ]);
-const globex = row(GLOBEX, DEALS, '000000000002', [
+const globex = row(GLOBEX, DEALS, '8180', [
   property(NAME, {
     __typename: 'GraphqlStringPropertyValue',
     stringValue: 'Globex',
@@ -117,7 +117,7 @@ const globex = row(GLOBEX, DEALS, '000000000002', [
     optionIds: [WON],
   }),
 ]);
-const initech = row(INITECH, DEALS, '000000000003', [
+const initech = row(INITECH, DEALS, '8280', [
   property(NAME, {
     __typename: 'GraphqlStringPropertyValue',
     stringValue: 'Initech',
@@ -131,7 +131,7 @@ const initech = row(INITECH, DEALS, '000000000003', [
     optionIds: [LEAD],
   }),
 ]);
-const sam = row(SAM, PEOPLE, '000000000001', [
+const sam = row(SAM, PEOPLE, '80', [
   property(NAME, {
     __typename: 'GraphqlStringPropertyValue',
     stringValue: 'Sam',
