@@ -39,8 +39,9 @@ export function ViewTour(props: ViewTourProps) {
   const desktop = createMediaQuery(DESKTOP_QUERY);
   const flag = useFeatureFlag(enableInAppTours);
   return (
+    // Keyed on the user so switching accounts starts from their progress.
     <Show when={flag().enabled && desktop() && userId()} keyed>
-      {(id) => <DismissibleTour {...props} userId={id} />}
+      {(_userId) => <DismissibleTour {...props} />}
     </Show>
   );
 }
@@ -49,12 +50,11 @@ const isLocalTesting = () =>
   import.meta.env.DEV &&
   ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
 
-function DismissibleTour(props: ViewTourProps & { userId: string }) {
+function DismissibleTour(props: ViewTourProps) {
   // Localhost reopens tours from the start on every mount so they can be
   // iterated on, and leaves saved progress alone.
   const progress = createTourProgress({
     tourId: props.tour.id,
-    userId: props.userId,
     localOnly: isLocalTesting(),
   });
   // Mount only once progress is known, so a finished tour never flashes up.

@@ -18,15 +18,3 @@ export function parseTourProgress(value: unknown): TourProgress | undefined {
     return { status: 'active', step };
   return undefined;
 }
-
-/** Progress saved by earlier builds in localStorage, as a JSON string. */
-export function parseLegacyTourProgress(
-  raw: string | null
-): TourProgress | undefined {
-  if (!raw) return undefined;
-  try {
-    return parseTourProgress(JSON.parse(raw));
-  } catch {
-    return undefined;
-  }
-}
