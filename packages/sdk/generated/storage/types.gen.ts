@@ -3326,12 +3326,12 @@ export type CollabSurfaceTokenResponse = {
  * this carries only where it appears and column-kind configuration.
  */
 export type Column = {
-    config?: null | ColumnConfig;
+    config: null | ColumnConfig;
     /**
      * Optional label for this placement. The property's name still defines
      * its SQL identifier, so renaming a column does not break saved queries.
      */
-    display_name?: string | null;
+    display_name: string | null;
     /**
      * Identifier of the placement.
      */
@@ -3339,7 +3339,7 @@ export type Column = {
     /**
      * Whether the first nonempty value may settle this new text column's type.
      */
-    infer_type?: boolean;
+    infer_type: boolean;
     /**
      * Fractional index for column ordering.
      */
@@ -3412,17 +3412,17 @@ export type ColumnCast = {
     /**
      * Why nothing converts, for a `never` cast.
      */
-    reason?: string | null;
+    reason: string | null;
     /**
      * Whether the target is a relation to another table's rows.
      */
     relation: boolean;
-    specific_entity_type?: null | EntityType;
+    specific_entity_type: null | EntityType;
     /**
      * For a `checked` cast with failures, what is wrong with them, as in
      * `3 values aren't numbers`.
      */
-    summary?: string | null;
+    summary: string | null;
 };
 
 /**
@@ -4947,7 +4947,7 @@ export type Database = {
     /**
      * Set when trashed.
      */
-    trashed_at?: string | null;
+    trashed_at: string | null;
 };
 
 /**
@@ -8159,6 +8159,28 @@ export type NotificationFilters = {
 export type NotificationState = 'unseen' | 'seen' | 'done';
 
 /**
+ * Why an op of a batch was refused. Nothing in the batch was written.
+ */
+export type OpRefusalResponse = {
+    /**
+     * The column placement at fault, when one is.
+     */
+    column: string | null;
+    /**
+     * What is wrong.
+     */
+    message: string;
+    /**
+     * The refused op's index in the request.
+     */
+    op: number;
+    /**
+     * The row's index within the op, when one row is at fault.
+     */
+    row: number | null;
+};
+
+/**
  * What one op did, in the order the ops were sent.
  */
 export type OpResult = {
@@ -8839,7 +8861,7 @@ export type PropertyDefinition = {
      */
     is_system: boolean;
     owner: PropertyOwner;
-    specific_entity_type?: null | EntityType;
+    specific_entity_type: null | EntityType;
     updated_at: string;
 };
 
@@ -8897,7 +8919,7 @@ export type PropertyInput = {
  * A selectable option for select-type properties (service representation).
  */
 export type PropertyOption = {
-    color?: string | null;
+    color: string | null;
     created_at: string;
     display_order: number;
     id: string;
@@ -9434,7 +9456,7 @@ export type SavedQuery = {
      * The database whose tables win name resolution; `null` once that
      * database is deleted, or when none was given.
      */
-    databaseId?: string | null;
+    databaseId: string | null;
     /**
      * What it asks.
      */
@@ -11171,15 +11193,15 @@ export type StarterDatabase = {
     /**
      * Accessible starter database, if still present.
      */
-    databaseId?: string | null;
+    databaseId: string | null;
     /**
      * Initial table, returned only on first creation.
      */
-    tableId?: string | null;
+    tableId: string | null;
     /**
      * Initial board view, returned only on first creation.
      */
-    viewId?: string | null;
+    viewId: string | null;
 };
 
 /**
@@ -15411,7 +15433,7 @@ export type ApplyDatabaseOpsErrors = {
     /**
      * An op was refused; nothing was written
      */
-    400: ErrorResponse;
+    400: OpRefusalResponse;
     /**
      * Missing or invalid credentials
      */

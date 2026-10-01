@@ -8059,7 +8059,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/OpRefusalResponse"
                 }
               }
             }
@@ -22281,7 +22281,15 @@
       "Column": {
         "type": "object",
         "description": "A column: the placement of a property definition on a table.\n\nThe definition carries name, [`DataType`], multi-select flag, and options;\nthis carries only where it appears and column-kind configuration.",
-        "required": ["id", "table_id", "property_definition_id", "position"],
+        "required": [
+          "id",
+          "table_id",
+          "property_definition_id",
+          "position",
+          "config",
+          "display_name",
+          "infer_type"
+        ],
         "properties": {
           "config": {
             "oneOf": [
@@ -22380,9 +22388,12 @@
         "required": [
           "data_type",
           "is_multi_select",
+          "specific_entity_type",
           "relation",
           "cast",
+          "reason",
           "failures",
+          "summary",
           "examples"
         ],
         "properties": {
@@ -24499,7 +24510,7 @@
       "Database": {
         "type": "object",
         "description": "A database: a named collection of tables, owned and shared as one entity.",
-        "required": ["id", "name", "owner_id", "created_at"],
+        "required": ["id", "name", "owner_id", "created_at", "trashed_at"],
         "properties": {
           "created_at": {
             "type": "string",
@@ -30017,6 +30028,32 @@
         "description": "The mutually exclusive lifecycle states of a user's notification.",
         "enum": ["unseen", "seen", "done"]
       },
+      "OpRefusalResponse": {
+        "type": "object",
+        "description": "Why an op of a batch was refused. Nothing in the batch was written.",
+        "required": ["message", "op", "row", "column"],
+        "properties": {
+          "column": {
+            "type": ["string", "null"],
+            "format": "uuid",
+            "description": "The column placement at fault, when one is."
+          },
+          "message": {
+            "type": "string",
+            "description": "What is wrong."
+          },
+          "op": {
+            "type": "integer",
+            "description": "The refused op's index in the request.",
+            "minimum": 0
+          },
+          "row": {
+            "type": ["integer", "null"],
+            "description": "The row's index within the op, when one row is at fault.",
+            "minimum": 0
+          }
+        }
+      },
       "OpResult": {
         "oneOf": [
           {
@@ -31403,6 +31440,7 @@
           "display_name",
           "data_type",
           "is_multi_select",
+          "specific_entity_type",
           "created_at",
           "updated_at",
           "is_system",
@@ -31521,6 +31559,7 @@
           "property_definition_id",
           "display_order",
           "value",
+          "color",
           "created_at",
           "updated_at"
         ],
@@ -32347,7 +32386,13 @@
       "SavedQuery": {
         "type": "object",
         "description": "A stored, immutable query. Editing a question saves a new one.",
-        "required": ["id", "definition", "createdBy", "createdAt"],
+        "required": [
+          "id",
+          "definition",
+          "databaseId",
+          "createdBy",
+          "createdAt"
+        ],
         "properties": {
           "createdAt": {
             "type": "string",
@@ -34986,7 +35031,7 @@
       "StarterDatabase": {
         "type": "object",
         "description": "Starter result. A missing database means the user already started or removed it.",
-        "required": ["created"],
+        "required": ["databaseId", "tableId", "viewId", "created"],
         "properties": {
           "created": {
             "type": "boolean",
