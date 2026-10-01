@@ -11,7 +11,7 @@ import type { ImportTable } from '@service-storage/generated/schemas/importTable
 import type { TableDetail } from '@service-storage/generated/schemas/tableDetail';
 import { DeleteDialog } from '@ui/components/DeleteDialog';
 import { Dropdown } from '@ui/components/Dropdown';
-import { err, ResultAsync } from 'neverthrow';
+import { errAsync, ResultAsync } from 'neverthrow';
 import { createSignal, Show } from 'solid-js';
 import { CsvImportDialog } from '../components/csv-import-dialog';
 import {
@@ -30,6 +30,9 @@ import {
   exportDatabaseTableCsv,
   importDatabaseTable,
 } from '../queries/transfer';
+
+/** A CSV that cannot become a table, or a file that could not be read at all. */
+type CsvImportFailure = DatabaseCsvFailure | { kind: 'unreadable' };
 
 export function DatabasePageActions(props: {
   detail: DatabaseDetail;
@@ -52,25 +55,24 @@ export function DatabasePageActions(props: {
   async function selectFile(file: File | undefined) {
     if (!file || reading()) return;
     setReading(true);
-    const text =
+    const read =
       file.size > MAX_CSV_BYTES
-        ? undefined
-        : await ResultAsync.fromPromise(
+        ? errAsync<string, CsvImportFailure>({ kind: 'too-large' })
+        : ResultAsync.fromPromise(
             file.text(),
-            () => 'unreadable' as const
+            (): CsvImportFailure => ({ kind: 'unreadable' })
           );
+    const parsed = await read.andThen(parseDatabaseCsv);
     setReading(false);
     if (fileInput) fileInput.value = '';
-    if (text?.isErr()) {
-      toast.failure('Could not read this file.');
-      return;
-    }
-    const parsed = text
-      ? parseDatabaseCsv(text.value)
-      : err<DatabaseCsv, DatabaseCsvFailure>({ kind: 'too-large' });
     parsed.match(
       (data) => setDraft({ data, name: importedTableName(file.name) }),
-      (failure) => toast.failure(databaseCsvMessage(failure))
+      (failure) =>
+        toast.failure(
+          failure.kind === 'unreadable'
+            ? 'Could not read this file.'
+            : databaseCsvMessage(failure)
+        )
     );
   }
   function importedTableName(fileName: string) {
