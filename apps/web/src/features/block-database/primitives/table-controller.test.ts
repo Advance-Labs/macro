@@ -8,7 +8,7 @@ import {
   type Result,
   ResultAsync,
 } from 'neverthrow';
-import { createRoot, createSignal } from 'solid-js';
+import { createEffect, createRoot, createSignal } from 'solid-js';
 import { describe, expect, it, vi } from 'vitest';
 import type {
   DatabaseRowsSnapshot,
@@ -106,7 +106,7 @@ describe('table controller', () => {
     vi.mocked(source.write).mockImplementationOnce(
       () => new ResultAsync(first.promise)
     );
-    const a = controller.save(move, 'Status');
+    const a = controller.save(move, { label: 'Status' });
     const b = controller.save(
       {
         kind: 'cell',
@@ -114,7 +114,7 @@ describe('table controller', () => {
         columnId: 'title',
         value: 'Ship launch',
       },
-      'Title'
+      { label: 'Title' }
     );
     await vi.waitFor(() => expect(source.write).toHaveBeenCalledTimes(1));
     expect(controller.rows()[0].cells).toEqual({
@@ -134,8 +134,8 @@ describe('table controller', () => {
     const { controller, source, dispose } = setup();
     vi.mocked(source.write).mockImplementation(() => errAsync(offline));
     await Promise.all([
-      controller.save(move, 'Status'),
-      controller.save({ kind: 'delete', rowId: 'record' }, 'Delete'),
+      controller.save(move, { label: 'Status' }),
+      controller.save({ kind: 'delete', rowId: 'record' }, { label: 'Delete' }),
     ]);
     expect(controller.failure()).toMatchObject({
       label: 'Status',
@@ -208,16 +208,12 @@ describe('table controller', () => {
       );
     await controller.save(
       { kind: 'create', values: { title: 'First draft' } },
-      'new record',
-      undefined,
-      'draft'
+      { label: 'new record', createIntentId: 'draft' }
     );
     expect(controller.failure()).toBeDefined();
     await controller.save(
       { kind: 'create', values: { title: 'Final draft' } },
-      'new record',
-      undefined,
-      'draft'
+      { label: 'new record', createIntentId: 'draft' }
     );
     expect(controller.failure()).toBeUndefined();
     await controller.retry();
@@ -238,17 +234,13 @@ describe('table controller', () => {
       );
     await controller.save(
       { kind: 'create', values: { title: 'Draft' } },
-      'new record',
-      undefined,
-      'draft'
+      { label: 'new record', createIntentId: 'draft' }
     );
     await controller.retry();
     await expect(
       controller.save(
         { kind: 'create', values: { title: 'Draft' } },
-        'new record',
-        undefined,
-        'draft'
+        { label: 'new record', createIntentId: 'draft' }
       )
     ).resolves.toEqual(ok({ insertedRowIds: ['created'], version: 2 }));
     expect(source.write).toHaveBeenCalledTimes(2);
@@ -265,15 +257,11 @@ describe('table controller', () => {
     );
     const a = controller.save(
       { kind: 'create', values: { title: 'Draft' } },
-      'new record',
-      undefined,
-      'draft'
+      { label: 'new record', createIntentId: 'draft' }
     );
     const b = controller.save(
       { kind: 'create', values: { title: 'Draft' } },
-      'new record',
-      undefined,
-      'draft'
+      { label: 'new record', createIntentId: 'draft' }
     );
     await vi.waitFor(() => expect(source.write).toHaveBeenCalledTimes(1));
     first.resolve(ok({ insertedRowIds: ['created'], version: 2 }));
@@ -327,7 +315,7 @@ describe('table controller', () => {
 
   it('creates a new option with the write that first selects it', async () => {
     const { controller, source, dispose } = setup();
-    await controller.save(move, 'Status', 'Done');
+    await controller.save(move, { label: 'Status', option: 'Done' });
     expect(source.addOption).not.toHaveBeenCalled();
     expect(source.write).toHaveBeenCalledExactlyOnceWith(move, 1, true);
     dispose();
@@ -355,5 +343,42 @@ describe('table controller', () => {
     );
     expect(source.write).toHaveBeenCalledTimes(2);
     expect(vi.mocked(source.write).mock.calls[1][1]).toBe(2);
+  });
+
+  it('tells a reader when a new row’s outcome becomes unknown', async () => {
+    const { controller, source, dispose } = setup();
+    vi.mocked(source.write).mockImplementation(() =>
+      errAsync({ kind: 'outcome-unknown' })
+    );
+    const seen: boolean[] = [];
+    createRoot(() =>
+      createEffect(() => seen.push(controller.createUncertain('draft')))
+    );
+
+    await controller.save(
+      { kind: 'create', values: { title: 'Draft' } },
+      { label: 'new record', createIntentId: 'draft' }
+    );
+
+    expect(seen).toEqual([false, true]);
+    dispose();
+  });
+
+  it('lets a later saved value of a cell retire that cell’s failed one', async () => {
+    const { controller, source, dispose } = setup();
+    vi.mocked(source.write).mockImplementationOnce(() => errAsync(offline));
+    await controller.save(
+      { kind: 'cell', rowId: 'record', columnId: 'status', value: 'Doing' },
+      { label: 'Status' }
+    );
+    expect(controller.failure()?.label).toBe('Status');
+
+    await controller.save(
+      { kind: 'cell', rowId: 'record', columnId: 'status', value: 'Done' },
+      { label: 'Status' }
+    );
+
+    expect(controller.failure()).toBeUndefined();
+    dispose();
   });
 });

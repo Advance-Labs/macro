@@ -9,6 +9,11 @@ export type KeyedSerializer = {
 
 export function createKeyedSerializer(): KeyedSerializer {
   const tails = new Map<string, Promise<void>>();
+  /** Drop the key once its last queued task settles with nothing after it. */
+  async function forgetWhenIdle(key: string, settled: Promise<void>) {
+    await settled;
+    if (tails.get(key) === settled) tails.delete(key);
+  }
   return {
     run<Value>(key: string, task: () => Promise<Value>): Promise<Value> {
       const previous = tails.get(key);
@@ -22,9 +27,9 @@ export function createKeyedSerializer(): KeyedSerializer {
         } catch {
           // The caller awaits `result` and sees its rejection.
         }
-        if (tails.get(key) === settled) tails.delete(key);
       })();
       tails.set(key, settled);
+      void forgetWhenIdle(key, settled);
       return result;
     },
   };

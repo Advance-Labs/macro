@@ -1,11 +1,4 @@
-import {
-  err,
-  errAsync,
-  ok,
-  okAsync,
-  type Result,
-  ResultAsync,
-} from 'neverthrow';
+import { err, errAsync, okAsync, type Result, ResultAsync } from 'neverthrow';
 import { createRoot, createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
@@ -132,9 +125,7 @@ describe('editable blank row', () => {
     );
     await controller.save(
       { kind: 'create', values: { name: 'Saved once' } },
-      'new record',
-      undefined,
-      id
+      { label: 'new record', createIntentId: id }
     );
     expect(source.write).toHaveBeenCalledOnce();
     expect(database().rows).toHaveLength(1);
@@ -180,7 +171,12 @@ describe('editable blank row', () => {
       await controller.save({ kind: 'create', values: { name: 'Too late' } })
     ).toEqual(err({ kind: 'unmounted' }));
     expect(await controller.addGroup('status', 'Too late')).toEqual(
-      ok(undefined)
+      err([
+        {
+          code: 'UNKNOWN_ERROR',
+          message: 'The table was closed before the group was added.',
+        },
+      ])
     );
     expect(source.addOption).not.toHaveBeenCalled();
 
@@ -456,8 +452,9 @@ describe('editable blank row', () => {
     expect(await drafts.write(id, 'status', 'In review', 'In review')).toBe(
       false
     );
+    expect(drafts.error()?.failure).toEqual(offline);
     expect(drafts.error()?.error).toBe(
-      'Could not save this row. Your entries are kept here.'
+      'Your change could not be sent. Check your connection.'
     );
     expect(await drafts.retry(id)).toBe(true);
     expect(source.addOption).not.toHaveBeenCalled();

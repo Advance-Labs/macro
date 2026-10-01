@@ -1,12 +1,12 @@
 import type { ResultError } from '@core/util/result';
 import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
-import { Mutex } from 'async-mutex';
 import { err, ok, type Result } from 'neverthrow';
 import { batch, createMemo, createSignal, onCleanup } from 'solid-js';
 import type {
   DatabaseRowsSource,
   DatabaseWriteResult,
 } from '../context/table-source';
+import { createKeyedSerializer } from '../core/keyed-serializer';
 import {
   type DatabaseRow,
   type DatabaseRowMutation,
@@ -28,27 +28,54 @@ export type FailedWrite = {
 };
 
 /** A save that did not land: the write failed, or the table was closed. */
-type DatabaseSaveFailure = DatabaseWriteFailure | { kind: 'unmounted' };
+export type DatabaseSaveFailure = DatabaseWriteFailure | { kind: 'unmounted' };
 
 type DatabaseSave = Result<DatabaseWriteResult, DatabaseSaveFailure>;
+
+/** How a save is told apart and described. */
+export type DatabaseSaveRequest = {
+  /** What the failure banner calls the edit; "change" by default. */
+  label?: string;
+  /** A label the write may create as a new option, kept for a retry. */
+  option?: string;
+  /** Ties repeated attempts at one new row together, so it is created once. */
+  createIntentId?: string;
+};
 
 export type AcceptedDraftWrites = {
   save: (
     mutation: DatabaseRowMutation,
-    label?: string,
-    option?: string,
-    createIntentId?: string
+    request?: DatabaseSaveRequest
   ) => Promise<DatabaseSave>;
 };
 
 const UNMOUNTED = { kind: 'unmounted' } as const;
+
+const TABLE_WRITES = 'table';
+
+const GROUP_UNMOUNTED: ResultError<DatabaseSchemaErrorCode> = {
+  code: 'UNKNOWN_ERROR',
+  message: 'The table was closed before the group was added.',
+};
+
+/** The same edit: one object, or a later value for the same cell. */
+function sameEdit(left: DatabaseRowMutation, right: DatabaseRowMutation) {
+  return (
+    left === right ||
+    (left.kind === 'cell' &&
+      right.kind === 'cell' &&
+      left.rowId === right.rowId &&
+      left.columnId === right.columnId)
+  );
+}
 
 /** One writer per mounted table. A queued edit always uses the latest completed read/write. */
 export function createTableController(
   source: DatabaseRowsSource,
   onSaved?: (mutation: DatabaseRowMutation, result: DatabaseWriteResult) => void
 ) {
-  const mutex = new Mutex();
+  // Row writes and schema changes share one queue: both advance the table version.
+  const writes = createKeyedSerializer();
   const [completedCreates, setCompletedCreates] = createSignal(
     new Map<string, DatabaseWriteResult>()
   );
@@ -64,9 +91,13 @@ export function createTableController(
   const [refreshWarning, setRefreshWarning] = createSignal(false);
   const [schemaPending, setSchemaPending] = createSignal(0);
   let sequence = 0;
+  // A new column's type settles against the newest version this writer has
+  // seen, read or written; row ops themselves carry no version.
   let lastWrittenVersion: number | undefined;
   let disposed = false;
-  const uncertainCreates = new Map<string, FailedWrite>();
+  const [uncertainCreates, setUncertainCreates] = createSignal(
+    new Map<string, FailedWrite>()
+  );
   const uncertainMutations = new WeakMap<DatabaseRowMutation, FailedWrite>();
   onCleanup(() => {
     disposed = true;
@@ -74,9 +105,7 @@ export function createTableController(
 
   async function save(
     mutation: DatabaseRowMutation,
-    label = 'change',
-    option?: string,
-    createIntentId?: string
+    { label = 'change', option, createIntentId }: DatabaseSaveRequest = {}
   ): Promise<DatabaseSave> {
     const completed = createIntentId && completedCreates().get(createIntentId);
     if (completed) return ok(completed);
@@ -85,92 +114,99 @@ export function createTableController(
     let result: DatabaseSave;
     let didWrite = false;
     try {
-      result = await mutex.runExclusive(async (): Promise<DatabaseSave> => {
-        // A new table version cannot prove whether this INSERT committed.
-        // Keep the same draft blocked even after refresh or banner dismissal.
-        const uncertain =
-          (createIntentId && uncertainCreates.get(createIntentId)) ||
-          uncertainMutations.get(mutation);
-        if (uncertain) {
-          setFailures((failed) =>
-            failed.includes(uncertain) ? failed : [...failed, uncertain]
-          );
-          return err(uncertain.failure);
-        }
-        // Draft submit and the error-banner Retry can be queued together.
-        const completed =
-          createIntentId && completedCreates().get(createIntentId);
-        if (completed) return ok(completed);
-        const readVersion = source.snapshot()?.version;
-        const version =
-          readVersion === undefined
-            ? lastWrittenVersion
-            : lastWrittenVersion === undefined
-              ? readVersion
-              : Math.max(readVersion, lastWrittenVersion);
-        // A new option is created by the write that first uses it.
-        const written = await source.write(
-          mutation,
-          version,
-          option !== undefined
-        );
-        if (written.isErr()) {
-          const failure = written.error;
-          const outcomeUnknown = failure.kind === 'outcome-unknown';
-          if (outcomeUnknown && (await source.refresh()).isErr())
-            setRefreshWarning(true);
-          const failed: FailedWrite = {
-            mutation,
-            label,
-            option,
-            createIntentId,
-            failure,
-          };
-          if (outcomeUnknown) {
-            uncertainMutations.set(mutation, failed);
-            if (createIntentId) uncertainCreates.set(createIntentId, failed);
-          }
-          setFailures((failures) => [
-            ...failures.filter(
-              (entry) =>
-                entry.mutation !== mutation &&
-                (createIntentId === undefined ||
-                  entry.createIntentId !== createIntentId)
-            ),
-            failed,
-          ]);
-          return err(failure);
-        }
-        didWrite = true;
-        const saved = written.value;
-        batch(() => {
-          if (createIntentId)
-            setCompletedCreates((creates) =>
-              new Map(creates).set(createIntentId, saved)
+      result = await writes.run(
+        TABLE_WRITES,
+        async (): Promise<DatabaseSave> => {
+          // A new table version cannot prove whether this INSERT committed.
+          // Keep the same draft blocked even after refresh or banner dismissal.
+          const uncertain =
+            (createIntentId && uncertainCreates().get(createIntentId)) ||
+            uncertainMutations.get(mutation);
+          if (uncertain) {
+            setFailures((failed) =>
+              failed.includes(uncertain) ? failed : [...failed, uncertain]
             );
-          lastWrittenVersion = saved.version ?? lastWrittenVersion;
-          // A later successful edit must not hide an earlier rejected edit.
-          setFailures((failed) =>
-            failed.filter(
-              (entry) =>
-                entry.mutation !== mutation &&
-                (createIntentId === undefined ||
-                  entry.createIntentId !== createIntentId)
-            )
+            return err(uncertain.failure);
+          }
+          // Draft submit and the error-banner Retry can be queued together.
+          const completed =
+            createIntentId && completedCreates().get(createIntentId);
+          if (completed) return ok(completed);
+          const readVersion = source.snapshot()?.version;
+          const inferenceBaseVersion =
+            readVersion === undefined
+              ? lastWrittenVersion
+              : lastWrittenVersion === undefined
+                ? readVersion
+                : Math.max(readVersion, lastWrittenVersion);
+          // A new option is created by the write that first uses it.
+          const written = await source.write(
+            mutation,
+            inferenceBaseVersion,
+            option !== undefined
           );
-          setCommitted((writes) => [
-            ...writes,
-            {
+          if (written.isErr()) {
+            const failure = written.error;
+            const outcomeUnknown = failure.kind === 'outcome-unknown';
+            if (outcomeUnknown && (await source.refresh()).isErr())
+              setRefreshWarning(true);
+            const failed: FailedWrite = {
               mutation,
-              version: saved.version,
-              insertedRowIds: saved.insertedRowIds,
-            },
-          ]);
-        });
-        // A failed refresh cannot turn a committed write into a failed edit.
-        await refresh();
-        return ok(saved);
-      });
+              label,
+              option,
+              createIntentId,
+              failure,
+            };
+            if (outcomeUnknown) {
+              uncertainMutations.set(mutation, failed);
+              if (createIntentId)
+                setUncertainCreates((creates) =>
+                  new Map(creates).set(createIntentId, failed)
+                );
+            }
+            setFailures((failures) => [
+              ...failures.filter(
+                (entry) =>
+                  !sameEdit(entry.mutation, mutation) &&
+                  (createIntentId === undefined ||
+                    entry.createIntentId !== createIntentId)
+              ),
+              failed,
+            ]);
+            return err(failure);
+          }
+          didWrite = true;
+          const saved = written.value;
+          batch(() => {
+            if (createIntentId)
+              setCompletedCreates((creates) =>
+                new Map(creates).set(createIntentId, saved)
+              );
+            lastWrittenVersion = saved.version ?? lastWrittenVersion;
+            // A later successful edit must not hide an earlier rejected edit
+            // of another cell.
+            setFailures((failed) =>
+              failed.filter(
+                (entry) =>
+                  !sameEdit(entry.mutation, mutation) &&
+                  (createIntentId === undefined ||
+                    entry.createIntentId !== createIntentId)
+              )
+            );
+            setCommitted((writes) => [
+              ...writes,
+              {
+                mutation,
+                version: saved.version,
+                insertedRowIds: saved.insertedRowIds,
+              },
+            ]);
+          });
+          // A failed refresh cannot turn a committed write into a failed edit.
+          await refresh();
+          return ok(saved);
+        }
+      );
     } finally {
       setPending((writes) => writes.filter((write) => write.id !== id));
     }
@@ -187,12 +223,11 @@ export function createTableController(
       await refresh();
       return;
     }
-    await save(
-      failed.mutation,
-      failed.label,
-      failed.option,
-      failed.createIntentId
-    );
+    await save(failed.mutation, {
+      label: failed.label,
+      option: failed.option,
+      createIntentId: failed.createIntentId,
+    });
   }
 
   function pruneCommitted() {
@@ -220,7 +255,7 @@ export function createTableController(
   ): Promise<Result<void, ResultError<DatabaseSchemaErrorCode>[]>> {
     setSchemaPending((count) => count + 1);
     try {
-      return await mutex.runExclusive(async () => {
+      return await writes.run(TABLE_WRITES, async () => {
         const added = await source.addOption(columnId, label);
         // The option is saved even if its subsequent rows refresh fails.
         if (added.isOk()) await refresh();
@@ -275,7 +310,7 @@ export function createTableController(
       pending().some((write) => write.createIntentId === intentId),
     createComplete: (intentId: string) => completedCreates().has(intentId),
     createResult: (intentId: string) => completedCreates().get(intentId),
-    createUncertain: (intentId: string) => uncertainCreates.has(intentId),
+    createUncertain: (intentId: string) => uncertainCreates().has(intentId),
     rowPending: (rowId: string) =>
       pending().some(
         (write) =>
@@ -292,8 +327,10 @@ export function createTableController(
     ) => (disposed ? Promise.resolve(false) : drain({ save })),
     retry,
     refresh,
-    addGroup: (...request: Parameters<typeof addGroup>) =>
-      disposed ? Promise.resolve(ok(undefined)) : addGroup(...request),
+    addGroup: (
+      ...request: Parameters<typeof addGroup>
+    ): ReturnType<typeof addGroup> =>
+      disposed ? Promise.resolve(err([GROUP_UNMOUNTED])) : addGroup(...request),
     dismissFailure: () => setFailures((failed) => failed.slice(1)),
   };
 }
