@@ -353,6 +353,26 @@ describe('table controller', () => {
     dispose();
   });
 
+  it('reads the source once for each change, however many views of it are shown', () => {
+    const { controller, source, setSnapshot, dispose } = setup();
+    const read = vi.spyOn(source, 'snapshot');
+    controller.rows();
+    controller.knownRows();
+    read.mockClear();
+
+    setSnapshot({
+      version: 2,
+      rows: [{ rowId: 'record', cells: { status: 'Done', title: 'Plan launch' } }],
+    });
+    expect(controller.rows()).toEqual([
+      { rowId: 'record', cells: { status: 'Done', title: 'Plan launch' } },
+    ]);
+    expect(controller.knownRows()).toEqual(controller.rows());
+    expect(controller.snapshot()?.version).toBe(2);
+    expect(read).toHaveBeenCalledTimes(1);
+    dispose();
+  });
+
   it('creates a new option with the write that first selects it', async () => {
     const { controller, source, dispose } = setup();
     await controller.save(move, { label: 'Status', option: 'Done' });

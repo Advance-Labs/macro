@@ -267,8 +267,11 @@ export function createTableController(
     }
   }
 
+  // What the grid shows reads the source once per change; writes read it
+  // directly, as they may finish after this owner is gone.
+  const snapshot = createMemo(() => source.snapshot());
   const unreadWrites = createMemo(() => {
-    const version = source.snapshot()?.version;
+    const version = snapshot()?.version;
     return committed().filter(
       (write) =>
         write.version === undefined ||
@@ -284,7 +287,7 @@ export function createTableController(
   // A row that reads as before stays the object the grid shows, so a read or
   // a write redraws only the rows it changed.
   const rows = createMemo<DatabaseRow[]>((shown) => {
-    const read = source.snapshot()?.rows ?? [];
+    const read = snapshot()?.rows ?? [];
     // Acknowledged inserts remain openable when only the follow-up read failed.
     // Whether they match the view is unknown until then, so they stay on screen.
     const created: DatabaseRow[] = unreadWrites().flatMap((write) => {
@@ -301,12 +304,14 @@ export function createTableController(
   }, []);
 
   return {
+    /** The source's last read, as the grid shows it. */
+    snapshot,
     /** The rows the view's statement returned, with local writes applied until they are read back. */
     rows,
     /** The view's rows, then the rows it retains by id that it does not show. */
     knownRows: createMemo<DatabaseRow[]>((known) => {
       const shown = rows();
-      const retained = (source.snapshot()?.retained ?? []).filter(
+      const retained = (snapshot()?.retained ?? []).filter(
         (row) => !shown.some((known) => known.rowId === row.rowId)
       );
       return keepUnchangedRows(known, [

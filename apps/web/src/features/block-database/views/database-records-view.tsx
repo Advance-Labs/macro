@@ -377,7 +377,7 @@ export function DatabaseRecordsView(props: {
         <Show
           when={
             controller.refreshWarning() ||
-            (props.source.error() && props.source.snapshot())
+            (props.source.error() && controller.snapshot())
           }
         >
           <RefreshNotice onRefresh={() => void controller.refresh()} />
@@ -431,7 +431,7 @@ export function DatabaseRecordsView(props: {
           <Match when={props.source.loading()}>
             <TableSkeleton />
           </Match>
-          <Match when={!props.source.snapshot()}>
+          <Match when={!controller.snapshot()}>
             <DatabaseLoadFailure
               title="This table could not be loaded"
               message={loadFailureMessage()}
