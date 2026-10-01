@@ -114,6 +114,11 @@ const RoutePricing = lazy(() =>
     default: module.RoutePricing,
   }))
 );
+const RouteTour = lazy(() =>
+  import('../../features/marketing/views/SalesPage').then((module) => ({
+    default: module.RouteTour,
+  }))
+);
 const RoutePartners = lazy(() =>
   import('../routes/RoutePartners').then((module) => ({
     default: module.RoutePartners,
@@ -267,6 +272,8 @@ export const App: Component<{
       <Route path="/agents" component={RouteAgents} />
       <Route path="/github" component={RouteGithub} />
       <Route path="/pricing" component={RoutePricing} />
+      {/* Paid-social landing page: noindex and kept out of the nav. */}
+      <Route path="/tour" component={RouteTour} />
       {/* Partner program: the landing page and its full program terms. */}
       <Route path="/partners" component={RoutePartners} />
       <Route path="/partners/terms" component={RoutePartnerTerms} />

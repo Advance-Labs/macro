@@ -166,6 +166,21 @@ FAQ answers and the collapsed comparison are rendered in the initial HTML.
 The comparison uses a native `details` disclosure for both people and crawlers.
 Retain FAQ class markers so prerendering emits matching FAQPage structured data.
 
+## Paid-social landing page
+
+`/tour` (`features/marketing/views/SalesPage.tsx`) is the Instagram ad landing
+page. It is prerendered, `noindex`, out of the sitemap, and not linked from the
+navigation. It has four parts, top to bottom: the homepage hero markup
+(`WelcomeStep` with `ContextScene`), the expanded `FeatureConstellation`, a
+savings calculator, and an inline cal.com booker for the Macro demo call.
+
+`core/sales-savings.ts` reduces the pricing calculator to one plan tier for all
+tools and reads prices from `core/savings-calculator.ts`; update prices there,
+not on the page. "Book a demo" buttons scroll to the booker, which loads
+`embed.js` only as the visitor approaches it and appends Meta attribution to
+the booking. Verify at phone width: no horizontal scroll, calculator steppers
+and toggles, and that the booker loads.
+
 ## Blog presentation
 
 `/posts` lists every article as one icon-and-title row. There are no category or
