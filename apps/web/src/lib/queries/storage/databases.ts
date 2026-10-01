@@ -3,6 +3,7 @@ import { analytics } from '@app/lib/analytics';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { enableDatabases } from '@core/constant/featureFlags';
 import type { DatabaseOp } from '@core/database-sql/generated/types';
+import { traceDatabaseOps } from '@core/database-sql/trace';
 import { catchToResult, type ResultError, throwOnErr } from '@core/util/result';
 import { storageServiceClient } from '@service-storage/client';
 import type {
@@ -111,7 +112,7 @@ export function applyDatabaseOps(
   databaseId: string,
   ops: DatabaseOp[]
 ): ResultAsync<OpResult[], DatabaseOpsError> {
-  return (
+  return traceDatabaseOps(databaseId, ops, () =>
     storageServiceClient.databases
       .applyOps({ id: databaseId, request: { ops } })
       .map((response) => response.results)
