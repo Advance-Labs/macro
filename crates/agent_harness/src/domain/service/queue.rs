@@ -372,7 +372,21 @@ where
             }
             HarnessCommand::RemoveQueued { action_id, .. } => {
                 queue_result(self.queues.remove(session_id, action_id), session_id)?;
-                self.persist_or_rollback(session_id).await?;
+                let remaining = self
+                    .queues
+                    .snapshot(session_id)
+                    .iter()
+                    .map(QueuedEntry::to_stored)
+                    .collect::<anyhow::Result<Vec<_>>>()
+                    .map_err(AgentSessionError::Unknown)?;
+                if let Err(error) = self
+                    .sessions
+                    .cancel_queued_action(session_id, action_id, &remaining)
+                    .await
+                {
+                    self.reload_queue(session_id).await?;
+                    return Err(error.into());
+                }
                 self.publish_queue(session_id).await;
                 Ok(CommandOutcome::Completed)
             }
@@ -582,12 +596,27 @@ where
     ) -> Result<CommandOutcome> {
         let action_id = command.id;
         if self.queues.contains(session_id, action_id) {
+            if !self.busy.is_pending(session_id) {
+                self.busy.admit(session_id);
+                if let Err(error) = self.dispatch_next(session_id).await {
+                    self.busy.clear(session_id);
+                    return Err(error);
+                }
+                self.publish_queue(session_id).await;
+            }
             return Ok(CommandOutcome::Queued);
         }
         if self
             .busy
             .turn(session_id)
             .is_some_and(|turn| turn.action_id == action_id)
+        {
+            return Ok(CommandOutcome::Completed);
+        }
+        if self
+            .sessions
+            .action_completed(session_id, action_id)
+            .await?
         {
             return Ok(CommandOutcome::Completed);
         }

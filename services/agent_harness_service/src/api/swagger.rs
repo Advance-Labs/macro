@@ -32,6 +32,10 @@ struct SecurityAddon;
 
 impl Modify for SecurityAddon {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        openapi.merge(
+            serde_json::from_value(agent_review::inbound::axum_router::openapi())
+                .expect("compatible review OpenAPI"),
+        );
         if let Some(components) = openapi.components.as_mut() {
             components.add_security_scheme(
                 "bearerAuth",

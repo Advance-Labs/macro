@@ -165,7 +165,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
- "utoipa",
+ "utoipa 5.5.0",
  "workspace-hack",
 ]
 
@@ -245,7 +245,7 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -311,7 +311,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "wasm-bindgen",
 ]
 
@@ -378,7 +378,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "url",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -393,6 +393,8 @@ dependencies = [
  "agent_fold",
  "agent_harness",
  "agent_inmem",
+ "agent_review",
+ "agent_review_runtime",
  "agent_runtime_protocol",
  "agent_session",
  "agent_trigger",
@@ -400,7 +402,9 @@ dependencies = [
  "ai_toolset",
  "ai_usage",
  "anyhow",
+ "async-trait",
  "aws-sdk-kms",
+ "aws-sdk-s3",
  "aws-sdk-secretsmanager",
  "aws-sdk-sqs",
  "axum",
@@ -417,6 +421,7 @@ dependencies = [
  "cursor_api_key",
  "cursor_cloud_agents",
  "database_env_vars",
+ "diffd-core",
  "doppler-config",
  "entity_access",
  "futures",
@@ -446,6 +451,7 @@ dependencies = [
  "pipedream_mcp",
  "rdkafka",
  "redis",
+ "reqwest 0.13.4",
  "rmcp",
  "rootcause",
  "secretsmanager_client",
@@ -460,8 +466,9 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "url",
- "utoipa",
+ "utoipa 5.5.0",
  "utoipa-swagger-ui",
+ "uuid",
  "workspace-hack",
 ]
 
@@ -554,6 +561,53 @@ dependencies = [
 ]
 
 [[package]]
+name = "agent_review"
+version = "0.1.0"
+dependencies = [
+ "agent_runtime_protocol",
+ "agent_session",
+ "ai_toolset",
+ "async-trait",
+ "aws-sdk-s3",
+ "axum",
+ "chrono",
+ "diffd-core",
+ "entity_access",
+ "futures",
+ "macro_authorization",
+ "macro_db_migrator",
+ "macro_user_id",
+ "rootcause",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "url",
+ "utoipa 6.0.0",
+ "uuid",
+]
+
+[[package]]
+name = "agent_review_runtime"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "diffd-core",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "similar",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "agent_runtime_protocol"
 version = "0.1.0"
 dependencies = [
@@ -571,7 +625,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite 0.28.0",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
 ]
 
 [[package]]
@@ -629,7 +683,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -747,7 +801,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "workspace-hack",
 ]
 
@@ -784,7 +838,7 @@ dependencies = [
  "tokio",
  "tower 0.5.3",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -912,7 +966,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -938,7 +992,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
- "utoipa",
+ "utoipa 5.5.0",
  "workspace-hack",
 ]
 
@@ -961,7 +1015,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "workspace-hack",
 ]
 
@@ -1890,7 +1944,7 @@ dependencies = [
  "url",
  "urlencoding",
  "user_quota",
- "utoipa",
+ "utoipa 5.5.0",
  "utoipa-swagger-ui",
  "uuid",
  "workspace-hack",
@@ -3084,7 +3138,7 @@ dependencies = [
  "serde",
  "sqlx",
  "thiserror 2.0.18",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
 ]
 
@@ -3133,7 +3187,7 @@ dependencies = [
  "tokio",
  "tower 0.5.3",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -3370,7 +3424,7 @@ dependencies = [
  "sha2 0.10.9",
  "thiserror 2.0.18",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "workspace-hack",
 ]
 
@@ -3405,7 +3459,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "urlencoding",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -3452,7 +3506,7 @@ dependencies = [
  "tower 0.5.3",
  "tower-http",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "utoipa-swagger-ui",
  "uuid",
  "workspace-hack",
@@ -3513,7 +3567,7 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "urlencoding",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -3729,7 +3783,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -3743,7 +3797,7 @@ dependencies = [
  "macro_user_id",
  "serde",
  "serde_json",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -3805,7 +3859,7 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "tracing-subscriber",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -3864,7 +3918,7 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "unicode-segmentation",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -3992,7 +4046,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
  "zeroize",
@@ -4097,6 +4151,7 @@ name = "coding_agent_worker"
 version = "0.1.0"
 dependencies = [
  "agent-client-protocol",
+ "agent_review_runtime",
  "agent_runtime_protocol",
  "agent_session",
  "agent_trigger",
@@ -4170,7 +4225,7 @@ dependencies = [
  "tokio",
  "tokio-retry",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -4220,7 +4275,7 @@ dependencies = [
  "sqlx",
  "strum 0.27.2",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -4403,7 +4458,7 @@ dependencies = [
  "tracing-opentelemetry",
  "tungstenite 0.28.0",
  "url",
- "utoipa",
+ "utoipa 5.5.0",
  "utoipa-swagger-ui",
  "uuid",
  "workspace-hack",
@@ -4431,7 +4486,7 @@ dependencies = [
  "model-entity",
  "serde",
  "serde_json",
- "utoipa",
+ "utoipa 5.5.0",
  "workspace-hack",
 ]
 
@@ -4531,7 +4586,7 @@ dependencies = [
  "tokio",
  "tower 0.5.3",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -4570,7 +4625,7 @@ dependencies = [
  "tokio",
  "tower 0.5.3",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "utoipa-swagger-ui",
  "workspace-hack",
 ]
@@ -4636,7 +4691,7 @@ dependencies = [
  "tower 0.5.3",
  "tower-http",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "utoipa-swagger-ui",
  "workspace-hack",
  "zip 2.4.2",
@@ -4810,7 +4865,7 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "unfurl",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -5638,7 +5693,7 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "tracing-subscriber",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "wiremock",
  "workspace-hack",
@@ -5649,6 +5704,42 @@ name = "diff"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56254986775e3233ffa9c4d7d3faaf6d36a2c09d30b20687e9f88bc8bafc16c8"
+
+[[package]]
+name = "diffd-core"
+version = "0.1.0"
+dependencies = [
+ "insta",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "similar",
+ "thiserror 2.0.18",
+ "tree-sitter",
+ "tree-sitter-bash",
+ "tree-sitter-c",
+ "tree-sitter-cpp",
+ "tree-sitter-css",
+ "tree-sitter-go",
+ "tree-sitter-highlight",
+ "tree-sitter-html",
+ "tree-sitter-java",
+ "tree-sitter-javascript",
+ "tree-sitter-json",
+ "tree-sitter-language",
+ "tree-sitter-lua",
+ "tree-sitter-md",
+ "tree-sitter-nix",
+ "tree-sitter-python",
+ "tree-sitter-ruby",
+ "tree-sitter-rust",
+ "tree-sitter-sequel",
+ "tree-sitter-tags",
+ "tree-sitter-toml-ng",
+ "tree-sitter-typescript",
+ "tree-sitter-yaml",
+ "utoipa 6.0.0",
+]
 
 [[package]]
 name = "diffus"
@@ -5838,7 +5929,7 @@ dependencies = [
  "tracing",
  "unfurl_service",
  "url",
- "utoipa",
+ "utoipa 5.5.0",
  "utoipa-swagger-ui",
  "uuid",
  "workspace-hack",
@@ -5990,7 +6081,7 @@ dependencies = [
  "unicode-segmentation",
  "urlencoding",
  "user_api_key",
- "utoipa",
+ "utoipa 5.5.0",
  "utoipa-swagger-ui",
  "uuid",
  "webhook",
@@ -6024,7 +6115,7 @@ dependencies = [
  "sqlx",
  "strum 0.27.2",
  "thiserror 2.0.18",
- "utoipa",
+ "utoipa 5.5.0",
 ]
 
 [[package]]
@@ -6168,7 +6259,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unicode-segmentation",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -6526,7 +6617,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -6759,7 +6850,7 @@ dependencies = [
  "unfurl",
  "url",
  "urlencoding",
- "utoipa",
+ "utoipa 5.5.0",
  "utoipa-swagger-ui",
  "uuid",
  "workspace-hack",
@@ -6931,7 +7022,7 @@ dependencies = [
  "tokio",
  "tower 0.5.3",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -7262,7 +7353,7 @@ dependencies = [
  "tokio",
  "tower 0.5.3",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -7406,7 +7497,7 @@ dependencies = [
  "tokio",
  "tower 0.5.3",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -7924,7 +8015,7 @@ dependencies = [
  "tracing",
  "url",
  "urlencoding",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -8304,7 +8395,7 @@ dependencies = [
  "tokio",
  "tower 0.5.3",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -8462,7 +8553,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "thiserror 2.0.18",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -8498,7 +8589,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -9413,7 +9504,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "url",
- "utoipa",
+ "utoipa 5.5.0",
  "utoipa-swagger-ui",
  "workspace-hack",
 ]
@@ -9455,7 +9546,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -9591,7 +9682,7 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "unicode-segmentation",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -9714,7 +9805,7 @@ dependencies = [
  "serde",
  "serde_json",
  "url",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -9803,7 +9894,7 @@ dependencies = [
  "serde_json",
  "strum 0.27.2",
  "thiserror 2.0.18",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
 ]
 
@@ -11084,7 +11175,7 @@ dependencies = [
  "sqlx",
  "thiserror 2.0.18",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
 ]
 
 [[package]]
@@ -11274,7 +11365,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "workspace-hack",
 ]
 
@@ -11470,7 +11561,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "workspace-hack",
 ]
 
@@ -11548,7 +11639,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -11754,7 +11845,7 @@ dependencies = [
  "strum 0.27.2",
  "thiserror 2.0.18",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -11768,7 +11859,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum 0.27.2",
- "utoipa",
+ "utoipa 5.5.0",
  "workspace-hack",
 ]
 
@@ -11777,7 +11868,7 @@ name = "model-error-response"
 version = "0.1.0"
 dependencies = [
  "serde",
- "utoipa",
+ "utoipa 5.5.0",
  "workspace-hack",
 ]
 
@@ -11789,7 +11880,7 @@ dependencies = [
  "serde_json",
  "strum 0.27.2",
  "thiserror 2.0.18",
- "utoipa",
+ "utoipa 5.5.0",
 ]
 
 [[package]]
@@ -11813,7 +11904,7 @@ dependencies = [
  "sqlx",
  "strum 0.27.2",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -11837,7 +11928,7 @@ version = "0.1.0"
 dependencies = [
  "macro_user_id",
  "serde",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -11856,7 +11947,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "strum 0.27.2",
- "utoipa",
+ "utoipa 5.5.0",
  "workspace-hack",
 ]
 
@@ -11866,7 +11957,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
- "utoipa",
+ "utoipa 5.5.0",
  "workspace-hack",
 ]
 
@@ -11887,7 +11978,7 @@ dependencies = [
  "sqlx",
  "strum 0.27.2",
  "thiserror 2.0.18",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -11951,7 +12042,7 @@ dependencies = [
  "sqlx",
  "strum 0.27.2",
  "thiserror 2.0.18",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -11969,7 +12060,7 @@ dependencies = [
  "sqlx",
  "thiserror 2.0.18",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -11989,7 +12080,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum 0.27.2",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -12012,7 +12103,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
- "utoipa",
+ "utoipa 5.5.0",
  "workspace-hack",
 ]
 
@@ -12039,7 +12130,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum 0.27.2",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -12053,7 +12144,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "strum 0.27.2",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -12341,7 +12432,7 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "url",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "wiremock",
  "workspace-hack",
@@ -12458,7 +12549,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "url",
- "utoipa",
+ "utoipa 5.5.0",
  "utoipa-swagger-ui",
  "uuid",
  "workspace-hack",
@@ -12473,7 +12564,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "utoipa",
+ "utoipa 5.5.0",
 ]
 
 [[package]]
@@ -12862,7 +12953,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -13721,7 +13812,7 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "url",
- "utoipa",
+ "utoipa 5.5.0",
  "workspace-hack",
 ]
 
@@ -14227,7 +14318,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unicode-segmentation",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -14277,7 +14368,7 @@ dependencies = [
  "tokio",
  "tower 0.5.3",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -14293,7 +14384,7 @@ dependencies = [
  "notification",
  "properties",
  "serde_json",
- "utoipa",
+ "utoipa 5.5.0",
  "workspace-hack",
 ]
 
@@ -14939,7 +15030,7 @@ dependencies = [
  "tracing",
  "url",
  "urlencoding",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -15013,7 +15104,7 @@ dependencies = [
  "tokio-util",
  "tower 0.5.3",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -15724,7 +15815,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -15809,7 +15900,7 @@ dependencies = [
  "tokio-util",
  "tower 0.5.3",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "utoipa-swagger-ui",
  "workspace-hack",
 ]
@@ -15994,7 +16085,7 @@ dependencies = [
  "tower 0.5.3",
  "tower-http",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "utoipa-swagger-ui",
  "uuid",
  "workspace-hack",
@@ -16049,7 +16140,7 @@ dependencies = [
  "tower 0.5.3",
  "tower-http",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -17065,7 +17156,7 @@ dependencies = [
  "tokio",
  "tower 0.5.3",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -17604,7 +17695,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-tree",
- "utoipa",
+ "utoipa 5.5.0",
  "utoipa-swagger-ui",
  "uuid",
  "workspace-hack",
@@ -17646,9 +17737,15 @@ dependencies = [
  "tokio",
  "tokio-test",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "workspace-hack",
 ]
+
+[[package]]
+name = "streaming-iterator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
 name = "string_cache"
@@ -17987,7 +18084,7 @@ dependencies = [
  "axum",
  "macro_authorization",
  "serde",
- "utoipa",
+ "utoipa 5.5.0",
  "workspace-hack",
 ]
 
@@ -18132,7 +18229,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -18181,7 +18278,7 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "url",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -18845,6 +18942,241 @@ dependencies = [
 ]
 
 [[package]]
+name = "tree-sitter"
+version = "0.25.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78f873475d258561b06f1c595d93308a7ed124d9977cb26b148c2084a4a3cc87"
+dependencies = [
+ "cc",
+ "regex",
+ "regex-syntax",
+ "serde_json",
+ "streaming-iterator",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-bash"
+version = "0.25.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e5ec769279cc91b561d3df0d8a5deb26b0ad40d183127f409494d6d8fc53062"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-c"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9b2eb57a55fed6b00812912e730b7a275cf4fe98bfd6a5d76263d4438371728"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-cpp"
+version = "0.23.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df2196ea9d47b4ab4a31b9297eaa5a5d19a0b121dceb9f118f6790ad0ab94743"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-css"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5cbc5e18f29a2c6d6435891f42569525cf95435a3e01c2f1947abcde178686f"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-go"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8560a4d2f835cc0d4d2c2e03cbd0dde2f6114b43bc491164238d333e28b16ea"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-highlight"
+version = "0.25.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adc5f880ad8d8f94e88cb81c3557024cf1a8b75e3b504c50481ed4f5a6006ff3"
+dependencies = [
+ "regex",
+ "streaming-iterator",
+ "thiserror 2.0.18",
+ "tree-sitter",
+]
+
+[[package]]
+name = "tree-sitter-html"
+version = "0.23.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "261b708e5d92061ede329babaaa427b819329a9d427a1d710abb0f67bbef63ee"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-java"
+version = "0.23.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0aa6cbcdc8c679b214e616fd3300da67da0e492e066df01bcf5a5921a71e90d6"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-javascript"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68204f2abc0627a90bdf06e605f5c470aa26fdcb2081ea553a04bdad756693f5"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-json"
+version = "0.24.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d727acca406c0020cffc6cf35516764f36c8e3dc4408e5ebe2cb35a947ec471"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-language"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca0d1bf6fdd806e43ae5198f82f527056d359def39e54e67a0f478ac09dac081"
+
+[[package]]
+name = "tree-sitter-lua"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8daaf5f4235188a58603c39760d5fa5d4b920d36a299c934adddae757f32a10c"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-md"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2efd398be546456c814598ee56c0f51769a77241511b4a58077815d120afa882"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-nix"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4952a9733f3a98f6683a0ccd1035d84ab7a52f7e84eeed58548d86765ad92de3"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-python"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6bf85fd39652e740bf60f46f4cda9492c3a9ad75880575bf14960f775cb74a1c"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-ruby"
+version = "0.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be0484ea4ef6bb9c575b4fdabde7e31340a8d2dbc7d52b321ac83da703249f95"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-rust"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "439e577dbe07423ec2582ac62c7531120dbfccfa6e5f92406f93dd271a120e45"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-sequel"
+version = "0.3.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d198ad3c319c02e43c21efa1ec796b837afcb96ffaef1a40c1978fbdcec7d17"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-tags"
+version = "0.25.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d0f6406e002baae5cc53e41a12c8ae582a8dc8237a1fd3a5f3edf9fa06be7d0"
+dependencies = [
+ "memchr",
+ "regex",
+ "streaming-iterator",
+ "thiserror 2.0.18",
+ "tree-sitter",
+]
+
+[[package]]
+name = "tree-sitter-toml-ng"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9adc2c898ae49730e857d75be403da3f92bb81d8e37a2f918a08dd10de5ebb1"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-typescript"
+version = "0.23.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c5f76ed8d947a75cc446d5fccd8b602ebf0cde64ccf2ffa434d873d7a575eff"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-yaml"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53c223db85f05e34794f065454843b0668ebc15d240ada63e2b5939f43ce7c97"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
 name = "tree_magic_mini"
 version = "3.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -19094,7 +19426,7 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
- "utoipa",
+ "utoipa 5.5.0",
  "workspace-hack",
 ]
 
@@ -19123,7 +19455,7 @@ dependencies = [
  "tracing",
  "unfurl",
  "url",
- "utoipa",
+ "utoipa 5.5.0",
  "utoipa-swagger-ui",
  "workspace-hack",
 ]
@@ -19342,7 +19674,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "workspace-hack",
 ]
@@ -19373,7 +19705,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
- "utoipa",
+ "utoipa 5.5.0",
  "workspace-hack",
 ]
 
@@ -19425,7 +19757,19 @@ dependencies = [
  "indexmap 2.14.0",
  "serde",
  "serde_json",
- "utoipa-gen",
+ "utoipa-gen 5.5.0",
+]
+
+[[package]]
+name = "utoipa"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8765fe27aeff71012a3f90fa474cf1df863a7d0dd81ed25de4e63fff2544994f"
+dependencies = [
+ "indexmap 2.14.0",
+ "serde",
+ "serde_json",
+ "utoipa-gen 6.0.1",
 ]
 
 [[package]]
@@ -19438,6 +19782,18 @@ dependencies = [
  "quote",
  "regex",
  "syn 2.0.117",
+ "uuid",
+]
+
+[[package]]
+name = "utoipa-gen"
+version = "6.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d935f1c83fdf8b88f09bbe050d0cea78ea4afee6d7b0317403228c1200b2c8ab"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
  "uuid",
 ]
 
@@ -19455,7 +19811,7 @@ dependencies = [
  "serde",
  "serde_json",
  "url",
- "utoipa",
+ "utoipa 5.5.0",
  "utoipa-swagger-ui-vendored",
  "zip 3.0.0",
 ]
@@ -19915,7 +20271,7 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "url",
- "utoipa",
+ "utoipa 5.5.0",
  "uuid",
  "webhook_signature",
  "workspace-hack",
