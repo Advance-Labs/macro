@@ -48,7 +48,7 @@ where
             .await
             .map_err(|error| SavedQueryError::Repo(rootcause::Report::new(error).into_dynamic()))?
             .ok_or(SavedQueryError::NotFound)?;
-        if saved.created_by == viewer.user_id.as_ref() {
+        if saved.created_by.as_deref() == Some(viewer.user_id.as_ref()) {
             return Ok(saved);
         }
         let Some(database_id) = saved.database_id else {

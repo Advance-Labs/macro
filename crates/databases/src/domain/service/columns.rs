@@ -221,9 +221,8 @@ where
         let views = views_without_tests_of(&table_views, replacement.column.id, written_at())?;
         let version = match self.repo.replace_column(table, &replacement, &views).await {
             Ok(Some(version)) => {
-                // The placement now names the new definition; the converted
-                // cells follow it, and the old definition's cells are left
-                // behind (no column reads them any more).
+                // The placement names the new definition, and the schema has
+                // dropped the old definition's cells; the converted ones follow.
                 for (row_id, value) in &replacement.values {
                     self.cells
                         .write(*row_id, &[(new_id, Some(value.clone()))])

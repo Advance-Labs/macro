@@ -72,18 +72,10 @@ where
             )));
         }
 
-        let row_ids = match self.repo.delete_table(table).await.map_err(repo_err)? {
-            TableDeletion::Deleted { row_ids } => row_ids,
+        match self.repo.delete_table(table).await.map_err(repo_err)? {
+            TableDeletion::Deleted => {}
             TableDeletion::NotFound => return Err(DatabaseError::NotFound),
             TableDeletion::LastTable => return Err(last_table()),
-        };
-        // The table is gone and nothing can reach these rows any more, so a
-        // cell left behind is unreachable rather than wrong; failing the
-        // request here would only invite a retry of a committed delete.
-        for row_id in row_ids {
-            if let Err(error) = self.cells.clear(row_id).await {
-                tracing::error!(error = ?error, %row_id, %table_id, "failed to clear a deleted table's row cells");
-            }
         }
         self.publish(
             receipt_attribution(&receipt),

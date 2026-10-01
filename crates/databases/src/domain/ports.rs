@@ -283,9 +283,6 @@ pub trait CellStore: Send + Sync + 'static {
         cells: &[(PropertyDefinitionId, Option<PropertyValue>)],
     ) -> impl Future<Output = Result<(), Self::Err>> + Send;
 
-    /// Remove every cell of a row.
-    fn clear(&self, row: RowId) -> impl Future<Output = Result<(), Self::Err>> + Send;
-
     /// Apply a request's writes in one transaction, row identities, cells
     /// and options together: each written table is locked and checked live,
     /// each updated or deleted row checked to belong to its table, each

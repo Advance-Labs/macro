@@ -1,18 +1,17 @@
--- Reverse the database owner scope. Database-owned definitions have no other
--- owner to fall back to, so they are discarded.
---
--- The DELETE below is not confined to `property_definitions`. Its
--- `ON DELETE CASCADE` foreign keys take these with it, irreversibly:
---   * `property_options` — every select/tag option of a discarded definition.
---   * `entity_properties` — every value any entity holds for one, which for a
---     database column means every cell recorded through the EAV surface.
---   * `database_columns` — the placements binding a discarded definition,
---     which empties the affected tables of all but their `row_id` (the
---     `database_rows.cells` JSONB is keyed by definition id and is left
---     behind, addressing nothing).
--- Reverting this migration therefore destroys Macro Databases column data;
--- it exists to unwind an unshipped migration, not to roll back production.
+-- Destroys every database, its rows and its cells. It unwinds an unshipped
+-- schema; it is not a production rollback. The DATABASE_ROW enum value stays
+-- (see 20261001064034_add_database_row_property_entity_type.down.sql).
 
+DROP TRIGGER IF EXISTS database_row_cell_membership ON entity_properties;
+DROP TRIGGER IF EXISTS database_row_cells_cleanup ON database_rows;
+DROP TRIGGER IF EXISTS database_column_cells_cleanup ON database_columns;
+DROP TRIGGER IF EXISTS database_column_rebind_cells_cleanup ON database_columns;
+DROP FUNCTION IF EXISTS check_database_row_cell();
+DROP FUNCTION IF EXISTS delete_database_row_cells();
+DROP FUNCTION IF EXISTS delete_database_column_cells();
+
+-- Every row cell, then the database-owned definitions with their options.
+DELETE FROM entity_properties WHERE entity_type = 'DATABASE_ROW';
 DELETE FROM property_definitions WHERE database_id IS NOT NULL;
 
 CREATE OR REPLACE FUNCTION check_property_name_not_system()
@@ -43,10 +42,17 @@ $$
 $$;
 
 DROP INDEX IF EXISTS idx_property_definitions_database_id;
-
 ALTER TABLE property_definitions DROP CONSTRAINT owned_by_database_or_team_or_user_or_system;
 ALTER TABLE property_definitions ADD CONSTRAINT owned_by_team_or_user_or_system CHECK (
     is_system::int + (team_id IS NOT NULL)::int + (user_id IS NOT NULL)::int = 1
 );
-
 ALTER TABLE property_definitions DROP COLUMN database_id;
+
+DROP TABLE database_starter_seeds;
+DROP TABLE database_queries;
+DROP TABLE database_view_positions;
+DROP TABLE database_views;
+DROP TABLE database_rows;
+DROP TABLE database_columns;
+DROP TABLE database_tables;
+DROP TABLE databases;

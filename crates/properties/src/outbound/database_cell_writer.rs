@@ -108,13 +108,4 @@ impl DatabaseCellWriter for PropertiesPgRepo {
         .await?;
         Ok(())
     }
-
-    async fn delete_entity_properties_in(
-        &self,
-        transaction: &mut Self::Transaction,
-        entity: &EntityReference,
-    ) -> Result<(), Self::Err> {
-        entity_property_queries::delete_entity_properties(&mut **transaction, entity).await?;
-        Ok(())
-    }
 }

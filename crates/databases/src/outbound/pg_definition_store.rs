@@ -4,7 +4,7 @@
 //! column are owned by the database (`database_id` set, `user_id`/`team_id`
 //! NULL, `is_system` false), which keeps them out of the shared user/team
 //! property namespace — see
-//! `crates/macro_db_client/migrations/20260929191815_add_database_property_owner.up.sql`.
+//! `crates/macro_db_client/migrations/20261001064036_add_databases.up.sql`.
 //!
 //! Mechanics only: policy (who may bind what) lives in the domain service.
 

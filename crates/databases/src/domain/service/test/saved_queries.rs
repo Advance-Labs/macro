@@ -45,7 +45,7 @@ async fn a_viewer_of_its_database_reads_a_saved_query() {
         .await
         .unwrap();
     assert_eq!(saved.database_id, Some(db));
-    assert_eq!(saved.created_by, OWNER);
+    assert_eq!(saved.created_by.as_deref(), Some(OWNER));
     assert_eq!(
         saved.definition,
         QueryDefinition::V1 {

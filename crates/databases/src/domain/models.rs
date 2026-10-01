@@ -189,7 +189,7 @@ pub struct ColumnReplacement {
 /// Table versions changed by a placement deletion or reorder.
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ColumnSchemaOutcome {
-    /// Includes both endpoint tables when deleting relationship edges.
+    /// Includes the related table when a relation column goes.
     #[schema(value_type = HashMap<String, TableVersion>)]
     pub table_versions: HashMap<TableId, TableVersion>,
 }
@@ -198,7 +198,7 @@ pub struct ColumnSchemaOutcome {
 #[derive(utoipa::ToSchema, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ColumnConfig {
-    /// A link column targeting another table; edges live in the junction.
+    /// A relation column: its cells reference rows of another table.
     Link {
         /// Target database.
         #[schema(value_type = Uuid)]
@@ -729,8 +729,9 @@ pub struct SavedQuery {
     /// database is deleted, or when none was given.
     #[schema(required = true, value_type = Option<Uuid>)]
     pub database_id: Option<DatabaseId>,
-    /// Who saved it.
-    pub created_by: String,
+    /// Who saved it; `null` once that user is deleted.
+    #[schema(required = true)]
+    pub created_by: Option<String>,
     /// When it was saved.
     pub created_at: DateTime<Utc>,
 }
@@ -738,12 +739,8 @@ pub struct SavedQuery {
 /// Result of removing a table, checked atomically against its database.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TableDeletion {
-    /// The table and its row identities are gone; these rows' cells are
-    /// the caller's to clear.
-    Deleted {
-        /// Every row the table held.
-        row_ids: Vec<RowId>,
-    },
+    /// The table, its columns, rows and cells are gone.
+    Deleted,
     /// The table, or its live database, was not there.
     NotFound,
     /// It is the database's only table.

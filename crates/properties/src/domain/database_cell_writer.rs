@@ -57,11 +57,4 @@ pub trait DatabaseCellWriter: Send + Sync + 'static {
         property_definition_id: Uuid,
         value: Option<PropertyValue>,
     ) -> impl Future<Output = Result<(), Self::Err>> + Send;
-
-    /// Remove every property of an entity.
-    fn delete_entity_properties_in(
-        &self,
-        transaction: &mut Self::Transaction,
-        entity: &EntityReference,
-    ) -> impl Future<Output = Result<(), Self::Err>> + Send;
 }

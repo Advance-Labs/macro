@@ -158,14 +158,6 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(err, skip(self))]
-    async fn clear(&self, row: RowId) -> Result<(), Self::Err> {
-        self.properties
-            .delete_entity_properties(&row_entity(row))
-            .await?;
-        Ok(())
-    }
-
     #[tracing::instrument(err, skip(self, writes), fields(writes = writes.writes.len()))]
     async fn apply_writes(&self, writes: &Writes) -> Result<WritesOutcome, Self::Err> {
         // Returning before the commit drops the transaction, which rolls
@@ -267,16 +259,13 @@ where
                 }
                 Write::DeleteRows { table_id, rows } => {
                     for row in rows {
+                        // The row's cells go with it, by the schema's trigger.
                         if !rows::delete_row(&mut *transaction, *table_id, *row).await? {
                             return Ok(WritesOutcome::MissingRow {
                                 write: index,
                                 row: *row,
                             });
                         }
-                        self.properties
-                            .delete_entity_properties_in(&mut transaction, &row_entity(*row))
-                            .await
-                            .map_err(cells_error)?;
                     }
                     inserted.push(Vec::new());
                 }

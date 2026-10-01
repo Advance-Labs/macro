@@ -358,7 +358,7 @@ impl DatabasesService for FakeDatabases {
             id: Uuid::from_u128(0x0e11),
             definition,
             database_id,
-            created_by: viewer.user_id.as_ref().to_string(),
+            created_by: Some(viewer.user_id.as_ref().to_string()),
             created_at: Utc::now(),
         })
     }

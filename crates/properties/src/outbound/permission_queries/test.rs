@@ -6,7 +6,8 @@ use models_properties::service::property_value::PropertyValue;
 const OWNER: &str = "macro|user1@test.com";
 const DESCRIPTION_DEFINITION: Uuid = Uuid::from_u128(0x8888_8888_8888_8888_8888_8888_8888_8888);
 
-/// A database with one table and one row; returns `(database_id, row_id)`.
+/// A database with one table, placing the description definition, and one
+/// row; returns `(database_id, row_id)`.
 async fn insert_row(pool: &Pool<Postgres>) -> anyhow::Result<(Uuid, Uuid)> {
     let database_id = Uuid::now_v7();
     let table_id = Uuid::now_v7();
@@ -22,6 +23,14 @@ async fn insert_row(pool: &Pool<Postgres>) -> anyhow::Result<(Uuid, Uuid)> {
         r#"INSERT INTO database_tables (id, database_id, name, position) VALUES ($1, $2, 't', 'a')"#,
         table_id,
         database_id,
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query!(
+        r#"INSERT INTO database_columns (id, table_id, property_definition_id, position) VALUES ($1, $2, $3, 'a')"#,
+        Uuid::now_v7(),
+        table_id,
+        DESCRIPTION_DEFINITION,
     )
     .execute(pool)
     .await?;

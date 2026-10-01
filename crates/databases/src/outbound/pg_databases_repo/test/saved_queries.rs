@@ -13,7 +13,7 @@ async fn a_saved_query_round_trips_and_outlives_its_database(pool: PgPool) {
         .unwrap();
     assert_eq!(scoped.database_id, Some(table.database_id));
     assert_eq!(scoped.definition, definition);
-    assert_eq!(scoped.created_by, USER);
+    assert_eq!(scoped.created_by.as_deref(), Some(USER));
     assert_eq!(
         repo.get_query(scoped.id).await.unwrap(),
         Some(scoped.clone())

@@ -31,13 +31,8 @@ impl PgDatabasesRepo {
         if tables.len() <= 1 {
             return Ok(TableDeletion::LastTable);
         }
-        let row_ids = sqlx::query_scalar!(
-            "DELETE FROM database_rows WHERE table_id = $1 RETURNING id",
-            table.id
-        )
-        .fetch_all(&mut *transaction)
-        .await?;
-        // Column placements go with the table through their foreign key.
+        // Columns, rows and views go with the table through their foreign
+        // keys, and the rows' cells with them by trigger.
         let deleted = sqlx::query!(
             "DELETE FROM database_tables WHERE id = $1 AND database_id = $2",
             table.id,
@@ -50,6 +45,6 @@ impl PgDatabasesRepo {
             return Ok(TableDeletion::NotFound);
         }
         transaction.commit().await?;
-        Ok(TableDeletion::Deleted { row_ids })
+        Ok(TableDeletion::Deleted)
     }
 }

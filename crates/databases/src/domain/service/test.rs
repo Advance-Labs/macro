@@ -322,14 +322,11 @@ impl DatabasesRepo for FakeRepo {
         }
         w.tables.retain(|t| t.id != table.id);
         w.columns.retain(|c| c.table_id != table.id);
-        let row_ids = w
-            .rows
-            .remove(&table.id)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|row| row.id)
-            .collect();
-        Ok(TableDeletion::Deleted { row_ids })
+        // The schema's cleanup triggers take the rows' cells with them.
+        for row in w.rows.remove(&table.id).unwrap_or_default() {
+            w.cells.remove(&row.id);
+        }
+        Ok(TableDeletion::Deleted)
     }
     async fn create_column(
         &self,
@@ -479,7 +476,17 @@ impl DatabasesRepo for FakeRepo {
         if !rewrite_views(&mut w, views) {
             return Ok(None);
         }
-        w.columns.remove(c);
+        let removed = w.columns.remove(c);
+        let rows: Vec<RowId> = w
+            .rows
+            .get(&table.id)
+            .map(|rows| rows.iter().map(|row| row.id).collect())
+            .unwrap_or_default();
+        for row in rows {
+            if let Some(cells) = w.cells.get_mut(&row) {
+                cells.remove(&removed.property_definition_id);
+            }
+        }
         w.tables[t].version.0 += 1;
         Ok(Some(ColumnSchemaOutcome {
             table_versions: HashMap::from([(table.id, w.tables[t].version)]),
@@ -556,7 +563,11 @@ impl DatabasesRepo for FakeRepo {
         };
         let before = rows.len();
         rows.retain(|row| row.id != row_id);
-        Ok(rows.len() < before)
+        let deleted = rows.len() < before;
+        if deleted {
+            w.cells.remove(&row_id);
+        }
+        Ok(deleted)
     }
     async fn row_table(&self, row_id: RowId) -> Result<Option<TableId>, FakeError> {
         Ok(self
@@ -667,7 +678,7 @@ impl DatabasesRepo for FakeRepo {
             id: Uuid::now_v7(),
             definition: definition.clone(),
             database_id,
-            created_by: created_by.to_string(),
+            created_by: Some(created_by.to_string()),
             created_at: Utc::now(),
         };
         self.0.lock().unwrap().queries.push(saved.clone());
@@ -728,10 +739,6 @@ impl CellStore for FakeCells {
                 }
             }
         }
-        Ok(())
-    }
-    async fn clear(&self, row: RowId) -> Result<(), FakeError> {
-        self.0.lock().unwrap().cells.remove(&row);
         Ok(())
     }
     async fn apply_writes(&self, writes: &Writes) -> Result<WritesOutcome, FakeError> {
