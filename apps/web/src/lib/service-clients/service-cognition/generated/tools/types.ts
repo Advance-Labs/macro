@@ -5834,9 +5834,10 @@ export interface QueryDatabaseResponse {
    */
   readVersions: ToolTableVersion[];
   /**
-   * Tables whose read hit the row cap. Any aggregate over one of these is
-   * computed on a partial table — say so rather than reporting the number
-   * as a total.
+   * Every table the query read, when a read hit the row cap: the cap is
+   * reported per statement, so any aggregate over these tables may be
+   * computed on a partial table — say so rather than reporting it as a
+   * total.
    */
   truncatedTables?: string[];
   /**
