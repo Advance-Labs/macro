@@ -29,7 +29,7 @@ inbound = [
 # dependency, so only the trait crate is pulled in here.
 entity_mutation = ["dep:entity_mutation", "ports"]
 # Liveness fan-out through the connection gateway.
-gateway = ["dep:connection_gateway_client", "outbound"]
+gateway = ["dep:anyhow", "dep:connection_gateway_client", "outbound"]
 # Driven adapters share the port contracts.
 outbound = ["ports"]
 ports = ["dep:entity_access", "dep:tokio", "dep:tracing"]

@@ -1,9 +1,5 @@
-//! Table-changed fan-out through the connection gateway.
-//!
-//! Every client with the database open tracks the `Database` entity on its
-//! websocket; the gateway delivers a `database_table_changed` message to
-//! those connections and each re-runs its own queries. Results are never
-//! pushed — every viewer re-executes as themselves.
+//! Table-changed and awareness fan-out through the connection gateway; each
+//! client re-runs its own queries as itself, so results are never pushed.
 
 use connection_gateway_client::client::ConnectionGatewayClient;
 use macro_user_id::user_id::MacroUserIdStr;
@@ -21,8 +17,8 @@ pub const AWARENESS_MESSAGE_TYPE: &str = "database_awareness";
 #[derive(Debug, thiserror::Error)]
 pub enum PublishError {
     /// The gateway rejected or failed the publish.
-    #[error("gateway publish failed: {0}")]
-    Gateway(String),
+    #[error("gateway publish failed")]
+    Gateway(#[source] anyhow::Error),
 }
 
 /// [`TableEventPublisher`] over the connection gateway.
@@ -59,7 +55,7 @@ impl TableEventPublisher for GatewayTableEventPublisher {
                 }),
             )
             .await
-            .map_err(|e| PublishError::Gateway(format!("{e:#}")))?;
+            .map_err(PublishError::Gateway)?;
         Ok(())
     }
 
@@ -82,7 +78,7 @@ impl TableEventPublisher for GatewayTableEventPublisher {
                 }),
             )
             .await
-            .map_err(|error| PublishError::Gateway(error.to_string()))?;
+            .map_err(PublishError::Gateway)?;
         Ok(())
     }
 }
@@ -114,12 +110,8 @@ impl TableEventPublisher for NoOpTableEventPublisher {
     }
 }
 
-/// The publisher for hosts that may or may not have gateway credentials.
-///
-/// A host that configures the connection gateway publishes for real, so a
-/// table an agent writes invalidates the query chips watching it exactly as a
-/// user's own write does. Hosts without credentials drop the event: the write
-/// has already committed, and clients refresh on their own.
+/// The publisher for hosts that may or may not have gateway credentials;
+/// without them the committed write's liveness ping is dropped.
 #[derive(Debug, Clone)]
 pub enum MaybeGatewayTableEventPublisher {
     /// Publish through the connection gateway.

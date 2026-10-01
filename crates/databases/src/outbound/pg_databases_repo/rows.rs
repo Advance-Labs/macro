@@ -5,7 +5,25 @@ use sqlx::{PgConnection, PgExecutor};
 
 use models_databases::position::keys_between;
 
-use crate::domain::models::{PropertyDefinitionId, RowId, RowRef, TableId, TableVersion};
+use super::PgDatabasesRepoError;
+use crate::domain::models::{
+    DatabaseId, PropertyDefinitionId, RowId, RowRef, TableId, TableVersion,
+};
+
+/// Lock a database's row against concurrent table naming, ordering and
+/// deletion; `false` when it is gone or trashed.
+pub(crate) async fn lock_live_database(
+    executor: impl PgExecutor<'_>,
+    database_id: DatabaseId,
+) -> Result<bool, sqlx::Error> {
+    let live = sqlx::query_scalar!(
+        "SELECT id FROM databases WHERE id = $1 AND trashed_at IS NULL FOR UPDATE",
+        database_id
+    )
+    .fetch_optional(executor)
+    .await?;
+    Ok(live.is_some())
+}
 
 /// Append `count` empty rows to a live table, in order; `None` when the
 /// table is gone or its database is trashed.
@@ -14,7 +32,7 @@ pub(crate) async fn append_rows(
     table_id: TableId,
     created_by: &str,
     count: usize,
-) -> Result<Option<Vec<RowRef>>, sqlx::Error> {
+) -> Result<Option<Vec<RowRef>>, PgDatabasesRepoError> {
     // Row writers and schema writers serialize on the table's version
     // row, so positions are minted under the same lock.
     let live = sqlx::query_scalar!(
@@ -34,9 +52,7 @@ pub(crate) async fn append_rows(
     )
     .fetch_one(&mut *connection)
     .await?;
-    // A stored position that is not a key fails to decode as one.
-    let positions = keys_between(max_position.as_deref(), None, count)
-        .map_err(|error| sqlx::Error::Decode(Box::new(error)))?;
+    let positions = keys_between(max_position.as_deref(), None, count)?;
     let mut rows = Vec::with_capacity(count);
     for position in positions {
         let id = macro_uuid::generate_uuid_v7();

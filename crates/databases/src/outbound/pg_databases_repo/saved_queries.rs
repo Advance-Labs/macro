@@ -1,6 +1,29 @@
 use super::*;
 use crate::domain::models::{QueryDefinition, QueryId, SavedQuery};
 
+/// A `database_queries` row, its definition still JSON.
+struct SavedQueryRecord {
+    id: QueryId,
+    database_id: Option<DatabaseId>,
+    definition: serde_json::Value,
+    created_by: Option<String>,
+    created_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl TryFrom<SavedQueryRecord> for SavedQuery {
+    type Error = serde_json::Error;
+
+    fn try_from(record: SavedQueryRecord) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: record.id,
+            definition: serde_json::from_value(record.definition)?,
+            database_id: record.database_id,
+            created_by: record.created_by,
+            created_at: record.created_at,
+        })
+    }
+}
+
 impl PgDatabasesRepo {
     pub(super) async fn insert_query(
         &self,
@@ -8,7 +31,8 @@ impl PgDatabasesRepo {
         definition: &QueryDefinition,
         created_by: &str,
     ) -> Result<SavedQuery, PgDatabasesRepoError> {
-        let row = sqlx::query!(
+        let saved = sqlx::query_as!(
+            SavedQueryRecord,
             r#"
             INSERT INTO database_queries (id, database_id, definition, created_by)
             VALUES ($1, $2, $3, $4)
@@ -21,20 +45,15 @@ impl PgDatabasesRepo {
         )
         .fetch_one(&self.pool)
         .await?;
-        Ok(SavedQuery {
-            id: row.id,
-            definition: serde_json::from_value(row.definition)?,
-            database_id: row.database_id,
-            created_by: row.created_by,
-            created_at: row.created_at,
-        })
+        Ok(saved.try_into()?)
     }
 
     pub(super) async fn query_by_id(
         &self,
         id: QueryId,
     ) -> Result<Option<SavedQuery>, PgDatabasesRepoError> {
-        let Some(row) = sqlx::query!(
+        let saved = sqlx::query_as!(
+            SavedQueryRecord,
             r#"
             SELECT id, database_id, definition, created_by, created_at
             FROM database_queries
@@ -43,16 +62,7 @@ impl PgDatabasesRepo {
             id,
         )
         .fetch_optional(&self.pool)
-        .await?
-        else {
-            return Ok(None);
-        };
-        Ok(Some(SavedQuery {
-            id: row.id,
-            definition: serde_json::from_value(row.definition)?,
-            database_id: row.database_id,
-            created_by: row.created_by,
-            created_at: row.created_at,
-        }))
+        .await?;
+        Ok(saved.map(SavedQuery::try_from).transpose()?)
     }
 }

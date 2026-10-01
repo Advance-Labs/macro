@@ -54,6 +54,30 @@ pub enum PgDatabasesRepoError {
     /// A stored position is not a fractional key.
     #[error("stored position")]
     Position(#[from] PositionError),
+    /// A stored card lane is neither empty nor an option id.
+    #[error("stored card lane `{0}` is not an option id")]
+    CorruptLane(String),
+}
+
+/// A `database_tables` row, read by `query_as!` and mapped onto [`Table`].
+pub(crate) struct TableRecord {
+    pub(crate) id: TableId,
+    pub(crate) database_id: DatabaseId,
+    pub(crate) name: String,
+    pub(crate) position: String,
+    pub(crate) version: i64,
+}
+
+impl From<TableRecord> for Table {
+    fn from(record: TableRecord) -> Self {
+        Self {
+            id: record.id,
+            database_id: record.database_id,
+            name: record.name,
+            position: record.position,
+            version: TableVersion(record.version),
+        }
+    }
 }
 
 /// The position that appends after `last`, the largest one a list has, or
@@ -79,6 +103,7 @@ impl PgDatabasesRepo {
 impl DatabasesRepo for PgDatabasesRepo {
     type Error = PgDatabasesRepoError;
 
+    #[tracing::instrument(err, skip(self, table, column, views))]
     async fn delete_column(
         &self,
         table: &Table,
@@ -98,9 +123,10 @@ impl DatabasesRepo for PgDatabasesRepo {
 
     #[tracing::instrument(err, skip(self))]
     async fn view_positions(&self, view_id: ViewId) -> Result<Vec<CardPosition>, Self::Error> {
-        Ok(views::view_positions(&self.pool, view_id).await?)
+        views::view_positions(&self.pool, view_id).await
     }
 
+    #[tracing::instrument(err, skip(self, table))]
     async fn reorder_columns(
         &self,
         table: &Table,
@@ -130,25 +156,26 @@ impl DatabasesRepo for PgDatabasesRepo {
         self.query_by_id(id).await
     }
 
-    #[tracing::instrument(err, skip(self, cmd))]
+    #[tracing::instrument(err, skip(self, command))]
     async fn create_database(
         &self,
-        cmd: &CreateDatabase,
+        command: &CreateDatabase,
         starter_table_name: &str,
     ) -> Result<Database, Self::Error> {
         // Time-ordered v7 so ids sort by creation and are known before insert.
         let id = macro_uuid::generate_uuid_v7();
         let mut transaction = self.pool.begin().await?;
 
-        let row = sqlx::query!(
+        let database = sqlx::query_as!(
+            Database,
             r#"
             INSERT INTO databases (id, name, owner_id)
             VALUES ($1, $2, $3)
             RETURNING id, name, owner_id, created_at, trashed_at
             "#,
             id,
-            cmd.name,
-            cmd.owner_id.as_ref(),
+            command.name,
+            command.owner_id.as_ref(),
         )
         .fetch_one(&mut *transaction)
         .await?;
@@ -172,21 +199,14 @@ impl DatabasesRepo for PgDatabasesRepo {
             &mut transaction,
             &id,
             EntityType::Database,
-            cmd.owner_id.as_ref(),
+            command.owner_id.as_ref(),
             EntityAccessSourceType::User,
             AccessLevel::Owner,
         )
         .await?;
 
         transaction.commit().await?;
-
-        Ok(Database {
-            id: row.id,
-            name: row.name,
-            owner_id: row.owner_id,
-            created_at: row.created_at,
-            trashed_at: row.trashed_at,
-        })
+        Ok(database)
     }
 
     /// Returns the row whether or not it is trashed; the domain decides what a
@@ -196,7 +216,8 @@ impl DatabasesRepo for PgDatabasesRepo {
         &self,
         id: DatabaseId,
     ) -> Result<Option<(Database, Vec<Table>)>, Self::Error> {
-        let Some(row) = sqlx::query!(
+        let Some(database) = sqlx::query_as!(
+            Database,
             r#"SELECT id, name, owner_id, created_at, trashed_at FROM databases WHERE id = $1"#,
             id
         )
@@ -206,15 +227,8 @@ impl DatabasesRepo for PgDatabasesRepo {
             return Ok(None);
         };
 
-        let database = Database {
-            id: row.id,
-            name: row.name,
-            owner_id: row.owner_id,
-            created_at: row.created_at,
-            trashed_at: row.trashed_at,
-        };
-
-        let tables = sqlx::query!(
+        let tables = sqlx::query_as!(
+            TableRecord,
             r#"
             SELECT id, database_id, name, position, version
             FROM database_tables
@@ -226,28 +240,22 @@ impl DatabasesRepo for PgDatabasesRepo {
         .fetch_all(&self.pool)
         .await?
         .into_iter()
-        .map(|row| Table {
-            id: row.id,
-            database_id: row.database_id,
-            name: row.name,
-            position: row.position,
-            version: TableVersion(row.version),
-        })
+        .map(Table::from)
         .collect();
 
         Ok(Some((database, tables)))
     }
 
     #[tracing::instrument(err, skip(self))]
-    async fn rename_database(&self, id: DatabaseId, name: &str) -> Result<(), Self::Error> {
-        sqlx::query!(
+    async fn rename_database(&self, id: DatabaseId, name: &str) -> Result<bool, Self::Error> {
+        let renamed = sqlx::query!(
             r#"UPDATE databases SET name = $2, updated_at = now() WHERE id = $1"#,
             id,
             name,
         )
         .execute(&self.pool)
         .await?;
-        Ok(())
+        Ok(renamed.rows_affected() == 1)
     }
 
     #[tracing::instrument(err, skip(self))]
@@ -255,26 +263,26 @@ impl DatabasesRepo for PgDatabasesRepo {
         &self,
         id: DatabaseId,
         trashed_at: chrono::DateTime<chrono::Utc>,
-    ) -> Result<(), Self::Error> {
-        sqlx::query!(
+    ) -> Result<bool, Self::Error> {
+        let trashed = sqlx::query!(
             r#"UPDATE databases SET trashed_at = $2, updated_at = now() WHERE id = $1"#,
             id,
             trashed_at,
         )
         .execute(&self.pool)
         .await?;
-        Ok(())
+        Ok(trashed.rows_affected() == 1)
     }
 
     #[tracing::instrument(err, skip(self))]
-    async fn restore_database(&self, id: DatabaseId) -> Result<(), Self::Error> {
-        sqlx::query!(
+    async fn restore_database(&self, id: DatabaseId) -> Result<bool, Self::Error> {
+        let restored = sqlx::query!(
             r#"UPDATE databases SET trashed_at = NULL, updated_at = now() WHERE id = $1"#,
             id,
         )
         .execute(&self.pool)
         .await?;
-        Ok(())
+        Ok(restored.rows_affected() == 1)
     }
 
     /// Tables, columns, rows, views and database-owned property definitions
@@ -301,31 +309,27 @@ impl DatabasesRepo for PgDatabasesRepo {
         Ok(())
     }
 
-    #[tracing::instrument(err, skip(self, cmd))]
-    async fn create_table(&self, cmd: &CreateTable) -> Result<TableMutationOutcome, Self::Error> {
+    #[tracing::instrument(err, skip(self, command))]
+    async fn create_table(
+        &self,
+        command: &CreateTable,
+    ) -> Result<TableMutationOutcome, Self::Error> {
         let mut transaction = self.pool.begin().await?;
-
-        if sqlx::query!(
-            "SELECT id FROM databases WHERE id = $1 AND trashed_at IS NULL FOR UPDATE",
-            cmd.database_id
-        )
-        .fetch_optional(&mut *transaction)
-        .await?
-        .is_none()
-        {
+        if !rows::lock_live_database(&mut *transaction, command.database_id).await? {
             return Ok(TableMutationOutcome::NotFound);
         }
 
         let max_position = sqlx::query_scalar!(
             r#"SELECT MAX(position) FROM database_tables WHERE database_id = $1"#,
-            cmd.database_id
+            command.database_id
         )
         .fetch_one(&mut *transaction)
         .await?;
         let position = position_after(max_position.as_deref())?;
         let id = macro_uuid::generate_uuid_v7();
 
-        let row = sqlx::query!(
+        let table = sqlx::query_as!(
+            TableRecord,
             r#"
             INSERT INTO database_tables (id, database_id, name, position)
             SELECT $1, $2, $3, $4
@@ -336,26 +340,17 @@ impl DatabasesRepo for PgDatabasesRepo {
             RETURNING id, database_id, name, position, version
             "#,
             id,
-            cmd.database_id,
-            cmd.name,
+            command.database_id,
+            command.name,
             position,
         )
         .fetch_optional(&mut *transaction)
         .await?;
 
         transaction.commit().await?;
-
-        Ok(row
-            .map(|row| {
-                TableMutationOutcome::Applied(Table {
-                    id: row.id,
-                    database_id: row.database_id,
-                    name: row.name,
-                    position: row.position,
-                    version: TableVersion(row.version),
-                })
-            })
-            .unwrap_or(TableMutationOutcome::Conflict))
+        Ok(table.map_or(TableMutationOutcome::Conflict, |table| {
+            TableMutationOutcome::Applied(table.into())
+        }))
     }
 
     #[tracing::instrument(err, skip(self, table))]
@@ -367,17 +362,11 @@ impl DatabasesRepo for PgDatabasesRepo {
     ) -> Result<TableMutationOutcome, Self::Error> {
         let mut transaction = self.pool.begin().await?;
         // Serialize table naming and position allocation within a database.
-        if sqlx::query!(
-            "SELECT id FROM databases WHERE id = $1 AND trashed_at IS NULL FOR UPDATE",
-            table.database_id
-        )
-        .fetch_optional(&mut *transaction)
-        .await?
-        .is_none()
-        {
+        if !rows::lock_live_database(&mut *transaction, table.database_id).await? {
             return Ok(TableMutationOutcome::NotFound);
         }
-        let row = sqlx::query!(
+        let renamed = sqlx::query_as!(
+            TableRecord,
             r#"
             UPDATE database_tables
             SET name = $3, version = version + 1
@@ -397,17 +386,9 @@ impl DatabasesRepo for PgDatabasesRepo {
         .fetch_optional(&mut *transaction)
         .await?;
         transaction.commit().await?;
-        Ok(row
-            .map(|row| {
-                TableMutationOutcome::Applied(Table {
-                    id: row.id,
-                    database_id: row.database_id,
-                    name: row.name,
-                    position: row.position,
-                    version: TableVersion(row.version),
-                })
-            })
-            .unwrap_or(TableMutationOutcome::Conflict))
+        Ok(renamed.map_or(TableMutationOutcome::Conflict, |table| {
+            TableMutationOutcome::Applied(table.into())
+        }))
     }
 
     #[tracing::instrument(err, skip(self))]
@@ -419,14 +400,18 @@ impl DatabasesRepo for PgDatabasesRepo {
         self.rewrite_table_positions(database_id, table_ids).await
     }
 
-    #[tracing::instrument(err, skip(self, cmd))]
+    #[tracing::instrument(err, skip(self, command))]
     async fn create_column(
         &self,
         table_id: TableId,
         property_definition_id: PropertyDefinitionId,
-        cmd: &CreateColumn,
+        command: &CreateColumn,
     ) -> Result<(ColumnId, TableVersion), Self::Error> {
-        let config = cmd.config.as_ref().map(serde_json::to_value).transpose()?;
+        let config = command
+            .config
+            .as_ref()
+            .map(serde_json::to_value)
+            .transpose()?;
 
         let mut transaction = self.pool.begin().await?;
 
@@ -449,7 +434,7 @@ impl DatabasesRepo for PgDatabasesRepo {
             property_definition_id,
             position,
             config,
-            cmd.infer_type,
+            command.infer_type,
         )
         .execute(&mut *transaction)
         .await?;
@@ -544,14 +529,9 @@ impl DatabasesRepo for PgDatabasesRepo {
         if updated.is_none() {
             return Ok(None);
         }
-        let version = sqlx::query_scalar!(
-            "UPDATE database_tables SET version = version + 1 WHERE id = $1 RETURNING version",
-            table.id,
-        )
-        .fetch_one(&mut *transaction)
-        .await?;
+        let version = rows::bump_table_version(&mut *transaction, table.id).await?;
         transaction.commit().await?;
-        Ok(Some(TableVersion(version)))
+        Ok(Some(version))
     }
 
     #[tracing::instrument(err, skip(self))]
@@ -573,7 +553,8 @@ impl DatabasesRepo for PgDatabasesRepo {
 
     #[tracing::instrument(skip(self), err)]
     async fn databases_by_ids(&self, ids: &[DatabaseId]) -> Result<Vec<Database>, Self::Error> {
-        let rows = sqlx::query!(
+        Ok(sqlx::query_as!(
+            Database,
             r#"
             SELECT id, name, owner_id, created_at, trashed_at
             FROM databases
@@ -583,17 +564,7 @@ impl DatabasesRepo for PgDatabasesRepo {
             ids,
         )
         .fetch_all(&self.pool)
-        .await?;
-        Ok(rows
-            .into_iter()
-            .map(|r| Database {
-                id: r.id,
-                name: r.name,
-                owner_id: r.owner_id,
-                created_at: r.created_at,
-                trashed_at: r.trashed_at,
-            })
-            .collect())
+        .await?)
     }
 
     #[tracing::instrument(skip(self), err)]
@@ -601,7 +572,8 @@ impl DatabasesRepo for PgDatabasesRepo {
         &self,
         database_ids: &[DatabaseId],
     ) -> Result<Vec<Table>, Self::Error> {
-        let rows = sqlx::query!(
+        let tables = sqlx::query_as!(
+            TableRecord,
             r#"
             SELECT id, database_id, name, position, version
             FROM database_tables
@@ -612,16 +584,7 @@ impl DatabasesRepo for PgDatabasesRepo {
         )
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows
-            .into_iter()
-            .map(|r| Table {
-                id: r.id,
-                database_id: r.database_id,
-                name: r.name,
-                position: r.position,
-                version: TableVersion(r.version),
-            })
-            .collect())
+        Ok(tables.into_iter().map(Table::from).collect())
     }
 
     #[tracing::instrument(skip(self), err)]
@@ -638,20 +601,21 @@ impl DatabasesRepo for PgDatabasesRepo {
         .fetch_all(&self.pool)
         .await?;
         rows.into_iter()
-            .map(|r| {
+            .map(|row| {
                 Ok(Column {
-                    id: r.id,
-                    table_id: r.table_id,
-                    property_definition_id: r.property_definition_id,
-                    position: r.position,
-                    config: r.config.map(serde_json::from_value).transpose()?,
-                    display_name: r.display_name,
-                    infer_type: r.infer_type,
+                    id: row.id,
+                    table_id: row.table_id,
+                    property_definition_id: row.property_definition_id,
+                    position: row.position,
+                    config: row.config.map(serde_json::from_value).transpose()?,
+                    display_name: row.display_name,
+                    infer_type: row.infer_type,
                 })
             })
             .collect()
     }
 
+    #[tracing::instrument(err, skip(self))]
     async fn table_versions(
         &self,
         table_ids: &[TableId],

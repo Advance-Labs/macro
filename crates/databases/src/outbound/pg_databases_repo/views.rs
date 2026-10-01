@@ -1,7 +1,5 @@
-//! Statements on views and the places of their cards, over any connection:
-//! the repository reads them on the pool, the cell store writes them inside
-//! a batch's transaction. A card's lane is stored as its option's id, or as
-//! the empty string for the lane of cards without one.
+//! View and card-place statements over any connection. A card's lane is
+//! stored as its option's id, or as the empty string for cards without one.
 
 use sqlx::PgExecutor;
 use uuid::Uuid;
@@ -15,9 +13,14 @@ fn lane_key(lane: Option<Uuid>) -> String {
 }
 
 /// The lane a stored key names; `None` for the lane of cards without an
-/// option, and for a key that names nothing.
-fn lane_of(key: &str) -> Option<Uuid> {
-    Uuid::parse_str(key).ok()
+/// option.
+fn lane_of(key: &str) -> Result<Option<Uuid>, PgDatabasesRepoError> {
+    if key.is_empty() {
+        return Ok(None);
+    }
+    Uuid::parse_str(key)
+        .map(Some)
+        .map_err(|_| PgDatabasesRepoError::CorruptLane(key.to_string()))
 }
 
 /// Every view of the given tables, ordered by table then position.
@@ -57,7 +60,7 @@ pub(crate) async fn views_for_tables(
 pub(crate) async fn view_positions(
     executor: impl PgExecutor<'_>,
     view_id: ViewId,
-) -> Result<Vec<CardPosition>, sqlx::Error> {
+) -> Result<Vec<CardPosition>, PgDatabasesRepoError> {
     let rows = sqlx::query!(
         r#"
         SELECT row_id, lane, position
@@ -69,14 +72,15 @@ pub(crate) async fn view_positions(
     )
     .fetch_all(executor)
     .await?;
-    Ok(rows
-        .into_iter()
-        .map(|row| CardPosition {
-            row: row.row_id,
-            lane: lane_of(&row.lane),
-            position: row.position,
+    rows.into_iter()
+        .map(|row| {
+            Ok(CardPosition {
+                row: row.row_id,
+                lane: lane_of(&row.lane)?,
+                position: row.position,
+            })
         })
-        .collect())
+        .collect()
 }
 
 /// Store a new view.

@@ -86,8 +86,12 @@ impl PgDatabasesRepo {
         };
         let changed = sqlx::query!(
             "DELETE FROM database_columns WHERE id = $1 AND table_id = $2 AND property_definition_id = $3",
-            column.id, table.id, column.property_definition_id
-        ).execute(&mut *transaction).await?;
+            column.id,
+            table.id,
+            column.property_definition_id
+        )
+        .execute(&mut *transaction)
+        .await?;
         if changed.rows_affected() != 1 || !rewrite_views(&mut transaction, views).await? {
             transaction.rollback().await?;
             return Ok(None);
@@ -95,7 +99,9 @@ impl PgDatabasesRepo {
         let versions = sqlx::query!(
             "UPDATE database_tables SET version = version + 1 WHERE id = ANY($1) RETURNING id, version",
             &tables
-        ).fetch_all(&mut *transaction).await?;
+        )
+        .fetch_all(&mut *transaction)
+        .await?;
         transaction.commit().await?;
         Ok(Some(ColumnSchemaOutcome {
             table_versions: versions
@@ -128,14 +134,9 @@ impl PgDatabasesRepo {
                 return Ok(None);
             }
         }
-        let version = sqlx::query_scalar!(
-            "UPDATE database_tables SET version = version + 1 WHERE id = $1 RETURNING version",
-            table.id
-        )
-        .fetch_one(&mut *transaction)
-        .await?;
+        let version = rows::bump_table_version(&mut *transaction, table.id).await?;
         transaction.commit().await?;
-        Ok(Some(TableVersion(version)))
+        Ok(Some(version))
     }
 }
 

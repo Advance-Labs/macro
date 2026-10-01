@@ -8,6 +8,7 @@ use models_permissions::share_permission::channel_share_permission::{
 impl DatabaseSharingRepo for PgDatabasesRepo {
     type Error = PgDatabasesRepoError;
 
+    #[tracing::instrument(err, skip(self))]
     async fn channel_grants(
         &self,
         database_id: DatabaseId,
@@ -20,6 +21,7 @@ impl DatabaseSharingRepo for PgDatabasesRepo {
         .await?)
     }
 
+    #[tracing::instrument(err, skip(self, grants))]
     async fn update_channel_grants(
         &self,
         database_id: DatabaseId,

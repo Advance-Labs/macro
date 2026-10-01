@@ -114,30 +114,36 @@ impl DatabasesRepo for FakeRepo {
             )
         }))
     }
-    async fn rename_database(&self, id: DatabaseId, name: &str) -> Result<(), FakeError> {
+    async fn rename_database(&self, id: DatabaseId, name: &str) -> Result<bool, FakeError> {
         let mut w = self.0.lock().unwrap();
         if let Some(database) = w.databases.iter_mut().find(|d| d.id == id) {
             database.name = name.to_string();
+            Ok(true)
+        } else {
+            Ok(false)
         }
-        Ok(())
     }
     async fn trash_database(
         &self,
         id: DatabaseId,
         trashed_at: chrono::DateTime<Utc>,
-    ) -> Result<(), FakeError> {
+    ) -> Result<bool, FakeError> {
         let mut w = self.0.lock().unwrap();
         if let Some(database) = w.databases.iter_mut().find(|d| d.id == id) {
             database.trashed_at = Some(trashed_at);
+            Ok(true)
+        } else {
+            Ok(false)
         }
-        Ok(())
     }
-    async fn restore_database(&self, id: DatabaseId) -> Result<(), FakeError> {
+    async fn restore_database(&self, id: DatabaseId) -> Result<bool, FakeError> {
         let mut w = self.0.lock().unwrap();
         if let Some(database) = w.databases.iter_mut().find(|d| d.id == id) {
             database.trashed_at = None;
+            Ok(true)
+        } else {
+            Ok(false)
         }
-        Ok(())
     }
     async fn delete_database(&self, id: DatabaseId) -> Result<(), FakeError> {
         let mut w = self.0.lock().unwrap();

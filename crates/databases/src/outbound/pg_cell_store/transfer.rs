@@ -5,13 +5,38 @@ use models_databases::position::{key_between, keys_between};
 use uuid::Uuid;
 
 use super::*;
-use crate::domain::models::{DatabaseId, Table, TableVersion, Viewer};
+use crate::domain::models::{DatabaseId, Table, Viewer};
 use crate::domain::transfer::{
     DatabaseTransferRepo, ImportFingerprint, ImportOutcome, ImportTable,
 };
+use crate::outbound::pg_databases_repo::TableRecord;
 
 /// Rows minted per `INSERT … UNNEST` statement.
 const ROWS_PER_INSERT: usize = 500;
+
+/// A `database_tables` row with the import key's fingerprint.
+struct ImportedTableRecord {
+    id: TableId,
+    database_id: DatabaseId,
+    name: String,
+    position: String,
+    version: i64,
+    import_fingerprint: Option<String>,
+}
+
+impl ImportedTableRecord {
+    fn into_table(self) -> (Table, Option<String>) {
+        let fingerprint = self.import_fingerprint;
+        let table = TableRecord {
+            id: self.id,
+            database_id: self.database_id,
+            name: self.name,
+            position: self.position,
+            version: self.version,
+        };
+        (table.into(), fingerprint)
+    }
+}
 
 impl<Properties> DatabaseTransferRepo for PgCellStore<Properties>
 where
@@ -23,33 +48,31 @@ where
 {
     type Error = PgCellStoreError;
 
+    #[tracing::instrument(err, skip(self))]
     async fn imported_table(
         &self,
         database_id: DatabaseId,
         request_id: Uuid,
     ) -> Result<Option<(Table, ImportFingerprint)>, Self::Error> {
-        let row = sqlx::query!(
+        let imported = sqlx::query_as!(
+            ImportedTableRecord,
             "SELECT id, database_id, name, position, version, import_fingerprint FROM database_tables WHERE database_id = $1 AND import_key = $2",
-            database_id, request_id,
-        ).fetch_optional(&self.pool).await?;
-        row.map(|row| {
-            let fingerprint = row
-                .import_fingerprint
-                .ok_or(PgCellStoreError::MissingImportFingerprint(row.id))?;
-            Ok((
-                Table {
-                    id: row.id,
-                    database_id: row.database_id,
-                    name: row.name,
-                    position: row.position,
-                    version: TableVersion(row.version),
-                },
-                ImportFingerprint(fingerprint),
-            ))
-        })
-        .transpose()
+            database_id,
+            request_id,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+        imported
+            .map(|record| {
+                let (table, fingerprint) = record.into_table();
+                let fingerprint =
+                    fingerprint.ok_or(PgCellStoreError::MissingImportFingerprint(table.id))?;
+                Ok((table, ImportFingerprint(fingerprint)))
+            })
+            .transpose()
     }
 
+    #[tracing::instrument(err, skip(self, viewer, request, fingerprint, definitions, cells))]
     async fn import_table(
         &self,
         database_id: DatabaseId,
@@ -61,24 +84,24 @@ where
     ) -> Result<ImportOutcome, Self::Error> {
         let fingerprint = fingerprint.0.as_str();
         let mut transaction = self.pool.begin().await?;
-        if sqlx::query_scalar!(
-            "SELECT id FROM databases WHERE id = $1 AND trashed_at IS NULL FOR UPDATE",
-            database_id
-        )
-        .fetch_optional(&mut *transaction)
-        .await?
-        .is_none()
-        {
+        if !rows::lock_live_database(&mut *transaction, database_id).await? {
             return Ok(ImportOutcome::NotFound);
         }
-        if let Some(row) = sqlx::query!(
+        let replayed = sqlx::query_as!(
+            ImportedTableRecord,
             "SELECT id, database_id, name, position, version, import_fingerprint FROM database_tables WHERE database_id = $1 AND import_key = $2",
-            database_id, request.request_id,
-        ).fetch_optional(&mut *transaction).await? {
-            return Ok(if row.import_fingerprint.as_deref() == Some(fingerprint) {
-                ImportOutcome::Replayed(Table { id: row.id, database_id: row.database_id,
-                    name: row.name, position: row.position, version: TableVersion(row.version) })
-            } else { ImportOutcome::KeyConflict });
+            database_id,
+            request.request_id,
+        )
+        .fetch_optional(&mut *transaction)
+        .await?;
+        if let Some(record) = replayed {
+            let (table, stored) = record.into_table();
+            return Ok(if stored.as_deref() == Some(fingerprint) {
+                ImportOutcome::Replayed(table)
+            } else {
+                ImportOutcome::KeyConflict
+            });
         }
         let max_position = sqlx::query_scalar!(
             "SELECT MAX(position) FROM database_tables WHERE database_id = $1",
@@ -89,13 +112,21 @@ where
         let id = macro_uuid::generate_uuid_v7();
         let position =
             key_between(max_position.as_deref(), None).map_err(PgDatabasesRepoError::from)?;
-        let table = sqlx::query!(
+        let table = sqlx::query_as!(
+            TableRecord,
             r#"INSERT INTO database_tables (id, database_id, name, position, version, import_key, import_fingerprint)
                SELECT $1, $2, $3, $4, 1, $5, $6 WHERE NOT EXISTS (
                    SELECT 1 FROM database_tables WHERE database_id = $2 AND lower(name) = lower($3))
                RETURNING id, database_id, name, position, version"#,
-            id, database_id, request.name, position, request.request_id, fingerprint,
-        ).fetch_optional(&mut *transaction).await?;
+            id,
+            database_id,
+            request.name,
+            position,
+            request.request_id,
+            fingerprint,
+        )
+        .fetch_optional(&mut *transaction)
+        .await?;
         let Some(table) = table else {
             return Ok(ImportOutcome::NameConflict);
         };
@@ -105,8 +136,13 @@ where
             let column_id = macro_uuid::generate_uuid_v7();
             sqlx::query!(
                 "INSERT INTO database_columns (id, table_id, property_definition_id, position, infer_type) VALUES ($1, $2, $3, $4, false)",
-                column_id, id, definition, position,
-            ).execute(&mut *transaction).await?;
+                column_id,
+                id,
+                definition,
+                position,
+            )
+            .execute(&mut *transaction)
+            .await?;
         }
         let mut rows = Vec::with_capacity(request.rows.len());
         let mut row_positions = keys_between(None, None, request.rows.len())
@@ -121,8 +157,13 @@ where
             sqlx::query!(
                 r#"INSERT INTO database_rows (id, table_id, position, created_by)
                    SELECT row_id, $1, position, $2 FROM UNNEST($3::uuid[], $4::text[]) AS data(row_id, position)"#,
-                id, viewer.user_id.as_ref(), &row_ids, &positions,
-            ).execute(&mut *transaction).await?;
+                id,
+                viewer.user_id.as_ref(),
+                &row_ids,
+                &positions,
+            )
+            .execute(&mut *transaction)
+            .await?;
             rows.extend(row_ids);
         }
         for (row, row_cells) in rows.iter().zip(cells) {
@@ -139,12 +180,6 @@ where
             }
         }
         transaction.commit().await?;
-        Ok(ImportOutcome::Created(Table {
-            id: table.id,
-            database_id: table.database_id,
-            name: table.name,
-            position: table.position,
-            version: TableVersion(table.version),
-        }))
+        Ok(ImportOutcome::Created(table.into()))
     }
 }

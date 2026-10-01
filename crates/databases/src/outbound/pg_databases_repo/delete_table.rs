@@ -9,14 +9,7 @@ impl PgDatabasesRepo {
         let mut transaction = self.pool.begin().await?;
         // The database lock serializes table creation, renames and deletes,
         // so two concurrent deletes cannot both see a second table.
-        if sqlx::query!(
-            "SELECT id FROM databases WHERE id = $1 AND trashed_at IS NULL FOR UPDATE",
-            table.database_id
-        )
-        .fetch_optional(&mut *transaction)
-        .await?
-        .is_none()
-        {
+        if !rows::lock_live_database(&mut *transaction, table.database_id).await? {
             return Ok(TableDeletion::NotFound);
         }
         let tables = sqlx::query_scalar!(

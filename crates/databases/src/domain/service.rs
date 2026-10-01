@@ -511,10 +511,14 @@ where
         // is: restore it first.
         let (database, _tables) = self.database_for_edit(&receipt).await?;
         let name = validate_name(&name)?;
-        self.repository
+        if !self
+            .repository
             .rename_database(database.id, &name)
             .await
-            .map_err(repository_error)?;
+            .map_err(repository_error)?
+        {
+            return Err(DatabaseError::NotFound);
+        }
         self.emit(DatabaseMacroEvent::renamed(DatabaseRenamedMetadata {
             database_id: database.id,
             attribution: receipt_attribution(&receipt),
@@ -532,10 +536,14 @@ where
         if database.trashed_at.is_some() {
             return Ok(());
         }
-        self.repository
+        if !self
+            .repository
             .trash_database(database.id, Utc::now())
             .await
-            .map_err(repository_error)?;
+            .map_err(repository_error)?
+        {
+            return Err(DatabaseError::NotFound);
+        }
         self.emit(DatabaseMacroEvent::trashed(DatabaseTrashedMetadata {
             database_id: database.id,
             attribution: receipt_attribution(&receipt),
@@ -552,10 +560,14 @@ where
         if database.trashed_at.is_none() {
             return Ok(());
         }
-        self.repository
+        if !self
+            .repository
             .restore_database(database.id)
             .await
-            .map_err(repository_error)?;
+            .map_err(repository_error)?
+        {
+            return Err(DatabaseError::NotFound);
+        }
         self.emit(DatabaseMacroEvent::restored(DatabaseRestoredMetadata {
             database_id: database.id,
             attribution: receipt_attribution(&receipt),

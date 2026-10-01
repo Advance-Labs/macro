@@ -59,9 +59,13 @@ pub enum PgCellStoreError {
     /// The properties writer failed inside a batch; nothing of it committed.
     #[error("row batch cells: {0}")]
     Cells(#[source] Box<dyn std::error::Error + Send + Sync>),
-    /// A view statement of a batch failed; nothing of it committed.
-    #[error("row batch views: {0}")]
-    Views(#[from] PgDatabasesRepoError),
+    /// A repository statement of a batch failed; nothing of it committed.
+    #[error("row batch statement: {0}")]
+    Repository(#[from] PgDatabasesRepoError),
+    /// The properties side keyed a row's cells by something that is not a
+    /// row id.
+    #[error("row cells keyed by `{0}`, which is not a row id")]
+    CorruptRowId(String),
     /// An imported table carries its request key without the fingerprint
     /// written with it.
     #[error("imported table {0} has no import fingerprint")]
@@ -92,12 +96,21 @@ fn options_by_definition(
     grouped
 }
 
+/// The unique index on a table's view names.
+const VIEW_NAME_CONSTRAINT: &str = "database_views_table_name_key";
+
 /// Whether a view statement failed on the unique view name of its table.
 fn name_taken(error: &PgDatabasesRepoError) -> bool {
     matches!(
         error,
-        PgDatabasesRepoError::Sqlx(sqlx::Error::Database(database)) if database.is_unique_violation()
+        PgDatabasesRepoError::Sqlx(sqlx::Error::Database(database))
+            if database.constraint() == Some(VIEW_NAME_CONSTRAINT)
     )
+}
+
+/// The row a properties-side entity id names.
+fn row_of(entity_id: &str) -> Result<RowId, PgCellStoreError> {
+    Uuid::parse_str(entity_id).map_err(|_| PgCellStoreError::CorruptRowId(entity_id.to_string()))
 }
 
 fn cells_error(error: impl std::error::Error + Send + Sync + 'static) -> PgCellStoreError {
@@ -129,10 +142,7 @@ where
         let mut cells: HashMap<RowId, HashMap<PropertyDefinitionId, PropertyValue>> =
             HashMap::new();
         for (key, properties) in fetched {
-            let Ok(row) = Uuid::parse_str(&key.entity_id) else {
-                continue;
-            };
-            let row_cells = cells.entry(row).or_default();
+            let row_cells = cells.entry(row_of(&key.entity_id)?).or_default();
             for property in properties {
                 if let Some(value) = property.value {
                     row_cells.insert(property.property.property_definition_id, value);
@@ -159,17 +169,18 @@ where
                 None,
             )
             .await?;
-        Ok(fetched
-            .into_iter()
-            .filter_map(|(key, properties)| {
-                let row = Uuid::parse_str(&key.entity_id).ok()?;
-                let value = properties
-                    .into_iter()
-                    .find(|property| property.property.property_definition_id == definition)?
-                    .value?;
-                Some((row, value))
-            })
-            .collect())
+        let mut cells = HashMap::new();
+        for (key, properties) in fetched {
+            let row = row_of(&key.entity_id)?;
+            let value = properties
+                .into_iter()
+                .find(|property| property.property.property_definition_id == definition)
+                .and_then(|property| property.value);
+            if let Some(value) = value {
+                cells.insert(row, value);
+            }
+        }
+        Ok(cells)
     }
 
     #[tracing::instrument(err, skip(self, replacement, views), fields(cells = replacement.values.len()))]

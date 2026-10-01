@@ -187,9 +187,11 @@ async fn rename_trash_and_restore_round_trip(pool: PgPool) {
     let (repo, table, _) = fixture(&pool).await;
     let database_id = table.database_id;
 
-    repo.rename_database(database_id, "Winter Offsite")
-        .await
-        .expect("rename should succeed");
+    assert!(
+        repo.rename_database(database_id, "Winter Offsite")
+            .await
+            .expect("rename should succeed")
+    );
     let (database, _) = repo
         .get_database(database_id)
         .await
@@ -199,9 +201,11 @@ async fn rename_trash_and_restore_round_trip(pool: PgPool) {
     assert!(database.trashed_at.is_none());
 
     let trashed_at = chrono::Utc::now();
-    repo.trash_database(database_id, trashed_at)
-        .await
-        .expect("trash should succeed");
+    assert!(
+        repo.trash_database(database_id, trashed_at)
+            .await
+            .expect("trash should succeed")
+    );
     let (database, _) = repo
         .get_database(database_id)
         .await
@@ -212,9 +216,11 @@ async fn rename_trash_and_restore_round_trip(pool: PgPool) {
     let stored = database.trashed_at.expect("trashed_at should be set");
     assert!((stored - trashed_at).num_milliseconds().abs() < 1);
 
-    repo.restore_database(database_id)
-        .await
-        .expect("restore should succeed");
+    assert!(
+        repo.restore_database(database_id)
+            .await
+            .expect("restore should succeed")
+    );
     let (database, tables) = repo
         .get_database(database_id)
         .await
@@ -223,6 +229,21 @@ async fn rename_trash_and_restore_round_trip(pool: PgPool) {
     assert!(database.trashed_at.is_none());
     // Trashing and restoring never touches the contents.
     assert_eq!(tables.len(), 2);
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn renaming_trashing_or_restoring_a_missing_database_says_it_is_gone(pool: PgPool) {
+    let repo = PgDatabasesRepo::new(pool);
+    let missing = Uuid::nil();
+
+    assert!(!repo.rename_database(missing, "Winter").await.unwrap());
+    assert!(
+        !repo
+            .trash_database(missing, chrono::Utc::now())
+            .await
+            .unwrap()
+    );
+    assert!(!repo.restore_database(missing).await.unwrap());
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]

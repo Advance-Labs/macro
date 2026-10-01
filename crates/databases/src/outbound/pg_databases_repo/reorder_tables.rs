@@ -9,14 +9,7 @@ impl PgDatabasesRepo {
         let mut transaction = self.pool.begin().await?;
         // The same lock that serializes table creation, renames and deletes,
         // so the set checked below cannot change before the commit.
-        if sqlx::query!(
-            "SELECT id FROM databases WHERE id = $1 AND trashed_at IS NULL FOR UPDATE",
-            database_id
-        )
-        .fetch_optional(&mut *transaction)
-        .await?
-        .is_none()
-        {
+        if !rows::lock_live_database(&mut *transaction, database_id).await? {
             return Ok(TableOrderOutcome::NotFound);
         }
         let mut current = sqlx::query_scalar!(
@@ -32,7 +25,8 @@ impl PgDatabasesRepo {
             return Ok(TableOrderOutcome::Conflict);
         }
         let positions = keys_between(None, None, ids.len())?;
-        let tables = sqlx::query!(
+        let tables = sqlx::query_as!(
+            TableRecord,
             r#"
             UPDATE database_tables t
             SET position = ordered.position, version = t.version + 1
@@ -47,17 +41,8 @@ impl PgDatabasesRepo {
         .fetch_all(&mut *transaction)
         .await?;
         transaction.commit().await?;
-        let mut tables: Vec<Table> = tables
-            .into_iter()
-            .map(|row| Table {
-                id: row.id,
-                database_id: row.database_id,
-                name: row.name,
-                position: row.position,
-                version: TableVersion(row.version),
-            })
-            .collect();
-        tables.sort_by(|a, b| a.position.cmp(&b.position));
+        let mut tables: Vec<Table> = tables.into_iter().map(Table::from).collect();
+        tables.sort_by(|left, right| left.position.cmp(&right.position));
         Ok(TableOrderOutcome::Applied(tables))
     }
 }

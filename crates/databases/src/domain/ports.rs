@@ -46,25 +46,25 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         id: DatabaseId,
     ) -> impl Future<Output = Result<Option<(Database, Vec<Table>)>, Self::Error>> + Send;
 
-    /// Rename a database.
+    /// Rename a database; `false` when it is gone.
     fn rename_database(
         &self,
         id: DatabaseId,
         name: &str,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 
-    /// Move a database to the trash.
+    /// Move a database to the trash; `false` when it is gone.
     fn trash_database(
         &self,
         id: DatabaseId,
         trashed_at: DateTime<Utc>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 
-    /// Restore a trashed database.
+    /// Restore a trashed database; `false` when it is gone.
     fn restore_database(
         &self,
         id: DatabaseId,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 
     /// Remove a database permanently.
     fn delete_database(
