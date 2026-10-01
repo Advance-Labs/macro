@@ -269,7 +269,6 @@ impl DatabasesService for FakeService {
     async fn get_database(
         &self,
         _receipt: EntityAccessReceipt<ViewAccessLevel>,
-        _viewer: Viewer,
     ) -> Result<DatabaseDetail, DatabaseError> {
         self.calls.lock().unwrap().described += 1;
         if self.schema_error {
@@ -344,7 +343,6 @@ impl DatabasesService for FakeService {
     async fn infer_column_type(
         &self,
         _: EntityAccessReceipt<EditAccessLevel>,
-        _: Viewer,
         _: crate::domain::models::InferColumnType,
     ) -> Result<crate::domain::models::InferColumnTypeOutcome, DatabaseError> {
         unimplemented!("tool tests do not infer column types")
@@ -371,7 +369,6 @@ impl DatabasesService for FakeService {
     async fn column_casts(
         &self,
         _: EntityAccessReceipt<ViewAccessLevel>,
-        _: Viewer,
         _: Uuid,
         _: Uuid,
     ) -> Result<Vec<crate::domain::models::ColumnCast>, DatabaseError> {

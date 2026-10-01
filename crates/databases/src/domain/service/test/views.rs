@@ -140,10 +140,11 @@ async fn a_new_view_goes_after_the_tables_others_and_comes_with_the_detail() {
     );
     let detail = seeded
         .service
-        .get_database(
-            receipt::<ViewAccessLevel>(seeded.database_id, OWNER, AccessLevel::Owner),
-            viewer(OWNER),
-        )
+        .get_database(receipt::<ViewAccessLevel>(
+            seeded.database_id,
+            OWNER,
+            AccessLevel::Owner,
+        ))
         .await
         .unwrap();
     assert_eq!(detail.tables[0].views, vec![table_view, stages]);
@@ -345,10 +346,11 @@ async fn views_reorder_when_the_order_names_each_of_them_once() {
     );
     let detail = seeded
         .service
-        .get_database(
-            receipt::<ViewAccessLevel>(seeded.database_id, OWNER, AccessLevel::Owner),
-            viewer(OWNER),
-        )
+        .get_database(receipt::<ViewAccessLevel>(
+            seeded.database_id,
+            OWNER,
+            AccessLevel::Owner,
+        ))
         .await
         .unwrap();
     let names: Vec<&str> = detail.tables[0]

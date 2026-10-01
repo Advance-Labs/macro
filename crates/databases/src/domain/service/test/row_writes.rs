@@ -120,10 +120,11 @@ async fn a_view_grant_reads_but_cannot_be_receipted_for_ops() {
 
     let detail = seeded
         .service
-        .get_database(
-            receipt::<ViewAccessLevel>(seeded.database_id, VIEWER, AccessLevel::View),
-            viewer(VIEWER),
-        )
+        .get_database(receipt::<ViewAccessLevel>(
+            seeded.database_id,
+            VIEWER,
+            AccessLevel::View,
+        ))
         .await
         .unwrap();
     assert_eq!(detail.grant, AccessLevel::View);

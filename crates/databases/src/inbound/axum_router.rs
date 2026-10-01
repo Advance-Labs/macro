@@ -424,7 +424,6 @@ where
 pub async fn get_database_handler<Service, EntityAccess, Authorization>(
     access: DatabaseAccessLevelExtractor<ViewAccessLevel, EntityAccess, Authorization>,
     State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
-    user: MacroAuthorizationExtractor<Authorization, UserOrInternal>,
 ) -> Result<Json<DatabaseDetail>, DatabaseError>
 where
     Service: DatabasesService,
@@ -433,7 +432,7 @@ where
 {
     let detail = state
         .service
-        .get_database(access.entity_access_receipt, viewer_of(&user))
+        .get_database(access.entity_access_receipt)
         .await?;
     Ok(Json(detail))
 }
@@ -788,7 +787,6 @@ pub struct InferColumnTypeRequest {
 pub async fn infer_column_type_handler<Service, EntityAccess, Authorization>(
     access: DatabaseAccessLevelExtractor<EditAccessLevel, EntityAccess, Authorization>,
     State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
-    user: MacroAuthorizationExtractor<Authorization, UserOrInternal>,
     Path(ColumnPath {
         table_id,
         column_id,
@@ -805,7 +803,6 @@ where
         .service
         .infer_column_type(
             access.entity_access_receipt,
-            viewer_of(&user),
             InferColumnType {
                 table_id,
                 column_id,

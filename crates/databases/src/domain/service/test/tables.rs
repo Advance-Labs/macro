@@ -149,10 +149,7 @@ async fn a_new_table_is_empty_and_named_by_its_quoted_sql_name() {
     assert_eq!(table.name, "Ticket sales");
 
     let detail = svc
-        .get_database(
-            receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::Owner),
-            viewer(OWNER),
-        )
+        .get_database(receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::Owner))
         .await
         .unwrap();
     assert_eq!(
@@ -226,10 +223,7 @@ async fn reordering_three_tables_answers_and_lists_them_in_the_new_order() {
     );
 
     let detail = svc
-        .get_database(
-            receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::Owner),
-            viewer(OWNER),
-        )
+        .get_database(receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::Owner))
         .await
         .unwrap();
     assert_eq!(

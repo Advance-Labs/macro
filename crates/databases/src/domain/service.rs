@@ -679,11 +679,10 @@ where
             .collect())
     }
 
-    #[tracing::instrument(skip(self, receipt, _viewer), err)]
+    #[tracing::instrument(skip(self, receipt), err)]
     async fn get_database(
         &self,
         receipt: EntityAccessReceipt<ViewAccessLevel>,
-        _viewer: Viewer,
     ) -> Result<DatabaseDetail, DatabaseError> {
         let database_id = receipt_database_id(&receipt)?;
         let grant = receipt_grant(&receipt, AccessLevel::View);
@@ -830,11 +829,10 @@ where
         self.add_column(receipt, viewer, command).await
     }
 
-    #[tracing::instrument(skip(self, receipt, _viewer), err)]
+    #[tracing::instrument(skip(self, receipt), err)]
     async fn infer_column_type(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
-        _viewer: Viewer,
         command: InferColumnType,
     ) -> Result<InferColumnTypeOutcome, DatabaseError> {
         self.settle_column_type(receipt, command).await
@@ -850,11 +848,10 @@ where
         self.change_placement_type(receipt, viewer, command).await
     }
 
-    #[tracing::instrument(skip(self, receipt, _viewer), err)]
+    #[tracing::instrument(skip(self, receipt), err)]
     async fn column_casts(
         &self,
         receipt: EntityAccessReceipt<ViewAccessLevel>,
-        _viewer: Viewer,
         table_id: TableId,
         column_id: ColumnId,
     ) -> Result<Vec<ColumnCast>, DatabaseError> {

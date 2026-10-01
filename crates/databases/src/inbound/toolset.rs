@@ -173,7 +173,7 @@ impl<Service: DatabasesService, EntityAccess: EntityAccessService>
     ) -> Result<DatabaseDetail, ToolCallError> {
         let receipt = self.view_receipt(user_id, database_id).await?;
         self.service
-            .get_database(receipt, self.viewer(user_id))
+            .get_database(receipt)
             .await
             .map_err(database_error)
     }

@@ -228,7 +228,6 @@ impl DatabasesService for RecordingService {
     async fn get_database(
         &self,
         _: EntityAccessReceipt<ViewAccessLevel>,
-        _: Viewer,
     ) -> Result<DatabaseDetail, DatabaseError> {
         unimplemented!("{ONLY_OPS}")
     }
@@ -308,7 +307,6 @@ impl DatabasesService for RecordingService {
     async fn infer_column_type(
         &self,
         _: EntityAccessReceipt<EditAccessLevel>,
-        _: Viewer,
         _: InferColumnType,
     ) -> Result<InferColumnTypeOutcome, DatabaseError> {
         unimplemented!("{ONLY_OPS}")
@@ -324,7 +322,6 @@ impl DatabasesService for RecordingService {
     async fn column_casts(
         &self,
         _: EntityAccessReceipt<ViewAccessLevel>,
-        _: Viewer,
         _: TableId,
         _: ColumnId,
     ) -> Result<Vec<ColumnCast>, DatabaseError> {

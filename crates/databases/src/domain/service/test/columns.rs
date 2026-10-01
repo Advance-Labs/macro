@@ -258,10 +258,7 @@ async fn reorder_validates_complete_ids_and_delete_preserves_definitions() {
         HashMap::from([(table_id, TableVersion(2))])
     );
     let detail = svc
-        .get_database(
-            receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::Owner),
-            viewer(OWNER),
-        )
+        .get_database(receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::Owner))
         .await
         .unwrap();
     assert_eq!(
@@ -293,10 +290,7 @@ async fn reorder_validates_complete_ids_and_delete_preserves_definitions() {
         assert_eq!(w.published.last(), Some(&(table_id, TableVersion(3))));
     }
     let detail = svc
-        .get_database(
-            receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::Owner),
-            viewer(OWNER),
-        )
+        .get_database(receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::Owner))
         .await
         .unwrap();
     assert_eq!(

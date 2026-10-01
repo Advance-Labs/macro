@@ -34,10 +34,7 @@ async fn create_database_grants_owner_and_starter_table() {
         assert_eq!(world_state.tables[0].database_id, db.id);
     }
     let detail = svc
-        .get_database(
-            receipt::<ViewAccessLevel>(db.id, OWNER, AccessLevel::Owner),
-            viewer(OWNER),
-        )
+        .get_database(receipt::<ViewAccessLevel>(db.id, OWNER, AccessLevel::Owner))
         .await
         .unwrap();
     let columns = &detail.tables[0].columns;
@@ -215,10 +212,7 @@ async fn table_rename_moves_the_sql_name_and_retries_without_overwriting_a_new_n
     );
 
     let detail = svc
-        .get_database(
-            receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::Owner),
-            viewer(OWNER),
-        )
+        .get_database(receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::Owner))
         .await
         .unwrap();
     assert_eq!(detail.tables[0].sql_name, "\"Offsite\".\"Attendees\"");
@@ -328,10 +322,7 @@ async fn trash_hides_the_database_and_restore_brings_it_back() {
     // A trashed database is invisible to listing, reads, ops, and renames.
     assert!(svc.list_databases(viewer(OWNER)).await.unwrap().is_empty());
     let err = svc
-        .get_database(
-            receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::Owner),
-            viewer(OWNER),
-        )
+        .get_database(receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::Owner))
         .await
         .unwrap_err();
     assert!(matches!(err, DatabaseError::NotFound));
@@ -461,10 +452,7 @@ async fn schema_operations_respect_receipts() {
     );
 
     let detail = svc
-        .get_database(
-            receipt::<ViewAccessLevel>(db, VIEWER, AccessLevel::View),
-            viewer(VIEWER),
-        )
+        .get_database(receipt::<ViewAccessLevel>(db, VIEWER, AccessLevel::View))
         .await
         .unwrap();
     assert_eq!(detail.grant, AccessLevel::View);
@@ -481,10 +469,7 @@ async fn schema_operations_respect_receipts() {
     assert!(detail.tables[0].columns.iter().all(|c| !c.writable));
 
     let detail = svc
-        .get_database(
-            receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::Owner),
-            viewer(OWNER),
-        )
+        .get_database(receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::Owner))
         .await
         .unwrap();
     assert_eq!(detail.grant, AccessLevel::Owner);

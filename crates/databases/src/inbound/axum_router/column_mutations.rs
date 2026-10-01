@@ -102,7 +102,6 @@ where
 pub async fn column_casts_handler<Service, EntityAccess, Authorization>(
     access: DatabaseAccessLevelExtractor<ViewAccessLevel, EntityAccess, Authorization>,
     State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
-    user: MacroAuthorizationExtractor<Authorization, UserOrInternal>,
     Path(path): Path<ColumnPath>,
 ) -> Result<Json<Vec<ColumnCast>>, DatabaseError>
 where
@@ -112,12 +111,7 @@ where
 {
     state
         .service
-        .column_casts(
-            access.entity_access_receipt,
-            viewer_of(&user),
-            path.table_id,
-            path.column_id,
-        )
+        .column_casts(access.entity_access_receipt, path.table_id, path.column_id)
         .await
         .map(Json)
 }

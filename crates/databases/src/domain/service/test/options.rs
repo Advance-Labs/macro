@@ -759,10 +759,11 @@ async fn a_column_says_whether_its_property_is_shared_beyond_the_database() {
 
     let detail = seeded
         .service
-        .get_database(
-            receipt::<ViewAccessLevel>(seeded.database_id, OWNER, AccessLevel::Owner),
-            viewer(OWNER),
-        )
+        .get_database(receipt::<ViewAccessLevel>(
+            seeded.database_id,
+            OWNER,
+            AccessLevel::Owner,
+        ))
         .await
         .unwrap();
 

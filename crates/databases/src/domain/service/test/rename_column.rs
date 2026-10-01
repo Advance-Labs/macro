@@ -39,10 +39,7 @@ async fn label_rename_preserves_the_binding_moves_the_sql_name_and_retries_idemp
         Some(PropertyValue::Str("Sam".into()))
     );
     let detail = svc
-        .get_database(
-            receipt::<ViewAccessLevel>(db, VIEWER, AccessLevel::View),
-            viewer(VIEWER),
-        )
+        .get_database(receipt::<ViewAccessLevel>(db, VIEWER, AccessLevel::View))
         .await
         .unwrap();
     let renamed = detail.tables[0]
@@ -258,10 +255,7 @@ async fn reusing_a_previous_label_keeps_the_renamed_columns_values_intact() {
         .await
         .unwrap();
     let detail = svc
-        .get_database(
-            receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::View),
-            viewer(OWNER),
-        )
+        .get_database(receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::View))
         .await
         .unwrap();
     let columns = &detail.tables[0].columns;

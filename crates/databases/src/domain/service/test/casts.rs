@@ -378,7 +378,6 @@ async fn the_dry_run_answers_every_menu_target_for_a_viewer() {
         .service
         .column_casts(
             receipt(seeded.database_id, VIEWER, AccessLevel::View),
-            viewer(VIEWER),
             seeded.table_id,
             seeded.name_column.id,
         )

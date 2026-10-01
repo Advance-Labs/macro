@@ -62,7 +62,7 @@ where
 
         let detail = service_context
             .service
-            .get_database(receipt, service_context.viewer(user_id))
+            .get_database(receipt)
             .await
             .map_err(database_error)?;
 

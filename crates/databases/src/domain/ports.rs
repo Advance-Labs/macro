@@ -376,7 +376,6 @@ pub trait DatabasesService: Send + Sync + 'static {
     fn get_database(
         &self,
         receipt: EntityAccessReceipt<ViewAccessLevel>,
-        viewer: Viewer,
     ) -> impl Future<Output = Result<DatabaseDetail, DatabaseError>> + Send;
 
     /// Rename a database.
@@ -458,7 +457,6 @@ pub trait DatabasesService: Send + Sync + 'static {
     fn infer_column_type(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
-        viewer: Viewer,
         command: InferColumnType,
     ) -> impl Future<Output = Result<InferColumnTypeOutcome, DatabaseError>> + Send;
 
@@ -476,7 +474,6 @@ pub trait DatabasesService: Send + Sync + 'static {
     fn column_casts(
         &self,
         receipt: EntityAccessReceipt<ViewAccessLevel>,
-        viewer: Viewer,
         table_id: TableId,
         column_id: ColumnId,
     ) -> impl Future<Output = Result<Vec<ColumnCast>, DatabaseError>> + Send;

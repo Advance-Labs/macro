@@ -49,7 +49,6 @@ async fn number_inference_preserves_label_old_definition_and_accepts_first_write
     let response = svc
         .infer_column_type(
             receipt(db, OWNER, AccessLevel::Edit),
-            viewer(OWNER),
             InferColumnType {
                 table_id,
                 column_id,
@@ -118,7 +117,7 @@ async fn number_inference_preserves_label_old_definition_and_accepts_first_write
         Some(PropertyValue::Num(12.0))
     );
     let detail = svc
-        .get_database(receipt(db, OWNER, AccessLevel::View), viewer(OWNER))
+        .get_database(receipt(db, OWNER, AccessLevel::View))
         .await
         .unwrap();
     let inferred = detail.tables[0]
@@ -155,7 +154,6 @@ async fn entity_inference_persists_specific_type_and_text_only_settles_flag() {
         let response = svc
             .infer_column_type(
                 receipt(db, OWNER, AccessLevel::Edit),
-                viewer(OWNER),
                 InferColumnType {
                     table_id,
                     column_id,
@@ -216,7 +214,6 @@ async fn inference_refuses_nonempty_column_and_removes_unused_replacement() {
     assert!(matches!(
         svc.infer_column_type(
             receipt(db, OWNER, AccessLevel::Edit),
-            viewer(OWNER),
             InferColumnType {
                 table_id,
                 column_id,
@@ -260,7 +257,6 @@ async fn inference_rejects_stale_wrong_database_trashed_and_fixed_columns() {
     let error = svc
         .infer_column_type(
             receipt(db, OWNER, AccessLevel::Edit),
-            viewer(OWNER),
             command(TableVersion(0)),
         )
         .await
@@ -270,7 +266,6 @@ async fn inference_rejects_stale_wrong_database_trashed_and_fixed_columns() {
     let error = svc
         .infer_column_type(
             receipt(Uuid::new_v4(), OWNER, AccessLevel::Edit),
-            viewer(OWNER),
             command(TableVersion(1)),
         )
         .await
@@ -289,7 +284,6 @@ async fn inference_rejects_stale_wrong_database_trashed_and_fixed_columns() {
     let error = svc
         .infer_column_type(
             receipt(db, OWNER, AccessLevel::Edit),
-            viewer(OWNER),
             command(TableVersion(1)),
         )
         .await
@@ -323,7 +317,6 @@ async fn inference_rejects_stale_wrong_database_trashed_and_fixed_columns() {
     let error = svc
         .infer_column_type(
             receipt(db, OWNER, AccessLevel::Edit),
-            viewer(OWNER),
             command(TableVersion(1)),
         )
         .await
@@ -337,7 +330,6 @@ async fn inference_rejects_stale_wrong_database_trashed_and_fixed_columns() {
     let error = svc
         .infer_column_type(
             receipt(db, OWNER, AccessLevel::Edit),
-            viewer(OWNER),
             command(TableVersion(1)),
         )
         .await
@@ -366,7 +358,6 @@ async fn inference_validates_type_and_entity_configuration_before_creating_defin
         assert!(matches!(
             svc.infer_column_type(
                 receipt(db, OWNER, AccessLevel::Edit),
-                viewer(OWNER),
                 InferColumnType {
                     table_id,
                     column_id,
@@ -462,7 +453,6 @@ async fn a_first_written_value_settles_text_type_and_later_inference_cannot_rety
     assert!(matches!(
         svc.infer_column_type(
             receipt(db, OWNER, AccessLevel::Edit),
-            viewer(OWNER),
             InferColumnType {
                 table_id,
                 column_id,

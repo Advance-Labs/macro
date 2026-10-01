@@ -203,7 +203,6 @@ impl DatabasesService for FakeDatabases {
     async fn get_database(
         &self,
         _: EntityAccessReceipt<ViewAccessLevel>,
-        _: Viewer,
     ) -> Result<DatabaseDetail, DatabaseError> {
         unimplemented!("SQL reads every database at once")
     }
@@ -283,7 +282,6 @@ impl DatabasesService for FakeDatabases {
     async fn infer_column_type(
         &self,
         _: EntityAccessReceipt<EditAccessLevel>,
-        _: Viewer,
         _: InferColumnType,
     ) -> Result<InferColumnTypeOutcome, DatabaseError> {
         unimplemented!("SQL never infers a column type")
@@ -299,7 +297,6 @@ impl DatabasesService for FakeDatabases {
     async fn column_casts(
         &self,
         _: EntityAccessReceipt<ViewAccessLevel>,
-        _: Viewer,
         _: TableId,
         _: ColumnId,
     ) -> Result<Vec<ColumnCast>, DatabaseError> {
