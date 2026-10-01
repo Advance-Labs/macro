@@ -104,7 +104,11 @@ function renderTool(
         message_id="message-1"
         part_index={0}
         isComplete
-        renderContext={{ isStreaming: false, grouped: false }}
+        renderContext={{
+          isStreaming: false,
+          grouped: false,
+          followedBy: () => false,
+        }}
       />
     </ActivityContextProvider>
   ));

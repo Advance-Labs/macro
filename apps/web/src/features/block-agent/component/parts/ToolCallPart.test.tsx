@@ -122,6 +122,7 @@ const context = (inFlight: boolean): ToolCallContext => ({
   messageId: 'session:0:agent',
   partIndex: 0,
   inFlight,
+  followedBy: () => false,
 });
 
 function toolUse(
@@ -925,6 +926,7 @@ describe('ToolCallPart subagents', () => {
           messageId: 'session:0:agent',
           partIndex: 0,
           inFlight: true,
+          followedBy: () => false,
         }}
       />
     ));

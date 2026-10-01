@@ -100,7 +100,12 @@ vi.mock('@core/component/AI/component/tool/handler', async () => {
       tool_id: string;
       isComplete: boolean;
       name: string;
-      renderContext: { renderContext: { grouped?: boolean } };
+      renderContext: {
+        renderContext: {
+          grouped?: boolean;
+          followedBy: (name: string) => boolean;
+        };
+      };
     }) => {
       solid.onMount(() => {
         lifecycle.toolMounts.set(
@@ -118,6 +123,9 @@ vi.mock('@core/component/AI/component/tool/handler', async () => {
         <div
           data-complete={String(props.isComplete)}
           data-grouped={String(props.renderContext.renderContext.grouped)}
+          data-followed-by-save={String(
+            props.renderContext.renderContext.followedBy('SaveDatabaseQuery')
+          )}
           data-name={props.name}
           data-testid="tool"
         >
@@ -206,6 +214,50 @@ describe('AssistantMessageParts streaming identity', () => {
       rendered.unmount();
     }
   );
+  it('tells each tool whether a later part of the turn saves the query', () => {
+    const parts: AssistantMessagePart[] = [
+      { type: 'toolCall', id: 'query-tool', name: 'QueryDatabase', json: {} },
+      {
+        type: 'toolCallResponseJson',
+        id: 'query-tool',
+        name: 'QueryDatabase',
+        json: {},
+      },
+      {
+        type: 'toolCall',
+        id: 'save-tool',
+        name: 'SaveDatabaseQuery',
+        json: {},
+      },
+      {
+        type: 'toolCallResponseJson',
+        id: 'save-tool',
+        name: 'SaveDatabaseQuery',
+        json: {},
+      },
+      { type: 'text', text: 'Saved the question.' },
+    ];
+    const rendered = render(() => (
+      <AssistantMessageParts
+        parts={parts}
+        message={{
+          attachments: [],
+          content: parts,
+          id: 'message-save',
+          role: 'assistant',
+        }}
+        isStreaming={false}
+      />
+    ));
+    const followedBySave = rendered
+      .getAllByTestId('tool')
+      .map((tool) => [tool.textContent, tool.dataset.followedBySave]);
+    expect(followedBySave).toEqual([
+      ['query-tool', 'true'],
+      ['save-tool', 'false'],
+    ]);
+    rendered.unmount();
+  });
   beforeEach(() => {
     lifecycle.markdownCleanups = 0;
     lifecycle.markdownMounts = 0;

@@ -1,11 +1,12 @@
 /**
- * Tool renderers for the Macro Databases toolset
- * (`crates/databases/src/inbound/toolset`).
+ * Tool renderers for the Macro Databases toolsets: QueryDatabase and
+ * SaveDatabaseQuery from `crates/databases_sql/src/toolset`, the rest from
+ * `crates/databases/src/inbound/toolset`.
  */
 
 import { AppAnswerDisplay } from '@app/features/database-query/answer-display';
-import { ToolQueryResults } from '@app/features/database-query/components/tool-query-results';
 import { toolAnswers } from '@app/features/database-query/core/tool-answer';
+import { ToolQueryResults } from '@app/features/database-query/views/tool-query-results';
 import { globalSplitManager } from '@app/signal/splitLayout';
 import { useGlobalBlockOrchestrator } from '@components/app/GlobalAppState';
 import {
@@ -152,7 +153,9 @@ const describeDatabaseHandler = createToolRenderer({
     const schema = () => ctx.response?.data;
     const status = () => {
       const current = schema();
-      return current ? `${current.tables.length} tabs` : undefined;
+      if (!current) return undefined;
+      const count = current.tables.length;
+      return `${count} table${count === 1 ? '' : 's'}`;
     };
 
     return (
@@ -168,7 +171,7 @@ const describeDatabaseHandler = createToolRenderer({
       >
         <div class="flex min-w-0 flex-1 items-center justify-between gap-3">
           <span class="min-w-0 truncate">
-            Read table{' '}
+            Read database{' '}
             <span class="text-ink">
               {schema()?.name ?? ctx.tool.data.databaseId}
             </span>
@@ -188,7 +191,10 @@ const describeDatabaseHandler = createToolRenderer({
 const queryDatabaseHandler = createToolRenderer({
   name: 'QueryDatabase',
   render: (ctx) => {
-    const [expanded, setExpanded] = createSignal(true);
+    const [chosen, setChosen] = createSignal<boolean>();
+    // A saved question later in the turn shows the same answer, so this one starts folded.
+    const expanded = () =>
+      chosen() ?? !ctx.renderContext.followedBy('SaveDatabaseQuery');
     const showSql = isFeatureEnabled(showDatabaseSql);
     // The result carries table ids; the plain-words title names them from the schema.
     const detailQuery = useDatabaseDetailQuery(() =>
@@ -221,12 +227,14 @@ const queryDatabaseHandler = createToolRenderer({
           expanded() && answers().length ? (
             <For each={answers()}>
               {(answer) => (
-                <ToolQueryResults
-                  answer={answer}
-                  sql={ctx.tool.data.sql}
-                  preferredDisplay={ctx.tool.data.display ?? undefined}
-                  answerDisplay={AppAnswerDisplay}
-                />
+                <AppAnswerDisplay>
+                  <ToolQueryResults
+                    answer={answer}
+                    sql={ctx.tool.data.sql}
+                    preferredDisplay={ctx.tool.data.display ?? undefined}
+                    showSql={showSql}
+                  />
+                </AppAnswerDisplay>
               )}
             </For>
           ) : undefined
@@ -236,7 +244,7 @@ const queryDatabaseHandler = createToolRenderer({
           <span class="min-w-0 truncate">{title()}</span>
           <Tool.ResultToggle
             expanded={expanded()}
-            onToggle={() => setExpanded((open) => !open)}
+            onToggle={() => setChosen(!expanded())}
             showToggle={answers().length > 0}
           />
         </div>
@@ -542,7 +550,8 @@ const reorderColumnsHandler = createToolRenderer({
 const saveDatabaseQueryHandler = createToolRenderer({
   name: 'SaveDatabaseQuery',
   render: (ctx) => {
-    const [expanded, setExpanded] = createSignal(true);
+    // The saved question is pasted into the reply too, so its preview starts folded.
+    const [expanded, setExpanded] = createSignal(false);
     const markdown = () => ctx.response?.data.markdown;
     return (
       <BaseTool

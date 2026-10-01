@@ -3,17 +3,19 @@ import type {
   NamedTool,
   ToolName,
 } from '@service-cognition/generated/tools/tool';
-import { cleanup, render, screen } from '@solidjs/testing-library';
+import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import type { Component, ParentProps } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { databaseToolHandlers } from './DatabaseTools';
 
 vi.mock('@app/features/database-query/answer-display', () => ({
-  AppAnswerDisplay: () => null,
+  AppAnswerDisplay: (props: ParentProps) => props.children,
 }));
-vi.mock('@app/features/database-query/components/tool-query-results', () => ({
-  ToolQueryResults: () => null,
+vi.mock('@app/features/database-query/views/tool-query-results', () => ({
+  ToolQueryResults: (props: { sql: string }) => (
+    <output aria-label="Query results" data-sql={props.sql} />
+  ),
 }));
 vi.mock('@app/signal/splitLayout', () => ({ globalSplitManager: () => null }));
 vi.mock('@components/app/GlobalAppState', () => ({
@@ -103,7 +105,11 @@ function renderTool<Name extends ToolName>(
       message_id="message-1"
       part_index={0}
       isComplete={response !== undefined}
-      renderContext={{ isStreaming: false, grouped: false }}
+      renderContext={{
+        isStreaming: false,
+        grouped: false,
+        followedBy: () => false,
+      }}
     />
   ));
 }
@@ -113,6 +119,19 @@ function line(rendered: ReturnType<typeof render>) {
 }
 
 describe('database schema tool activity', () => {
+  it('renders DescribeDatabase with its database and table count', () => {
+    renderTool(
+      databaseToolHandlers.DescribeDatabase,
+      'DescribeDatabase',
+      { databaseId },
+      database
+    );
+    expect(screen.getByText('Read database').textContent).toBe(
+      'Read database Launch'
+    );
+    expect(screen.getByText('1 table')).toBeTruthy();
+  });
+
   it('renders RenameDatabase with the name the server kept', () => {
     const rendered = renderTool(
       databaseToolHandlers.RenameDatabase,
@@ -243,6 +262,48 @@ describe('SaveDatabaseQuery', () => {
       { queryId: '01992d2f-8444-7000-8000-000000000004', markdown }
     );
     expect(screen.getByText('Saved question')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { expanded: false }));
+    expect(screen.getByLabelText('Saved answer').textContent).toBe(markdown);
+  });
+
+  it('starts folded, since the reply pastes the same question', () => {
+    const markdown =
+      '<m-db-query>{"queryId":"01992d2f-8444-7000-8000-000000000004","title":"Open tickets","prompt":"How many open tickets?","displayMode":"scalar"}</m-db-query>';
+    render(() => (
+      <Dynamic
+        component={
+          databaseToolHandlers.SaveDatabaseQuery.render as Component<
+            Record<string, unknown>
+          >
+        }
+        tool={{
+          id: 'tool-1',
+          name: 'SaveDatabaseQuery',
+          data: {
+            databaseId,
+            sql: 'SELECT COUNT(*) FROM "Tickets"',
+            title: 'Open tickets',
+            displayMode: 'scalar',
+          },
+        }}
+        response={{
+          id: 'tool-1',
+          name: 'SaveDatabaseQuery',
+          data: { queryId: '01992d2f-8444-7000-8000-000000000004', markdown },
+        }}
+        chat_id="chat-1"
+        message_id="message-1"
+        part_index={0}
+        isComplete
+        renderContext={{
+          isStreaming: false,
+          grouped: false,
+          followedBy: () => false,
+        }}
+      />
+    ));
+    expect(screen.queryByLabelText('Saved answer')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { expanded: false }));
     expect(screen.getByLabelText('Saved answer').textContent).toBe(markdown);
   });
 
@@ -278,6 +339,98 @@ describe('SaveDatabaseView', () => {
       isComplete: true,
     });
     expect(invalidateDatabase).toHaveBeenCalledExactlyOnceWith(databaseId);
+  });
+});
+
+describe('QueryDatabase results', () => {
+  it('opens its results when nothing later in the turn saves them', () => {
+    render(() => (
+      <Dynamic
+        component={
+          databaseToolHandlers.QueryDatabase.render as Component<
+            Record<string, unknown>
+          >
+        }
+        tool={{
+          id: 'tool-1',
+          name: 'QueryDatabase',
+          data: { databaseId, sql: 'SELECT COUNT(*) FROM "Invites"' },
+        }}
+        response={{
+          id: 'tool-1',
+          name: 'QueryDatabase',
+          data: {
+            results: [
+              {
+                columns: [{ name: 'Count', kind: 'number' }],
+                rows: [[{ type: 'number', value: 12 }]],
+                rowIds: [],
+              },
+            ],
+            changesApplied: 0,
+            readVersions: [{ tableId: invitesTableId, version: 4 }],
+            summary: 'Returned 1 row.',
+          },
+        }}
+        chat_id="chat-1"
+        message_id="message-1"
+        part_index={0}
+        isComplete
+        renderContext={{
+          isStreaming: false,
+          grouped: false,
+          followedBy: () => false,
+        }}
+      />
+    ));
+    expect(screen.getByLabelText('Query results').dataset.sql).toBe(
+      'SELECT COUNT(*) FROM "Invites"'
+    );
+  });
+
+  it('folds its results when a later SaveDatabaseQuery shows them', () => {
+    const followedBy = vi.fn((name: ToolName) => name === 'SaveDatabaseQuery');
+    render(() => (
+      <Dynamic
+        component={
+          databaseToolHandlers.QueryDatabase.render as Component<
+            Record<string, unknown>
+          >
+        }
+        tool={{
+          id: 'tool-1',
+          name: 'QueryDatabase',
+          data: { databaseId, sql: 'SELECT COUNT(*) FROM "Invites"' },
+        }}
+        response={{
+          id: 'tool-1',
+          name: 'QueryDatabase',
+          data: {
+            results: [
+              {
+                columns: [{ name: 'Count', kind: 'number' }],
+                rows: [[{ type: 'number', value: 12 }]],
+                rowIds: [],
+              },
+            ],
+            changesApplied: 0,
+            readVersions: [{ tableId: invitesTableId, version: 4 }],
+            summary: 'Returned 1 row.',
+          },
+        }}
+        chat_id="chat-1"
+        message_id="message-1"
+        part_index={0}
+        isComplete
+        renderContext={{ isStreaming: false, grouped: false, followedBy }}
+      />
+    ));
+    expect(followedBy).toHaveBeenCalledWith('SaveDatabaseQuery');
+    expect(screen.queryByLabelText('Query results')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { expanded: false }));
+    expect(screen.getByLabelText('Query results').dataset.sql).toBe(
+      'SELECT COUNT(*) FROM "Invites"'
+    );
   });
 });
 

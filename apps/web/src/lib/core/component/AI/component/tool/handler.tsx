@@ -309,6 +309,7 @@ export function RenderTool(props: ToolProps) {
           renderContext={{
             isStreaming: props.renderContext.renderContext.isStreaming,
             grouped: props.renderContext.renderContext.grouped,
+            followedBy: props.renderContext.renderContext.followedBy,
           }}
         />
       </Show>

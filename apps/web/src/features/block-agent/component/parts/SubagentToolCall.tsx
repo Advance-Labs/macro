@@ -14,7 +14,11 @@ import type {
 import { Index, type JSX, Match, Show, Switch } from 'solid-js';
 import { thoughtIsStreaming } from '../../state/thought-streaming';
 import { FoldedOutput, Thought, ToolCard } from '../../ui';
-import type { ToolCallCommon, ToolCallContext } from './shared';
+import {
+  type ToolCallCommon,
+  type ToolCallContext,
+  toolUsedAfter,
+} from './shared';
 import { TextPart } from './TextPart';
 import { ToolCallPart } from './ToolCallPart';
 
@@ -40,7 +44,8 @@ function resultSummary(result: SubagentResult): string | undefined {
 function ChildPart(props: {
   part: MessagePart;
   index: number;
-  childCount: number;
+  /** The subagent's parts this one sits among. */
+  siblings: readonly MessagePart[];
   context?: ToolCallContext;
 }) {
   const inFlight = () => props.context?.inFlight ?? false;
@@ -56,7 +61,7 @@ function ChildPart(props: {
             active={thoughtIsStreaming(
               inFlight(),
               props.index,
-              props.childCount
+              props.siblings.length
             )}
           />
         )}
@@ -70,6 +75,7 @@ function ChildPart(props: {
                 ...props.context,
                 // A child's slot is its own; the parent's index is not it.
                 partIndex: props.index,
+                followedBy: toolUsedAfter(props.siblings, props.index),
               }
             }
           />
@@ -143,7 +149,7 @@ export function SubagentToolCall(props: {
                     <ChildPart
                       part={child()}
                       index={index}
-                      childCount={props.detail.children.length}
+                      siblings={props.detail.children}
                       context={childContext()}
                     />
                   </div>

@@ -122,7 +122,12 @@ export function MacroToolCall(props: {
             part_index={props.context?.partIndex ?? 0}
             isComplete={true}
             renderContext={{
-              renderContext: { isStreaming: false, grouped: true },
+              renderContext: {
+                isStreaming: false,
+                grouped: true,
+                // A part outside any turn has nothing after it.
+                followedBy: props.context?.followedBy ?? (() => false),
+              },
             }}
           />
         </Suspense>
