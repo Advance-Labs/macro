@@ -1,59 +1,54 @@
-use models_properties::db;
+use models_properties::option_color;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
-use models_properties::{DataType, EntityType, option_color};
+use models_properties::service::property_option::PropertyOptionValue;
 use sqlx::{Postgres, Transaction};
 
 use super::properties_pg_repo::PropertiesPgRepo;
+use super::property_definition_queries;
+use super::property_option_queries;
+use super::query_error::PropertyQueryError;
 use crate::domain::database_definition_writer::{DatabaseDefinitionWriter, NewDatabaseDefinition};
-
-/// Database schema write failures retain their original SQL or conversion cause.
-#[derive(Debug, thiserror::Error)]
-pub enum DatabaseDefinitionWriteError {
-    /// Database rejected a definition or option.
-    #[error(transparent)]
-    Sqlx(#[from] sqlx::Error),
-    /// A returned option did not represent a typed value.
-    #[error("invalid option: {0}")]
-    Option(String),
-}
 
 impl DatabaseDefinitionWriter for PropertiesPgRepo {
     type Transaction = Transaction<'static, Postgres>;
-    type Err = DatabaseDefinitionWriteError;
+    type Err = PropertyQueryError;
 
     async fn create_database_definition_in(
         &self,
         transaction: &mut Self::Transaction,
         input: NewDatabaseDefinition<'_>,
     ) -> Result<PropertyDefinitionWithOptions, Self::Err> {
-        let id = macro_uuid::generate_uuid_v7();
-        let definition = sqlx::query_as!(db::PropertyDefinition,
-            r#"INSERT INTO property_definitions (id, database_id, display_name, data_type, is_multi_select, specific_entity_type)
-               VALUES ($1, $2, $3, $4, $5, $6)
-               RETURNING id, team_id, user_id, database_id, display_name,
-               data_type AS "data_type: DataType", is_multi_select,
-               specific_entity_type AS "specific_entity_type: EntityType", created_at, updated_at, is_system"#,
-            id, input.database_id, input.name, input.data_type as DataType,
-            input.is_multi_select, input.specific_entity_type as Option<EntityType>,
-        ).fetch_one(&mut **transaction).await?;
+        let definition = property_definition_queries::create_database_property_definition(
+            &mut **transaction,
+            input.database_id,
+            input.name,
+            input.data_type,
+            input.is_multi_select,
+            input.specific_entity_type,
+        )
+        .await?;
         let mut property_options = Vec::with_capacity(input.options.len());
-        for (index, label) in input.options.iter().enumerate() {
-            let option_id = macro_uuid::generate_uuid_v7();
-            let option = sqlx::query_as!(db::PropertyOption,
-                r#"INSERT INTO property_options (id, property_definition_id, display_order, string_value, color)
-                   VALUES ($1, $2, $3, $4, $5)
-                   RETURNING id, property_definition_id, display_order, number_value, string_value, color, created_at, updated_at"#,
-                option_id, id, index as i32, label, option_color(index),
-            ).fetch_one(&mut **transaction).await?;
-            property_options.push(option.try_into().map_err(
-                |error: models_properties::db::error::DbConversionError| {
-                    DatabaseDefinitionWriteError::Option(error.to_string())
-                },
-            )?);
+        for (position, label) in input.options.iter().enumerate() {
+            property_options.push(
+                property_option_queries::insert_property_option(
+                    &mut **transaction,
+                    macro_uuid::generate_uuid_v7(),
+                    definition.id,
+                    display_order(position)?,
+                    PropertyOptionValue::String((*label).to_owned()),
+                    Some(option_color(position).to_owned()),
+                )
+                .await?,
+            );
         }
         Ok(PropertyDefinitionWithOptions {
-            definition: definition.into(),
+            definition,
             property_options,
         })
     }
+}
+
+/// An option's `display_order` column for its position among its definition's options.
+pub(super) fn display_order(position: usize) -> Result<i32, PropertyQueryError> {
+    i32::try_from(position).map_err(|_| PropertyQueryError::DisplayOrderOverflow(position))
 }

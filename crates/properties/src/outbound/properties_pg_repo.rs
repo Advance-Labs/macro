@@ -154,15 +154,17 @@ impl PropertiesRepo for PropertiesPgRepo {
         is_multi_select: bool,
         specific_entity_type: Option<EntityType>,
     ) -> Result<PropertyDefinition, Self::Err> {
-        property_definition_queries::create_database_property_definition(
-            &self.pool,
-            database_id,
-            display_name,
-            data_type,
-            is_multi_select,
-            specific_entity_type,
+        Ok(
+            property_definition_queries::create_database_property_definition(
+                &self.pool,
+                database_id,
+                display_name,
+                data_type,
+                is_multi_select,
+                specific_entity_type,
+            )
+            .await?,
         )
-        .await
     }
 
     #[tracing::instrument(skip(self), err)]
@@ -229,7 +231,10 @@ impl PropertiesRepo for PropertiesPgRepo {
         &self,
         property_definition_id: Uuid,
     ) -> Result<Vec<PropertyOption>, Self::Err> {
-        property_option_queries::get_property_options(&self.pool, property_definition_id).await
+        Ok(
+            property_option_queries::get_property_options(&self.pool, property_definition_id)
+                .await?,
+        )
     }
 
     #[tracing::instrument(skip(self), err)]
@@ -398,14 +403,14 @@ impl PropertiesRepo for PropertiesPgRepo {
         property_definition_id: Uuid,
         value: Option<PropertyValue>,
     ) -> Result<EntityPropertyMutationSnapshot, Self::Err> {
-        entity_property_queries::upsert_entity_property(
+        Ok(entity_property_queries::upsert_entity_property(
             &self.pool,
             entity_id,
             entity_type,
             property_definition_id,
             value,
         )
-        .await
+        .await?)
     }
 
     #[tracing::instrument(skip(self))]

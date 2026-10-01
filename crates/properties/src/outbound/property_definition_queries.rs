@@ -7,7 +7,7 @@ use models_properties::service::property_definition::PropertyDefinition;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
 use models_properties::service::property_option::{PropertyOption, PropertyOptionValue};
 use models_properties::{DataType, EntityType, db};
-use sqlx::{Pool, Postgres};
+use sqlx::{PgExecutor, Pool, Postgres};
 use uuid::Uuid;
 
 use crate::domain::model::{GetOrCreateTagDefinitionResult, PropertyDefinitionOwner};
@@ -431,15 +431,15 @@ pub async fn create_property_definition(
 }
 
 /// Creates a database-owned definition without adding it to shared property lists.
-#[tracing::instrument(skip(pool), err)]
+#[tracing::instrument(skip(executor), err)]
 pub async fn create_database_property_definition(
-    pool: &Pool<Postgres>,
+    executor: impl PgExecutor<'_>,
     database_id: Uuid,
     display_name: &str,
     data_type: DataType,
     is_multi_select: bool,
     specific_entity_type: Option<EntityType>,
-) -> anyhow::Result<PropertyDefinition> {
+) -> Result<PropertyDefinition, sqlx::Error> {
     let id = macro_uuid::generate_uuid_v7();
     let row = sqlx::query_as!(
         db::PropertyDefinition,
@@ -462,7 +462,7 @@ pub async fn create_database_property_definition(
         is_multi_select,
         specific_entity_type as Option<EntityType>,
     )
-    .fetch_one(pool)
+    .fetch_one(executor)
     .await?;
     Ok(row.into())
 }

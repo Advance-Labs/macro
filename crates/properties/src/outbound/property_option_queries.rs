@@ -7,6 +7,8 @@ use models_properties::service::property_option::{PropertyOption, PropertyOption
 use sqlx::{PgExecutor, Pool, Postgres};
 use uuid::Uuid;
 
+use super::query_error::PropertyQueryError;
+
 use crate::domain::model::{
     GetOrCreatePropertyOptionResult, PropertyOptionReplaceOutcome, PropertyOptionReplacePlan,
     UpdatePropertyOptionOutcome,
@@ -46,7 +48,7 @@ pub async fn get_property_option(
 pub async fn get_property_options(
     executor: impl PgExecutor<'_>,
     property_definition_id: Uuid,
-) -> anyhow::Result<Vec<PropertyOption>> {
+) -> Result<Vec<PropertyOption>, PropertyQueryError> {
     let rows = sqlx::query_as!(
         db::PropertyOption,
         r#"
@@ -69,7 +71,7 @@ pub async fn get_property_options(
     .await?;
 
     rows.into_iter()
-        .map(|row| row.try_into().map_err(anyhow::Error::from))
+        .map(|row| row.try_into().map_err(PropertyQueryError::from))
         .collect()
 }
 
@@ -136,10 +138,11 @@ pub async fn create_property_option(
         color,
     )
     .await
+    .map_err(anyhow::Error::from)
 }
 
 /// Inserts a property option under an id the caller minted.
-#[tracing::instrument(skip(executor))]
+#[tracing::instrument(skip(executor), err)]
 pub async fn insert_property_option(
     executor: impl PgExecutor<'_>,
     id: Uuid,
@@ -147,7 +150,7 @@ pub async fn insert_property_option(
     display_order: i32,
     value: PropertyOptionValue,
     color: Option<String>,
-) -> anyhow::Result<PropertyOption> {
+) -> Result<PropertyOption, PropertyQueryError> {
     let (number_value, string_value) = value.to_db_values();
 
     let row = sqlx::query!(
@@ -204,8 +207,9 @@ pub async fn get_or_create_property_option(
         });
     }
 
-    match create_property_option(
+    match insert_property_option(
         pool,
+        macro_uuid::generate_uuid_v7(),
         property_definition_id,
         display_order,
         value.clone(),
@@ -217,25 +221,22 @@ pub async fn get_or_create_property_option(
             option,
             created: true,
         }),
-        Err(error) => {
+        Err(PropertyQueryError::Sqlx(error)) => {
             // Only a collision on the value is recoverable. Do not hide a
             // missing definition, connection failure, or unrelated constraint.
-            let duplicate_value = error
-                .downcast_ref::<sqlx::Error>()
-                .and_then(sqlx::Error::as_database_error)
-                .is_some_and(|error| {
-                    error.is_unique_violation()
-                        && matches!(
-                            error.constraint(),
-                            Some(
-                                "unique_property_options_string_value"
-                                    | "unique_property_options_string_value_sha256"
-                                    | "unique_property_options_number_value"
-                            )
+            let duplicate_value = error.as_database_error().is_some_and(|error| {
+                error.is_unique_violation()
+                    && matches!(
+                        error.constraint(),
+                        Some(
+                            "unique_property_options_string_value"
+                                | "unique_property_options_string_value_sha256"
+                                | "unique_property_options_number_value"
                         )
-                });
+                    )
+            });
             if !duplicate_value {
-                return Err(error);
+                return Err(error.into());
             }
             // The failed insert waits for the winning transaction to commit.
             // A fresh read can therefore resolve its option under READ COMMITTED.
@@ -249,6 +250,7 @@ pub async fn get_or_create_property_option(
                 created: false,
             })
         }
+        Err(error) => Err(error.into()),
     }
 }
 
@@ -307,13 +309,14 @@ pub async fn update_property_option(
 
 /// Changes one option of a definition in place: its value when `value` is
 /// given, its colour (`None` clears it) when `color` is.
+#[tracing::instrument(skip(executor), err)]
 pub async fn patch_property_option(
     executor: impl PgExecutor<'_>,
     property_definition_id: Uuid,
     option_id: Uuid,
     value: Option<PropertyOptionValue>,
     color: Option<Option<String>>,
-) -> anyhow::Result<UpdatePropertyOptionOutcome> {
+) -> Result<UpdatePropertyOptionOutcome, PropertyQueryError> {
     let (number_value, string_value) = value
         .as_ref()
         .map_or((None, None), PropertyOptionValue::to_db_values);
@@ -360,10 +363,11 @@ pub async fn patch_property_option(
 /// Empties the cells of database rows a definition's option removal left
 /// with no option, the way clearing a cell does, so a single-select cell
 /// reads as empty rather than as an empty list.
+#[tracing::instrument(skip(executor), err)]
 pub async fn clear_emptied_database_row_values(
     executor: impl PgExecutor<'_>,
     property_definition_id: Uuid,
-) -> anyhow::Result<()> {
+) -> Result<(), PropertyQueryError> {
     sqlx::query!(
         r#"
         UPDATE entity_properties
@@ -403,7 +407,7 @@ pub(crate) async fn delete_options_in_tx(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     property_definition_id: Uuid,
     option_ids: &[Uuid],
-) -> anyhow::Result<u64> {
+) -> Result<u64, PropertyQueryError> {
     let option_id_strings: Vec<String> = option_ids.iter().map(Uuid::to_string).collect();
     sqlx::query!(
         r#"

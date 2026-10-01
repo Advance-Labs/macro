@@ -5,6 +5,8 @@ use models_properties::{EntityReference, EntityType};
 use sqlx::{PgExecutor, Pool, Postgres};
 use uuid::Uuid;
 
+use super::query_error::PropertyQueryError;
+
 use crate::domain::model::{
     EntityPropertyMutationSnapshot, EntityPropertyOptionSelection, EntityPropertyOptionUpdate,
 };
@@ -21,7 +23,7 @@ pub(super) struct EntityPropertyMutationRow {
 }
 
 impl EntityPropertyMutationRow {
-    pub(super) fn into_snapshot(self) -> anyhow::Result<EntityPropertyMutationSnapshot> {
+    pub(super) fn into_snapshot(self) -> Result<EntityPropertyMutationSnapshot, serde_json::Error> {
         let value = match self.value {
             Some(value) if !value.is_null() => Some(serde_json::from_value(value)?),
             Some(_) | None => None,
@@ -59,7 +61,7 @@ pub async fn upsert_entity_property(
     entity_type: EntityType,
     property_definition_id: Uuid,
     value: Option<PropertyValue>,
-) -> anyhow::Result<EntityPropertyMutationSnapshot> {
+) -> Result<EntityPropertyMutationSnapshot, PropertyQueryError> {
     let id = macro_uuid::generate_uuid_v7();
 
     // Serialize PropertyValue to JSONB (or NULL if None)
@@ -107,7 +109,7 @@ pub async fn upsert_entity_property(
 
     tracing::debug!("successfully upserted entity property");
 
-    row.into_snapshot()
+    Ok(row.into_snapshot()?)
 }
 
 /// Atomically add one option to a multi-select entity property value, creating
@@ -171,7 +173,7 @@ pub async fn add_entity_property_option(
     .fetch_one(pool)
     .await?;
 
-    row.into_snapshot()
+    Ok(row.into_snapshot()?)
 }
 
 /// Atomically remove one option from a multi-select entity property value. A
@@ -229,8 +231,9 @@ pub async fn remove_entity_property_option(
     .fetch_optional(pool)
     .await?;
 
-    row.map(EntityPropertyMutationRow::into_snapshot)
-        .transpose()
+    Ok(row
+        .map(EntityPropertyMutationRow::into_snapshot)
+        .transpose()?)
 }
 
 /// Apply option deltas to several of an entity's multi-select property values in

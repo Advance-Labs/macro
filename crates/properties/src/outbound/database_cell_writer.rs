@@ -5,20 +5,17 @@ use models_properties::service::property_value::PropertyValue;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
+use super::database_definition_writer::display_order;
 use super::entity_property_queries;
 use super::properties_pg_repo::PropertiesPgRepo;
 use super::property_option_queries;
+use super::query_error::PropertyQueryError;
 use crate::domain::database_cell_writer::DatabaseCellWriter;
 use crate::domain::model::UpdatePropertyOptionOutcome;
 
-/// A cell or option write failed; the caller's transaction is to be dropped.
-#[derive(Debug, thiserror::Error)]
-#[error("database cell write failed: {0}")]
-pub struct DatabaseCellWriteError(#[from] anyhow::Error);
-
 impl DatabaseCellWriter for PropertiesPgRepo {
     type Transaction = Transaction<'static, Postgres>;
-    type Err = DatabaseCellWriteError;
+    type Err = PropertyQueryError;
 
     async fn add_options_in(
         &self,
@@ -39,14 +36,17 @@ impl DatabaseCellWriter for PropertiesPgRepo {
             .map(|option| option.display_order)
             .max()
             .map_or(0, |highest| highest + 1);
-        for (index, (id, value)) in options.iter().enumerate() {
+        for (offset, (id, value)) in options.iter().enumerate() {
+            let display_order = display_order(offset)?
+                .checked_add(first_order)
+                .ok_or(PropertyQueryError::DisplayOrderOverflow(offset))?;
             property_option_queries::insert_property_option(
                 &mut **transaction,
                 *id,
                 property_definition_id,
-                first_order + index as i32,
+                display_order,
                 value.clone(),
-                Some(option_color(existing.len() + index).to_string()),
+                Some(option_color(existing.len() + offset).to_string()),
             )
             .await?;
         }
@@ -61,14 +61,14 @@ impl DatabaseCellWriter for PropertiesPgRepo {
         value: Option<PropertyOptionValue>,
         color: Option<Option<String>>,
     ) -> Result<UpdatePropertyOptionOutcome, Self::Err> {
-        Ok(property_option_queries::patch_property_option(
+        property_option_queries::patch_property_option(
             &mut **transaction,
             property_definition_id,
             option_id,
             value,
             color,
         )
-        .await?)
+        .await
     }
 
     async fn delete_option_in(
