@@ -8,7 +8,8 @@ use uuid::Uuid;
 
 use super::*;
 use crate::resolve::{
-    Binding, CmpOp, Dir, Filter, Order, OrderKey, Relation, SelectItem, Value, row_position_key,
+    Binding, ComparisonOperator, Direction, Filter, Order, OrderKey, Relation, SelectItem, Value,
+    row_position_key,
 };
 use crate::test_support::*;
 
@@ -114,9 +115,9 @@ fn a_nested_view_is_the_select_its_sql_resolves_to() {
                         negated: false,
                     },
                 ]),
-                Filter::Cmp {
+                Filter::Comparison {
                     column: POINTS,
-                    op: CmpOp::Gt,
+                    operator: ComparisonOperator::Greater,
                     value: Value::Number(3.0),
                 },
             ]),
@@ -125,15 +126,15 @@ fn a_nested_view_is_the_select_its_sql_resolves_to() {
         order_by: vec![
             Order {
                 key: OrderKey::Column(DUE),
-                dir: Dir::Desc,
+                direction: Direction::Descending,
             },
             Order {
                 key: OrderKey::Column(SUMMARY),
-                dir: Dir::Asc,
+                direction: Direction::Ascending,
             },
             Order {
                 key: OrderKey::Column(row_position_key(ISSUES)),
-                dir: Dir::Asc,
+                direction: Direction::Ascending,
             },
         ],
         limit: None,
@@ -230,9 +231,9 @@ fn every_test_compiles_to_its_filter() {
                 operator: TextOperator::Is,
                 value: "Ship it".into(),
             },
-            Filter::Cmp {
+            Filter::Comparison {
                 column: SUMMARY,
-                op: CmpOp::Eq,
+                operator: ComparisonOperator::Equal,
                 value: Value::Text("Ship it".into()),
             },
         ),
@@ -243,9 +244,9 @@ fn every_test_compiles_to_its_filter() {
                 value: "Ship it".into(),
             },
             Filter::Or(vec![
-                Filter::Cmp {
+                Filter::Comparison {
                     column: SUMMARY,
-                    op: CmpOp::Ne,
+                    operator: ComparisonOperator::NotEqual,
                     value: Value::Text("Ship it".into()),
                 },
                 Filter::IsNull {
@@ -318,9 +319,9 @@ fn every_test_compiles_to_its_filter() {
                 operator: NumberOperator::Is,
                 value: 5.0,
             },
-            Filter::Cmp {
+            Filter::Comparison {
                 column: POINTS,
-                op: CmpOp::Eq,
+                operator: ComparisonOperator::Equal,
                 value: Value::Number(5.0),
             },
         ),
@@ -331,9 +332,9 @@ fn every_test_compiles_to_its_filter() {
                 value: 5.0,
             },
             Filter::Or(vec![
-                Filter::Cmp {
+                Filter::Comparison {
                     column: POINTS,
-                    op: CmpOp::Ne,
+                    operator: ComparisonOperator::NotEqual,
                     value: Value::Number(5.0),
                 },
                 Filter::IsNull {
@@ -348,9 +349,9 @@ fn every_test_compiles_to_its_filter() {
                 operator: NumberOperator::GreaterThan,
                 value: -1.5,
             },
-            Filter::Cmp {
+            Filter::Comparison {
                 column: POINTS,
-                op: CmpOp::Gt,
+                operator: ComparisonOperator::Greater,
                 value: Value::Number(-1.5),
             },
         ),
@@ -360,9 +361,9 @@ fn every_test_compiles_to_its_filter() {
                 operator: NumberOperator::GreaterThanOrEqual,
                 value: 2.0,
             },
-            Filter::Cmp {
+            Filter::Comparison {
                 column: POINTS,
-                op: CmpOp::Ge,
+                operator: ComparisonOperator::GreaterOrEqual,
                 value: Value::Number(2.0),
             },
         ),
@@ -372,9 +373,9 @@ fn every_test_compiles_to_its_filter() {
                 operator: NumberOperator::LessThan,
                 value: 8.0,
             },
-            Filter::Cmp {
+            Filter::Comparison {
                 column: POINTS,
-                op: CmpOp::Lt,
+                operator: ComparisonOperator::Less,
                 value: Value::Number(8.0),
             },
         ),
@@ -384,9 +385,9 @@ fn every_test_compiles_to_its_filter() {
                 operator: NumberOperator::LessThanOrEqual,
                 value: 8.0,
             },
-            Filter::Cmp {
+            Filter::Comparison {
                 column: POINTS,
-                op: CmpOp::Le,
+                operator: ComparisonOperator::LessOrEqual,
                 value: Value::Number(8.0),
             },
         ),
@@ -396,9 +397,9 @@ fn every_test_compiles_to_its_filter() {
                 operator: DateOperator::Before,
                 value: due,
             },
-            Filter::Cmp {
+            Filter::Comparison {
                 column: DUE,
-                op: CmpOp::Lt,
+                operator: ComparisonOperator::Less,
                 value: Value::Date(due),
             },
         ),
@@ -408,9 +409,9 @@ fn every_test_compiles_to_its_filter() {
                 operator: DateOperator::After,
                 value: due,
             },
-            Filter::Cmp {
+            Filter::Comparison {
                 column: DUE,
-                op: CmpOp::Gt,
+                operator: ComparisonOperator::Greater,
                 value: Value::Date(due),
             },
         ),
@@ -420,9 +421,9 @@ fn every_test_compiles_to_its_filter() {
                 operator: DateOperator::OnOrBefore,
                 value: due,
             },
-            Filter::Cmp {
+            Filter::Comparison {
                 column: DUE,
-                op: CmpOp::Le,
+                operator: ComparisonOperator::LessOrEqual,
                 value: Value::Date(due),
             },
         ),
@@ -432,18 +433,18 @@ fn every_test_compiles_to_its_filter() {
                 operator: DateOperator::OnOrAfter,
                 value: due,
             },
-            Filter::Cmp {
+            Filter::Comparison {
                 column: DUE,
-                op: CmpOp::Ge,
+                operator: ComparisonOperator::GreaterOrEqual,
                 value: Value::Date(due),
             },
         ),
         (
             BLOCKED_PLACEMENT,
             FilterTest::Checkbox { checked: true },
-            Filter::Cmp {
+            Filter::Comparison {
                 column: BLOCKED,
-                op: CmpOp::Eq,
+                operator: ComparisonOperator::Equal,
                 value: Value::Bool(true),
             },
         ),
@@ -451,9 +452,9 @@ fn every_test_compiles_to_its_filter() {
             BLOCKED_PLACEMENT,
             FilterTest::Checkbox { checked: false },
             Filter::Or(vec![
-                Filter::Cmp {
+                Filter::Comparison {
                     column: BLOCKED,
-                    op: CmpOp::Eq,
+                    operator: ComparisonOperator::Equal,
                     value: Value::Bool(false),
                 },
                 Filter::IsNull {
@@ -661,9 +662,9 @@ fn groups_collapse_and_empty_groups_keep_every_row() {
         column: BLOCKED_PLACEMENT,
         test: FilterTest::Checkbox { checked: true },
     });
-    let blocked_filter = Filter::Cmp {
+    let blocked_filter = Filter::Comparison {
         column: BLOCKED,
-        op: CmpOp::Eq,
+        operator: ComparisonOperator::Equal,
         value: Value::Bool(true),
     };
     let empty = |conjunction| FilterGroup {
@@ -731,7 +732,7 @@ fn an_unsorted_view_keeps_the_table_order() {
         compiled.order_by,
         vec![Order {
             key: OrderKey::Column(row_position_key(ISSUES)),
-            dir: Dir::Asc,
+            direction: Direction::Ascending,
         }]
     );
 }

@@ -4,8 +4,8 @@ use item_filters::ast::properties::{EntityRefId, PropertiesLiteral, PropertyMatc
 use super::*;
 use crate::catalog::{PEOPLE_EMAIL, PEOPLE_ID, PEOPLE_NAME, PEOPLE_TABLE};
 use crate::resolve::{
-    AggFn, CmpOp, Dir, JoinKind, Order, OrderKey, Query, Relation, Value, column_key, compile,
-    row_id_key,
+    AggregateFunction, ComparisonOperator, Direction, JoinKind, Order, OrderKey, Query, Relation,
+    Value, column_key, compile, row_id_key,
 };
 use crate::test_support::{catalog, *};
 
@@ -67,8 +67,6 @@ fn entity(column: Uuid, id: &str) -> Expr<PropertiesLiteral> {
     })
 }
 
-// ---- the plan for each pushdown situation: full literals -------------------
-
 #[test]
 fn pushable_and_residual_conjuncts_are_divided() {
     let plan = split(
@@ -89,15 +87,15 @@ fn pushable_and_residual_conjuncts_are_divided() {
                 key_hint: None,
             },
             vec![NAME, AMOUNT],
-            Some(Filter::Cmp {
+            Some(Filter::Comparison {
                 column: AMOUNT,
-                op: CmpOp::Gt,
+                operator: ComparisonOperator::Greater,
                 value: Value::Number(5000.0),
             }),
             Shape::Rows(vec![NAME, AMOUNT]),
             vec![Order {
                 key: OrderKey::Column(AMOUNT),
-                dir: Dir::Desc,
+                direction: Direction::Descending,
             }],
         )
     );
@@ -122,14 +120,14 @@ fn an_or_with_a_residual_side_pushes_nothing() {
             },
             vec![NAME, STAGE, AMOUNT],
             Some(Filter::Or(vec![
-                Filter::Cmp {
+                Filter::Comparison {
                     column: STAGE,
-                    op: CmpOp::Eq,
+                    operator: ComparisonOperator::Equal,
                     value: Value::Option(WON),
                 },
-                Filter::Cmp {
+                Filter::Comparison {
                     column: AMOUNT,
-                    op: CmpOp::Gt,
+                    operator: ComparisonOperator::Greater,
                     value: Value::Number(5000.0),
                 },
             ])),
@@ -202,9 +200,9 @@ fn negations_stay_residual_because_soup_not_keeps_empty_cells() {
             },
             vec![NAME, STAGE, TAGS, OWNER, DONE],
             Some(Filter::And(vec![
-                Filter::Cmp {
+                Filter::Comparison {
                     column: STAGE,
-                    op: CmpOp::Ne,
+                    operator: ComparisonOperator::NotEqual,
                     value: Value::Option(WON),
                 },
                 Filter::Has {
@@ -217,9 +215,9 @@ fn negations_stay_residual_because_soup_not_keeps_empty_cells() {
                     values: vec![Value::Entity("macro|sam@example.com".into())],
                     negated: true,
                 },
-                Filter::Cmp {
+                Filter::Comparison {
                     column: DONE,
-                    op: CmpOp::Eq,
+                    operator: ComparisonOperator::Equal,
                     value: Value::Bool(true),
                 },
             ])),
@@ -254,15 +252,15 @@ fn count_per_select_group_needs_no_rows() {
                 group_by: Some(STAGE),
                 items: vec![
                     SelectItem::Column(STAGE),
-                    SelectItem::Agg {
-                        func: AggFn::Count,
+                    SelectItem::Aggregate {
+                        function: AggregateFunction::Count,
                         column: None,
                     },
                 ],
             },
             vec![Order {
                 key: OrderKey::Item(1),
-                dir: Dir::Desc,
+                direction: Direction::Descending,
             }],
         )
     );
@@ -293,9 +291,9 @@ fn any_other_aggregate_or_a_residual_filter_fetches_rows_and_folds() {
             },
             vec![OWNER, AMOUNT, CLOSED_AT],
             Some(Filter::And(vec![
-                Filter::Cmp {
+                Filter::Comparison {
                     column: AMOUNT,
-                    op: CmpOp::Gt,
+                    operator: ComparisonOperator::Greater,
                     value: Value::Number(5000.0),
                 },
                 Filter::IsNull {
@@ -307,12 +305,12 @@ fn any_other_aggregate_or_a_residual_filter_fetches_rows_and_folds() {
                 group_by: Some(OWNER),
                 items: vec![
                     SelectItem::Column(OWNER),
-                    SelectItem::Agg {
-                        func: AggFn::Sum,
+                    SelectItem::Aggregate {
+                        function: AggregateFunction::Sum,
                         column: Some(AMOUNT),
                     },
-                    SelectItem::Agg {
-                        func: AggFn::Count,
+                    SelectItem::Aggregate {
+                        function: AggregateFunction::Count,
                         column: None,
                     },
                 ],
@@ -320,11 +318,11 @@ fn any_other_aggregate_or_a_residual_filter_fetches_rows_and_folds() {
             vec![
                 Order {
                     key: OrderKey::Item(1),
-                    dir: Dir::Desc,
+                    direction: Direction::Descending,
                 },
                 Order {
                     key: OrderKey::Column(OWNER),
-                    dir: Dir::Asc,
+                    direction: Direction::Ascending,
                 },
             ],
         )
@@ -368,8 +366,6 @@ fn a_whole_table_read_pushes_nothing_and_needs_every_column() {
         )
     );
 }
-
-// ---- joins: one fetch per relation ------------------------------------------
 
 #[test]
 fn each_relation_gets_its_own_pushdown_and_needs() {
@@ -445,9 +441,9 @@ fn each_relation_gets_its_own_pushdown_and_needs() {
     assert_eq!(
         plan.residual,
         Some(Filter::And(vec![
-            Filter::Cmp {
+            Filter::Comparison {
                 column: deals_amount,
-                op: CmpOp::Gt,
+                operator: ComparisonOperator::Greater,
                 value: Value::Number(100.0),
             },
             Filter::Like {

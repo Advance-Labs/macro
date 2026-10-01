@@ -11,7 +11,7 @@ use super::ParseError;
 #[derive(Logos, Debug, Clone, PartialEq, strum::IntoStaticStr)]
 #[logos(skip r"[ \t\r\n]+")]
 #[strum(serialize_all = "UPPERCASE")]
-pub enum Tok {
+pub enum TokenKind {
     #[regex("(?i)select")]
     Select,
     #[regex("(?i)distinct")]
@@ -30,8 +30,7 @@ pub enum Tok {
     Outer,
     #[regex("(?i)on")]
     On,
-    // Reserved so it can never be read as a table alias; the parser rejects
-    // it with a message the agent can act on.
+    // Reserved so `FROM t LIMIT 5` never reads `LIMIT` as an alias.
     #[regex("(?i)limit")]
     Limit,
     #[regex("(?i)offset")]
@@ -94,49 +93,60 @@ pub enum Tok {
     Max,
 
     #[token("<=")]
-    Le,
+    #[strum(serialize = "<=")]
+    LessOrEqual,
     #[token(">=")]
-    Ge,
+    #[strum(serialize = ">=")]
+    GreaterOrEqual,
     #[token("!=")]
     #[token("<>")]
-    Ne,
+    #[strum(serialize = "!=")]
+    NotEqual,
     #[token("=")]
-    Eq,
+    #[strum(serialize = "=")]
+    Equal,
     #[token("<")]
-    Lt,
+    #[strum(serialize = "<")]
+    Less,
     #[token(">")]
-    Gt,
+    #[strum(serialize = ">")]
+    Greater,
     #[token("(")]
-    LParen,
+    #[strum(serialize = "(")]
+    LeftParen,
     #[token("[")]
-    LBracket,
+    #[strum(serialize = "[")]
+    LeftBracket,
     #[token("]")]
-    RBracket,
+    #[strum(serialize = "]")]
+    RightBracket,
     #[token(")")]
-    RParen,
+    #[strum(serialize = ")")]
+    RightParen,
     #[token(",")]
+    #[strum(serialize = ",")]
     Comma,
     #[token(".")]
+    #[strum(serialize = ".")]
     Dot,
     #[token("*")]
+    #[strum(serialize = "*")]
     Star,
     #[token("-")]
+    #[strum(serialize = "-")]
     Minus,
     #[token(";")]
-    Semi,
+    #[strum(serialize = ";")]
+    Semicolon,
 
-    #[regex(r"[A-Za-z_][A-Za-z0-9_]*", |lex| lex.slice().to_owned())]
-    Ident(String),
+    #[regex(r"[A-Za-z_][A-Za-z0-9_]*", |lexer| lexer.slice().to_owned())]
+    Identifier(String),
     #[regex(r#""([^"]|"")*""#, |lex| unquote(lex.slice(), '"'))]
-    QuotedIdent(String),
+    QuotedIdentifier(String),
     #[regex(r"'([^']|'')*'", |lex| unquote(lex.slice(), '\''))]
-    Str(String),
-    #[regex(r"([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?", |lex| lex.slice().parse().ok())]
-    Num(f64),
-    /// Never produced by the lexer: appended by [`lex`] so every parser sees
-    /// a token at the end of the statement, with the statement's end as its
-    /// span.
-    End,
+    StringLiteral(String),
+    #[regex(r"([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?", |lexer| lexer.slice().parse().ok())]
+    NumberLiteral(f64),
 }
 
 /// Strip the surrounding quotes and collapse doubled quotes.
@@ -149,13 +159,13 @@ fn unquote(slice: &str, quote: char) -> String {
 /// A token with the byte range it came from.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
-    pub kind: Tok,
+    pub kind: TokenKind,
     pub span: Range<usize>,
 }
 
 /// Tokenize the whole input, failing on the first character no token matches.
 pub fn lex(sql: &str) -> Result<Vec<Token>, ParseError> {
-    let mut lexer = Tok::lexer(sql);
+    let mut lexer = TokenKind::lexer(sql);
     let mut tokens = Vec::new();
     while let Some(result) = lexer.next() {
         let span = lexer.span();
@@ -173,66 +183,38 @@ pub fn lex(sql: &str) -> Result<Vec<Token>, ParseError> {
             }
         }
     }
-    tokens.push(Token {
-        kind: Tok::End,
-        span: sql.len()..sql.len(),
-    });
     Ok(tokens)
 }
 
-impl Tok {
-    /// How the token reads in an error message.
+impl TokenKind {
     /// The keyword's name in lower case, for a keyword used as a name after
     /// `AS`; `None` for every other token.
     pub fn keyword_name(&self) -> Option<String> {
         match self {
-            Tok::Ident(_)
-            | Tok::QuotedIdent(_)
-            | Tok::Str(_)
-            | Tok::Num(_)
-            | Tok::Le
-            | Tok::Ge
-            | Tok::Ne
-            | Tok::Eq
-            | Tok::Lt
-            | Tok::Gt
-            | Tok::LParen
-            | Tok::LBracket
-            | Tok::RBracket
-            | Tok::RParen
-            | Tok::Comma
-            | Tok::Dot
-            | Tok::Star
-            | Tok::Minus
-            | Tok::Semi
-            | Tok::End => None,
-            keyword => Some(<&'static str>::from(keyword).to_lowercase()),
+            TokenKind::Identifier(_)
+            | TokenKind::QuotedIdentifier(_)
+            | TokenKind::StringLiteral(_)
+            | TokenKind::NumberLiteral(_) => None,
+            // Punctuation spells itself with symbols, keywords with letters.
+            other => {
+                let spelling: &'static str = other.into();
+                spelling
+                    .chars()
+                    .all(|character| character.is_ascii_alphabetic())
+                    .then(|| spelling.to_lowercase())
+            }
         }
     }
 
+    /// How the token reads in an error message.
     pub fn describe(&self) -> String {
         match self {
-            Tok::Ident(name) => format!("\"{name}\""),
-            Tok::QuotedIdent(name) => format!("\"{name}\""),
-            Tok::Str(text) => format!("'{text}'"),
-            Tok::Num(n) => n.to_string(),
-            Tok::Le => "<=".into(),
-            Tok::Ge => ">=".into(),
-            Tok::Ne => "!=".into(),
-            Tok::Eq => "=".into(),
-            Tok::Lt => "<".into(),
-            Tok::Gt => ">".into(),
-            Tok::LParen => "(".into(),
-            Tok::LBracket => "[".into(),
-            Tok::RBracket => "]".into(),
-            Tok::RParen => ")".into(),
-            Tok::Comma => ",".into(),
-            Tok::Dot => ".".into(),
-            Tok::Star => "*".into(),
-            Tok::Minus => "-".into(),
-            Tok::Semi => ";".into(),
-            Tok::End => "end of statement".into(),
-            keyword => <&'static str>::from(keyword).into(),
+            TokenKind::Identifier(name) | TokenKind::QuotedIdentifier(name) => {
+                format!("\"{name}\"")
+            }
+            TokenKind::StringLiteral(text) => format!("'{text}'"),
+            TokenKind::NumberLiteral(number) => number.to_string(),
+            other => <&'static str>::from(other).into(),
         }
     }
 }

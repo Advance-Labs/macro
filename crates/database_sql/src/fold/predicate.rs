@@ -2,7 +2,7 @@
 
 use std::cmp::Ordering;
 
-use crate::resolve::{CmpOp, Filter, Value};
+use crate::resolve::{ComparisonOperator, Filter, Value};
 
 use super::{Cell, Row};
 
@@ -21,17 +21,21 @@ pub fn holds(filter: &Filter, row: &Row) -> bool {
             };
             empty != *negated
         }
-        Filter::Cmp { column, op, value } => row
+        Filter::Comparison {
+            column,
+            operator,
+            value,
+        } => row
             .cells
             .get(column)
             .and_then(|cell| compare(cell, value))
-            .is_some_and(|ordering| match op {
-                CmpOp::Eq => ordering == Ordering::Equal,
-                CmpOp::Ne => ordering != Ordering::Equal,
-                CmpOp::Lt => ordering == Ordering::Less,
-                CmpOp::Le => ordering != Ordering::Greater,
-                CmpOp::Gt => ordering == Ordering::Greater,
-                CmpOp::Ge => ordering != Ordering::Less,
+            .is_some_and(|ordering| match operator {
+                ComparisonOperator::Equal => ordering == Ordering::Equal,
+                ComparisonOperator::NotEqual => ordering != Ordering::Equal,
+                ComparisonOperator::Less => ordering == Ordering::Less,
+                ComparisonOperator::LessOrEqual => ordering != Ordering::Greater,
+                ComparisonOperator::Greater => ordering == Ordering::Greater,
+                ComparisonOperator::GreaterOrEqual => ordering != Ordering::Less,
             }),
         Filter::In {
             column,

@@ -41,7 +41,7 @@ pub fn view_as_sql(view: &DatabaseView, catalog: &Catalog) -> Result<String, Vie
                 format!(
                     "{} {}",
                     identifier(column_name(table, key)),
-                    <&str>::from(order.dir)
+                    <&str>::from(order.direction)
                 )
             }
         })
@@ -57,15 +57,15 @@ fn condition(table: &Table, filter: &Filter) -> String {
     match filter {
         Filter::And(parts) => joined(table, parts, " AND "),
         Filter::Or(parts) => joined(table, parts, " OR "),
-        Filter::Cmp {
+        Filter::Comparison {
             column: key,
-            op,
+            operator,
             value,
         } => {
             format!(
                 "{} {} {}",
                 column(key),
-                op.symbol(),
+                operator.symbol(),
                 literal(table, *key, value)
             )
         }

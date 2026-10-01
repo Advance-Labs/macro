@@ -5,8 +5,8 @@ use uuid::Uuid;
 
 use crate::catalog::{Catalog, ColumnKind, EntityKind, Table};
 use crate::parse::{
-    ColumnRef, Cond, Delete, FromItem, Ident, Insert, Item, Lit, Select, SetValue, TableName,
-    Update,
+    ColumnRef, Condition, Delete, FromItem, Identifier, Insert, Item, Literal, Select, SelectList,
+    SetValue, TableName, Update,
 };
 
 use super::names::ROW_ID;
@@ -36,7 +36,7 @@ pub fn resolve(table: &Table, insert: Insert) -> Result<InsertQuery, ResolveErro
         .map(|row| {
             row.into_iter()
                 .zip(&columns)
-                .filter(|(value, _)| *value != Lit::Null)
+                .filter(|(value, _)| *value != Literal::Null)
                 .map(|(value, column)| Ok((column.id, filter::typed_cell(column, value)?)))
                 .collect::<Result<Vec<_>, ResolveError>>()
         })
@@ -60,8 +60,8 @@ pub fn resolve_update(catalog: &Catalog, update: Update) -> Result<UpdateQuery, 
             });
         }
         let value = match value {
-            SetValue::Lit(Lit::Null) => Assigned::Value(None),
-            SetValue::Lit(value) => Assigned::Value(Some(filter::typed_cell(column, value)?)),
+            SetValue::Literal(Literal::Null) => Assigned::Value(None),
+            SetValue::Literal(value) => Assigned::Value(Some(filter::typed_cell(column, value)?)),
             SetValue::Column(name) => {
                 let source = names::column(table, &name)?;
                 if family(&column.kind) != family(&source.kind) {
@@ -100,16 +100,16 @@ pub fn resolve_delete(catalog: &Catalog, delete: Delete) -> Result<DeleteQuery, 
 fn rows_where(
     catalog: &Catalog,
     table: &TableName,
-    where_: Cond,
+    where_: Condition,
 ) -> Result<SelectQuery, ResolveError> {
     select::resolve(
         catalog,
         Select {
             distinct: false,
-            items: vec![Item::Column(ColumnRef {
+            items: SelectList::Items(vec![Item::Column(ColumnRef {
                 table: None,
-                column: Ident(ROW_ID.into()),
-            })],
+                column: Identifier(ROW_ID.into()),
+            })]),
             aliases: vec![],
             from: FromItem {
                 table: table.clone(),

@@ -8,7 +8,7 @@ use models_databases::{
 };
 use uuid::Uuid;
 
-use crate::catalog::{Catalog, Column, ColumnKind, EntityKind, Table};
+use crate::catalog::{Catalog, Column, ColumnKind, RelationTarget, Table};
 use crate::fold::Cell;
 use crate::resolve::{
     AlterColumnTypeQuery, Assigned, InsertQuery, SelectItem, UpdateQuery, Value, column_key,
@@ -271,42 +271,22 @@ fn options(column: &Column, ids: &[Uuid]) -> CellValue {
 
 /// Entity references, or related rows for a relation.
 fn references(column: &Column, ids: &[String]) -> CellValue {
-    match column.kind {
-        ColumnKind::Entity {
-            target: EntityKind::Row,
-            ..
-        } => CellValue::Rows(
-            ids.iter()
-                .filter_map(|id| Uuid::parse_str(id).ok())
-                .collect(),
-        ),
-        ColumnKind::Entity { target, .. } => CellValue::Entities(
+    let ColumnKind::Entity { target, .. } = column.kind else {
+        unreachable!("only entity columns hold references")
+    };
+    match OpEntityKind::try_from(target) {
+        Ok(entity_type) => CellValue::Entities(
             ids.iter()
                 .map(|id| EntityRef {
-                    entity_type: entity_kind(target),
+                    entity_type,
                     entity_id: id.clone(),
                 })
                 .collect(),
         ),
-        _ => unreachable!("only entity columns hold references"),
-    }
-}
-
-/// What a reference points at, as an op names it; a relation is written as
-/// rows, never as references.
-pub(crate) fn entity_kind(kind: EntityKind) -> OpEntityKind {
-    match kind {
-        EntityKind::User => OpEntityKind::User,
-        EntityKind::Document => OpEntityKind::Document,
-        EntityKind::Task => OpEntityKind::Task,
-        EntityKind::Company => OpEntityKind::Company,
-        EntityKind::CallRecord => OpEntityKind::CallRecord,
-        EntityKind::Channel => OpEntityKind::Channel,
-        EntityKind::Chat => OpEntityKind::Chat,
-        EntityKind::Project => OpEntityKind::Project,
-        EntityKind::Thread => OpEntityKind::Thread,
-        EntityKind::CalendarEvent => OpEntityKind::CalendarEvent,
-        EntityKind::Initiative => OpEntityKind::Initiative,
-        EntityKind::Row => unreachable!("a relation is written as rows, not references"),
+        Err(RelationTarget) => CellValue::Rows(
+            ids.iter()
+                .filter_map(|id| Uuid::parse_str(id).ok())
+                .collect(),
+        ),
     }
 }

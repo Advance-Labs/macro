@@ -23,7 +23,9 @@ use crate::catalog::{Catalog, ColumnKind};
 use crate::engine::{Engine, Step};
 use crate::fold::{Bin, Row, Table};
 use crate::parse::ParseError;
-use crate::resolve::{AggFn, Binding, CompileError, Relation, ResolveError, SelectItem};
+use crate::resolve::{
+    AggregateFunction, Binding, CompileError, Relation, ResolveError, SelectItem,
+};
 use crate::split::{GqlQuery, column_of, virtual_column_of};
 
 /// The most rows one statement reads before the fold. Past it the answer
@@ -380,21 +382,26 @@ pub(crate) fn describe(
                     name: column.name,
                 }
             }
-            SelectItem::Agg { func, column: None } => OutcomeColumn {
-                name: format!("{}(*)", func.name()),
+            SelectItem::Aggregate {
+                function,
+                column: None,
+            } => OutcomeColumn {
+                name: format!("{}(*)", function.name()),
                 column: None,
                 kind: OutcomeKind::Number,
             },
-            SelectItem::Agg {
-                func,
+            SelectItem::Aggregate {
+                function,
                 column: Some(key),
             } => {
                 let column = column(*key);
                 OutcomeColumn {
-                    name: format!("{}({})", func.name(), column.name),
+                    name: format!("{}({})", function.name(), column.name),
                     column: None,
-                    kind: match (func, &column.kind) {
-                        (AggFn::Min | AggFn::Max, ColumnKind::Date) => OutcomeKind::Date,
+                    kind: match (function, &column.kind) {
+                        (AggregateFunction::Min | AggregateFunction::Max, ColumnKind::Date) => {
+                            OutcomeKind::Date
+                        }
                         _ => OutcomeKind::Number,
                     },
                 }

@@ -27,7 +27,8 @@ use crate::fold::Cell;
 pub use propf::{Propf, PropfLiteral, PropfValue};
 
 use crate::resolve::{
-    AggFn, Binding, Filter, JoinKind, Order, OrderKey, Relation, SelectItem, SelectQuery,
+    AggregateFunction, Binding, Filter, JoinKind, Order, OrderKey, Relation, SelectItem,
+    SelectQuery,
 };
 
 /// A resolved `SELECT`, divided.
@@ -157,7 +158,7 @@ pub fn split(catalog: &Catalog, mut query: SelectQuery) -> Plan {
     let aggregates = query
         .items
         .iter()
-        .any(|item| matches!(item, SelectItem::Agg { .. }));
+        .any(|item| matches!(item, SelectItem::Aggregate { .. }));
     let shape = if aggregates || query.group_by.is_some() {
         Shape::Aggregate {
             group_by: query.group_by,
@@ -170,7 +171,7 @@ pub fn split(catalog: &Catalog, mut query: SelectQuery) -> Plan {
                 .iter()
                 .map(|item| match item {
                     SelectItem::Column(id) => *id,
-                    SelectItem::Agg { .. } => unreachable!("no aggregates in a row shape"),
+                    SelectItem::Aggregate { .. } => unreachable!("no aggregates in a row shape"),
                 })
                 .collect(),
         )
@@ -185,8 +186,8 @@ pub fn split(catalog: &Catalog, mut query: SelectQuery) -> Plan {
                     *item == SelectItem::Column(group)
                         || matches!(
                             item,
-                            SelectItem::Agg {
-                                func: AggFn::Count,
+                            SelectItem::Aggregate {
+                                function: AggregateFunction::Count,
                                 column: None
                             }
                         )
@@ -360,10 +361,10 @@ fn needed_keys(
     for item in items {
         match item {
             SelectItem::Column(key) => need(*key),
-            SelectItem::Agg {
+            SelectItem::Aggregate {
                 column: Some(key), ..
             } => need(*key),
-            SelectItem::Agg { column: None, .. } => {}
+            SelectItem::Aggregate { column: None, .. } => {}
         }
     }
     if let Some(key) = group_by {
@@ -390,7 +391,7 @@ impl Filter {
     /// Visit every key the filter tests, in source order.
     pub fn for_each_column(&self, visit: &mut impl FnMut(Uuid)) {
         match self {
-            Filter::Cmp { column, .. }
+            Filter::Comparison { column, .. }
             | Filter::In { column, .. }
             | Filter::Has { column, .. }
             | Filter::IsNull { column, .. }

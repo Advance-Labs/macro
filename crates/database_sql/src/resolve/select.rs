@@ -2,9 +2,12 @@
 //! `GROUP BY`, aggregates against column kinds, `ORDER BY` against the
 //! select list.
 
+use uuid::Uuid;
+
 use crate::catalog::{Catalog, ColumnKind};
 use crate::parse::{
-    Agg, AggFn, ColumnRef, Item, Join, OrderBy, OrderKey as ParsedOrderKey, Select,
+    Aggregate, AggregateFunction, ColumnRef, Identifier, Item, Join, OrderBy,
+    OrderKey as ParsedOrderKey, Select, SelectList,
 };
 
 use super::names::{Bound, Scope};
@@ -26,45 +29,48 @@ pub fn resolve(catalog: &Catalog, select: Select) -> Result<SelectQuery, Resolve
         .map(|name| scope.column(name))
         .transpose()?;
 
-    let items = if select.items == [Item::Star] {
-        let mut items = Vec::new();
-        for index in 0..scope.relations.len() {
-            for column in &scope.relations[index].table.columns {
-                let reference = ColumnRef {
-                    table: Some(crate::parse::Ident(scope.relations[index].alias.clone())),
-                    column: crate::parse::Ident(column.name.clone()),
-                };
-                items.push(SelectItem::Column(scope.column(&reference)?.key));
+    // Each item with the column it selects, for the grouping check's message.
+    let resolved: Vec<(SelectItem, Option<Bound>)> = match &select.items {
+        SelectList::Star => {
+            let mut resolved = Vec::new();
+            for index in 0..scope.relations.len() {
+                for column in &scope.relations[index].table.columns {
+                    let reference = ColumnRef {
+                        table: Some(Identifier(scope.relations[index].alias.clone())),
+                        column: Identifier(column.name.clone()),
+                    };
+                    let bound = scope.column(&reference)?;
+                    resolved.push((SelectItem::Column(bound.key), Some(bound)));
+                }
             }
+            resolved
         }
-        items
-    } else {
-        select
-            .items
+        SelectList::Items(written) => written
             .iter()
             .map(|item| resolve_item(&mut scope, item))
-            .collect::<Result<_, _>>()?
+            .collect::<Result<_, _>>()?,
     };
 
-    let aggregates = items
+    let aggregates = resolved
         .iter()
-        .any(|item| matches!(item, SelectItem::Agg { .. }));
+        .any(|(item, _)| matches!(item, SelectItem::Aggregate { .. }));
     if aggregates || group_by.is_some() {
-        for item in &items {
-            if let SelectItem::Column(key) = item
-                && group_by.as_ref().map(|bound| bound.key) != Some(*key)
+        for (_, bound) in &resolved {
+            if let Some(bound) = bound
+                && group_by.as_ref().map(|group| group.key) != Some(bound.key)
             {
                 return Err(ResolveError::ColumnNotGrouped {
-                    column: key_name(&scope, *key),
+                    column: bound.column.name.clone(),
                     grouped: group_by.is_some(),
                 });
             }
         }
     }
+    let items: Vec<SelectItem> = resolved.into_iter().map(|(item, _)| item).collect();
 
     let where_ = select
         .where_
-        .map(|cond| filter::resolve(&mut scope, cond))
+        .map(|condition| filter::resolve(&mut scope, condition))
         .transpose()?;
 
     let labels: Vec<(usize, String)> = select
@@ -155,46 +161,54 @@ fn resolve_join<'c>(
 /// Entity references match row ids and each other; anything else matches
 /// only its own kind. Whether a side holds several values does not matter:
 /// a multi-valued side matches by membership.
-fn joinable(a: &Bound, b: &Bound) -> bool {
-    match (&a.column.kind, &b.column.kind) {
+fn joinable(earlier: &Bound, joined: &Bound) -> bool {
+    match (&earlier.column.kind, &joined.column.kind) {
         (ColumnKind::Entity { .. }, ColumnKind::Entity { .. }) => true,
         (ColumnKind::Select { .. }, ColumnKind::Select { .. }) => true,
-        (x, y) => x == y,
+        (earlier, joined) => earlier == joined,
     }
 }
 
-fn resolve_item(scope: &mut Scope<'_>, item: &Item) -> Result<SelectItem, ResolveError> {
+fn resolve_item(
+    scope: &mut Scope<'_>,
+    item: &Item,
+) -> Result<(SelectItem, Option<Bound>), ResolveError> {
     match item {
-        Item::Star => unreachable!("a lone * is expanded before items are resolved"),
-        Item::Column(name) => Ok(SelectItem::Column(scope.column(name)?.key)),
-        Item::Agg(agg) => resolve_agg(scope, agg),
+        Item::Column(name) => {
+            let bound = scope.column(name)?;
+            Ok((SelectItem::Column(bound.key), Some(bound)))
+        }
+        Item::Aggregate(aggregate) => Ok((resolve_aggregate(scope, aggregate)?, None)),
     }
 }
 
-fn resolve_agg(scope: &mut Scope<'_>, agg: &Agg) -> Result<SelectItem, ResolveError> {
-    let Some(name) = &agg.arg else {
-        return Ok(SelectItem::Agg {
-            func: agg.func,
+fn resolve_aggregate(
+    scope: &mut Scope<'_>,
+    aggregate: &Aggregate,
+) -> Result<SelectItem, ResolveError> {
+    let Some(name) = &aggregate.argument else {
+        return Ok(SelectItem::Aggregate {
+            function: aggregate.function,
             column: None,
         });
     };
     let bound = scope.column(name)?;
-    let allowed = match agg.func {
-        AggFn::Count => true,
-        AggFn::Sum | AggFn::Avg => bound.column.kind == ColumnKind::Number,
-        AggFn::Min | AggFn::Max => {
+    let allowed = match aggregate.function {
+        AggregateFunction::Count => true,
+        AggregateFunction::Sum | AggregateFunction::Avg => bound.column.kind == ColumnKind::Number,
+        AggregateFunction::Min | AggregateFunction::Max => {
             matches!(bound.column.kind, ColumnKind::Number | ColumnKind::Date)
         }
     };
     if !allowed {
         return Err(ResolveError::AggregateNotSupported {
-            func: agg.func.name(),
+            func: aggregate.function.name(),
             column: bound.column.name.clone(),
             kind: bound.column.kind.describe(),
         });
     }
-    Ok(SelectItem::Agg {
-        func: agg.func,
+    Ok(SelectItem::Aggregate {
+        function: aggregate.function,
         column: Some(bound.key),
     })
 }
@@ -203,7 +217,7 @@ fn resolve_order(
     scope: &mut Scope<'_>,
     items: &[SelectItem],
     labels: &[(usize, String)],
-    group_by: Option<uuid::Uuid>,
+    group_by: Option<Uuid>,
     order: &OrderBy,
 ) -> Result<Order, ResolveError> {
     let key = match &order.key {
@@ -217,90 +231,54 @@ fn resolve_order(
             }
             OrderKey::Item(index)
         }
-        ParsedOrderKey::Agg(agg) => {
-            let wanted = resolve_agg(scope, agg)?;
+        ParsedOrderKey::Aggregate(aggregate) => {
+            let wanted = resolve_aggregate(scope, aggregate)?;
             items
                 .iter()
                 .position(|item| *item == wanted)
                 .map(OrderKey::Item)
                 .ok_or_else(|| ResolveError::OrderAggregateNotSelected {
-                    agg: agg.to_string(),
+                    agg: aggregate.to_string(),
                 })?
         }
-        ParsedOrderKey::Column(name)
-            if name.table.is_none()
-                && labels
-                    .iter()
-                    .any(|(_, label)| label.eq_ignore_ascii_case(&name.column.0)) =>
-        {
-            let (index, _) = labels
-                .iter()
-                .find(|(_, label)| label.eq_ignore_ascii_case(&name.column.0))
-                .expect("the guard found it");
-            OrderKey::Item(*index)
-        }
-        ParsedOrderKey::Column(name) => {
-            let bound = scope.column(name)?;
-            let grouped = group_by.is_some()
-                || items
-                    .iter()
-                    .any(|item| matches!(item, SelectItem::Agg { .. }));
-            if grouped && group_by != Some(bound.key) {
-                return Err(ResolveError::OrderColumnNotGrouped {
-                    column: bound.column.name.clone(),
-                });
-            }
-            OrderKey::Column(bound.key)
-        }
+        ParsedOrderKey::Column(name) => match labeled(labels, name) {
+            Some(index) => OrderKey::Item(index),
+            None => order_column(scope, items, group_by, name)?,
+        },
     };
     Ok(Order {
         key,
-        dir: order.dir,
+        direction: order.direction,
     })
 }
 
-/// The display name behind a key already bound in the scope.
-fn key_name(scope: &Scope<'_>, key: uuid::Uuid) -> String {
-    let binding = scope
-        .bindings
+/// The select-list position an unqualified name labels with `AS`.
+fn labeled(labels: &[(usize, String)], name: &ColumnRef) -> Option<usize> {
+    if name.table.is_some() {
+        return None;
+    }
+    labels
         .iter()
-        .find(|binding| binding.key == key)
-        .expect("select items are bound in the scope");
-    let table = scope.relations[binding.relation].table;
-    match binding.column {
-        Some(id) => table
-            .columns
+        .find(|(_, label)| label.eq_ignore_ascii_case(&name.column.0))
+        .map(|(index, _)| *index)
+}
+
+/// `ORDER BY column`, which a grouped query allows only on its group column.
+fn order_column(
+    scope: &mut Scope<'_>,
+    items: &[SelectItem],
+    group_by: Option<Uuid>,
+    name: &ColumnRef,
+) -> Result<OrderKey, ResolveError> {
+    let bound = scope.column(name)?;
+    let grouped = group_by.is_some()
+        || items
             .iter()
-            .find(|column| column.id == id)
-            .map(|column| column.name.clone())
-            .expect("bindings come from the catalog"),
-        None => super::virtual_column(table.id, key)
-            .map(|column| column.name)
-            .expect("a binding without a definition is a stand-in"),
+            .any(|item| matches!(item, SelectItem::Aggregate { .. }));
+    if grouped && group_by != Some(bound.key) {
+        return Err(ResolveError::OrderColumnNotGrouped {
+            column: bound.column.name.clone(),
+        });
     }
-}
-
-impl AggFn {
-    /// The function as written.
-    pub fn name(self) -> &'static str {
-        self.into()
-    }
-}
-
-impl std::fmt::Display for Agg {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.arg {
-            Some(column) => write!(f, "{}({})", self.func.name(), column),
-            None => write!(f, "{}(*)", self.func.name()),
-        }
-    }
-}
-
-impl std::fmt::Display for ColumnRef {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.table {
-            Some(table) => write!(f, "{}.{}", table.0, self.column.0),
-            None => write!(f, "{}", self.column.0),
-        }
-    }
+    Ok(OrderKey::Column(bound.key))
 }

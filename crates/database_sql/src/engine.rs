@@ -25,8 +25,8 @@ use uuid::Uuid;
 use crate::catalog::Catalog;
 use crate::fold::{Bin, Cell, Row, fold_bins, fold_relations};
 use crate::resolve::{
-    CmpOp, DeleteQuery, Filter, Query, SelectQuery, UpdateQuery, Value, column_key, compile,
-    row_id_key, row_position_key,
+    ComparisonOperator, DeleteQuery, Filter, Query, SelectQuery, UpdateQuery, Value, column_key,
+    compile, row_id_key, row_position_key,
 };
 use crate::run::{Outcome, OutcomeColumn, PAGE_LIMIT, Page, ROW_CAP, RunError, describe};
 use crate::split::{GqlQuery, KeyHint, Plan, Shape, split};
@@ -493,9 +493,9 @@ fn named_rows(read: &SelectQuery) -> Vec<Uuid> {
             .collect()
     };
     match &read.where_ {
-        Some(Filter::Cmp {
+        Some(Filter::Comparison {
             column,
-            op: CmpOp::Eq,
+            operator: ComparisonOperator::Equal,
             value,
         }) if *column == row_id => ids(std::slice::from_ref(value)),
         Some(Filter::In {

@@ -8,8 +8,6 @@ use crate::parse::parse;
 
 use crate::test_support::{catalog, *};
 
-// ---- resolved statements: full literals ------------------------------------
-
 #[test]
 fn grouped_aggregate_with_mixed_where() {
     let sql = "
@@ -31,12 +29,12 @@ fn grouped_aggregate_with_mixed_where() {
         labels: vec![],
         items: vec![
             SelectItem::Column(OWNER),
-            SelectItem::Agg {
-                func: AggFn::Sum,
+            SelectItem::Aggregate {
+                function: AggregateFunction::Sum,
                 column: Some(AMOUNT),
             },
-            SelectItem::Agg {
-                func: AggFn::Count,
+            SelectItem::Aggregate {
+                function: AggregateFunction::Count,
                 column: None,
             },
         ],
@@ -46,9 +44,9 @@ fn grouped_aggregate_with_mixed_where() {
                 values: vec![Value::Option(WON), Value::Option(LEAD)],
                 negated: false,
             },
-            Filter::Cmp {
+            Filter::Comparison {
                 column: AMOUNT,
-                op: CmpOp::Gt,
+                operator: ComparisonOperator::Greater,
                 value: Value::Number(5000.0),
             },
             Filter::IsNull {
@@ -60,11 +58,11 @@ fn grouped_aggregate_with_mixed_where() {
         order_by: vec![
             Order {
                 key: OrderKey::Item(1),
-                dir: Dir::Desc,
+                direction: Direction::Descending,
             },
             Order {
                 key: OrderKey::Column(OWNER),
-                dir: Dir::Asc,
+                direction: Direction::Ascending,
             },
         ],
         limit: None,
@@ -130,24 +128,24 @@ fn star_expands_and_every_column_kind_types_its_literal() {
                 escape: None,
                 negated: false,
             },
-            Filter::Cmp {
+            Filter::Comparison {
                 column: AMOUNT,
-                op: CmpOp::Le,
+                operator: ComparisonOperator::LessOrEqual,
                 value: Value::Number(10.0),
             },
-            Filter::Cmp {
+            Filter::Comparison {
                 column: STAGE,
-                op: CmpOp::Ne,
+                operator: ComparisonOperator::NotEqual,
                 value: Value::Option(WON),
             },
-            Filter::Cmp {
+            Filter::Comparison {
                 column: CLOSED_AT,
-                op: CmpOp::Ge,
+                operator: ComparisonOperator::GreaterOrEqual,
                 value: Value::Date(Utc.with_ymd_and_hms(2026, 9, 1, 0, 0, 0).unwrap()),
             },
-            Filter::Cmp {
+            Filter::Comparison {
                 column: OWNER,
-                op: CmpOp::Eq,
+                operator: ComparisonOperator::Equal,
                 value: Value::Entity("macro|sam@example.com".into()),
             },
             Filter::Has {
@@ -155,21 +153,21 @@ fn star_expands_and_every_column_kind_types_its_literal() {
                 value: Value::Option(VIP),
                 negated: true,
             },
-            Filter::Cmp {
+            Filter::Comparison {
                 column: DONE,
-                op: CmpOp::Eq,
+                operator: ComparisonOperator::Equal,
                 value: Value::Bool(true),
             },
-            Filter::Cmp {
+            Filter::Comparison {
                 column: WEBSITE,
-                op: CmpOp::Eq,
+                operator: ComparisonOperator::Equal,
                 value: Value::Text("https://acme.example".into()),
             },
         ])),
         group_by: None,
         order_by: vec![Order {
             key: OrderKey::Column(CLOSED_AT),
-            dir: Dir::Desc,
+            direction: Direction::Descending,
         }],
         limit: None,
         offset: None,
@@ -204,8 +202,8 @@ fn order_by_aggregate_resolves_to_its_select_item() {
         labels: vec![],
         items: vec![
             SelectItem::Column(STAGE),
-            SelectItem::Agg {
-                func: AggFn::Max,
+            SelectItem::Aggregate {
+                function: AggregateFunction::Max,
                 column: Some(CLOSED_AT),
             },
         ],
@@ -214,11 +212,11 @@ fn order_by_aggregate_resolves_to_its_select_item() {
         order_by: vec![
             Order {
                 key: OrderKey::Item(1),
-                dir: Dir::Desc,
+                direction: Direction::Descending,
             },
             Order {
                 key: OrderKey::Column(STAGE),
-                dir: Dir::Asc,
+                direction: Direction::Ascending,
             },
         ],
         limit: None,
@@ -277,9 +275,9 @@ fn an_update_reads_the_rows_its_where_matches_and_types_its_cells() {
             joins: vec![],
             items: vec![SelectItem::Column(row_id_key(DEALS))],
             labels: vec![],
-            where_: Some(Filter::Cmp {
+            where_: Some(Filter::Comparison {
                 column: row_id_key(DEALS),
-                op: CmpOp::Eq,
+                operator: ComparisonOperator::Equal,
                 value: Value::Entity("00000000-0000-0000-0000-0000000000a1".into()),
             }),
             group_by: None,
@@ -320,9 +318,9 @@ fn a_delete_reads_the_rows_its_where_matches() {
             joins: vec![],
             items: vec![SelectItem::Column(row_id_key(DEALS))],
             labels: vec![],
-            where_: Some(Filter::Cmp {
+            where_: Some(Filter::Comparison {
                 column: AMOUNT,
-                op: CmpOp::Lt,
+                operator: ComparisonOperator::Less,
                 value: Value::Number(100.0),
             }),
             group_by: None,
@@ -422,21 +420,21 @@ fn joins_key_each_relation_and_record_bindings() {
             SelectItem::Column(row_id_key(TASKS)),
         ],
         where_: Some(Filter::And(vec![
-            Filter::Cmp {
+            Filter::Comparison {
                 column: PRIORITY,
-                op: CmpOp::Eq,
+                operator: ComparisonOperator::Equal,
                 value: Value::Option(HIGH),
             },
-            Filter::Cmp {
+            Filter::Comparison {
                 column: deals_amount,
-                op: CmpOp::Gt,
+                operator: ComparisonOperator::Greater,
                 value: Value::Number(100.0),
             },
         ])),
         group_by: None,
         order_by: vec![Order {
             key: OrderKey::Column(people_email),
-            dir: Dir::Asc,
+            direction: Direction::Ascending,
         }],
         limit: None,
         offset: None,
@@ -627,8 +625,6 @@ fn lists_type_multi_valued_cells_and_bare_values_become_one_element_lists() {
     assert_eq!(resolve(&catalog(), parse(sql).unwrap()).unwrap(), expected);
 }
 
-// ---- rejections: the exact message the agent reads --------------------------
-
 #[test]
 fn rejections_quote_what_the_agent_wrote() {
     let cases: &[(&str, &str)] = &[
@@ -814,8 +810,6 @@ fn exact_case_resolves_a_case_insensitive_collision() {
     );
 }
 
-// ---- ALTER COLUMN ------------------------------------------------------
-
 #[test]
 fn a_type_change_binds_the_column_and_keeps_using_null() {
     assert_eq!(
@@ -856,8 +850,6 @@ fn a_type_change_the_cast_rule_never_allows_is_refused_without_reading_data() {
     }
 }
 
-// ---- the row position ------------------------------------------------------
-
 #[test]
 fn order_by_row_position_binds_the_virtual_column() {
     let Query::Select(select) = compile(
@@ -871,7 +863,7 @@ fn order_by_row_position_binds_the_virtual_column() {
         select.order_by,
         vec![Order {
             key: OrderKey::Column(row_position_key(DEALS)),
-            dir: Dir::Asc,
+            direction: Direction::Ascending,
         }]
     );
     assert_eq!(

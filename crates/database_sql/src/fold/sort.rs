@@ -6,7 +6,7 @@ use std::cmp::Ordering;
 use uuid::Uuid;
 
 use crate::catalog::{Catalog, ColumnKind};
-use crate::resolve::{Dir, Order, OrderKey, SelectItem};
+use crate::resolve::{Direction, Order, OrderKey, SelectItem};
 
 use super::aggregate::Group;
 use super::{Cell, Row, group_order_index};
@@ -23,7 +23,7 @@ pub fn rows(catalog: &Catalog, rows: &mut [Row], order_by: &[Order]) {
                 };
                 directed(
                     compare(catalog, a.cells.get(&column), b.cells.get(&column)),
-                    order.dir,
+                    order.direction,
                 )
             })
             .find(|ordering| *ordering != Ordering::Equal)
@@ -50,7 +50,7 @@ pub fn groups(
                     // ORDER BY the group column when it is not selected.
                     None => compare(catalog, a.key.as_ref(), b.key.as_ref()),
                 };
-                directed(ordering, order.dir)
+                directed(ordering, order.direction)
             })
             .find(|ordering| *ordering != Ordering::Equal)
             .unwrap_or(Ordering::Equal)
@@ -58,10 +58,10 @@ pub fn groups(
 }
 
 /// Reverse for `DESC`, but keep empty cells last.
-fn directed(ordering: Ranked, dir: Dir) -> Ordering {
-    match (ordering, dir) {
-        (Ranked::Both(ordering), Dir::Asc) => ordering,
-        (Ranked::Both(ordering), Dir::Desc) => ordering.reverse(),
+fn directed(ordering: Ranked, direction: Direction) -> Ordering {
+    match (ordering, direction) {
+        (Ranked::Both(ordering), Direction::Ascending) => ordering,
+        (Ranked::Both(ordering), Direction::Descending) => ordering.reverse(),
         (Ranked::EmptyLeft, _) => Ordering::Greater,
         (Ranked::EmptyRight, _) => Ordering::Less,
         (Ranked::BothEmpty, _) => Ordering::Equal,

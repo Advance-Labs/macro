@@ -5,7 +5,7 @@
 use uuid::Uuid;
 
 use crate::catalog::{Catalog, Column, ColumnKind, EntityKind, Table};
-use crate::parse::{ColumnRef, FromItem, Ident, TableName};
+use crate::parse::{ColumnRef, FromItem, Identifier, TableName};
 
 use super::{Binding, ResolveError, column_key, row_id_key, row_position_key};
 
@@ -109,7 +109,7 @@ pub fn qualified(table: &Table) -> String {
 }
 
 /// The column a statement names in one table.
-pub fn column<'t>(table: &'t Table, name: &Ident) -> Result<&'t Column, ResolveError> {
+pub fn column<'t>(table: &'t Table, name: &Identifier) -> Result<&'t Column, ResolveError> {
     table
         .columns
         .iter()

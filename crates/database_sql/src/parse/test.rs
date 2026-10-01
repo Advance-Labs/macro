@@ -1,15 +1,6 @@
 use super::*;
 use models_databases::{ColumnKind as OpColumnKind, EntityKind};
 
-fn col(name: &str) -> ColumnRef {
-    ColumnRef {
-        table: None,
-        column: Ident(name.into()),
-    }
-}
-
-// ---- accepted statements: one full literal per grammar area ---------------
-
 #[test]
 fn grouped_aggregate_with_mixed_where() {
     let sql = "
@@ -23,50 +14,71 @@ fn grouped_aggregate_with_mixed_where() {
     let expected = Statement::Select(Select {
         distinct: false,
         aliases: vec![],
-        items: vec![
-            Item::Column(col("owner")),
-            Item::Agg(Agg {
-                func: AggFn::Sum,
-                arg: Some(col("amount")),
+        items: SelectList::Items(vec![
+            Item::Column(ColumnRef {
+                table: None,
+                column: Identifier("owner".into()),
             }),
-            Item::Agg(Agg {
-                func: AggFn::Count,
-                arg: None,
+            Item::Aggregate(Aggregate {
+                function: AggregateFunction::Sum,
+                argument: Some(ColumnRef {
+                    table: None,
+                    column: Identifier("amount".into()),
+                }),
             }),
-        ],
+            Item::Aggregate(Aggregate {
+                function: AggregateFunction::Count,
+                argument: None,
+            }),
+        ]),
         from: FromItem {
             table: TableName {
-                database: Some(Ident("crm".into())),
-                table: Ident("deals".into()),
+                database: Some(Identifier("crm".into())),
+                table: Identifier("deals".into()),
             },
             alias: None,
         },
         joins: vec![],
-        where_: Some(Cond::And(vec![
-            Cond::In {
-                column: col("stage"),
-                values: vec![Lit::Str("Won".into()), Lit::Str("Lead".into())],
+        where_: Some(Condition::And(vec![
+            Condition::In {
+                column: ColumnRef {
+                    table: None,
+                    column: Identifier("stage".into()),
+                },
+                values: vec![Literal::Text("Won".into()), Literal::Text("Lead".into())],
                 negated: false,
             },
-            Cond::Cmp {
-                column: col("amount"),
-                op: CmpOp::Gt,
-                value: Lit::Num(5000.0),
+            Condition::Comparison {
+                column: ColumnRef {
+                    table: None,
+                    column: Identifier("amount".into()),
+                },
+                operator: ComparisonOperator::Greater,
+                value: Literal::Number(5000.0),
             },
-            Cond::IsNull {
-                column: col("closed_at"),
+            Condition::IsNull {
+                column: ColumnRef {
+                    table: None,
+                    column: Identifier("closed_at".into()),
+                },
                 negated: true,
             },
         ])),
-        group_by: Some(col("owner")),
+        group_by: Some(ColumnRef {
+            table: None,
+            column: Identifier("owner".into()),
+        }),
         order_by: vec![
             OrderBy {
                 key: OrderKey::Position(2),
-                dir: Dir::Desc,
+                direction: Direction::Descending,
             },
             OrderBy {
-                key: OrderKey::Column(col("owner")),
-                dir: Dir::Asc,
+                key: OrderKey::Column(ColumnRef {
+                    table: None,
+                    column: Identifier("owner".into()),
+                }),
+                direction: Direction::Ascending,
             },
         ],
         limit: None,
@@ -83,37 +95,49 @@ fn or_binds_looser_than_and_and_parens_override() {
     let expected = Statement::Select(Select {
         distinct: false,
         aliases: vec![],
-        items: vec![Item::Star],
+        items: SelectList::Star,
         from: FromItem {
             table: TableName {
                 database: None,
-                table: Ident("deals".into()),
+                table: Identifier("deals".into()),
             },
             alias: None,
         },
         joins: vec![],
-        where_: Some(Cond::Or(vec![
-            Cond::Cmp {
-                column: col("a"),
-                op: CmpOp::Eq,
-                value: Lit::Num(1.0),
-            },
-            Cond::And(vec![
-                Cond::Cmp {
-                    column: col("b"),
-                    op: CmpOp::Eq,
-                    value: Lit::Num(2.0),
+        where_: Some(Condition::Or(vec![
+            Condition::Comparison {
+                column: ColumnRef {
+                    table: None,
+                    column: Identifier("a".into()),
                 },
-                Cond::Or(vec![
-                    Cond::Cmp {
-                        column: col("c"),
-                        op: CmpOp::Eq,
-                        value: Lit::Num(3.0),
+                operator: ComparisonOperator::Equal,
+                value: Literal::Number(1.0),
+            },
+            Condition::And(vec![
+                Condition::Comparison {
+                    column: ColumnRef {
+                        table: None,
+                        column: Identifier("b".into()),
                     },
-                    Cond::Cmp {
-                        column: col("d"),
-                        op: CmpOp::Eq,
-                        value: Lit::Num(4.0),
+                    operator: ComparisonOperator::Equal,
+                    value: Literal::Number(2.0),
+                },
+                Condition::Or(vec![
+                    Condition::Comparison {
+                        column: ColumnRef {
+                            table: None,
+                            column: Identifier("c".into()),
+                        },
+                        operator: ComparisonOperator::Equal,
+                        value: Literal::Number(3.0),
+                    },
+                    Condition::Comparison {
+                        column: ColumnRef {
+                            table: None,
+                            column: Identifier("d".into()),
+                        },
+                        operator: ComparisonOperator::Equal,
+                        value: Literal::Number(4.0),
                     },
                 ]),
             ]),
@@ -146,66 +170,99 @@ fn every_atom_form_and_literal_kind() {
     let expected = Statement::Select(Select {
         distinct: false,
         aliases: vec![],
-        items: vec![Item::Column(col("name"))],
+        items: SelectList::Items(vec![Item::Column(ColumnRef {
+            table: None,
+            column: Identifier("name".into()),
+        })]),
         from: FromItem {
             table: TableName {
-                database: Some(Ident("crm".into())),
-                table: Ident("deals".into()),
+                database: Some(Identifier("crm".into())),
+                table: Identifier("deals".into()),
             },
             alias: None,
         },
         joins: vec![],
-        where_: Some(Cond::And(vec![
-            Cond::In {
-                column: col("stage"),
-                values: vec![Lit::Str("Lost".into())],
+        where_: Some(Condition::And(vec![
+            Condition::In {
+                column: ColumnRef {
+                    table: None,
+                    column: Identifier("stage".into()),
+                },
+                values: vec![Literal::Text("Lost".into())],
                 negated: true,
             },
-            Cond::Has {
-                column: col("tags"),
-                value: Lit::Str("vip".into()),
+            Condition::Has {
+                column: ColumnRef {
+                    table: None,
+                    column: Identifier("tags".into()),
+                },
+                value: Literal::Text("vip".into()),
                 negated: false,
             },
-            Cond::Has {
-                column: col("assignees"),
-                value: Lit::Str("macro|a@b.com".into()),
+            Condition::Has {
+                column: ColumnRef {
+                    table: None,
+                    column: Identifier("assignees".into()),
+                },
+                value: Literal::Text("macro|a@b.com".into()),
                 negated: true,
             },
-            Cond::IsNull {
-                column: col("closed_at"),
+            Condition::IsNull {
+                column: ColumnRef {
+                    table: None,
+                    column: Identifier("closed_at".into()),
+                },
                 negated: false,
             },
-            Cond::Like {
-                column: col("name"),
+            Condition::Like {
+                column: ColumnRef {
+                    table: None,
+                    column: Identifier("name".into()),
+                },
                 pattern: "A%".into(),
                 escape: None,
                 negated: false,
             },
-            Cond::Like {
-                column: col("notes"),
+            Condition::Like {
+                column: ColumnRef {
+                    table: None,
+                    column: Identifier("notes".into()),
+                },
                 pattern: "%draft%".into(),
                 escape: None,
                 negated: true,
             },
-            Cond::Cmp {
-                column: col("done"),
-                op: CmpOp::Eq,
-                value: Lit::Bool(true),
+            Condition::Comparison {
+                column: ColumnRef {
+                    table: None,
+                    column: Identifier("done".into()),
+                },
+                operator: ComparisonOperator::Equal,
+                value: Literal::Boolean(true),
             },
-            Cond::Cmp {
-                column: col("score"),
-                op: CmpOp::Ge,
-                value: Lit::Num(-1500.0),
+            Condition::Comparison {
+                column: ColumnRef {
+                    table: None,
+                    column: Identifier("score".into()),
+                },
+                operator: ComparisonOperator::GreaterOrEqual,
+                value: Literal::Number(-1500.0),
             },
-            Cond::Cmp {
-                column: col("Plus ones"),
-                op: CmpOp::Ne,
-                value: Lit::Num(0.5),
+            Condition::Comparison {
+                column: ColumnRef {
+                    table: None,
+                    column: Identifier("Plus ones".into()),
+                },
+                operator: ComparisonOperator::NotEqual,
+                value: Literal::Number(0.5),
             },
-            Cond::Cmp {
-                column: col("note"),
-                op: CmpOp::Ne,
-                value: Lit::Str("it's".into()),
+            Condition::Comparison {
+                column: ColumnRef {
+                    table: None,
+                    column: Identifier("note".into()),
+                },
+                operator: ComparisonOperator::NotEqual,
+                value: Literal::Text("it's".into()),
             },
         ])),
         group_by: None,
@@ -224,38 +281,53 @@ fn order_by_column_aggregate_and_position() {
     let expected = Statement::Select(Select {
         distinct: false,
         aliases: vec![],
-        items: vec![
-            Item::Column(col("stage")),
-            Item::Agg(Agg {
-                func: AggFn::Max,
-                arg: Some(col("amount")),
+        items: SelectList::Items(vec![
+            Item::Column(ColumnRef {
+                table: None,
+                column: Identifier("stage".into()),
             }),
-        ],
+            Item::Aggregate(Aggregate {
+                function: AggregateFunction::Max,
+                argument: Some(ColumnRef {
+                    table: None,
+                    column: Identifier("amount".into()),
+                }),
+            }),
+        ]),
         from: FromItem {
             table: TableName {
-                database: Some(Ident("My CRM".into())),
-                table: Ident("Big Deals".into()),
+                database: Some(Identifier("My CRM".into())),
+                table: Identifier("Big Deals".into()),
             },
             alias: None,
         },
         joins: vec![],
         where_: None,
-        group_by: Some(col("stage")),
+        group_by: Some(ColumnRef {
+            table: None,
+            column: Identifier("stage".into()),
+        }),
         order_by: vec![
             OrderBy {
-                key: OrderKey::Column(col("stage")),
-                dir: Dir::Asc,
+                key: OrderKey::Column(ColumnRef {
+                    table: None,
+                    column: Identifier("stage".into()),
+                }),
+                direction: Direction::Ascending,
             },
             OrderBy {
-                key: OrderKey::Agg(Agg {
-                    func: AggFn::Max,
-                    arg: Some(col("amount")),
+                key: OrderKey::Aggregate(Aggregate {
+                    function: AggregateFunction::Max,
+                    argument: Some(ColumnRef {
+                        table: None,
+                        column: Identifier("amount".into()),
+                    }),
                 }),
-                dir: Dir::Desc,
+                direction: Direction::Descending,
             },
             OrderBy {
                 key: OrderKey::Position(1),
-                dir: Dir::Asc,
+                direction: Direction::Ascending,
             },
         ],
         limit: None,
@@ -277,33 +349,33 @@ fn distinct_aliases_and_joins() {
         ORDER BY p.email
     ";
     let qualified = |table: &str, column: &str| ColumnRef {
-        table: Some(Ident(table.into())),
-        column: Ident(column.into()),
+        table: Some(Identifier(table.into())),
+        column: Identifier(column.into()),
     };
 
     let expected = Statement::Select(Select {
         distinct: true,
         aliases: vec![],
-        items: vec![
+        items: SelectList::Items(vec![
             Item::Column(qualified("p", "email")),
             Item::Column(qualified("t", "row_id")),
-        ],
+        ]),
         from: FromItem {
             table: TableName {
-                database: Some(Ident("macro".into())),
-                table: Ident("tasks".into()),
+                database: Some(Identifier("macro".into())),
+                table: Identifier("tasks".into()),
             },
-            alias: Some(Ident("t".into())),
+            alias: Some(Identifier("t".into())),
         },
         joins: vec![
             Join {
                 kind: JoinKind::Inner,
                 table: FromItem {
                     table: TableName {
-                        database: Some(Ident("macro".into())),
-                        table: Ident("people".into()),
+                        database: Some(Identifier("macro".into())),
+                        table: Identifier("people".into()),
                     },
-                    alias: Some(Ident("p".into())),
+                    alias: Some(Identifier("p".into())),
                 },
                 on: vec![(qualified("t", "assignees"), qualified("p", "id"))],
             },
@@ -311,8 +383,8 @@ fn distinct_aliases_and_joins() {
                 kind: JoinKind::Left,
                 table: FromItem {
                     table: TableName {
-                        database: Some(Ident("crm".into())),
-                        table: Ident("deals".into()),
+                        database: Some(Identifier("crm".into())),
+                        table: Identifier("deals".into()),
                     },
                     alias: None,
                 },
@@ -322,15 +394,15 @@ fn distinct_aliases_and_joins() {
                 ],
             },
         ],
-        where_: Some(Cond::Cmp {
+        where_: Some(Condition::Comparison {
             column: qualified("t", "priority"),
-            op: CmpOp::Eq,
-            value: Lit::Str("High".into()),
+            operator: ComparisonOperator::Equal,
+            value: Literal::Text("High".into()),
         }),
         group_by: Some(qualified("p", "email")),
         order_by: vec![OrderBy {
             key: OrderKey::Column(qualified("p", "email")),
-            dir: Dir::Asc,
+            direction: Direction::Ascending,
         }],
         limit: None,
         offset: None,
@@ -349,43 +421,49 @@ fn item_aliases_and_membership_joins() {
         ORDER BY deals DESC
     ";
     let qualified = |table: &str, column: &str| ColumnRef {
-        table: Some(Ident(table.into())),
-        column: Ident(column.into()),
+        table: Some(Identifier(table.into())),
+        column: Identifier(column.into()),
     };
 
     let expected = Statement::Select(Select {
         distinct: false,
-        items: vec![
+        items: SelectList::Items(vec![
             Item::Column(qualified("p", "email")),
-            Item::Agg(Agg {
-                func: AggFn::Count,
-                arg: None,
+            Item::Aggregate(Aggregate {
+                function: AggregateFunction::Count,
+                argument: None,
             }),
+        ]),
+        aliases: vec![
+            (0, Identifier("person".into())),
+            (1, Identifier("deals".into())),
         ],
-        aliases: vec![(0, Ident("person".into())), (1, Ident("deals".into()))],
         from: FromItem {
             table: TableName {
-                database: Some(Ident("crm".into())),
-                table: Ident("deals".into()),
+                database: Some(Identifier("crm".into())),
+                table: Identifier("deals".into()),
             },
-            alias: Some(Ident("d".into())),
+            alias: Some(Identifier("d".into())),
         },
         joins: vec![Join {
             kind: JoinKind::Inner,
             table: FromItem {
                 table: TableName {
-                    database: Some(Ident("crm".into())),
-                    table: Ident("people".into()),
+                    database: Some(Identifier("crm".into())),
+                    table: Identifier("people".into()),
                 },
-                alias: Some(Ident("p".into())),
+                alias: Some(Identifier("p".into())),
             },
             on: vec![(qualified("d", "owner"), qualified("p", "id"))],
         }],
         where_: None,
         group_by: Some(qualified("p", "email")),
         order_by: vec![OrderBy {
-            key: OrderKey::Column(col("deals")),
-            dir: Dir::Desc,
+            key: OrderKey::Column(ColumnRef {
+                table: None,
+                column: Identifier("deals".into()),
+            }),
+            direction: Direction::Descending,
         }],
         limit: None,
         offset: None,
@@ -401,24 +479,33 @@ fn like_takes_an_escape_character() {
     let expected = Statement::Select(Select {
         distinct: false,
         aliases: vec![],
-        items: vec![Item::Column(col("name"))],
+        items: SelectList::Items(vec![Item::Column(ColumnRef {
+            table: None,
+            column: Identifier("name".into()),
+        })]),
         from: FromItem {
             table: TableName {
-                database: Some(Ident("crm".into())),
-                table: Ident("deals".into()),
+                database: Some(Identifier("crm".into())),
+                table: Identifier("deals".into()),
             },
             alias: None,
         },
         joins: vec![],
-        where_: Some(Cond::Or(vec![
-            Cond::Like {
-                column: col("name"),
+        where_: Some(Condition::Or(vec![
+            Condition::Like {
+                column: ColumnRef {
+                    table: None,
+                    column: Identifier("name".into()),
+                },
                 pattern: r"50\%%".into(),
                 escape: Some('\\'),
                 negated: false,
             },
-            Cond::Like {
-                column: col("notes"),
+            Condition::Like {
+                column: ColumnRef {
+                    table: None,
+                    column: Identifier("notes".into()),
+                },
                 pattern: "%a!_b%".into(),
                 escape: Some('!'),
                 negated: true,
@@ -442,7 +529,10 @@ fn a_keyword_after_as_is_the_alias() {
     };
     assert_eq!(
         select.aliases,
-        vec![(0, Ident("count".into())), (1, Ident("sum".into()))]
+        vec![
+            (0, Identifier("count".into())),
+            (1, Identifier("sum".into()))
+        ]
     );
 }
 
@@ -454,25 +544,34 @@ fn keywords_are_usable_as_column_names_when_quoted() {
     let expected = Statement::Select(Select {
         distinct: false,
         aliases: vec![],
-        items: vec![
-            Item::Column(col("count")),
-            Item::Agg(Agg {
-                func: AggFn::Count,
-                arg: Some(col("order")),
+        items: SelectList::Items(vec![
+            Item::Column(ColumnRef {
+                table: None,
+                column: Identifier("count".into()),
             }),
-        ],
+            Item::Aggregate(Aggregate {
+                function: AggregateFunction::Count,
+                argument: Some(ColumnRef {
+                    table: None,
+                    column: Identifier("order".into()),
+                }),
+            }),
+        ]),
         from: FromItem {
             table: TableName {
                 database: None,
-                table: Ident("stats".into()),
+                table: Identifier("stats".into()),
             },
             alias: None,
         },
         joins: vec![],
-        where_: Some(Cond::Cmp {
-            column: col("from"),
-            op: CmpOp::Eq,
-            value: Lit::Str("x".into()),
+        where_: Some(Condition::Comparison {
+            column: ColumnRef {
+                table: None,
+                column: Identifier("from".into()),
+            },
+            operator: ComparisonOperator::Equal,
+            value: Literal::Text("x".into()),
         }),
         group_by: None,
         order_by: vec![],
@@ -494,33 +593,33 @@ fn insert_several_rows() {
 
     let expected = Statement::Insert(Insert {
         table: TableName {
-            database: Some(Ident("crm".into())),
-            table: Ident("deals".into()),
+            database: Some(Identifier("crm".into())),
+            table: Identifier("deals".into()),
         },
         columns: vec![
-            Ident("name".into()),
-            Ident("stage".into()),
-            Ident("amount".into()),
-            Ident("closed at".into()),
+            Identifier("name".into()),
+            Identifier("stage".into()),
+            Identifier("amount".into()),
+            Identifier("closed at".into()),
         ],
         rows: vec![
             vec![
-                Lit::Str("Acme".into()),
-                Lit::Str("Won".into()),
-                Lit::Num(12000.0),
-                Lit::Str("2026-09-01".into()),
+                Literal::Text("Acme".into()),
+                Literal::Text("Won".into()),
+                Literal::Number(12000.0),
+                Literal::Text("2026-09-01".into()),
             ],
             vec![
-                Lit::Str("Globex".into()),
-                Lit::Str("Lead".into()),
-                Lit::Null,
-                Lit::Null,
+                Literal::Text("Globex".into()),
+                Literal::Text("Lead".into()),
+                Literal::Null,
+                Literal::Null,
             ],
             vec![
-                Lit::Str("Initech '24".into()),
-                Lit::Str("Lead".into()),
-                Lit::Num(-0.0),
-                Lit::Bool(false),
+                Literal::Text("Initech '24".into()),
+                Literal::Text("Lead".into()),
+                Literal::Number(-0.0),
+                Literal::Boolean(false),
             ],
         ],
     });
@@ -534,21 +633,30 @@ fn update_and_delete_take_any_where() {
 
     let expected = Statement::Update(Update {
         table: TableName {
-            database: Some(Ident("crm".into())),
-            table: Ident("deals".into()),
+            database: Some(Identifier("crm".into())),
+            table: Identifier("deals".into()),
         },
         assignments: vec![
-            (Ident("stage".into()), SetValue::Lit(Lit::Str("Won".into()))),
-            (Ident("amount".into()), SetValue::Lit(Lit::Num(12000.0))),
-            (Ident("closed at".into()), SetValue::Lit(Lit::Null)),
+            (
+                Identifier("stage".into()),
+                SetValue::Literal(Literal::Text("Won".into())),
+            ),
+            (
+                Identifier("amount".into()),
+                SetValue::Literal(Literal::Number(12000.0)),
+            ),
+            (
+                Identifier("closed at".into()),
+                SetValue::Literal(Literal::Null),
+            ),
         ],
-        where_: Cond::Cmp {
+        where_: Condition::Comparison {
             column: ColumnRef {
                 table: None,
-                column: Ident("ROW_ID".into()),
+                column: Identifier("ROW_ID".into()),
             },
-            op: CmpOp::Eq,
-            value: Lit::Str("00000000-0000-0000-0000-0000000000a1".into()),
+            operator: ComparisonOperator::Equal,
+            value: Literal::Text("00000000-0000-0000-0000-0000000000a1".into()),
         },
     });
     assert_eq!(parse(sql).unwrap(), expected);
@@ -557,24 +665,24 @@ fn update_and_delete_take_any_where() {
     let expected = Statement::Delete(Delete {
         table: TableName {
             database: None,
-            table: Ident("deals".into()),
+            table: Identifier("deals".into()),
         },
-        where_: Cond::And(vec![
-            Cond::Cmp {
+        where_: Condition::And(vec![
+            Condition::Comparison {
                 column: ColumnRef {
                     table: None,
-                    column: Ident("stage".into()),
+                    column: Identifier("stage".into()),
                 },
-                op: CmpOp::Eq,
-                value: Lit::Str("Lead".into()),
+                operator: ComparisonOperator::Equal,
+                value: Literal::Text("Lead".into()),
             },
-            Cond::Cmp {
+            Condition::Comparison {
                 column: ColumnRef {
                     table: None,
-                    column: Ident("amount".into()),
+                    column: Identifier("amount".into()),
                 },
-                op: CmpOp::Lt,
-                value: Lit::Num(100.0),
+                operator: ComparisonOperator::Less,
+                value: Literal::Number(100.0),
             },
         ]),
     });
@@ -586,23 +694,26 @@ fn an_update_can_copy_another_column_of_the_row() {
     let sql = "UPDATE crm.deals SET \"closed at\" = due, done = TRUE WHERE done = FALSE";
     let expected = Statement::Update(Update {
         table: TableName {
-            database: Some(Ident("crm".into())),
-            table: Ident("deals".into()),
+            database: Some(Identifier("crm".into())),
+            table: Identifier("deals".into()),
         },
         assignments: vec![
             (
-                Ident("closed at".into()),
-                SetValue::Column(Ident("due".into())),
+                Identifier("closed at".into()),
+                SetValue::Column(Identifier("due".into())),
             ),
-            (Ident("done".into()), SetValue::Lit(Lit::Bool(true))),
+            (
+                Identifier("done".into()),
+                SetValue::Literal(Literal::Boolean(true)),
+            ),
         ],
-        where_: Cond::Cmp {
+        where_: Condition::Comparison {
             column: ColumnRef {
                 table: None,
-                column: Ident("done".into()),
+                column: Identifier("done".into()),
             },
-            op: CmpOp::Eq,
-            value: Lit::Bool(false),
+            operator: ComparisonOperator::Equal,
+            value: Literal::Boolean(false),
         },
     });
     assert_eq!(parse(sql).unwrap(), expected);
@@ -613,29 +724,31 @@ fn list_values_default_values_and_limit_offset() {
     let sql = "UPDATE crm.deals SET tags = ['vip', 'renewal'], owner = ['macro|sam@example.com'] WHERE row_id = '00000000-0000-0000-0000-0000000000a1'";
     let expected = Statement::Update(Update {
         table: TableName {
-            database: Some(Ident("crm".into())),
-            table: Ident("deals".into()),
+            database: Some(Identifier("crm".into())),
+            table: Identifier("deals".into()),
         },
         assignments: vec![
             (
-                Ident("tags".into()),
-                SetValue::Lit(Lit::List(vec![
-                    Lit::Str("vip".into()),
-                    Lit::Str("renewal".into()),
+                Identifier("tags".into()),
+                SetValue::Literal(Literal::List(vec![
+                    Literal::Text("vip".into()),
+                    Literal::Text("renewal".into()),
                 ])),
             ),
             (
-                Ident("owner".into()),
-                SetValue::Lit(Lit::List(vec![Lit::Str("macro|sam@example.com".into())])),
+                Identifier("owner".into()),
+                SetValue::Literal(Literal::List(vec![Literal::Text(
+                    "macro|sam@example.com".into(),
+                )])),
             ),
         ],
-        where_: Cond::Cmp {
+        where_: Condition::Comparison {
             column: ColumnRef {
                 table: None,
-                column: Ident("row_id".into()),
+                column: Identifier("row_id".into()),
             },
-            op: CmpOp::Eq,
-            value: Lit::Str("00000000-0000-0000-0000-0000000000a1".into()),
+            operator: ComparisonOperator::Equal,
+            value: Literal::Text("00000000-0000-0000-0000-0000000000a1".into()),
         },
     });
     assert_eq!(parse(sql).unwrap(), expected);
@@ -643,8 +756,8 @@ fn list_values_default_values_and_limit_offset() {
     let sql = "INSERT INTO crm.deals DEFAULT VALUES";
     let expected = Statement::Insert(Insert {
         table: TableName {
-            database: Some(Ident("crm".into())),
-            table: Ident("deals".into()),
+            database: Some(Identifier("crm".into())),
+            table: Identifier("deals".into()),
         },
         columns: vec![],
         rows: vec![vec![]],
@@ -655,14 +768,14 @@ fn list_values_default_values_and_limit_offset() {
     let expected = Statement::Select(Select {
         distinct: false,
         aliases: vec![],
-        items: vec![Item::Column(ColumnRef {
+        items: SelectList::Items(vec![Item::Column(ColumnRef {
             table: None,
-            column: Ident("name".into()),
-        })],
+            column: Identifier("name".into()),
+        })]),
         from: FromItem {
             table: TableName {
-                database: Some(Ident("crm".into())),
-                table: Ident("deals".into()),
+                database: Some(Identifier("crm".into())),
+                table: Identifier("deals".into()),
             },
             alias: None,
         },
@@ -672,17 +785,15 @@ fn list_values_default_values_and_limit_offset() {
         order_by: vec![OrderBy {
             key: OrderKey::Column(ColumnRef {
                 table: None,
-                column: Ident("name".into()),
+                column: Identifier("name".into()),
             }),
-            dir: Dir::Asc,
+            direction: Direction::Ascending,
         }],
         limit: Some(10),
         offset: Some(20),
     });
     assert_eq!(parse(sql).unwrap(), expected);
 }
-
-// ---- rejected statements: the span and the exact message the agent reads ---
 
 #[test]
 fn rejections_point_at_the_offending_token() {
@@ -768,6 +879,16 @@ fn rejections_point_at_the_offending_token() {
             "expected a column name or a 1-based select-list position after ORDER BY, found 0",
         ),
         (
+            "SELECT name FROM crm.deals ORDER BY name, 0",
+            42..43,
+            "expected a column name or a 1-based select-list position after ORDER BY, found 0",
+        ),
+        (
+            "SELECT name FROM crm.deals LIMIT 10000000000",
+            33..44,
+            "expected a row count after LIMIT, found 10000000000",
+        ),
+        (
             "SELECT name FROM crm.deals WHERE (stage = 'Won'",
             47..47,
             "expected ) to close the condition, found end of statement",
@@ -835,18 +956,16 @@ fn rejections_point_at_the_offending_token() {
     }
 }
 
-// ---- ALTER TABLE … ALTER COLUMN … TYPE ------------------------------------
-
 #[test]
 fn alter_column_type_names_the_table_column_and_type() {
     assert_eq!(
         parse("ALTER TABLE crm.deals ALTER COLUMN amount TYPE text").unwrap(),
         Statement::AlterColumnType(AlterColumnType {
             table: TableName {
-                database: Some(Ident("crm".into())),
-                table: Ident("deals".into()),
+                database: Some(Identifier("crm".into())),
+                table: Identifier("deals".into()),
             },
-            column: Ident("amount".into()),
+            column: Identifier("amount".into()),
             to: OpColumnKind::Text,
             clear_invalid: false,
         })
@@ -860,9 +979,9 @@ fn using_null_clears_what_does_not_fit_and_column_is_optional() {
         Statement::AlterColumnType(AlterColumnType {
             table: TableName {
                 database: None,
-                table: Ident("deals".into()),
+                table: Identifier("deals".into()),
             },
-            column: Ident("closed at".into()),
+            column: Identifier("closed at".into()),
             to: OpColumnKind::Select { multi: true },
             clear_invalid: true,
         })
@@ -876,9 +995,9 @@ fn an_entity_type_names_its_kind_and_takes_brackets_for_several() {
         Statement::AlterColumnType(AlterColumnType {
             table: TableName {
                 database: None,
-                table: Ident("deals".into()),
+                table: Identifier("deals".into()),
             },
-            column: Ident("owner".into()),
+            column: Identifier("owner".into()),
             to: OpColumnKind::Entity {
                 target: EntityKind::User,
                 multi: true,
@@ -891,9 +1010,9 @@ fn an_entity_type_names_its_kind_and_takes_brackets_for_several() {
         Statement::AlterColumnType(AlterColumnType {
             table: TableName {
                 database: None,
-                table: Ident("deals".into()),
+                table: Identifier("deals".into()),
             },
-            column: Ident("column".into()),
+            column: Identifier("column".into()),
             to: OpColumnKind::SelectNumber { multi: false },
             clear_invalid: false,
         })

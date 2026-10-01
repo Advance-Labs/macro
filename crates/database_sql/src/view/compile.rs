@@ -10,8 +10,8 @@ use models_databases::views::{
 
 use crate::catalog::{Catalog, Table};
 use crate::resolve::{
-    Binding, CmpOp, Dir, Filter, Order, OrderKey, Relation, SelectItem, SelectQuery, Value,
-    row_position_key,
+    Binding, ComparisonOperator, Direction, Filter, Order, OrderKey, Relation, SelectItem,
+    SelectQuery, Value, row_position_key,
 };
 
 use super::{checked_table, placed};
@@ -48,14 +48,14 @@ pub(super) fn compile_checked(view: &DatabaseView, table: &Table) -> SelectQuery
         .iter()
         .map(|key| Order {
             key: OrderKey::Column(placed(table, key.column).id),
-            dir: match key.direction {
-                SortDirection::Ascending => Dir::Asc,
-                SortDirection::Descending => Dir::Desc,
+            direction: match key.direction {
+                SortDirection::Ascending => Direction::Ascending,
+                SortDirection::Descending => Direction::Descending,
             },
         })
         .chain(std::iter::once(Order {
             key: OrderKey::Column(position),
-            dir: Dir::Asc,
+            direction: Direction::Ascending,
         }))
         .collect();
     SelectQuery {
@@ -114,7 +114,11 @@ fn joined(conjunction: Conjunction, mut parts: Vec<Filter>) -> Option<Filter> {
 
 fn condition_filter(table: &Table, condition: &FilterCondition) -> Filter {
     let column = placed(table, condition.column).id;
-    let compare = |op, value| Filter::Cmp { column, op, value };
+    let compare = |operator, value| Filter::Comparison {
+        column,
+        operator,
+        value,
+    };
     let or_empty = |filter| {
         Filter::Or(vec![
             filter,
@@ -139,8 +143,8 @@ fn condition_filter(table: &Table, condition: &FilterCondition) -> Filter {
             let text = || Value::Text(value.clone());
             let literal = escaped(value);
             match operator {
-                TextOperator::Is => compare(CmpOp::Eq, text()),
-                TextOperator::IsNot => or_empty(compare(CmpOp::Ne, text())),
+                TextOperator::Is => compare(ComparisonOperator::Equal, text()),
+                TextOperator::IsNot => or_empty(compare(ComparisonOperator::NotEqual, text())),
                 TextOperator::Contains => like(format!("%{literal}%"), false),
                 TextOperator::DoesNotContain => or_empty(like(format!("%{literal}%"), true)),
                 TextOperator::StartsWith => like(format!("{literal}%"), false),
@@ -150,25 +154,31 @@ fn condition_filter(table: &Table, condition: &FilterCondition) -> Filter {
         FilterTest::Number { operator, value } => {
             let number = Value::Number(*value);
             match operator {
-                NumberOperator::Is => compare(CmpOp::Eq, number),
-                NumberOperator::IsNot => or_empty(compare(CmpOp::Ne, number)),
-                NumberOperator::GreaterThan => compare(CmpOp::Gt, number),
-                NumberOperator::GreaterThanOrEqual => compare(CmpOp::Ge, number),
-                NumberOperator::LessThan => compare(CmpOp::Lt, number),
-                NumberOperator::LessThanOrEqual => compare(CmpOp::Le, number),
+                NumberOperator::Is => compare(ComparisonOperator::Equal, number),
+                NumberOperator::IsNot => or_empty(compare(ComparisonOperator::NotEqual, number)),
+                NumberOperator::GreaterThan => compare(ComparisonOperator::Greater, number),
+                NumberOperator::GreaterThanOrEqual => {
+                    compare(ComparisonOperator::GreaterOrEqual, number)
+                }
+                NumberOperator::LessThan => compare(ComparisonOperator::Less, number),
+                NumberOperator::LessThanOrEqual => compare(ComparisonOperator::LessOrEqual, number),
             }
         }
         FilterTest::Date { operator, value } => compare(
             match operator {
-                DateOperator::Before => CmpOp::Lt,
-                DateOperator::After => CmpOp::Gt,
-                DateOperator::OnOrBefore => CmpOp::Le,
-                DateOperator::OnOrAfter => CmpOp::Ge,
+                DateOperator::Before => ComparisonOperator::Less,
+                DateOperator::After => ComparisonOperator::Greater,
+                DateOperator::OnOrBefore => ComparisonOperator::LessOrEqual,
+                DateOperator::OnOrAfter => ComparisonOperator::GreaterOrEqual,
             },
             Value::Date(*value),
         ),
-        FilterTest::Checkbox { checked: true } => compare(CmpOp::Eq, Value::Bool(true)),
-        FilterTest::Checkbox { checked: false } => or_empty(compare(CmpOp::Eq, Value::Bool(false))),
+        FilterTest::Checkbox { checked: true } => {
+            compare(ComparisonOperator::Equal, Value::Bool(true))
+        }
+        FilterTest::Checkbox { checked: false } => {
+            or_empty(compare(ComparisonOperator::Equal, Value::Bool(false)))
+        }
         FilterTest::Options { operator, options } => set_filter(
             column,
             *operator,

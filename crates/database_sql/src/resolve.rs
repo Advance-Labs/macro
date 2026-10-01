@@ -24,7 +24,7 @@ use crate::parse::{self, Statement};
 use models_databases::ColumnKind as OpColumnKind;
 use models_databases::cast::{Cast, CastKind, Contents, cast};
 
-pub use crate::parse::{AggFn, CmpOp, Dir, JoinKind};
+pub use crate::parse::{AggregateFunction, ComparisonOperator, Direction, JoinKind};
 
 /// A statement bound to the catalog.
 #[derive(Debug, Clone, PartialEq)]
@@ -150,9 +150,9 @@ pub enum SelectItem {
     /// A column's value.
     Column(Uuid),
     /// An aggregate over a column, or over rows for `COUNT(*)`.
-    Agg {
+    Aggregate {
         /// Which aggregate.
-        func: AggFn,
+        function: AggregateFunction,
         /// The column aggregated; `None` only for `COUNT(*)`.
         column: Option<Uuid>,
     },
@@ -161,12 +161,12 @@ pub enum SelectItem {
 /// A resolved `WHERE` condition.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Filter {
-    /// `column op value`.
-    Cmp {
+    /// `column operator value`.
+    Comparison {
         /// The column.
         column: Uuid,
         /// The operator.
-        op: CmpOp,
+        operator: ComparisonOperator,
         /// The value, typed for the column.
         value: Value,
     },
@@ -240,7 +240,7 @@ pub struct Order {
     /// What is sorted on.
     pub key: OrderKey,
     /// The direction.
-    pub dir: Dir,
+    pub direction: Direction,
 }
 
 /// What an `ORDER BY` key refers to after resolution.

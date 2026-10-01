@@ -2,7 +2,7 @@
 
 use uuid::Uuid;
 
-use crate::resolve::{AggFn, SelectItem};
+use crate::resolve::{AggregateFunction, SelectItem};
 
 use super::{Cell, Row};
 
@@ -50,7 +50,9 @@ pub fn groups(rows: Vec<Row>, group_by: Option<Uuid>, items: &[SelectItem]) -> V
                 .iter()
                 .map(|item| match item {
                     SelectItem::Column(_) => key.clone(),
-                    SelectItem::Agg { func, column } => evaluate(*func, *column, &rows),
+                    SelectItem::Aggregate { function, column } => {
+                        evaluate(*function, *column, &rows)
+                    }
                 })
                 .collect(),
             key,
@@ -66,7 +68,7 @@ fn is_empty(cell: &Cell) -> bool {
 
 /// SQL aggregate semantics: `COUNT(*)` counts rows, everything else skips
 /// empty cells, and a numeric aggregate over nothing is `NULL`.
-fn evaluate(func: AggFn, column: Option<Uuid>, rows: &[Row]) -> Option<Cell> {
+fn evaluate(function: AggregateFunction, column: Option<Uuid>, rows: &[Row]) -> Option<Cell> {
     let Some(column) = column else {
         return Some(Cell::Number(rows.len() as f64));
     };
@@ -74,9 +76,9 @@ fn evaluate(func: AggFn, column: Option<Uuid>, rows: &[Row]) -> Option<Cell> {
         .iter()
         .filter_map(|row| row.cells.get(&column))
         .filter(|cell| !is_empty(cell));
-    match func {
-        AggFn::Count => Some(Cell::Number(present.count() as f64)),
-        AggFn::Sum | AggFn::Avg => {
+    match function {
+        AggregateFunction::Count => Some(Cell::Number(present.count() as f64)),
+        AggregateFunction::Sum | AggregateFunction::Avg => {
             let numbers: Vec<f64> = present
                 .filter_map(|cell| match cell {
                     Cell::Number(n) => Some(*n),
@@ -87,25 +89,25 @@ fn evaluate(func: AggFn, column: Option<Uuid>, rows: &[Row]) -> Option<Cell> {
                 return None;
             }
             let sum: f64 = numbers.iter().sum();
-            Some(Cell::Number(match func {
-                AggFn::Sum => sum,
+            Some(Cell::Number(match function {
+                AggregateFunction::Sum => sum,
                 _ => sum / numbers.len() as f64,
             }))
         }
-        AggFn::Min | AggFn::Max => {
+        AggregateFunction::Min | AggregateFunction::Max => {
             let mut best: Option<Cell> = None;
             for cell in present {
                 let replace = match (&best, cell) {
                     (None, _) => true,
                     (Some(Cell::Number(b)), Cell::Number(n)) => {
-                        if func == AggFn::Min {
+                        if function == AggregateFunction::Min {
                             n < b
                         } else {
                             n > b
                         }
                     }
                     (Some(Cell::Date(b)), Cell::Date(d)) => {
-                        if func == AggFn::Min {
+                        if function == AggregateFunction::Min {
                             d < b
                         } else {
                             d > b

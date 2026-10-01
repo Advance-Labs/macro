@@ -2,21 +2,25 @@
 //!
 //! ```text
 //! statement := select | insert | update | delete | alter
-//! select    := SELECT [DISTINCT] items FROM table {join} [WHERE cond] [GROUP BY ident]
+//! select    := SELECT [DISTINCT] items FROM source {join} [WHERE cond] [GROUP BY column]
 //!              [ORDER BY order {, order}] [LIMIT int [OFFSET int]]
-//! items     := '*' | item {, item}
-//! item      := ident | agg
-//! agg       := COUNT '(' '*' ')' | (COUNT|SUM|AVG|MIN|MAX) '(' ident ')'
+//! items     := '*' | item [[AS] name] {, item [[AS] name]}
+//! item      := column | agg
+//! agg       := COUNT '(' '*' ')' | (COUNT|SUM|AVG|MIN|MAX) '(' column ')'
+//! source    := table [[AS] alias]
+//! join      := [INNER] JOIN source ON pair {AND pair} | LEFT [OUTER] JOIN source ON pair {AND pair}
+//! pair      := column (= | HAS) column
 //! table     := [ident '.'] ident
-//! order     := (ident | agg | int) [ASC | DESC]
+//! column    := [alias '.'] ident
+//! order     := (column | agg | int) [ASC | DESC]
 //! cond      := and {OR and}
 //! and       := term {AND term}
 //! term      := '(' cond ')' | atom
-//! atom      := ident cmp lit
-//!            | ident [NOT] IN '(' lit {, lit} ')'
-//!            | ident [NOT] HAS lit
-//!            | ident IS [NOT] NULL
-//!            | ident [NOT] LIKE string
+//! atom      := column cmp lit
+//!            | column [NOT] IN '(' lit {, lit} ')'
+//!            | column [NOT] HAS lit
+//!            | column IS [NOT] NULL
+//!            | column [NOT] LIKE string [ESCAPE string]
 //! lit       := string | number | TRUE | FALSE | NULL
 //! insert    := INSERT INTO table '(' ident {, ident} ')' VALUES row {, row}
 //!            | INSERT INTO table DEFAULT VALUES
@@ -31,12 +35,12 @@
 //! ```
 //!
 //! Keywords are case-insensitive; identifiers keep their case. `ALTER`,
-//! `TABLE`, `COLUMN`, `TYPE`, `USING` and the type names are read as words,
-//! so a column may still be called `type`. A trailing
-//! `;` is allowed. Everything else SQL has (joins, subqueries, aliases,
-//! arithmetic, functions beyond the five aggregates, `HAVING`, an
-//! `UPDATE`/`DELETE` without a `WHERE`) is a
-//! parse error with a span and a message written for the agent that sent it.
+//! `TABLE`, `COLUMN`, `TYPE`, `USING`, `ESCAPE` and the type names are read
+//! as words, so a column may still be called `type`. A trailing `;` is
+//! allowed. Everything else SQL has (subqueries, arithmetic, functions beyond
+//! the five aggregates, `HAVING`, an `UPDATE`/`DELETE` without a `WHERE`) is
+//! a parse error with a span and a message written for the agent that sent
+//! it.
 
 pub mod ast;
 mod lexer;
@@ -73,5 +77,5 @@ struct Span {
 /// Parse one statement.
 pub fn parse(sql: &str) -> Result<Statement, ParseError> {
     let tokens = lexer::lex(sql)?;
-    parser::statement(&tokens)
+    parser::statement(&tokens, sql.len())
 }

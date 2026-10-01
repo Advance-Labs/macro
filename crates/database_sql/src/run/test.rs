@@ -173,8 +173,6 @@ fn source(rows: Vec<Row>) -> FakeSource {
     }
 }
 
-// ---- reads ------------------------------------------------------------------
-
 #[test]
 fn select_pages_to_completion_then_folds() {
     let source = source(deals());
@@ -511,8 +509,6 @@ fn a_view_problem_crosses_tagged_by_its_stage() {
     );
 }
 
-// ---- writes -----------------------------------------------------------------
-
 #[test]
 fn an_insert_is_one_op_holding_every_row() {
     let sink = FakeSink {
@@ -709,8 +705,6 @@ fn outcome_serializes_camel_case_for_the_wire() {
         })
     );
 }
-
-// ---- schema -----------------------------------------------------------------
 
 #[test]
 fn a_type_change_is_one_op_without_reading_rows() {

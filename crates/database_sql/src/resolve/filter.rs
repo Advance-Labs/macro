@@ -4,24 +4,28 @@
 use chrono::{DateTime, NaiveDate, Utc};
 
 use crate::catalog::{Column, ColumnKind, EntityKind};
-use crate::parse::{CmpOp, Cond, Lit};
+use crate::parse::{ComparisonOperator, Condition, Literal};
 
 use super::names::Scope;
 use super::{Filter, ResolveError, Value};
 
-pub fn resolve(scope: &mut Scope<'_>, cond: Cond) -> Result<Filter, ResolveError> {
+pub fn resolve(scope: &mut Scope<'_>, cond: Condition) -> Result<Filter, ResolveError> {
     match cond {
-        Cond::And(parts) => parts
+        Condition::And(parts) => parts
             .into_iter()
             .map(|part| resolve(scope, part))
             .collect::<Result<_, _>>()
             .map(Filter::And),
-        Cond::Or(parts) => parts
+        Condition::Or(parts) => parts
             .into_iter()
             .map(|part| resolve(scope, part))
             .collect::<Result<_, _>>()
             .map(Filter::Or),
-        Cond::Cmp { column, op, value } => {
+        Condition::Comparison {
+            column,
+            operator,
+            value,
+        } => {
             let bound = scope.column(&column)?;
             let column = &bound.column;
             if column.kind.is_multi() {
@@ -29,19 +33,19 @@ pub fn resolve(scope: &mut Scope<'_>, cond: Cond) -> Result<Filter, ResolveError
                     column: column.name.clone(),
                 });
             }
-            if value == Lit::Null {
+            if value == Literal::Null {
                 return Err(ResolveError::CompareToNull {
                     column: column.name.clone(),
                 });
             }
-            check_operator(column, op)?;
-            Ok(Filter::Cmp {
+            check_operator(column, operator)?;
+            Ok(Filter::Comparison {
                 column: bound.key,
-                op,
+                operator,
                 value: typed(column, value)?,
             })
         }
-        Cond::In {
+        Condition::In {
             column,
             values,
             negated,
@@ -56,7 +60,7 @@ pub fn resolve(scope: &mut Scope<'_>, cond: Cond) -> Result<Filter, ResolveError
             let values = values
                 .into_iter()
                 .map(|value| {
-                    if value == Lit::Null {
+                    if value == Literal::Null {
                         return Err(ResolveError::CompareToNull {
                             column: column.name.clone(),
                         });
@@ -70,7 +74,7 @@ pub fn resolve(scope: &mut Scope<'_>, cond: Cond) -> Result<Filter, ResolveError
                 negated,
             })
         }
-        Cond::Has {
+        Condition::Has {
             column,
             value,
             negated,
@@ -88,14 +92,14 @@ pub fn resolve(scope: &mut Scope<'_>, cond: Cond) -> Result<Filter, ResolveError
                 negated,
             })
         }
-        Cond::IsNull { column, negated } => {
+        Condition::IsNull { column, negated } => {
             let bound = scope.column(&column)?;
             Ok(Filter::IsNull {
                 column: bound.key,
                 negated,
             })
         }
-        Cond::Like {
+        Condition::Like {
             column,
             pattern,
             escape,
@@ -121,8 +125,14 @@ pub fn resolve(scope: &mut Scope<'_>, cond: Cond) -> Result<Filter, ResolveError
 }
 
 /// Which operators a column's kind defines.
-fn check_operator(column: &Column, op: CmpOp) -> Result<(), ResolveError> {
-    let ordered = matches!(op, CmpOp::Lt | CmpOp::Le | CmpOp::Gt | CmpOp::Ge);
+fn check_operator(column: &Column, operator: ComparisonOperator) -> Result<(), ResolveError> {
+    let ordered = matches!(
+        operator,
+        ComparisonOperator::Less
+            | ComparisonOperator::LessOrEqual
+            | ComparisonOperator::Greater
+            | ComparisonOperator::GreaterOrEqual
+    );
     let supported = match column.kind {
         ColumnKind::Text | ColumnKind::Link | ColumnKind::Number | ColumnKind::Date => {
             return Ok(());
@@ -134,23 +144,16 @@ fn check_operator(column: &Column, op: CmpOp) -> Result<(), ResolveError> {
     if ordered {
         return Err(ResolveError::OperatorNotSupported {
             column: column.name.clone(),
-            op: op.symbol(),
+            op: operator.symbol(),
             supported,
         });
     }
     Ok(())
 }
 
-impl CmpOp {
-    /// The operator as written.
-    pub fn symbol(self) -> &'static str {
-        self.into()
-    }
-}
-
 /// Type a literal a column is compared to. Lists belong to writes.
-pub fn typed(column: &Column, lit: Lit) -> Result<Value, ResolveError> {
-    if matches!(lit, Lit::List(_)) {
+pub fn typed(column: &Column, lit: Literal) -> Result<Value, ResolveError> {
+    if matches!(lit, Literal::List(_)) {
         return Err(ResolveError::ListInComparison {
             column: column.name.clone(),
         });
@@ -161,9 +164,9 @@ pub fn typed(column: &Column, lit: Lit) -> Result<Value, ResolveError> {
 /// Type a literal being stored in a cell: a list for a multi-valued column
 /// (or one element for a single-valued one), a bare value otherwise; a
 /// multi-valued column accepts a bare value as a one-element list.
-pub fn typed_cell(column: &Column, lit: Lit) -> Result<Value, ResolveError> {
+pub fn typed_cell(column: &Column, lit: Literal) -> Result<Value, ResolveError> {
     let elements = match lit {
-        Lit::List(elements) => elements,
+        Literal::List(elements) => elements,
         single => vec![single],
     };
     if !column.kind.is_multi() {
@@ -190,31 +193,33 @@ pub fn typed_cell(column: &Column, lit: Lit) -> Result<Value, ResolveError> {
     })
 }
 
-fn typed_one(column: &Column, lit: Lit) -> Result<Value, ResolveError> {
+fn typed_one(column: &Column, lit: Literal) -> Result<Value, ResolveError> {
     let mismatch = |expected, hint| ResolveError::TypeMismatch {
         column: column.name.clone(),
         expected,
         hint,
     };
     match (&column.kind, lit) {
-        (ColumnKind::Text | ColumnKind::Link, Lit::Str(text)) => Ok(Value::Text(text)),
+        (ColumnKind::Text | ColumnKind::Link, Literal::Text(text)) => Ok(Value::Text(text)),
         (ColumnKind::Text, _) => Err(mismatch("text", "compare it to quoted 'text'")),
         (ColumnKind::Link, _) => Err(mismatch("link", "compare it to a quoted 'URL'")),
-        (ColumnKind::Number, Lit::Num(n)) => Ok(Value::Number(n)),
+        (ColumnKind::Number, Literal::Number(n)) => Ok(Value::Number(n)),
         (ColumnKind::Number, _) => Err(mismatch("number", "compare it to a number")),
-        (ColumnKind::Boolean, Lit::Bool(b)) => Ok(Value::Bool(b)),
+        (ColumnKind::Boolean, Literal::Boolean(b)) => Ok(Value::Bool(b)),
         (ColumnKind::Boolean, _) => Err(mismatch("checkbox", "compare it to TRUE or FALSE")),
-        (ColumnKind::Date, Lit::Str(text)) => parse_date(&text).map(Value::Date).ok_or_else(|| {
-            mismatch(
-                "date",
-                "compare it to an ISO date like '2026-09-01' or '2026-09-01T09:00:00Z'",
-            )
-        }),
+        (ColumnKind::Date, Literal::Text(text)) => {
+            parse_date(&text).map(Value::Date).ok_or_else(|| {
+                mismatch(
+                    "date",
+                    "compare it to an ISO date like '2026-09-01' or '2026-09-01T09:00:00Z'",
+                )
+            })
+        }
         (ColumnKind::Date, _) => Err(mismatch(
             "date",
             "compare it to an ISO date like '2026-09-01' or '2026-09-01T09:00:00Z'",
         )),
-        (ColumnKind::Select { options, .. }, Lit::Str(label)) => options
+        (ColumnKind::Select { options, .. }, Literal::Text(label)) => options
             .iter()
             .find(|option| option.label.eq_ignore_ascii_case(&label))
             .map(|option| Value::Option(option.id))
@@ -231,12 +236,14 @@ fn typed_one(column: &Column, lit: Lit) -> Result<Value, ResolveError> {
                 target: EntityKind::Row,
                 ..
             },
-            Lit::Str(id),
+            Literal::Text(id),
         ) => match uuid::Uuid::parse_str(&id) {
             Ok(_) => Ok(Value::Entity(id)),
             Err(_) => Err(ResolveError::RowIdNotAnId { written: id }),
         },
-        (ColumnKind::Entity { .. }, Lit::Str(id)) if is_entity_id(&id) => Ok(Value::Entity(id)),
+        (ColumnKind::Entity { .. }, Literal::Text(id)) if is_entity_id(&id) => {
+            Ok(Value::Entity(id))
+        }
         (ColumnKind::Entity { .. }, _) => Err(mismatch(
             "entity",
             "give an id like 'macro|sam@example.com', not a name",

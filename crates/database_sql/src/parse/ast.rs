@@ -1,12 +1,14 @@
-//! The subset AST. Untyped and unresolved: names are [`Ident`]s and values
-//! are [`Lit`]s; binding them to a catalog is the next stage's job. No spans:
-//! later stages report problems by quoting the identifier.
+//! The subset AST. Untyped and unresolved: names are [`Identifier`]s and
+//! values are [`Literal`]s; binding them to a catalog is the next stage's
+//! job. No spans: later stages report problems by quoting the identifier.
+
+use std::fmt;
 
 use models_databases::ColumnKind as OpColumnKind;
 
 /// An identifier as written, quotes removed, case preserved.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Ident(pub String);
+pub struct Identifier(pub String);
 
 /// One parsed statement.
 #[derive(Debug, Clone, PartialEq)]
@@ -29,15 +31,15 @@ pub struct Select {
     /// `DISTINCT`: drop repeated result rows.
     pub distinct: bool,
     /// The select list.
-    pub items: Vec<Item>,
+    pub items: SelectList,
     /// `item AS name`: the select-list position and the name it goes by.
-    pub aliases: Vec<(usize, Ident)>,
+    pub aliases: Vec<(usize, Identifier)>,
     /// The table the `FROM` names.
     pub from: FromItem,
     /// The joined tables, in statement order.
     pub joins: Vec<Join>,
     /// The `WHERE` condition.
-    pub where_: Option<Cond>,
+    pub where_: Option<Condition>,
     /// The `GROUP BY` column.
     pub group_by: Option<ColumnRef>,
     /// The `ORDER BY` keys, in order.
@@ -48,13 +50,22 @@ pub struct Select {
     pub offset: Option<u32>,
 }
 
+/// What a `SELECT` lists.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SelectList {
+    /// `*`: every column of every table read.
+    Star,
+    /// The items written, in order.
+    Items(Vec<Item>),
+}
+
 /// A table read, with the alias its columns are qualified by.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FromItem {
     /// The table.
     pub table: TableName,
     /// `[AS] alias`; without one, the table name qualifies its columns.
-    pub alias: Option<Ident>,
+    pub alias: Option<Identifier>,
 }
 
 /// `JOIN table ON left = right [AND left = right]…`.
@@ -82,44 +93,42 @@ pub enum JoinKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ColumnRef {
     /// The alias qualifying the column, if any.
-    pub table: Option<Ident>,
+    pub table: Option<Identifier>,
     /// The column.
-    pub column: Ident,
+    pub column: Identifier,
 }
 
 /// `[database.]table`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableName {
     /// The database, when qualified.
-    pub database: Option<Ident>,
+    pub database: Option<Identifier>,
     /// The table.
-    pub table: Ident,
+    pub table: Identifier,
 }
 
 /// One entry of the select list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Item {
-    /// `*`.
-    Star,
     /// A column.
     Column(ColumnRef),
     /// An aggregate call.
-    Agg(Agg),
+    Aggregate(Aggregate),
 }
 
 /// An aggregate call.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Agg {
+pub struct Aggregate {
     /// Which aggregate.
-    pub func: AggFn,
+    pub function: AggregateFunction,
     /// The column aggregated; `None` only for `COUNT(*)`.
-    pub arg: Option<ColumnRef>,
+    pub argument: Option<ColumnRef>,
 }
 
 /// The aggregate functions; the string form is the name as written.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::IntoStaticStr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::IntoStaticStr, strum::EnumString)]
 #[strum(serialize_all = "UPPERCASE")]
-pub enum AggFn {
+pub enum AggregateFunction {
     /// `COUNT`.
     Count,
     /// `SUM`.
@@ -134,22 +143,22 @@ pub enum AggFn {
 
 /// A `WHERE` condition.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Cond {
-    /// `column op value`.
-    Cmp {
+pub enum Condition {
+    /// `column operator value`.
+    Comparison {
         /// The column.
         column: ColumnRef,
         /// The operator.
-        op: CmpOp,
+        operator: ComparisonOperator,
         /// The literal compared against.
-        value: Lit,
+        value: Literal,
     },
     /// `column [NOT] IN (values)`.
     In {
         /// The column.
         column: ColumnRef,
         /// The literals listed.
-        values: Vec<Lit>,
+        values: Vec<Literal>,
         /// `NOT IN`.
         negated: bool,
     },
@@ -158,7 +167,7 @@ pub enum Cond {
         /// The column.
         column: ColumnRef,
         /// The member tested.
-        value: Lit,
+        value: Literal,
         /// `NOT HAS`.
         negated: bool,
     },
@@ -182,48 +191,48 @@ pub enum Cond {
         negated: bool,
     },
     /// Two or more conditions joined by `AND`.
-    And(Vec<Cond>),
+    And(Vec<Condition>),
     /// Two or more conditions joined by `OR`.
-    Or(Vec<Cond>),
+    Or(Vec<Condition>),
 }
 
 /// A comparison operator; the string form is the symbol.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::IntoStaticStr)]
-pub enum CmpOp {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::IntoStaticStr, strum::EnumString)]
+pub enum ComparisonOperator {
     /// `=`.
     #[strum(serialize = "=")]
-    Eq,
+    Equal,
     /// `!=` or `<>`.
     #[strum(serialize = "!=")]
-    Ne,
+    NotEqual,
     /// `<`.
     #[strum(serialize = "<")]
-    Lt,
+    Less,
     /// `<=`.
     #[strum(serialize = "<=")]
-    Le,
+    LessOrEqual,
     /// `>`.
     #[strum(serialize = ">")]
-    Gt,
+    Greater,
     /// `>=`.
     #[strum(serialize = ">=")]
-    Ge,
+    GreaterOrEqual,
 }
 
 /// A literal value.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Lit {
+pub enum Literal {
     /// `'text'`.
-    Str(String),
+    Text(String),
     /// A number.
-    Num(f64),
+    Number(f64),
     /// `TRUE` or `FALSE`.
-    Bool(bool),
+    Boolean(bool),
     /// `NULL`.
     Null,
     /// `[value, …]`: several values for a multi-valued cell. Only in
     /// `INSERT` rows and `UPDATE` assignments.
-    List(Vec<Lit>),
+    List(Vec<Literal>),
 }
 
 /// One `ORDER BY` key.
@@ -232,7 +241,7 @@ pub struct OrderBy {
     /// What is sorted on.
     pub key: OrderKey,
     /// The direction; `ASC` when unspecified.
-    pub dir: Dir,
+    pub direction: Direction,
 }
 
 /// What an `ORDER BY` key refers to.
@@ -241,19 +250,20 @@ pub enum OrderKey {
     /// A column.
     Column(ColumnRef),
     /// An aggregate that also appears in the select list.
-    Agg(Agg),
+    Aggregate(Aggregate),
     /// A 1-based position in the select list.
     Position(u32),
 }
 
 /// A sort direction; the string form is the keyword.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::IntoStaticStr)]
-#[strum(serialize_all = "UPPERCASE")]
-pub enum Dir {
+pub enum Direction {
     /// Ascending.
-    Asc,
+    #[strum(serialize = "ASC")]
+    Ascending,
     /// Descending.
-    Desc,
+    #[strum(serialize = "DESC")]
+    Descending,
 }
 
 /// `INSERT INTO table (columns) VALUES rows`.
@@ -262,40 +272,40 @@ pub struct Insert {
     /// The table written.
     pub table: TableName,
     /// The columns named, in order; empty for `DEFAULT VALUES`.
-    pub columns: Vec<Ident>,
+    pub columns: Vec<Identifier>,
     /// The rows; every row has exactly `columns.len()` values. `DEFAULT
     /// VALUES` is one empty row.
-    pub rows: Vec<Vec<Lit>>,
+    pub rows: Vec<Vec<Literal>>,
 }
 
-/// `UPDATE table SET column = value, … WHERE cond`: every row the condition
-/// matches.
+/// `UPDATE table SET column = value, … WHERE condition`: every row the
+/// condition matches.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Update {
     /// The table written.
     pub table: TableName,
     /// The cells set, in order.
-    pub assignments: Vec<(Ident, SetValue)>,
+    pub assignments: Vec<(Identifier, SetValue)>,
     /// Which rows.
-    pub where_: Cond,
+    pub where_: Condition,
 }
 
 /// What an `UPDATE` sets a cell to.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SetValue {
     /// A value; `NULL` clears the cell.
-    Lit(Lit),
+    Literal(Literal),
     /// Another column of the same row: each row gets its own value.
-    Column(Ident),
+    Column(Identifier),
 }
 
-/// `DELETE FROM table WHERE cond`: every row the condition matches.
+/// `DELETE FROM table WHERE condition`: every row the condition matches.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Delete {
     /// The table written.
     pub table: TableName,
     /// Which rows.
-    pub where_: Cond,
+    pub where_: Condition,
 }
 
 /// `ALTER TABLE table ALTER [COLUMN] column TYPE type [USING NULL]`: change
@@ -305,9 +315,41 @@ pub struct AlterColumnType {
     /// The table whose column changes.
     pub table: TableName,
     /// The column.
-    pub column: Ident,
+    pub column: Identifier,
     /// The type it becomes.
     pub to: OpColumnKind,
     /// `USING NULL`: empty the values that do not fit instead of refusing.
     pub clear_invalid: bool,
+}
+
+impl AggregateFunction {
+    /// The function as written.
+    pub fn name(self) -> &'static str {
+        self.into()
+    }
+}
+
+impl ComparisonOperator {
+    /// The operator as written.
+    pub fn symbol(self) -> &'static str {
+        self.into()
+    }
+}
+
+impl fmt::Display for Aggregate {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.argument {
+            Some(column) => write!(formatter, "{}({column})", self.function.name()),
+            None => write!(formatter, "{}(*)", self.function.name()),
+        }
+    }
+}
+
+impl fmt::Display for ColumnRef {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.table {
+            Some(table) => write!(formatter, "{}.{}", table.0, self.column.0),
+            None => write!(formatter, "{}", self.column.0),
+        }
+    }
 }

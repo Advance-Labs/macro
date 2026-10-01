@@ -153,8 +153,6 @@ fn text(value: &str) -> Option<Cell> {
     Some(Cell::Text(value.into()))
 }
 
-// ---- the question that motivated joins ---------------------------------------
-
 #[test]
 fn emails_of_people_with_high_priority_tasks() {
     let (outcome, requests) = drive(
@@ -225,8 +223,6 @@ fn without_distinct_each_assignment_is_a_row() {
         vec![FIX_LOGIN, FIX_LOGIN, SHIP_IT, WRITE_DOCS]
     );
 }
-
-// ---- join kinds ---------------------------------------------------------------
 
 #[test]
 fn left_join_on_row_id_keeps_tasks_without_a_deal() {
@@ -353,8 +349,6 @@ fn a_definition_shared_by_both_tables_keeps_its_two_columns_apart() {
         vec![Some(NAME), Some(NAME)]
     );
 }
-
-// ---- the protocol -------------------------------------------------------------
 
 #[test]
 fn pages_continue_by_cursor_and_ids_must_match() {
@@ -486,8 +480,6 @@ fn steps_and_pages_cross_the_wire_as_json() {
     assert_eq!(serde_json::from_value::<Page>(json).unwrap(), page);
 }
 
-// ---- run() drives the same engine ---------------------------------------------
-
 struct ByTable;
 
 impl RowSource for ByTable {
@@ -532,8 +524,6 @@ fn run_answers_a_join_through_a_row_source() {
         vec![vec![text("sam@example.com")], vec![text("ana@example.com")]]
     );
 }
-
-// ---- the row position ---------------------------------------------------------
 
 #[test]
 fn order_by_row_position_lists_rows_in_table_order_whatever_the_fetch_order() {

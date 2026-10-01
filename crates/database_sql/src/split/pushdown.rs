@@ -14,7 +14,7 @@
 use filter_ast::Expr;
 use item_filters::ast::properties::{EntityRefId, PropertiesLiteral, PropertyMatchValue};
 
-use crate::resolve::{Binding, CmpOp, Filter, Value};
+use crate::resolve::{Binding, ComparisonOperator, Filter, Value};
 
 /// The expression pushed into each relation's query, indexed by relation,
 /// and the filter that remains.
@@ -82,9 +82,9 @@ fn pushable(filter: &Filter, bindings: &[Binding]) -> Option<(usize, Expr<Proper
 /// cannot be expressed.
 fn push(filter: &Filter, bindings: &[Binding]) -> Option<Expr<PropertiesLiteral>> {
     match filter {
-        Filter::Cmp {
+        Filter::Comparison {
             column,
-            op: CmpOp::Eq,
+            operator: ComparisonOperator::Equal,
             value,
         } => literal(*column, value, bindings),
         Filter::In {

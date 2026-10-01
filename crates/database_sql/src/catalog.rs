@@ -6,6 +6,7 @@
 
 mod schema;
 
+use models_databases::EntityKind as OpEntityKind;
 use models_databases::cast::CastKind;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -209,6 +210,33 @@ impl EntityKind {
     }
 }
 
+/// A relation's target, which an op names as rows rather than as an
+/// entity kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("a relation points at rows, not at an entity kind")]
+pub struct RelationTarget;
+
+impl TryFrom<EntityKind> for OpEntityKind {
+    type Error = RelationTarget;
+
+    fn try_from(kind: EntityKind) -> Result<Self, Self::Error> {
+        Ok(match kind {
+            EntityKind::User => OpEntityKind::User,
+            EntityKind::Document => OpEntityKind::Document,
+            EntityKind::Task => OpEntityKind::Task,
+            EntityKind::Company => OpEntityKind::Company,
+            EntityKind::CallRecord => OpEntityKind::CallRecord,
+            EntityKind::Channel => OpEntityKind::Channel,
+            EntityKind::Chat => OpEntityKind::Chat,
+            EntityKind::Project => OpEntityKind::Project,
+            EntityKind::Thread => OpEntityKind::Thread,
+            EntityKind::CalendarEvent => OpEntityKind::CalendarEvent,
+            EntityKind::Initiative => OpEntityKind::Initiative,
+            EntityKind::Row => return Err(RelationTarget),
+        })
+    }
+}
+
 /// One option of a select column.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -230,13 +258,12 @@ impl ColumnKind {
             ColumnKind::Date => CastKind::Date,
             ColumnKind::Link => CastKind::Link,
             ColumnKind::Select { multi, .. } => CastKind::Select { multi: *multi },
-            ColumnKind::Entity {
-                target: EntityKind::Row,
-                ..
-            } => CastKind::Relation,
-            ColumnKind::Entity { multi, target } => CastKind::Entity {
-                target: crate::write::entity_kind(*target),
-                multi: *multi,
+            ColumnKind::Entity { multi, target } => match OpEntityKind::try_from(*target) {
+                Ok(target) => CastKind::Entity {
+                    target,
+                    multi: *multi,
+                },
+                Err(RelationTarget) => CastKind::Relation,
             },
         }
     }

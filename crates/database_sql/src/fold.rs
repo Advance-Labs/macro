@@ -23,7 +23,7 @@ use specta::Type;
 use uuid::Uuid;
 
 use crate::catalog::Catalog;
-use crate::resolve::{AggFn, OrderKey, SelectItem};
+use crate::resolve::{AggregateFunction, OrderKey, SelectItem};
 use crate::split::{Plan, Shape};
 
 /// A cell as fetched. An absent cell is `NULL`; an absent multi-valued cell
@@ -158,11 +158,11 @@ pub fn fold_bins(catalog: &Catalog, plan: &Plan, bins: Vec<Bin>) -> Table {
                 .iter()
                 .map(|item| match item {
                     SelectItem::Column(_) => bin.key.clone(),
-                    SelectItem::Agg {
-                        func: AggFn::Count,
+                    SelectItem::Aggregate {
+                        function: AggregateFunction::Count,
                         column: None,
                     } => Some(Cell::Number(bin.count as f64)),
-                    SelectItem::Agg { .. } => unreachable!("bins only answer COUNT(*)"),
+                    SelectItem::Aggregate { .. } => unreachable!("bins only answer COUNT(*)"),
                 })
                 .collect(),
         })

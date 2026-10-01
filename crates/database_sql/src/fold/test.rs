@@ -74,8 +74,6 @@ fn plan(sql: &str) -> Plan {
     }
 }
 
-// ---- results: full literals -------------------------------------------------
-
 #[test]
 fn rows_are_filtered_projected_and_sorted() {
     let plan = plan(
@@ -234,8 +232,6 @@ fn limit_and_offset_apply_after_ordering() {
     );
 }
 
-// ---- residual predicate semantics: which rows each WHERE keeps ---------------
-
 #[test]
 fn residual_predicates_follow_sql_null_rules_and_macro_matching() {
     let cases: &[(&str, &[Uuid])] = &[
@@ -306,8 +302,6 @@ fn residual_predicates_follow_sql_null_rules_and_macro_matching() {
         assert_eq!(held, *kept, "\nWHERE {where_}");
     }
 }
-
-// ---- joins and DISTINCT ------------------------------------------------------
 
 #[test]
 fn distinct_keeps_the_first_of_equal_rows_after_sorting() {
