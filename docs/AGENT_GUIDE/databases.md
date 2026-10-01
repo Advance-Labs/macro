@@ -1,7 +1,7 @@
 # Databases
 
 Choose **Create → Database** to create a database and its first table with a Name
-column. **C → B** opens a new database with its title selected and ready to type.
+column. **C → L** opens a new database with its title selected and ready to type.
 Enter saves the title and focuses A1, ready to type without another click.
 Databases open at
 `/app/database/<uuid>`. A database contains tables; records belong to a table and
@@ -20,7 +20,7 @@ PostHog unless the variable was set when it was built. With the flag off:
 
 - `/app/database/<uuid>` and a `~/database/<uuid>` split show the 404 view. The
   database block's code is never fetched and no database request is made.
-- **Create → Database**, its **C → B** shortcut, the command palette entry and
+- **Create → Database**, its **C → L** shortcut, the command palette entry and
   the slash menu's **Database** action are absent, and no starter database is
   created.
 - The sidebar, mentions, search and Quick Access list no databases; Activity
@@ -264,9 +264,11 @@ Its bottom composer contains a database mention and private context identifying
 this database, its current table, and all its tables. Nothing sends automatically.
 Type a question or requested change and send it using the normal chat controls.
 Any chat, not only one opened from a database, can build databases: the assistant
-has `ListDatabases`, `DescribeDatabase`, `QueryDatabase`, `CreateDatabase`,
-`CreateTable`, `RenameTable`, `ReorderTables`, `AddColumn` (including relation columns via `linkToTableId`),
-`AddColumnOptions`, and `SaveDatabaseView`. It reads current schema before editing
+has `ListDatabases`, `DescribeDatabase`, `QueryDatabase`, `SaveDatabaseQuery`,
+`CreateDatabase`, `RenameDatabase`, `CreateTable`, `RenameTable`, `ReorderTables`,
+`DeleteTable`, `AddColumn` (including relation columns via `linkToTableId`),
+`AddColumnOptions`, `RenameColumn`, `ChangeColumnType`, `DeleteColumn`,
+`ReorderColumns`, and `SaveDatabaseView`. It reads current schema before editing
 and checks actual results before reporting success.
 
 Query tool rows say what the query did in words (**Read Invites**, **Updated 3
@@ -304,8 +306,9 @@ requires updating the result before saving. Results refresh
 when their source tables change, and each reader sees only data they can access.
 The AI supplies a short answer title independently of the original question.
 Double-click that title (or focus it and press F2) to rename it inline; Enter saves,
-Escape cancels. Renaming keeps the question and its saved query unchanged. Table references
-survive database and table renames.
+Escape cancels. Renaming keeps the question and its saved query unchanged. A saved
+query names databases, tables, and columns by their display names, so renaming one
+it reads makes the answer fail until the question is updated.
 
 An existing document keeps its answer label when Databases is off and does not
 fetch its database results; see [Feature flag](#feature-flag).
