@@ -27,6 +27,7 @@ use channels::inbound::toolset::channel_toolset;
 use chat::inbound::toolset::chat_toolset;
 use crm::inbound::toolset::crm_toolset;
 use databases::inbound::toolset::{databases_read_only_toolset, databases_toolset};
+use databases_sql::toolset::{databases_sql_read_only_toolset, databases_sql_toolset};
 use display_results::DisplayResults;
 use documents::inbound::toolset::document_toolset;
 use email::inbound::toolset::{email_toolset, mcp_toolset as email_mcp_toolset};
@@ -59,36 +60,40 @@ pub use tool_context::{
     ToolCalendarToolContext, ToolCallRecordQueryService, ToolCallService, ToolCallToolContext,
     ToolChannelEventDispatcher, ToolChannelMessagesService, ToolChannelToolContext,
     ToolChatService, ToolChatToolContext, ToolCommsService, ToolCrmService, ToolCrmToolContext,
-    ToolDatabasesService, ToolDatabasesToolContext, ToolDocumentService, ToolDocumentToolContext,
-    ToolEmailService, ToolEmailToolContext, ToolEntityAccessManagementService,
-    ToolEntityAccessService, ToolEntityCreator, ToolForeignEntityService, ToolFrecencyService,
-    ToolImportService, ToolImportToolContext, ToolInitiativeToolContext, ToolMcpSelector,
-    ToolNotificationQueue, ToolNotificationService, ToolNotificationToolContext,
-    ToolPipedreamConnection, ToolProjectService, ToolProjectToolContext, ToolPropertiesService,
-    ToolPropertiesToolContext, ToolRemindersService, ToolRemindersToolContext, ToolServiceContext,
-    ToolSkillService, ToolSkillToolContext, ToolSoupService, ToolSystemPropertiesService,
-    ToolTableEventPublisher, ToolTeamService, ToolTeamToolContext, ToolUserEmailService,
-    build_activity_tool_context, build_bot_tool_context, build_calendar_tool_context,
-    build_channel_tool_context_with_dispatcher, build_channel_tool_context_with_side_effects,
-    build_channel_tool_context_without_side_effects, build_crm_tool_context,
-    build_databases_tool_context, build_initiative_tool_context,
-    build_message_service_with_side_effects, build_message_service_without_side_effects,
-    build_project_tool_context, build_properties_service, build_properties_service_with_broker,
-    build_properties_tool_context, build_reminders_tool_context, build_skill_tool_context,
-    build_task_properties_adapter, build_team_repository, build_team_tool_context,
+    ToolDatabasesService, ToolDatabasesSqlToolContext, ToolDatabasesToolContext,
+    ToolDocumentService, ToolDocumentToolContext, ToolEmailService, ToolEmailToolContext,
+    ToolEntityAccessManagementService, ToolEntityAccessService, ToolEntityCreator,
+    ToolForeignEntityService, ToolFrecencyService, ToolImportService, ToolImportToolContext,
+    ToolInitiativeToolContext, ToolMcpSelector, ToolNotificationQueue, ToolNotificationService,
+    ToolNotificationToolContext, ToolPipedreamConnection, ToolProjectService,
+    ToolProjectToolContext, ToolPropertiesService, ToolPropertiesToolContext, ToolRemindersService,
+    ToolRemindersToolContext, ToolServiceContext, ToolSkillService, ToolSkillToolContext,
+    ToolSoupService, ToolSystemPropertiesService, ToolTableEventPublisher, ToolTeamService,
+    ToolTeamToolContext, ToolUserEmailService, build_activity_tool_context, build_bot_tool_context,
+    build_calendar_tool_context, build_channel_tool_context_with_dispatcher,
+    build_channel_tool_context_with_side_effects, build_channel_tool_context_without_side_effects,
+    build_crm_tool_context, build_databases_sql_tool_context, build_databases_tool_context,
+    build_initiative_tool_context, build_message_service_with_side_effects,
+    build_message_service_without_side_effects, build_project_tool_context,
+    build_properties_service, build_properties_service_with_broker, build_properties_tool_context,
+    build_reminders_tool_context, build_skill_tool_context, build_task_properties_adapter,
+    build_team_repository, build_team_tool_context,
 };
 pub type AiToolSet = AsyncToolCollection<ToolServiceContext>;
 
 /// Database-only capabilities for the in-app database assistant. This excludes
 /// connectors and unrelated tools such as messaging and email.
 pub fn database_tools() -> AiToolSet {
-    AsyncToolCollection::new().add_subtoolset::<ToolDatabasesToolContext>(databases_toolset())
+    AsyncToolCollection::new()
+        .add_subtoolset::<ToolDatabasesToolContext>(databases_toolset())
+        .add_subtoolset::<ToolDatabasesSqlToolContext>(databases_sql_toolset())
 }
 
 /// Discovery and enforced read-only SQL for automatically sourced document answers.
 pub fn database_read_only_tools() -> AiToolSet {
     AsyncToolCollection::new()
         .add_subtoolset::<ToolDatabasesToolContext>(databases_read_only_toolset())
+        .add_subtoolset::<ToolDatabasesSqlToolContext>(databases_sql_read_only_toolset())
 }
 
 pub struct ToolSetWithPrompt {
@@ -124,6 +129,7 @@ pub(crate) fn subagent_toolset() -> AiToolSet {
         .add_subtoolset::<ToolTeamToolContext>(team_toolset())
         .add_subtoolset::<ToolCrmToolContext>(crm_toolset())
         .add_subtoolset::<ToolDatabasesToolContext>(databases_toolset())
+        .add_subtoolset::<ToolDatabasesSqlToolContext>(databases_sql_toolset())
         .add_subtoolset::<ToolSkillToolContext>(skill_toolset())
         .add_subtoolset::<AnthropicToolContext>(anthropic_toolset())
 }

@@ -238,6 +238,21 @@ pub async fn build_tool_service_context(
     let skill_tool_context =
         ai_tools::build_skill_tool_context(search_client.clone(), soup_service.clone());
 
+    // No gateway credentials or Kafka in this host, so database writes
+    // commit without a liveness ping or a domain event; open clients
+    // refresh on their own.
+    let databases_tool_context = ai_tools::build_databases_tool_context(
+        pool.clone(),
+        entity_access_service.clone(),
+        ai_tools::ToolTableEventPublisher::NoOp(Default::default()),
+        ai_tools::MaybeToolEventBroker::NoOp(Default::default()),
+    );
+    let databases_sql_tool_context = ai_tools::build_databases_sql_tool_context(
+        &databases_tool_context,
+        soup_service.clone(),
+        pool.clone(),
+    );
+
     Ok(ToolServiceContext {
         search_service_client: search_client.clone(),
         email_service_client: email_ext_client,
@@ -257,15 +272,8 @@ pub async fn build_tool_service_context(
             pool.clone(),
             entity_access_service.clone(),
         ),
-        // No gateway credentials or Kafka in this host, so database writes
-        // commit without a liveness ping or a domain event; open clients
-        // refresh on their own.
-        databases_tool_context: ai_tools::build_databases_tool_context(
-            pool.clone(),
-            entity_access_service.clone(),
-            ai_tools::ToolTableEventPublisher::NoOp(Default::default()),
-            ai_tools::MaybeToolEventBroker::NoOp(Default::default()),
-        ),
+        databases_tool_context,
+        databases_sql_tool_context,
         import_tool_context: ToolImportToolContext::unwired(),
         chat_tool_context,
         channel_tool_context: ai_tools::build_channel_tool_context(

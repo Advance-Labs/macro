@@ -641,6 +641,22 @@ async fn main() -> anyhow::Result<()> {
         macro_event_broker.clone(),
     );
 
+    let databases_tool_context = ai_tools::build_databases_tool_context(
+        db.clone(),
+        entity_access_service.clone(),
+        ai_tools::ToolTableEventPublisher::Gateway(
+            databases::outbound::gateway_event_publisher::GatewayTableEventPublisher::new(
+                channels_connection_gateway.as_ref().clone(),
+            ),
+        ),
+        ai_tools::MaybeToolEventBroker::Real(macro_event_broker.clone()),
+    );
+    let databases_sql_tool_context = ai_tools::build_databases_sql_tool_context(
+        &databases_tool_context,
+        soup_service.clone(),
+        db.clone(),
+    );
+
     let tool_service_context = ai_tools::ToolServiceContext {
         search_service_client: search_service_client.clone(),
         email_service_client: email_service_client_external.clone(),
@@ -665,16 +681,8 @@ async fn main() -> anyhow::Result<()> {
             db.clone(),
             entity_access_service.clone(),
         ),
-        databases_tool_context: ai_tools::build_databases_tool_context(
-            db.clone(),
-            entity_access_service.clone(),
-            ai_tools::ToolTableEventPublisher::Gateway(
-                databases::outbound::gateway_event_publisher::GatewayTableEventPublisher::new(
-                    channels_connection_gateway.as_ref().clone(),
-                ),
-            ),
-            ai_tools::MaybeToolEventBroker::Real(macro_event_broker.clone()),
-        ),
+        databases_tool_context,
+        databases_sql_tool_context,
         import_tool_context: import::inbound::toolset::ImportToolContext::wired(
             import_service.clone(),
         ),

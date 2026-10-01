@@ -393,6 +393,22 @@ async fn build_tool_context(args: ToolContextBuildArgs<'_>) -> anyhow::Result<To
         side_effect_clients.macro_event_broker,
     );
 
+    let databases_tool_context = ai_tools::build_databases_tool_context(
+        db.clone(),
+        entity_access_service.clone(),
+        ai_tools::ToolTableEventPublisher::Gateway(
+            databases::outbound::gateway_event_publisher::GatewayTableEventPublisher::new(
+                databases_gateway,
+            ),
+        ),
+        ai_tools::MaybeToolEventBroker::Real(macro_event_broker.clone()),
+    );
+    let databases_sql_tool_context = ai_tools::build_databases_sql_tool_context(
+        &databases_tool_context,
+        soup_service.clone(),
+        db.clone(),
+    );
+
     let tool_context = ToolServiceContext {
         email_service_client: Arc::new(EmailServiceClientExternal::new(
             email_service_client.url().to_owned(),
@@ -419,16 +435,8 @@ async fn build_tool_context(args: ToolContextBuildArgs<'_>) -> anyhow::Result<To
             db.clone(),
             entity_access_service.clone(),
         ),
-        databases_tool_context: ai_tools::build_databases_tool_context(
-            db.clone(),
-            entity_access_service.clone(),
-            ai_tools::ToolTableEventPublisher::Gateway(
-                databases::outbound::gateway_event_publisher::GatewayTableEventPublisher::new(
-                    databases_gateway,
-                ),
-            ),
-            ai_tools::MaybeToolEventBroker::Real(macro_event_broker.clone()),
-        ),
+        databases_tool_context,
+        databases_sql_tool_context,
         import_tool_context: ToolImportToolContext::unwired(),
         chat_tool_context,
         channel_tool_context,

@@ -26,9 +26,14 @@ use chat::inbound::toolset::ChatToolContext;
 use chat::outbound::postgres::PgChatRepo;
 use connection::domain::ports::ConnectionService;
 use connection_gateway_client::ConnectionGatewayClient;
-use contacts::{domain::service::SqsContactsIngress, outbound::ingress::SqsContactsQueue};
+use contacts::domain::service::{ContactsDomainService, SqsContactsIngress};
+use contacts::outbound::gateway::ConnectionGatewayNotifier;
+use contacts::outbound::ingress::SqsContactsQueue;
+use contacts::outbound::repository::DbContactsRepository;
 use crm::inbound::toolset::CrmToolContext;
 use databases::inbound::toolset::DatabasesToolContext;
+use databases_sql::DatabasesSql;
+use databases_sql::toolset::DatabasesSqlToolContext;
 use documents::{
     domain::ports::{TaskPropertiesPort, task_property_edit_receipt},
     inbound::toolset::DocumentToolContext,
@@ -1050,11 +1055,8 @@ pub fn build_reminders_tool_context(
 /// under the tool-host name the AI tool wiring uses.
 pub use databases::outbound::gateway_event_publisher::MaybeGatewayTableEventPublisher as ToolTableEventPublisher;
 
-/// Type alias for the databases service implementation used by AI tools.
-///
-/// The same port implementations the HTTP surface runs on, so an agent's SQL
-/// is compiled by `database_sql` against the acting user's catalog exactly as
-/// the HTTP surface's is.
+/// Type alias for the databases service implementation used by AI tools:
+/// the same port implementations the HTTP surface runs on.
 pub type ToolDatabasesService =
     databases::outbound::build::PgDatabasesService<ToolTableEventPublisher, MaybeToolEventBroker>;
 
@@ -1079,6 +1081,38 @@ pub fn build_databases_tool_context(
         entity_access_service,
         saved_views::PgViewStorage::new(pool),
     )
+}
+
+/// The contacts the SQL tools read `macro.people` from. Reads only, so
+/// nothing is ever invalidated through a notifier.
+pub type ToolContactsService =
+    ContactsDomainService<DbContactsRepository, Option<ConnectionGatewayNotifier>>;
+
+/// Type alias for the SQL tools' context: SQL over the same databases
+/// service the schema tools use, reading rows through Soup.
+pub type ToolDatabasesSqlToolContext = DatabasesSqlToolContext<
+    ToolDatabasesService,
+    ToolEntityAccessService,
+    ToolSoupService,
+    ToolContactsService,
+>;
+
+/// Build the SQL tools' context over the schema tools' databases service
+/// and entity access, and the host's Soup.
+pub fn build_databases_sql_tool_context(
+    databases: &ToolDatabasesToolContext,
+    soup_service: Arc<ToolSoupService>,
+    pool: sqlx::PgPool,
+) -> ToolDatabasesSqlToolContext {
+    DatabasesSqlToolContext::new(DatabasesSql::new(
+        databases.service.clone(),
+        databases.entity_access_service.clone(),
+        soup_service,
+        Arc::new(ContactsDomainService {
+            repository: DbContactsRepository::new(pool),
+            notifier: None,
+        }),
+    ))
 }
 
 /// Type alias for the chat service implementation used by AI tools.
@@ -1524,6 +1558,7 @@ pub struct ToolServiceContext {
     pub notification_tool_context: ToolNotificationToolContext,
     pub reminders_tool_context: ToolRemindersToolContext,
     pub databases_tool_context: ToolDatabasesToolContext,
+    pub databases_sql_tool_context: ToolDatabasesSqlToolContext,
     /// Import staging/tracking tools. `unwired` in hosts that can't build
     /// the import service — calls there fail with a clear error.
     pub import_tool_context: ToolImportToolContext,
@@ -1561,6 +1596,7 @@ impl ToolServiceContext {
         self.initiative_tool_context = self.initiative_tool_context.with_actor(actor);
         self.channel_tool_context = self.channel_tool_context.with_actor(actor);
         self.databases_tool_context = self.databases_tool_context.with_actor(actor);
+        self.databases_sql_tool_context = self.databases_sql_tool_context.with_actor(actor);
         self
     }
 
