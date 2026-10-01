@@ -9,6 +9,7 @@ import { useUserId } from '@core/context/user';
 import ProjectIcon from '@phosphor/stack.svg';
 import { isAccessiblePreviewItem, useItemPreview } from '@queries/preview';
 import type { EntityType } from '@service-properties/generated/schemas/entityType';
+import { createLazyMemo } from '@solid-primitives/memo';
 import { type Accessor, createMemo, type JSX, untrack } from 'solid-js';
 import { match } from 'ts-pattern';
 import { useProjectIdentityQuery } from '../../projects/queries/project-identity';
@@ -142,7 +143,8 @@ export function usePropertyEntityDisplay(
       })
   );
 
-  const icon = createMemo(() =>
+  // Built on first read: a caller that draws its own icon pays nothing.
+  const icon = createLazyMemo(() =>
     match(entityType())
       .when(
         (type) => type === 'INITIATIVE' && projectSource(),
