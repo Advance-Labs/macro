@@ -50,6 +50,9 @@ internal object Calls {
     private var held = false
     private var answering = false
     private var accepted = false
+    private data class JoinLease(val id: String, val channelId: String, val recipient: String?, var callId: String? = null)
+    private var joinLease: JoinLease? = null
+    private var leaseTimeout: Job? = null
     private var focusLost = false
     private var telecomMuted = false
     private var telecomFocusLost = false
@@ -101,6 +104,26 @@ internal object Calls {
         emit("participants", JSObject().apply { put("identities", identities()) })
         changed?.invoke()
     }
+    fun prepareJoin(ctx: Context, channelId: String): String {
+        check(joinLease == null) { "A call join is already pending" }
+        val lease = JoinLease(java.util.UUID.randomUUID().toString(), channelId,
+            ctx.getSharedPreferences("macro_push", Context.MODE_PRIVATE).getString("recipient", null),
+            offer?.takeIf { !accepted && it.channelId == channelId }?.callId)
+        joinLease = lease
+        if (lease.callId != null) { poller?.cancel(); poller = null }
+        leaseTimeout = scope.launch { delay(30_000); abortJoin(ctx, lease.id) }
+        return lease.id
+    }
+    fun abortJoin(ctx: Context, id: String) {
+        val lease = joinLease?.takeIf { it.id == id } ?: return
+        joinLease = null; leaseTimeout?.cancel(); leaseTimeout = null
+        if (!accepted && offer?.callId == lease.callId) end(ctx, lease.callId)
+    }
+    fun abortPendingJoin(ctx: Context) { joinLease?.let { abortJoin(ctx, it.id) } }
+    fun resetRecipient(ctx: Context, previous: String?) {
+        joinLease?.takeIf { it.recipient == previous }?.let { abortJoin(ctx, it.id) }
+        if (recipient == previous) end(ctx)
+    }
     fun receive(ctx: Context, data: Map<String, String>, sentTime: Long) {
         if (android.os.Build.VERSION.SDK_INT < 26) return
         if (data["recipientId"] != ctx.getSharedPreferences("macro_push", Context.MODE_PRIVATE).getString("recipient", null)) return
@@ -114,10 +137,15 @@ internal object Calls {
         try {
             val handle = account(ctx)
             ctx.getSystemService(TelecomManager::class.java).addNewIncomingCall(handle, Bundle().apply { putString("callId", next.callId) })
+            if (joinLease?.channelId == next.channelId) {
+                joinLease?.callId = next.callId
+                return
+            }
             poller = scope.launch {
                 while (offer === next && room == null) {
                     if (!CallOffer.fresh(next.sentTime, System.currentTimeMillis())) { end(ctx, next.callId); break }
                     val status = ringStatus(next)
+                    if (offer !== next || joinLease?.channelId == next.channelId) break
                     if (RingPolicy.decide(next.sentTime, System.currentTimeMillis(), status) == RingPolicy.Decision.RESOLVE) { end(ctx, next.callId); break }
                     delay(1000)
                 }
@@ -139,15 +167,23 @@ internal object Calls {
             } finally { http.disconnect() }
         }.getOrNull()
     }
-    fun outgoing(ctx: Context, next: CallOffer) {
+    fun outgoing(ctx: Context, next: CallOffer, leaseId: String? = null) {
+        if (leaseId != null) check(joinLease?.let { it.id == leaseId && it.channelId == next.channelId } == true) { "Call join was cancelled" }
         val current = offer
         if (current?.callId == next.callId) {
-            if (!accepted) answer(ctx, current.callId)
+            if (accepted) { joinLease = null; leaseTimeout?.cancel(); leaseTimeout = null }
+            if (!accepted) {
+                poller?.cancel(); poller = null
+                offer = next; title = next.title; accepted = true; state = "connecting"
+                joinLease = null; leaseTimeout?.cancel(); leaseTimeout = null
+                publish(); connect(ctx)
+            }
             return
         }
         check(current == null) { "Another call is active" }
         recipient = ctx.getSharedPreferences("macro_push", Context.MODE_PRIVATE).getString("recipient", null)
         title = next.title
+        joinLease = null; leaseTimeout?.cancel(); leaseTimeout = null
         offer = next; state = "connecting"; accepted = true; publish()
         try {
             val handle = account(ctx)
@@ -170,6 +206,7 @@ internal object Calls {
             val status = verify(next)
             if (offer !== next) return@launch
             answering = false
+            if (joinLease?.channelId == next.channelId) return@launch
             if (room != null || accepted) return@launch
             when (RingPolicy.decide(next.sentTime, System.currentTimeMillis(), status)) {
                 RingPolicy.Decision.RESOLVE -> { end(ctx, id); return@launch }
@@ -255,8 +292,9 @@ internal object Calls {
         held = value
         scope.launch { runCatching { applyMicrophone() } }
     }
-    suspend fun camera(ctx: Context, enabled: Boolean) = videoMutex.withLock {
+    suspend fun camera(ctx: Context, enabled: Boolean, expectedRoom: Room? = null) = videoMutex.withLock {
         val media = room ?: return@withLock
+        if (expectedRoom != null && media !== expectedRoom) return@withLock
         if (enabled) {
             check(ContextCompat.checkSelfPermission(ctx, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) { "Camera permission required" }
             CallService.start(ctx, media = true, camera = true)
@@ -301,23 +339,33 @@ internal object Calls {
         })
     }
     fun route(route: Int) { (connection as? TelecomService.MacroConnection)?.route(route) }
-    fun end(ctx: Context, id: String? = offer?.callId) {
+    fun end(ctx: Context, id: String? = offer?.callId,
+        disconnectConnection: (Connection) -> Unit = { it.setDisconnected(DisconnectCause(DisconnectCause.LOCAL)) }) {
         val next = offer ?: return
         if (next.callId != id) return
         val preferences = ctx.getSharedPreferences("macro_calls", Context.MODE_PRIVATE)
         val now = System.currentTimeMillis()
-        preferences.edit().apply {
-            preferences.all.forEach { (key, timestamp) -> if ((timestamp as? Long ?: 0) < now - 120_000) remove(key) }
-            putLong(next.callId, now)
-        }.apply()
+        runCatching {
+            preferences.edit().apply {
+                preferences.all.forEach { (key, timestamp) -> if ((timestamp as? Long ?: 0) < now - 120_000) remove(key) }
+                putLong(next.callId, now)
+            }.apply()
+        }
+        joinLease = null; leaseTimeout?.cancel(); leaseTimeout = null
         poller?.cancel(); poller = null
         session?.cancel(); session = null
         val media = room; room = null
+        val telecomConnection = connection; connection = null
         offer = null; pendingAnswered = null; state = "disconnected"; title = null; recipient = null; displayNames.clear(); error = null; muted = false; video = false; held = false; answering = false; accepted = false; focusLost = false; telecomMuted = false; telecomFocusLost = false; desiredAudioType = null; overlay = "hidden"
-        media?.disconnect(); media?.release()
-        connection?.setDisconnected(DisconnectCause(DisconnectCause.LOCAL)); connection?.destroy(); connection = null
-        ctx.stopService(Intent(ctx, CallService::class.java))
-        ctx.getSystemService(android.app.NotificationManager::class.java).cancel(CallService.NOTIFICATION_ID)
-        publish(); emit("ended", JSObject().apply { put("callId", next.callId) })
+        // Native/SDK callbacks may fail or reenter; no resource owns the cleared session.
+        // Release each resource independently so one failure cannot leave a phantom call.
+        runCatching { media?.disconnect() }
+        runCatching { media?.release() }
+        runCatching { telecomConnection?.let(disconnectConnection) }
+        runCatching { telecomConnection?.destroy() }
+        runCatching { ctx.stopService(Intent(ctx, CallService::class.java)) }
+        runCatching { ctx.getSystemService(android.app.NotificationManager::class.java).cancel(CallService.NOTIFICATION_ID) }
+        runCatching { publish() }
+        runCatching { emit("ended", JSObject().apply { put("callId", next.callId) }) }
     }
 }

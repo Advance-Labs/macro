@@ -21,7 +21,12 @@ internal class OutgoingArgs {
     var channelTitle: String? = null
     lateinit var serverUrl: String
     lateinit var token: String
+    var joinLease: String? = null
 }
+@InvokeArg
+internal class PrepareJoinArgs { lateinit var channelId: String }
+@InvokeArg
+internal class AbortJoinArgs { lateinit var lease: String }
 @InvokeArg
 internal class EnabledArgs { var enabled = false }
 @InvokeArg
@@ -44,6 +49,16 @@ class CallPlugin(private val activity: Activity) : Plugin(activity) {
         val channel = Calls.pendingAnswered; Calls.pendingAnswered = null
         invoke.resolve(JSObject().apply { put("channelId", channel ?: org.json.JSONObject.NULL); put("nativeMedia", true) })
     }
+    @Command fun prepareJoin(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(PrepareJoinArgs::class.java)
+            require(args.channelId.isNotBlank())
+            invoke.resolve(JSObject().apply { put("lease", Calls.prepareJoin(activity, args.channelId)) })
+        } catch (_: Exception) { invoke.reject("Unable to prepare native call join") }
+    }
+    @Command fun abortJoin(invoke: Invoke) {
+        Calls.abortJoin(activity, invoke.parseArgs(AbortJoinArgs::class.java).lease); invoke.resolve()
+    }
     @Command fun startOutgoingCall(invoke: Invoke) {
         if (Build.VERSION.SDK_INT < 26) { invoke.reject("Native calls require Android 8 or newer"); return }
         if (activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -54,7 +69,7 @@ class CallPlugin(private val activity: Activity) : Plugin(activity) {
             require(URI(args.serverUrl).let { it.scheme == "wss" && it.host != null && it.userInfo == null })
             require(args.channelId.isNotBlank() && args.token.isNotBlank())
             Calls.outgoing(activity, CallOffer(UUID.fromString(args.callId).toString(), args.channelId,
-                args.channelTitle ?: "Macro call", args.serverUrl, args.token))
+                args.channelTitle ?: "Macro call", args.serverUrl, args.token), args.joinLease)
             invoke.resolve()
         } catch (_: Exception) { invoke.reject("Unable to start native call") }
     }
@@ -102,5 +117,5 @@ class CallPlugin(private val activity: Activity) : Plugin(activity) {
         Calls.publish(); invoke.resolve()
     }
     @Command fun getVoipToken(invoke: Invoke) { invoke.resolve(JSObject().apply { put("token", org.json.JSONObject.NULL) }) }
-    override fun onDestroy(activity: AppCompatActivity) { Calls.unwatch() }
+    override fun onDestroy(activity: AppCompatActivity) { Calls.abortPendingJoin(activity); Calls.unwatch() }
 }

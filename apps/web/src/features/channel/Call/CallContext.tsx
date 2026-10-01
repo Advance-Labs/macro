@@ -58,6 +58,7 @@ import {
 } from './native-call-state';
 import {
   isNativeCallEnabled,
+  prepareNativeCallJoin,
   registerCallKitCallEndedHandler,
 } from './use-callkit';
 
@@ -1576,6 +1577,7 @@ function createCallState() {
 
   const lifecycle = createCallLifecycle({
     shouldRequestToken: callSession.shouldRequestToken,
+    prepareToken: prepareNativeCallJoin,
     requestToken: requestCallToken,
     connect: (token) =>
       callSession.connectWithToken(token, {

@@ -24,7 +24,12 @@ class TelecomService : ConnectionService() {
             setCallerDisplayName(offer.title, TelecomManager.PRESENTATION_ALLOWED)
             setAudioModeIsVoip(true)
             Calls.connection = this
-            if (incoming) setRinging() else { setDialing(); Calls.connect(applicationContext) }
+            // App Join can adopt an incoming offer before Telecom creates it.
+            if (incoming && Calls.snapshot() == null) setRinging()
+            else {
+                if (Calls.state == "connected") setActive() else setDialing()
+                if (!incoming) Calls.connect(applicationContext)
+            }
         }
     }
     override fun onCreateIncomingConnectionFailed(handle: PhoneAccountHandle, request: ConnectionRequest) { Calls.end(applicationContext, request.extras?.getString("callId")) }

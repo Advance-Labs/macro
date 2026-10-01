@@ -92,11 +92,20 @@ class MediaLifecycleTest {
                 instrumentation.uiAutomation.executeShellCommand("svc data enable").close()
             }
             awaitCondition("Native room did not reconnect") { Calls.state == "connected" }
+            instrumentation.runOnMainSync { Calls.scope.launch { Calls.camera(context, true) } }
+            awaitCondition("Native camera did not restart before PiP") { Calls.video }
             instrumentation.uiAutomation.executeShellCommand("input keyevent 3").close()
             awaitCondition("Call controls did not enter picture in picture") { activity!!.isInPictureInPictureMode }
+            instrumentation.waitForIdleSync()
             instrumentation.runOnMainSync {
+                assertTrue("Entering PiP must retain camera capture", Calls.video)
                 assertEquals("connected", Calls.state)
                 assertNotNull("Navigation must retain the media room", Calls.room)
+                activity!!.finish()
+            }
+            awaitCondition("Leaving the visible call surface must stop the camera") { !Calls.video }
+            instrumentation.runOnMainSync {
+                assertEquals("Background audio must remain connected", "connected", Calls.state)
                 Calls.end(context, offer.callId)
                 assertNull(Calls.room)
                 assertNull(Calls.connection)

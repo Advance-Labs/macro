@@ -101,8 +101,19 @@ class CallActivity : Activity() {
     override fun onPictureInPictureModeChanged(inPip: Boolean, config: android.content.res.Configuration) { super.onPictureInPictureModeChanged(inPip, config); render() }
     override fun onStop() {
         super.onStop()
-        // Camera may continue in supported PiP; ordinary background keeps audio only.
-        if (!isInPictureInPictureMode && Calls.video) Calls.scope.launch { runCatching { Calls.camera(this@CallActivity, false) } }
+        // Visible PiP is paused, not stopped. Its mode flag can remain true when closed.
+        stopCameraIfOwned()
     }
-    override fun onDestroy() { if (Calls.changed === callback) Calls.changed = null; detach(); super.onDestroy() }
+    private fun stopCameraIfOwned() {
+        if (isChangingConfigurations || Calls.changed !== callback || !Calls.video) return
+        val media = Calls.room ?: return
+        Calls.scope.launch {
+            if (Calls.room === media) runCatching { Calls.camera(this@CallActivity, false, media) }
+        }
+    }
+    override fun onDestroy() {
+        stopCameraIfOwned()
+        if (Calls.changed === callback) Calls.changed = null
+        detach(); super.onDestroy()
+    }
 }

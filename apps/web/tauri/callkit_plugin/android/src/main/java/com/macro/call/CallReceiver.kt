@@ -17,7 +17,7 @@ class CallReceiver : BroadcastReceiver() {
                             "payload" to (intent.getStringExtra("payload") ?: ""))
                         Calls.receive(context.applicationContext, data, intent.getLongExtra("sentTime", 0))
                     }
-                    "com.macro.call.RESET" -> if (Calls.recipient == intent.getStringExtra("previousRecipient")) Calls.end(context.applicationContext)
+                    "com.macro.call.RESET" -> Calls.resetRecipient(context.applicationContext, intent.getStringExtra("previousRecipient"))
                     "answer" -> intent.getStringExtra("callId")?.let { Calls.answer(context.applicationContext, it) }
                     "end" -> intent.getStringExtra("callId")?.let { Calls.end(context.applicationContext, it) }
                 }

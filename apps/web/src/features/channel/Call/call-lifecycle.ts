@@ -163,6 +163,7 @@ function shouldRejoin(reason?: DisconnectReason) {
 /** One coordinator per call provider; views only submit intent and observe it. */
 export function createCallLifecycle(options: {
   shouldRequestToken: (channelId: string) => boolean;
+  prepareToken?: (channelId: string) => Promise<() => Promise<void>>;
   requestToken: (channelId: string) => Promise<CallTokenResponse>;
   connect: (token: CallTokenResponse) => Promise<void>;
   disconnect: (options?: CallSessionDisconnectOptions) => Promise<void>;
@@ -213,6 +214,12 @@ export function createCallLifecycle(options: {
       joining: ({ request }, dispatch) => {
         let active = true;
         let settled = false;
+        let finishPreparation: (() => Promise<void>) | undefined;
+        const releasePreparation = () => {
+          const cleanup = finishPreparation;
+          finishPreparation = undefined;
+          if (cleanup) void cleanup().catch(options.reportError);
+        };
         const fail = (error: unknown) => {
           if (!active) return;
           settled = true;
@@ -264,6 +271,14 @@ export function createCallLifecycle(options: {
               request.channelId
             );
             if (needsConnection || renewMembership) {
+              if (options.prepareToken) {
+                const cleanup = await options.prepareToken(request.channelId);
+                if (!active) {
+                  await cleanup();
+                  return;
+                }
+                finishPreparation = cleanup;
+              }
               const [token] = await Promise.all([
                 options.requestToken(request.channelId),
                 delay,
@@ -313,11 +328,14 @@ export function createCallLifecycle(options: {
             }
           } catch (error) {
             fail(error);
+          } finally {
+            releasePreparation();
           }
         }
         void connect();
         return () => {
           active = false;
+          releasePreparation();
           clearTimeout(timeout);
           clearTimeout(delayTimer);
           finishDelay();

@@ -16,6 +16,8 @@ const COMMANDS: &[&str] = &[
     "watch_participant_identities",
     "get_active_call_state",
     "start_outgoing_call",
+    "prepare_join",
+    "abort_join",
     "set_video_enabled",
     "set_video_overlay_mode",
     "set_call_drawer_channel_title",

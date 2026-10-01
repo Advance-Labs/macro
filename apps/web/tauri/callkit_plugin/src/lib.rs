@@ -35,6 +35,8 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
         android::watch_participant_identities,
         android::get_active_call_state,
         android::start_outgoing_call,
+        android::prepare_join,
+        android::abort_join,
         android::set_video_enabled,
         android::set_video_overlay_mode,
         android::set_call_drawer_channel_title,

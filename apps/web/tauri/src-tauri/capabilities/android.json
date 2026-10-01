@@ -19,6 +19,8 @@
     "call-kit:allow-watch-participant-identities",
     "call-kit:allow-get-active-call-state",
     "call-kit:allow-start-outgoing-call",
+    "call-kit:allow-prepare-join",
+    "call-kit:allow-abort-join",
     "call-kit:allow-set-video-enabled",
     "call-kit:allow-set-video-overlay-mode",
     "call-kit:allow-set-call-drawer-channel-title",

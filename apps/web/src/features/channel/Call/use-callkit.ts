@@ -384,10 +384,15 @@ export function useCallKitSetup() {
     registerChannelWatcher<CallAnsweredPayload>(
       'watch_call_answered',
       'call answered',
-      (payload) => handleCallAnswered(payload, 'channel')
+      (payload) => {
+        handleCallAnswered(payload, 'channel');
+        // Native retains the same answer for suspended/cold-start recovery.
+        // Consume it now so a later foreground drain cannot navigate again.
+        drainPendingAnsweredCall(payload);
+      }
     );
 
-    const drainPendingAnsweredCall = () => {
+    function drainPendingAnsweredCall(handled?: CallAnsweredPayload) {
       invoke<GetPendingAnsweredCallResponse>(
         'plugin:call-kit|get_pending_answered_call'
       )
@@ -397,6 +402,12 @@ export function useCallKitSetup() {
             nativeMedia,
           });
           if (!channelId) return;
+          if (
+            handled?.channelId === channelId &&
+            (handled.nativeMedia ?? false) === (nativeMedia ?? false)
+          ) {
+            return;
+          }
           handleCallAnswered(
             { channelId, nativeMedia: nativeMedia ?? false },
             'pending'
@@ -405,7 +416,7 @@ export function useCallKitSetup() {
         .catch((err) =>
           console.error('[callkit] get_pending_answered_call failed', err)
         );
-    };
+    }
 
     drainPendingAnsweredCall();
 
@@ -859,6 +870,28 @@ export async function endCallKitCall(): Promise<void> {
   );
 }
 
+const pendingAndroidJoins = new Map<string, string>();
+
+/** Pause ring resolution before the join API marks this user as answered. */
+export async function prepareNativeCallJoin(
+  channelId: string
+): Promise<() => Promise<void>> {
+  if (!isNativeCallEnabled() || !isPlatform('android')) return async () => {};
+  const { lease } = await invoke<{ lease: string }>(
+    'plugin:call-kit|prepare_join',
+    { channelId }
+  );
+  pendingAndroidJoins.set(channelId, lease);
+  let cleaned = false;
+  return async () => {
+    if (cleaned) return;
+    cleaned = true;
+    if (pendingAndroidJoins.get(channelId) === lease)
+      pendingAndroidJoins.delete(channelId);
+    await invoke('plugin:call-kit|abort_join', { lease });
+  };
+}
+
 export async function startNativeCallKitOutgoingCall(
   args: StartOutgoingCallArgs,
   nativeCall: Pick<NativeCallState, 'setBootstrapChannelId'>
@@ -869,7 +902,12 @@ export async function startNativeCallKitOutgoingCall(
     callId: args.callId,
     channelTitle: args.channelTitle,
   });
-  await invoke('plugin:call-kit|start_outgoing_call', args);
+  await invoke('plugin:call-kit|start_outgoing_call', {
+    ...args,
+    ...(isPlatform('android')
+      ? { joinLease: pendingAndroidJoins.get(args.channelId) ?? null }
+      : {}),
+  });
   markNativeCallActivity();
   nativeCall.setBootstrapChannelId(args.channelId);
 }

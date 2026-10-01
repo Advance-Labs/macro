@@ -56,6 +56,7 @@ struct StartOutgoingCallArgs {
     caller_name: Option<String>,
     server_url: String,
     token: String,
+    join_lease: Option<String>,
 }
 
 #[tauri::command]
@@ -67,6 +68,7 @@ pub(crate) async fn start_outgoing_call<R: Runtime>(
     caller_name: Option<String>,
     server_url: String,
     token: String,
+    join_lease: Option<String>,
 ) -> Result<(), String> {
     app.state::<Calls<R>>()
         .0
@@ -79,6 +81,7 @@ pub(crate) async fn start_outgoing_call<R: Runtime>(
                 caller_name,
                 server_url,
                 token,
+                join_lease,
             },
         )
         .await
@@ -182,6 +185,35 @@ pub(crate) async fn set_participant_display_name<R: Runtime>(
                 display_name,
             },
         )
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PrepareJoinArgs {
+    channel_id: String,
+}
+#[tauri::command]
+pub(crate) async fn prepare_join<R: Runtime>(
+    app: AppHandle<R>,
+    channel_id: String,
+) -> Result<Value, String> {
+    app.state::<Calls<R>>()
+        .0
+        .run_mobile_plugin_async("prepareJoin", PrepareJoinArgs { channel_id })
+        .await
+        .map_err(|e| e.to_string())
+}
+#[derive(Serialize)]
+struct AbortJoinArgs {
+    lease: String,
+}
+#[tauri::command]
+pub(crate) async fn abort_join<R: Runtime>(app: AppHandle<R>, lease: String) -> Result<(), String> {
+    app.state::<Calls<R>>()
+        .0
+        .run_mobile_plugin_async("abortJoin", AbortJoinArgs { lease })
         .await
         .map_err(|e| e.to_string())
 }
