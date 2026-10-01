@@ -26,71 +26,93 @@ fn is_slug(value: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '.' | '-'))
 }
 
-macro_rules! slug_type {
-    ($(#[$doc:meta])* $name:ident, $label:literal) => {
-        $(#[$doc])*
-        #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-        #[cfg_attr(feature = "inbound", derive(utoipa::ToSchema))]
-        #[serde(try_from = "String", into = "String")]
-        pub struct $name(String);
-
-        impl $name {
-            /// Parse a slug, rejecting anything the table would refuse.
-            pub fn parse(value: impl Into<String>) -> Result<Self, UserKvError> {
-                let value = value.into();
-                if is_slug(&value) {
-                    Ok(Self(value))
-                } else {
-                    Err(UserKvError::BadRequest(format!(
-                        concat!(
-                            "invalid ",
-                            $label,
-                            " {:?}: use 1-{} characters of a-z, 0-9, '_', '.', or '-', starting with a letter or digit"
-                        ),
-                        value, MAX_SLUG_LEN
-                    )))
-                }
-            }
-
-            /// The slug as a string.
-            pub fn as_str(&self) -> &str {
-                &self.0
-            }
-        }
-
-        impl TryFrom<String> for $name {
-            type Error = UserKvError;
-
-            fn try_from(value: String) -> Result<Self, Self::Error> {
-                Self::parse(value)
-            }
-        }
-
-        impl From<$name> for String {
-            fn from(value: $name) -> Self {
-                value.0
-            }
-        }
-
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(&self.0)
-            }
-        }
-    };
+/// Validates `value` as a slug, naming what it is (`label`) in the error.
+fn parse_slug(value: String, label: &str) -> Result<String, UserKvError> {
+    if is_slug(&value) {
+        Ok(value)
+    } else {
+        Err(UserKvError::BadRequest(format!(
+            "invalid {label} {value:?}: use 1-{MAX_SLUG_LEN} characters of a-z, 0-9, '_', '.', or '-', starting with a letter or digit"
+        )))
+    }
 }
 
-slug_type!(
-    /// Groups the entries of one use case, e.g. `tours`.
-    KvNamespace,
-    "namespace"
-);
+// A separate type from `KvKey` so the two can't be swapped at a call site.
+/// Groups the entries of one use case, e.g. `tours`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "inbound", derive(utoipa::ToSchema))]
+#[serde(try_from = "String", into = "String")]
+pub struct KvNamespace(String);
 
-slug_type!(
-    /// Identifies an entry within its namespace, e.g. `calendar`.
-    KvKey,
-    "key"
-);
+impl KvNamespace {
+    /// Parse a namespace, rejecting anything the table would refuse.
+    pub fn parse(value: impl Into<String>) -> Result<Self, UserKvError> {
+        parse_slug(value.into(), "namespace").map(Self)
+    }
+
+    /// The namespace as a string.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for KvNamespace {
+    type Error = UserKvError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::parse(value)
+    }
+}
+
+impl From<KvNamespace> for String {
+    fn from(value: KvNamespace) -> Self {
+        value.0
+    }
+}
+
+impl fmt::Display for KvNamespace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// Identifies an entry within its namespace, e.g. `calendar`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "inbound", derive(utoipa::ToSchema))]
+#[serde(try_from = "String", into = "String")]
+pub struct KvKey(String);
+
+impl KvKey {
+    /// Parse a key, rejecting anything the table would refuse.
+    pub fn parse(value: impl Into<String>) -> Result<Self, UserKvError> {
+        parse_slug(value.into(), "key").map(Self)
+    }
+
+    /// The key as a string.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for KvKey {
+    type Error = UserKvError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::parse(value)
+    }
+}
+
+impl From<KvKey> for String {
+    fn from(value: KvKey) -> Self {
+        value.0
+    }
+}
+
+impl fmt::Display for KvKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
 
 /// One stored entry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
