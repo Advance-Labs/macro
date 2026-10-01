@@ -14,6 +14,13 @@ import { match } from 'ts-pattern';
 import type { DatabaseCellValue } from './database-view';
 import type { DatabaseRow } from './table';
 
+/**
+ * What a cell shows for an option its column's catalog lacks, as relations
+ * show an unavailable record. A write carrying it is refused, so it never
+ * becomes an option of its own.
+ */
+export const UNAVAILABLE_OPTION = 'Unavailable option';
+
 function listed(values: string[], multi: boolean): DatabaseCellValue {
   return multi ? JSON.stringify(values) : (values[0] ?? null);
 }
@@ -33,12 +40,11 @@ function gridValue(
     .with({ type: 'date' }, ({ value }) => value)
     .with({ type: 'options' }, ({ value }) =>
       listed(
-        value.flatMap((id) =>
+        value.map((id) =>
           kind?.kind === 'select'
-            ? kind.options
-                .filter((option) => option.id === id)
-                .map((option) => option.label)
-            : []
+            ? (kind.options.find((option) => option.id === id)?.label ??
+              UNAVAILABLE_OPTION)
+            : UNAVAILABLE_OPTION
         ),
         multi
       )

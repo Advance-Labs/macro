@@ -7,41 +7,58 @@ import type {
   CellValue,
   CellWrite,
   DatabaseOp,
+  OpEntityKind,
 } from '@core/database-sql/generated/types';
 import type { ColumnDetail } from '@service-storage/generated/schemas/columnDetail';
 import { err, ok, Result } from 'neverthrow';
 import { match } from 'ts-pattern';
-import { relatedRowIds } from './database-relations';
+import { inferDatabaseNumber } from './column-inference';
 import type { DatabaseCellValue } from './database-view';
+import { UNAVAILABLE_OPTION } from './grid-cells';
 import type { DatabaseRowMutation } from './table';
 import type { DatabaseCellFailure } from './write-failure';
 
 const CLEAR: CellValue = { type: 'clear' };
 
-/** Cell values a multi-valued column holds, as the grid's JSON-array string. */
-function listedValues(value: DatabaseCellValue): string[] {
-  if (typeof value !== 'string' || !value) return [];
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return Array.isArray(parsed)
-      ? parsed
-          .filter(
-            (item): item is string | number =>
-              typeof item === 'string' || typeof item === 'number'
-          )
-          .map(String)
-      : [];
-  } catch {
-    return [];
-  }
+/**
+ * Cell values a multi-valued column holds, from the grid's JSON-array string.
+ * Anything else is refused rather than read as no values, which would clear
+ * the cell.
+ */
+function listedValues(
+  value: DatabaseCellValue
+): Result<string[], DatabaseCellFailure> {
+  if (value === null || value === '') return ok([]);
+  if (typeof value !== 'string') return err({ kind: 'malformed-list' });
+  const parsed = Result.fromThrowable(
+    (text: string): unknown => JSON.parse(text),
+    (): DatabaseCellFailure => ({ kind: 'malformed-list' })
+  )(value);
+  return parsed.andThen((list) =>
+    Array.isArray(list) &&
+    list.every((item) => typeof item === 'string' || typeof item === 'number')
+      ? ok(list.map(String))
+      : err({ kind: 'malformed-list' })
+  );
 }
 
 /** The kind of entity an entity column's references point at. */
-function referenceKind(column: ColumnDetail) {
-  const target = column.definition.definition.specific_entity_type ?? 'USER';
-  return target === 'DATABASE_ROW'
-    ? err<never, DatabaseCellFailure>({ kind: 'relation-as-entity' })
-    : ok(target);
+function referenceKind(
+  column: ColumnDetail
+): Result<OpEntityKind, DatabaseCellFailure> {
+  const target = column.definition.definition.specific_entity_type;
+  if (target === null) return err({ kind: 'untyped-entity' });
+  if (target === 'DATABASE_ROW') return err({ kind: 'relation-as-entity' });
+  return ok(target);
+}
+
+/** Options named by label; one the grid could not name is refused. */
+function optionLabels(
+  labels: string[]
+): Result<CellValue, DatabaseCellFailure> {
+  return labels.includes(UNAVAILABLE_OPTION)
+    ? err({ kind: 'unavailable-option' })
+    : ok({ type: 'options', value: labels.map((label) => ({ label })) });
 }
 
 /** A calendar day or an instant, as the instant a date cell stores. */
@@ -58,28 +75,32 @@ export function cellValue(
   value: DatabaseCellValue
 ): Result<CellValue, DatabaseCellFailure> {
   const definition = column.definition.definition;
-  if (column.column.config?.kind === 'link') {
-    const rows = relatedRowIds(value);
-    return ok(rows.length ? { type: 'rows', value: rows } : CLEAR);
-  }
-  if (definition.is_multi_select) {
-    const values = listedValues(value);
-    if (!values.length) return ok(CLEAR);
-    return definition.data_type === 'ENTITY'
-      ? referenceKind(column).map((entityType) => ({
-          type: 'entities',
-          value: values.map((entityId) => ({ entityType, entityId })),
-        }))
-      : ok({ type: 'options', value: values.map((label) => ({ label })) });
-  }
+  if (column.column.config?.kind === 'link')
+    return listedValues(value).map(
+      (rows): CellValue =>
+        rows.length ? { type: 'rows', value: [...new Set(rows)] } : CLEAR
+    );
+  if (definition.is_multi_select)
+    return listedValues(value).andThen(
+      (values): Result<CellValue, DatabaseCellFailure> => {
+        if (!values.length) return ok(CLEAR);
+        return definition.data_type === 'ENTITY'
+          ? referenceKind(column).map((entityType) => ({
+              type: 'entities',
+              value: values.map((entityId) => ({ entityType, entityId })),
+            }))
+          : optionLabels(values);
+      }
+    );
   if (value === null) return ok(CLEAR);
   if (value === '' && definition.data_type !== 'STRING') return ok(CLEAR);
   return match(definition.data_type)
     .returnType<Result<CellValue, DatabaseCellFailure>>()
     .with('STRING', () => ok({ type: 'text', value: String(value) }))
     .with('NUMBER', () => {
-      const number = typeof value === 'number' ? value : Number(value);
-      return Number.isFinite(number)
+      const number =
+        typeof value === 'number' ? value : inferDatabaseNumber(value);
+      return number !== undefined && Number.isFinite(number)
         ? ok({ type: 'number', value: number })
         : err({ kind: 'not-a-number' });
     })
@@ -95,7 +116,7 @@ export function cellValue(
     .with('DATE', () => ok({ type: 'date', value: instant(String(value)) }))
     .with('LINK', () => ok({ type: 'link', value: [String(value)] }))
     .with('SELECT_STRING', 'SELECT_NUMBER', 'TAG', () =>
-      ok({ type: 'options', value: [{ label: String(value) }] })
+      optionLabels([String(value)])
     )
     .with('ENTITY', () =>
       referenceKind(column).map((entityType) => ({

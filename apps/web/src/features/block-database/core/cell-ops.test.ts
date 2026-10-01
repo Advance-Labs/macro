@@ -2,6 +2,7 @@ import type { ColumnDetail } from '@service-storage/generated/schemas/columnDeta
 import { err, ok } from 'neverthrow';
 import { describe, expect, it } from 'vitest';
 import { cellValue, mutationOp } from './cell-ops';
+import { UNAVAILABLE_OPTION } from './grid-cells';
 
 function column(
   dataType: ColumnDetail['definition']['definition']['data_type'],
@@ -136,6 +137,18 @@ describe('grid values as cell values', () => {
       err({ kind: 'not-a-number' })
     );
   });
+
+  it('refuses numbers the column inference would not read as one', () => {
+    expect(cellValue(column('NUMBER'), ' ')).toEqual(
+      err({ kind: 'not-a-number' })
+    );
+    expect(cellValue(column('NUMBER'), '0x10')).toEqual(
+      err({ kind: 'not-a-number' })
+    );
+    expect(cellValue(column('NUMBER'), ' 42 ')).toEqual(
+      ok({ type: 'number', value: 42 })
+    );
+  });
 });
 
 describe('grid values a column cannot take', () => {
@@ -173,6 +186,36 @@ describe('grid values a column cannot take', () => {
     expect(cellValue(rows, 'row-1')).toEqual(
       err({ kind: 'relation-as-entity' })
     );
+  });
+
+  it('refuses a multi-valued cell that is not a JSON array instead of clearing it', () => {
+    expect(cellValue(column('TAG', { multi: true }), 'Urgent')).toEqual(
+      err({ kind: 'malformed-list' })
+    );
+    expect(cellValue(column('TAG', { multi: true }), '{"a":1}')).toEqual(
+      err({ kind: 'malformed-list' })
+    );
+    expect(cellValue(column('TAG', { multi: true }), '[null]')).toEqual(
+      err({ kind: 'malformed-list' })
+    );
+    expect(cellValue(column('ENTITY', { relation: true }), 'row-1')).toEqual(
+      err({ kind: 'malformed-list' })
+    );
+  });
+
+  it('refuses a bare id for an entity column that names no kind', () => {
+    expect(cellValue(column('ENTITY'), 'someone')).toEqual(
+      err({ kind: 'untyped-entity' })
+    );
+  });
+
+  it('refuses an option the grid could not name', () => {
+    expect(
+      cellValue(
+        column('TAG', { multi: true }),
+        JSON.stringify(['Urgent', UNAVAILABLE_OPTION])
+      )
+    ).toEqual(err({ kind: 'unavailable-option' }));
   });
 
   it('refuses the whole op when one of its cells is refused', () => {
