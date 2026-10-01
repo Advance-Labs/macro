@@ -94,10 +94,14 @@ impl<'a> Input for Tokens<'a> {
 type ParseResult<'a, Output> = IResult<Tokens<'a>, Output, ParseError>;
 
 impl nom::error::ParseError<Tokens<'_>> for ParseError {
-    fn from_error_kind(input: Tokens<'_>, kind: nom::error::ErrorKind) -> Self {
+    fn from_error_kind(input: Tokens<'_>, _: nom::error::ErrorKind) -> Self {
         // Only reached through combinators we never leave a message on; the
         // leaves below always say what they expected.
-        at(input, &format!("something else ({kind:?})"))
+        let found = match input.tokens.first() {
+            Some(token) => token.kind.describe(),
+            None => "end of statement".into(),
+        };
+        message_at(input, &format!("unexpected {found}"))
     }
 
     fn append(_: Tokens<'_>, _: nom::error::ErrorKind, other: Self) -> Self {

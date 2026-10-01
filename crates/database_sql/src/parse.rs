@@ -53,8 +53,7 @@ use std::ops::Range;
 pub use ast::*;
 
 /// Why a statement could not be parsed, with the byte range it points at.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, serde::Serialize, specta::Type)]
-#[error("{message} at {span:?}")]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct ParseError {
     /// Byte range in the source the message is about. Empty at end of input.
     #[specta(type = Span)]
@@ -62,6 +61,16 @@ pub struct ParseError {
     /// What was expected and what was found, in words an agent can act on.
     pub message: String,
 }
+
+// By hand: specta's derive cannot read a thiserror format that names a
+// field's field.
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{} at byte {}", self.message, self.span.start)
+    }
+}
+
+impl std::error::Error for ParseError {}
 
 /// A byte range as it crosses the wasm boundary: `{start, end}`.
 #[derive(specta::Type)]

@@ -1083,3 +1083,18 @@ fn a_bad_alter_says_what_would_have_been_accepted() {
         );
     }
 }
+
+#[test]
+fn a_parse_error_reads_with_the_byte_it_points_at() {
+    // `FORM` reads as the column's alias, so the miss is at `crm`.
+    let error = parse("SELECT name FORM crm.deals").unwrap_err();
+
+    assert_eq!(
+        error,
+        ParseError {
+            span: 17..20,
+            message: "expected FROM, found \"crm\"".into(),
+        }
+    );
+    assert_eq!(error.to_string(), "expected FROM, found \"crm\" at byte 17");
+}
