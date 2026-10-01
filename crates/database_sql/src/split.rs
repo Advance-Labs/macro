@@ -159,7 +159,7 @@ pub enum Shape {
 pub fn split(catalog: &Catalog, mut query: SelectQuery) -> Plan {
     let relations = query.relations.len();
     let (pushed, residual) = match query.where_.take() {
-        Some(filter) => pushdown::divide(filter, &query.bindings, &query.relations),
+        Some(filter) => pushdown::divide(filter, &query.bindings, &query.relations, &query.joins),
         None => (vec![None; relations], None),
     };
 

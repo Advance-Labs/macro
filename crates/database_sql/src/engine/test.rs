@@ -111,23 +111,26 @@ fn people() -> Vec<Row> {
     ]
 }
 
-/// Deals keyed as the second relation.
+/// Deals keyed by definition, as a source reads them: Acme is won,
+/// Globex a lead.
 fn deals() -> Vec<Row> {
     vec![
         Row {
             id: ACME,
             position: None,
             cells: HashMap::from([
-                (column_key(1, NAME), Cell::Text("Acme".into())),
-                (column_key(1, AMOUNT), Cell::Number(12000.0)),
+                (NAME, Cell::Text("Acme".into())),
+                (AMOUNT, Cell::Number(12000.0)),
+                (STAGE, Cell::Options(vec![WON])),
             ]),
         },
         Row {
             id: GLOBEX,
             position: None,
             cells: HashMap::from([
-                (column_key(1, NAME), Cell::Text("Globex".into())),
-                (column_key(1, AMOUNT), Cell::Number(50.0)),
+                (NAME, Cell::Text("Globex".into())),
+                (AMOUNT, Cell::Number(50.0)),
+                (STAGE, Cell::Options(vec![LEAD])),
             ]),
         },
     ]
@@ -356,6 +359,42 @@ fn left_join_on_row_id_keeps_tasks_without_a_deal() {
         ]
     );
     // The hint names the row id (no property) with the deals the tasks link.
+    assert_eq!(
+        requests[1].query,
+        GqlQuery::Soup {
+            table: DEALS,
+            property_filter: None,
+            key_hint: Some(KeyHint {
+                column: None,
+                values: vec![
+                    Cell::Entities(vec![ACME.to_string()]),
+                    Cell::Entities(vec![GLOBEX.to_string()]),
+                ],
+            }),
+        }
+    );
+}
+
+#[test]
+fn where_on_a_left_joined_table_drops_the_tasks_it_rejects() {
+    let (outcome, requests) = drive(
+        &catalog(),
+        "SELECT t.title, d.name FROM macro.tasks t LEFT JOIN crm.deals d ON t.deal = d.row_id
+         WHERE d.stage = 'Won' ORDER BY t.title",
+        by_table,
+    );
+    // Only the login fix links a won deal. Ship it links a lead, and the
+    // other two link nothing, so their `d.stage` is NULL and WHERE drops
+    // them after the join.
+    assert_eq!(
+        outcome.rows,
+        vec![vec![
+            Some(Cell::Text("Fix login".into())),
+            Some(Cell::Text("Acme".into()))
+        ]]
+    );
+    // The deals read carries no filter: pushed into it, the stage would act
+    // as part of the ON condition and keep every task.
     assert_eq!(
         requests[1].query,
         GqlQuery::Soup {
