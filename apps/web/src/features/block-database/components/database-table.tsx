@@ -338,6 +338,38 @@ export function DatabaseTable(props: {
         next.querySelector<HTMLElement>('button, input, [tabindex]') ?? next
       ).focus();
   }
+  // One menu for every row: right-click (or a long press) picks its row and cell.
+  const [contextTarget, setContextTarget] = createSignal<{
+    rowId: string;
+    columnId?: string;
+  }>();
+  const contextRowId = () => contextTarget()?.rowId ?? '';
+  const rowButtons = new Map<string, HTMLButtonElement>();
+  let afterClose: (() => void) | undefined;
+  const deferAction = (action: () => void) => {
+    afterClose = action;
+  };
+  const contextField = () =>
+    props.columns.find((column) => column.id === contextTarget()?.columnId);
+  const renameField = () =>
+    props.columns.find(
+      (column) => column.id === props.titleColumnId && canEditCell(column)
+    );
+  /** Note the row and cell a context menu opens for; false when it is not for a row. */
+  const captureContext = (target: EventTarget | null): boolean => {
+    if (
+      !(target instanceof HTMLElement) ||
+      target.closest(
+        'input:not([type="checkbox"]), textarea, [contenteditable="true"]'
+      )
+    )
+      return false;
+    const rowId =
+      target.closest<HTMLElement>('[data-grid-row-id]')?.dataset.gridRowId;
+    if (!rowId) return false;
+    setContextTarget({ rowId, columnId: cellAt(target)?.columnId });
+    return true;
+  };
   return (
     <DragDropProvider
       collisionDetector={columnReorder.collisionDetector}
@@ -462,249 +494,248 @@ export function DatabaseTable(props: {
               </div>
             </Show>
           </div>
-          <Key each={props.rows} by="rowId">
-            {(row, index) => {
-              const [contextColumn, setContextColumn] = createSignal<string>();
-              let afterClose: (() => void) | undefined;
-              let rowButton: HTMLButtonElement | undefined;
-              const deferAction = (action: () => void) => {
-                afterClose = action;
-              };
-              const contextField = () =>
-                props.columns.find((column) => column.id === contextColumn());
-              const renameField = () =>
-                props.columns.find(
-                  (column) =>
-                    column.id === props.titleColumnId && canEditCell(column)
-                );
-              const captureContext = (event: MouseEvent, columnId?: string) => {
-                if (
-                  event.target instanceof HTMLElement &&
-                  event.target.closest(
-                    'input:not([type="checkbox"]), textarea, [contenteditable="true"]'
-                  )
-                ) {
-                  event.stopPropagation();
-                  return;
-                }
-                setContextColumn(columnId);
-              };
-              const highlighted = () => props.highlightRowId === row().rowId;
-              return (
-                <ContextMenu>
-                  <ContextMenu.Trigger
-                    as="div"
-                    ref={(element: HTMLElement) => {
-                      createEffect(
-                        on(highlighted, (isHighlighted) => {
-                          if (!isHighlighted) return;
-                          element.scrollIntoView({ block: 'nearest' });
-                          const first = props.columns[0];
-                          if (first) control(row().rowId, first.id)?.focus();
-                        })
-                      );
-                    }}
-                    role="row"
-                    data-grid-row-id={row().rowId}
-                    data-highlighted={highlighted() ? '' : undefined}
-                    aria-rowindex={index() + 2}
-                    // Off-screen rows skip style, layout and paint; they stay
-                    // in the DOM, the accessibility tree and find-in-page.
-                    class="group grid min-h-10 border-b border-edge-muted/60 transition-colors duration-700 [contain-intrinsic-size:auto_41px] [content-visibility:auto] hover:bg-hover/50"
-                    classList={{ 'bg-accent/15': highlighted() }}
-                    style={{ 'grid-template-columns': template() }}
-                  >
-                    <div
-                      role="gridcell"
-                      aria-colindex={1}
-                      tabindex={-1}
-                      // Opaque so cells scrolled beneath it stay hidden; the
-                      // overlay repeats the row's hover and highlight tint.
-                      class="sticky left-0 z-1 flex items-center justify-center border-r border-edge-muted/40 bg-panel outline-none before:pointer-events-none before:absolute before:inset-0 before:transition-colors before:duration-700 group-hover:before:bg-hover/50 group-data-highlighted:before:bg-accent/15 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ink/50"
-                      data-grid-cell
-                      data-grid-row={index()}
-                      data-grid-column={0}
-                      onContextMenu={(event) => captureContext(event)}
-                    >
-                      <Show
-                        when={!props.isUnsavedRow?.(row().rowId)}
-                        fallback={
-                          <span class="text-[10px] tabular-nums text-ink-placeholder">
-                            {index() + 1}
-                          </span>
-                        }
+          <ContextMenu>
+            <ContextMenu.Trigger as="div" class="contents">
+              <div
+                class="contents"
+                // Runs before the menu's own handler: it picks the row and
+                // cell the menu is for, or lets the browser's menu through.
+                onContextMenu={(event) => {
+                  if (!captureContext(event.target)) event.stopPropagation();
+                }}
+                onPointerDown={(event) => {
+                  if (event.pointerType !== 'mouse')
+                    captureContext(event.target);
+                }}
+              >
+                <Key each={props.rows} by="rowId">
+                  {(row, index) => {
+                    const highlighted = () =>
+                      props.highlightRowId === row().rowId;
+                    return (
+                      <div
+                        ref={(element: HTMLElement) => {
+                          createEffect(
+                            on(highlighted, (isHighlighted) => {
+                              if (!isHighlighted) return;
+                              element.scrollIntoView({ block: 'nearest' });
+                              const first = props.columns[0];
+                              if (first)
+                                control(row().rowId, first.id)?.focus();
+                            })
+                          );
+                        }}
+                        role="row"
+                        data-grid-row-id={row().rowId}
+                        data-highlighted={highlighted() ? '' : undefined}
+                        aria-rowindex={index() + 2}
+                        // Off-screen rows skip style, layout and paint; they stay
+                        // in the DOM, the accessibility tree and find-in-page.
+                        class="group grid min-h-10 border-b border-edge-muted/60 transition-colors duration-700 [contain-intrinsic-size:auto_41px] [content-visibility:auto] hover:bg-hover/50"
+                        classList={{ 'bg-accent/15': highlighted() }}
+                        style={{ 'grid-template-columns': template() }}
                       >
-                        <button
-                          ref={rowButton}
-                          type="button"
-                          class="relative grid size-7 place-items-center rounded text-[10px] tabular-nums text-ink-placeholder outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50"
-                          aria-label={`Open ${props.getRowTitle(row())}`}
-                          title="Open record"
-                          onClick={() => props.onOpen(row().rowId)}
+                        <div
+                          role="gridcell"
+                          aria-colindex={1}
+                          tabindex={-1}
+                          // Opaque so cells scrolled beneath it stay hidden; the
+                          // overlay repeats the row's hover and highlight tint.
+                          class="sticky left-0 z-1 flex items-center justify-center border-r border-edge-muted/40 bg-panel outline-none before:pointer-events-none before:absolute before:inset-0 before:transition-colors before:duration-700 group-hover:before:bg-hover/50 group-data-highlighted:before:bg-accent/15 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ink/50"
+                          data-grid-cell
+                          data-grid-row={index()}
+                          data-grid-column={0}
                         >
-                          <span class="group-hover:opacity-0 group-focus-within:opacity-0">
-                            {index() + 1}
-                          </span>
-                          <ArrowSquareOutIcon class="absolute size-3.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100" />
-                        </button>
-                      </Show>
-                    </div>
-                    <Key each={props.columns} by="id">
-                      {(column, columnIndex) => {
-                        const presence = () =>
-                          presenceAt(row().rowId, column().id);
-                        return (
-                          <div
-                            role="gridcell"
-                            aria-colindex={columnIndex() + 2}
-                            tabindex={-1}
-                            class="relative min-w-0 border-r border-edge-muted/40 px-0.5 py-0.5 outline-none focus-within:ring-1 focus-within:ring-inset focus-within:ring-ink/40 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ink/50"
-                            data-grid-cell
-                            data-grid-row={index()}
-                            data-grid-column={columnIndex() + 1}
-                            data-remote-users={
-                              presence().length
-                                ? presence()
-                                    .map((user) => user.userId)
-                                    .join(' ')
-                                : undefined
-                            }
-                            style={presenceOutline(presence()[0])}
-                            onContextMenu={(event) =>
-                              captureContext(event, column().id)
+                          <Show
+                            when={!props.isUnsavedRow?.(row().rowId)}
+                            fallback={
+                              <span class="text-[10px] tabular-nums text-ink-placeholder">
+                                {index() + 1}
+                              </span>
                             }
                           >
-                            {props.renderCell(row, column, {
-                              onReady: (editor) =>
-                                register(row().rowId, column().id, editor),
-                              onNavigate: (direction) =>
-                                navigate(row().rowId, column().id, direction),
-                              onNavigateRow: (direction) =>
-                                navigateRow(
-                                  row().rowId,
-                                  column().id,
-                                  direction
-                                ),
-                            })}
-                            <Show when={presence().length}>
-                              <span class="pointer-events-none absolute -top-px right-0 z-1 flex gap-px">
-                                <For each={presence()}>
-                                  {(user) => <PresenceTag user={user} />}
-                                </For>
+                            <button
+                              ref={(button) => {
+                                rowButtons.set(row().rowId, button);
+                                onCleanup(() => {
+                                  if (rowButtons.get(row().rowId) === button)
+                                    rowButtons.delete(row().rowId);
+                                });
+                              }}
+                              type="button"
+                              class="relative grid size-7 place-items-center rounded text-[10px] tabular-nums text-ink-placeholder outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50"
+                              aria-label={`Open ${props.getRowTitle(row())}`}
+                              title="Open record"
+                              onClick={() => props.onOpen(row().rowId)}
+                            >
+                              <span class="group-hover:opacity-0 group-focus-within:opacity-0">
+                                {index() + 1}
                               </span>
-                            </Show>
-                          </div>
-                        );
-                      }}
-                    </Key>
-                    <Show when={props.canEdit}>
-                      <div
-                        role="gridcell"
-                        onContextMenu={(event) => captureContext(event)}
-                      />
-                    </Show>
-                  </ContextMenu.Trigger>
-                  <ContextMenu.Portal>
-                    <ContextMenuContent
-                      class="min-w-44"
-                      onCloseAutoFocus={(event) => {
-                        event.preventDefault();
-                        const action = afterClose;
-                        afterClose = undefined;
-                        queueMicrotask(() => {
-                          if (action) {
-                            action();
-                            return;
-                          }
-                          const columnId = contextColumn();
-                          const cell = columnId
-                            ? control(row().rowId, columnId)
-                            : undefined;
-                          if (cell) cell.focus();
-                          else rowButton?.focus();
-                        });
-                      }}
-                    >
-                      <Show
-                        when={
-                          props.canEdit &&
-                          contextField() &&
-                          canEditCell(contextField()!)
-                        }
-                      >
-                        <MenuItem
-                          closeOnSelect
-                          icon={PencilIcon}
-                          text="Edit cell"
-                          onClick={() =>
-                            deferAction(() =>
-                              control(row().rowId, contextColumn()!)?.edit()
-                            )
-                          }
-                        />
-                      </Show>
-                      <Show when={!props.isUnsavedRow?.(row().rowId)}>
-                        <MenuItem
-                          closeOnSelect
-                          icon={ArrowSquareOutIcon}
-                          text="Open record"
-                          onClick={() =>
-                            deferAction(() => props.onOpen(row().rowId))
-                          }
-                        />
-                        <Show
-                          when={
-                            props.canEdit &&
-                            renameField() &&
-                            contextColumn() !== renameField()?.id
-                          }
-                        >
-                          <MenuItem
-                            closeOnSelect
-                            icon={PencilIcon}
-                            text="Rename"
-                            onClick={() =>
-                              deferAction(() =>
-                                control(row().rowId, renameField()!.id)?.edit()
-                              )
-                            }
-                          />
+                              <ArrowSquareOutIcon class="absolute size-3.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100" />
+                            </button>
+                          </Show>
+                        </div>
+                        <Key each={props.columns} by="id">
+                          {(column, columnIndex) => {
+                            const presence = () =>
+                              presenceAt(row().rowId, column().id);
+                            return (
+                              <div
+                                role="gridcell"
+                                aria-colindex={columnIndex() + 2}
+                                tabindex={-1}
+                                class="relative min-w-0 border-r border-edge-muted/40 px-0.5 py-0.5 outline-none focus-within:ring-1 focus-within:ring-inset focus-within:ring-ink/40 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ink/50"
+                                data-grid-cell
+                                data-grid-row={index()}
+                                data-grid-column={columnIndex() + 1}
+                                data-remote-users={
+                                  presence().length
+                                    ? presence()
+                                        .map((user) => user.userId)
+                                        .join(' ')
+                                    : undefined
+                                }
+                                style={presenceOutline(presence()[0])}
+                              >
+                                {props.renderCell(row, column, {
+                                  onReady: (editor) =>
+                                    register(row().rowId, column().id, editor),
+                                  onNavigate: (direction) =>
+                                    navigate(
+                                      row().rowId,
+                                      column().id,
+                                      direction
+                                    ),
+                                  onNavigateRow: (direction) =>
+                                    navigateRow(
+                                      row().rowId,
+                                      column().id,
+                                      direction
+                                    ),
+                                })}
+                                <Show when={presence().length}>
+                                  <span class="pointer-events-none absolute -top-px right-0 z-1 flex gap-px">
+                                    <For each={presence()}>
+                                      {(user) => <PresenceTag user={user} />}
+                                    </For>
+                                  </span>
+                                </Show>
+                              </div>
+                            );
+                          }}
+                        </Key>
+                        <Show when={props.canEdit}>
+                          <div role="gridcell" />
                         </Show>
-                        <Show when={props.canEdit && props.onDuplicate}>
-                          <MenuItem
-                            closeOnSelect
-                            icon={CopyIcon}
-                            text="Duplicate"
-                            disabled={props.pending}
-                            onClick={() =>
-                              deferAction(() => {
-                                void props.onDuplicate?.(row().rowId);
-                              })
-                            }
-                          />
-                        </Show>
-                        <Show when={props.canEdit && props.onRequestDelete}>
-                          <MenuSeparator />
-                          <MenuItem
-                            closeOnSelect
-                            icon={TrashIcon}
-                            text="Delete record"
-                            class="text-failure"
-                            disabled={props.pending}
-                            onClick={() =>
-                              deferAction(() =>
-                                props.onRequestDelete?.(row().rowId)
-                              )
-                            }
-                          />
-                        </Show>
-                      </Show>
-                    </ContextMenuContent>
-                  </ContextMenu.Portal>
-                </ContextMenu>
-              );
-            }}
-          </Key>
+                      </div>
+                    );
+                  }}
+                </Key>
+              </div>
+            </ContextMenu.Trigger>
+            <ContextMenu.Portal>
+              <ContextMenuContent
+                class="min-w-44"
+                onCloseAutoFocus={(event) => {
+                  event.preventDefault();
+                  const action = afterClose;
+                  afterClose = undefined;
+                  queueMicrotask(() => {
+                    if (action) {
+                      action();
+                      return;
+                    }
+                    const target = contextTarget();
+                    if (!target) return;
+                    const columnId = target.columnId;
+                    const cell = columnId
+                      ? control(target.rowId, columnId)
+                      : undefined;
+                    if (cell) cell.focus();
+                    else rowButtons.get(target.rowId)?.focus();
+                  });
+                }}
+              >
+                <Show
+                  when={
+                    props.canEdit &&
+                    contextField() &&
+                    canEditCell(contextField()!)
+                  }
+                >
+                  <MenuItem
+                    closeOnSelect
+                    icon={PencilIcon}
+                    text="Edit cell"
+                    onClick={() =>
+                      deferAction(() =>
+                        control(
+                          contextRowId(),
+                          contextTarget()!.columnId!
+                        )?.edit()
+                      )
+                    }
+                  />
+                </Show>
+                <Show when={!props.isUnsavedRow?.(contextRowId())}>
+                  <MenuItem
+                    closeOnSelect
+                    icon={ArrowSquareOutIcon}
+                    text="Open record"
+                    onClick={() =>
+                      deferAction(() => props.onOpen(contextRowId()))
+                    }
+                  />
+                  <Show
+                    when={
+                      props.canEdit &&
+                      renameField() &&
+                      contextTarget()?.columnId !== renameField()?.id
+                    }
+                  >
+                    <MenuItem
+                      closeOnSelect
+                      icon={PencilIcon}
+                      text="Rename"
+                      onClick={() =>
+                        deferAction(() =>
+                          control(contextRowId(), renameField()!.id)?.edit()
+                        )
+                      }
+                    />
+                  </Show>
+                  <Show when={props.canEdit && props.onDuplicate}>
+                    <MenuItem
+                      closeOnSelect
+                      icon={CopyIcon}
+                      text="Duplicate"
+                      disabled={props.pending}
+                      onClick={() =>
+                        deferAction(() => {
+                          void props.onDuplicate?.(contextRowId());
+                        })
+                      }
+                    />
+                  </Show>
+                  <Show when={props.canEdit && props.onRequestDelete}>
+                    <MenuSeparator />
+                    <MenuItem
+                      closeOnSelect
+                      icon={TrashIcon}
+                      text="Delete record"
+                      class="text-failure"
+                      disabled={props.pending}
+                      onClick={() =>
+                        deferAction(() =>
+                          props.onRequestDelete?.(contextRowId())
+                        )
+                      }
+                    />
+                  </Show>
+                </Show>
+              </ContextMenuContent>
+            </ContextMenu.Portal>
+          </ContextMenu>
           <Show when={props.rows.length === 0}>{props.emptyState}</Show>
           <div
             aria-hidden="true"
