@@ -66,11 +66,11 @@ describe('new database view', () => {
     fireEvent.click(screen.getByRole('button', { name: /Board Cards/ }));
     fireEvent.submit(input.closest('form')!);
     await waitFor(() => expect(close).toHaveBeenCalledOnce());
-    expect(submit).toHaveBeenCalledExactlyOnceWith(
-      'Delivery board',
-      'board',
-      'priority'
-    );
+    expect(submit).toHaveBeenCalledExactlyOnceWith({
+      name: 'Delivery board',
+      layout: 'board',
+      groupBy: 'priority',
+    });
   });
 
   it('keeps the layout and draft, and says why, when creating fails', async () => {
@@ -117,6 +117,10 @@ describe('new database view', () => {
     ).toBe('true');
     fireEvent.submit(input.closest('form')!);
     await waitFor(() => expect(close).toHaveBeenCalledOnce());
-    expect(submit).toHaveBeenLastCalledWith('Board view', 'board', 'priority');
+    expect(submit).toHaveBeenLastCalledWith({
+      name: 'Board view',
+      layout: 'board',
+      groupBy: 'priority',
+    });
   });
 });

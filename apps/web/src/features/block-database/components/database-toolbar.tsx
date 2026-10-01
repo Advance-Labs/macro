@@ -41,7 +41,7 @@ import {
 } from '../core/write-failure';
 import type { ViewChange } from '../queries/views';
 import { FilterPanel, filterConditionCount } from './database-view-filters';
-import { NewViewDialog, type NewViewLayout } from './new-view-dialog';
+import { type NewView, NewViewDialog } from './new-view-dialog';
 import { ToolbarPopover } from './view-control-popover';
 import { ViewSelect } from './view-select';
 
@@ -57,11 +57,7 @@ type DatabaseToolbarProps = {
   onSearchChange: (search: string) => void;
   onSelectView: (id?: string) => void;
   onChangeView: (change: ViewChange) => void;
-  onCreateView: (
-    name: string,
-    layout: NewViewLayout,
-    groupBy: string | undefined
-  ) => ResultAsync<void, DatabaseOpFailure>;
+  onCreateView: (view: NewView) => ResultAsync<void, DatabaseOpFailure>;
   onRenameView: (
     view: DatabaseView,
     name: string

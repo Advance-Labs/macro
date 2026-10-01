@@ -27,6 +27,7 @@ import { useDatabaseTableChangedSync } from '@queries/storage/databases-sync';
 import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
 import { getEntityGraphqlClient } from '@service-storage/graphql-soup';
 import { Button } from '@ui';
+import { match } from 'ts-pattern';
 import {
   type Component,
   createMemo,
@@ -37,7 +38,7 @@ import {
   untrack,
 } from 'solid-js';
 import { DatabaseToolbar } from '../components/database-toolbar';
-import type { NewViewLayout } from '../components/new-view-dialog';
+import type { NewView } from '../components/new-view-dialog';
 import { databaseChatContext } from '../core/chat-context';
 import type { DatabaseRelatedDestination } from '../core/database-relations';
 import {
@@ -240,22 +241,21 @@ const Block: Component = () => {
       [current.tableId]: { ...current, ...change },
     }));
   }
-  function createView(
-    current: DatabaseView,
-    name: string,
-    layout: NewViewLayout,
-    groupBy: string | undefined
-  ) {
+  function createView(current: DatabaseView, created: NewView) {
     return createDatabaseView(databaseId, current.tableId, {
-      name,
+      name: created.name,
       query: current.query,
-      layout:
-        layout === 'board' && groupBy
-          ? boardLayout(groupBy, columns())
-          : current.layout.kind === 'table'
+      layout: match(created)
+        .with({ layout: 'board' }, ({ groupBy }) =>
+          boardLayout(groupBy, columns())
+        )
+        .with({ layout: 'table' }, () =>
+          current.layout.kind === 'table'
             ? current.layout
-            : { kind: 'table', columns: [] },
-    }).map((created) => selectView(created.id));
+            : { kind: 'table' as const, columns: [] }
+        )
+        .exhaustive(),
+    }).map((view) => selectView(view.id));
   }
 
   return (
@@ -393,13 +393,8 @@ const Block: Component = () => {
                                     onSearchChange={setSearch}
                                     onSelectView={selectView}
                                     onChangeView={changeView}
-                                    onCreateView={(name, layout, groupBy) =>
-                                      createView(
-                                        shown().view,
-                                        name,
-                                        layout,
-                                        groupBy
-                                      )
+                                    onCreateView={(created) =>
+                                      createView(shown().view, created)
                                     }
                                     onRenameView={(target, name) =>
                                       updateDatabaseView(target, { name }).map(

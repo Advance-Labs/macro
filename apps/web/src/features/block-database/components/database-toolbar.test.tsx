@@ -469,11 +469,10 @@ describe('database toolbar views', () => {
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: 'New view' })).toBeNull()
     );
-    expect(create).toHaveBeenCalledExactlyOnceWith(
-      'Planning',
-      'table',
-      undefined
-    );
+    expect(create).toHaveBeenCalledExactlyOnceWith({
+      name: 'Planning',
+      layout: 'table',
+    });
   });
 });
 

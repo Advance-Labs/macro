@@ -14,18 +14,20 @@ import {
 } from '../core/write-failure';
 import { ViewSelect } from './view-select';
 
-export type NewViewLayout = 'table' | 'board';
+type NewViewLayout = 'table' | 'board';
+
+/** A view to create: a table, or a board grouped by a single select. */
+export type NewView = { name: string } & (
+  | { layout: 'table' }
+  | { layout: 'board'; groupBy: string }
+);
 
 /** Creates a table or board view of the current table, named and, for a board, grouped. */
 export function NewViewDialog(props: {
   initialName: string;
   initialLayout?: NewViewLayout;
   columns: DatabaseViewColumn[];
-  onSubmit: (
-    name: string,
-    layout: NewViewLayout,
-    groupBy: string | undefined
-  ) => ResultAsync<void, DatabaseOpFailure>;
+  onSubmit: (view: NewView) => ResultAsync<void, DatabaseOpFailure>;
   onClose: () => void;
   returnFocus?: HTMLElement;
   returnFocusFallback?: HTMLElement;
@@ -39,18 +41,23 @@ export function NewViewDialog(props: {
   const [groupBy, setGroupBy] = createSignal(groups()[0]?.id);
   const [pending, setPending] = createSignal(false);
   const [error, setError] = createSignal('');
-  const incomplete = () =>
-    !name().trim() || (layout() === 'board' && !groupBy());
+  const request = (): NewView | undefined => {
+    const trimmed = name().trim();
+    if (!trimmed) return undefined;
+    if (layout() === 'table') return { name: trimmed, layout: 'table' };
+    const group = groupBy();
+    return group
+      ? { name: trimmed, layout: 'board', groupBy: group }
+      : undefined;
+  };
+  const incomplete = () => !request();
   const submit = async (event: SubmitEvent) => {
     event.preventDefault();
-    if (pending() || incomplete()) return;
+    const view = request();
+    if (pending() || !view) return;
     setPending(true);
     setError('');
-    const created = await props.onSubmit(
-      name().trim(),
-      layout(),
-      layout() === 'board' ? groupBy() : undefined
-    );
+    const created = await props.onSubmit(view);
     setPending(false);
     created.match(props.onClose, (failure) =>
       setError(databaseOpMessage(failure, 'this view'))
