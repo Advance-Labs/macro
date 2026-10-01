@@ -77,14 +77,14 @@ impl PgDatabasesRepo {
 }
 
 impl DatabasesRepo for PgDatabasesRepo {
-    type Err = PgDatabasesRepoError;
+    type Error = PgDatabasesRepoError;
 
     async fn delete_column(
         &self,
         table: &Table,
         column: &Column,
         views: &[DatabaseView],
-    ) -> Result<Option<ColumnSchemaOutcome>, Self::Err> {
+    ) -> Result<Option<ColumnSchemaOutcome>, Self::Error> {
         self.delete_column_placement(table, column, views).await
     }
 
@@ -92,12 +92,12 @@ impl DatabasesRepo for PgDatabasesRepo {
     async fn views_for_tables(
         &self,
         table_ids: &[TableId],
-    ) -> Result<Vec<DatabaseView>, Self::Err> {
+    ) -> Result<Vec<DatabaseView>, Self::Error> {
         views::views_for_tables(&self.pool, table_ids).await
     }
 
     #[tracing::instrument(err, skip(self))]
-    async fn view_positions(&self, view_id: ViewId) -> Result<Vec<CardPosition>, Self::Err> {
+    async fn view_positions(&self, view_id: ViewId) -> Result<Vec<CardPosition>, Self::Error> {
         Ok(views::view_positions(&self.pool, view_id).await?)
     }
 
@@ -105,12 +105,12 @@ impl DatabasesRepo for PgDatabasesRepo {
         &self,
         table: &Table,
         column_ids: &[ColumnId],
-    ) -> Result<Option<TableVersion>, Self::Err> {
+    ) -> Result<Option<TableVersion>, Self::Error> {
         self.reorder_column_placements(table, column_ids).await
     }
 
     #[tracing::instrument(err, skip(self, table))]
-    async fn delete_table(&self, table: &Table) -> Result<TableDeletion, Self::Err> {
+    async fn delete_table(&self, table: &Table) -> Result<TableDeletion, Self::Error> {
         self.delete_table_and_rows(table).await
     }
 
@@ -120,13 +120,13 @@ impl DatabasesRepo for PgDatabasesRepo {
         database_id: Option<DatabaseId>,
         definition: &QueryDefinition,
         created_by: &MacroUserIdStr<'_>,
-    ) -> Result<SavedQuery, Self::Err> {
+    ) -> Result<SavedQuery, Self::Error> {
         self.insert_query(database_id, definition, created_by.as_ref())
             .await
     }
 
     #[tracing::instrument(err, skip(self))]
-    async fn get_query(&self, id: QueryId) -> Result<Option<SavedQuery>, Self::Err> {
+    async fn get_query(&self, id: QueryId) -> Result<Option<SavedQuery>, Self::Error> {
         self.query_by_id(id).await
     }
 
@@ -135,7 +135,7 @@ impl DatabasesRepo for PgDatabasesRepo {
         &self,
         cmd: &CreateDatabase,
         starter_table_name: &str,
-    ) -> Result<Database, Self::Err> {
+    ) -> Result<Database, Self::Error> {
         // Time-ordered v7 so ids sort by creation and are known before insert.
         let id = macro_uuid::generate_uuid_v7();
         let mut transaction = self.pool.begin().await?;
@@ -195,7 +195,7 @@ impl DatabasesRepo for PgDatabasesRepo {
     async fn get_database(
         &self,
         id: DatabaseId,
-    ) -> Result<Option<(Database, Vec<Table>)>, Self::Err> {
+    ) -> Result<Option<(Database, Vec<Table>)>, Self::Error> {
         let Some(row) = sqlx::query!(
             r#"SELECT id, name, owner_id, created_at, trashed_at FROM databases WHERE id = $1"#,
             id
@@ -239,7 +239,7 @@ impl DatabasesRepo for PgDatabasesRepo {
     }
 
     #[tracing::instrument(err, skip(self))]
-    async fn rename_database(&self, id: DatabaseId, name: &str) -> Result<(), Self::Err> {
+    async fn rename_database(&self, id: DatabaseId, name: &str) -> Result<(), Self::Error> {
         sqlx::query!(
             r#"UPDATE databases SET name = $2, updated_at = now() WHERE id = $1"#,
             id,
@@ -255,7 +255,7 @@ impl DatabasesRepo for PgDatabasesRepo {
         &self,
         id: DatabaseId,
         trashed_at: chrono::DateTime<chrono::Utc>,
-    ) -> Result<(), Self::Err> {
+    ) -> Result<(), Self::Error> {
         sqlx::query!(
             r#"UPDATE databases SET trashed_at = $2, updated_at = now() WHERE id = $1"#,
             id,
@@ -267,7 +267,7 @@ impl DatabasesRepo for PgDatabasesRepo {
     }
 
     #[tracing::instrument(err, skip(self))]
-    async fn restore_database(&self, id: DatabaseId) -> Result<(), Self::Err> {
+    async fn restore_database(&self, id: DatabaseId) -> Result<(), Self::Error> {
         sqlx::query!(
             r#"UPDATE databases SET trashed_at = NULL, updated_at = now() WHERE id = $1"#,
             id,
@@ -283,7 +283,7 @@ impl DatabasesRepo for PgDatabasesRepo {
     /// foreign key to `databases`, so they are purged explicitly in the same
     /// transaction.
     #[tracing::instrument(err, skip(self))]
-    async fn delete_database(&self, id: DatabaseId) -> Result<(), Self::Err> {
+    async fn delete_database(&self, id: DatabaseId) -> Result<(), Self::Error> {
         let mut transaction = self.pool.begin().await?;
 
         entity_access_db_utils::delete_entity_access_rows(
@@ -302,7 +302,7 @@ impl DatabasesRepo for PgDatabasesRepo {
     }
 
     #[tracing::instrument(err, skip(self, cmd))]
-    async fn create_table(&self, cmd: &CreateTable) -> Result<TableMutationOutcome, Self::Err> {
+    async fn create_table(&self, cmd: &CreateTable) -> Result<TableMutationOutcome, Self::Error> {
         let mut transaction = self.pool.begin().await?;
 
         if sqlx::query!(
@@ -364,7 +364,7 @@ impl DatabasesRepo for PgDatabasesRepo {
         table: &Table,
         name: &str,
         previous_name: &str,
-    ) -> Result<TableMutationOutcome, Self::Err> {
+    ) -> Result<TableMutationOutcome, Self::Error> {
         let mut transaction = self.pool.begin().await?;
         // Serialize table naming and position allocation within a database.
         if sqlx::query!(
@@ -415,7 +415,7 @@ impl DatabasesRepo for PgDatabasesRepo {
         &self,
         database_id: DatabaseId,
         table_ids: &[TableId],
-    ) -> Result<TableOrderOutcome, Self::Err> {
+    ) -> Result<TableOrderOutcome, Self::Error> {
         self.rewrite_table_positions(database_id, table_ids).await
     }
 
@@ -425,7 +425,7 @@ impl DatabasesRepo for PgDatabasesRepo {
         table_id: TableId,
         property_definition_id: PropertyDefinitionId,
         cmd: &CreateColumn,
-    ) -> Result<(ColumnId, TableVersion), Self::Err> {
+    ) -> Result<(ColumnId, TableVersion), Self::Error> {
         let config = cmd.config.as_ref().map(serde_json::to_value).transpose()?;
 
         let mut transaction = self.pool.begin().await?;
@@ -466,7 +466,7 @@ impl DatabasesRepo for PgDatabasesRepo {
         table: &Table,
         column: &Column,
         name: &str,
-    ) -> Result<Option<RenameColumnOutcome>, Self::Err> {
+    ) -> Result<Option<RenameColumnOutcome>, Self::Error> {
         let mut transaction = self.pool.begin().await?;
         let version = sqlx::query_scalar!(
             r#"UPDATE database_tables SET version = version + 1
@@ -510,7 +510,7 @@ impl DatabasesRepo for PgDatabasesRepo {
         table: &Table,
         column: &Column,
         definition_id: PropertyDefinitionId,
-    ) -> Result<Option<TableVersion>, Self::Err> {
+    ) -> Result<Option<TableVersion>, Self::Error> {
         let mut transaction = self.pool.begin().await?;
         // Row writers take this same lock before checking versions and cells.
         let current = sqlx::query_scalar!(
@@ -555,7 +555,7 @@ impl DatabasesRepo for PgDatabasesRepo {
     }
 
     #[tracing::instrument(err, skip(self))]
-    async fn row_refs(&self, table_id: TableId) -> Result<Vec<RowRef>, Self::Err> {
+    async fn row_refs(&self, table_id: TableId) -> Result<Vec<RowRef>, Self::Error> {
         let rows = sqlx::query!(
             "SELECT id, position FROM database_rows WHERE table_id = $1 ORDER BY position, id",
             table_id,
@@ -572,7 +572,7 @@ impl DatabasesRepo for PgDatabasesRepo {
     }
 
     #[tracing::instrument(skip(self), err)]
-    async fn databases_by_ids(&self, ids: &[DatabaseId]) -> Result<Vec<Database>, Self::Err> {
+    async fn databases_by_ids(&self, ids: &[DatabaseId]) -> Result<Vec<Database>, Self::Error> {
         let rows = sqlx::query!(
             r#"
             SELECT id, name, owner_id, created_at, trashed_at
@@ -600,7 +600,7 @@ impl DatabasesRepo for PgDatabasesRepo {
     async fn tables_for_databases(
         &self,
         database_ids: &[DatabaseId],
-    ) -> Result<Vec<Table>, Self::Err> {
+    ) -> Result<Vec<Table>, Self::Error> {
         let rows = sqlx::query!(
             r#"
             SELECT id, database_id, name, position, version
@@ -625,7 +625,7 @@ impl DatabasesRepo for PgDatabasesRepo {
     }
 
     #[tracing::instrument(skip(self), err)]
-    async fn columns_for_tables(&self, table_ids: &[TableId]) -> Result<Vec<Column>, Self::Err> {
+    async fn columns_for_tables(&self, table_ids: &[TableId]) -> Result<Vec<Column>, Self::Error> {
         let rows = sqlx::query!(
             r#"
             SELECT id, table_id, property_definition_id, position, config, display_name, infer_type
@@ -655,7 +655,7 @@ impl DatabasesRepo for PgDatabasesRepo {
     async fn table_versions(
         &self,
         table_ids: &[TableId],
-    ) -> Result<HashMap<TableId, TableVersion>, Self::Err> {
+    ) -> Result<HashMap<TableId, TableVersion>, Self::Error> {
         let versions = sqlx::query!(
             r#"SELECT id, version FROM database_tables WHERE id = ANY($1)"#,
             table_ids

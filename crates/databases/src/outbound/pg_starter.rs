@@ -59,13 +59,13 @@ where
     P: DatabaseDefinitionWriter<Transaction = Transaction<'static, Postgres>>
         + PropertiesRepo<Err = anyhow::Error>,
 {
-    type Err = PgStarterError;
+    type Error = PgStarterError;
 
     async fn ensure_starter(
         &self,
         viewer: &Viewer,
         blueprint: &StarterBlueprint,
-    ) -> Result<StarterDatabase, Self::Err> {
+    ) -> Result<StarterDatabase, Self::Error> {
         let mut transaction = self.pool.begin().await?;
         let user_id = viewer.user_id.as_ref();
         let claimed = sqlx::query_scalar!(

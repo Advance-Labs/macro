@@ -6,11 +6,11 @@ use chrono::{DateTime, Utc};
 use super::*;
 use crate::domain::models::{DatabaseView, ViewId};
 
-impl<Repo, Defs, Cells, Events, Access, Broker>
-    DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
+impl<Repository, Definitions, Cells, Events, Access, Broker>
+    DatabasesServiceImpl<Repository, Definitions, Cells, Events, Access, Broker>
 where
-    Repo: DatabasesRepo,
-    Defs: ColumnDefinitionStore,
+    Repository: DatabasesRepo,
+    Definitions: ColumnDefinitionStore,
     Cells: CellStore,
     Events: TableEventPublisher,
     Access: AccessDirectory,
@@ -23,24 +23,27 @@ where
     ) -> Result<Vec<CardPosition>, DatabaseError> {
         let database_id = receipt_database_id(&receipt)?;
         let (database, tables) = self
-            .repo
+            .repository
             .get_database(database_id)
             .await
-            .map_err(repo_err)?
+            .map_err(repository_error)?
             .ok_or(DatabaseError::NotFound)?;
         if database.trashed_at.is_some() {
             return Err(DatabaseError::NotFound);
         }
         let table_ids: Vec<TableId> = tables.iter().map(|table| table.id).collect();
         let views = self
-            .repo
+            .repository
             .views_for_tables(&table_ids)
             .await
-            .map_err(repo_err)?;
+            .map_err(repository_error)?;
         if !views.iter().any(|view| view.id == view_id) {
             return Err(DatabaseError::NotFound);
         }
-        self.repo.view_positions(view_id).await.map_err(repo_err)
+        self.repository
+            .view_positions(view_id)
+            .await
+            .map_err(repository_error)
     }
 }
 

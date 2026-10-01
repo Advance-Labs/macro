@@ -6,12 +6,12 @@ use models_permissions::share_permission::channel_share_permission::{
 };
 
 impl DatabaseSharingRepo for PgDatabasesRepo {
-    type Err = PgDatabasesRepoError;
+    type Error = PgDatabasesRepoError;
 
     async fn channel_grants(
         &self,
         database_id: DatabaseId,
-    ) -> Result<Vec<ChannelSharePermission>, Self::Err> {
+    ) -> Result<Vec<ChannelSharePermission>, Self::Error> {
         Ok(entity_access_db_utils::get_direct_channel_grants(
             &self.pool,
             &database_id,
@@ -24,7 +24,7 @@ impl DatabaseSharingRepo for PgDatabasesRepo {
         &self,
         database_id: DatabaseId,
         grants: &[UpdateChannelSharePermission],
-    ) -> Result<bool, Self::Err> {
+    ) -> Result<bool, Self::Error> {
         let mut transaction = self.pool.begin().await?;
         let live = sqlx::query_scalar!(
             "SELECT id FROM databases WHERE id = $1 AND trashed_at IS NULL FOR SHARE",

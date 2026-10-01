@@ -21,13 +21,13 @@ where
         + Sync
         + 'static,
 {
-    type Err = PgCellStoreError;
+    type Error = PgCellStoreError;
 
     async fn imported_table(
         &self,
         database_id: DatabaseId,
         request_id: Uuid,
-    ) -> Result<Option<(Table, ImportFingerprint)>, Self::Err> {
+    ) -> Result<Option<(Table, ImportFingerprint)>, Self::Error> {
         let row = sqlx::query!(
             "SELECT id, database_id, name, position, version, import_fingerprint FROM database_tables WHERE database_id = $1 AND import_key = $2",
             database_id, request_id,
@@ -58,7 +58,7 @@ where
         fingerprint: &ImportFingerprint,
         definitions: &[PropertyDefinitionId],
         cells: &[Vec<(PropertyDefinitionId, PropertyValue)>],
-    ) -> Result<ImportOutcome, Self::Err> {
+    ) -> Result<ImportOutcome, Self::Error> {
         let fingerprint = fingerprint.0.as_str();
         let mut transaction = self.pool.begin().await?;
         if sqlx::query_scalar!(

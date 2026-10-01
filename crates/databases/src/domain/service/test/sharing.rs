@@ -6,18 +6,18 @@ use models_permissions::share_permission::channel_share_permission::{
 use models_permissions::share_permission::{LinkShare, UpdateSharePermissionRequestV2};
 
 impl DatabaseSharingRepo for FakeRepo {
-    type Err = FakeError;
+    type Error = FakeError;
     async fn channel_grants(
         &self,
         _: DatabaseId,
-    ) -> Result<Vec<ChannelSharePermission>, Self::Err> {
+    ) -> Result<Vec<ChannelSharePermission>, Self::Error> {
         Ok(vec![])
     }
     async fn update_channel_grants(
         &self,
         _: DatabaseId,
         grants: &[UpdateChannelSharePermission],
-    ) -> Result<bool, Self::Err> {
+    ) -> Result<bool, Self::Error> {
         self.0.lock().unwrap().share_updates.push(grants.to_vec());
         Ok(true)
     }

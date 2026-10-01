@@ -6,11 +6,11 @@ use models_databases::cast::{Cast, Contents, cast};
 use models_databases::views::written_at;
 use models_properties::service::property_value::PropertyValue;
 
-impl<Repo, Defs, Cells, Events, Access, Broker>
-    DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
+impl<Repository, Definitions, Cells, Events, Access, Broker>
+    DatabasesServiceImpl<Repository, Definitions, Cells, Events, Access, Broker>
 where
-    Repo: DatabasesRepo,
-    Defs: ColumnDefinitionStore,
+    Repository: DatabasesRepo,
+    Definitions: ColumnDefinitionStore,
     Cells: CellStore,
     Events: TableEventPublisher,
     Access: AccessDirectory,
@@ -20,10 +20,10 @@ where
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
         viewer: Viewer,
-        cmd: ChangeColumnType,
+        command: ChangeColumnType,
     ) -> Result<ColumnTypeChangeOutcome, DatabaseError> {
         let database_id = receipt_database_id(&receipt)?;
-        self.retype_column(database_id, receipt_attribution(&receipt), &viewer, cmd)
+        self.retype_column(database_id, receipt_attribution(&receipt), &viewer, command)
             .await
     }
 
@@ -36,72 +36,72 @@ where
         database_id: DatabaseId,
         attribution: Option<events::Attribution>,
         viewer: &Viewer,
-        cmd: ChangeColumnType,
+        command: ChangeColumnType,
     ) -> Result<ColumnTypeChangeOutcome, DatabaseError> {
         let (database, tables) = self
-            .repo
+            .repository
             .get_database(database_id)
             .await
-            .map_err(repo_err)?
+            .map_err(repository_error)?
             .filter(|(database, _)| database.trashed_at.is_none())
             .ok_or(DatabaseError::NotFound)?;
         let table = tables
             .iter()
-            .find(|table| table.id == cmd.table_id)
+            .find(|table| table.id == command.table_id)
             .ok_or(DatabaseError::NotFound)?;
-        if table.version != cmd.base_version {
+        if table.version != command.base_version {
             return Err(DatabaseError::VersionConflict);
         }
-        if (cmd.specific_entity_type.is_some()
-            && (cmd.data_type != DataType::Entity || cmd.relation.is_some()))
-            || (cmd.data_type == DataType::Entity
-                && cmd.relation.is_none()
-                && cmd.specific_entity_type.is_none())
-            || (cmd.relation.is_some()
-                && (cmd.data_type != DataType::Entity || !cmd.is_multi_select))
-            || (cmd.is_multi_select
+        if (command.specific_entity_type.is_some()
+            && (command.data_type != DataType::Entity || command.relation.is_some()))
+            || (command.data_type == DataType::Entity
+                && command.relation.is_none()
+                && command.specific_entity_type.is_none())
+            || (command.relation.is_some()
+                && (command.data_type != DataType::Entity || !command.is_multi_select))
+            || (command.is_multi_select
                 && !matches!(
-                    cmd.data_type,
+                    command.data_type,
                     DataType::SelectString
                         | DataType::SelectNumber
                         | DataType::Tag
                         | DataType::Entity
                         | DataType::Link
                 ))
-            || (cmd.data_type == DataType::Tag && !cmd.is_multi_select)
+            || (command.data_type == DataType::Tag && !command.is_multi_select)
         {
             return Err(DatabaseError::from(SchemaError::UnsupportedColumnType));
         }
-        if let Some((database_id, table_id)) = cmd.relation
+        if let Some((database_id, table_id)) = command.relation
             && (self
                 .live_database_grant(viewer, database_id)
                 .await
                 .map_err(DatabaseError::Repo)?
                 .is_none()
                 || !self
-                    .repo
+                    .repository
                     .tables_for_databases(&[database_id])
                     .await
-                    .map_err(repo_err)?
+                    .map_err(repository_error)?
                     .iter()
                     .any(|table| table.id == table_id))
         {
             return Err(DatabaseError::from(SchemaError::RelatedTableInaccessible));
         }
         let detail = self
-            .column_detail(database.id, AccessLevel::Edit, table.id, cmd.column_id)
+            .column_detail(database.id, AccessLevel::Edit, table.id, command.column_id)
             .await?;
         if let Some(blocker) = self.retype_blocker(table.id, &detail).await? {
             return Err(blocker.into());
         }
         let current = PropertyType::of(&detail.column, &detail.definition);
         let target = PropertyType {
-            data_type: cmd.data_type,
-            is_multi_select: cmd.is_multi_select,
-            specific_entity_type: cmd.specific_entity_type,
-            relation: cmd.relation.is_some(),
+            data_type: command.data_type,
+            is_multi_select: command.is_multi_select,
+            specific_entity_type: command.specific_entity_type,
+            relation: command.relation.is_some(),
         };
-        let same_relation = match (&detail.column.config, cmd.relation) {
+        let same_relation = match (&detail.column.config, command.relation) {
             (Some(ColumnConfig::Link { table_id, .. }), Some((_, target_table))) => {
                 *table_id == target_table
             }
@@ -140,7 +140,7 @@ where
         if let Cast::Never(reason) = cast(current.cast_kind(), target.cast_kind(), contents) {
             return Err(SchemaError::NeverCasts(reason).into());
         }
-        let mut converter = Converter::new(&detail.definition, target, cmd.clear_invalid);
+        let mut converter = Converter::new(&detail.definition, target, command.clear_invalid);
         for (row_id, value) in values {
             converter.push(row_id, value);
         }
@@ -148,25 +148,25 @@ where
             return Err(SchemaError::Misfits(refusal).into());
         }
 
-        let options = validate_option_labels(cmd.data_type, &converter.labels, &[])?;
+        let options = validate_option_labels(command.data_type, &converter.labels, &[])?;
         let mut definition = self
             .definitions
             .create_typed_definition(
                 database.id,
                 &detail.definition.definition.display_name,
-                cmd.data_type,
-                cmd.is_multi_select,
-                cmd.specific_entity_type,
+                command.data_type,
+                command.is_multi_select,
+                command.specific_entity_type,
             )
             .await
-            .map_err(repo_err)?;
+            .map_err(repository_error)?;
         let new_id = definition.definition.id;
         if !options.is_empty() {
             match self.definitions.add_options(new_id, &options).await {
                 Ok(options) => definition.property_options = options,
                 Err(error) => {
                     self.delete_unused_definition(new_id).await;
-                    return Err(repo_err(error));
+                    return Err(repository_error(error));
                 }
             }
         }
@@ -193,7 +193,7 @@ where
         let replacement = ColumnReplacement {
             column: detail.column,
             definition_id: new_id,
-            config: cmd
+            config: command
                 .relation
                 .map(|(database_id, table_id)| ColumnConfig::Link {
                     database_id,
@@ -202,10 +202,10 @@ where
             values,
         };
         let table_views = self
-            .repo
+            .repository
             .views_for_tables(&[table.id])
             .await
-            .map_err(repo_err)?;
+            .map_err(repository_error)?;
         let views = views_without_tests_of(&table_views, replacement.column.id, written_at())?;
         let version = match self.cells.replace_column(table, &replacement, &views).await {
             Ok(Some(version)) => version,
@@ -215,7 +215,7 @@ where
             }
             // The commit could have succeeded before a transport error. Never
             // delete a potentially bound replacement on an uncertain outcome.
-            Err(error) => return Err(repo_err(error)),
+            Err(error) => return Err(repository_error(error)),
         };
         let table_versions = HashMap::from([(table.id, version)]);
         self.publish(attribution, &[(database.id, table.id, version)])
@@ -237,11 +237,10 @@ where
         if matches!(detail.column.config, Some(ColumnConfig::Lookup { .. })) {
             return Ok(Some(SchemaError::RetypeLookup));
         }
-        let read_through = self
-            .repo
+        let read_through = self.repository
             .columns_for_tables(&[table_id])
             .await
-            .map_err(repo_err)?
+            .map_err(repository_error)?
             .iter()
             .any(|column| {
                 matches!(column.config, Some(ColumnConfig::Lookup { via_column_id, .. }) if via_column_id == detail.column.id)
@@ -250,10 +249,10 @@ where
             return Ok(Some(SchemaError::LookupBlocksRetype));
         }
         let views = self
-            .repo
+            .repository
             .views_for_tables(&[table_id])
             .await
-            .map_err(repo_err)?;
+            .map_err(repository_error)?;
         Ok(views_without_tests_of(&views, detail.column.id, written_at()).err())
     }
 
@@ -273,10 +272,10 @@ where
             return Err(DatabaseError::VersionConflict);
         }
         let columns = self
-            .repo
+            .repository
             .columns_for_tables(&[table_id])
             .await
-            .map_err(repo_err)?;
+            .map_err(repository_error)?;
         let column = columns
             .iter()
             .find(|column| column.id == column_id)
@@ -285,16 +284,16 @@ where
             return Err(DatabaseError::from(SchemaError::LookupBlocksRemoval));
         }
         let table_views = self
-            .repo
+            .repository
             .views_for_tables(&[table_id])
             .await
-            .map_err(repo_err)?;
+            .map_err(repository_error)?;
         let views = views_without_column(&table_views, column_id, written_at())?;
         let outcome = self
-            .repo
+            .repository
             .delete_column(table, column, &views)
             .await
-            .map_err(repo_err)?
+            .map_err(repository_error)?
             .ok_or(DatabaseError::VersionConflict)?;
         // The repository bumps the table and, for a relation, its target.
         let related = match column.config {
@@ -341,19 +340,19 @@ where
             return Err(DatabaseError::VersionConflict);
         }
         let columns = self
-            .repo
+            .repository
             .columns_for_tables(&[table_id])
             .await
-            .map_err(repo_err)?;
+            .map_err(repository_error)?;
         let expected: HashSet<_> = columns.iter().map(|column| column.id).collect();
         if ids.len() != expected.len() || ids.iter().copied().collect::<HashSet<_>>() != expected {
             return Err(DatabaseError::from(SchemaError::IncompleteColumnOrder));
         }
         let version = self
-            .repo
+            .repository
             .reorder_columns(table, &ids)
             .await
-            .map_err(repo_err)?
+            .map_err(repository_error)?
             .ok_or(DatabaseError::VersionConflict)?;
         let table_versions = HashMap::from([(table_id, version)]);
         self.publish(

@@ -33,13 +33,13 @@ impl<Access> AccessDirectory for EntityAccessDirectory<Access>
 where
     Access: EntityAccessService + AccessibleDatabases,
 {
-    type Err = EntityAccessDirectoryError;
+    type Error = EntityAccessDirectoryError;
 
     #[tracing::instrument(err, skip(self, viewer))]
     async fn accessible_databases(
         &self,
         viewer: &Viewer,
-    ) -> Result<Vec<(DatabaseId, AccessLevel)>, Self::Err> {
+    ) -> Result<Vec<(DatabaseId, AccessLevel)>, Self::Error> {
         Ok(self.access.accessible_databases(&viewer.user_id).await?)
     }
 
@@ -48,7 +48,7 @@ where
         &self,
         viewer: &Viewer,
         database_id: DatabaseId,
-    ) -> Result<Option<AccessLevel>, Self::Err> {
+    ) -> Result<Option<AccessLevel>, Self::Error> {
         Ok(self
             .access
             .get_access_level(

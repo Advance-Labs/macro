@@ -71,16 +71,16 @@ const MAX_CONVERTED_ROWS: usize = 200_000;
 /// carries the durable domain events (`macro.databases`) other domains
 /// consume, activity among them.
 #[derive(Debug, Clone)]
-pub struct DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker> {
-    repo: Repo,
-    definitions: Defs,
+pub struct DatabasesServiceImpl<Repository, Definitions, Cells, Events, Access, Broker> {
+    repository: Repository,
+    definitions: Definitions,
     cells: Cells,
     events: Events,
     access: Access,
     broker: Broker,
 }
 
-fn repo_err<E: std::error::Error + Send + Sync + 'static>(e: E) -> DatabaseError {
+fn repository_error<E: std::error::Error + Send + Sync + 'static>(e: E) -> DatabaseError {
     DatabaseError::Repo(rootcause::Report::new(e).into_dynamic())
 }
 
@@ -203,11 +203,11 @@ fn validate_option_labels(
     Ok(values)
 }
 
-impl<Repo, Defs, Cells, Events, Access, Broker>
-    DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
+impl<Repository, Definitions, Cells, Events, Access, Broker>
+    DatabasesServiceImpl<Repository, Definitions, Cells, Events, Access, Broker>
 where
-    Repo: DatabasesRepo,
-    Defs: ColumnDefinitionStore,
+    Repository: DatabasesRepo,
+    Definitions: ColumnDefinitionStore,
     Cells: CellStore,
     Events: TableEventPublisher,
     Access: AccessDirectory,
@@ -215,15 +215,15 @@ where
 {
     /// Create a databases service from its port implementations.
     pub fn new(
-        repo: Repo,
-        definitions: Defs,
+        repository: Repository,
+        definitions: Definitions,
         cells: Cells,
         events: Events,
         access: Access,
         broker: Broker,
     ) -> Self {
         Self {
-            repo,
+            repository,
             definitions,
             cells,
             events,
@@ -255,26 +255,26 @@ where
     ) -> Result<Vec<TableEntry>, DatabaseError> {
         let database_ids: Vec<DatabaseId> = grants.keys().copied().collect();
         let mut databases = self
-            .repo
+            .repository
             .databases_by_ids(&database_ids)
             .await
-            .map_err(repo_err)?;
-        databases.retain(|d| d.trashed_at.is_none());
-        let live_ids: Vec<DatabaseId> = databases.iter().map(|d| d.id).collect();
+            .map_err(repository_error)?;
+        databases.retain(|database| database.trashed_at.is_none());
+        let live_ids: Vec<DatabaseId> = databases.iter().map(|database| database.id).collect();
         let tables = self
-            .repo
+            .repository
             .tables_for_databases(&live_ids)
             .await
-            .map_err(repo_err)?;
-        let table_ids: Vec<TableId> = tables.iter().map(|t| t.id).collect();
+            .map_err(repository_error)?;
+        let table_ids: Vec<TableId> = tables.iter().map(|table| table.id).collect();
         let columns = self
-            .repo
+            .repository
             .columns_for_tables(&table_ids)
             .await
-            .map_err(repo_err)?;
+            .map_err(repository_error)?;
         let definition_ids: Vec<Uuid> = columns
             .iter()
-            .map(|c| c.property_definition_id)
+            .map(|column| column.property_definition_id)
             .collect::<HashSet<_>>()
             .into_iter()
             .collect();
@@ -282,15 +282,15 @@ where
             .definitions
             .definitions(&definition_ids)
             .await
-            .map_err(repo_err)?
+            .map_err(repository_error)?
             .into_iter()
-            .map(|d| (d.definition.id, d))
+            .map(|definition| (definition.definition.id, definition))
             .collect();
         let views = self
-            .repo
+            .repository
             .views_for_tables(&table_ids)
             .await
-            .map_err(repo_err)?;
+            .map_err(repository_error)?;
         Ok(catalog::build_entries(
             &databases,
             &tables,
@@ -317,7 +317,7 @@ where
             return Ok(None);
         };
         let live = self
-            .repo
+            .repository
             .databases_by_ids(&[database_id])
             .await
             .map_err(|error| rootcause::Report::new(error).into_dynamic())?
@@ -399,10 +399,10 @@ where
     ) -> Result<(Database, Vec<Table>), DatabaseError> {
         let database_id = receipt_database_id(receipt)?;
         let (database, tables) = self
-            .repo
+            .repository
             .get_database(database_id)
             .await
-            .map_err(repo_err)?
+            .map_err(repository_error)?
             .ok_or(DatabaseError::NotFound)?;
         if database.trashed_at.is_some() {
             return Err(DatabaseError::NotFound);
@@ -440,10 +440,10 @@ where
     ) -> Result<Database, DatabaseError> {
         let database_id = receipt_database_id(receipt)?;
         let (database, _tables) = self
-            .repo
+            .repository
             .get_database(database_id)
             .await
-            .map_err(repo_err)?
+            .map_err(repository_error)?
             .ok_or(DatabaseError::NotFound)?;
         Ok(database)
     }
@@ -453,9 +453,13 @@ where
         &self,
         table_id: TableId,
     ) -> Result<Vec<(RowRef, HashMap<PropertyDefinitionId, PropertyValue>)>, DatabaseError> {
-        let refs = self.repo.row_refs(table_id).await.map_err(repo_err)?;
+        let refs = self
+            .repository
+            .row_refs(table_id)
+            .await
+            .map_err(repository_error)?;
         let ids: Vec<RowId> = refs.iter().map(|row| row.id).collect();
-        let mut cells = self.cells.cells(&ids).await.map_err(repo_err)?;
+        let mut cells = self.cells.cells(&ids).await.map_err(repository_error)?;
         Ok(refs
             .into_iter()
             .map(|row| {
@@ -466,33 +470,33 @@ where
     }
 }
 
-impl<Repo, Defs, Cells, Events, Access, Broker> DatabasesService
-    for DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
+impl<Repository, Definitions, Cells, Events, Access, Broker> DatabasesService
+    for DatabasesServiceImpl<Repository, Definitions, Cells, Events, Access, Broker>
 where
-    Repo: DatabasesRepo,
-    Defs: ColumnDefinitionStore,
+    Repository: DatabasesRepo,
+    Definitions: ColumnDefinitionStore,
     Cells: CellStore,
     Events: TableEventPublisher,
     Access: AccessDirectory,
     Broker: MacroEventBroker,
 {
     #[tracing::instrument(skip(self), err)]
-    async fn create_database(&self, cmd: CreateDatabase) -> Result<Database, DatabaseError> {
-        let cmd = CreateDatabase {
-            name: validate_name(&cmd.name)?,
-            ..cmd
+    async fn create_database(&self, command: CreateDatabase) -> Result<Database, DatabaseError> {
+        let command = CreateDatabase {
+            name: validate_name(&command.name)?,
+            ..command
         };
         let database = self
-            .repo
-            .create_database(&cmd, STARTER_TABLE_NAME)
+            .repository
+            .create_database(&command, STARTER_TABLE_NAME)
             .await
-            .map_err(repo_err)?;
+            .map_err(repository_error)?;
         self.emit(DatabaseMacroEvent::created(DatabaseCreatedMetadata {
             database_id: database.id,
-            owner: cmd.owner_id.clone(),
+            owner: command.owner_id.clone(),
             name: database.name.clone(),
             created_at: database.created_at,
-            attribution: events::Attribution::acting(cmd.owner_id, cmd.acting_bot),
+            attribution: events::Attribution::acting(command.owner_id, command.acting_bot),
         }));
         Ok(database)
     }
@@ -507,10 +511,10 @@ where
         // is: restore it first.
         let (database, _tables) = self.database_for_edit(&receipt).await?;
         let name = validate_name(&name)?;
-        self.repo
+        self.repository
             .rename_database(database.id, &name)
             .await
-            .map_err(repo_err)?;
+            .map_err(repository_error)?;
         self.emit(DatabaseMacroEvent::renamed(DatabaseRenamedMetadata {
             database_id: database.id,
             attribution: receipt_attribution(&receipt),
@@ -528,10 +532,10 @@ where
         if database.trashed_at.is_some() {
             return Ok(());
         }
-        self.repo
+        self.repository
             .trash_database(database.id, Utc::now())
             .await
-            .map_err(repo_err)?;
+            .map_err(repository_error)?;
         self.emit(DatabaseMacroEvent::trashed(DatabaseTrashedMetadata {
             database_id: database.id,
             attribution: receipt_attribution(&receipt),
@@ -548,10 +552,10 @@ where
         if database.trashed_at.is_none() {
             return Ok(());
         }
-        self.repo
+        self.repository
             .restore_database(database.id)
             .await
-            .map_err(repo_err)?;
+            .map_err(repository_error)?;
         self.emit(DatabaseMacroEvent::restored(DatabaseRestoredMetadata {
             database_id: database.id,
             attribution: receipt_attribution(&receipt),
@@ -567,10 +571,10 @@ where
         // Permanent deletion does not require the database to be trashed
         // first; the receipt already proves ownership.
         let database = self.database_by_receipt(&receipt).await?;
-        self.repo
+        self.repository
             .delete_database(database.id)
             .await
-            .map_err(repo_err)?;
+            .map_err(repository_error)?;
         self.emit(DatabaseMacroEvent::purged(DatabasePurgedMetadata {
             database_id: database.id,
         }));
@@ -583,19 +587,23 @@ where
             .access
             .accessible_databases(&viewer)
             .await
-            .map_err(repo_err)?
+            .map_err(repository_error)?
             .into_iter()
             .collect();
         let ids: Vec<DatabaseId> = grants.keys().copied().collect();
-        let mut databases = self.repo.databases_by_ids(&ids).await.map_err(repo_err)?;
-        databases.retain(|d| d.trashed_at.is_none());
-        databases.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        let mut databases = self
+            .repository
+            .databases_by_ids(&ids)
+            .await
+            .map_err(repository_error)?;
+        databases.retain(|database| database.trashed_at.is_none());
+        databases.sort_by(|left, right| left.created_at.cmp(&right.created_at));
         let live_ids: Vec<DatabaseId> = databases.iter().map(|database| database.id).collect();
         let tables = self
-            .repo
+            .repository
             .tables_for_databases(&live_ids)
             .await
-            .map_err(repo_err)?;
+            .map_err(repository_error)?;
         let mut tables_by_database: HashMap<DatabaseId, Vec<Table>> = HashMap::new();
         for table in tables {
             tables_by_database
@@ -626,7 +634,7 @@ where
             .access
             .accessible_databases(&viewer)
             .await
-            .map_err(repo_err)?
+            .map_err(repository_error)?
             .into_iter()
             .collect();
         let mut entries_by_database: HashMap<DatabaseId, Vec<TableEntry>> = HashMap::new();
@@ -640,7 +648,7 @@ where
                 .or_default()
                 .push(entry);
         }
-        databases.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        databases.sort_by(|left, right| left.created_at.cmp(&right.created_at));
         Ok(databases
             .into_iter()
             .filter_map(|database| {
@@ -661,10 +669,10 @@ where
         let database_id = receipt_database_id(&receipt)?;
         let grant = receipt_grant(&receipt, AccessLevel::View);
         let (database, _tables) = self
-            .repo
+            .repository
             .get_database(database_id)
             .await
-            .map_err(repo_err)?
+            .map_err(repository_error)?
             .ok_or(DatabaseError::NotFound)?;
         if database.trashed_at.is_some() {
             return Err(DatabaseError::NotFound);
@@ -679,26 +687,26 @@ where
     async fn create_table(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
-        cmd: CreateTable,
+        command: CreateTable,
     ) -> Result<Table, DatabaseError> {
         let (database, tables) = self.database_for_edit(&receipt).await?;
-        if database.id != cmd.database_id {
+        if database.id != command.database_id {
             return Err(DatabaseError::Unauthorized);
         }
-        let name = validate_name(&cmd.name)?;
-        if tables.iter().any(|t| same_name(&t.name, &name)) {
+        let name = validate_name(&command.name)?;
+        if tables.iter().any(|table| same_name(&table.name, &name)) {
             return Err(DatabaseError::from(SchemaError::TableNameTaken {
                 name: name.clone(),
             }));
         }
         let table = match self
-            .repo
+            .repository
             .create_table(&CreateTable {
-                database_id: cmd.database_id,
+                database_id: command.database_id,
                 name: name.clone(),
             })
             .await
-            .map_err(repo_err)?
+            .map_err(repository_error)?
         {
             TableMutationOutcome::Applied(table) => table,
             TableMutationOutcome::NotFound => return Err(DatabaseError::NotFound),
@@ -743,10 +751,10 @@ where
             }));
         }
         let renamed = match self
-            .repo
+            .repository
             .rename_table(table, &name, &previous_name)
             .await
-            .map_err(repo_err)?
+            .map_err(repository_error)?
         {
             TableMutationOutcome::Applied(table) => table,
             TableMutationOutcome::NotFound => return Err(DatabaseError::NotFound),
@@ -798,10 +806,10 @@ where
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
         viewer: Viewer,
-        cmd: CreateColumn,
+        command: CreateColumn,
     ) -> Result<ColumnId, DatabaseError> {
         let (database, tables) = self.database_for_edit(&receipt).await?;
-        if !tables.iter().any(|t| t.id == cmd.table_id) {
+        if !tables.iter().any(|table| table.id == command.table_id) {
             // The receipt covers this database only; a table elsewhere is
             // indistinguishable from a missing one.
             return Err(DatabaseError::NotFound);
@@ -811,7 +819,7 @@ where
         if let Some(ColumnConfig::Link {
             database_id,
             table_id,
-        }) = &cmd.config
+        }) = &command.config
         {
             if self
                 .live_database_grant(&viewer, *database_id)
@@ -822,19 +830,19 @@ where
                 return Err(DatabaseError::from(SchemaError::LinkDatabaseInaccessible));
             }
             let target_tables = self
-                .repo
+                .repository
                 .tables_for_databases(&[*database_id])
                 .await
-                .map_err(repo_err)?;
-            if !target_tables.iter().any(|t| t.id == *table_id) {
+                .map_err(repository_error)?;
+            if !target_tables.iter().any(|table| table.id == *table_id) {
                 return Err(DatabaseError::from(SchemaError::LinkTableMissing));
             }
         }
 
-        if cmd.infer_type
-            && (cmd.config.is_some()
+        if command.infer_type
+            && (command.config.is_some()
                 || !matches!(
-                    &cmd.binding,
+                    &command.binding,
                     ColumnBinding::NewDefinition { data_type: DataType::String, is_multi_select: false, options, .. }
                         if options.is_empty()
                 ))
@@ -844,18 +852,21 @@ where
 
         // Effective display labels are unique per table, compared as names.
         let existing = self
-            .repo
-            .columns_for_tables(&[cmd.table_id])
+            .repository
+            .columns_for_tables(&[command.table_id])
             .await
-            .map_err(repo_err)?;
-        let existing_ids: Vec<Uuid> = existing.iter().map(|c| c.property_definition_id).collect();
+            .map_err(repository_error)?;
+        let existing_ids: Vec<Uuid> = existing
+            .iter()
+            .map(|column| column.property_definition_id)
+            .collect();
         let definition_names: HashMap<_, _> = self
             .definitions
             .definitions(&existing_ids)
             .await
-            .map_err(repo_err)?
+            .map_err(repository_error)?
             .into_iter()
-            .map(|d| (d.definition.id, d.definition.display_name))
+            .map(|definition| (definition.definition.id, definition.definition.display_name))
             .collect();
         let existing_names: Vec<_> = existing
             .iter()
@@ -866,7 +877,7 @@ where
                     .or_else(|| definition_names.get(&column.property_definition_id))
             })
             .collect();
-        let (binding, option_values) = match cmd.binding {
+        let (binding, option_values) = match command.binding {
             ColumnBinding::NewDefinition {
                 name,
                 data_type,
@@ -891,7 +902,9 @@ where
             other => (other, Vec::new()),
         };
         if let ColumnBinding::NewDefinition { name, .. } = &binding
-            && existing_names.iter().any(|n| same_name(n, name))
+            && existing_names
+                .iter()
+                .any(|existing| same_name(existing, name))
         {
             return Err(DatabaseError::from(SchemaError::ColumnNameTaken {
                 name: name.clone(),
@@ -907,7 +920,7 @@ where
             .definitions
             .resolve_binding(database.id, &viewer, &binding)
             .await
-            .map_err(repo_err)?;
+            .map_err(repository_error)?;
         let definition_id = match (definition_id, &binding) {
             (Some(definition_id), _) => definition_id,
             (None, ColumnBinding::ExistingDefinition(id)) => {
@@ -931,17 +944,17 @@ where
             if created {
                 self.delete_unused_definition(definition_id).await;
             }
-            return Err(repo_err(error));
+            return Err(repository_error(error));
         }
-        let cmd = CreateColumn { binding, ..cmd };
+        let command = CreateColumn { binding, ..command };
         let (column_id, version) = self
-            .repo
-            .create_column(cmd.table_id, definition_id, &cmd)
+            .repository
+            .create_column(command.table_id, definition_id, &command)
             .await
-            .map_err(repo_err)?;
+            .map_err(repository_error)?;
         self.publish(
             receipt_attribution(&receipt),
-            &[(database.id, cmd.table_id, version)],
+            &[(database.id, command.table_id, version)],
         )
         .await;
         Ok(column_id)
@@ -952,9 +965,9 @@ where
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
         _viewer: Viewer,
-        cmd: InferColumnType,
+        command: InferColumnType,
     ) -> Result<InferColumnTypeOutcome, DatabaseError> {
-        self.settle_column_type(receipt, cmd).await
+        self.settle_column_type(receipt, command).await
     }
 
     #[tracing::instrument(skip(self, receipt, viewer), err)]
@@ -962,9 +975,9 @@ where
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
         viewer: Viewer,
-        cmd: ChangeColumnType,
+        command: ChangeColumnType,
     ) -> Result<ColumnTypeChangeOutcome, DatabaseError> {
-        self.change_placement_type(receipt, viewer, cmd).await
+        self.change_placement_type(receipt, viewer, command).await
     }
 
     #[tracing::instrument(skip(self, receipt, _viewer), err)]
@@ -1007,28 +1020,28 @@ where
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
         viewer: Viewer,
-        cmd: AddColumnOptions,
+        command: AddColumnOptions,
     ) -> Result<ColumnDetail, DatabaseError> {
         let (database, tables) = self.database_for_edit(&receipt).await?;
-        if !tables.iter().any(|t| t.id == cmd.table_id) {
+        if !tables.iter().any(|table| table.id == command.table_id) {
             // The receipt covers this database only; a table elsewhere is
             // indistinguishable from a missing one.
             return Err(DatabaseError::NotFound);
         }
         let columns = self
-            .repo
-            .columns_for_tables(&[cmd.table_id])
+            .repository
+            .columns_for_tables(&[command.table_id])
             .await
-            .map_err(repo_err)?;
+            .map_err(repository_error)?;
         let column = columns
             .iter()
-            .find(|c| c.id == cmd.column_id)
+            .find(|column| column.id == command.column_id)
             .ok_or(DatabaseError::NotFound)?;
         let definition = self
             .definitions
             .definitions(&[column.property_definition_id])
             .await
-            .map_err(repo_err)?
+            .map_err(repository_error)?
             .into_iter()
             .next()
             .ok_or(DatabaseError::NotFound)?;
@@ -1047,7 +1060,7 @@ where
                 .definitions
                 .editable_definitions(&viewer, &[definition.definition.id])
                 .await
-                .map_err(repo_err)?
+                .map_err(repository_error)?
                 .contains(&definition.definition.id)
         {
             return Err(SchemaError::SharedOptions {
@@ -1060,7 +1073,7 @@ where
             .iter()
             .map(|option| catalog::option_display(&option.value))
             .collect();
-        let values = validate_option_labels(data_type, &cmd.labels, &existing)?;
+        let values = validate_option_labels(data_type, &command.labels, &existing)?;
 
         // Every label was already there: nothing changed, so nothing is
         // written, versioned, or announced.
@@ -1077,13 +1090,13 @@ where
             // version moves with them.
             let version = self
                 .cells
-                .add_options(cmd.table_id, &options)
+                .add_options(command.table_id, &options)
                 .await
-                .map_err(repo_err)?
+                .map_err(repository_error)?
                 .ok_or(DatabaseError::NotFound)?;
             self.publish(
                 receipt_attribution(&receipt),
-                &[(database.id, cmd.table_id, version)],
+                &[(database.id, command.table_id, version)],
             )
             .await;
         }
@@ -1091,8 +1104,8 @@ where
         self.column_detail(
             database.id,
             receipt_grant(&receipt, AccessLevel::Edit),
-            cmd.table_id,
-            cmd.column_id,
+            command.table_id,
+            command.column_id,
         )
         .await
     }

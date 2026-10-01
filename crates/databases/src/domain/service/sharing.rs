@@ -8,11 +8,11 @@ use models_permissions::share_permission::{
 /// Most channel grants one request may change.
 const MAX_CHANNEL_GRANTS_PER_UPDATE: usize = 100;
 
-impl<Repo, Defs, Cells, Events, Access, Broker> DatabaseSharingService
-    for DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
+impl<Repository, Definitions, Cells, Events, Access, Broker> DatabaseSharingService
+    for DatabasesServiceImpl<Repository, Definitions, Cells, Events, Access, Broker>
 where
-    Repo: DatabasesRepo + DatabaseSharingRepo,
-    Defs: ColumnDefinitionStore,
+    Repository: DatabasesRepo + DatabaseSharingRepo,
+    Definitions: ColumnDefinitionStore,
     Cells: CellStore,
     Events: TableEventPublisher,
     Access: AccessDirectory,
@@ -28,10 +28,10 @@ where
             return Err(DatabaseError::NotFound);
         }
         let channel_share_permissions = self
-            .repo
+            .repository
             .channel_grants(database.id)
             .await
-            .map_err(repo_err)?;
+            .map_err(repository_error)?;
         Ok(SharePermissionV2 {
             id: database.id.to_string(),
             link_share: None,
@@ -78,10 +78,10 @@ where
             return Err(DatabaseError::NotFound);
         }
         if !self
-            .repo
+            .repository
             .update_channel_grants(database.id, &grants)
             .await
-            .map_err(repo_err)?
+            .map_err(repository_error)?
         {
             return Err(DatabaseError::NotFound);
         }

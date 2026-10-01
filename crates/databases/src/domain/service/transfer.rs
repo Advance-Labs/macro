@@ -42,18 +42,18 @@ fn validate_import(request: &mut ImportTable) -> Result<ImportFingerprint, Datab
     {
         return Err(DatabaseError::from(SchemaError::NullCharacterInImport));
     }
-    let encoded = serde_json::to_vec(request).map_err(repo_err)?;
+    let encoded = serde_json::to_vec(request).map_err(repository_error)?;
     if encoded.len() > MAX_IMPORT_BYTES {
         return Err(DatabaseError::from(SchemaError::ImportTooLarge));
     }
     Ok(ImportFingerprint(format!("{:x}", Sha256::digest(encoded))))
 }
 
-impl<Repo, Defs, Cells, Events, Access, Broker> DatabaseTransferService
-    for DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
+impl<Repository, Definitions, Cells, Events, Access, Broker> DatabaseTransferService
+    for DatabasesServiceImpl<Repository, Definitions, Cells, Events, Access, Broker>
 where
-    Repo: DatabasesRepo,
-    Defs: ColumnDefinitionStore,
+    Repository: DatabasesRepo,
+    Definitions: ColumnDefinitionStore,
     Cells: CellStore + DatabaseTransferRepo,
     Events: TableEventPublisher,
     Access: AccessDirectory,
@@ -72,7 +72,7 @@ where
             .cells
             .imported_table(database.id, request.request_id)
             .await
-            .map_err(repo_err)?
+            .map_err(repository_error)?
         {
             return if previous == fingerprint {
                 Ok(table)
@@ -98,7 +98,7 @@ where
                     for id in &definitions {
                         self.delete_unused_definition(*id).await;
                     }
-                    return Err(repo_err(error));
+                    return Err(repository_error(error));
                 }
             }
         }
@@ -138,7 +138,7 @@ where
                 self.delete_unused_definition(*id).await;
             }
         }
-        match outcome.map_err(repo_err)? {
+        match outcome.map_err(repository_error)? {
             ImportOutcome::Created(table) | ImportOutcome::Replayed(table) => {
                 self.publish(
                     receipt_attribution(&receipt),

@@ -1,10 +1,10 @@
 use super::*;
 
-impl<Repo, Defs, Cells, Events, Access, Broker>
-    DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
+impl<Repository, Definitions, Cells, Events, Access, Broker>
+    DatabasesServiceImpl<Repository, Definitions, Cells, Events, Access, Broker>
 where
-    Repo: DatabasesRepo,
-    Defs: ColumnDefinitionStore,
+    Repository: DatabasesRepo,
+    Definitions: ColumnDefinitionStore,
     Cells: CellStore,
     Events: TableEventPublisher,
     Access: AccessDirectory,
@@ -28,7 +28,7 @@ where
         {
             return Err(SavedQueryError::NotFound);
         }
-        self.repo
+        self.repository
             .save_query(database_id, &definition, &viewer.user_id)
             .await
             .map_err(|error| SavedQueryError::Repo(rootcause::Report::new(error).into_dynamic()))
@@ -43,7 +43,7 @@ where
         id: QueryId,
     ) -> Result<SavedQuery, SavedQueryError> {
         let saved = self
-            .repo
+            .repository
             .get_query(id)
             .await
             .map_err(|error| SavedQueryError::Repo(rootcause::Report::new(error).into_dynamic()))?

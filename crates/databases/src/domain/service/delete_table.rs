@@ -1,11 +1,11 @@
 use super::*;
 use crate::domain::models::TableDeletion;
 
-impl<Repo, Defs, Cells, Events, Access, Broker>
-    DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
+impl<Repository, Definitions, Cells, Events, Access, Broker>
+    DatabasesServiceImpl<Repository, Definitions, Cells, Events, Access, Broker>
 where
-    Repo: DatabasesRepo,
-    Defs: ColumnDefinitionStore,
+    Repository: DatabasesRepo,
+    Definitions: ColumnDefinitionStore,
     Cells: CellStore,
     Events: TableEventPublisher,
     Access: AccessDirectory,
@@ -32,10 +32,10 @@ where
             .map(|other| other.id)
             .collect();
         let columns = self
-            .repo
+            .repository
             .columns_for_tables(&other_tables)
             .await
-            .map_err(repo_err)?;
+            .map_err(repository_error)?;
         if let Some(relation) = columns.iter().find(|column| {
             matches!(column.config, Some(ColumnConfig::Link { table_id: target, .. }) if target == table_id)
         }) {
@@ -43,7 +43,7 @@ where
                 .definitions
                 .definitions(&[relation.property_definition_id])
                 .await
-                .map_err(repo_err)?
+                .map_err(repository_error)?
                 .into_iter()
                 .next()
                 .map(|definition| definition.definition.display_name);
@@ -74,7 +74,12 @@ where
             .into());
         }
 
-        match self.repo.delete_table(table).await.map_err(repo_err)? {
+        match self
+            .repository
+            .delete_table(table)
+            .await
+            .map_err(repository_error)?
+        {
             TableDeletion::Deleted => {}
             TableDeletion::NotFound => return Err(DatabaseError::NotFound),
             TableDeletion::LastTable => return Err(SchemaError::LastTable.into()),

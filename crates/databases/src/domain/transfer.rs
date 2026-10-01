@@ -44,13 +44,13 @@ pub enum ImportOutcome {
 /// Persistence mechanics for atomic imports.
 pub trait DatabaseTransferRepo: Send + Sync + 'static {
     /// Persistence error.
-    type Err: std::error::Error + Send + Sync + 'static;
+    type Error: std::error::Error + Send + Sync + 'static;
     /// Find an earlier committed request, even after its table was renamed.
     fn imported_table(
         &self,
         database_id: DatabaseId,
         request_id: Uuid,
-    ) -> impl Future<Output = Result<Option<(Table, ImportFingerprint)>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Option<(Table, ImportFingerprint)>, Self::Error>> + Send;
     /// Create the table, its placements, its rows and their cells together,
     /// serializing on the database. `cells` holds one entry per row of
     /// [`ImportTable::rows`], in order.
@@ -62,7 +62,7 @@ pub trait DatabaseTransferRepo: Send + Sync + 'static {
         fingerprint: &ImportFingerprint,
         definitions: &[PropertyDefinitionId],
         cells: &[Vec<(PropertyDefinitionId, PropertyValue)>],
-    ) -> impl Future<Output = Result<ImportOutcome, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<ImportOutcome, Self::Error>> + Send;
 }
 
 /// Import use case, with edit capability checked at the boundary.

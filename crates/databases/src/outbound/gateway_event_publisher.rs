@@ -39,7 +39,7 @@ impl GatewayTableEventPublisher {
 }
 
 impl TableEventPublisher for GatewayTableEventPublisher {
-    type Err = PublishError;
+    type Error = PublishError;
 
     #[tracing::instrument(skip(self), err)]
     async fn table_changed(
@@ -47,7 +47,7 @@ impl TableEventPublisher for GatewayTableEventPublisher {
         database_id: DatabaseId,
         table_id: TableId,
         version: TableVersion,
-    ) -> Result<(), Self::Err> {
+    ) -> Result<(), Self::Error> {
         self.client
             .send_message(
                 EntityType::Database.with_entity_string(database_id.to_string()),
@@ -69,7 +69,7 @@ impl TableEventPublisher for GatewayTableEventPublisher {
         database_id: DatabaseId,
         user_id: &MacroUserIdStr<'_>,
         state: &Awareness,
-    ) -> Result<(), Self::Err> {
+    ) -> Result<(), Self::Error> {
         self.client
             .send_message(
                 EntityType::Database.with_entity_string(database_id.to_string()),
@@ -93,14 +93,14 @@ impl TableEventPublisher for GatewayTableEventPublisher {
 pub struct NoOpTableEventPublisher;
 
 impl TableEventPublisher for NoOpTableEventPublisher {
-    type Err = std::convert::Infallible;
+    type Error = std::convert::Infallible;
 
     async fn table_changed(
         &self,
         _database_id: DatabaseId,
         _table_id: TableId,
         _version: TableVersion,
-    ) -> Result<(), Self::Err> {
+    ) -> Result<(), Self::Error> {
         Ok(())
     }
 
@@ -109,7 +109,7 @@ impl TableEventPublisher for NoOpTableEventPublisher {
         _database_id: DatabaseId,
         _user_id: &MacroUserIdStr<'_>,
         _state: &Awareness,
-    ) -> Result<(), Self::Err> {
+    ) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -135,14 +135,14 @@ impl From<GatewayTableEventPublisher> for MaybeGatewayTableEventPublisher {
 }
 
 impl TableEventPublisher for MaybeGatewayTableEventPublisher {
-    type Err = PublishError;
+    type Error = PublishError;
 
     async fn table_changed(
         &self,
         database_id: DatabaseId,
         table_id: TableId,
         version: TableVersion,
-    ) -> Result<(), Self::Err> {
+    ) -> Result<(), Self::Error> {
         match self {
             Self::Gateway(publisher) => {
                 publisher
@@ -161,7 +161,7 @@ impl TableEventPublisher for MaybeGatewayTableEventPublisher {
         database_id: DatabaseId,
         user_id: &MacroUserIdStr<'_>,
         state: &Awareness,
-    ) -> Result<(), Self::Err> {
+    ) -> Result<(), Self::Error> {
         match self {
             Self::Gateway(publisher) => publisher.awareness(database_id, user_id, state).await,
             Self::NoOp(publisher) => publisher

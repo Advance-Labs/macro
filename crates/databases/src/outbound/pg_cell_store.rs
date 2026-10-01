@@ -112,13 +112,13 @@ where
         + Sync
         + 'static,
 {
-    type Err = PgCellStoreError;
+    type Error = PgCellStoreError;
 
     #[tracing::instrument(err, skip(self, rows), fields(rows = rows.len()))]
     async fn cells(
         &self,
         rows: &[RowId],
-    ) -> Result<HashMap<RowId, HashMap<PropertyDefinitionId, PropertyValue>>, Self::Err> {
+    ) -> Result<HashMap<RowId, HashMap<PropertyDefinitionId, PropertyValue>>, Self::Error> {
         if rows.is_empty() {
             return Ok(HashMap::new());
         }
@@ -147,7 +147,7 @@ where
         &self,
         rows: &[RowId],
         definition: PropertyDefinitionId,
-    ) -> Result<HashMap<RowId, PropertyValue>, Self::Err> {
+    ) -> Result<HashMap<RowId, PropertyValue>, Self::Error> {
         if rows.is_empty() {
             return Ok(HashMap::new());
         }
@@ -178,7 +178,7 @@ where
         table: &Table,
         replacement: &ColumnReplacement,
         views: &[DatabaseView],
-    ) -> Result<Option<TableVersion>, Self::Err> {
+    ) -> Result<Option<TableVersion>, Self::Error> {
         let Some(mut transaction) = lock_column_tables(&self.pool, table, &[table.id]).await?
         else {
             return Ok(None);
@@ -210,7 +210,7 @@ where
         &self,
         table_id: TableId,
         options: &[NewOption],
-    ) -> Result<Option<TableVersion>, Self::Err> {
+    ) -> Result<Option<TableVersion>, Self::Error> {
         let mut transaction = self.pool.begin().await?;
         if rows::lock_live_tables(&mut *transaction, &[table_id])
             .await?
@@ -230,7 +230,7 @@ where
     }
 
     #[tracing::instrument(err, skip(self, writes), fields(writes = writes.writes.len()))]
-    async fn apply_writes(&self, writes: &Writes) -> Result<WritesOutcome, Self::Err> {
+    async fn apply_writes(&self, writes: &Writes) -> Result<WritesOutcome, Self::Error> {
         // Returning before the commit drops the transaction, which rolls
         // everything back.
         let mut transaction = self.pool.begin().await?;

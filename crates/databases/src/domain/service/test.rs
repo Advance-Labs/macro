@@ -120,7 +120,7 @@ struct FakeEvents(Shared);
 struct FakeAccess(Shared);
 
 impl DatabasesRepo for FakeRepo {
-    type Err = FakeError;
+    type Error = FakeError;
     async fn create_database(
         &self,
         cmd: &CreateDatabase,
@@ -600,7 +600,7 @@ impl DatabasesRepo for FakeRepo {
 }
 
 impl CellStore for FakeCells {
-    type Err = FakeError;
+    type Error = FakeError;
     async fn cells(
         &self,
         rows: &[RowId],
@@ -1008,7 +1008,7 @@ fn apply_in_world(w: &mut World, writes: &Writes) -> WritesOutcome {
 }
 
 impl ColumnDefinitionStore for FakeDefs {
-    type Err = FakeError;
+    type Error = FakeError;
     async fn resolve_binding(
         &self,
         database_id: DatabaseId,
@@ -1125,7 +1125,7 @@ impl ColumnDefinitionStore for FakeDefs {
 }
 
 impl TableEventPublisher for FakeEvents {
-    type Err = FakeError;
+    type Error = FakeError;
     async fn table_changed(
         &self,
         _database_id: DatabaseId,
@@ -1151,7 +1151,7 @@ impl TableEventPublisher for FakeEvents {
 }
 
 impl AccessDirectory for FakeAccess {
-    type Err = FakeError;
+    type Error = FakeError;
     async fn accessible_databases(
         &self,
         viewer: &Viewer,

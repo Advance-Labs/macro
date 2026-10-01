@@ -1,11 +1,11 @@
 use super::*;
 use crate::domain::models::TableOrderOutcome;
 
-impl<Repo, Defs, Cells, Events, Access, Broker>
-    DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
+impl<Repository, Definitions, Cells, Events, Access, Broker>
+    DatabasesServiceImpl<Repository, Definitions, Cells, Events, Access, Broker>
 where
-    Repo: DatabasesRepo,
-    Defs: ColumnDefinitionStore,
+    Repository: DatabasesRepo,
+    Definitions: ColumnDefinitionStore,
     Cells: CellStore,
     Events: TableEventPublisher,
     Access: AccessDirectory,
@@ -22,10 +22,10 @@ where
             return Err(DatabaseError::from(SchemaError::IncompleteTableOrder));
         }
         let reordered = match self
-            .repo
+            .repository
             .reorder_tables(database.id, &ids)
             .await
-            .map_err(repo_err)?
+            .map_err(repository_error)?
         {
             TableOrderOutcome::Applied(tables) => tables,
             TableOrderOutcome::NotFound => return Err(DatabaseError::NotFound),

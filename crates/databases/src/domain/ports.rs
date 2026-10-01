@@ -30,51 +30,53 @@ use models_databases::{DatabaseOp, OpResult};
 /// Persistence for databases, tables, column placements and row identities.
 pub trait DatabasesRepo: Send + Sync + 'static {
     /// The error type returned by repository operations.
-    type Err: std::error::Error + Send + Sync + 'static;
+    type Error: std::error::Error + Send + Sync + 'static;
 
     /// Create a database with its starter table, granting the creator owner
     /// access.
     fn create_database(
         &self,
-        cmd: &CreateDatabase,
+        command: &CreateDatabase,
         starter_table_name: &str,
-    ) -> impl Future<Output = Result<Database, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Database, Self::Error>> + Send;
 
     /// A database and its tables, if it exists.
     fn get_database(
         &self,
         id: DatabaseId,
-    ) -> impl Future<Output = Result<Option<(Database, Vec<Table>)>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Option<(Database, Vec<Table>)>, Self::Error>> + Send;
 
     /// Rename a database.
     fn rename_database(
         &self,
         id: DatabaseId,
         name: &str,
-    ) -> impl Future<Output = Result<(), Self::Err>> + Send;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     /// Move a database to the trash.
     fn trash_database(
         &self,
         id: DatabaseId,
         trashed_at: DateTime<Utc>,
-    ) -> impl Future<Output = Result<(), Self::Err>> + Send;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     /// Restore a trashed database.
     fn restore_database(
         &self,
         id: DatabaseId,
-    ) -> impl Future<Output = Result<(), Self::Err>> + Send;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     /// Remove a database permanently.
-    fn delete_database(&self, id: DatabaseId)
-    -> impl Future<Output = Result<(), Self::Err>> + Send;
+    fn delete_database(
+        &self,
+        id: DatabaseId,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     /// Add a table to a database.
     fn create_table(
         &self,
-        cmd: &CreateTable,
-    ) -> impl Future<Output = Result<TableMutationOutcome, Self::Err>> + Send;
+        command: &CreateTable,
+    ) -> impl Future<Output = Result<TableMutationOutcome, Self::Error>> + Send;
 
     /// Rename a table, guarded by its previous name.
     fn rename_table(
@@ -82,7 +84,7 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         table: &Table,
         name: &str,
         previous_name: &str,
-    ) -> impl Future<Output = Result<TableMutationOutcome, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<TableMutationOutcome, Self::Error>> + Send;
 
     /// Give a database's tables the positions of `table_ids`, which must name
     /// every one of its tables exactly once.
@@ -90,14 +92,14 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         &self,
         database_id: DatabaseId,
         table_ids: &[TableId],
-    ) -> impl Future<Output = Result<TableOrderOutcome, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<TableOrderOutcome, Self::Error>> + Send;
 
     /// Remove a table with its columns and row identities, unless it is its
     /// database's last one.
     fn delete_table(
         &self,
         table: &Table,
-    ) -> impl Future<Output = Result<TableDeletion, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<TableDeletion, Self::Error>> + Send;
 
     /// Bind a definition into a table as a new column placement, answering
     /// it with the table's new version.
@@ -105,8 +107,8 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         &self,
         table_id: TableId,
         property_definition_id: PropertyDefinitionId,
-        cmd: &CreateColumn,
-    ) -> impl Future<Output = Result<(ColumnId, TableVersion), Self::Err>> + Send;
+        command: &CreateColumn,
+    ) -> impl Future<Output = Result<(ColumnId, TableVersion), Self::Error>> + Send;
 
     /// Rename a column placement.
     fn rename_column(
@@ -114,7 +116,7 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         table: &Table,
         column: &Column,
         name: &str,
-    ) -> impl Future<Output = Result<Option<RenameColumnOutcome>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Option<RenameColumnOutcome>, Self::Error>> + Send;
 
     /// Settle an untyped column on a definition, provided no row has a value
     /// in it yet.
@@ -123,7 +125,7 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         table: &Table,
         column: &Column,
         definition_id: PropertyDefinitionId,
-    ) -> impl Future<Output = Result<Option<TableVersion>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Option<TableVersion>, Self::Error>> + Send;
 
     /// Remove a column placement, rewriting `views` (the table's views that
     /// referred to it, without it) in the same transaction.
@@ -132,56 +134,56 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         table: &Table,
         column: &Column,
         views: &[DatabaseView],
-    ) -> impl Future<Output = Result<Option<ColumnSchemaOutcome>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Option<ColumnSchemaOutcome>, Self::Error>> + Send;
 
     /// Reorder a table's column placements.
     fn reorder_columns(
         &self,
         table: &Table,
         column_ids: &[ColumnId],
-    ) -> impl Future<Output = Result<Option<TableVersion>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Option<TableVersion>, Self::Error>> + Send;
 
     /// Every row of a table, in position order.
     fn row_refs(
         &self,
         table_id: TableId,
-    ) -> impl Future<Output = Result<Vec<RowRef>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Vec<RowRef>, Self::Error>> + Send;
 
     /// Current versions for a set of tables.
     fn table_versions(
         &self,
         table_ids: &[TableId],
-    ) -> impl Future<Output = Result<HashMap<TableId, TableVersion>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<HashMap<TableId, TableVersion>, Self::Error>> + Send;
 
     /// Databases by id (missing ids are skipped).
     fn databases_by_ids(
         &self,
         ids: &[DatabaseId],
-    ) -> impl Future<Output = Result<Vec<Database>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Vec<Database>, Self::Error>> + Send;
 
     /// Every table of the given databases, ordered by database then position.
     fn tables_for_databases(
         &self,
         database_ids: &[DatabaseId],
-    ) -> impl Future<Output = Result<Vec<Table>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Vec<Table>, Self::Error>> + Send;
 
     /// Every column placement of the given tables, ordered by table then position.
     fn columns_for_tables(
         &self,
         table_ids: &[TableId],
-    ) -> impl Future<Output = Result<Vec<Column>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Vec<Column>, Self::Error>> + Send;
 
     /// Every view of the given tables, ordered by table then position.
     fn views_for_tables(
         &self,
         table_ids: &[TableId],
-    ) -> impl Future<Output = Result<Vec<DatabaseView>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Vec<DatabaseView>, Self::Error>> + Send;
 
     /// Where a board's cards sit, those that have a place.
     fn view_positions(
         &self,
         view_id: ViewId,
-    ) -> impl Future<Output = Result<Vec<CardPosition>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Vec<CardPosition>, Self::Error>> + Send;
 
     /// Store a new, immutable query.
     fn save_query(
@@ -189,13 +191,13 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         database_id: Option<DatabaseId>,
         definition: &QueryDefinition,
         created_by: &MacroUserIdStr<'_>,
-    ) -> impl Future<Output = Result<SavedQuery, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<SavedQuery, Self::Error>> + Send;
 
     /// A saved query, if it exists.
     fn get_query(
         &self,
         id: QueryId,
-    ) -> impl Future<Output = Result<Option<SavedQuery>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Option<SavedQuery>, Self::Error>> + Send;
 }
 
 /// A row's cells, kept by the properties system as entity properties of the
@@ -204,7 +206,7 @@ pub trait DatabasesRepo: Send + Sync + 'static {
 /// caller.
 pub trait CellStore: Send + Sync + 'static {
     /// The error type returned by the store.
-    type Err: std::error::Error + Send + Sync + 'static;
+    type Error: std::error::Error + Send + Sync + 'static;
 
     /// The cells of these rows, keyed by row then definition. A row with no
     /// cells is absent from the map.
@@ -212,7 +214,7 @@ pub trait CellStore: Send + Sync + 'static {
         &self,
         rows: &[RowId],
     ) -> impl Future<
-        Output = Result<HashMap<RowId, HashMap<PropertyDefinitionId, PropertyValue>>, Self::Err>,
+        Output = Result<HashMap<RowId, HashMap<PropertyDefinitionId, PropertyValue>>, Self::Error>,
     > + Send;
 
     /// One column's cells of these rows: what `definition` holds on each, for
@@ -221,7 +223,7 @@ pub trait CellStore: Send + Sync + 'static {
         &self,
         rows: &[RowId],
         definition: PropertyDefinitionId,
-    ) -> impl Future<Output = Result<HashMap<RowId, PropertyValue>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<HashMap<RowId, PropertyValue>, Self::Error>> + Send;
 
     /// Swap a placement onto a fresh definition in one transaction: rewrite
     /// `views` (the table's views whose filters tested the old values) and
@@ -232,7 +234,7 @@ pub trait CellStore: Send + Sync + 'static {
         table: &Table,
         replacement: &ColumnReplacement,
         views: &[DatabaseView],
-    ) -> impl Future<Output = Result<Option<TableVersion>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Option<TableVersion>, Self::Error>> + Send;
 
     /// Add options to a definition bound on `table_id` and bump the table's
     /// version, in one transaction. `None` when the table is gone or its
@@ -241,7 +243,7 @@ pub trait CellStore: Send + Sync + 'static {
         &self,
         table_id: TableId,
         options: &[NewOption],
-    ) -> impl Future<Output = Result<Option<TableVersion>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Option<TableVersion>, Self::Error>> + Send;
 
     /// Apply a request's writes in one transaction, row identities, cells
     /// and options together: each written table is locked and checked live,
@@ -252,7 +254,7 @@ pub trait CellStore: Send + Sync + 'static {
     fn apply_writes(
         &self,
         writes: &Writes,
-    ) -> impl Future<Output = Result<WritesOutcome, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<WritesOutcome, Self::Error>> + Send;
 }
 
 /// Which databases a viewer can reach, as `entity_access` answers it: the
@@ -261,27 +263,27 @@ pub trait CellStore: Send + Sync + 'static {
 /// and the service drops them.
 pub trait AccessDirectory: Send + Sync + 'static {
     /// The error type returned by directory operations.
-    type Err: std::error::Error + Send + Sync + 'static;
+    type Error: std::error::Error + Send + Sync + 'static;
 
     /// Every database the viewer holds a grant on, at the highest level.
     fn accessible_databases(
         &self,
         viewer: &Viewer,
-    ) -> impl Future<Output = Result<Vec<(DatabaseId, AccessLevel)>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Vec<(DatabaseId, AccessLevel)>, Self::Error>> + Send;
 
     /// The viewer's highest level on one database; `None` without a grant.
     fn database_access(
         &self,
         viewer: &Viewer,
         database_id: DatabaseId,
-    ) -> impl Future<Output = Result<Option<AccessLevel>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Option<AccessLevel>, Self::Error>> + Send;
 }
 
 /// The definitions behind columns: creating database-owned ones, binding
 /// existing ones, and reading them back with their options.
 pub trait ColumnDefinitionStore: Send + Sync + 'static {
     /// The error type returned by the store.
-    type Err: std::error::Error + Send + Sync + 'static;
+    type Error: std::error::Error + Send + Sync + 'static;
 
     /// The definition a column binding names, checked against the viewer:
     /// a new database-owned one, or the existing one when the viewer may bind
@@ -291,7 +293,7 @@ pub trait ColumnDefinitionStore: Send + Sync + 'static {
         database_id: DatabaseId,
         viewer: &Viewer,
         binding: &ColumnBinding,
-    ) -> impl Future<Output = Result<Option<PropertyDefinitionId>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Option<PropertyDefinitionId>, Self::Error>> + Send;
 
     /// Create a definition owned by the database.
     fn create_typed_definition(
@@ -301,13 +303,13 @@ pub trait ColumnDefinitionStore: Send + Sync + 'static {
         data_type: models_properties::DataType,
         is_multi_select: bool,
         specific_entity_type: Option<models_properties::EntityType>,
-    ) -> impl Future<Output = Result<PropertyDefinitionWithOptions, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<PropertyDefinitionWithOptions, Self::Error>> + Send;
 
     /// Remove a definition that no column binds any more.
     fn delete_unused_definition(
         &self,
         id: PropertyDefinitionId,
-    ) -> impl Future<Output = Result<(), Self::Err>> + Send;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     /// Add options to a select definition, answering every option it has.
     /// Each new option takes the palette colour of its position
@@ -316,13 +318,13 @@ pub trait ColumnDefinitionStore: Send + Sync + 'static {
         &self,
         definition_id: PropertyDefinitionId,
         values: &[PropertyOptionValue],
-    ) -> impl Future<Output = Result<Vec<PropertyOption>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Vec<PropertyOption>, Self::Error>> + Send;
 
     /// Definitions by id, with their options.
     fn definitions(
         &self,
         ids: &[PropertyDefinitionId],
-    ) -> impl Future<Output = Result<Vec<PropertyDefinitionWithOptions>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Vec<PropertyDefinitionWithOptions>, Self::Error>> + Send;
 
     /// The definitions among `ids` the viewer may change as the properties
     /// system decides it for definitions outside any database: their own, or
@@ -331,13 +333,13 @@ pub trait ColumnDefinitionStore: Send + Sync + 'static {
         &self,
         viewer: &Viewer,
         ids: &[PropertyDefinitionId],
-    ) -> impl Future<Output = Result<Vec<PropertyDefinitionId>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Vec<PropertyDefinitionId>, Self::Error>> + Send;
 }
 
 /// Liveness: tell open clients a table changed.
 pub trait TableEventPublisher: Send + Sync + 'static {
     /// The error type returned by the publisher.
-    type Err: std::error::Error + Send + Sync + 'static;
+    type Error: std::error::Error + Send + Sync + 'static;
 
     /// Announce a table's new version.
     fn table_changed(
@@ -345,7 +347,7 @@ pub trait TableEventPublisher: Send + Sync + 'static {
         database_id: DatabaseId,
         table_id: TableId,
         version: TableVersion,
-    ) -> impl Future<Output = Result<(), Self::Err>> + Send;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     /// Relay where a viewer is to the database's other viewers.
     fn awareness(
@@ -353,7 +355,7 @@ pub trait TableEventPublisher: Send + Sync + 'static {
         database_id: DatabaseId,
         user_id: &MacroUserIdStr<'_>,
         state: &Awareness,
-    ) -> impl Future<Output = Result<(), Self::Err>> + Send;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
 /// The databases domain service.
@@ -361,7 +363,7 @@ pub trait DatabasesService: Send + Sync + 'static {
     /// Create a database with a starter table.
     fn create_database(
         &self,
-        cmd: CreateDatabase,
+        command: CreateDatabase,
     ) -> impl Future<Output = Result<Database, DatabaseError>> + Send;
 
     /// Every database the viewer can see.
@@ -413,7 +415,7 @@ pub trait DatabasesService: Send + Sync + 'static {
     fn create_table(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
-        cmd: CreateTable,
+        command: CreateTable,
     ) -> impl Future<Output = Result<Table, DatabaseError>> + Send;
 
     /// Rename a table.
@@ -446,7 +448,7 @@ pub trait DatabasesService: Send + Sync + 'static {
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
         viewer: Viewer,
-        cmd: CreateColumn,
+        command: CreateColumn,
     ) -> impl Future<Output = Result<ColumnId, DatabaseError>> + Send;
 
     /// Rename a column.
@@ -464,7 +466,7 @@ pub trait DatabasesService: Send + Sync + 'static {
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
         viewer: Viewer,
-        cmd: InferColumnType,
+        command: InferColumnType,
     ) -> impl Future<Output = Result<InferColumnTypeOutcome, DatabaseError>> + Send;
 
     /// Convert a column to another type, converting its cells. A value that
@@ -473,7 +475,7 @@ pub trait DatabasesService: Send + Sync + 'static {
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
         viewer: Viewer,
-        cmd: ChangeColumnType,
+        command: ChangeColumnType,
     ) -> impl Future<Output = Result<ColumnTypeChangeOutcome, DatabaseError>> + Send;
 
     /// What changing a column to each type the type menu offers would do to
@@ -509,7 +511,7 @@ pub trait DatabasesService: Send + Sync + 'static {
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
         viewer: Viewer,
-        cmd: AddColumnOptions,
+        command: AddColumnOptions,
     ) -> impl Future<Output = Result<ColumnDetail, DatabaseError>> + Send;
 
     /// Apply a batch of ops to the receipt's database: all of them, or,

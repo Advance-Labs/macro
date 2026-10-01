@@ -63,7 +63,7 @@ impl<P: PropertiesRepo<Err = anyhow::Error>> PgDefinitionStore<P> {
 }
 
 impl<P: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore for PgDefinitionStore<P> {
-    type Err = PgDefinitionStoreError;
+    type Error = PgDefinitionStoreError;
 
     #[tracing::instrument(skip(self, viewer, binding), err)]
     async fn resolve_binding(
@@ -71,7 +71,7 @@ impl<P: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore for PgDefinit
         database_id: DatabaseId,
         viewer: &Viewer,
         binding: &ColumnBinding,
-    ) -> Result<Option<PropertyDefinitionId>, Self::Err> {
+    ) -> Result<Option<PropertyDefinitionId>, Self::Error> {
         match binding {
             // Options are attached separately, through
             // [`ColumnDefinitionStore::add_options`], once the definition exists.
@@ -100,7 +100,7 @@ impl<P: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore for PgDefinit
         data_type: DataType,
         is_multi_select: bool,
         specific_entity_type: Option<EntityType>,
-    ) -> Result<PropertyDefinitionWithOptions, Self::Err> {
+    ) -> Result<PropertyDefinitionWithOptions, Self::Error> {
         let definition = self
             .properties
             .create_database_property_definition(
@@ -118,7 +118,7 @@ impl<P: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore for PgDefinit
         })
     }
 
-    async fn delete_unused_definition(&self, id: PropertyDefinitionId) -> Result<(), Self::Err> {
+    async fn delete_unused_definition(&self, id: PropertyDefinitionId) -> Result<(), Self::Error> {
         self.properties
             .delete_property_definition(id)
             .await
@@ -130,7 +130,7 @@ impl<P: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore for PgDefinit
         &self,
         definition_id: PropertyDefinitionId,
         values: &[PropertyOptionValue],
-    ) -> Result<Vec<PropertyOption>, Self::Err> {
+    ) -> Result<Vec<PropertyOption>, Self::Error> {
         if values.is_empty() {
             return Ok(Vec::new());
         }
@@ -171,7 +171,7 @@ impl<P: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore for PgDefinit
         &self,
         viewer: &Viewer,
         ids: &[PropertyDefinitionId],
-    ) -> Result<Vec<PropertyDefinitionId>, Self::Err> {
+    ) -> Result<Vec<PropertyDefinitionId>, Self::Error> {
         self.properties
             .get_editable_property_definition_ids(ids, viewer.user_id.as_ref())
             .await
@@ -182,7 +182,7 @@ impl<P: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore for PgDefinit
     async fn definitions(
         &self,
         ids: &[PropertyDefinitionId],
-    ) -> Result<Vec<PropertyDefinitionWithOptions>, Self::Err> {
+    ) -> Result<Vec<PropertyDefinitionWithOptions>, Self::Error> {
         self.properties
             .get_property_definitions_with_options(ids)
             .await

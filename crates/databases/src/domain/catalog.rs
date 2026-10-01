@@ -139,8 +139,10 @@ pub fn build_entries(
     views: &[DatabaseView],
     grants: &HashMap<DatabaseId, AccessLevel>,
 ) -> Vec<TableEntry> {
-    let databases_by_id: HashMap<DatabaseId, &Database> =
-        databases.iter().map(|d| (d.id, d)).collect();
+    let databases_by_id: HashMap<DatabaseId, &Database> = databases
+        .iter()
+        .map(|database| (database.id, database))
+        .collect();
     let mut columns_by_table: HashMap<TableId, Vec<&Column>> = HashMap::new();
     for column in columns {
         columns_by_table

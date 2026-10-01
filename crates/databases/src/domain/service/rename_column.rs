@@ -1,10 +1,10 @@
 use super::*;
 
-impl<Repo, Defs, Cells, Events, Access, Broker>
-    DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
+impl<Repository, Definitions, Cells, Events, Access, Broker>
+    DatabasesServiceImpl<Repository, Definitions, Cells, Events, Access, Broker>
 where
-    Repo: DatabasesRepo,
-    Defs: ColumnDefinitionStore,
+    Repository: DatabasesRepo,
+    Definitions: ColumnDefinitionStore,
     Cells: CellStore,
     Events: TableEventPublisher,
     Access: AccessDirectory,
@@ -24,10 +24,10 @@ where
             .find(|table| table.id == table_id)
             .ok_or(DatabaseError::NotFound)?;
         let columns = self
-            .repo
+            .repository
             .columns_for_tables(&[table_id])
             .await
-            .map_err(repo_err)?;
+            .map_err(repository_error)?;
         let column = columns
             .iter()
             .find(|column| column.id == column_id)
@@ -40,7 +40,7 @@ where
             .definitions
             .definitions(&definition_ids)
             .await
-            .map_err(repo_err)?
+            .map_err(repository_error)?
             .into_iter()
             .map(|definition| (definition.definition.id, definition.definition.display_name))
             .collect();
@@ -68,10 +68,10 @@ where
             return Err(DatabaseError::from(SchemaError::ColumnLabelTaken));
         }
         let outcome = self
-            .repo
+            .repository
             .rename_column(table, column, &name)
             .await
-            .map_err(repo_err)?
+            .map_err(repository_error)?
             .ok_or_else(|| DatabaseError::from(SchemaError::TableChangedWhileRenaming))?;
         self.publish(
             receipt_attribution(&receipt),

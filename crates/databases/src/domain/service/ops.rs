@@ -22,11 +22,11 @@ use chrono::DateTime;
 /// Most rows one request inserts, updates and deletes in total.
 const MAX_WRITTEN_ROWS: usize = 10_000;
 
-impl<Repo, Defs, Cells, Events, Access, Broker>
-    DatabasesServiceImpl<Repo, Defs, Cells, Events, Access, Broker>
+impl<Repository, Definitions, Cells, Events, Access, Broker>
+    DatabasesServiceImpl<Repository, Definitions, Cells, Events, Access, Broker>
 where
-    Repo: DatabasesRepo,
-    Defs: ColumnDefinitionStore,
+    Repository: DatabasesRepo,
+    Definitions: ColumnDefinitionStore,
     Cells: CellStore,
     Events: TableEventPublisher,
     Access: AccessDirectory,
@@ -143,7 +143,7 @@ where
             .cells
             .apply_writes(&row_writes)
             .await
-            .map_err(repo_err)?
+            .map_err(repository_error)?
         {
             WritesOutcome::Applied {
                 inserted,
@@ -294,10 +294,10 @@ where
                 continue;
             };
             let rows: Vec<RowId> = self
-                .repo
+                .repository
                 .row_refs(*table)
                 .await
-                .map_err(repo_err)?
+                .map_err(repository_error)?
                 .into_iter()
                 .map(|row| row.id)
                 .collect();
@@ -305,8 +305,12 @@ where
                 .cells
                 .column_cells(&rows, grouping)
                 .await
-                .map_err(repo_err)?;
-            let positions = self.repo.view_positions(*view).await.map_err(repo_err)?;
+                .map_err(repository_error)?;
+            let positions = self
+                .repository
+                .view_positions(*view)
+                .await
+                .map_err(repository_error)?;
             boards.insert(
                 *view,
                 views::Board::new(grouping, &rows, &cells, &positions),
@@ -348,7 +352,7 @@ where
         self.definitions
             .editable_definitions(viewer, &shared)
             .await
-            .map_err(repo_err)
+            .map_err(repository_error)
     }
 }
 

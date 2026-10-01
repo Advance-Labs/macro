@@ -123,14 +123,14 @@ impl StarterBlueprint {
 /// Persistence owns the atomic insert and unique per-user marker.
 pub trait DatabaseStarterRepo: Send + Sync + 'static {
     /// Persistence error.
-    type Err: std::error::Error + Send + Sync + 'static;
+    type Error: std::error::Error + Send + Sync + 'static;
     /// Create only once and only for someone without an existing database.
     /// Never overwrite, recreate deleted content, or expose a partial example.
     fn ensure_starter(
         &self,
         viewer: &Viewer,
         blueprint: &StarterBlueprint,
-    ) -> impl Future<Output = Result<StarterDatabase, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<StarterDatabase, Self::Error>> + Send;
 }
 
 /// Authenticated-user provisioning capability. No caller-supplied owner or content.
@@ -143,25 +143,25 @@ pub trait DatabaseStarterService: Send + Sync + 'static {
 }
 
 /// Composes a starter blueprint with atomic storage and standard creation events.
-pub struct DatabaseStarterServiceImpl<Repo, Broker> {
-    repo: Repo,
+pub struct DatabaseStarterServiceImpl<Repository, Broker> {
+    repository: Repository,
     broker: Broker,
 }
 
-impl<Repo, Broker> DatabaseStarterServiceImpl<Repo, Broker> {
+impl<Repository, Broker> DatabaseStarterServiceImpl<Repository, Broker> {
     /// Construct from domain capabilities at the composition root.
-    pub fn new(repo: Repo, broker: Broker) -> Self {
-        Self { repo, broker }
+    pub fn new(repository: Repository, broker: Broker) -> Self {
+        Self { repository, broker }
     }
 }
 
-impl<Repo: DatabaseStarterRepo, Broker: MacroEventBroker> DatabaseStarterService
-    for DatabaseStarterServiceImpl<Repo, Broker>
+impl<Repository: DatabaseStarterRepo, Broker: MacroEventBroker> DatabaseStarterService
+    for DatabaseStarterServiceImpl<Repository, Broker>
 {
     async fn ensure_starter(&self, viewer: Viewer) -> Result<StarterDatabase, DatabaseError> {
         let blueprint = StarterBlueprint::default();
         let outcome = self
-            .repo
+            .repository
             .ensure_starter(&viewer, &blueprint)
             .await
             .map_err(|error| DatabaseError::Repo(rootcause::Report::new(error).into_dynamic()))?;

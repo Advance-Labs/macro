@@ -12,20 +12,20 @@ use super::models::{DatabaseError, DatabaseId};
 /// Persistence of direct channel grants, implemented through the owning access crate.
 pub trait DatabaseSharingRepo: Send + Sync + 'static {
     /// Persistence failure.
-    type Err: std::error::Error + Send + Sync + 'static;
+    type Error: std::error::Error + Send + Sync + 'static;
 
     /// Read the direct channel grants for a database.
     fn channel_grants(
         &self,
         database_id: DatabaseId,
-    ) -> impl Future<Output = Result<Vec<ChannelSharePermission>, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<Vec<ChannelSharePermission>, Self::Error>> + Send;
 
     /// Change channel grants only while the database remains live.
     fn update_channel_grants(
         &self,
         database_id: DatabaseId,
         grants: &[UpdateChannelSharePermission],
-    ) -> impl Future<Output = Result<bool, Self::Err>> + Send;
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 }
 
 /// Owners control the database's recipients and each recipient's access level.
