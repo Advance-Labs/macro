@@ -1,4 +1,3 @@
-import { Tooltip } from '@ui/components/Tooltip';
 import type { JSX } from 'solid-js';
 import { match } from 'ts-pattern';
 import type { DatabaseEntityType } from '../core/column-inference';
@@ -25,11 +24,12 @@ export function DatabaseMentionLabel(props: {
   icon: JSX.Element;
   entityType: DatabaseEntityType;
 }) {
+  // A native title shows the whole of a cut-off name; a styled tooltip in
+  // every cell of a column costs a Kobalte root each.
   return (
-    <Tooltip
-      as="span"
-      label={props.name || mentionTypeLabel(props.entityType)}
-      class="min-w-0 max-w-full"
+    <span
+      class="inline-flex min-w-0 max-w-full items-center"
+      title={props.name || mentionTypeLabel(props.entityType)}
     >
       <span class="flex min-w-0 items-center gap-1.5">
         <span
@@ -42,7 +42,7 @@ export function DatabaseMentionLabel(props: {
           {props.name || mentionTypeLabel(props.entityType)}
         </span>
       </span>
-    </Tooltip>
+    </span>
   );
 }
 
