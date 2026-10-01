@@ -27,20 +27,20 @@ import {
   soupReconciliationBaseline,
 } from '@queries/soup/graphql/reconciliation';
 import {
+  type DatabaseRowFieldsFragment,
+  DatabaseRowFieldsFragmentDoc,
+  DatabaseRowsDocument,
+  type DatabaseRowsQuery,
+  type DatabaseRowsQueryVariables,
   type GraphqlDatabaseRowExpr,
   type GraphqlEntityFilterAst,
   type GraphqlFilterPropertiesExpr,
   GroupSoupDocument,
   type GroupSoupQuery,
   type GroupSoupQueryVariables,
-  SoupDocument,
   type SoupInput,
-  SoupItemFieldsFragmentDoc,
-  type SoupPropertyFieldsFragment,
-  type SoupQuery,
-  type SoupQueryVariables,
+  type SoupPropertyValueFieldsFragment,
 } from '@service-storage/graphql/generated/graphql';
-import type { GraphqlSoupItem } from '@service-storage/graphql-soup';
 import {
   type AnyVariables,
   type Client,
@@ -82,7 +82,7 @@ export interface LocalMembership {
   /** The last network first page for each Soup input. */
   baselines: Map<
     string,
-    { items: readonly GraphqlSoupItem[]; complete: boolean }
+    { items: readonly DatabaseRowFieldsFragment[]; complete: boolean }
   >;
   reconcile: boolean;
 }
@@ -97,11 +97,11 @@ const MAX_KEY_HINT_VALUES = 100;
 const PERSON_ROW_NAMESPACE = '6ba7b812-9dad-11d1-80b4-00c04fd430c8';
 
 type DatabaseRowItem = Extract<
-  GraphqlSoupItem,
+  DatabaseRowFieldsFragment,
   { __typename: 'GraphqlSoupDatabaseRow' }
 >;
 
-const rowSelection = selectRecords(SoupItemFieldsFragmentDoc);
+const rowSelection = selectRecords(DatabaseRowFieldsFragmentDoc);
 
 function fetchFailure(message: string): DatabaseSqlFetchFailure {
   return { kind: 'fetch', message };
@@ -332,12 +332,12 @@ function soupPage(
   return local.andThen((page) =>
     page
       ? okAsync(page)
-      : graphqlQuery<SoupQuery, SoupQueryVariables>(
+      : graphqlQuery<DatabaseRowsQuery, DatabaseRowsQueryVariables>(
           client,
-          SoupDocument,
+          DatabaseRowsDocument,
           { input },
           requestPolicy,
-          'Soup',
+          'database rows',
           step
         ).andThen((data) => {
           const { items, nextCursor } = data.user.soup;
@@ -390,7 +390,11 @@ function reconciledPage(
       // A full page may continue past the limit; only the server's cursor knows.
       if (result.keys.length >= limit) return okAsync(undefined);
       return ResultAsync.fromPromise(
-        readRecordsByKeys<GraphqlSoupItem>(host, rowSelection, result.keys),
+        readRecordsByKeys<DatabaseRowFieldsFragment>(
+          host,
+          rowSelection,
+          result.keys
+        ),
         thrownFetchFailure
       ).andThen(({ records }) =>
         tableRows(
@@ -402,7 +406,7 @@ function reconciledPage(
 }
 
 function tableRows(
-  items: readonly GraphqlSoupItem[]
+  items: readonly DatabaseRowFieldsFragment[]
 ): Result<Row[], DatabaseSqlFetchFailure> {
   return Result.combine(
     items.map((item) =>
@@ -424,7 +428,9 @@ function rowCells(item: DatabaseRowItem): Record<string, Cell> {
 }
 
 /** A property value as the engine reads it, matching the server's source. */
-function cell(value: SoupPropertyFieldsFragment['value']): Cell | undefined {
+function cell(
+  value: SoupPropertyValueFieldsFragment | null | undefined
+): Cell | undefined {
   if (!value) return undefined;
   return match(value)
     .returnType<Cell>()
