@@ -267,6 +267,7 @@ pub struct RenameColumnRequest {
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum ColumnBindingRequest {
     /// Create a fresh definition scoped to the database.
+    #[serde(rename_all = "camelCase")]
     New {
         /// Column display name.
         name: String,
@@ -282,6 +283,7 @@ pub enum ColumnBindingRequest {
         options: Option<Vec<String>>,
     },
     /// Bind an existing user/team/system definition.
+    #[serde(rename_all = "camelCase")]
     Existing {
         /// The definition to bind.
         property_definition_id: Uuid,
@@ -754,10 +756,12 @@ where
 
 /// Request to settle an empty column's first-value type.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct InferColumnTypeRequest {
     /// First-value type: STRING, NUMBER, or ENTITY.
     pub data_type: DataType,
     /// Required entity category for ENTITY.
+    #[serde(default)]
     pub specific_entity_type: Option<models_properties::EntityType>,
     /// Table version used when interpreting the first value.
     pub base_version: TableVersion,

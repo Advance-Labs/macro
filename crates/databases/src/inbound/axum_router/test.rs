@@ -7,16 +7,101 @@ mod fakes;
 fn a_column_request_takes_infer_type_in_camel_case() {
     let camel: CreateColumnRequest = serde_json::from_value(serde_json::json!({
         "inferType": true,
-        "binding": {"kind": "existing", "property_definition_id": Uuid::nil()},
+        "binding": {"kind": "existing", "propertyDefinitionId": Uuid::nil()},
     }))
     .unwrap();
     assert!(camel.infer_type);
 
     let omitted: CreateColumnRequest = serde_json::from_value(serde_json::json!({
-        "binding": {"kind": "existing", "property_definition_id": Uuid::nil()},
+        "binding": {"kind": "existing", "propertyDefinitionId": Uuid::nil()},
     }))
     .unwrap();
     assert!(!omitted.infer_type);
+}
+
+#[test]
+fn a_new_column_binding_takes_its_fields_in_camel_case() {
+    let request: CreateColumnRequest = serde_json::from_value(serde_json::json!({
+        "binding": {
+            "kind": "new",
+            "name": "Status",
+            "dataType": "SELECT_STRING",
+            "isMultiSelect": true,
+            "options": ["Todo", "Done"],
+        },
+        "linkToTableId": "00000000-0000-0000-0000-000000000007",
+        "linkToDatabaseId": "00000000-0000-0000-0000-000000000008",
+    }))
+    .unwrap();
+    let ColumnBindingRequest::New {
+        name,
+        data_type,
+        is_multi_select,
+        options,
+    } = request.binding
+    else {
+        panic!("expected a new binding, got {:?}", request.binding);
+    };
+    assert_eq!(name, "Status");
+    assert_eq!(data_type, DataType::SelectString);
+    assert!(is_multi_select);
+    assert_eq!(options, Some(vec!["Todo".to_string(), "Done".to_string()]));
+    assert_eq!(request.link_to_table_id, Some(Uuid::from_u128(7)));
+    assert_eq!(request.link_to_database_id, Some(Uuid::from_u128(8)));
+}
+
+#[test]
+fn an_existing_column_binding_takes_its_definition_in_camel_case() {
+    let request: CreateColumnRequest = serde_json::from_value(serde_json::json!({
+        "binding": {
+            "kind": "existing",
+            "propertyDefinitionId": "00000000-0000-0000-0000-000000000009",
+        },
+    }))
+    .unwrap();
+    let ColumnBindingRequest::Existing {
+        property_definition_id,
+    } = request.binding
+    else {
+        panic!("expected an existing binding, got {:?}", request.binding);
+    };
+    assert_eq!(property_definition_id, Uuid::from_u128(9));
+}
+
+#[test]
+fn a_snake_case_column_binding_is_refused() {
+    let refused = serde_json::from_value::<CreateColumnRequest>(serde_json::json!({
+        "binding": {
+            "kind": "existing",
+            "property_definition_id": "00000000-0000-0000-0000-000000000009",
+        },
+    }));
+    assert!(refused.is_err());
+}
+
+#[test]
+fn an_infer_type_request_takes_camel_case_and_an_optional_entity_type() {
+    let entity: InferColumnTypeRequest = serde_json::from_value(serde_json::json!({
+        "dataType": "ENTITY",
+        "specificEntityType": "USER",
+        "baseVersion": 5,
+    }))
+    .unwrap();
+    assert_eq!(entity.data_type, DataType::Entity);
+    assert_eq!(
+        entity.specific_entity_type,
+        Some(models_properties::EntityType::User)
+    );
+    assert_eq!(entity.base_version, TableVersion(5));
+
+    let number: InferColumnTypeRequest = serde_json::from_value(serde_json::json!({
+        "dataType": "NUMBER",
+        "baseVersion": 5,
+    }))
+    .unwrap();
+    assert_eq!(number.data_type, DataType::Number);
+    assert_eq!(number.specific_entity_type, None);
+    assert_eq!(number.base_version, TableVersion(5));
 }
 
 #[test]
