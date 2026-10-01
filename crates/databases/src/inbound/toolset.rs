@@ -1,12 +1,5 @@
-//! Toolset inbound adapter for Macro Databases.
-//!
-//! A driving adapter like [`axum_router`](super::axum_router), but for the
-//! agent loop. It goes through the same [`DatabasesService`] port and the same
-//! access receipts, so a tool can reach exactly what the HTTP API can and
-//! nothing more. The SQL tools live in the `databases_sql` adapter.
-//!
-//! The tools are deliberately thin: mint a receipt, convert the request, call
-//! the service, render the answer. No policy, no persistence.
+//! Agent tools over the same [`DatabasesService`] port and receipts as the
+//! HTTP routes, so a tool reaches exactly what the API can.
 
 mod add_column;
 mod add_column_options;
@@ -297,11 +290,8 @@ pub(crate) fn column_of(
         })
 }
 
-/// Turn a schema/persistence error into something the model can act on.
-///
-/// `InvalidSchemaOperation` is passed through verbatim — it is the service
-/// explaining what was wrong with the request, which is exactly what lets a
-/// model correct itself and retry.
+/// Turn a service error into something the model can act on; a refused
+/// schema operation's reason passes through verbatim so the model can retry.
 pub(crate) fn database_error(error: DatabaseError) -> ToolCallError {
     let description = match &error {
         DatabaseError::NotFound => {

@@ -1,6 +1,5 @@
-//! Toolset tests: fake service + fake entity access, asserting that the
-//! receipts gate the schema operations and that errors reach the model in a
-//! form it can act on.
+//! Toolset tests over a fake service and entity access: receipts gate the
+//! schema operations and errors reach the model in a form it can act on.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

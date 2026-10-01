@@ -1,22 +1,5 @@
-//! Axum router for the databases endpoints.
-//!
-//! The surface is typed; SQL is not part of it (the browser runs the engine
-//! itself, agents run it through the `databases_sql` adapter):
-//!
-//! - `POST /queries`, `GET /queries/{query_id}` — saved, immutable queries
-//!   that document nodes point at.
-//! - `GET /` — list the caller's databases; `POST /` — create one.
-//! - `GET /{id}` — schema detail (tables, columns, definitions, SQL names).
-//! - `POST /{id}/ops` — typed, batched writes to the database's rows, column
-//!   types, options and views, applied together or not at all.
-//! - `GET /{id}/views/{view_id}/positions` — where a board's cards sit.
-//! - `POST /{id}/tables`, `POST /{id}/tables/{table_id}/columns`,
-//!   `POST /{id}/tables/{table_id}/columns/{column_id}/options` — schema
-//!   operations, which stay structured because property definitions carry
-//!   configuration DDL cannot express.
-//!
-//! Handlers are thin: extract identity/receipts, convert DTOs, call the
-//! service, map errors. No policy, no persistence.
+//! Axum router for the databases endpoints: typed reads, schema operations
+//! and batched ops; SQL runs in the browser engine or the `databases_sql` tools.
 
 /// Structured column type, ordering, and placement deletion endpoints.
 pub mod column_mutations;
