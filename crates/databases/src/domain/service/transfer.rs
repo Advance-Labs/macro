@@ -90,7 +90,7 @@ where
         for name in &request.columns {
             match self
                 .definitions
-                .create_typed_definition(database.id, name, DataType::String, false, None)
+                .create_typed_definition(database.id, name, DataType::String, false, None, &[])
                 .await
             {
                 Ok(definition) => definitions.push(definition.definition.id),

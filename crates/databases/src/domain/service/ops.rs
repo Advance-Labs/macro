@@ -677,7 +677,7 @@ impl Planner<'_> {
                             place.refuse("a tag option always has a colour; pick another instead")
                         );
                     }
-                    Some(color) => Some(color.map(|color| color.hex().to_string())),
+                    Some(color) => Some(*color),
                     None => None,
                 };
                 Ok(Write::UpdateOption {

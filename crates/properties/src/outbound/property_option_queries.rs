@@ -324,7 +324,7 @@ pub async fn patch_property_option(
     let (color_changes, new_color) = match color {
         ColorChange::Keep => (false, None),
         ColorChange::Clear => (true, None),
-        ColorChange::Set(color) => (true, Some(color)),
+        ColorChange::Set(color) => (true, Some(color.hex().to_string())),
     };
     let result = sqlx::query_as!(
         db::PropertyOption,

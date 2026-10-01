@@ -3,6 +3,7 @@
 mod apply_writes;
 
 use models_databases::position::{key_between, keys_between};
+use option_palette::OptionColor;
 
 use super::*;
 use apply_writes::apply_in_world;
@@ -744,38 +745,19 @@ impl CellStore for FakeCells {
 
 impl ColumnDefinitionStore for FakeDefinitions {
     type Error = FakeError;
-    async fn resolve_binding(
+    async fn bindable_definition(
         &self,
-        database_id: DatabaseId,
+        _database_id: DatabaseId,
         _viewer: &Viewer,
-        binding: &ColumnBinding,
+        id: PropertyDefinitionId,
     ) -> Result<Option<PropertyDefinitionId>, FakeError> {
-        match binding {
-            ColumnBinding::ExistingDefinition(id) => Ok(self
-                .0
-                .lock()
-                .unwrap()
-                .definitions
-                .contains_key(id)
-                .then_some(*id)),
-            ColumnBinding::NewDefinition {
-                name,
-                data_type,
-                is_multi_select,
-                // Options are attached through `add_options`, as in Postgres.
-                options: _,
-            } => {
-                let created = definition(
-                    name,
-                    *data_type,
-                    *is_multi_select,
-                    PropertyOwner::Database { database_id },
-                );
-                let id = created.definition.id;
-                self.0.lock().unwrap().definitions.insert(id, created);
-                Ok(Some(id))
-            }
-        }
+        Ok(self
+            .0
+            .lock()
+            .unwrap()
+            .definitions
+            .contains_key(&id)
+            .then_some(id))
     }
     async fn create_typed_definition(
         &self,
@@ -784,6 +766,7 @@ impl ColumnDefinitionStore for FakeDefinitions {
         data_type: DataType,
         is_multi_select: bool,
         specific_entity_type: Option<PropertyEntityType>,
+        options: &[PropertyOptionValue],
     ) -> Result<PropertyDefinitionWithOptions, FakeError> {
         let mut created = definition(
             name,
@@ -792,6 +775,19 @@ impl ColumnDefinitionStore for FakeDefinitions {
             PropertyOwner::Database { database_id },
         );
         created.definition.specific_entity_type = specific_entity_type;
+        created.property_options = options
+            .iter()
+            .enumerate()
+            .map(|(position, value)| PropertyOption {
+                id: Uuid::new_v4(),
+                property_definition_id: created.definition.id,
+                display_order: i32::try_from(position).unwrap(),
+                value: value.clone(),
+                color: Some(OptionColor::for_position(position).hex().to_string()),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            })
+            .collect();
         self.0
             .lock()
             .unwrap()
@@ -802,33 +798,6 @@ impl ColumnDefinitionStore for FakeDefinitions {
     async fn delete_unused_definition(&self, id: PropertyDefinitionId) -> Result<(), FakeError> {
         self.0.lock().unwrap().definitions.remove(&id);
         Ok(())
-    }
-    async fn add_options(
-        &self,
-        definition_id: PropertyDefinitionId,
-        values: &[PropertyOptionValue],
-    ) -> Result<Vec<PropertyOption>, FakeError> {
-        let mut world = self.0.lock().unwrap();
-        let extended = world.definitions.get_mut(&definition_id).ok_or(FakeError)?;
-        let mut display_order = extended
-            .property_options
-            .iter()
-            .map(|option| option.display_order)
-            .max()
-            .map_or(0, |highest| highest + 1);
-        for value in values {
-            extended.property_options.push(PropertyOption {
-                id: Uuid::new_v4(),
-                property_definition_id: definition_id,
-                display_order,
-                value: value.clone(),
-                color: None,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-            });
-            display_order += 1;
-        }
-        Ok(extended.property_options.clone())
     }
     async fn definitions(
         &self,

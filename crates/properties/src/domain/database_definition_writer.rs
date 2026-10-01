@@ -1,6 +1,7 @@
 //! Transactional composition for database-owned schema creation.
 
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
+use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::{DataType, EntityType};
 use uuid::Uuid;
 
@@ -16,8 +17,8 @@ pub struct NewDatabaseDefinition<'a> {
     pub is_multi_select: bool,
     /// Optional entity-reference restriction.
     pub specific_entity_type: Option<EntityType>,
-    /// Initial string-select labels in display order.
-    pub options: &'a [&'a str],
+    /// Initial options in display order, each coloured by its position.
+    pub options: &'a [PropertyOptionValue],
 }
 
 /// Lets a composition root create schema within an owning use case's transaction.

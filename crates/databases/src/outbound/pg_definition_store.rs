@@ -5,12 +5,15 @@
 mod test;
 
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
-use models_properties::service::property_option::{PropertyOption, PropertyOptionValue};
+use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::{DataType, EntityType};
-use option_palette::OptionColor;
+use properties::domain::database_definition_writer::{
+    DatabaseDefinitionWriter, NewDatabaseDefinition,
+};
 use properties::domain::ports::PropertiesRepo;
+use sqlx::{PgPool, Postgres, Transaction};
 
-use crate::domain::models::{ColumnBinding, DatabaseId, PropertyDefinitionId, Viewer};
+use crate::domain::models::{DatabaseId, PropertyDefinitionId, Viewer};
 use crate::domain::ports::ColumnDefinitionStore;
 
 /// Errors from the column-definition store.
@@ -19,56 +22,52 @@ pub enum PgDefinitionStoreError {
     /// Failure from the owning properties domain.
     #[error("properties error: {0}")]
     Properties(#[source] anyhow::Error),
+    /// The properties domain failed a write inside the store's transaction.
+    #[error("properties write failed: {0}")]
+    Write(#[source] Box<dyn std::error::Error + Send + Sync>),
+    /// The store's transaction failed.
+    #[error("database error")]
+    Sqlx(#[from] sqlx::Error),
 }
 
 /// [`ColumnDefinitionStore`] over the properties domain's repository, which
 /// owns `property_definitions` and `property_options`.
 #[derive(Debug, Clone)]
 pub struct PgDefinitionStore<Properties> {
+    pool: PgPool,
     properties: Properties,
 }
 
-impl<Properties: PropertiesRepo<Err = anyhow::Error>> PgDefinitionStore<Properties> {
-    /// Create a store over the owning properties domain port.
-    pub fn new(properties: Properties) -> Self {
-        Self { properties }
+impl<Properties> PgDefinitionStore<Properties> {
+    /// Create a store over the pool and the owning properties domain's ports.
+    pub fn new(pool: PgPool, properties: Properties) -> Self {
+        Self { pool, properties }
     }
 }
 
-impl<Properties: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore
-    for PgDefinitionStore<Properties>
+impl<Properties> ColumnDefinitionStore for PgDefinitionStore<Properties>
+where
+    Properties: PropertiesRepo<Err = anyhow::Error>
+        + DatabaseDefinitionWriter<Transaction = Transaction<'static, Postgres>>,
 {
     type Error = PgDefinitionStoreError;
 
-    #[tracing::instrument(skip(self, viewer, binding), err)]
-    async fn resolve_binding(
+    #[tracing::instrument(skip(self, viewer), err)]
+    async fn bindable_definition(
         &self,
         database_id: DatabaseId,
         viewer: &Viewer,
-        binding: &ColumnBinding,
+        id: PropertyDefinitionId,
     ) -> Result<Option<PropertyDefinitionId>, Self::Error> {
-        match binding {
-            // Options are attached separately, through
-            // [`ColumnDefinitionStore::add_options`], once the definition exists.
-            ColumnBinding::NewDefinition {
-                name,
-                data_type,
-                is_multi_select,
-                options: _,
-            } => self
-                .create_typed_definition(database_id, name, *data_type, *is_multi_select, None)
-                .await
-                .map(|created| Some(created.definition.id)),
-            ColumnBinding::ExistingDefinition(id) => Ok(self
-                .properties
-                .get_bindable_property_definition(*id, viewer.user_id.as_ref(), database_id)
-                .await
-                .map_err(PgDefinitionStoreError::Properties)?
-                .map(|definition| definition.id)),
-        }
+        Ok(self
+            .properties
+            .get_bindable_property_definition(id, viewer.user_id.as_ref(), database_id)
+            .await
+            .map_err(PgDefinitionStoreError::Properties)?
+            .map(|definition| definition.id))
     }
 
-    #[tracing::instrument(skip(self), err)]
+    #[tracing::instrument(skip(self, options), err)]
     async fn create_typed_definition(
         &self,
         database_id: DatabaseId,
@@ -76,22 +75,26 @@ impl<Properties: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore
         data_type: DataType,
         is_multi_select: bool,
         specific_entity_type: Option<EntityType>,
+        options: &[PropertyOptionValue],
     ) -> Result<PropertyDefinitionWithOptions, Self::Error> {
+        let mut transaction = self.pool.begin().await?;
         let definition = self
             .properties
-            .create_database_property_definition(
-                database_id,
-                name,
-                data_type,
-                is_multi_select,
-                specific_entity_type,
+            .create_database_definition_in(
+                &mut transaction,
+                NewDatabaseDefinition {
+                    database_id,
+                    name,
+                    data_type,
+                    is_multi_select,
+                    specific_entity_type,
+                    options,
+                },
             )
             .await
-            .map_err(PgDefinitionStoreError::Properties)?;
-        Ok(PropertyDefinitionWithOptions {
-            definition,
-            property_options: Vec::new(),
-        })
+            .map_err(|error| PgDefinitionStoreError::Write(Box::new(error)))?;
+        transaction.commit().await?;
+        Ok(definition)
     }
 
     #[tracing::instrument(skip(self), err)]
@@ -100,49 +103,6 @@ impl<Properties: PropertiesRepo<Err = anyhow::Error>> ColumnDefinitionStore
             .delete_property_definition(id)
             .await
             .map_err(PgDefinitionStoreError::Properties)
-    }
-
-    #[tracing::instrument(skip(self), err)]
-    async fn add_options(
-        &self,
-        definition_id: PropertyDefinitionId,
-        values: &[PropertyOptionValue],
-    ) -> Result<Vec<PropertyOption>, Self::Error> {
-        if values.is_empty() {
-            return Ok(Vec::new());
-        }
-        // New options go after the ones already there, so the order the user
-        // sees (and the labels the catalog derives from it) is stable.
-        let existing = self
-            .properties
-            .get_property_options(definition_id)
-            .await
-            .map_err(PgDefinitionStoreError::Properties)?;
-        let mut display_order = existing
-            .iter()
-            .map(|option| option.display_order)
-            .max()
-            .map_or(0, |highest| highest + 1);
-
-        let mut created = Vec::with_capacity(values.len());
-        for (index, value) in values.iter().enumerate() {
-            let color = OptionColor::for_position(existing.len() + index)
-                .hex()
-                .to_string();
-            created.push(
-                self.properties
-                    .create_property_option(
-                        definition_id,
-                        display_order,
-                        value.clone(),
-                        Some(color),
-                    )
-                    .await
-                    .map_err(PgDefinitionStoreError::Properties)?,
-            );
-            display_order += 1;
-        }
-        Ok(created)
     }
 
     #[tracing::instrument(skip(self, viewer), err)]

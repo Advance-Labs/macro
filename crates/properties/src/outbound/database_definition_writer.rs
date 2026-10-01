@@ -1,5 +1,4 @@
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
-use models_properties::service::property_option::PropertyOptionValue;
 use option_palette::OptionColor;
 use sqlx::{Postgres, Transaction};
 
@@ -28,14 +27,14 @@ impl DatabaseDefinitionWriter for PropertiesPgRepo {
         )
         .await?;
         let mut property_options = Vec::with_capacity(input.options.len());
-        for (position, label) in input.options.iter().enumerate() {
+        for (position, value) in input.options.iter().enumerate() {
             property_options.push(
                 property_option_queries::insert_property_option(
                     &mut **transaction,
                     macro_uuid::generate_uuid_v7(),
                     definition.id,
                     display_order(position)?,
-                    PropertyOptionValue::String((*label).to_owned()),
+                    value.clone(),
                     Some(OptionColor::for_position(position).hex().to_owned()),
                 )
                 .await?,

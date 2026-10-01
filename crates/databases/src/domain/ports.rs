@@ -9,14 +9,14 @@ use entity_access::domain::models::{
 };
 use macro_user_id::user_id::MacroUserIdStr;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
-use models_properties::service::property_option::{PropertyOption, PropertyOptionValue};
+use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::service::property_value::PropertyValue;
 
 use crate::domain::models::{
-    AddColumnOptions, Awareness, Column, ColumnBinding, ColumnDetail, ColumnId, CreateColumn,
-    CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId, FirstTable,
-    InferColumnType, InferColumnTypeOutcome, ListedDatabase, PropertyDefinitionId,
-    RenameColumnOutcome, RowId, RowRef, Table, TableId, TableMutationOutcome, TableVersion, Viewer,
+    AddColumnOptions, Awareness, Column, ColumnDetail, ColumnId, CreateColumn, CreateDatabase,
+    CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId, FirstTable, InferColumnType,
+    InferColumnTypeOutcome, ListedDatabase, PropertyDefinitionId, RenameColumnOutcome, RowId,
+    RowRef, Table, TableId, TableMutationOutcome, TableVersion, Viewer,
 };
 use crate::domain::models::{
     CardPosition, DatabaseView, NewOption, QueryDefinition, QueryId, SavedQuery, SavedQueryError,
@@ -285,17 +285,18 @@ pub trait ColumnDefinitionStore: Send + Sync + 'static {
     /// The error type returned by the store.
     type Error: std::error::Error + Send + Sync + 'static;
 
-    /// The definition a column binding names, checked against the viewer:
-    /// a new database-owned one, or the existing one when the viewer may bind
-    /// it. `None` when an existing definition is missing or not theirs to bind.
-    fn resolve_binding(
+    /// An existing definition the viewer may bind in `database_id`; `None`
+    /// when it is missing or not theirs to bind.
+    fn bindable_definition(
         &self,
         database_id: DatabaseId,
         viewer: &Viewer,
-        binding: &ColumnBinding,
+        id: PropertyDefinitionId,
     ) -> impl Future<Output = Result<Option<PropertyDefinitionId>, Self::Error>> + Send;
 
-    /// Create a definition owned by the database.
+    /// Create a definition owned by the database with its first options, in
+    /// display order, together. Each option takes the palette colour of its
+    /// position ([`option_palette::OptionColor::for_position`]).
     fn create_typed_definition(
         &self,
         database_id: DatabaseId,
@@ -303,6 +304,7 @@ pub trait ColumnDefinitionStore: Send + Sync + 'static {
         data_type: models_properties::DataType,
         is_multi_select: bool,
         specific_entity_type: Option<models_properties::EntityType>,
+        options: &[PropertyOptionValue],
     ) -> impl Future<Output = Result<PropertyDefinitionWithOptions, Self::Error>> + Send;
 
     /// Remove a definition that no column binds any more.
@@ -310,15 +312,6 @@ pub trait ColumnDefinitionStore: Send + Sync + 'static {
         &self,
         id: PropertyDefinitionId,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
-
-    /// Add options to a select definition, answering every option it has.
-    /// Each new option takes the palette colour of its position
-    /// ([`option_palette::OptionColor::for_position`]), so neighbouring options differ.
-    fn add_options(
-        &self,
-        definition_id: PropertyDefinitionId,
-        values: &[PropertyOptionValue],
-    ) -> impl Future<Output = Result<Vec<PropertyOption>, Self::Error>> + Send;
 
     /// Definitions by id, with their options.
     fn definitions(

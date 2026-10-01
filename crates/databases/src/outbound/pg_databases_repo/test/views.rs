@@ -111,7 +111,7 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
     let guests = guests(&pool).await;
     let rows = insert_statuses(&pool, &guests, &["Going", "Maybe", "Going"]).await;
     let service = service(&pool);
-    let options = PgDefinitionStore::new(PropertiesPgRepo::new(pool.clone()))
+    let options = PgDefinitionStore::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
         .definitions(&[guests.status_definition])
         .await
         .unwrap()

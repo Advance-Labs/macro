@@ -192,6 +192,7 @@ async fn a_new_database_starts_with_a_table_holding_a_text_title_column(pool: Pg
     assert!(!columns[0].infer_type);
     assert!(columns[0].config.is_none());
     let definitions = crate::outbound::pg_definition_store::PgDefinitionStore::new(
+        pool.clone(),
         PropertiesPgRepo::new(pool.clone()),
     )
     .definitions(&[columns[0].property_definition_id])

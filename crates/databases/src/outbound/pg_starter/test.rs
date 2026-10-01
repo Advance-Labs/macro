@@ -76,6 +76,7 @@ async fn concurrent_starter_requests_create_one_complete_editable_example(pool: 
     assert!(rows.iter().all(|row| cells[&row.id].len() == 2));
     let views = data.views_for_tables(&[table]).await.unwrap();
     let stages: Vec<_> = crate::outbound::pg_definition_store::PgDefinitionStore::new(
+        pool.clone(),
         PropertiesPgRepo::new(pool.clone()),
     )
     .definitions(&[columns[1].property_definition_id])
@@ -162,6 +163,7 @@ async fn the_starter_stages_are_coloured_in_palette_order(pool: PgPool) {
         .await
         .unwrap();
     let definitions = crate::outbound::pg_definition_store::PgDefinitionStore::new(
+        pool.clone(),
         PropertiesPgRepo::new(pool.clone()),
     )
     .definitions(&[columns[1].property_definition_id])

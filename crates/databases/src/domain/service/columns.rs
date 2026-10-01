@@ -153,7 +153,7 @@ where
         }
 
         let options = validate_option_labels(command.data_type, &converter.labels, &[])?;
-        let mut definition = self
+        let definition = self
             .definitions
             .create_typed_definition(
                 database.id,
@@ -161,19 +161,11 @@ where
                 command.data_type,
                 command.is_multi_select,
                 command.specific_entity_type,
+                &options,
             )
             .await
             .map_err(repository_error)?;
         let new_id = definition.definition.id;
-        if !options.is_empty() {
-            match self.definitions.add_options(new_id, &options).await {
-                Ok(options) => definition.property_options = options,
-                Err(error) => {
-                    self.delete_unused_definition(new_id).await;
-                    return Err(repository_error(error));
-                }
-            }
-        }
         let option_ids: HashMap<_, _> = catalog::option_labels(&definition)
             .into_iter()
             .map(|(id, label)| (label, id))
@@ -481,36 +473,34 @@ where
             return Err(DatabaseError::from(SchemaError::DefinitionAlreadyBound));
         }
 
-        let definition_id = self
-            .definitions
-            .resolve_binding(database.id, &viewer, &binding)
-            .await
-            .map_err(repository_error)?;
-        let definition_id = match (definition_id, &binding) {
-            (Some(definition_id), _) => definition_id,
-            (None, ColumnBinding::ExistingDefinition(id)) => {
-                return Err(DatabaseError::from(SchemaError::DefinitionNotFound(*id)));
+        let definition_id = match &binding {
+            ColumnBinding::NewDefinition {
+                name,
+                data_type,
+                is_multi_select,
+                ..
+            } => {
+                self.definitions
+                    .create_typed_definition(
+                        database.id,
+                        name,
+                        *data_type,
+                        *is_multi_select,
+                        None,
+                        &option_values,
+                    )
+                    .await
+                    .map_err(repository_error)?
+                    .definition
+                    .id
             }
-            (None, ColumnBinding::NewDefinition { .. }) => {
-                return Err(DatabaseError::Repo(
-                    rootcause::report!("the definition store did not create a new definition")
-                        .into_dynamic(),
-                ));
-            }
-        };
-        let created = matches!(binding, ColumnBinding::NewDefinition { .. });
-        if !option_values.is_empty()
-            && let Err(error) = self
+            ColumnBinding::ExistingDefinition(id) => self
                 .definitions
-                .add_options(definition_id, &option_values)
+                .bindable_definition(database.id, &viewer, *id)
                 .await
-        {
-            // Nothing binds the new definition yet, so it goes with the failure.
-            if created {
-                self.delete_unused_definition(definition_id).await;
-            }
-            return Err(repository_error(error));
-        }
+                .map_err(repository_error)?
+                .ok_or(DatabaseError::from(SchemaError::DefinitionNotFound(*id)))?,
+        };
         let command = CreateColumn { binding, ..command };
         let (column_id, version) = self
             .repository

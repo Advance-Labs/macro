@@ -6,6 +6,7 @@ mod test;
 use models_databases::position::{PositionError, keys_between};
 use models_properties::DataType;
 use models_properties::EntityReference;
+use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::service::property_value::PropertyValue;
 use properties::domain::database_cell_writer::DatabaseCellWriter;
 use properties::domain::database_definition_writer::{
@@ -138,6 +139,11 @@ where
             )
             .await
             .map_err(dependency)?;
+        let stage_options: Vec<PropertyOptionValue> = blueprint
+            .stages
+            .iter()
+            .map(|stage| PropertyOptionValue::String((*stage).to_string()))
+            .collect();
         let stage = self
             .properties
             .create_database_definition_in(
@@ -148,7 +154,7 @@ where
                     data_type: DataType::SelectString,
                     is_multi_select: false,
                     specific_entity_type: None,
-                    options: &blueprint.stages,
+                    options: &stage_options,
                 },
             )
             .await

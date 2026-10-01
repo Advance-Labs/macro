@@ -26,6 +26,13 @@ impl DatabaseCellWriter for PropertiesPgRepo {
         if options.is_empty() {
             return Ok(());
         }
+        // Two appends read the same last place without it.
+        sqlx::query_scalar!(
+            "SELECT id FROM property_definitions WHERE id = $1 FOR UPDATE",
+            property_definition_id
+        )
+        .fetch_optional(&mut **transaction)
+        .await?;
         let existing = property_option_queries::get_property_options(
             &mut **transaction,
             property_definition_id,

@@ -40,7 +40,7 @@ where
 {
     DatabasesServiceImpl::new(
         PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone())),
-        PgDefinitionStore::new(PropertiesPgRepo::new(pool.clone())),
+        PgDefinitionStore::new(pool.clone(), PropertiesPgRepo::new(pool.clone())),
         PgCellStore::new(pool.clone(), PropertiesPgRepo::new(pool)),
         events,
         EntityAccessDirectory::new(entity_access),

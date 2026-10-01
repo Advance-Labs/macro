@@ -5,6 +5,8 @@ use sqlx::PgPool;
 
 use uuid::Uuid;
 
+use properties::outbound::properties_pg_repo::PropertiesPgRepo;
+
 use super::*;
 use crate::domain::models::Viewer;
 
@@ -78,35 +80,22 @@ async fn insert_option(
     id
 }
 
-fn new_definition(name: &str, data_type: DataType) -> ColumnBinding {
-    ColumnBinding::NewDefinition {
-        name: name.to_string(),
-        data_type,
-        is_multi_select: false,
-        // Options are attached through `add_options`, never by the binding.
-        options: vec![],
-    }
+fn store(pool: &PgPool) -> PgDefinitionStore<PropertiesPgRepo> {
+    PgDefinitionStore::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn new_binding_creates_a_database_owned_definition(pool: PgPool) {
+async fn a_typed_definition_is_owned_by_the_database(pool: PgPool) {
     let database_id = insert_database(&pool).await;
-    let store = PgDefinitionStore::new(
-        properties::outbound::properties_pg_repo::PropertiesPgRepo::new(pool),
-    );
+    let store = store(&pool);
 
-    let definition_id = store
-        .resolve_binding(
-            database_id,
-            &viewer_for_tests(),
-            &new_definition("Headcount", DataType::Number),
-        )
+    let created = store
+        .create_typed_definition(database_id, "Headcount", DataType::Number, false, None, &[])
         .await
-        .expect("definition should be created")
-        .expect("a new definition always resolves");
+        .expect("definition should be created");
 
     let definitions = store
-        .definitions(&[definition_id])
+        .definitions(&[created.definition.id])
         .await
         .expect("definitions should be readable");
     let definition = &definitions
@@ -114,7 +103,6 @@ async fn new_binding_creates_a_database_owned_definition(pool: PgPool) {
         .expect("the created definition should come back")
         .definition;
 
-    assert_eq!(definition.id, definition_id);
     assert_eq!(definition.display_name, "Headcount");
     assert_eq!(definition.data_type, DataType::Number);
     assert!(!definition.is_multi_select);
@@ -122,101 +110,82 @@ async fn new_binding_creates_a_database_owned_definition(pool: PgPool) {
     // The whole point of the owner scope: the column is owned by the database,
     // so it never appears in the user's or a team's property list.
     assert_eq!(definition.owner, PropertyOwner::Database { database_id });
+    assert!(created.property_options.is_empty());
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn a_column_may_reuse_a_reserved_system_property_name(pool: PgPool) {
     let database_id = insert_database(&pool).await;
-    let store = PgDefinitionStore::new(
-        properties::outbound::properties_pg_repo::PropertiesPgRepo::new(pool),
-    );
 
     // "Status" is a seeded system property; the reserved-name trigger applies to
     // the shared namespace only.
-    store
-        .resolve_binding(
+    store(&pool)
+        .create_typed_definition(
             database_id,
-            &viewer_for_tests(),
-            &new_definition("Status", DataType::SelectString),
+            "Status",
+            DataType::SelectString,
+            false,
+            None,
+            &[],
         )
         .await
         .expect("a database column may be named Status");
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn existing_binding_returns_the_definition_id(pool: PgPool) {
+async fn an_existing_definition_of_the_database_is_bindable(pool: PgPool) {
     let database_id = insert_database(&pool).await;
-    let store = PgDefinitionStore::new(
-        properties::outbound::properties_pg_repo::PropertiesPgRepo::new(pool),
-    );
-
+    let store = store(&pool);
     let created = store
-        .resolve_binding(
-            database_id,
-            &viewer_for_tests(),
-            &new_definition("Owner", DataType::String),
-        )
+        .create_typed_definition(database_id, "Owner", DataType::String, false, None, &[])
         .await
-        .expect("definition should be created")
-        .expect("a new definition always resolves");
+        .expect("definition should be created");
 
-    let resolved = store
-        .resolve_binding(
-            database_id,
-            &viewer_for_tests(),
-            &ColumnBinding::ExistingDefinition(created),
-        )
+    let bindable = store
+        .bindable_definition(database_id, &viewer_for_tests(), created.definition.id)
         .await
         .expect("an existing definition should resolve");
 
-    assert_eq!(resolved, Some(created));
+    assert_eq!(bindable, Some(created.definition.id));
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn existing_binding_rejects_an_unknown_definition(pool: PgPool) {
+async fn an_unknown_definition_is_not_bindable(pool: PgPool) {
     let database_id = insert_database(&pool).await;
-    let store = PgDefinitionStore::new(
-        properties::outbound::properties_pg_repo::PropertiesPgRepo::new(pool),
-    );
     let missing = macro_uuid::generate_uuid_v7();
 
-    let resolved = store
-        .resolve_binding(
-            database_id,
-            &viewer_for_tests(),
-            &ColumnBinding::ExistingDefinition(missing),
-        )
+    let bindable = store(&pool)
+        .bindable_definition(database_id, &viewer_for_tests(), missing)
         .await
         .expect("an unknown definition is an answer, not a failure");
 
-    assert_eq!(resolved, None);
+    assert_eq!(bindable, None);
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn definitions_attaches_options_and_ignores_unknown_ids(pool: PgPool) {
     let database_id = insert_database(&pool).await;
-    let store = PgDefinitionStore::new(
-        properties::outbound::properties_pg_repo::PropertiesPgRepo::new(pool.clone()),
-    );
+    let store = store(&pool);
 
     let select_id = store
-        .resolve_binding(
+        .create_typed_definition(
             database_id,
-            &viewer_for_tests(),
-            &new_definition("Stage", DataType::SelectString),
+            "Stage",
+            DataType::SelectString,
+            false,
+            None,
+            &[],
         )
         .await
         .expect("definition should be created")
-        .expect("a new definition always resolves");
+        .definition
+        .id;
     let plain_id = store
-        .resolve_binding(
-            database_id,
-            &viewer_for_tests(),
-            &new_definition("Notes", DataType::String),
-        )
+        .create_typed_definition(database_id, "Notes", DataType::String, false, None, &[])
         .await
         .expect("definition should be created")
-        .expect("a new definition always resolves");
+        .definition
+        .id;
     insert_option(&pool, select_id, Some("Draft"), None).await;
     insert_option(&pool, select_id, Some("Sent"), None).await;
 
@@ -229,13 +198,13 @@ async fn definitions_attaches_options_and_ignores_unknown_ids(pool: PgPool) {
     assert_eq!(definitions.len(), 2);
     let select = definitions
         .iter()
-        .find(|d| d.definition.id == select_id)
+        .find(|definition| definition.definition.id == select_id)
         .expect("the select definition should come back");
     let mut values: Vec<&str> = select
         .property_options
         .iter()
         .map(|option| match &option.value {
-            PropertyOptionValue::String(s) => s.as_str(),
+            PropertyOptionValue::String(text) => text.as_str(),
             PropertyOptionValue::Number(_) => panic!("expected string options"),
         })
         .collect();
@@ -244,184 +213,106 @@ async fn definitions_attaches_options_and_ignores_unknown_ids(pool: PgPool) {
 
     let plain = definitions
         .iter()
-        .find(|d| d.definition.id == plain_id)
+        .find(|definition| definition.definition.id == plain_id)
         .expect("the plain definition should come back");
     assert!(plain.property_options.is_empty());
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn definitions_of_nothing_is_empty(pool: PgPool) {
-    let store = PgDefinitionStore::new(
-        properties::outbound::properties_pg_repo::PropertiesPgRepo::new(pool),
-    );
-
-    let definitions = store.definitions(&[]).await.expect("empty is not an error");
+    let definitions = store(&pool)
+        .definitions(&[])
+        .await
+        .expect("empty is not an error");
 
     assert!(definitions.is_empty());
 }
 
+/// First options come with the definition, in order, each coloured by its
+/// place so neighbours differ.
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn add_options_appends_to_the_definition(pool: PgPool) {
+async fn a_typed_definition_starts_with_its_options_in_order_and_colour(pool: PgPool) {
     let database_id = insert_database(&pool).await;
-    let store = PgDefinitionStore::new(
-        properties::outbound::properties_pg_repo::PropertiesPgRepo::new(pool),
-    );
-
-    let definition_id = store
-        .resolve_binding(
-            database_id,
-            &viewer_for_tests(),
-            &new_definition("Stage", DataType::SelectString),
-        )
-        .await
-        .expect("definition should be created")
-        .expect("a new definition always resolves");
+    let store = store(&pool);
 
     let created = store
-        .add_options(
-            definition_id,
+        .create_typed_definition(
+            database_id,
+            "Stage",
+            DataType::SelectString,
+            false,
+            None,
             &[
                 PropertyOptionValue::String("Draft".to_string()),
                 PropertyOptionValue::String("Sent".to_string()),
+                PropertyOptionValue::String("Signed".to_string()),
             ],
         )
         .await
-        .expect("options should be created");
-    assert_eq!(created.len(), 2);
-    assert_eq!(created[0].display_order, 0);
-    assert_eq!(created[1].display_order, 1);
-
-    // A second call appends rather than restarting the order, so the labels
-    // the catalog derives from it stay put.
-    let later = store
-        .add_options(
-            definition_id,
-            &[PropertyOptionValue::String("Signed".to_string())],
-        )
-        .await
-        .expect("options should be created");
-    assert_eq!(later[0].display_order, 2);
+        .expect("definition should be created");
 
     let definitions = store
-        .definitions(&[definition_id])
+        .definitions(&[created.definition.id])
         .await
         .expect("definitions should be readable");
-    let labels: Vec<String> = definitions[0]
+    let stored: Vec<(i32, PropertyOptionValue, Option<&str>)> = definitions[0]
         .property_options
         .iter()
-        .map(|option| match &option.value {
-            PropertyOptionValue::String(s) => s.clone(),
-            PropertyOptionValue::Number(_) => panic!("expected string options"),
+        .map(|option| {
+            (
+                option.display_order,
+                option.value.clone(),
+                option.color.as_deref(),
+            )
         })
         .collect();
-    assert_eq!(labels, ["Draft", "Sent", "Signed"]);
-}
-
-/// Options take the palette by position, so neighbours differ and a later
-/// call continues the cycle instead of restarting it.
-#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn add_options_colours_each_new_option_after_the_ones_already_there(pool: PgPool) {
-    let database_id = insert_database(&pool).await;
-    let store = PgDefinitionStore::new(
-        properties::outbound::properties_pg_repo::PropertiesPgRepo::new(pool),
-    );
-    let definition_id = store
-        .resolve_binding(
-            database_id,
-            &viewer_for_tests(),
-            &new_definition("Stage", DataType::SelectString),
-        )
-        .await
-        .expect("definition should be created")
-        .expect("a new definition always resolves");
-
-    let created = store
-        .add_options(
-            definition_id,
-            &[
+    assert_eq!(
+        stored,
+        [
+            (
+                0,
                 PropertyOptionValue::String("Draft".to_string()),
+                Some("#0091FF")
+            ),
+            (
+                1,
                 PropertyOptionValue::String("Sent".to_string()),
-            ],
-        )
-        .await
-        .expect("options should be created");
-    let later = store
-        .add_options(
-            definition_id,
-            &[PropertyOptionValue::String("Signed".to_string())],
-        )
-        .await
-        .expect("options should be created");
-
-    assert_eq!(created[0].color.as_deref(), Some("#0091FF"));
-    assert_eq!(created[1].color.as_deref(), Some("#46A758"));
-    assert_eq!(later[0].color.as_deref(), Some("#8E4EC6"));
-    let definitions = store
-        .definitions(&[definition_id])
-        .await
-        .expect("definitions should be readable");
-    let stored: Vec<Option<&str>> = definitions[0]
-        .property_options
-        .iter()
-        .map(|option| option.color.as_deref())
-        .collect();
-    assert_eq!(stored, [Some("#0091FF"), Some("#46A758"), Some("#8E4EC6")]);
+                Some("#46A758")
+            ),
+            (
+                2,
+                PropertyOptionValue::String("Signed".to_string()),
+                Some("#8E4EC6")
+            ),
+        ]
+    );
 }
 
 /// A numeric select stores its options as numbers, which is what makes the
 /// catalog render `2` rather than `"2"` in the compiled CHECK.
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn add_options_stores_numbers_for_a_numeric_select(pool: PgPool) {
+async fn a_numeric_select_starts_with_numbers(pool: PgPool) {
     let database_id = insert_database(&pool).await;
-    let store = PgDefinitionStore::new(
-        properties::outbound::properties_pg_repo::PropertiesPgRepo::new(pool),
-    );
+    let store = store(&pool);
 
-    let definition_id = store
-        .resolve_binding(
+    let created = store
+        .create_typed_definition(
             database_id,
-            &viewer_for_tests(),
-            &new_definition("Priority", DataType::SelectNumber),
+            "Priority",
+            DataType::SelectNumber,
+            false,
+            None,
+            &[PropertyOptionValue::Number(2.0)],
         )
         .await
-        .expect("definition should be created")
-        .expect("a new definition always resolves");
-
-    store
-        .add_options(definition_id, &[PropertyOptionValue::Number(2.0)])
-        .await
-        .expect("options should be created");
+        .expect("definition should be created");
 
     let definitions = store
-        .definitions(&[definition_id])
+        .definitions(&[created.definition.id])
         .await
         .expect("definitions should be readable");
     assert_eq!(
         definitions[0].property_options[0].value,
         PropertyOptionValue::Number(2.0)
     );
-}
-
-#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn add_options_of_nothing_writes_nothing(pool: PgPool) {
-    let database_id = insert_database(&pool).await;
-    let store = PgDefinitionStore::new(
-        properties::outbound::properties_pg_repo::PropertiesPgRepo::new(pool),
-    );
-    let definition_id = store
-        .resolve_binding(
-            database_id,
-            &viewer_for_tests(),
-            &new_definition("Stage", DataType::SelectString),
-        )
-        .await
-        .expect("definition should be created")
-        .expect("a new definition always resolves");
-
-    let created = store
-        .add_options(definition_id, &[])
-        .await
-        .expect("empty is not an error");
-
-    assert!(created.is_empty());
 }

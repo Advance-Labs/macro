@@ -62,11 +62,15 @@ async fn relabelling_an_option_keeps_every_cell_that_holds_it() {
     assert_eq!(
         options(&seeded.world, status),
         vec![
-            (going, PropertyOptionValue::String("Attending".into()), None),
+            (
+                going,
+                PropertyOptionValue::String("Attending".into()),
+                Some("#0091FF".into())
+            ),
             (
                 declined,
                 PropertyOptionValue::String("Declined".into()),
-                None
+                Some("#46A758".into())
             ),
         ]
     );
@@ -480,7 +484,7 @@ async fn removing_an_option_empties_single_select_cells_and_trims_multi_select_o
         vec![(
             declined,
             PropertyOptionValue::String("Declined".into()),
-            None
+            Some("#46A758".into())
         )]
     );
     assert_eq!(cell(&seeded.world, seeded.row_id, status), None);
@@ -568,11 +572,15 @@ async fn a_later_op_sees_the_options_an_earlier_one_changed() {
     assert_eq!(
         options(&seeded.world, status),
         vec![
-            (going, PropertyOptionValue::String("Attending".into()), None),
+            (
+                going,
+                PropertyOptionValue::String("Attending".into()),
+                Some("#0091FF".into())
+            ),
             (
                 declined,
                 PropertyOptionValue::String("Declined".into()),
-                None
+                Some("#46A758".into())
             ),
         ]
     );

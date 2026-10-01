@@ -23,7 +23,7 @@ use uuid::Uuid;
 
 use crate::domain::models::{
     ChangeColumnType, ColumnBinding, ColumnConfig, CreateColumn, CreateDatabase, CreateTable,
-    DatabaseError, DatabaseId, OpRefusal, TableVersion, Viewer,
+    DatabaseError, DatabaseId, NewOption, OpRefusal, TableVersion, Viewer,
 };
 use crate::domain::ports::{CellStore, ColumnDefinitionStore, DatabasesRepo, DatabasesService};
 use crate::outbound::gateway_event_publisher::NoOpTableEventPublisher;
@@ -215,7 +215,7 @@ async fn ops_insert_update_and_delete_rows_bumping_the_table_once_per_request(po
     );
     let (sam, alex, robin) = (inserted[0], inserted[1], inserted[2]);
 
-    let going = PgDefinitionStore::new(PropertiesPgRepo::new(pool.clone()))
+    let going = PgDefinitionStore::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
         .definitions(&[guests.status_definition])
         .await
         .unwrap()[0]
@@ -319,7 +319,7 @@ async fn ops_insert_update_and_delete_rows_bumping_the_table_once_per_request(po
 async fn a_new_label_becomes_a_palette_coloured_option_and_an_unknown_one_is_refused(pool: PgPool) {
     let guests = guests(&pool).await;
     let service = service(&pool);
-    let definitions = PgDefinitionStore::new(PropertiesPgRepo::new(pool.clone()));
+    let definitions = PgDefinitionStore::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
 
     let refused = service
         .apply_ops(
@@ -437,7 +437,7 @@ async fn a_refused_op_leaves_nothing_of_its_batch_behind(pool: PgPool) {
             .unwrap()
             .is_empty()
     );
-    let options = PgDefinitionStore::new(PropertiesPgRepo::new(pool.clone()))
+    let options = PgDefinitionStore::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
         .definitions(&[guests.status_definition])
         .await
         .unwrap()
@@ -750,7 +750,7 @@ async fn a_type_change_through_ops_converts_like_change_column_type(pool: PgPool
 async fn an_option_is_relabelled_and_recoloured_in_place(pool: PgPool) {
     let guests = guests(&pool).await;
     let service = service(&pool);
-    let definitions = PgDefinitionStore::new(PropertiesPgRepo::new(pool.clone()));
+    let definitions = PgDefinitionStore::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
     let going = definitions
         .definitions(&[guests.status_definition])
         .await
@@ -826,7 +826,7 @@ async fn a_removed_option_leaves_its_cells_empty_and_the_others_alone(pool: PgPo
     let [OpResult::RowsWritten { inserted, .. }] = inserted.as_slice() else {
         panic!("expected one insert, got {inserted:?}");
     };
-    let definitions = PgDefinitionStore::new(PropertiesPgRepo::new(pool.clone()));
+    let definitions = PgDefinitionStore::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
     let options = definitions
         .definitions(&[guests.status_definition])
         .await
@@ -914,10 +914,74 @@ async fn a_shared_property_is_editable_by_its_owner_alone(pool: PgPool) {
         .await
         .unwrap();
 
-    let editable = PgDefinitionStore::new(properties)
+    let editable = PgDefinitionStore::new(pool.clone(), properties)
         .editable_definitions(&viewer(), &[mine.id, theirs.id])
         .await
         .unwrap();
 
     assert_eq!(editable, vec![mine.id]);
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn appended_options_follow_the_existing_ones_in_place_and_colour(pool: PgPool) {
+    let guests = guests(&pool).await;
+    let before = version(&pool, guests.table_id).await;
+    let maybe = macro_uuid::generate_uuid_v7();
+    let declined = macro_uuid::generate_uuid_v7();
+
+    let after = cells(&pool)
+        .add_options(
+            guests.table_id,
+            &[
+                NewOption {
+                    definition_id: guests.status_definition,
+                    id: maybe,
+                    value: PropertyOptionValue::String("Maybe".into()),
+                },
+                NewOption {
+                    definition_id: guests.status_definition,
+                    id: declined,
+                    value: PropertyOptionValue::String("Declined".into()),
+                },
+            ],
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(after, Some(TableVersion(before.0 + 1)));
+    let options = &PgDefinitionStore::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
+        .definitions(&[guests.status_definition])
+        .await
+        .unwrap()[0]
+        .property_options;
+    let stored: Vec<(i32, PropertyOptionValue, Option<&str>)> = options
+        .iter()
+        .map(|option| {
+            (
+                option.display_order,
+                option.value.clone(),
+                option.color.as_deref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        stored,
+        [
+            (
+                0,
+                PropertyOptionValue::String("Going".into()),
+                Some("#0091FF")
+            ),
+            (
+                1,
+                PropertyOptionValue::String("Maybe".into()),
+                Some("#46A758")
+            ),
+            (
+                2,
+                PropertyOptionValue::String("Declined".into()),
+                Some("#8E4EC6")
+            ),
+        ]
+    );
 }

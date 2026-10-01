@@ -56,6 +56,7 @@ where
                         command.data_type,
                         false,
                         command.specific_entity_type,
+                        &[],
                     )
                     .await
                     .map_err(repository_error)?,
