@@ -7,10 +7,6 @@ export type AlteredColumn = {
   column: string;
   /**  The type it became, as SQL spells it. */
   to: string;
-  /**  Cells `USING NULL` emptied. */
-  clearedCells: number;
-  /**  Cells that kept only their first of several values. */
-  trimmedCells: number;
 };
 
 /**  What a request is answered with. */
@@ -362,11 +358,6 @@ export type DatabaseOp =
        *  start empty.
        */
       rows: CellWrite[][];
-      /**
-       *  Create a select option for a label the column does not have yet,
-       *  instead of refusing the op.
-       */
-      createMissingOptions?: boolean;
     }
   /**
    *  Write cells of existing rows. Last write wins: there is no version
@@ -378,11 +369,6 @@ export type DatabaseOp =
       table: TableId;
       /**  Which rows get which cells. */
       changes: RowChanges;
-      /**
-       *  Create a select option for a label the column does not have yet,
-       *  instead of refusing the op.
-       */
-      createMissingOptions?: boolean;
     }
   /**  Remove rows and their cells. */
   | {
@@ -394,7 +380,9 @@ export type DatabaseOp =
     }
   /**
    *  Convert a column to another type, converting its cells. A value that
-   *  does not fit refuses the change unless `clearInvalid` empties it.
+   *  does not fit refuses the change, counting and quoting the misfits: a
+   *  type change never empties a cell. To keep the original, create a
+   *  column of the new type and write it the values that convert.
    */
   | {
       kind: 'change_column_type';
@@ -404,12 +392,6 @@ export type DatabaseOp =
       column: ColumnId;
       /**  The type it becomes. */
       to: OpColumnKind;
-      /**
-       *  Empty the cells whose value does not fit, instead of refusing; a
-       *  cell with several values going to a single-valued type keeps its
-       *  first.
-       */
-      clearInvalid?: boolean;
     }
   /**
    *  Relabel or recolour one option of a select or tag column. Every cell
@@ -1020,10 +1002,6 @@ export type OpResult =
       kind: 'column_typed';
       /**  The table's version after the change. */
       tableVersion: TableVersion;
-      /**  Cells emptied because their value did not fit the new type. */
-      clearedCells: number;
-      /**  Cells that held several values and kept only their first. */
-      trimmedCells: number;
     }
   /**  What an option change or removal did. */
   | {
@@ -1106,7 +1084,7 @@ export type OptionRef =
   | ({ id: OptionId } & { label?: never })
   /**
    *  An option's label, matched without regard to case. An unknown label
-   *  is refused unless the op creates missing options.
+   *  is refused.
    */
   | ({ label: string } & { id?: never });
 

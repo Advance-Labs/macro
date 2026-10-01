@@ -86,10 +86,8 @@
     {
       "results": [
         {
-          "clearedCells": 0,
           "kind": "column_typed",
-          "tableVersion": 11,
-          "trimmedCells": 0
+          "tableVersion": 11
         }
       ],
       "step": {
@@ -97,7 +95,6 @@
         "id": 0,
         "ops": [
           {
-            "clearInvalid": false,
             "column": "01990000-0000-7000-8000-00000000b002",
             "kind": "change_column_type",
             "table": "01990000-0000-7000-8000-00000000d001",
@@ -112,11 +109,9 @@
   ],
   "outcome": {
     "alteredColumn": {
-      "clearedCells": 0,
       "column": "01990000-0000-7000-8000-00000000c002",
       "table": "01990000-0000-7000-8000-00000000d001",
-      "to": "text",
-      "trimmedCells": 0
+      "to": "text"
     },
     "changesApplied": 0,
     "columns": [],

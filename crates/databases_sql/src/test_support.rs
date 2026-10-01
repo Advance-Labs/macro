@@ -11,9 +11,9 @@ use chrono::{DateTime, Utc};
 use contacts::domain::models::messages::ContactsNodes;
 use contacts::domain::ports::ContactsService;
 use databases::domain::models::{
-    Awareness, ColumnCast, ColumnId, CreateDatabase, Database, DatabaseDetail, DatabaseError,
-    DatabaseId, InferColumnType, InferColumnTypeOutcome, ListedDatabase, OpBatch, QueryDefinition,
-    QueryId, SavedQuery, SavedQueryError, TableId, Viewer,
+    Awareness, ColumnCast, ColumnConversion, ColumnId, CreateDatabase, Database, DatabaseDetail,
+    DatabaseError, DatabaseId, InferColumnType, InferColumnTypeOutcome, ListedDatabase, OpBatch,
+    QueryDefinition, QueryId, SavedQuery, SavedQueryError, TableId, Viewer,
 };
 use databases::domain::ports::DatabasesService;
 use entity_access::domain::models::{
@@ -244,6 +244,15 @@ impl DatabasesService for FakeDatabases {
         _: ColumnId,
     ) -> Result<Vec<ColumnCast>, DatabaseError> {
         unimplemented!("SQL never previews a type change")
+    }
+    async fn column_conversion(
+        &self,
+        _: EntityAccessReceipt<ViewAccessLevel>,
+        _: TableId,
+        _: ColumnId,
+        _: models_databases::ColumnKind,
+    ) -> Result<ColumnConversion, DatabaseError> {
+        unimplemented!("SQL never converts a column into another")
     }
     async fn share_awareness(
         &self,

@@ -224,7 +224,6 @@
                 }
               ]
             },
-            "createMissingOptions": false,
             "kind": "update_rows",
             "table": "01990000-0000-7000-8000-00000000d001"
           }

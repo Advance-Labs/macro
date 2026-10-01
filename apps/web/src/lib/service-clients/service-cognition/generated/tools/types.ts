@@ -1013,14 +1013,6 @@ export type SqlStatement =
        * The type it became, as SQL spells it, e.g. `select[]`.
        */
       to: string;
-      /**
-       * Cells `USING NULL` emptied because their value did not fit.
-       */
-      clearedCells: number;
-      /**
-       * Cells that held several values and kept only their first.
-       */
-      trimmedCells: number;
       kind: 'alterColumnType';
     };
 /**
@@ -2399,10 +2391,6 @@ export interface ChangeColumnType {
    * Id of a table of this database to relate to; makes the column a relation holding row ids. Requires dataType entity.
    */
   linkToTableId?: string | null;
-  /**
-   * Empty the values that cannot become the new type instead of refusing the change; a cell with several values keeps its first. Defaults to false. The response says how many cells were changed.
-   */
-  clearInvalid?: boolean;
 }
 /**
  * Response from the ChangeColumnType tool.
@@ -2420,15 +2408,6 @@ export interface ChangeColumnTypeResponse {
    * The changed column's id, unchanged by the conversion.
    */
   columnId: string;
-  /**
-   * Cells emptied because their value did not fit, with `clearInvalid`.
-   */
-  clearedCells: number;
-  /**
-   * Cells that held several values and kept only their first, with
-   * `clearInvalid`.
-   */
-  trimmedCells: number;
   /**
    * The database's schema after the change.
    */

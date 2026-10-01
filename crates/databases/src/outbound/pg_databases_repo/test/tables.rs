@@ -87,7 +87,6 @@ async fn a_deleted_database_is_not_found_rather_than_a_name_conflict_or_storage_
             .apply_writes(&Writes {
                 database_id: table.database_id,
                 created_by: user(),
-                options: Vec::new(),
                 writes: vec![write],
                 related_rows: Vec::new(),
                 expected_versions: Vec::new(),
@@ -136,7 +135,6 @@ async fn deleting_a_table_takes_its_rows_and_columns_but_never_the_last_table(po
                         }],
                         vec![],
                     ],
-                    create_missing_options: false,
                 },
             ]
             .into(),

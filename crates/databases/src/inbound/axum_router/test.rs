@@ -70,7 +70,6 @@ fn an_ops_body_reads_every_op_kind() {
                 "kind": "insert_rows",
                 "table": table,
                 "rows": [[{"column": column, "value": {"type": "text", "value": "Sam"}}]],
-                "createMissingOptions": true,
             },
             {
                 "kind": "update_rows",
@@ -95,7 +94,6 @@ fn an_ops_body_reads_every_op_kind() {
                 "table": table,
                 "column": column,
                 "to": {"type": "number"},
-                "clearInvalid": true,
             },
         ],
     }))
@@ -112,7 +110,6 @@ fn an_ops_body_reads_every_op_kind() {
                     column: ColumnId::from_uuid(column),
                     value: CellValue::Text("Sam".into()),
                 }]],
-                create_missing_options: true,
             },
             DatabaseOp::UpdateRows {
                 table: TableId::from_uuid(table),
@@ -123,7 +120,6 @@ fn an_ops_body_reads_every_op_kind() {
                         value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
                     }],
                 },
-                create_missing_options: false,
             },
             DatabaseOp::UpdateRows {
                 table: TableId::from_uuid(table),
@@ -136,7 +132,6 @@ fn an_ops_body_reads_every_op_kind() {
                         }],
                     }],
                 },
-                create_missing_options: false,
             },
             DatabaseOp::DeleteRows {
                 table: TableId::from_uuid(table),
@@ -146,7 +141,6 @@ fn an_ops_body_reads_every_op_kind() {
                 table: TableId::from_uuid(table),
                 column: ColumnId::from_uuid(column),
                 to: ColumnKind::Number,
-                clear_invalid: true,
             },
         ]
     );
@@ -656,7 +650,6 @@ async fn a_schema_batch_reaches_the_service_with_its_base_versions() {
                         target: EntityKind::User,
                         multi: true,
                     },
-                    clear_invalid: false,
                 },
                 DatabaseOp::DeleteColumn {
                     table: guests,
@@ -837,5 +830,76 @@ async fn the_schema_routes_are_gone() {
     assert_eq!(
         send(Method::POST, format!("/{database}/ops")).await,
         StatusCode::OK
+    );
+}
+
+#[tokio::test]
+async fn a_conversion_request_reaches_the_service_and_answers_the_converted_cells() {
+    use axum::body::Body;
+    use axum::http::{Request, header};
+    use entity_access::domain::models::AccessLevel;
+    use models_databases::{CellValue, ColumnKind};
+    use tower::ServiceExt;
+
+    use crate::domain::models::{ColumnConversion, ConvertedCell};
+
+    let database = Uuid::from_u128(0x0dbb);
+    let table = Uuid::from_u128(0x7ab1);
+    let column = Uuid::from_u128(0xc01a);
+    let one = Uuid::from_u128(0x5a11);
+    let two = Uuid::from_u128(0x5a12);
+    let (router, service) = fakes::conversion_router(AccessLevel::View);
+    *service.conversion.lock().unwrap() = Some(ColumnConversion {
+        table_version: TableVersion(7),
+        options: vec![],
+        cells: vec![
+            ConvertedCell {
+                row: RowId::from_uuid(one),
+                value: CellValue::Number(1.0),
+            },
+            ConvertedCell {
+                row: RowId::from_uuid(two),
+                value: CellValue::Number(2.0),
+            },
+        ],
+        misfits: 1,
+    });
+
+    let response = router
+        .oneshot(
+            Request::post(format!(
+                "/{database}/tables/{table}/columns/{column}/conversion"
+            ))
+            .header(header::AUTHORIZATION, "Bearer valid")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(r#"{"to": {"type": "number"}}"#))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&bytes).unwrap(),
+        serde_json::json!({
+            "tableVersion": 7,
+            "options": [],
+            "cells": [
+                {"row": one, "value": {"type": "number", "value": 1.0}},
+                {"row": two, "value": {"type": "number", "value": 2.0}},
+            ],
+            "misfits": 1,
+        })
+    );
+    assert_eq!(
+        *service.conversions.lock().unwrap(),
+        vec![(
+            TableId::from_uuid(table),
+            ColumnId::from_uuid(column),
+            ColumnKind::Number
+        )]
     );
 }

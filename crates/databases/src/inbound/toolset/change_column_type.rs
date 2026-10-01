@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
 use std::collections::HashMap;
 
-use models_databases::{ColumnId, DatabaseId, DatabaseOp, NewOption, OpResult, OptionId, TableId};
+use models_databases::{ColumnId, DatabaseId, DatabaseOp, NewOption, OptionId, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -86,14 +86,6 @@ pub struct ChangeColumnType {
     )]
     #[serde(default)]
     pub link_to_table_id: Option<TableId>,
-    /// Empty what does not fit instead of refusing.
-    #[schemars(
-        description = "Empty the values that cannot become the new type instead of refusing \
-                       the change; a cell with several values keeps its first. Defaults to \
-                       false. The response says how many cells were changed."
-    )]
-    #[serde(default)]
-    pub clear_invalid: bool,
 }
 
 impl ToolAnnotated for ChangeColumnType {
@@ -110,11 +102,6 @@ pub struct ChangeColumnTypeResponse {
     pub table_id: TableId,
     /// The changed column's id, unchanged by the conversion.
     pub column_id: ColumnId,
-    /// Cells emptied because their value did not fit, with `clearInvalid`.
-    pub cleared_cells: usize,
-    /// Cells that held several values and kept only their first, with
-    /// `clearInvalid`.
-    pub trimmed_cells: usize,
     /// The database's schema after the change.
     pub database: Option<ToolDatabaseSchema>,
     /// Follow-up guidance if part of the change or the schema refresh failed.
@@ -165,7 +152,6 @@ where
             table: self.table_id,
             column: self.column_id,
             to,
-            clear_invalid: self.clear_invalid,
         }];
         if let Some(labels) = self.options.as_ref().filter(|labels| !labels.is_empty()) {
             ops.push(DatabaseOp::AddOptions {
@@ -180,7 +166,7 @@ where
                     .collect(),
             });
         }
-        let results = service_context
+        service_context
             .apply(
                 user_id,
                 self.database_id,
@@ -190,15 +176,6 @@ where
                 },
             )
             .await?;
-        let (cleared_cells, trimmed_cells) = match results.first() {
-            Some(OpResult::ColumnTyped {
-                cleared_cells,
-                trimmed_cells,
-                ..
-            }) => (*cleared_cells as usize, *trimmed_cells as usize),
-            _ => (0, 0),
-        };
-
         let SchemaAfterWrite { database, warning } = service_context
             .schema_after_write(user_id, self.database_id)
             .await;
@@ -206,8 +183,6 @@ where
             database_id: self.database_id,
             table_id: self.table_id,
             column_id: self.column_id,
-            cleared_cells,
-            trimmed_cells,
             database,
             warning,
         })

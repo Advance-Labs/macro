@@ -27,13 +27,14 @@ import { useOptionEditing } from '../context/option-editing';
 import {
   columnSchemaMessage,
   type DatabaseColumnCastsSource,
+  type DatabaseColumnConversion,
   type DatabaseColumnTypeChange,
   type DatabaseSchemaChange,
 } from '../core/column-schema';
 import { type DatabaseViewColumn, isOptionColumn } from '../core/database-view';
 import {
   ColumnTypeMenu,
-  type DatabaseColumnClearingChoice,
+  type DatabaseColumnConversionChoice,
 } from './column-type-menu';
 import { createInlineRename } from './inline-rename';
 import { OptionEditor } from './option-editor';
@@ -47,6 +48,11 @@ export type DatabaseColumnHeaderProps = {
     columnId: string,
     change: DatabaseColumnTypeChange
   ) => DatabaseSchemaChange;
+  /** Add a column of another type beside this one, with the values that convert. */
+  onConvert?: (
+    columnId: string,
+    conversion: DatabaseColumnConversion
+  ) => DatabaseSchemaChange<string>;
   onDelete?: (columnId: string) => DatabaseSchemaChange;
   relationTables?: { id: string; name: string }[];
   /** The type menu's dry run; without it every type is offered as is. */
@@ -76,7 +82,8 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
   const [operating, setOperating] = createSignal(false);
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [deleteOpen, setDeleteOpen] = createSignal(false);
-  const [clearing, setClearing] = createSignal<DatabaseColumnClearingChoice>();
+  const [converting, setConverting] =
+    createSignal<DatabaseColumnConversionChoice>();
   const [optionsOpen, setOptionsOpen] = createSignal(false);
   /** The options open once the menu has closed, instead of the menu giving focus back. */
   let optionsRequested = false;
@@ -130,6 +137,20 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
     if (!mounted) return;
     setOperating(false);
     if (changed.isErr()) setError(columnSchemaMessage(changed.error));
+  }
+  async function convert(choice: DatabaseColumnConversionChoice) {
+    if (!canRename() || !props.onConvert || pending()) return;
+    setError('');
+    setOperating(true);
+    const converted = await props.onConvert(props.column.id, {
+      to: choice.to,
+      label: choice.label,
+      columnName: props.column.name,
+    });
+    if (!mounted) return;
+    setOperating(false);
+    setConverting(undefined);
+    if (converted.isErr()) setError(columnSchemaMessage(converted.error));
   }
   async function remove() {
     if (!canRename() || !props.onDelete || pending()) return;
@@ -388,11 +409,14 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
                                   props.columnCasts?.(props.column.id, open)
                                 }
                                 onChange={(change) => void changeType(change)}
-                                onConfirmClearing={(choice) => {
-                                  setMenuOpen(false);
-                                  setError('');
-                                  setClearing(choice);
-                                }}
+                                onConvertToNewColumn={
+                                  props.onConvert &&
+                                  ((choice) => {
+                                    setMenuOpen(false);
+                                    setError('');
+                                    setConverting(choice);
+                                  })
+                                }
                               />
                             </Show>
                           </Dropdown.Group>
@@ -538,28 +562,27 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
         )}
       </Show>
       <ConfirmDialog
-        open={!!clearing()}
+        open={!!converting()}
         onOpenChange={(open) => {
-          if (!open) setClearing(undefined);
+          if (!open) setConverting(undefined);
         }}
         pending={pending()}
-        tone="danger"
-        title={`Convert “${props.column.name}” to ${clearing()?.label ?? ''}?`}
-        confirmLabel={clearingLabel(clearing()?.cast.failures ?? 0)}
+        title={`Convert “${props.column.name}” into a new column?`}
+        confirmLabel="Convert into a new column"
         onConfirm={() => {
-          const choice = clearing();
-          if (!choice) return;
-          setClearing(undefined);
-          void changeType({ ...choice.change, clearInvalid: true });
+          const choice = converting();
+          if (choice) void convert(choice);
         }}
         body={
           <>
             <p>
-              {clearing()?.cast.summary}. Converting anyway empties what doesn't
-              fit; a cell with several values keeps its first.
+              {misfits(converting()?.cast.failures ?? 0)} {converting()?.label}.
+              A new {converting()?.label} column will be added next to this one
+              with the values that convert; “{props.column.name}” stays as it
+              is.
             </p>
             <ul class="mt-2 list-disc pl-5">
-              <For each={clearing()?.cast.examples}>
+              <For each={converting()?.cast.examples}>
                 {(example) => <li>{example}</li>}
               </For>
             </ul>
@@ -595,6 +618,8 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
   );
 }
 
-function clearingLabel(failures: number): string {
-  return `Convert anyway, clearing ${failures} ${failures === 1 ? 'value' : 'values'}`;
+function misfits(failures: number): string {
+  return failures === 1
+    ? "1 value doesn't fit"
+    : `${failures} values don't fit`;
 }

@@ -967,15 +967,14 @@ fn alter_column_type_names_the_table_column_and_type() {
             },
             column: Identifier("amount".into()),
             to: OpColumnKind::Text,
-            clear_invalid: false,
         })
     );
 }
 
 #[test]
-fn using_null_clears_what_does_not_fit_and_column_is_optional() {
+fn the_column_keyword_is_optional() {
     assert_eq!(
-        parse("alter table deals alter \"closed at\" type select[] using null;").unwrap(),
+        parse("alter table deals alter \"closed at\" type select[];").unwrap(),
         Statement::AlterColumnType(AlterColumnType {
             table: TableName {
                 database: None,
@@ -983,8 +982,16 @@ fn using_null_clears_what_does_not_fit_and_column_is_optional() {
             },
             column: Identifier("closed at".into()),
             to: OpColumnKind::Select { multi: true },
-            clear_invalid: true,
         })
+    );
+}
+
+#[test]
+fn using_null_is_not_part_of_alter_column() {
+    let error = parse("ALTER TABLE deals ALTER COLUMN amount TYPE number USING NULL").unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "expected end of statement, found \"USING\" at byte 50"
     );
 }
 
@@ -1002,7 +1009,6 @@ fn an_entity_type_names_its_kind_and_takes_brackets_for_several() {
                 target: EntityKind::User,
                 multi: true,
             },
-            clear_invalid: false,
         })
     );
     assert_eq!(
@@ -1014,7 +1020,6 @@ fn an_entity_type_names_its_kind_and_takes_brackets_for_several() {
             },
             column: Identifier("column".into()),
             to: OpColumnKind::SelectNumber { multi: false },
-            clear_invalid: false,
         })
     );
 }
@@ -1058,12 +1063,6 @@ fn a_bad_alter_says_what_would_have_been_accepted() {
             49..61,
             "a relation to another table's rows is made with the ChangeColumnType tool's \
              linkToTableId, not ALTER COLUMN"
-                .into(),
-        ),
-        (
-            "ALTER TABLE deals ALTER COLUMN amount TYPE text USING 'x'",
-            54..57,
-            "expected NULL after USING (USING NULL empties the values that do not fit), found 'x'"
                 .into(),
         ),
         (

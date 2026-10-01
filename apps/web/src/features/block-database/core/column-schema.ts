@@ -78,11 +78,35 @@ export type DatabaseColumnKind =
 /** A type change the server validates against every stored value. */
 export type DatabaseColumnTypeChange = {
   to: DatabaseColumnKind;
-  /** Empty the values that do not fit instead of refusing. */
-  clearInvalid?: boolean;
   /** The table version the type menu's dry run read. */
   baseVersion?: number;
 };
+
+/** A type some values do not fit, written to a new column beside the original instead. */
+export type DatabaseColumnConversion = {
+  to: DatabaseColumnKind;
+  /** The type's name in the menu, e.g. `Number`, or a related table's name. */
+  label: string;
+  /** The original column's name, as the menu showed it. */
+  columnName: string;
+};
+
+/**
+ * The name of the column a conversion adds: the original's, then the type,
+ * numbered from 2 while the table has it, ignoring case and spaces around.
+ */
+export function convertedColumnName(
+  name: string,
+  label: string,
+  takenNames: readonly string[]
+): string {
+  const taken = new Set(takenNames.map((taken) => taken.trim().toLowerCase()));
+  const base = `${name} (${label})`;
+  let candidate = base;
+  for (let suffix = 2; taken.has(candidate.trim().toLowerCase()); suffix++)
+    candidate = `${base} ${suffix}`;
+  return candidate;
+}
 
 /** What changing a column to one type would do to its values. */
 export type DatabaseColumnCast =

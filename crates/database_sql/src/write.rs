@@ -28,7 +28,7 @@ pub(crate) enum Sent {
     },
 }
 
-/// `INSERT`: every row in one op. Labels name options; none is created.
+/// `INSERT`: every row in one op. Labels name options the column has.
 pub(crate) fn insert(catalog: &Catalog, query: &InsertQuery) -> DatabaseOp {
     let table = table(catalog, query.table);
     DatabaseOp::InsertRows {
@@ -49,7 +49,6 @@ pub(crate) fn insert(catalog: &Catalog, query: &InsertQuery) -> DatabaseOp {
                     .collect()
             })
             .collect(),
-        create_missing_options: false,
     }
 }
 
@@ -117,7 +116,6 @@ pub(crate) fn update(
     Some(DatabaseOp::UpdateRows {
         table: query.table,
         changes,
-        create_missing_options: false,
     })
 }
 
@@ -135,7 +133,6 @@ pub(crate) fn alter(catalog: &Catalog, query: &AlterColumnTypeQuery) -> Database
         table: query.table,
         column: column(table(catalog, query.table), query.column).placement,
         to: query.to,
-        clear_invalid: query.clear_invalid,
     }
 }
 
@@ -157,20 +154,11 @@ pub(crate) fn outcome(sent: &Sent, results: &[OpResult]) -> Result<Outcome, RunE
             changes_applied: *affected,
             ..Outcome::default()
         }),
-        (
-            Sent::Column { table, column, to },
-            OpResult::ColumnTyped {
-                cleared_cells,
-                trimmed_cells,
-                ..
-            },
-        ) => Ok(Outcome {
+        (Sent::Column { table, column, to }, OpResult::ColumnTyped { .. }) => Ok(Outcome {
             altered_column: Some(AlteredColumn {
                 table: *table,
                 column: *column,
                 to: to.to_string(),
-                cleared_cells: *cleared_cells as usize,
-                trimmed_cells: *trimmed_cells as usize,
             }),
             ..Outcome::default()
         }),

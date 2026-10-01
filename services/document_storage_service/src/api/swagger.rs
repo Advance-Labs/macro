@@ -453,6 +453,7 @@ use utoipa::OpenApi;
         databases::inbound::axum_router::saved_queries::save_query_handler,
         databases::inbound::axum_router::saved_queries::get_query_handler,
         databases::inbound::axum_router::casts::column_casts_handler,
+        databases::inbound::axum_router::casts::column_conversion_handler,
         databases::inbound::axum_router::infer_column_type_handler,
         // collab surfaces
         collab_surface::inbound::axum_router::ensure_surface_handler,

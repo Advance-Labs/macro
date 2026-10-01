@@ -64,7 +64,6 @@ async fn linked() -> Linked {
                     column: title,
                     value: CellValue::Text("Keynote".into()),
                 }]],
-                create_missing_options: false,
             }]),
         )
         .await
@@ -120,7 +119,6 @@ async fn a_relation_write_moves_only_the_table_holding_the_cell() {
                         value: CellValue::Rows(vec![keynote_row]),
                     }],
                 },
-                create_missing_options: false,
             }]),
         )
         .await
@@ -174,7 +172,6 @@ async fn changing_a_linked_columns_type_requires_clearing_its_relations_first() 
                     value: CellValue::Rows(vec![keynote_row]),
                 }],
             },
-            create_missing_options: false,
         }]),
     )
     .await
@@ -191,7 +188,6 @@ async fn changing_a_linked_columns_type_requires_clearing_its_relations_first() 
                     table: table_id,
                     column: relation_column.id,
                     to: ColumnKind::Text,
-                    clear_invalid: false,
                 }],
                 base_versions: HashMap::from([(table_id, before)]),
             },

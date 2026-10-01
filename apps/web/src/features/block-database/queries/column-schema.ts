@@ -19,7 +19,7 @@ type ColumnMutation =
   | { kind: 'order'; columnIds: string[] };
 
 /** The op's spelling of a kind; a relation's rows live in this database. */
-function opColumnKind(
+export function opColumnKind(
   databaseId: string,
   kind: DatabaseColumnKind
 ): OpColumnKind {
@@ -46,7 +46,6 @@ export function updateDatabaseColumns(params: {
       table,
       column: columnId,
       to: opColumnKind(params.databaseId, change.to),
-      clearInvalid: change.clearInvalid ?? false,
     }))
     .with({ kind: 'delete' }, ({ columnId }) => ({
       kind: 'delete_column',

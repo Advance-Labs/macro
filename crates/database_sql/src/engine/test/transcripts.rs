@@ -389,7 +389,6 @@ fn an_insert_of_two_rows_is_one_op() {
                         },
                     ],
                 ],
-                create_missing_options: false,
             }],
         })
     );
@@ -430,7 +429,6 @@ fn an_update_with_literal_values_sets_the_same_cells_on_every_matching_row() {
                         },
                     ],
                 },
-                create_missing_options: false,
             }],
         })
     );
@@ -498,7 +496,6 @@ fn an_update_that_copies_a_column_gives_each_row_its_own_cells() {
                         },
                     ],
                 },
-                create_missing_options: false,
             }],
         })
     );
@@ -539,8 +536,6 @@ fn an_alter_column_is_one_type_change_op() {
         "ALTER TABLE crm.deals ALTER COLUMN amount TYPE text",
         vec![Feed::Results(vec![OpResult::ColumnTyped {
             table_version: TableVersion(11),
-            cleared_cells: 0,
-            trimmed_cells: 0,
         }])],
     );
 
@@ -553,7 +548,6 @@ fn an_alter_column_is_one_type_change_op() {
                 table: DEALS,
                 column: AMOUNT_COLUMN,
                 to: ColumnType::Text,
-                clear_invalid: false,
             }],
         })
     );

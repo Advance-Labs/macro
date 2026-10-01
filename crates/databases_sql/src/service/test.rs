@@ -509,7 +509,6 @@ async fn a_write_is_applied_under_an_edit_receipt_for_its_database() {
                         value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
                     }],
                 },
-                create_missing_options: false,
             }],
         }]
     );
@@ -787,8 +786,6 @@ async fn an_alter_column_reports_the_column_it_changed() {
         .op_answers
         .push_back(Ok(vec![OpResult::ColumnTyped {
             table_version: TableVersion(2),
-            cleared_cells: 1,
-            trimmed_cells: 0,
         }]));
     let outcome = sql(&world)
         .execute(
@@ -810,8 +807,6 @@ async fn an_alter_column_reports_the_column_it_changed() {
             column_id: STATUS_COLUMN,
             column_name: "Status".into(),
             to: "text".into(),
-            cleared_cells: 1,
-            trimmed_cells: 0,
         }
     );
 }

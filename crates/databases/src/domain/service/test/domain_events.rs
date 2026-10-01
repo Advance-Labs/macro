@@ -45,7 +45,6 @@ async fn lifecycle_and_writes_publish_domain_events() {
                     value: CellValue::Options(vec![OptionRef::Label("Declined".into())]),
                 }],
             },
-            create_missing_options: false,
         }]),
     )
     .await
@@ -150,7 +149,6 @@ async fn an_agent_is_attributed_as_acting_for_the_user() {
                     value: CellValue::Options(vec![OptionRef::Label("Declined".into())]),
                 }],
             },
-            create_missing_options: false,
         }]),
     )
     .await

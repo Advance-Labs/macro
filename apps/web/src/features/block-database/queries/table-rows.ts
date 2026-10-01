@@ -30,11 +30,12 @@ import {
 } from 'neverthrow';
 import { type Accessor, createMemo, createSignal, untrack } from 'solid-js';
 import { match, P } from 'ts-pattern';
+import { v7 as uuidv7 } from 'uuid';
 import type {
   DatabaseRowsSource,
   DatabaseWriteResult,
 } from '../context/table-source';
-import { mutationOp } from '../core/cell-ops';
+import { missingOptionLabels, mutationOp } from '../core/cell-ops';
 import {
   type DatabaseColumnType,
   inferDatabaseNumber,
@@ -322,6 +323,15 @@ export function createDatabaseRowsSource(props: {
     return column?.writable ? ok(column) : err({ kind: 'read-only-column' });
   }
 
+  function optionLabelsOf(table: TableDetail, columnId: string): string[] {
+    const column = table.columns.find(
+      (column) => column.column.id === columnId
+    );
+    return (column?.definition.property_options ?? []).map((option) =>
+      String(option.value.value)
+    );
+  }
+
   /** The base a new column's type is settled against, past the settlements this writer made from it. */
   function latestInferenceBase(
     inferenceBaseVersion: number | undefined
@@ -453,21 +463,29 @@ export function createDatabaseRowsSource(props: {
     // Read the refreshed cache directly; Solid props may notify after fetchQuery resolves.
     const table = currentTable();
     if (!table) return err(TABLE_UNAVAILABLE);
-    const op = mutationOp(
-      tableId,
-      prepared.value,
-      (columnId) => columnForWrite(table, columnId),
-      createOptions
+    const op = mutationOp(tableId, prepared.value, (columnId) =>
+      columnForWrite(table, columnId)
     );
     if (op.isErr()) return err(op.error);
-    const applied = await props.applyOps([op.value]);
+    // A label the column lacks becomes an option in the same batch, ahead of the write.
+    const newOptions: DatabaseOp[] = createOptions
+      ? missingOptionLabels(op.value, (columnId) =>
+          optionLabelsOf(table, columnId)
+        ).map(({ column, labels }) => ({
+          kind: 'add_options',
+          table: tableId,
+          column,
+          options: labels.map((label) => ({ id: uuidv7(), label })),
+        }))
+      : [];
+    const applied = await props.applyOps([...newOptions, op.value]);
     if (applied.isErr())
       return err(
         mutation.kind === 'create' && !isDefiniteRefusal(applied.error)
           ? { kind: 'outcome-unknown' }
           : { kind: 'ops', error: applied.error }
       );
-    const [written] = applied.value;
+    const written = applied.value.at(-1);
     if (written?.kind !== 'rows_written')
       return err({ kind: 'unexpected-result' });
     props.applyVersions({ [tableId]: written.tableVersion });

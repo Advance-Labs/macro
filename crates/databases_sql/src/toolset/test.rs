@@ -338,7 +338,6 @@ async fn a_write_runs_as_the_agent_for_the_user_and_guards_its_base_versions() {
                         value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
                     }],
                 },
-                create_missing_options: false,
             }],
         }]
     );
@@ -560,8 +559,6 @@ async fn every_statement_kind_names_what_it_wrote() {
         }]),
         Ok(vec![OpResult::ColumnTyped {
             table_version: TableVersion(5),
-            cleared_cells: 0,
-            trimmed_cells: 2,
         }]),
     ]);
     let statement = async |statement: &str| {
@@ -621,10 +618,8 @@ async fn every_statement_kind_names_what_it_wrote() {
                 "columnId": STATUS_COLUMN,
                 "columnName": "Status",
                 "to": "select[]",
-                "clearedCells": 0,
-                "trimmedCells": 2,
             }),
-            "Changed \"Status\" to select[]. Kept only the first value of 2 cells.".into()
+            "Changed \"Status\" to select[].".into()
         )
     );
 }

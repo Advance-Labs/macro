@@ -1,17 +1,18 @@
 use super::*;
-use crate::domain::models::CastVerdict;
+use crate::domain::models::{CastVerdict, ColumnConversion, ConvertedCell};
+use models_databases::{EntityKind, EntityRef, RowChange};
+use models_properties::shared::EntityReference;
 
 fn version(world: &Shared) -> TableVersion {
     world.lock().unwrap().tables[0].version
 }
 
-fn retype(seeded: &Seeded, column: ColumnId, to: ColumnKind, clear_invalid: bool) -> OpBatch {
+fn retype(seeded: &Seeded, column: ColumnId, to: ColumnKind) -> OpBatch {
     OpBatch {
         ops: vec![DatabaseOp::ChangeColumnType {
             table: seeded.table_id,
             column,
             to,
-            clear_invalid,
         }],
         base_versions: HashMap::from([(seeded.table_id, version(&seeded.world))]),
     }
@@ -26,7 +27,7 @@ async fn a_never_cast_is_refused_with_its_reason_before_touching_data() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            retype(&seeded, seeded.plus_ones_column.id, ColumnKind::Date, false),
+            retype(&seeded, seeded.plus_ones_column.id, ColumnKind::Date),
         )
         .await
         .unwrap_err();
@@ -51,7 +52,7 @@ async fn a_failed_checked_cast_counts_the_misfits_and_quotes_three() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            retype(&seeded, seeded.name_column.id, ColumnKind::Number, false),
+            retype(&seeded, seeded.name_column.id, ColumnKind::Number),
         )
         .await
         .unwrap_err();
@@ -62,7 +63,7 @@ async fn a_failed_checked_cast_counts_the_misfits_and_quotes_three() {
     assert_eq!(
         refusal.reason,
         "4 values in \"Name\" aren't numbers: 'Sam', 'TBD', 'n/a'. \
-         Fix them, or convert with clearing to empty them."
+         Fix them, or add a column of the new type for the values that convert."
     );
     let w = seeded.world.lock().unwrap();
     assert_eq!(w.definitions.len(), 3);
@@ -88,7 +89,7 @@ async fn a_checked_cast_whose_values_all_fit_converts_them() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            retype(&seeded, seeded.name_column.id, ColumnKind::Number, false),
+            retype(&seeded, seeded.name_column.id, ColumnKind::Number),
         )
         .await
         .unwrap();
@@ -97,8 +98,6 @@ async fn a_checked_cast_whose_values_all_fit_converts_them() {
         outcome,
         vec![OpResult::ColumnTyped {
             table_version: TableVersion(before.0 + 1),
-            cleared_cells: 0,
-            trimmed_cells: 0,
         }]
     );
     let w = seeded.world.lock().unwrap();
@@ -118,47 +117,46 @@ async fn a_checked_cast_whose_values_all_fit_converts_them() {
 }
 
 #[tokio::test]
-async fn clearing_empties_the_values_that_do_not_fit_and_counts_them() {
+async fn a_number_cast_with_a_value_that_is_not_a_number_is_refused_and_keeps_the_cells() {
     let seeded = seeded().await;
     let rows = insert_names(&seeded, &["7", "soon"]).await;
+    let (cells_before, columns_before, definitions_before) = {
+        let w = seeded.world.lock().unwrap();
+        (w.cells.clone(), w.columns.clone(), w.definitions.len())
+    };
+    let before = version(&seeded.world);
 
-    let outcome = seeded
+    let error = seeded
         .service
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            retype(&seeded, seeded.name_column.id, ColumnKind::Number, true),
+            retype(&seeded, seeded.name_column.id, ColumnKind::Number),
         )
         .await
-        .unwrap();
+        .unwrap_err();
 
-    assert!(
-        matches!(
-            outcome.as_slice(),
-            [OpResult::ColumnTyped {
-                cleared_cells: 2,
-                trimmed_cells: 0,
-                ..
-            }]
-        ),
-        "{outcome:?}"
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
+    assert_eq!(
+        refusal.reason,
+        "2 values in \"Name\" aren't numbers: 'Sam', 'soon'. \
+         Fix them, or add a column of the new type for the values that convert."
     );
     let w = seeded.world.lock().unwrap();
-    let column = w
-        .columns
-        .iter()
-        .find(|column| column.id == seeded.name_column.id)
-        .unwrap();
     assert_eq!(
-        w.cells[&rows[0]][&column.property_definition_id],
-        PropertyValue::Num(7.0)
+        w.cells[&rows[1]][&seeded.name_column.property_definition_id],
+        PropertyValue::Str("soon".into())
     );
-    assert!(!w.cells[&rows[1]].contains_key(&column.property_definition_id));
-    assert!(!w.cells[&seeded.row_id].contains_key(&column.property_definition_id));
+    assert_eq!(w.cells, cells_before);
+    assert_eq!(w.columns, columns_before);
+    assert_eq!(w.definitions.len(), definitions_before);
+    assert_eq!(w.tables[0].version, before);
 }
 
 #[tokio::test]
-async fn clearing_a_cell_with_several_values_keeps_its_first() {
+async fn a_cell_with_two_options_refuses_a_single_select_and_keeps_both() {
     let seeded = seeded().await;
     let svc = &seeded.service;
     let tags = ColumnId::new();
@@ -203,48 +201,31 @@ async fn clearing_a_cell_with_several_values_keeps_its_first() {
                     ]),
                 }],
             },
-            create_missing_options: false,
         }]),
     )
     .await
     .unwrap();
+    let (cells_before, columns_before, definitions_before) = {
+        let w = seeded.world.lock().unwrap();
+        (w.cells.clone(), w.columns.clone(), w.definitions.len())
+    };
 
     let error = svc
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            retype(&seeded, tags, ColumnKind::Select { multi: false }, false),
+            retype(&seeded, tags, ColumnKind::Select { multi: false }),
         )
         .await
         .unwrap_err();
+
     let DatabaseError::InvalidOp(refusal) = error else {
         panic!("expected a refused op, got {error:?}");
     };
     assert_eq!(
         refusal.reason,
         "1 cell in \"Diet\" has more than one value: 'Vegan, Nut-free'. \
-         Fix it, or convert with clearing to keep only its first value."
-    );
-
-    let outcome = svc
-        .apply_ops(
-            edit(seeded.database_id),
-            viewer(OWNER),
-            retype(&seeded, tags, ColumnKind::Select { multi: false }, true),
-        )
-        .await
-        .unwrap();
-
-    assert!(
-        matches!(
-            outcome.as_slice(),
-            [OpResult::ColumnTyped {
-                cleared_cells: 0,
-                trimmed_cells: 1,
-                ..
-            }]
-        ),
-        "{outcome:?}"
+         Fix it, or add a column of the new type for the values that convert."
     );
     let diet = seeded
         .world
@@ -256,10 +237,202 @@ async fn clearing_a_cell_with_several_values_keeps_its_first() {
         .unwrap()
         .property_definition_id;
     let vegan = option_id(&seeded.world, diet, "Vegan");
+    let nut_free = option_id(&seeded.world, diet, "Nut-free");
     assert_eq!(
         cell(&seeded.world, seeded.row_id, diet),
-        Some(PropertyValue::SelectOption(vec![vegan.into_uuid()]))
+        Some(PropertyValue::SelectOption(vec![
+            vegan.into_uuid(),
+            nut_free.into_uuid()
+        ]))
     );
+    let w = seeded.world.lock().unwrap();
+    assert!(w.definitions[&diet].definition.is_multi_select);
+    assert_eq!(w.cells, cells_before);
+    assert_eq!(w.columns, columns_before);
+    assert_eq!(w.definitions.len(), definitions_before);
+}
+
+#[tokio::test]
+async fn a_date_cast_with_a_value_that_is_not_a_date_is_refused_and_keeps_the_cells() {
+    let seeded = seeded().await;
+    let rows = insert_names(&seeded, &["2026-09-30", "next week"]).await;
+    let (cells_before, columns_before, definitions_before) = {
+        let w = seeded.world.lock().unwrap();
+        (w.cells.clone(), w.columns.clone(), w.definitions.len())
+    };
+    let before = version(&seeded.world);
+
+    let error = seeded
+        .service
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            retype(&seeded, seeded.name_column.id, ColumnKind::Date),
+        )
+        .await
+        .unwrap_err();
+
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
+    assert_eq!(
+        refusal.reason,
+        "2 values in \"Name\" aren't dates: 'Sam', 'next week'. \
+         Fix them, or add a column of the new type for the values that convert."
+    );
+    let w = seeded.world.lock().unwrap();
+    assert_eq!(
+        w.cells[&rows[0]][&seeded.name_column.property_definition_id],
+        PropertyValue::Str("2026-09-30".into())
+    );
+    assert_eq!(w.cells, cells_before);
+    assert_eq!(w.columns, columns_before);
+    assert_eq!(w.definitions.len(), definitions_before);
+    assert_eq!(w.tables[0].version, before);
+}
+
+#[tokio::test]
+async fn a_link_cast_with_a_value_that_is_not_a_url_is_refused_and_keeps_the_cells() {
+    let seeded = seeded().await;
+    let rows = insert_names(&seeded, &["https://macro.com", "macro dot com"]).await;
+    let (cells_before, columns_before, definitions_before) = {
+        let w = seeded.world.lock().unwrap();
+        (w.cells.clone(), w.columns.clone(), w.definitions.len())
+    };
+    let before = version(&seeded.world);
+
+    let error = seeded
+        .service
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            retype(&seeded, seeded.name_column.id, ColumnKind::Link),
+        )
+        .await
+        .unwrap_err();
+
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
+    assert_eq!(
+        refusal.reason,
+        "2 values in \"Name\" aren't complete URLs: 'Sam', 'macro dot com'. \
+         Fix them, or add a column of the new type for the values that convert."
+    );
+    let w = seeded.world.lock().unwrap();
+    assert_eq!(
+        w.cells[&rows[0]][&seeded.name_column.property_definition_id],
+        PropertyValue::Str("https://macro.com".into())
+    );
+    assert_eq!(w.cells, cells_before);
+    assert_eq!(w.columns, columns_before);
+    assert_eq!(w.definitions.len(), definitions_before);
+    assert_eq!(w.tables[0].version, before);
+}
+
+#[tokio::test]
+async fn a_cell_with_two_references_refuses_a_single_reference_and_keeps_both() {
+    let seeded = seeded().await;
+    let svc = &seeded.service;
+    let hosts = ColumnId::new();
+    svc.apply_ops(
+        edit(seeded.database_id),
+        viewer(OWNER),
+        OpBatch::from(vec![
+            DatabaseOp::CreateColumn {
+                table: seeded.table_id,
+                id: hosts,
+                definition: NewColumn::New {
+                    name: "Hosts".into(),
+                    kind: ColumnKind::Entity {
+                        target: EntityKind::User,
+                        multi: true,
+                    },
+                    options: vec![],
+                    infer_type: false,
+                },
+                after: None,
+            },
+            DatabaseOp::UpdateRows {
+                table: seeded.table_id,
+                changes: RowChanges::Uniform {
+                    rows: vec![seeded.row_id],
+                    cells: vec![CellWrite {
+                        column: hosts,
+                        value: CellValue::Entities(vec![
+                            EntityRef {
+                                entity_type: EntityKind::User,
+                                entity_id: "macro|ana@macro.com".into(),
+                            },
+                            EntityRef {
+                                entity_type: EntityKind::User,
+                                entity_id: "macro|ben@macro.com".into(),
+                            },
+                        ]),
+                    }],
+                },
+            },
+        ]),
+    )
+    .await
+    .unwrap();
+    let (cells_before, columns_before, definitions_before) = {
+        let w = seeded.world.lock().unwrap();
+        (w.cells.clone(), w.columns.clone(), w.definitions.len())
+    };
+    let before = version(&seeded.world);
+
+    let error = svc
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            retype(
+                &seeded,
+                hosts,
+                ColumnKind::Entity {
+                    target: EntityKind::User,
+                    multi: false,
+                },
+            ),
+        )
+        .await
+        .unwrap_err();
+
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
+    assert_eq!(
+        refusal.reason,
+        "1 cell in \"Hosts\" has more than one value: \
+         'macro|ana@macro.com, macro|ben@macro.com'. \
+         Fix it, or add a column of the new type for the values that convert."
+    );
+    let w = seeded.world.lock().unwrap();
+    let definition = w
+        .columns
+        .iter()
+        .find(|column| column.id == hosts)
+        .unwrap()
+        .property_definition_id;
+    assert_eq!(
+        w.cells[&seeded.row_id][&definition],
+        PropertyValue::EntityRef(vec![
+            EntityReference {
+                entity_id: "macro|ana@macro.com".into(),
+                entity_type: PropertyEntityType::User,
+                specific_message_id: None,
+            },
+            EntityReference {
+                entity_id: "macro|ben@macro.com".into(),
+                entity_type: PropertyEntityType::User,
+                specific_message_id: None,
+            },
+        ])
+    );
+    assert_eq!(w.cells, cells_before);
+    assert_eq!(w.columns, columns_before);
+    assert_eq!(w.definitions.len(), definitions_before);
+    assert_eq!(w.tables[0].version, before);
 }
 
 #[tokio::test]
@@ -302,7 +475,6 @@ async fn a_date_becomes_its_calendar_day_as_text_unless_it_has_a_time() {
                         value: CellValue::Date(afternoon),
                     }],
                 ],
-                create_missing_options: false,
             }]),
         )
         .await
@@ -314,7 +486,7 @@ async fn a_date_becomes_its_calendar_day_as_text_unless_it_has_a_time() {
     svc.apply_ops(
         edit(seeded.database_id),
         viewer(OWNER),
-        retype(&seeded, arrives, ColumnKind::Text, false),
+        retype(&seeded, arrives, ColumnKind::Text),
     )
     .await
     .unwrap();
@@ -344,12 +516,7 @@ async fn changing_a_column_to_its_own_type_changes_nothing() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            retype(
-                &seeded,
-                seeded.plus_ones_column.id,
-                ColumnKind::Number,
-                false,
-            ),
+            retype(&seeded, seeded.plus_ones_column.id, ColumnKind::Number),
         )
         .await
         .unwrap();
@@ -358,8 +525,6 @@ async fn changing_a_column_to_its_own_type_changes_nothing() {
         outcome,
         vec![OpResult::ColumnTyped {
             table_version: before,
-            cleared_cells: 0,
-            trimmed_cells: 0,
         }]
     );
     let w = seeded.world.lock().unwrap();
@@ -476,5 +641,341 @@ async fn the_dry_run_answers_every_menu_target_for_a_viewer() {
                 "Only an empty column can become a relation: existing values aren't rows."
             ),
         ]
+    );
+}
+
+#[tokio::test]
+async fn a_text_column_converts_into_a_new_number_column_beside_it() {
+    let seeded = seeded().await;
+    let svc = &seeded.service;
+    let size = ColumnId::new();
+    svc.apply_ops(
+        edit(seeded.database_id),
+        viewer(OWNER),
+        OpBatch::from(vec![DatabaseOp::CreateColumn {
+            table: seeded.table_id,
+            id: size,
+            definition: NewColumn::New {
+                name: "Party size".into(),
+                kind: ColumnKind::Text,
+                options: vec![],
+                infer_type: false,
+            },
+            after: None,
+        }]),
+    )
+    .await
+    .unwrap();
+    let inserted = svc
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::InsertRows {
+                table: seeded.table_id,
+                rows: vec![
+                    vec![CellWrite {
+                        column: size,
+                        value: CellValue::Text("1".into()),
+                    }],
+                    vec![CellWrite {
+                        column: size,
+                        value: CellValue::Text("2".into()),
+                    }],
+                    vec![CellWrite {
+                        column: size,
+                        value: CellValue::Text("soon".into()),
+                    }],
+                ],
+            }]),
+        )
+        .await
+        .unwrap();
+    let [OpResult::RowsWritten { inserted: rows, .. }] = inserted.as_slice() else {
+        panic!("expected one insert, got {inserted:?}");
+    };
+    let size_definition = seeded
+        .world
+        .lock()
+        .unwrap()
+        .columns
+        .iter()
+        .find(|column| column.id == size)
+        .unwrap()
+        .property_definition_id;
+    let original_cells = |world: &Shared| -> HashMap<RowId, PropertyValue> {
+        world
+            .lock()
+            .unwrap()
+            .cells
+            .iter()
+            .filter_map(|(row, cells)| Some((*row, cells.get(&size_definition)?.clone())))
+            .collect()
+    };
+    let before = original_cells(&seeded.world);
+
+    let conversion = svc
+        .column_conversion(
+            receipt(seeded.database_id, VIEWER, AccessLevel::View),
+            seeded.table_id,
+            size,
+            ColumnKind::Number,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        conversion,
+        ColumnConversion {
+            table_version: version(&seeded.world),
+            options: vec![],
+            cells: vec![
+                ConvertedCell {
+                    row: rows[0],
+                    value: CellValue::Number(1.0),
+                },
+                ConvertedCell {
+                    row: rows[1],
+                    value: CellValue::Number(2.0),
+                },
+            ],
+            misfits: 1,
+        }
+    );
+
+    let as_number = ColumnId::new();
+    svc.apply_ops(
+        edit(seeded.database_id),
+        viewer(OWNER),
+        OpBatch {
+            ops: vec![
+                DatabaseOp::CreateColumn {
+                    table: seeded.table_id,
+                    id: as_number,
+                    definition: NewColumn::New {
+                        name: "Party size (number)".into(),
+                        kind: ColumnKind::Number,
+                        options: vec![],
+                        infer_type: false,
+                    },
+                    after: Some(size),
+                },
+                DatabaseOp::UpdateRows {
+                    table: seeded.table_id,
+                    changes: RowChanges::PerRow {
+                        rows: conversion
+                            .cells
+                            .into_iter()
+                            .map(|cell| RowChange {
+                                row: cell.row,
+                                cells: vec![CellWrite {
+                                    column: as_number,
+                                    value: cell.value,
+                                }],
+                            })
+                            .collect(),
+                    },
+                },
+            ],
+            base_versions: HashMap::from([(seeded.table_id, conversion.table_version)]),
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(original_cells(&seeded.world), before);
+    assert_eq!(
+        before,
+        HashMap::from([
+            (rows[0], PropertyValue::Str("1".into())),
+            (rows[1], PropertyValue::Str("2".into())),
+            (rows[2], PropertyValue::Str("soon".into())),
+        ])
+    );
+    let number_definition = seeded
+        .world
+        .lock()
+        .unwrap()
+        .columns
+        .iter()
+        .find(|column| column.id == as_number)
+        .unwrap()
+        .property_definition_id;
+    assert_eq!(
+        cell(&seeded.world, rows[0], number_definition),
+        Some(PropertyValue::Num(1.0))
+    );
+    assert_eq!(
+        cell(&seeded.world, rows[1], number_definition),
+        Some(PropertyValue::Num(2.0))
+    );
+    assert_eq!(cell(&seeded.world, rows[2], number_definition), None);
+    assert_eq!(cell(&seeded.world, seeded.row_id, number_definition), None);
+}
+
+#[tokio::test]
+async fn a_text_column_converts_into_a_new_select_column_with_its_labels_as_options() {
+    let seeded = seeded().await;
+    let svc = &seeded.service;
+    let diet = ColumnId::new();
+    svc.apply_ops(
+        edit(seeded.database_id),
+        viewer(OWNER),
+        OpBatch::from(vec![DatabaseOp::CreateColumn {
+            table: seeded.table_id,
+            id: diet,
+            definition: NewColumn::New {
+                name: "Diet".into(),
+                kind: ColumnKind::Text,
+                options: vec![],
+                infer_type: false,
+            },
+            after: None,
+        }]),
+    )
+    .await
+    .unwrap();
+    let inserted = svc
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::InsertRows {
+                table: seeded.table_id,
+                rows: vec![
+                    vec![CellWrite {
+                        column: diet,
+                        value: CellValue::Text("Vegan".into()),
+                    }],
+                    vec![CellWrite {
+                        column: diet,
+                        value: CellValue::Text("Nut-free".into()),
+                    }],
+                    vec![CellWrite {
+                        column: diet,
+                        value: CellValue::Text("Vegan".into()),
+                    }],
+                ],
+            }]),
+        )
+        .await
+        .unwrap();
+    let [OpResult::RowsWritten { inserted: rows, .. }] = inserted.as_slice() else {
+        panic!("expected one insert, got {inserted:?}");
+    };
+    let diet_definition = seeded
+        .world
+        .lock()
+        .unwrap()
+        .columns
+        .iter()
+        .find(|column| column.id == diet)
+        .unwrap()
+        .property_definition_id;
+
+    let conversion = svc
+        .column_conversion(
+            receipt(seeded.database_id, VIEWER, AccessLevel::View),
+            seeded.table_id,
+            diet,
+            ColumnKind::Select { multi: false },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        conversion,
+        ColumnConversion {
+            table_version: version(&seeded.world),
+            options: vec!["Vegan".into(), "Nut-free".into()],
+            cells: vec![
+                ConvertedCell {
+                    row: rows[0],
+                    value: CellValue::Options(vec![OptionRef::Label("Vegan".into())]),
+                },
+                ConvertedCell {
+                    row: rows[1],
+                    value: CellValue::Options(vec![OptionRef::Label("Nut-free".into())]),
+                },
+                ConvertedCell {
+                    row: rows[2],
+                    value: CellValue::Options(vec![OptionRef::Label("Vegan".into())]),
+                },
+            ],
+            misfits: 0,
+        }
+    );
+
+    let (as_select, vegan, nut_free) = (ColumnId::new(), OptionId::new(), OptionId::new());
+    svc.apply_ops(
+        edit(seeded.database_id),
+        viewer(OWNER),
+        OpBatch {
+            ops: vec![
+                DatabaseOp::CreateColumn {
+                    table: seeded.table_id,
+                    id: as_select,
+                    definition: NewColumn::New {
+                        name: "Diet (select)".into(),
+                        kind: ColumnKind::Select { multi: false },
+                        options: vec![
+                            NewOption {
+                                id: vegan,
+                                label: conversion.options[0].clone(),
+                            },
+                            NewOption {
+                                id: nut_free,
+                                label: conversion.options[1].clone(),
+                            },
+                        ],
+                        infer_type: false,
+                    },
+                    after: Some(diet),
+                },
+                DatabaseOp::UpdateRows {
+                    table: seeded.table_id,
+                    changes: RowChanges::PerRow {
+                        rows: conversion
+                            .cells
+                            .into_iter()
+                            .map(|cell| RowChange {
+                                row: cell.row,
+                                cells: vec![CellWrite {
+                                    column: as_select,
+                                    value: cell.value,
+                                }],
+                            })
+                            .collect(),
+                    },
+                },
+            ],
+            base_versions: HashMap::from([(seeded.table_id, conversion.table_version)]),
+        },
+    )
+    .await
+    .unwrap();
+
+    let select_definition = seeded
+        .world
+        .lock()
+        .unwrap()
+        .columns
+        .iter()
+        .find(|column| column.id == as_select)
+        .unwrap()
+        .property_definition_id;
+    assert_eq!(
+        cell(&seeded.world, rows[0], select_definition),
+        Some(PropertyValue::SelectOption(vec![vegan.into_uuid()]))
+    );
+    assert_eq!(
+        cell(&seeded.world, rows[1], select_definition),
+        Some(PropertyValue::SelectOption(vec![nut_free.into_uuid()]))
+    );
+    assert_eq!(
+        cell(&seeded.world, rows[2], select_definition),
+        Some(PropertyValue::SelectOption(vec![vegan.into_uuid()]))
+    );
+    assert_eq!(
+        cell(&seeded.world, rows[1], diet_definition),
+        Some(PropertyValue::Str("Nut-free".into()))
     );
 }

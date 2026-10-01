@@ -177,8 +177,6 @@ describe('database schema tool activity', () => {
         databaseId,
         tableId,
         columnId,
-        clearedCells: 0,
-        trimmedCells: 0,
         database,
       }
     );
@@ -574,44 +572,11 @@ describe('QueryDatabase with SQL hidden', () => {
           columnId,
           columnName: 'Price',
           to: 'number',
-          clearedCells: 0,
-          trimmedCells: 0,
         },
         summary: 'Changed "Price" to number.',
       }
     );
     expect(line(rendered)).toBe('Changed Price in Items to number');
-  });
-
-  it('counts the cells a type change emptied or trimmed', () => {
-    const rendered = renderTool(
-      databaseToolHandlers.QueryDatabase,
-      'QueryDatabase',
-      {
-        databaseId,
-        sql: 'ALTER TABLE "Items" ALTER COLUMN "Tags" TYPE select USING NULL',
-      },
-      {
-        results: [],
-        changesApplied: 0,
-        newVersions: { [tableId]: 5 },
-        readVersions: [],
-        statement: {
-          kind: 'alterColumnType',
-          tableId,
-          tableName: 'Items',
-          columnId,
-          columnName: 'Tags',
-          to: 'select',
-          clearedCells: 2,
-          trimmedCells: 1,
-        },
-        summary: 'Changed "Tags" to select.',
-      }
-    );
-    expect(line(rendered)).toBe(
-      'Changed Tags in Items to select (cleared 2 cells, trimmed 1 cell)'
-    );
   });
 
   it('keeps the server summary when SQL is shown', () => {

@@ -29,6 +29,7 @@ export {
   type ApplyOpsOptions,
   type ChangeColumnTypeOptions,
   type ColumnType,
+  type ConvertIntoNewColumnOptions,
   MacroOpRefusedError,
   type OpResultOf,
 } from './entities/databases/database';

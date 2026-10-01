@@ -22,36 +22,24 @@ pub(super) enum ConvertedCell {
 pub(super) struct Converter<'a> {
     source: &'a PropertyDefinitionWithOptions,
     target: PropertyType,
-    clear_invalid: bool,
     /// The converted cells, in the order they were pushed.
     pub cells: Vec<(RowId, ConvertedCell)>,
     /// Every option label the new column needs, first spelling first.
     pub labels: Vec<String>,
-    /// Without clearing: each cell that did not fit, with its value as text.
+    /// Each cell that did not fit, with its value as text.
     misfits: Vec<(Misfit, String)>,
-    /// With clearing: cells emptied.
-    pub cleared: usize,
-    /// With clearing: cells cut down to their first value.
-    pub trimmed: usize,
 }
 
 impl<'a> Converter<'a> {
     /// A converter to `target`. When both types take options, the source's
     /// options come along, used or not, as long as they fit.
-    pub fn new(
-        source: &'a PropertyDefinitionWithOptions,
-        target: PropertyType,
-        clear_invalid: bool,
-    ) -> Self {
+    pub fn new(source: &'a PropertyDefinitionWithOptions, target: PropertyType) -> Self {
         let mut converter = Converter {
             source,
             target,
-            clear_invalid,
             cells: Vec::new(),
             labels: Vec::new(),
             misfits: Vec::new(),
-            cleared: 0,
-            trimmed: 0,
         };
         if takes_options(source.definition.data_type) && takes_options(target.data_type) {
             for (_, label) in catalog::option_labels(source) {
@@ -63,20 +51,18 @@ impl<'a> Converter<'a> {
         converter
     }
 
-    /// Convert one row's cell.
+    /// Convert one row's cell, or note why it does not fit.
     pub fn push(&mut self, row: RowId, value: &PropertyValue) {
         if is_empty(value) {
             return;
         }
         match self.convert(value) {
-            Ok((cell, trimmed)) => {
+            Ok(cell) => {
                 if let ConvertedCell::Options(labels) = &cell {
                     self.adopt(labels.clone());
                 }
-                self.trimmed += usize::from(trimmed);
                 self.cells.push((row, cell));
             }
-            Err(_) if self.clear_invalid => self.cleared += 1,
             Err(misfit) => self.misfits.push((misfit, self.example(value))),
         }
     }
@@ -149,19 +135,15 @@ impl<'a> Converter<'a> {
         }
     }
 
-    /// The converted cell, and whether it lost all but its first value.
-    fn convert(&self, value: &PropertyValue) -> Result<(ConvertedCell, bool), Misfit> {
+    /// The converted cell. A cell with several values going to a
+    /// single-valued type does not fit: keeping one would drop the others.
+    fn convert(&self, value: &PropertyValue) -> Result<ConvertedCell, Misfit> {
         if let PropertyValue::EntityRef(references) = value {
             return self.convert_references(references);
         }
-        let mut values = self.values(value)?;
-        let mut trimmed = false;
+        let values = self.values(value)?;
         if values.len() > 1 && !self.target_is_multi() {
-            if !self.clear_invalid {
-                return Err(Misfit::SeveralValues);
-            }
-            values.truncate(1);
-            trimmed = true;
+            return Err(Misfit::SeveralValues);
         }
         let cell = if takes_options(self.target.data_type) {
             ConvertedCell::Options(
@@ -178,13 +160,13 @@ impl<'a> Converter<'a> {
             let value = values.into_iter().next().ok_or(Misfit::NotOption)?;
             ConvertedCell::Value(self.scalar(value)?)
         };
-        Ok((cell, trimmed))
+        Ok(cell)
     }
 
     fn convert_references(
         &self,
         references: &[models_properties::shared::EntityReference],
-    ) -> Result<(ConvertedCell, bool), Misfit> {
+    ) -> Result<ConvertedCell, Misfit> {
         if self.target.data_type != DataType::Entity
             || references
                 .iter()
@@ -193,18 +175,11 @@ impl<'a> Converter<'a> {
             return Err(Misfit::OtherReference);
         }
         if references.len() > 1 && !self.target.is_multi_select {
-            if !self.clear_invalid {
-                return Err(Misfit::SeveralValues);
-            }
-            return Ok((
-                ConvertedCell::Value(PropertyValue::EntityRef(references[..1].to_vec())),
-                true,
-            ));
+            return Err(Misfit::SeveralValues);
         }
-        Ok((
-            ConvertedCell::Value(PropertyValue::EntityRef(references.to_vec())),
-            false,
-        ))
+        Ok(ConvertedCell::Value(PropertyValue::EntityRef(
+            references.to_vec(),
+        )))
     }
 
     fn target_is_multi(&self) -> bool {

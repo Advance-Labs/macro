@@ -18,19 +18,20 @@ use macro_authorization::{
 };
 use macro_user_id::lowercased::Lowercase;
 use macro_user_id::user_id::{MacroUserId, MacroUserIdStr};
-use models_databases::OpResult;
+use models_databases::{ColumnKind, OpResult};
 use models_permissions::share_permission::{SharePermissionV2, UpdateSharePermissionRequestV2};
 use rootcause::Report;
 use uuid::Uuid;
 
 use crate::domain::models::{
-    Awareness, ColumnCast, ColumnId, CreateDatabase, Database, DatabaseDetail, DatabaseError,
-    DatabaseId, InferColumnType, InferColumnTypeOutcome, ListedDatabase, OpBatch, QueryDefinition,
-    QueryId, SavedQuery, SavedQueryError, Table, TableId, Viewer,
+    Awareness, ColumnCast, ColumnConversion, ColumnId, CreateDatabase, Database, DatabaseDetail,
+    DatabaseError, DatabaseId, InferColumnType, InferColumnTypeOutcome, ListedDatabase, OpBatch,
+    QueryDefinition, QueryId, SavedQuery, SavedQueryError, Table, TableId, Viewer,
 };
 use crate::domain::ports::DatabasesService;
 use crate::domain::sharing::DatabaseSharingService;
 use crate::domain::transfer::{DatabaseTransferService, ImportTable};
+use crate::inbound::axum_router::casts::column_conversion_handler;
 use crate::inbound::axum_router::ops::apply_ops_handler;
 use crate::inbound::axum_router::{DatabasesRouterState, databases_router};
 
@@ -81,6 +82,24 @@ pub(super) fn ops_router(level: AccessLevel) -> (Router, Arc<RecordingService>) 
         .route(
             "/{id}/ops",
             post(apply_ops_handler::<RecordingService, GrantingAccess, Authorization>),
+        )
+        .with_state(state);
+    (router, service)
+}
+
+/// The conversion route alone, for a caller holding `level` on every
+/// database, and the service behind it.
+pub(super) fn conversion_router(level: AccessLevel) -> (Router, Arc<RecordingService>) {
+    let service = Arc::new(RecordingService::default());
+    let state = DatabasesRouterState::new(
+        service.clone(),
+        Arc::new(GrantingAccess(level)),
+        authorization_state(),
+    );
+    let router = Router::new()
+        .route(
+            "/{id}/tables/{table_id}/columns/{column_id}/conversion",
+            post(column_conversion_handler::<RecordingService, GrantingAccess, Authorization>),
         )
         .with_state(state);
     (router, service)
@@ -202,14 +221,17 @@ impl EntityAccessService for GrantingAccess {
 }
 
 /// Records the batches that reached it, and answers each with no results,
-/// or with `refusal` when one is set; the ops route calls nothing else.
+/// or with `refusal` when one is set; records the conversions asked for and
+/// answers each with `conversion`. The routes under test call nothing else.
 #[derive(Default)]
 pub(super) struct RecordingService {
     pub(super) applied: Mutex<Vec<OpBatch>>,
     pub(super) refusal: Mutex<Option<DatabaseError>>,
+    pub(super) conversions: Mutex<Vec<(TableId, ColumnId, ColumnKind)>>,
+    pub(super) conversion: Mutex<Option<ColumnConversion>>,
 }
 
-const ONLY_OPS: &str = "the ops route calls only apply_ops";
+const ONLY_OPS: &str = "the routes under test call only apply_ops and column_conversion";
 
 impl DatabasesService for RecordingService {
     async fn apply_ops(
@@ -287,6 +309,24 @@ impl DatabasesService for RecordingService {
         _: ColumnId,
     ) -> Result<Vec<ColumnCast>, DatabaseError> {
         unimplemented!("{ONLY_OPS}")
+    }
+    async fn column_conversion(
+        &self,
+        _: EntityAccessReceipt<ViewAccessLevel>,
+        table_id: TableId,
+        column_id: ColumnId,
+        to: ColumnKind,
+    ) -> Result<ColumnConversion, DatabaseError> {
+        self.conversions
+            .lock()
+            .unwrap()
+            .push((table_id, column_id, to));
+        Ok(self
+            .conversion
+            .lock()
+            .unwrap()
+            .take()
+            .expect("the test sets the conversion it answers"))
     }
     async fn share_awareness(
         &self,

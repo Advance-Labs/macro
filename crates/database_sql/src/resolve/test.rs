@@ -879,18 +879,17 @@ fn exact_case_resolves_a_case_insensitive_collision() {
 }
 
 #[test]
-fn a_type_change_binds_the_column_and_keeps_using_null() {
+fn a_type_change_binds_the_column_and_its_type() {
     assert_eq!(
         compile(
             &catalog(),
-            "ALTER TABLE crm.deals ALTER COLUMN amount TYPE text USING NULL"
+            "ALTER TABLE crm.deals ALTER COLUMN amount TYPE text"
         )
         .unwrap(),
         Query::AlterColumnType(AlterColumnTypeQuery {
             table: DEALS,
             column: AMOUNT,
             to: models_databases::ColumnKind::Text,
-            clear_invalid: true,
         })
     );
 }

@@ -12,8 +12,7 @@ use std::sync::Arc;
 use cells::column_kind_name;
 
 use models_databases::{
-    CellWrite, ColumnKind, DatabaseOp, NewColumn, OpResult, PropertyId, RowChanges, TakenId,
-    VersionedTable,
+    ColumnKind, DatabaseOp, NewColumn, OpResult, PropertyId, RowChanges, TakenId, VersionedTable,
 };
 use models_properties::api::is_valid_hex_color;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
@@ -21,8 +20,8 @@ use models_properties::service::property_definition_with_options::PropertyDefini
 use super::*;
 use crate::domain::catalog::ColumnEntry;
 use crate::domain::models::{
-    DatabaseView, NewOption, OpBatch, OpRefusal, PropertyDefinitionId, RowId, ViewId, Write,
-    Writes, WritesOutcome,
+    DatabaseView, OpBatch, OpRefusal, PropertyDefinitionId, RowId, ViewId, Write, Writes,
+    WritesOutcome,
 };
 use chrono::DateTime;
 
@@ -77,7 +76,6 @@ where
             grant,
             editable,
             found,
-            options: Vec::new(),
             labels: HashMap::new(),
             views: HashMap::new(),
             boards,
@@ -87,7 +85,6 @@ where
             written_tables: HashSet::new(),
             created_tables: HashSet::new(),
             changed_options: HashSet::new(),
-            retyped: HashMap::new(),
         };
         let writes = ops
             .iter()
@@ -97,7 +94,6 @@ where
         let writes = Writes {
             database_id,
             created_by: viewer.user_id.clone(),
-            options: std::mem::take(&mut planner.options),
             writes,
             related_rows: planner
                 .related
@@ -126,7 +122,7 @@ where
             _ => None,
         }));
         self.publish(attribution, &changes).await;
-        op_results(&entries, &ops, &writes, &planner, committed)
+        op_results(&entries, &ops, &writes, committed)
     }
 
     /// What the batch's ops need read before they are planned: the
@@ -370,32 +366,12 @@ fn related_database(writes: &Writes, table: TableId) -> Option<DatabaseId> {
     })
 }
 
-/// The table an op names and the columns whose options it may change: the
-/// option ops', and every column whose missing options a row op may create.
+/// The table and column of an op that changes a column's options.
 fn option_columns(op: &DatabaseOp) -> Option<(TableId, Vec<ColumnId>)> {
-    let cells = |cells: &[CellWrite]| cells.iter().map(|cell| cell.column).collect::<Vec<_>>();
     match op {
         DatabaseOp::UpdateOption { table, column, .. }
         | DatabaseOp::DeleteOption { table, column, .. }
         | DatabaseOp::AddOptions { table, column, .. } => Some((*table, vec![*column])),
-        DatabaseOp::InsertRows {
-            table,
-            rows,
-            create_missing_options: true,
-        } => Some((*table, rows.iter().flat_map(|row| cells(row)).collect())),
-        DatabaseOp::UpdateRows {
-            table,
-            changes,
-            create_missing_options: true,
-        } => Some((
-            *table,
-            match changes {
-                RowChanges::Uniform { cells: written, .. } => cells(written),
-                RowChanges::PerRow { rows } => {
-                    rows.iter().flat_map(|row| cells(&row.cells)).collect()
-                }
-            },
-        )),
         _ => None,
     }
 }
@@ -540,7 +516,6 @@ fn op_results(
     entries: &[TableEntry],
     ops: &[DatabaseOp],
     writes: &Writes,
-    planner: &Planner,
     committed: Committed,
 ) -> Result<Vec<OpResult>, DatabaseError> {
     let table_versions = committed.table_versions;
@@ -565,8 +540,7 @@ fn op_results(
     ops.iter()
         .zip(&writes.writes)
         .zip(committed.inserted)
-        .enumerate()
-        .map(|(index, ((op, write), inserted))| {
+        .map(|((op, write), inserted)| {
             let table_version = || version_of(op.table().ok_or_else(mismatched_write)?);
             Ok(match op {
                 DatabaseOp::CreateTable { id, .. } => OpResult::TableCreated {
@@ -610,15 +584,9 @@ fn op_results(
                         _ => Vec::new(),
                     },
                 },
-                DatabaseOp::ChangeColumnType { .. } => {
-                    let (cleared, trimmed) =
-                        planner.retyped.get(&index).copied().unwrap_or_default();
-                    OpResult::ColumnTyped {
-                        table_version: table_version()?,
-                        cleared_cells: count(cleared),
-                        trimmed_cells: count(trimmed),
-                    }
-                }
+                DatabaseOp::ChangeColumnType { .. } => OpResult::ColumnTyped {
+                    table_version: table_version()?,
+                },
                 DatabaseOp::InsertRows { .. }
                 | DatabaseOp::UpdateRows { .. }
                 | DatabaseOp::DeleteRows { .. } => OpResult::RowsWritten {
@@ -778,7 +746,6 @@ struct Planner {
     /// The shared definitions whose options the viewer may change.
     editable: Vec<PropertyDefinitionId>,
     found: Found,
-    options: Vec<NewOption>,
     /// The options of each definition an op has looked at, with their
     /// labels, as the ops planned so far leave them.
     labels: HashMap<PropertyDefinitionId, Vec<(OptionId, String)>>,
@@ -797,8 +764,6 @@ struct Planner {
     created_tables: HashSet<TableId>,
     /// The definitions whose options an op so far changed.
     changed_options: HashSet<PropertyDefinitionId>,
-    /// Per type change op, the cells it emptied and the cells it trimmed.
-    retyped: HashMap<usize, (usize, usize)>,
 }
 
 /// Where in the batch a cell is: its op, the row's index within the op
@@ -876,24 +841,16 @@ impl Planner {
             DatabaseOp::AddOptions {
                 column, options, ..
             } => self.add_options(index, &entry, *column, options),
-            DatabaseOp::ChangeColumnType {
-                column,
-                to,
-                clear_invalid,
-                ..
-            } => self.change_type(index, &entry, *column, *to, *clear_invalid),
-            DatabaseOp::InsertRows {
-                rows,
-                create_missing_options,
-                ..
-            } => {
+            DatabaseOp::ChangeColumnType { column, to, .. } => {
+                self.change_type(index, &entry, *column, *to)
+            }
+            DatabaseOp::InsertRows { rows, .. } => {
                 self.written_tables.insert(table);
                 let rows = rows
                     .iter()
                     .enumerate()
                     .map(|(row, cells)| {
-                        let cells =
-                            self.cells(&entry, index, Some(row), cells, *create_missing_options)?;
+                        let cells = self.cells(&entry, index, Some(row), cells)?;
                         Ok(cells
                             .into_iter()
                             .filter_map(|(definition, value)| {
@@ -909,11 +866,10 @@ impl Planner {
             }
             DatabaseOp::UpdateRows {
                 changes: RowChanges::Uniform { rows, cells },
-                create_missing_options,
                 ..
             } => {
                 self.written_tables.insert(table);
-                let cells = self.cells(&entry, index, None, cells, *create_missing_options)?;
+                let cells = self.cells(&entry, index, None, cells)?;
                 Ok(Write::UpdateRows {
                     table_id: table,
                     rows: rows.iter().map(|row| (*row, cells.clone())).collect(),
@@ -921,7 +877,6 @@ impl Planner {
             }
             DatabaseOp::UpdateRows {
                 changes: RowChanges::PerRow { rows },
-                create_missing_options,
                 ..
             } => {
                 self.written_tables.insert(table);
@@ -931,13 +886,7 @@ impl Planner {
                         .iter()
                         .enumerate()
                         .map(|(row, change)| {
-                            let cells = self.cells(
-                                &entry,
-                                index,
-                                Some(row),
-                                &change.cells,
-                                *create_missing_options,
-                            )?;
+                            let cells = self.cells(&entry, index, Some(row), &change.cells)?;
                             Ok((change.row, cells))
                         })
                         .collect::<Result<_, DatabaseError>>()?,

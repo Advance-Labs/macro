@@ -73,16 +73,11 @@ function describeDatabaseQuery(input: {
       { kind: 'delete' },
       ({ tableName }) => `Deleted ${rowCount(changed)} from ${tableName}`
     )
-    .with({ kind: 'alterColumnType' }, (statement) => {
-      const lost = [
-        statement.clearedCells > 0 &&
-          `cleared ${count(statement.clearedCells, 'cell')}`,
-        statement.trimmedCells > 0 &&
-          `trimmed ${count(statement.trimmedCells, 'cell')}`,
-      ].filter((part): part is string => !!part);
-      const altered = `Changed ${statement.columnName} in ${statement.tableName} to ${statement.to}`;
-      return lost.length ? `${altered} (${lost.join(', ')})` : altered;
-    })
+    .with(
+      { kind: 'alterColumnType' },
+      ({ columnName, tableName, to }) =>
+        `Changed ${columnName} in ${tableName} to ${to}`
+    )
     .exhaustive();
 }
 

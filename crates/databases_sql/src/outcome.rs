@@ -79,10 +79,6 @@ pub enum SqlStatement {
         column_name: String,
         /// The type it became, as SQL spells it, e.g. `select[]`.
         to: String,
-        /// Cells `USING NULL` emptied because their value did not fit.
-        cleared_cells: usize,
-        /// Cells that held several values and kept only their first.
-        trimmed_cells: usize,
     },
 }
 
@@ -212,8 +208,6 @@ fn statement(
                 column_id: column.column.id,
                 column_name: column.name().to_string(),
                 to: altered.to.clone(),
-                cleared_cells: altered.cleared_cells,
-                trimmed_cells: altered.trimmed_cells,
             }
         }
     })

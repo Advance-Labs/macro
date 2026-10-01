@@ -33,11 +33,11 @@ use crate::domain::events::{
     DatabaseTrashedMetadata, TableVersionChange,
 };
 use crate::domain::models::{
-    Awareness, CardPosition, ColumnCast, ColumnDetail, ColumnId, CreateDatabase, Database,
-    DatabaseDetail, DatabaseError, DatabaseId, FirstTable, InferColumnType, InferColumnTypeOutcome,
-    ListedDatabase, OpBatch, OptionId, PropertyDefinitionId, QueryDefinition, QueryId, RowId,
-    RowRef, SavedQuery, SavedQueryError, SchemaError, SharingError, Table, TableDetail, TableId,
-    TableVersion, ViewId, Viewer,
+    Awareness, CardPosition, ColumnCast, ColumnConversion, ColumnDetail, ColumnId, CreateDatabase,
+    Database, DatabaseDetail, DatabaseError, DatabaseId, FirstTable, InferColumnType,
+    InferColumnTypeOutcome, ListedDatabase, OpBatch, OptionId, PropertyDefinitionId,
+    QueryDefinition, QueryId, RowId, RowRef, SavedQuery, SavedQueryError, SchemaError,
+    SharingError, Table, TableDetail, TableId, TableVersion, ViewId, Viewer,
 };
 use crate::domain::ports::{
     AccessDirectory, CellStore, ColumnDefinitionStore, DatabasesRepo, DatabasesService,
@@ -712,6 +712,17 @@ where
         column_id: ColumnId,
     ) -> Result<Vec<ColumnCast>, DatabaseError> {
         self.preview_casts(receipt, table_id, column_id).await
+    }
+
+    #[tracing::instrument(skip(self, receipt), err)]
+    async fn column_conversion(
+        &self,
+        receipt: EntityAccessReceipt<ViewAccessLevel>,
+        table_id: TableId,
+        column_id: ColumnId,
+        to: models_databases::ColumnKind,
+    ) -> Result<ColumnConversion, DatabaseError> {
+        self.convert_values(receipt, table_id, column_id, to).await
     }
 
     #[tracing::instrument(skip(self, receipt, viewer, batch), fields(ops = batch.ops.len()), err)]

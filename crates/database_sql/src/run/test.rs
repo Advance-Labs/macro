@@ -123,8 +123,6 @@ impl OpsSink for FakeSink {
                 },
                 DatabaseOp::ChangeColumnType { .. } => OpResult::ColumnTyped {
                     table_version: TableVersion(8),
-                    cleared_cells: 2,
-                    trimmed_cells: 0,
                 },
                 other => panic!("a statement sends no {other:?}"),
             })
@@ -592,7 +590,6 @@ fn an_insert_is_one_op_holding_every_row() {
                         value: CellValue::Text("Hooli".into()),
                     }],
                 ],
-                create_missing_options: false,
             }],
         )]
     );
@@ -640,7 +637,6 @@ fn update_and_delete_by_row_id_read_the_row_then_write_it() {
                             },
                         ],
                     },
-                    create_missing_options: false,
                 }],
             ),
             (
@@ -749,7 +745,7 @@ fn a_type_change_is_one_op_without_reading_rows() {
 
     let outcome = pollster::block_on(run(
         &catalog(),
-        "ALTER TABLE crm.deals ALTER COLUMN name TYPE number USING NULL",
+        "ALTER TABLE crm.deals ALTER COLUMN name TYPE number",
         &source,
         &sink,
     ))
@@ -762,8 +758,6 @@ fn a_type_change_is_one_op_without_reading_rows() {
                 table: DEALS,
                 column: NAME,
                 to: "number".into(),
-                cleared_cells: 2,
-                trimmed_cells: 0,
             }),
             ..Outcome::default()
         }
@@ -776,7 +770,6 @@ fn a_type_change_is_one_op_without_reading_rows() {
                 table: DEALS,
                 column: ColumnId::from_uuid(NAME),
                 to: models_databases::ColumnKind::Number,
-                clear_invalid: true,
             }],
         )]
     );
@@ -786,12 +779,7 @@ fn a_type_change_is_one_op_without_reading_rows() {
 #[test]
 fn a_type_change_the_sink_refuses_is_the_statement_error() {
     let sink = FakeSink {
-        refuse: |_| {
-            Some(
-                "2 values in \"name\" aren't numbers: 'Acme', 'Globex'. Fix them, or convert \
-                 with clearing to empty them.",
-            )
-        },
+        refuse: |_| Some("2 values in \"name\" aren't numbers: 'Acme', 'Globex'."),
         ..FakeSink::new()
     };
     let error = pollster::block_on(run(
@@ -805,8 +793,7 @@ fn a_type_change_the_sink_refuses_is_the_statement_error() {
     assert_eq!(
         error,
         RunFailure::Write(Refused(
-            "2 values in \"name\" aren't numbers: 'Acme', 'Globex'. Fix them, or convert with \
-             clearing to empty them."
+            "2 values in \"name\" aren't numbers: 'Acme', 'Globex'."
         ))
     );
 }

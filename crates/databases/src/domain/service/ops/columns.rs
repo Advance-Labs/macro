@@ -304,7 +304,6 @@ impl Planner {
         entry: &TableEntry,
         column_id: ColumnId,
         to: ColumnKind,
-        clear_invalid: bool,
     ) -> Result<Write, DatabaseError> {
         let place = Place {
             op: index,
@@ -369,7 +368,7 @@ impl Planner {
         if let Cast::Never(reason) = cast(current.cast_kind(), target.cast_kind(), contents) {
             return Err(place.refuse(reason));
         }
-        let mut converter = Converter::new(&column.definition, target, clear_invalid);
+        let mut converter = Converter::new(&column.definition, target);
         for (row, value) in &values {
             converter.push(*row, value);
         }
@@ -395,7 +394,6 @@ impl Planner {
             specific_entity_type: target.specific_entity_type,
             options,
         };
-        let (cleared, trimmed) = (converter.cleared, converter.trimmed);
         let converted: Vec<(RowId, PropertyValue)> = converter
             .cells
             .into_iter()
@@ -442,7 +440,6 @@ impl Planner {
                 cells: converted.into_iter().collect(),
             },
         );
-        self.retyped.insert(index, (cleared, trimmed));
         Ok(Write::ReplaceColumn {
             table_id: entry.table.id,
             read_version,

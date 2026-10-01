@@ -45,7 +45,6 @@ async fn an_insert_of_two_rows_mints_them_in_order_with_their_cells() {
                         },
                     ],
                 ],
-                create_missing_options: false,
             }]),
         )
         .await
@@ -135,7 +134,6 @@ async fn a_uniform_update_gives_three_rows_the_same_cells() {
                         },
                     ],
                 },
-                create_missing_options: false,
             }]),
         )
         .await
@@ -208,7 +206,6 @@ async fn a_per_row_update_gives_each_row_its_own_cells() {
                         },
                     ],
                 },
-                create_missing_options: false,
             }]),
         )
         .await
@@ -290,59 +287,6 @@ async fn a_delete_removes_the_rows_and_their_cells() {
 }
 
 #[tokio::test]
-async fn a_label_the_column_lacks_becomes_an_option_when_the_op_creates_them() {
-    let seeded = seeded().await;
-    let status = seeded.status_column.property_definition_id;
-
-    seeded
-        .service
-        .apply_ops(
-            edit(seeded.database_id),
-            viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::InsertRows {
-                table: seeded.table_id,
-                rows: vec![
-                    vec![CellWrite {
-                        column: seeded.status_column.id,
-                        value: CellValue::Options(vec![OptionRef::Label("Maybe".into())]),
-                    }],
-                    vec![CellWrite {
-                        column: seeded.status_column.id,
-                        value: CellValue::Options(vec![OptionRef::Label("maybe".into())]),
-                    }],
-                ],
-                create_missing_options: true,
-            }]),
-        )
-        .await
-        .unwrap();
-
-    let labels: Vec<PropertyOptionValue> = seeded.world.lock().unwrap().definitions[&status]
-        .property_options
-        .iter()
-        .map(|option| option.value.clone())
-        .collect();
-    assert_eq!(
-        labels,
-        vec![
-            PropertyOptionValue::String("Going".into()),
-            PropertyOptionValue::String("Declined".into()),
-            PropertyOptionValue::String("Maybe".into()),
-        ]
-    );
-    let maybe = option_id(&seeded.world, status, "Maybe");
-    let rows = row_ids(&seeded.world, seeded.table_id);
-    assert_eq!(
-        cell(&seeded.world, rows[1], status),
-        Some(PropertyValue::SelectOption(vec![maybe.into_uuid()]))
-    );
-    assert_eq!(
-        cell(&seeded.world, rows[2], status),
-        Some(PropertyValue::SelectOption(vec![maybe.into_uuid()]))
-    );
-}
-
-#[tokio::test]
 async fn an_unknown_label_is_refused_without_creating_options() {
     let seeded = seeded().await;
     let before = table_version(&seeded.world, seeded.table_id);
@@ -358,7 +302,6 @@ async fn an_unknown_label_is_refused_without_creating_options() {
                     column: seeded.status_column.id,
                     value: CellValue::Options(vec![OptionRef::Label("Maybe".into())]),
                 }]],
-                create_missing_options: false,
             }]),
         )
         .await
@@ -422,12 +365,10 @@ async fn an_op_on_another_databases_table_refuses_the_batch_before_anything_is_w
                 DatabaseOp::InsertRows {
                     table: seeded.table_id,
                     rows: vec![vec![]],
-                    create_missing_options: false,
                 },
                 DatabaseOp::InsertRows {
                     table: other_table,
                     rows: vec![vec![]],
-                    create_missing_options: false,
                 },
             ]),
         )
@@ -471,10 +412,9 @@ async fn a_failing_second_op_leaves_the_first_unapplied() {
                 DatabaseOp::InsertRows {
                     table: seeded.table_id,
                     rows: vec![vec![CellWrite {
-                        column: seeded.status_column.id,
-                        value: CellValue::Options(vec![OptionRef::Label("Maybe".into())]),
+                        column: seeded.name_column.id,
+                        value: CellValue::Text("Alex".into()),
                     }]],
-                    create_missing_options: true,
                 },
                 DatabaseOp::UpdateRows {
                     table: seeded.table_id,
@@ -496,7 +436,6 @@ async fn a_failing_second_op_leaves_the_first_unapplied() {
                             },
                         ],
                     },
-                    create_missing_options: false,
                 },
             ]),
         )
@@ -558,7 +497,6 @@ async fn a_value_that_does_not_fit_its_column_names_the_op_row_and_column() {
                         }],
                     }],
                 },
-                create_missing_options: false,
             }]),
         )
         .await
@@ -628,7 +566,6 @@ async fn a_relation_cell_names_rows_of_its_target_table() {
             OpBatch::from(vec![DatabaseOp::InsertRows {
                 table: sessions,
                 rows: vec![vec![]],
-                create_missing_options: false,
             }]),
         )
         .await
@@ -652,7 +589,6 @@ async fn a_relation_cell_names_rows_of_its_target_table() {
                         value: CellValue::Rows(vec![keynote]),
                     }],
                 },
-                create_missing_options: false,
             }]),
         )
         .await
@@ -680,7 +616,6 @@ async fn a_relation_cell_names_rows_of_its_target_table() {
                         value: CellValue::Rows(vec![seeded.row_id]),
                     }],
                 },
-                create_missing_options: false,
             }]),
         )
         .await
@@ -711,7 +646,15 @@ async fn a_relation_cell_names_rows_of_its_target_table() {
 #[tokio::test]
 async fn a_type_change_converts_the_columns_cells() {
     let seeded = seeded().await;
-    insert_names(&seeded, &["12"]).await;
+    let rows = insert_names(&seeded, &["12"]).await;
+    seeded
+        .world
+        .lock()
+        .unwrap()
+        .cells
+        .get_mut(&seeded.row_id)
+        .unwrap()
+        .remove(&seeded.name_column.property_definition_id);
 
     let results = seeded
         .service
@@ -722,7 +665,6 @@ async fn a_type_change_converts_the_columns_cells() {
                 table: seeded.table_id,
                 column: seeded.name_column.id,
                 to: ColumnKind::Number,
-                clear_invalid: true,
             }]),
         )
         .await
@@ -732,8 +674,6 @@ async fn a_type_change_converts_the_columns_cells() {
         results,
         vec![OpResult::ColumnTyped {
             table_version: table_version(&seeded.world, seeded.table_id),
-            cleared_cells: 1,
-            trimmed_cells: 0,
         }]
     );
     let definition = seeded
@@ -745,12 +685,10 @@ async fn a_type_change_converts_the_columns_cells() {
         .find(|column| column.id == seeded.name_column.id)
         .unwrap()
         .property_definition_id;
+    assert_eq!(cell(&seeded.world, seeded.row_id, definition), None);
     assert_eq!(
-        row_ids(&seeded.world, seeded.table_id)
-            .into_iter()
-            .map(|row| cell(&seeded.world, row, definition))
-            .collect::<Vec<_>>(),
-        vec![None, Some(PropertyValue::Num(12.0))]
+        cell(&seeded.world, rows[0], definition),
+        Some(PropertyValue::Num(12.0))
     );
 }
 
@@ -773,7 +711,6 @@ async fn a_batch_bumps_each_table_once_and_announces_it_once() {
                         column: seeded.name_column.id,
                         value: CellValue::Text("Alex".into()),
                     }]],
-                    create_missing_options: false,
                 },
                 DatabaseOp::UpdateRows {
                     table: seeded.table_id,
@@ -784,7 +721,6 @@ async fn a_batch_bumps_each_table_once_and_announces_it_once() {
                             value: CellValue::Number(0.0),
                         }],
                     },
-                    create_missing_options: false,
                 },
                 DatabaseOp::DeleteRows {
                     table: seeded.table_id,

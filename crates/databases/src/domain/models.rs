@@ -139,6 +139,34 @@ pub struct ColumnCast {
     pub examples: Vec<String>,
 }
 
+/// What a column's values become under another type, for a new column of
+/// that type beside it: the values that convert, the options they need,
+/// and how many do not convert. Nothing is changed by reading it.
+#[derive(utoipa::ToSchema, Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnConversion {
+    /// The table's version the cells were read at; a batch writing the new
+    /// column sends it as its base version.
+    pub table_version: TableVersion,
+    /// The option labels a new select or tag column needs, in order.
+    pub options: Vec<String>,
+    /// Each row whose value converts, with that value, options named by
+    /// label.
+    pub cells: Vec<ConvertedCell>,
+    /// How many values do not convert, and are left out.
+    pub misfits: u32,
+}
+
+/// One row's converted value.
+#[derive(utoipa::ToSchema, Debug, Clone, PartialEq, Serialize)]
+pub struct ConvertedCell {
+    /// The row.
+    #[schema(value_type = Uuid)]
+    pub row: RowId,
+    /// Its value under the new type.
+    pub value: models_databases::CellValue,
+}
+
 /// Whether a column's values convert to a type.
 #[derive(utoipa::ToSchema, Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -243,18 +271,6 @@ pub struct Viewer {
     /// attribution reads it: what the viewer can reach stays scoped to
     /// `user_id`.
     pub acting_bot: Option<BotId>,
-}
-
-/// A select option an op names by a label its column does not have yet,
-/// under an id minted before anything is written.
-#[derive(Debug, Clone, PartialEq)]
-pub struct NewOption {
-    /// The definition the option joins.
-    pub definition_id: PropertyDefinitionId,
-    /// The option's id.
-    pub id: OptionId,
-    /// Its stored value.
-    pub value: PropertyOptionValue,
 }
 
 /// Cells of one row to set, or with `None` to clear, by definition.
@@ -538,16 +554,14 @@ impl Write {
     }
 }
 
-/// A request's writes, applied in one transaction: every write, option
-/// and version bump commits, or none does.
+/// A request's writes, applied in one transaction: every write and version
+/// bump commits, or none does.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Writes {
     /// The database every write is in.
     pub database_id: DatabaseId,
     /// Who the inserted rows are created by.
     pub created_by: MacroUserIdStr<'static>,
-    /// Options to create before any cell names them.
-    pub options: Vec<NewOption>,
     /// The writes, in the order the ops were sent.
     pub writes: Vec<Write>,
     /// Rows relation cells point at, each with the table it must belong to.

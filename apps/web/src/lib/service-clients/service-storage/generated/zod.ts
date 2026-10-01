@@ -7544,12 +7544,6 @@ export const applyDatabaseOpsBody = zod
               ),
             zod
               .object({
-                createMissingOptions: zod
-                  .boolean()
-                  .optional()
-                  .describe(
-                    'Create a select option for a label the column does not have yet,\ninstead of refusing the op.'
-                  ),
                 kind: zod.enum(['insert_rows']),
                 rows: zod
                   .array(
@@ -7622,11 +7616,11 @@ export const applyDatabaseOpsBody = zod
                                               label: zod
                                                 .string()
                                                 .describe(
-                                                  "An option's label, matched without regard to case. An unknown label\nis refused unless the op creates missing options."
+                                                  "An option's label, matched without regard to case. An unknown label\nis refused."
                                                 ),
                                             })
                                             .describe(
-                                              "An option's label, matched without regard to case. An unknown label\nis refused unless the op creates missing options."
+                                              "An option's label, matched without regard to case. An unknown label\nis refused."
                                             ),
                                         ])
                                         .describe(
@@ -7796,11 +7790,11 @@ export const applyDatabaseOpsBody = zod
                                                     label: zod
                                                       .string()
                                                       .describe(
-                                                        "An option's label, matched without regard to case. An unknown label\nis refused unless the op creates missing options."
+                                                        "An option's label, matched without regard to case. An unknown label\nis refused."
                                                       ),
                                                   })
                                                   .describe(
-                                                    "An option's label, matched without regard to case. An unknown label\nis refused unless the op creates missing options."
+                                                    "An option's label, matched without regard to case. An unknown label\nis refused."
                                                   ),
                                               ])
                                               .describe(
@@ -7969,11 +7963,11 @@ export const applyDatabaseOpsBody = zod
                                                             label: zod
                                                               .string()
                                                               .describe(
-                                                                "An option's label, matched without regard to case. An unknown label\nis refused unless the op creates missing options."
+                                                                "An option's label, matched without regard to case. An unknown label\nis refused."
                                                               ),
                                                           })
                                                           .describe(
-                                                            "An option's label, matched without regard to case. An unknown label\nis refused unless the op creates missing options."
+                                                            "An option's label, matched without regard to case. An unknown label\nis refused."
                                                           ),
                                                       ])
                                                       .describe(
@@ -8068,12 +8062,6 @@ export const applyDatabaseOpsBody = zod
                       .describe('Each row its own cells.'),
                   ])
                   .describe('Which rows an update writes, and with what.'),
-                createMissingOptions: zod
-                  .boolean()
-                  .optional()
-                  .describe(
-                    'Create a select option for a label the column does not have yet,\ninstead of refusing the op.'
-                  ),
                 kind: zod.enum(['update_rows']),
                 table: zod.uuid().describe('The table the rows belong to.'),
               })
@@ -8091,12 +8079,6 @@ export const applyDatabaseOpsBody = zod
               .describe('Remove rows and their cells.'),
             zod
               .object({
-                clearInvalid: zod
-                  .boolean()
-                  .optional()
-                  .describe(
-                    'Empty the cells whose value does not fit, instead of refusing; a\ncell with several values going to a single-valued type keeps its\nfirst.'
-                  ),
                 column: zod
                   .uuid()
                   .describe(
@@ -8190,7 +8172,7 @@ export const applyDatabaseOpsBody = zod
                   .describe('A type a column can have.'),
               })
               .describe(
-                'Convert a column to another type, converting its cells. A value that\ndoes not fit refuses the change unless `clearInvalid` empties it.'
+                'Convert a column to another type, converting its cells. A value that\ndoes not fit refuses the change, counting and quoting the misfits: a\ntype change never empties a cell. To keep the original, create a\ncolumn of the new type and write it the values that convert.'
               ),
             zod
               .object({
@@ -8884,10 +8866,6 @@ export const applyDatabaseOpsBody = zod
 
 export const applyDatabaseOpsResponseResultsItemAffectedMin = 0;
 
-export const applyDatabaseOpsResponseResultsItemClearedCellsMin = 0;
-
-export const applyDatabaseOpsResponseResultsItemTrimmedCellsMin = 0;
-
 export const applyDatabaseOpsResponseResultsItemViewLayoutColumnsItemWidthMin = 0;
 
 export const applyDatabaseOpsResponse = zod
@@ -9023,23 +9001,11 @@ export const applyDatabaseOpsResponse = zod
               .describe('What an insert, update or delete did.'),
             zod
               .object({
-                clearedCells: zod
-                  .number()
-                  .min(applyDatabaseOpsResponseResultsItemClearedCellsMin)
-                  .describe(
-                    'Cells emptied because their value did not fit the new type.'
-                  ),
                 kind: zod.enum(['column_typed']),
                 tableVersion: zod
                   .number()
                   .describe(
                     "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
-                  ),
-                trimmedCells: zod
-                  .number()
-                  .min(applyDatabaseOpsResponseResultsItemTrimmedCellsMin)
-                  .describe(
-                    'Cells that held several values and kept only their first.'
                   ),
               })
               .describe('What a column type change did.'),
@@ -9677,6 +9643,269 @@ export const listDatabaseColumnCastsResponseItem = zod
 export const listDatabaseColumnCastsResponse = zod.array(
   listDatabaseColumnCastsResponseItem
 );
+
+/**
+ * @summary What one column's values become under another type: the values that
+convert, with the options they need, for a new column of that type beside
+it. The column itself is left as it is: a client writes the conversion as
+one ops batch, a `create_column` then an `update_rows`, with the answered
+table version as its base version. Changes nothing.
+ */
+export const convertDatabaseColumnParams = zod.object({
+  id: zod.uuid(),
+  table_id: zod.uuid(),
+  column_id: zod.uuid(),
+});
+
+export const convertDatabaseColumnBody = zod
+  .object({
+    to: zod
+      .union([
+        zod
+          .object({
+            type: zod.enum(['text']),
+          })
+          .describe('Free text.'),
+        zod
+          .object({
+            type: zod.enum(['number']),
+          })
+          .describe('A number.'),
+        zod
+          .object({
+            type: zod.enum(['boolean']),
+          })
+          .describe('A checkbox.'),
+        zod
+          .object({
+            type: zod.enum(['date']),
+          })
+          .describe('A date-time.'),
+        zod
+          .object({
+            type: zod.enum(['link']),
+          })
+          .describe('A URL.'),
+        zod
+          .object({
+            multi: zod
+              .boolean()
+              .describe('Whether a cell holds several options.'),
+            type: zod.enum(['select']),
+          })
+          .describe('Text options.'),
+        zod
+          .object({
+            multi: zod
+              .boolean()
+              .describe('Whether a cell holds several options.'),
+            type: zod.enum(['select_number']),
+          })
+          .describe('Numeric options.'),
+        zod
+          .object({
+            type: zod.enum(['tag']),
+          })
+          .describe('Colored labels; always several per cell.'),
+        zod
+          .object({
+            multi: zod
+              .boolean()
+              .describe('Whether a cell holds several references.'),
+            target: zod
+              .enum([
+                'USER',
+                'DOCUMENT',
+                'TASK',
+                'COMPANY',
+                'CALL_RECORD',
+                'CHANNEL',
+                'CHAT',
+                'PROJECT',
+                'THREAD',
+                'CALENDAR_EVENT',
+                'INITIATIVE',
+              ])
+              .describe(
+                'A kind of Macro entity a reference column can point at.'
+              ),
+            type: zod.enum(['entity']),
+          })
+          .describe('References to Macro entities.'),
+        zod
+          .object({
+            database: zod.uuid().describe('The database of the related table.'),
+            table: zod.uuid().describe('The related table.'),
+            type: zod.enum(['relation']),
+          })
+          .describe('Rows of another table.'),
+      ])
+      .describe('A type a column can have.'),
+  })
+  .describe("The type a column's values are converted to.");
+
+export const convertDatabaseColumnResponseMisfitsMin = 0;
+
+export const convertDatabaseColumnResponse = zod
+  .object({
+    cells: zod
+      .array(
+        zod
+          .object({
+            row: zod.uuid().describe('The row.'),
+            value: zod
+              .union([
+                zod
+                  .object({
+                    type: zod.enum(['text']),
+                    value: zod.string().describe('Free text.'),
+                  })
+                  .describe('Free text.'),
+                zod
+                  .object({
+                    type: zod.enum(['number']),
+                    value: zod.number().describe('A finite number.'),
+                  })
+                  .describe('A finite number.'),
+                zod
+                  .object({
+                    type: zod.enum(['boolean']),
+                    value: zod.boolean().describe('A checkbox.'),
+                  })
+                  .describe('A checkbox.'),
+                zod
+                  .object({
+                    type: zod.enum(['date']),
+                    value: zod.iso.datetime({}).describe('A date-time.'),
+                  })
+                  .describe('A date-time.'),
+                zod
+                  .object({
+                    type: zod.enum(['link']),
+                    value: zod
+                      .array(zod.string())
+                      .describe(
+                        'Complete http or https URLs; at most one for a single-valued column.'
+                      ),
+                  })
+                  .describe(
+                    'Complete http or https URLs; at most one for a single-valued column.'
+                  ),
+                zod
+                  .object({
+                    type: zod.enum(['options']),
+                    value: zod
+                      .array(
+                        zod
+                          .union([
+                            zod
+                              .object({
+                                id: zod
+                                  .uuid()
+                                  .describe('An option the column has.'),
+                              })
+                              .describe('An option the column has.'),
+                            zod
+                              .object({
+                                label: zod
+                                  .string()
+                                  .describe(
+                                    "An option's label, matched without regard to case. An unknown label\nis refused."
+                                  ),
+                              })
+                              .describe(
+                                "An option's label, matched without regard to case. An unknown label\nis refused."
+                              ),
+                          ])
+                          .describe(
+                            'A select option, by its id or by its label.'
+                          )
+                      )
+                      .describe(
+                        'Options of a select or tag column; at most one for a single-valued\ncolumn.'
+                      ),
+                  })
+                  .describe(
+                    'Options of a select or tag column; at most one for a single-valued\ncolumn.'
+                  ),
+                zod
+                  .object({
+                    type: zod.enum(['entities']),
+                    value: zod
+                      .array(
+                        zod
+                          .object({
+                            entityId: zod.string().describe("The entity's id."),
+                            entityType: zod
+                              .enum([
+                                'USER',
+                                'DOCUMENT',
+                                'TASK',
+                                'COMPANY',
+                                'CALL_RECORD',
+                                'CHANNEL',
+                                'CHAT',
+                                'PROJECT',
+                                'THREAD',
+                                'CALENDAR_EVENT',
+                                'INITIATIVE',
+                              ])
+                              .describe(
+                                'A kind of Macro entity a reference column can point at.'
+                              ),
+                          })
+                          .describe('A reference to one Macro entity.')
+                      )
+                      .describe(
+                        'References to Macro entities of the kind the column points at; at\nmost one for a single-valued column.'
+                      ),
+                  })
+                  .describe(
+                    'References to Macro entities of the kind the column points at; at\nmost one for a single-valued column.'
+                  ),
+                zod
+                  .object({
+                    type: zod.enum(['rows']),
+                    value: zod
+                      .array(zod.uuid())
+                      .describe(
+                        'Rows of the table a relation column points at.'
+                      ),
+                  })
+                  .describe('Rows of the table a relation column points at.'),
+                zod
+                  .object({
+                    type: zod.enum(['clear']),
+                  })
+                  .describe('No value: the cell is emptied.'),
+              ])
+              .describe(
+                "A cell's value. It must fit the column's type: text for a text column,\noptions of the column for a select, and so on."
+              ),
+          })
+          .describe("One row's converted value.")
+      )
+      .describe(
+        'Each row whose value converts, with that value, options named by\nlabel.'
+      ),
+    misfits: zod
+      .number()
+      .min(convertDatabaseColumnResponseMisfitsMin)
+      .describe('How many values do not convert, and are left out.'),
+    options: zod
+      .array(zod.string())
+      .describe(
+        'The option labels a new select or tag column needs, in order.'
+      ),
+    tableVersion: zod
+      .number()
+      .describe(
+        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+      ),
+  })
+  .describe(
+    "What a column's values become under another type, for a new column of\nthat type beside it: the values that convert, the options they need,\nand how many do not convert. Nothing is changed by reading it."
+  );
 
 /**
  * @summary Settle a new empty text column's type.

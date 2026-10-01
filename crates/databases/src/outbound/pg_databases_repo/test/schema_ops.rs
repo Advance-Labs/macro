@@ -68,7 +68,6 @@ async fn one_batch_creates_a_table_a_select_column_on_it_and_rows_filling_it(poo
                             value: CellValue::Options(vec![OptionRef::Id(crew)]),
                         }],
                     ],
-                    create_missing_options: false,
                 },
             ]
             .into(),
@@ -422,7 +421,6 @@ async fn a_stale_expected_version_conflicts_and_writes_nothing(pool: PgPool) {
         .apply_writes(&Writes {
             database_id: guests.database_id,
             created_by: viewer().user_id,
-            options: Vec::new(),
             writes: vec![
                 Write::CreateTable {
                     table_id: hosts,
@@ -476,7 +474,6 @@ async fn a_type_change_converts_stored_cells_and_rewrites_views_testing_the_colu
                             value: CellValue::Text("7".into()),
                         }],
                     ],
-                    create_missing_options: false,
                 },
                 DatabaseOp::CreateView {
                     table: guests.table_id,
@@ -531,7 +528,6 @@ async fn a_type_change_converts_stored_cells_and_rewrites_views_testing_the_colu
                 table: guests.table_id,
                 column: guests.name,
                 to: ColumnKind::Number,
-                clear_invalid: false,
             }]
             .into(),
         )
@@ -542,8 +538,6 @@ async fn a_type_change_converts_stored_cells_and_rewrites_views_testing_the_colu
         results,
         vec![OpResult::ColumnTyped {
             table_version: TableVersion(before.0 + 1),
-            cleared_cells: 0,
-            trimmed_cells: 0,
         }]
     );
     let repo = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));

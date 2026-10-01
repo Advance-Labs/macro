@@ -15,9 +15,6 @@ check.
 export type DatabaseOpOneOfTwoone = {
   /** Which rows get which cells. */
   changes: RowChanges;
-  /** Create a select option for a label the column does not have yet,
-instead of refusing the op. */
-  createMissingOptions?: boolean;
   kind: DatabaseOpOneOfTwooneKind;
   /** The table the rows belong to. */
   table: string;

@@ -1,6 +1,10 @@
 /** The `/databases` routes of `crates/databases`, mounted by the document storage service. */
 import { SERVER_HOSTS } from '@core/constant/servers';
-import type { DatabaseOp } from '@core/database-sql/generated/types';
+import type {
+  CellValue,
+  DatabaseOp,
+  OpColumnKind,
+} from '@core/database-sql/generated/types';
 import {
   type FetchWithTokenErrorCode,
   type FetchWithTokenInit,
@@ -13,6 +17,7 @@ import { match } from 'ts-pattern';
 import type { ApplyOpsResponse } from './generated/schemas/applyOpsResponse';
 import type { Awareness } from './generated/schemas/awareness';
 import type { ColumnCast } from './generated/schemas/columnCast';
+import type { ColumnConversion } from './generated/schemas/columnConversion';
 import type { CreateDatabaseRequest } from './generated/schemas/createDatabaseRequest';
 import type { Database } from './generated/schemas/database';
 import type { DatabaseDetail } from './generated/schemas/databaseDetail';
@@ -40,6 +45,11 @@ type DatabaseOpsErrorCode = FetchWithTokenErrorCode | 'INVALID_OP';
 /** An `/ops` failure; an `INVALID_OP` names the op, row, column and taken id it refused. */
 export type DatabaseOpsError = ResultError<DatabaseOpsErrorCode> & {
   refusal: OpRefusalResponse | null;
+};
+
+/** A {@link ColumnConversion} whose cells are the engine's own values, ready for an `update_rows` op. */
+export type DatabaseColumnConversion = Omit<ColumnConversion, 'cells'> & {
+  cells: { row: string; value: CellValue }[];
 };
 
 const documentStorageHost = SERVER_HOSTS['document-storage-service'];
@@ -197,6 +207,27 @@ export const databasesClient = {
     return databasesFetch<ColumnCast[]>(
       `/databases/${params.id}/tables/${params.tableId}/columns/${params.columnId}/casts`
     );
+  },
+
+  /**
+   * What a column's values become under `to`, for a new column of that type
+   * beside it; nothing changes. A type no value converts to is refused (400)
+   * with the cast's reason.
+   */
+  convertColumn(params: {
+    id: string;
+    tableId: string;
+    columnId: string;
+    to: OpColumnKind;
+  }): ResultAsync<DatabaseColumnConversion, DatabaseOpsError[]> {
+    return databasesFetch<DatabaseColumnConversion, 'INVALID_OP'>(
+      `/databases/${params.id}/tables/${params.tableId}/columns/${params.columnId}/conversion`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ to: params.to }),
+        invalid: 'INVALID_OP',
+      }
+    ).mapErr((errors) => errors.map((error) => ({ ...error, refusal: null })));
   },
 
   inferColumnType(params: {

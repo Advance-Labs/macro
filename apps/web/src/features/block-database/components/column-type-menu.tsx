@@ -7,6 +7,7 @@ import {
   castTargetOf,
   type DatabaseColumnCast,
   type DatabaseColumnCasts,
+  type DatabaseColumnConversion,
   type DatabaseColumnKind,
   type DatabaseColumnTypeChange,
 } from '../core/column-schema';
@@ -29,10 +30,11 @@ const types: { label: string; to: DatabaseColumnKind }[] = [
   { label: 'Tasks', to: { type: 'entity', target: 'TASK', multi: false } },
 ];
 
-/** A checked choice some values would not survive, awaiting confirmation. */
-export type DatabaseColumnClearingChoice = {
-  label: string;
-  change: DatabaseColumnTypeChange;
+/** A checked type some values do not fit, offered as a new column beside this one. */
+export type DatabaseColumnConversionChoice = Omit<
+  DatabaseColumnConversion,
+  'columnName'
+> & {
   cast: Extract<DatabaseColumnCast, { verdict: 'checked' }>;
 };
 
@@ -44,7 +46,11 @@ export function ColumnTypeMenu(props: {
     open: Accessor<boolean>
   ) => Accessor<DatabaseColumnCasts> | undefined;
   onChange: (change: DatabaseColumnTypeChange) => void;
-  onConfirmClearing: (choice: DatabaseColumnClearingChoice) => void;
+  /**
+   * A type some values do not fit is never changed in place; without this
+   * it is not offered.
+   */
+  onConvertToNewColumn?: (choice: DatabaseColumnConversionChoice) => void;
 }) {
   const [open, setOpen] = createSignal(false);
   const casts = props.loadCasts?.(open);
@@ -61,22 +67,27 @@ export function ColumnTypeMenu(props: {
     );
   };
   /** A type no value converts to is left out; until the dry run answers, nothing is listed. */
-  const offered = (to: DatabaseColumnKind) => castOf(to)?.verdict !== 'never';
+  const offered = (to: DatabaseColumnKind) => {
+    const cast = castOf(to);
+    if (cast?.verdict === 'never') return false;
+    return !misfits(cast) || !!props.onConvertToNewColumn;
+  };
   const checking = () => casts?.().status === 'loading';
   const offeredTables = () =>
     (props.tables ?? []).filter((table) =>
       offered({ type: 'relation', table: table.id })
     );
   const choose = (label: string, to: DatabaseColumnKind) => {
+    const cast = castOf(to);
+    if (misfits(cast)) {
+      props.onConvertToNewColumn?.({ to, label, cast });
+      return;
+    }
     const read = casts?.();
-    const change: DatabaseColumnTypeChange = {
+    props.onChange({
       to,
       baseVersion: read?.status === 'ready' ? read.version : undefined,
-    };
-    const cast = castOf(to);
-    if (cast?.verdict === 'checked' && cast.failures > 0)
-      props.onConfirmClearing({ label, change, cast });
-    else props.onChange(change);
+    });
   };
   return (
     <Dropdown.Sub open={open()} onOpenChange={setOpen}>
@@ -142,7 +153,14 @@ export function ColumnTypeMenu(props: {
   );
 }
 
-/** One offered type; a checked one says what converting would clear. */
+/** A checked type some values do not fit. */
+function misfits(
+  cast: DatabaseColumnCast | undefined
+): cast is Extract<DatabaseColumnCast, { verdict: 'checked' }> {
+  return cast?.verdict === 'checked' && cast.failures > 0;
+}
+
+/** One offered type; a checked one says which values do not fit. */
 function TypeItem(props: {
   label: string;
   cast: DatabaseColumnCast | undefined;
@@ -152,7 +170,10 @@ function TypeItem(props: {
 }) {
   const description = () => {
     const cast = props.cast;
-    return cast?.verdict === 'checked' ? cast.summary : undefined;
+    if (!misfits(cast)) return undefined;
+    return [cast.summary, 'Converts into a new column']
+      .filter((part) => !!part)
+      .join(' · ');
   };
   return (
     <Dropdown.Item onSelect={props.onSelect}>

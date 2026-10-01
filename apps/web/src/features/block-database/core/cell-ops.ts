@@ -130,14 +130,12 @@ export function cellValue(
 
 /**
  * The one op a grid edit is. `columnFor` answers the writable column a
- * value goes to; `createOptions` lets labels the column lacks become new
- * options instead of refusing the write.
+ * value goes to.
  */
 export function mutationOp(
   tableId: string,
   mutation: DatabaseRowMutation,
-  columnFor: (columnId: string) => Result<ColumnDetail, DatabaseCellFailure>,
-  createOptions: boolean
+  columnFor: (columnId: string) => Result<ColumnDetail, DatabaseCellFailure>
 ): Result<DatabaseOp, DatabaseCellFailure> {
   const cell = (columnId: string, value: DatabaseCellValue) =>
     columnFor(columnId)
@@ -153,7 +151,6 @@ export function mutationOp(
           kind: 'per_row',
           rows: [{ row: rowId, cells: [written] }],
         },
-        createMissingOptions: createOptions,
       }))
     )
     .with({ kind: 'create' }, ({ values }) =>
@@ -163,11 +160,52 @@ export function mutationOp(
         kind: 'insert_rows',
         table: tableId,
         rows: [cells],
-        createMissingOptions: createOptions,
       }))
     )
     .with({ kind: 'delete' }, ({ rowId }) =>
       ok({ kind: 'delete_rows', table: tableId, rows: [rowId] })
     )
     .exhaustive();
+}
+
+/**
+ * The labels a write names options by that its columns lack, per column:
+ * what an `add_options` op ahead of it must create, since an unknown label
+ * refuses the write. `labelsOf` answers a column's own option labels.
+ */
+export function missingOptionLabels(
+  op: DatabaseOp,
+  labelsOf: (columnId: string) => readonly string[]
+): { column: string; labels: string[] }[] {
+  const cells = match(op)
+    .returnType<CellWrite[]>()
+    .with({ kind: 'insert_rows' }, ({ rows }) => rows.flat())
+    .with(
+      { kind: 'update_rows', changes: { kind: 'uniform' } },
+      ({ changes }) => changes.cells
+    )
+    .with(
+      { kind: 'update_rows', changes: { kind: 'per_row' } },
+      ({ changes }) => changes.rows.flatMap((row) => row.cells)
+    )
+    .otherwise(() => []);
+  const missing = new Map<string, Map<string, string>>();
+  for (const cell of cells) {
+    if (cell.value.type !== 'options') continue;
+    const known = new Set(
+      labelsOf(cell.column).map((label) => label.toLowerCase())
+    );
+    const labels = missing.get(cell.column) ?? new Map<string, string>();
+    for (const option of cell.value.value) {
+      const label = option.label;
+      if (label === undefined || known.has(label.toLowerCase())) continue;
+      if (!labels.has(label.toLowerCase()))
+        labels.set(label.toLowerCase(), label);
+    }
+    if (labels.size) missing.set(cell.column, labels);
+  }
+  return [...missing].map(([column, labels]) => ({
+    column,
+    labels: [...labels.values()],
+  }));
 }

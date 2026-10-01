@@ -130,7 +130,6 @@ async fn commit(
         .apply_writes(&Writes {
             database_id,
             created_by: user(),
-            options: Vec::new(),
             writes,
             related_rows: Vec::new(),
             expected_versions: Vec::new(),

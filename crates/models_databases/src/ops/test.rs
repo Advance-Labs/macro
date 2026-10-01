@@ -27,7 +27,6 @@ fn an_insert_reads_its_rows_cells_and_values_from_json() {
                 {"column": NAME, "value": {"type": "clear"}},
             ],
         ],
-        "createMissingOptions": true,
     }))
     .unwrap();
 
@@ -51,7 +50,6 @@ fn an_insert_reads_its_rows_cells_and_values_from_json() {
                     value: CellValue::Clear,
                 }],
             ],
-            create_missing_options: true,
         }
     );
 }
@@ -116,7 +114,6 @@ fn updates_name_their_rows_uniformly_or_one_by_one() {
                     value: CellValue::Text("Guest".into()),
                 }],
             },
-            create_missing_options: false,
         }
     );
 
@@ -127,7 +124,6 @@ fn updates_name_their_rows_uniformly_or_one_by_one() {
             "kind": "per_row",
             "rows": [{"row": SAM, "cells": [{"column": NAME, "value": {"type": "text", "value": "Sam"}}]}],
         },
-        "createMissingOptions": false,
     }))
     .unwrap();
     assert_eq!(
@@ -143,7 +139,6 @@ fn updates_name_their_rows_uniformly_or_one_by_one() {
                     }],
                 }],
             },
-            create_missing_options: false,
         }
     );
 }
@@ -157,7 +152,6 @@ fn deletes_and_type_changes_read_from_json() {
             "table": TABLE,
             "column": STATUS,
             "to": {"type": "select", "multi": true},
-            "clearInvalid": true,
         },
         {
             "kind": "change_column_type",
@@ -185,7 +179,6 @@ fn deletes_and_type_changes_read_from_json() {
                 table: TABLE,
                 column: STATUS,
                 to: ColumnKind::Select { multi: true },
-                clear_invalid: true,
             },
             DatabaseOp::ChangeColumnType {
                 table: TABLE,
@@ -194,7 +187,6 @@ fn deletes_and_type_changes_read_from_json() {
                     target: EntityKind::User,
                     multi: false,
                 },
-                clear_invalid: false,
             },
             DatabaseOp::ChangeColumnType {
                 table: TABLE,
@@ -203,7 +195,6 @@ fn deletes_and_type_changes_read_from_json() {
                     database: PEOPLE,
                     table: TABLE,
                 },
-                clear_invalid: false,
             },
         ]
     );
@@ -219,8 +210,6 @@ fn results_say_what_each_op_did_in_camel_case() {
         },
         OpResult::ColumnTyped {
             table_version: TableVersion(5),
-            cleared_cells: 2,
-            trimmed_cells: 1,
         },
     ];
 
@@ -228,7 +217,7 @@ fn results_say_what_each_op_did_in_camel_case() {
         serde_json::to_value(&results).unwrap(),
         json!([
             {"kind": "rows_written", "tableVersion": 4, "inserted": [SAM], "affected": 1},
-            {"kind": "column_typed", "tableVersion": 5, "clearedCells": 2, "trimmedCells": 1},
+            {"kind": "column_typed", "tableVersion": 5},
         ])
     );
 }

@@ -223,14 +223,7 @@ describe('Database', () => {
       });
       return Response.json({
         results: [
-          [
-            {
-              kind: 'column_typed',
-              clearedCells: 2,
-              trimmedCells: 1,
-              tableVersion: 8,
-            },
-          ],
+          [{ kind: 'column_typed', tableVersion: 8 }],
           [{ kind: 'columns_reordered', tableVersion: 9 }],
           [{ kind: 'column_deleted', tableVersion: 10 }],
         ][writes.length - 1],
@@ -242,14 +235,8 @@ describe('Database', () => {
     if (!table || !column) throw new Error('Missing fixture column');
     const outcome = await column.changeType({
       to: { type: 'relation', table },
-      clearInvalid: true,
     });
-    expect(outcome).toEqual({
-      kind: 'column_typed',
-      clearedCells: 2,
-      trimmedCells: 1,
-      tableVersion: 8,
-    });
+    expect(outcome).toEqual({ kind: 'column_typed', tableVersion: 8 });
     expect(await table.database.reorderColumns(table, [column])).toBe(9);
     expect(await column.table.database.deleteColumn(column)).toBe(10);
     expect(writes).toEqual([
@@ -263,7 +250,6 @@ describe('Database', () => {
               table: tableId,
               column: columnId,
               to: { type: 'relation', database: databaseId, table: tableId },
-              clearInvalid: true,
             },
           ],
           baseVersions: { [tableId]: 7 },
@@ -543,6 +529,157 @@ describe('Database', () => {
     const [op] = (writes[0] as { ops: { id: string }[] }).ops;
     expect(status.id).toBe(op?.id ?? '');
     expect(status.table).toBe(table);
+  });
+
+  test('converts a column into a new one after it: one conversion read, then one batch creating and filling it at the read version', async () => {
+    const firstRow = '0198a4cc-e138-7670-a308-a6b76660270a';
+    const secondRow = '0198a4cc-e138-7670-a308-a6b76660270b';
+    const writes: { url: string; body: unknown }[] = [];
+    intercept(async (request) => {
+      if (request.method === 'GET') return Response.json(support);
+      const body = await request.json();
+      writes.push({ url: request.url, body });
+      if (request.url.endsWith('/conversion'))
+        return Response.json({
+          tableVersion: 9,
+          options: ['Open', 'Closed'],
+          cells: [
+            {
+              row: firstRow,
+              value: { type: 'options', value: [{ label: 'Open' }] },
+            },
+            {
+              row: secondRow,
+              value: { type: 'options', value: [{ label: 'Closed' }] },
+            },
+          ],
+          misfits: 1,
+        });
+      const [op] = (body as { ops: { id: string }[] }).ops;
+      return Response.json({
+        results: [
+          { kind: 'column_created', column: op?.id, tableVersion: 10 },
+          { kind: 'rows_written', tableVersion: 10 },
+        ],
+      });
+    });
+    const table = await client().databases.byId(databaseId).table('Tickets');
+    const name = (await table?.columns())?.[0];
+    if (!table || !name) throw new Error('Missing fixture column');
+    const converted = await name.convertIntoNewColumn({
+      to: { type: 'select', multi: false },
+    });
+    const v7 =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+    const batch = writes[1]?.body as { ops: { id: string }[] };
+    const newColumn = batch.ops[0]?.id ?? '';
+    expect(writes).toEqual([
+      {
+        url: `${host}/databases/${databaseId}/tables/${tableId}/columns/${columnId}/conversion`,
+        body: { to: { type: 'select', multi: false } },
+      },
+      {
+        url: `${host}/databases/${databaseId}/ops`,
+        body: {
+          ops: [
+            {
+              kind: 'create_column',
+              table: tableId,
+              id: expect.stringMatching(v7),
+              definition: {
+                source: 'new',
+                name: 'Name (Select)',
+                type: { type: 'select', multi: false },
+                options: [
+                  { id: expect.stringMatching(v7), label: 'Open' },
+                  { id: expect.stringMatching(v7), label: 'Closed' },
+                ],
+              },
+              after: columnId,
+            },
+            {
+              kind: 'update_rows',
+              table: tableId,
+              changes: {
+                kind: 'per_row',
+                rows: [
+                  {
+                    row: firstRow,
+                    cells: [
+                      {
+                        column: newColumn,
+                        value: { type: 'options', value: [{ label: 'Open' }] },
+                      },
+                    ],
+                  },
+                  {
+                    row: secondRow,
+                    cells: [
+                      {
+                        column: newColumn,
+                        value: {
+                          type: 'options',
+                          value: [{ label: 'Closed' }],
+                        },
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
+          baseVersions: { [tableId]: 9 },
+        },
+      },
+    ]);
+    expect(converted.id).toBe(newColumn);
+    expect(converted.table).toBe(table);
+  });
+
+  test('converts a column with no convertible values into an empty new column under the given name, with no row update', async () => {
+    const writes: { url: string; body: unknown }[] = [];
+    intercept(async (request) => {
+      if (request.method === 'GET') return Response.json(support);
+      const body = await request.json();
+      writes.push({ url: request.url, body });
+      if (request.url.endsWith('/conversion'))
+        return Response.json({
+          tableVersion: 7,
+          options: [],
+          cells: [],
+          misfits: 3,
+        });
+      const [op] = (body as { ops: { id: string }[] }).ops;
+      return Response.json({
+        results: [{ kind: 'column_created', column: op?.id, tableVersion: 8 }],
+      });
+    });
+    const table = await client().databases.byId(databaseId).table('Tickets');
+    const name = (await table?.columns())?.[0];
+    if (!name) throw new Error('Missing fixture column');
+    await name.convertIntoNewColumn({ to: { type: 'number' }, name: 'Score' });
+    expect(writes[1]).toEqual({
+      url: `${host}/databases/${databaseId}/ops`,
+      body: {
+        ops: [
+          {
+            kind: 'create_column',
+            table: tableId,
+            id: expect.stringMatching(
+              /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+            ),
+            definition: {
+              source: 'new',
+              name: 'Score',
+              type: { type: 'number' },
+              options: [],
+            },
+            after: columnId,
+          },
+        ],
+        baseVersions: { [tableId]: 7 },
+      },
+    });
   });
 
   test('binds a column to an existing property definition by handle', async () => {
