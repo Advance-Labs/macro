@@ -3,7 +3,9 @@ import type { FilterNode } from '@core/database-sql/generated/types';
 import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
 import type { ViewColumn } from '@service-storage/generated/schemas/viewColumn';
 import type { ViewLayout } from '@service-storage/generated/schemas/viewLayout';
+import { err, ok, type Result } from 'neverthrow';
 import { type DatabaseViewColumn, isBoardGroupColumn } from './database-view';
+import { moveBeside } from './move-beside';
 import { titleColumn } from './table';
 
 /** A table layout's column, with how it shows. */
@@ -190,16 +192,22 @@ function withoutColumnNode(
   return conditions.length ? { ...node, conditions } : undefined;
 }
 
-/** The view without a removed column: its conditions, sort key and layout entry go. */
+/**
+ * The view without a removed column: its conditions, sort key and layout
+ * entry go. A board grouped by it has nothing else to group by, so the
+ * column cannot be removed from it, as the service refuses too.
+ */
 export function withoutColumn(
   view: DatabaseView,
   columnId: string
-): DatabaseView {
+): Result<DatabaseView, { kind: 'board-groups-by-column' }> {
+  if (view.layout.kind === 'board' && view.layout.groupBy === columnId)
+    return err({ kind: 'board-groups-by-column' });
   const filter = view.query.filter;
   const kept = filter
     ? withoutColumnNode({ kind: 'group', ...filter }, columnId)
     : undefined;
-  return {
+  return ok({
     ...view,
     query: {
       filter:
@@ -220,7 +228,7 @@ export function withoutColumn(
             ...view.layout,
             cardFields: view.layout.cardFields.filter((id) => id !== columnId),
           },
-  };
+  });
 }
 
 /** The view order with `id` dropped onto `target`'s place; unchanged when either is unknown or they are the same. */
@@ -229,10 +237,6 @@ export function movedViewOrder(
   id: string,
   target: string
 ): string[] {
-  const from = order.indexOf(id);
-  const to = order.indexOf(target);
-  if (from < 0 || to < 0 || from === to) return [...order];
-  const moved = order.filter((view) => view !== id);
-  moved.splice(to, 0, id);
-  return moved;
+  const edge = order.indexOf(id) < order.indexOf(target) ? 'after' : 'before';
+  return moveBeside(order, id, target, edge) ?? [...order];
 }

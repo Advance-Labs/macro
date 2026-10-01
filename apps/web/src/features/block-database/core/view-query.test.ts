@@ -410,52 +410,44 @@ describe('filter groups', () => {
 describe('search', () => {
   it('matches any text cell holding the term, or any option whose label does', () => {
     expect(searchFilter(' may ', [name, rsvp, labels, guests])).toEqual({
-      kind: 'group',
-      conjunction: 'or',
-      conditions: [
-        {
-          kind: 'condition',
-          column: 'name',
-          test: { kind: 'text', operator: 'contains', value: 'may' },
-        },
-        {
-          kind: 'condition',
-          column: 'rsvp',
-          test: { kind: 'options', operator: 'isAnyOf', options: ['maybe'] },
-        },
-      ],
+      kind: 'matching',
+      filter: {
+        kind: 'group',
+        conjunction: 'or',
+        conditions: [
+          {
+            kind: 'condition',
+            column: 'name',
+            test: { kind: 'text', operator: 'contains', value: 'may' },
+          },
+          {
+            kind: 'condition',
+            column: 'rsvp',
+            test: { kind: 'options', operator: 'isAnyOf', options: ['maybe'] },
+          },
+        ],
+      },
     });
     expect(searchFilter('vip', [labels])).toEqual({
-      kind: 'group',
-      conjunction: 'or',
-      conditions: [
-        {
-          kind: 'condition',
-          column: 'labels',
-          test: { kind: 'options', operator: 'hasAny', options: ['vip'] },
-        },
-      ],
+      kind: 'matching',
+      filter: {
+        kind: 'group',
+        conjunction: 'or',
+        conditions: [
+          {
+            kind: 'condition',
+            column: 'labels',
+            test: { kind: 'options', operator: 'hasAny', options: ['vip'] },
+          },
+        ],
+      },
     });
   });
 
-  it('searches nothing for a blank term, and matches no row when no column can hold it', () => {
+  it('searches nothing for a blank term, and finds nothing when no column can hold it', () => {
     expect(searchFilter('   ', [name])).toBeUndefined();
-    expect(searchFilter('zzz', [rsvp, guests])).toEqual({
-      kind: 'group',
-      conjunction: 'and',
-      conditions: [
-        {
-          kind: 'condition',
-          column: 'rsvp',
-          test: { kind: 'presence', operator: 'isEmpty' },
-        },
-        {
-          kind: 'condition',
-          column: 'rsvp',
-          test: { kind: 'presence', operator: 'isNotEmpty' },
-        },
-      ],
-    });
+    expect(searchFilter('zzz', [rsvp, guests])).toEqual({ kind: 'nothing' });
+    expect(searchFilter('zzz', [])).toEqual({ kind: 'nothing' });
   });
 });
 

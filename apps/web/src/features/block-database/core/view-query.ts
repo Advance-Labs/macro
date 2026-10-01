@@ -300,14 +300,20 @@ export function removeNode(group: FilterGroup, path: FilterPath): FilterGroup {
   };
 }
 
+/** What a search keeps: the rows a filter matches, or none at all. */
+export type DatabaseSearch =
+  | { kind: 'matching'; filter: FilterNode }
+  /** No column can hold the term. */
+  | { kind: 'nothing' };
+
 /**
  * Rows holding `term`: a text cell containing it, or an option whose label
- * does. A term no column can hold matches no row; a blank one, every row.
+ * does. A blank term searches nothing and keeps every row.
  */
 export function searchFilter(
   term: string,
   columns: readonly DatabaseViewColumn[]
-): FilterNode | undefined {
+): DatabaseSearch | undefined {
   const text = term.trim();
   if (!text) return undefined;
   const lower = text.toLocaleLowerCase();
@@ -342,27 +348,31 @@ export function searchFilter(
       .with('number', 'date', 'checkbox', 'entities', () => [])
       .exhaustive()
   );
-  if (conditions.length)
-    return { kind: 'group', conjunction: 'or', conditions };
-  const [anyColumn] = columns;
-  // A cell is never both empty and not: the typed spelling of no rows.
+  return conditions.length
+    ? {
+        kind: 'matching',
+        filter: { kind: 'group', conjunction: 'or', conditions },
+      }
+    : { kind: 'nothing' };
+}
+
+/** A filter no row passes: a cell is never both empty and not. */
+export function noRowFilter(columnId: string): FilterNode {
   return {
     kind: 'group',
     conjunction: 'and',
-    conditions: anyColumn
-      ? [
-          {
-            kind: 'condition',
-            column: anyColumn.id,
-            test: { kind: 'presence', operator: 'isEmpty' },
-          },
-          {
-            kind: 'condition',
-            column: anyColumn.id,
-            test: { kind: 'presence', operator: 'isNotEmpty' },
-          },
-        ]
-      : [],
+    conditions: [
+      {
+        kind: 'condition',
+        column: columnId,
+        test: { kind: 'presence', operator: 'isEmpty' },
+      },
+      {
+        kind: 'condition',
+        column: columnId,
+        test: { kind: 'presence', operator: 'isNotEmpty' },
+      },
+    ],
   };
 }
 

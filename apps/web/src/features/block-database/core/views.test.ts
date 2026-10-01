@@ -1,3 +1,4 @@
+import { err, ok } from 'neverthrow';
 import { describe, expect, it } from 'vitest';
 import type { DatabaseViewColumn } from './database-view';
 import {
@@ -175,29 +176,50 @@ describe('a removed column', () => {
         },
         'guests'
       )
-    ).toEqual({
-      id: 'view',
-      databaseId: 'database',
-      tableId: 'table',
-      name: 'Board',
-      position: 'a0',
-      createdAt: '2026-10-01T00:00:00Z',
-      updatedAt: '2026-10-01T00:00:00Z',
-      query: {
-        filter: {
-          conjunction: 'and',
-          conditions: [
-            {
-              kind: 'condition',
-              column: 'name',
-              test: { kind: 'presence', operator: 'isEmpty' },
-            },
-          ],
+    ).toEqual(
+      ok({
+        id: 'view',
+        databaseId: 'database',
+        tableId: 'table',
+        name: 'Board',
+        position: 'a0',
+        createdAt: '2026-10-01T00:00:00Z',
+        updatedAt: '2026-10-01T00:00:00Z',
+        query: {
+          filter: {
+            conjunction: 'and',
+            conditions: [
+              {
+                kind: 'condition',
+                column: 'name',
+                test: { kind: 'presence', operator: 'isEmpty' },
+              },
+            ],
+          },
+          sort: [],
         },
-        sort: [],
-      },
-      layout: { ...board, cardFields: [] },
-    });
+        layout: { ...board, cardFields: [] },
+      })
+    );
+  });
+
+  it('cannot leave a board without the column it groups by', () => {
+    expect(
+      withoutColumn(
+        {
+          id: 'view',
+          databaseId: 'database',
+          tableId: 'table',
+          name: 'Board',
+          position: 'a0',
+          createdAt: '2026-10-01T00:00:00Z',
+          updatedAt: '2026-10-01T00:00:00Z',
+          query: { filter: null, sort: [] },
+          layout: board,
+        },
+        'rsvp'
+      )
+    ).toEqual(err({ kind: 'board-groups-by-column' }));
   });
 });
 
