@@ -14,10 +14,8 @@ import type { Table } from './table';
 export interface TableDetail {
   /** Columns in display order. */
   columns: ColumnDetail[];
-  /** The same name; kept for clients that still distinguish reads. */
-  read_sql_name: string;
-  /** The name SQL refers to the table by: its display name, quoted when it
-needs it (`FROM "Table 1"`), optionally qualified by the database's. */
+  /** The name SQL refers to the table by: its display name quoted and
+qualified by the database's (`FROM "Plans"."Table 1"`). */
   sql_name: string;
   /** The table. */
   table: Table;

@@ -16,10 +16,12 @@ a place there, between two of its cards. Only an unsorted board's
 cards move by hand.
  */
 export type DatabaseOpOneOfTwotwo = {
-  /** The card it lands right before, when `before` is not given; with
-neither, the card goes to the end of the lane. */
+  /** The card that ends up just after it, if any. Given with `before`,
+it must be the card right after `before`; with neither, the card
+goes to the end of the lane. */
   after?: DatabaseOpOneOfTwotwoAfter;
-  /** The card it lands right after, if any. */
+  /** The card that ends up just before it (it lands right after this
+one), if any. */
   before?: DatabaseOpOneOfTwotwoBefore;
   kind: DatabaseOpOneOfTwotwoKind;
   /** The lane it goes to: an option of the board's column, or `null`

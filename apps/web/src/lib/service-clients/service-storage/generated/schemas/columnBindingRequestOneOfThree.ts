@@ -12,5 +12,5 @@ import type { ColumnBindingRequestOneOfThreeKind } from './columnBindingRequestO
 export type ColumnBindingRequestOneOfThree = {
   kind: ColumnBindingRequestOneOfThreeKind;
   /** The definition to bind. */
-  property_definition_id: string;
+  propertyDefinitionId: string;
 };

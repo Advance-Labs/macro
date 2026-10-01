@@ -19,8 +19,7 @@ export interface ColumnDetail {
 person's, a team's or a system property), so changing its options
 changes them everywhere that property is used. */
   shared_outside_database: boolean;
-  /** The name SQL refers to the column by: its display name, quoted when it
-needs it. */
+  /** The name SQL refers to the column by: its display name, quoted. */
   sql_name: string;
   /** Whether SQL may write this column. */
   writable: boolean;

@@ -13,9 +13,9 @@ import type { DataType } from './dataType';
  */
 export type ColumnBindingRequestOneOf = {
   /** Value type. */
-  data_type: DataType;
+  dataType: DataType;
   /** Whether the column holds multiple values. */
-  is_multi_select?: boolean;
+  isMultiSelect?: boolean;
   kind: ColumnBindingRequestOneOfKind;
   /** Column display name. */
   name: string;

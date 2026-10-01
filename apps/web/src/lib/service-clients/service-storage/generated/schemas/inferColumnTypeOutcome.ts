@@ -11,7 +11,7 @@ import type { TableVersion } from './tableVersion';
  * Settled schema and the version against which its first value can be written.
  */
 export interface InferColumnTypeOutcome {
-  /** Updated placement, property definition, and stable SQL identifier. */
+  /** Updated placement, property definition, and SQL name. */
   column: ColumnDetail;
   /** Version after settling the column. */
   table_version: TableVersion;

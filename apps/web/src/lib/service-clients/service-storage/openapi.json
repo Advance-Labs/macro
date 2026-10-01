@@ -7580,7 +7580,7 @@
       },
       "post": {
         "tags": ["databases"],
-        "summary": "Create a database owned by the caller.",
+        "summary": "Create a database owned by the caller; its first table, \"Table 1\", holds a\n\"Name\" text column.",
         "operationId": "create_database",
         "requestBody": {
           "content": {
@@ -7891,7 +7891,7 @@
         },
         "responses": {
           "204": {
-            "description": "Relayed"
+            "description": "Relayed to the database's other viewers"
           },
           "401": {
             "description": "Missing or invalid credentials",
@@ -19493,6 +19493,31 @@
           }
         }
       },
+      "AwarenessRelay": {
+        "type": "object",
+        "description": "The [`AWARENESS_MESSAGE_TYPE`] payload: one viewer's awareness, stamped\nwhen the server relayed it so receivers can drop older relays.",
+        "required": ["databaseId", "userId", "state", "relayedAt"],
+        "properties": {
+          "databaseId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The database the viewer is in."
+          },
+          "relayedAt": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the server relayed it, in milliseconds since the Unix epoch."
+          },
+          "state": {
+            "$ref": "#/components/schemas/Awareness",
+            "description": "Where the viewer is."
+          },
+          "userId": {
+            "type": "string",
+            "description": "The viewer."
+          }
+        }
+      },
       "BTreeMap": {
         "type": "object",
         "additionalProperties": {
@@ -20964,7 +20989,7 @@
           },
           {
             "type": "object",
-            "description": "Rows of the table a relation column points at, by [`RowId`].",
+            "description": "Rows of the table a relation column points at.",
             "required": ["value", "type"],
             "properties": {
               "type": {
@@ -20977,7 +21002,7 @@
                   "type": "string",
                   "format": "uuid"
                 },
-                "description": "Rows of the table a relation column points at, by [`RowId`]."
+                "description": "Rows of the table a relation column points at."
               }
             }
           },
@@ -22406,7 +22431,7 @@
           },
           "display_name": {
             "type": ["string", "null"],
-            "description": "Optional label for this placement. The property's name still defines\nits SQL identifier, so renaming a column does not break saved queries."
+            "description": "The placement's own label, which also names it in SQL; `None` shows\nthe definition's name."
           },
           "id": {
             "type": "string",
@@ -22438,13 +22463,13 @@
           {
             "type": "object",
             "description": "Create a fresh definition scoped to the database.",
-            "required": ["name", "data_type", "kind"],
+            "required": ["name", "dataType", "kind"],
             "properties": {
-              "data_type": {
+              "dataType": {
                 "$ref": "#/components/schemas/DataType",
                 "description": "Value type."
               },
-              "is_multi_select": {
+              "isMultiSelect": {
                 "type": "boolean",
                 "description": "Whether the column holds multiple values."
               },
@@ -22468,13 +22493,13 @@
           {
             "type": "object",
             "description": "Bind an existing user/team/system definition.",
-            "required": ["property_definition_id", "kind"],
+            "required": ["propertyDefinitionId", "kind"],
             "properties": {
               "kind": {
                 "type": "string",
                 "enum": ["existing"]
               },
-              "property_definition_id": {
+              "propertyDefinitionId": {
                 "type": "string",
                 "format": "uuid",
                 "description": "The definition to bind."
@@ -22570,26 +22595,6 @@
                 "description": "Target table."
               }
             }
-          },
-          {
-            "type": "object",
-            "description": "A derived lookup through a link or entity column on the same table.",
-            "required": ["via_column_id", "target", "kind"],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": ["lookup"]
-              },
-              "target": {
-                "type": "string",
-                "description": "Target field on the other side (a definition id or magic column name)."
-              },
-              "via_column_id": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The link/entity column the lookup reads through."
-              }
-            }
           }
         ],
         "description": "Column-kind specific configuration stored on the placement."
@@ -22619,7 +22624,7 @@
           },
           "sql_name": {
             "type": "string",
-            "description": "The name SQL refers to the column by: its display name, quoted when it\nneeds it."
+            "description": "The name SQL refers to the column by: its display name, quoted."
           },
           "writable": {
             "type": "boolean",
@@ -23252,7 +23257,7 @@
           },
           "inferType": {
             "type": "boolean",
-            "description": "Infer the first value type of a newly owned text column. `infer_type`\nis still accepted from clients that predate the camelCase name."
+            "description": "Infer the first value type of a newly owned text column."
           },
           "linkToDatabaseId": {
             "type": "string",
@@ -24958,12 +24963,12 @@
               "after": {
                 "type": ["string", "null"],
                 "format": "uuid",
-                "description": "The card it lands right before, when `before` is not given; with\nneither, the card goes to the end of the lane."
+                "description": "The card that ends up just after it, if any. Given with `before`,\nit must be the card right after `before`; with neither, the card\ngoes to the end of the lane."
               },
               "before": {
                 "type": ["string", "null"],
                 "format": "uuid",
-                "description": "The card it lands right after, if any."
+                "description": "The card that ends up just before it (it lands right after this\none), if any."
               },
               "kind": {
                 "type": "string",
@@ -29344,7 +29349,7 @@
         "properties": {
           "column": {
             "$ref": "#/components/schemas/ColumnDetail",
-            "description": "Updated placement, property definition, and stable SQL identifier."
+            "description": "Updated placement, property definition, and SQL name."
           },
           "table_version": {
             "$ref": "#/components/schemas/TableVersion",
@@ -29355,17 +29360,17 @@
       "InferColumnTypeRequest": {
         "type": "object",
         "description": "Request to settle an empty column's first-value type.",
-        "required": ["data_type", "base_version"],
+        "required": ["dataType", "baseVersion"],
         "properties": {
-          "base_version": {
+          "baseVersion": {
             "$ref": "#/components/schemas/TableVersion",
             "description": "Table version used when interpreting the first value."
           },
-          "data_type": {
+          "dataType": {
             "$ref": "#/components/schemas/DataType",
             "description": "First-value type: STRING, NUMBER, or ENTITY."
           },
-          "specific_entity_type": {
+          "specificEntityType": {
             "oneOf": [
               {
                 "type": "null"
@@ -35933,10 +35938,31 @@
           }
         }
       },
+      "TableChanged": {
+        "type": "object",
+        "description": "The [`TABLE_CHANGED_MESSAGE_TYPE`] payload: one table's new version.",
+        "required": ["databaseId", "tableId", "version"],
+        "properties": {
+          "databaseId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The database the table belongs to."
+          },
+          "tableId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The table that changed."
+          },
+          "version": {
+            "$ref": "#/components/schemas/TableVersion",
+            "description": "The table's version after the write."
+          }
+        }
+      },
       "TableDetail": {
         "type": "object",
         "description": "One table with its columns and SQL name.",
-        "required": ["table", "sql_name", "read_sql_name", "columns", "views"],
+        "required": ["table", "sql_name", "columns", "views"],
         "properties": {
           "columns": {
             "type": "array",
@@ -35945,13 +35971,9 @@
             },
             "description": "Columns in display order."
           },
-          "read_sql_name": {
-            "type": "string",
-            "description": "The same name; kept for clients that still distinguish reads."
-          },
           "sql_name": {
             "type": "string",
-            "description": "The name SQL refers to the table by: its display name, quoted when it\nneeds it (`FROM \"Table 1\"`), optionally qualified by the database's."
+            "description": "The name SQL refers to the table by: its display name quoted and\nqualified by the database's (`FROM \"Plans\".\"Table 1\"`)."
           },
           "table": {
             "$ref": "#/components/schemas/Table",

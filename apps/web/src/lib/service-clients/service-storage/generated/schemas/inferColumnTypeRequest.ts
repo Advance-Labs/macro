@@ -14,8 +14,8 @@ import type { TableVersion } from './tableVersion';
  */
 export interface InferColumnTypeRequest {
   /** Table version used when interpreting the first value. */
-  base_version: TableVersion;
+  baseVersion: TableVersion;
   /** First-value type: STRING, NUMBER, or ENTITY. */
-  data_type: DataType;
-  specific_entity_type?: InferColumnTypeRequestSpecificEntityType;
+  dataType: DataType;
+  specificEntityType?: InferColumnTypeRequestSpecificEntityType;
 }

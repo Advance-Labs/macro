@@ -6323,7 +6323,8 @@ export const listDatabasesResponseItem = zod
 export const listDatabasesResponse = zod.array(listDatabasesResponseItem);
 
 /**
- * @summary Create a database owned by the caller.
+ * @summary Create a database owned by the caller; its first table, "Table 1", holds a
+"Name" text column.
  */
 export const createDatabaseBody = zod
   .object({
@@ -6451,38 +6452,16 @@ export const getDatabaseResponse = zod
                         config: zod.union([
                           zod.null(),
                           zod
-                            .union([
-                              zod
-                                .object({
-                                  database_id: zod
-                                    .uuid()
-                                    .describe('Target database.'),
-                                  kind: zod.enum(['link']),
-                                  table_id: zod
-                                    .uuid()
-                                    .describe('Target table.'),
-                                })
-                                .describe(
-                                  'A relation column: its cells reference rows of another table.'
-                                ),
-                              zod
-                                .object({
-                                  kind: zod.enum(['lookup']),
-                                  target: zod
-                                    .string()
-                                    .describe(
-                                      'Target field on the other side (a definition id or magic column name).'
-                                    ),
-                                  via_column_id: zod
-                                    .uuid()
-                                    .describe(
-                                      'The link\/entity column the lookup reads through.'
-                                    ),
-                                })
-                                .describe(
-                                  'A derived lookup through a link or entity column on the same table.'
-                                ),
-                            ])
+                            .object({
+                              database_id: zod
+                                .uuid()
+                                .describe('Target database.'),
+                              kind: zod.enum(['link']),
+                              table_id: zod.uuid().describe('Target table.'),
+                            })
+                            .describe(
+                              'A relation column: its cells reference rows of another table.'
+                            )
                             .describe(
                               'Column-kind specific configuration stored on the placement.'
                             ),
@@ -6491,7 +6470,7 @@ export const getDatabaseResponse = zod
                           .string()
                           .nullable()
                           .describe(
-                            "Optional label for this placement. The property's name still defines\nits SQL identifier, so renaming a column does not break saved queries."
+                            "The placement's own label, which also names it in SQL; `None` shows\nthe definition's name."
                           ),
                         id: zod.uuid().describe('Identifier of the placement.'),
                         infer_type: zod
@@ -6660,7 +6639,7 @@ export const getDatabaseResponse = zod
                     sql_name: zod
                       .string()
                       .describe(
-                        'The name SQL refers to the column by: its display name, quoted when it\nneeds it.'
+                        'The name SQL refers to the column by: its display name, quoted.'
                       ),
                     writable: zod
                       .boolean()
@@ -6671,15 +6650,10 @@ export const getDatabaseResponse = zod
                   )
               )
               .describe('Columns in display order.'),
-            read_sql_name: zod
-              .string()
-              .describe(
-                'The same name; kept for clients that still distinguish reads.'
-              ),
             sql_name: zod
               .string()
               .describe(
-                'The name SQL refers to the table by: its display name, quoted when it\nneeds it (`FROM \"Table 1\"`), optionally qualified by the database\'s.'
+                'The name SQL refers to the table by: its display name quoted and\nqualified by the database\'s (`FROM \"Plans\".\"Table 1\"`).'
               ),
             table: zod
               .object({
@@ -7266,11 +7240,11 @@ export const applyDatabaseOpsBody = zod
                                   value: zod
                                     .array(zod.uuid())
                                     .describe(
-                                      'Rows of the table a relation column points at, by [`RowId`].'
+                                      'Rows of the table a relation column points at.'
                                     ),
                                 })
                                 .describe(
-                                  'Rows of the table a relation column points at, by [`RowId`].'
+                                  'Rows of the table a relation column points at.'
                                 ),
                               zod
                                 .object({
@@ -7440,11 +7414,11 @@ export const applyDatabaseOpsBody = zod
                                         value: zod
                                           .array(zod.uuid())
                                           .describe(
-                                            'Rows of the table a relation column points at, by [`RowId`].'
+                                            'Rows of the table a relation column points at.'
                                           ),
                                       })
                                       .describe(
-                                        'Rows of the table a relation column points at, by [`RowId`].'
+                                        'Rows of the table a relation column points at.'
                                       ),
                                     zod
                                       .object({
@@ -7615,11 +7589,11 @@ export const applyDatabaseOpsBody = zod
                                                 value: zod
                                                   .array(zod.uuid())
                                                   .describe(
-                                                    'Rows of the table a relation column points at, by [`RowId`].'
+                                                    'Rows of the table a relation column points at.'
                                                   ),
                                               })
                                               .describe(
-                                                'Rows of the table a relation column points at, by [`RowId`].'
+                                                'Rows of the table a relation column points at.'
                                               ),
                                             zod
                                               .object({
@@ -8445,12 +8419,14 @@ export const applyDatabaseOpsBody = zod
                   .uuid()
                   .nullish()
                   .describe(
-                    'The card it lands right before, when `before` is not given; with\nneither, the card goes to the end of the lane.'
+                    'The card that ends up just after it, if any. Given with `before`,\nit must be the card right after `before`; with neither, the card\ngoes to the end of the lane.'
                   ),
                 before: zod
                   .uuid()
                   .nullish()
-                  .describe('The card it lands right after, if any.'),
+                  .describe(
+                    'The card that ends up just before it (it lands right after this\none), if any.'
+                  ),
                 kind: zod.enum(['move_card']),
                 lane: zod
                   .uuid()
@@ -9189,7 +9165,7 @@ export const createDatabaseColumnBody = zod
       .union([
         zod
           .object({
-            data_type: zod
+            dataType: zod
               .enum([
                 'BOOLEAN',
                 'DATE',
@@ -9204,7 +9180,7 @@ export const createDatabaseColumnBody = zod
               .describe(
                 'Data type for property values, determining storage and validation.'
               ),
-            is_multi_select: zod
+            isMultiSelect: zod
               .boolean()
               .optional()
               .describe('Whether the column holds multiple values.'),
@@ -9221,7 +9197,7 @@ export const createDatabaseColumnBody = zod
         zod
           .object({
             kind: zod.enum(['existing']),
-            property_definition_id: zod
+            propertyDefinitionId: zod
               .uuid()
               .describe('The definition to bind.'),
           })
@@ -9231,9 +9207,7 @@ export const createDatabaseColumnBody = zod
     inferType: zod
       .boolean()
       .optional()
-      .describe(
-        'Infer the first value type of a newly owned text column. `infer_type`\nis still accepted from clients that predate the camelCase name.'
-      ),
+      .describe('Infer the first value type of a newly owned text column.'),
     linkToDatabaseId: zod
       .uuid()
       .optional()
@@ -9340,34 +9314,14 @@ export const renameDatabaseColumnResponse = zod
         config: zod.union([
           zod.null(),
           zod
-            .union([
-              zod
-                .object({
-                  database_id: zod.uuid().describe('Target database.'),
-                  kind: zod.enum(['link']),
-                  table_id: zod.uuid().describe('Target table.'),
-                })
-                .describe(
-                  'A relation column: its cells reference rows of another table.'
-                ),
-              zod
-                .object({
-                  kind: zod.enum(['lookup']),
-                  target: zod
-                    .string()
-                    .describe(
-                      'Target field on the other side (a definition id or magic column name).'
-                    ),
-                  via_column_id: zod
-                    .uuid()
-                    .describe(
-                      'The link\/entity column the lookup reads through.'
-                    ),
-                })
-                .describe(
-                  'A derived lookup through a link or entity column on the same table.'
-                ),
-            ])
+            .object({
+              database_id: zod.uuid().describe('Target database.'),
+              kind: zod.enum(['link']),
+              table_id: zod.uuid().describe('Target table.'),
+            })
+            .describe(
+              'A relation column: its cells reference rows of another table.'
+            )
             .describe(
               'Column-kind specific configuration stored on the placement.'
             ),
@@ -9376,7 +9330,7 @@ export const renameDatabaseColumnResponse = zod
           .string()
           .nullable()
           .describe(
-            "Optional label for this placement. The property's name still defines\nits SQL identifier, so renaming a column does not break saved queries."
+            "The placement's own label, which also names it in SQL; `None` shows\nthe definition's name."
           ),
         id: zod.uuid().describe('Identifier of the placement.'),
         infer_type: zod
@@ -9501,12 +9455,12 @@ export const inferDatabaseColumnTypeParams = zod.object({
 
 export const inferDatabaseColumnTypeBody = zod
   .object({
-    base_version: zod
+    baseVersion: zod
       .number()
       .describe(
         "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
       ),
-    data_type: zod
+    dataType: zod
       .enum([
         'BOOLEAN',
         'DATE',
@@ -9521,7 +9475,7 @@ export const inferDatabaseColumnTypeBody = zod
       .describe(
         'Data type for property values, determining storage and validation.'
       ),
-    specific_entity_type: zod
+    specificEntityType: zod
       .union([
         zod.null(),
         zod
@@ -9556,34 +9510,14 @@ export const inferDatabaseColumnTypeResponse = zod
             config: zod.union([
               zod.null(),
               zod
-                .union([
-                  zod
-                    .object({
-                      database_id: zod.uuid().describe('Target database.'),
-                      kind: zod.enum(['link']),
-                      table_id: zod.uuid().describe('Target table.'),
-                    })
-                    .describe(
-                      'A relation column: its cells reference rows of another table.'
-                    ),
-                  zod
-                    .object({
-                      kind: zod.enum(['lookup']),
-                      target: zod
-                        .string()
-                        .describe(
-                          'Target field on the other side (a definition id or magic column name).'
-                        ),
-                      via_column_id: zod
-                        .uuid()
-                        .describe(
-                          'The link\/entity column the lookup reads through.'
-                        ),
-                    })
-                    .describe(
-                      'A derived lookup through a link or entity column on the same table.'
-                    ),
-                ])
+                .object({
+                  database_id: zod.uuid().describe('Target database.'),
+                  kind: zod.enum(['link']),
+                  table_id: zod.uuid().describe('Target table.'),
+                })
+                .describe(
+                  'A relation column: its cells reference rows of another table.'
+                )
                 .describe(
                   'Column-kind specific configuration stored on the placement.'
                 ),
@@ -9592,7 +9526,7 @@ export const inferDatabaseColumnTypeResponse = zod
               .string()
               .nullable()
               .describe(
-                "Optional label for this placement. The property's name still defines\nits SQL identifier, so renaming a column does not break saved queries."
+                "The placement's own label, which also names it in SQL; `None` shows\nthe definition's name."
               ),
             id: zod.uuid().describe('Identifier of the placement.'),
             infer_type: zod
@@ -9753,7 +9687,7 @@ export const inferDatabaseColumnTypeResponse = zod
         sql_name: zod
           .string()
           .describe(
-            'The name SQL refers to the column by: its display name, quoted when it\nneeds it.'
+            'The name SQL refers to the column by: its display name, quoted.'
           ),
         writable: zod.boolean().describe('Whether SQL may write this column.'),
       })
@@ -9794,34 +9728,14 @@ export const addDatabaseColumnOptionsResponse = zod
         config: zod.union([
           zod.null(),
           zod
-            .union([
-              zod
-                .object({
-                  database_id: zod.uuid().describe('Target database.'),
-                  kind: zod.enum(['link']),
-                  table_id: zod.uuid().describe('Target table.'),
-                })
-                .describe(
-                  'A relation column: its cells reference rows of another table.'
-                ),
-              zod
-                .object({
-                  kind: zod.enum(['lookup']),
-                  target: zod
-                    .string()
-                    .describe(
-                      'Target field on the other side (a definition id or magic column name).'
-                    ),
-                  via_column_id: zod
-                    .uuid()
-                    .describe(
-                      'The link\/entity column the lookup reads through.'
-                    ),
-                })
-                .describe(
-                  'A derived lookup through a link or entity column on the same table.'
-                ),
-            ])
+            .object({
+              database_id: zod.uuid().describe('Target database.'),
+              kind: zod.enum(['link']),
+              table_id: zod.uuid().describe('Target table.'),
+            })
+            .describe(
+              'A relation column: its cells reference rows of another table.'
+            )
             .describe(
               'Column-kind specific configuration stored on the placement.'
             ),
@@ -9830,7 +9744,7 @@ export const addDatabaseColumnOptionsResponse = zod
           .string()
           .nullable()
           .describe(
-            "Optional label for this placement. The property's name still defines\nits SQL identifier, so renaming a column does not break saved queries."
+            "The placement's own label, which also names it in SQL; `None` shows\nthe definition's name."
           ),
         id: zod.uuid().describe('Identifier of the placement.'),
         infer_type: zod
@@ -9987,7 +9901,7 @@ export const addDatabaseColumnOptionsResponse = zod
     sql_name: zod
       .string()
       .describe(
-        'The name SQL refers to the column by: its display name, quoted when it\nneeds it.'
+        'The name SQL refers to the column by: its display name, quoted.'
       ),
     writable: zod.boolean().describe('Whether SQL may write this column.'),
   })

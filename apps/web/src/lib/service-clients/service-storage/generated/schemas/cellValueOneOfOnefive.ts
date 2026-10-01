@@ -7,10 +7,10 @@
 import type { CellValueOneOfOnefiveType } from './cellValueOneOfOnefiveType';
 
 /**
- * Rows of the table a relation column points at, by [`RowId`].
+ * Rows of the table a relation column points at.
  */
 export type CellValueOneOfOnefive = {
   type: CellValueOneOfOnefiveType;
-  /** Rows of the table a relation column points at, by [`RowId`]. */
+  /** Rows of the table a relation column points at. */
   value: string[];
 };

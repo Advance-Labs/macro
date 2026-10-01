@@ -6,7 +6,8 @@
  */
 
 /**
- * The card it lands right before, when `before` is not given; with
-neither, the card goes to the end of the lane.
+ * The card that ends up just after it, if any. Given with `before`,
+it must be the card right after `before`; with neither, the card
+goes to the end of the lane.
  */
 export type DatabaseOpOneOfTwotwoAfter = string | null;

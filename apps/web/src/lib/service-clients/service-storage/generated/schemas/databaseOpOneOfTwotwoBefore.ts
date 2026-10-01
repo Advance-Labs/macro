@@ -6,6 +6,7 @@
  */
 
 /**
- * The card it lands right after, if any.
+ * The card that ends up just before it (it lands right after this
+one), if any.
  */
 export type DatabaseOpOneOfTwotwoBefore = string | null;

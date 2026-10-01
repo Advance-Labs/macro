@@ -12,8 +12,7 @@ import type { ColumnBindingRequest } from './columnBindingRequest';
 export interface CreateColumnRequest {
   /** Definition source. */
   binding: ColumnBindingRequest;
-  /** Infer the first value type of a newly owned text column. `infer_type`
-is still accepted from clients that predate the camelCase name. */
+  /** Infer the first value type of a newly owned text column. */
   inferType?: boolean;
   /** Database of the linked table (defaults to this database). */
   linkToDatabaseId?: string;

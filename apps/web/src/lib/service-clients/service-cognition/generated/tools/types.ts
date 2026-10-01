@@ -30,6 +30,10 @@ export type ColumnType =
  */
 export type ToolGrant = 'view' | 'comment' | 'edit' | 'owner';
 /**
+ * A column type as SQL spells it: text, number, boolean, date, link, select, select_number, tag, entity(KIND) or relation, with [] when a select or reference column holds several values (select[], entity(USER)).
+ */
+export type SpelledColumnType = string;
+/**
  * Content of a bash code execution response - either a result or an error
  */
 export type BashCodeExecutionContent =
@@ -895,6 +899,78 @@ export type Cell =
       value: string[];
     };
 /**
+ * The statement that ran: a read, or the table (and for a type change, the
+ * column) it wrote.
+ */
+export type SqlStatement =
+  | {
+      kind: 'select';
+    }
+  | {
+      /**
+       * The table written.
+       */
+      tableId: string;
+      /**
+       * Its name.
+       */
+      tableName: string;
+      kind: 'insert';
+    }
+  | {
+      /**
+       * The table written.
+       */
+      tableId: string;
+      /**
+       * Its name.
+       */
+      tableName: string;
+      kind: 'update';
+    }
+  | {
+      /**
+       * The table written.
+       */
+      tableId: string;
+      /**
+       * Its name.
+       */
+      tableName: string;
+      kind: 'delete';
+    }
+  | {
+      /**
+       * The table.
+       */
+      tableId: string;
+      /**
+       * Its name.
+       */
+      tableName: string;
+      /**
+       * The column placement; its id survives the change.
+       */
+      columnId: string;
+      /**
+       * The column's name.
+       */
+      columnName: string;
+      /**
+       * The type it became, as SQL spells it, e.g. `select[]`.
+       */
+      to: string;
+      /**
+       * Cells `USING NULL` emptied because their value did not fit.
+       */
+      clearedCells: number;
+      /**
+       * Cells that held several values and kept only their first.
+       */
+      trimmedCells: number;
+      kind: 'alterColumnType';
+    };
+/**
  * One activity action returned to the AI.
  */
 export type ToolActivityAction =
@@ -1633,13 +1709,13 @@ export interface ToolColumn {
    * Types ChangeColumnType converts every value to, spelled as SQL types
    * (`select[]` is a multi-valued select, `entity(USER)` a person).
    */
-  safeTypes: string[];
+  safeTypes: SpelledColumnType[];
   /**
    * Types whose conversion checks each value first and refuses, or with
    * `clearInvalid` empties, the ones that do not fit. Any type in neither
    * list is refused while the column holds values.
    */
-  checkedTypes: string[];
+  checkedTypes: SpelledColumnType[];
 }
 /**
  * One option of a select or tag column.
@@ -3399,11 +3475,11 @@ export interface CreateChannelResponse {
   summary: string;
 }
 /**
- * Create a new Macro database owned by the current user — the thing they see as a table. It starts with one empty table and no columns of its own beyond the implicit `row_id`.
+ * Create a new Macro database owned by the current user — the thing they see as a table. It starts with one table, "Table 1", with no rows and one text column, "Name", for each row's title, beside the implicit `row_id`.
  *
  * Use this when the user asks for a new tracker, list, or table ("make me a table of applicants"). Check ListDatabases first if there is any chance one already exists under that name — a second database with the same name is confusing and there is no merge.
  *
- * The response acknowledges the new database `id` and `name`, with its full schema in `database` including the starter table's id. If `database` is null, creation still succeeded: heed the warning and call DescribeDatabase with the returned id; never repeat CreateDatabase just because schema refresh failed. The usual shape of the work is: CreateDatabase, RenameTable on the starter table when the user named their table (it is called "Table 1"), one AddColumn per column the user described, then QueryDatabase with INSERTs for the rows. For more tables, CreateTable only after the starter table is used.
+ * The response acknowledges the new database `id` and `name`, with its full schema in `database` including the starter table's id. If `database` is null, creation still succeeded: heed the warning and call DescribeDatabase with the returned id; never repeat CreateDatabase just because schema refresh failed. The usual shape of the work is: CreateDatabase, RenameTable on the starter table when the user named their table, one AddColumn per further column the user described (use Name for each row's title rather than adding another), then QueryDatabase with INSERTs for the rows. For more tables, CreateTable only after the starter table is used.
  */
 export interface CreateDatabase {
   /**
@@ -3886,7 +3962,7 @@ export interface DeleteCalendarEventResponse {
   summary: string;
 }
 /**
- * Delete a column and every value in it. This cannot be undone, so only do it when the user asked for that column to go. Deleting a relation column also removes the relationships it held. A column that a lookup reads through cannot be deleted until the lookup is.
+ * Delete a column and every value in it. This cannot be undone, so only do it when the user asked for that column to go. Deleting a relation column also removes the relationships it held.
  *
  * Requires edit access. The response is the schema after the change.
  */
@@ -4905,7 +4981,7 @@ export interface CompanyListItem {
 /**
  * List every accessible Macro database AND its table tabs, including owned and shared data. A database is a container; its name can differ from a requested table's name. For example, the Tickets table might be inside a database named Product. Search every entry's `tables`, not just database names.
  *
- * Start here whenever the user refers to "my table", "the tracker", or any named list of theirs: this is the only way to turn that name into the `databaseId` every other database tool needs. Each entry includes `id`, `name`, `grant`, and nested `tables` with their ids, display names, and stable read aliases. `view` and `comment` permit reading, not row/schema edits.
+ * Start here whenever the user refers to "my table", "the tracker", or any named list of theirs: this is the only way to turn that name into the `databaseId` every other database tool needs. Each entry includes `id`, `name`, `grant`, and nested `tables` with their ids, display names, and SQL names. `view` and `comment` permit reading, not row/schema edits.
  *
  * Takes no arguments and returns every database, so there is no filter to get wrong. Follow it with DescribeDatabase for the matching database's columns before writing SQL. Do not claim a table is absent until you have checked the returned table names; resolve duplicate names using their database context. An empty result means no accessible databases, not proof that no such data exists elsewhere.
  */
@@ -5762,7 +5838,7 @@ export interface NameSearch {
  * - **Other schema changes use tools, not SQL DDL:** CreateDatabase, RenameDatabase, CreateTable, RenameTable, ReorderTables, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.
  * - Tables you only hold view access on are read-only.
  *
- * To change records, first SELECT the rows you mean (their ids are in `rowIds`), then UPDATE or DELETE each one by its id. After changing rows, SELECT the affected records to verify the actual result. On a connection failure, inspect before retrying an INSERT.
+ * To change records, first SELECT the rows you mean (their ids are in `rowIds`), then UPDATE or DELETE exactly those with `WHERE row_id IN (...)`. After changing rows, SELECT the affected records to verify the actual result. On a connection failure, inspect before retrying an INSERT.
  * To create a row and relate it in one go, INSERT it with the relation column set to the target row ids (`INSERT INTO invites (guest, status) VALUES (['<guest row id>'], 'Sent')`); the new row's id is in `insertedRowIds`.
  *
  * Results come back as columns and rows of typed cells (`{"type": "text", "value": "Sam"}`; `null` is an empty cell), with `rowIds`, the id of the row behind each result row of a row-shaped SELECT. Each column names its `kind`. A select column lists its `options`, and its cells hold option ids: read their labels there. An entity column names its `target`, which is how the app renders its ids as clickable chips — prefer selecting an entity column over stringifying it. Writes report `changesApplied` and, for inserts, the `insertedRowIds` the server minted.
@@ -5840,6 +5916,7 @@ export interface QueryDatabaseResponse {
    * total.
    */
   truncatedTables?: string[];
+  statement: SqlStatement;
   /**
    * A human-readable summary of what the statement did.
    */

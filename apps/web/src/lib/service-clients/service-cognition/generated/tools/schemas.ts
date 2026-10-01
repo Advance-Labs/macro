@@ -5102,6 +5102,51 @@ export const QueryDatabaseResponse = z.object({
     z.object({ tableId: z.string().uuid(), version: z.number().int() })
   ),
   truncatedTables: z.array(z.string()).optional(),
+  statement: z.any().superRefine((x, ctx) => {
+    const schemas = [
+      z.object({ kind: z.literal('select') }),
+      z.object({
+        tableId: z.string().uuid(),
+        tableName: z.string(),
+        kind: z.literal('insert'),
+      }),
+      z.object({
+        tableId: z.string().uuid(),
+        tableName: z.string(),
+        kind: z.literal('update'),
+      }),
+      z.object({
+        tableId: z.string().uuid(),
+        tableName: z.string(),
+        kind: z.literal('delete'),
+      }),
+      z.object({
+        tableId: z.string().uuid(),
+        tableName: z.string(),
+        columnId: z.string().uuid(),
+        columnName: z.string(),
+        to: z.string(),
+        clearedCells: z.number().int().gte(0),
+        trimmedCells: z.number().int().gte(0),
+        kind: z.literal('alterColumnType'),
+      }),
+    ];
+    const errors = schemas.reduce<z.ZodError[]>(
+      (errors, schema) =>
+        ((result) => (result.error ? [...errors, result.error] : errors))(
+          schema.safeParse(x)
+        ),
+      []
+    );
+    if (schemas.length - errors.length !== 1) {
+      ctx.addIssue({
+        path: ctx.path,
+        code: 'invalid_union',
+        unionErrors: errors,
+        message: 'Invalid input: Should pass single schema',
+      });
+    }
+  }),
   summary: z.string(),
 });
 

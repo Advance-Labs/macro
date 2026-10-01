@@ -4,11 +4,12 @@
  * Document Cognition Service
  * OpenAPI spec version: 1.0.0
  */
-import type { StructuredToolActivityChangesApplied } from './structuredToolActivityChangesApplied';
+import type { ToolOutcome } from './toolOutcome';
 
+/**
+ * One tool call the agent finished, and what it did.
+ */
 export interface StructuredToolActivity {
-  /** @minimum 0 */
-  changesApplied?: StructuredToolActivityChangesApplied;
   name: string;
-  success: boolean;
+  outcome: ToolOutcome;
 }

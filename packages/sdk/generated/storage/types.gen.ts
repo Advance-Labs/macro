@@ -1309,6 +1309,29 @@ export type Awareness = {
     tableId: string;
 };
 
+/**
+ * The [`AWARENESS_MESSAGE_TYPE`] payload: one viewer's awareness, stamped
+ * when the server relayed it so receivers can drop older relays.
+ */
+export type AwarenessRelay = {
+    /**
+     * The database the viewer is in.
+     */
+    databaseId: string;
+    /**
+     * When the server relayed it, in milliseconds since the Unix epoch.
+     */
+    relayedAt: number;
+    /**
+     * Where the viewer is.
+     */
+    state: Awareness;
+    /**
+     * The viewer.
+     */
+    userId: string;
+};
+
 export type BTreeMap = {
     [key: string]: string;
 };
@@ -2375,7 +2398,7 @@ export type CellValue = {
 } | {
     type: 'rows';
     /**
-     * Rows of the table a relation column points at, by [`RowId`].
+     * Rows of the table a relation column points at.
      */
     value: Array<string>;
 } | {
@@ -3349,8 +3372,8 @@ export type CollabSurfaceTokenResponse = {
 export type Column = {
     config: null | ColumnConfig;
     /**
-     * Optional label for this placement. The property's name still defines
-     * its SQL identifier, so renaming a column does not break saved queries.
+     * The placement's own label, which also names it in SQL; `None` shows
+     * the definition's name.
      */
     display_name: string | null;
     /**
@@ -3382,11 +3405,11 @@ export type ColumnBindingRequest = {
     /**
      * Value type.
      */
-    data_type: DataType;
+    dataType: DataType;
     /**
      * Whether the column holds multiple values.
      */
-    is_multi_select?: boolean;
+    isMultiSelect?: boolean;
     kind: 'new';
     /**
      * Column display name.
@@ -3402,7 +3425,7 @@ export type ColumnBindingRequest = {
     /**
      * The definition to bind.
      */
-    property_definition_id: string;
+    propertyDefinitionId: string;
 };
 
 /**
@@ -3447,7 +3470,7 @@ export type ColumnCast = {
 };
 
 /**
- * Column-kind specific configuration stored on the placement.
+ * A relation column: its cells reference rows of another table.
  */
 export type ColumnConfig = {
     /**
@@ -3459,16 +3482,6 @@ export type ColumnConfig = {
      * Target table.
      */
     table_id: string;
-} | {
-    kind: 'lookup';
-    /**
-     * Target field on the other side (a definition id or magic column name).
-     */
-    target: string;
-    /**
-     * The link/entity column the lookup reads through.
-     */
-    via_column_id: string;
 };
 
 /**
@@ -3490,8 +3503,7 @@ export type ColumnDetail = {
      */
     shared_outside_database: boolean;
     /**
-     * The name SQL refers to the column by: its display name, quoted when it
-     * needs it.
+     * The name SQL refers to the column by: its display name, quoted.
      */
     sql_name: string;
     /**
@@ -3897,8 +3909,7 @@ export type CreateColumnRequest = {
      */
     binding: ColumnBindingRequest;
     /**
-     * Infer the first value type of a newly owned text column. `infer_type`
-     * is still accepted from clients that predate the camelCase name.
+     * Infer the first value type of a newly owned text column.
      */
     inferType?: boolean;
     /**
@@ -5156,12 +5167,14 @@ export type DatabaseOp = {
     table: string;
 } | {
     /**
-     * The card it lands right before, when `before` is not given; with
-     * neither, the card goes to the end of the lane.
+     * The card that ends up just after it, if any. Given with `before`,
+     * it must be the card right after `before`; with neither, the card
+     * goes to the end of the lane.
      */
     after?: string | null;
     /**
-     * The card it lands right after, if any.
+     * The card that ends up just before it (it lands right after this
+     * one), if any.
      */
     before?: string | null;
     kind: 'move_card';
@@ -7624,7 +7637,7 @@ export type InFlightTurnSummary = {
  */
 export type InferColumnTypeOutcome = {
     /**
-     * Updated placement, property definition, and stable SQL identifier.
+     * Updated placement, property definition, and SQL name.
      */
     column: ColumnDetail;
     /**
@@ -7640,12 +7653,12 @@ export type InferColumnTypeRequest = {
     /**
      * Table version used when interpreting the first value.
      */
-    base_version: TableVersion;
+    baseVersion: TableVersion;
     /**
      * First-value type: STRING, NUMBER, or ENTITY.
      */
-    data_type: DataType;
-    specific_entity_type?: null | EntityType;
+    dataType: DataType;
+    specificEntityType?: null | EntityType;
 };
 
 /**
@@ -11704,6 +11717,24 @@ export type Table = {
 };
 
 /**
+ * The [`TABLE_CHANGED_MESSAGE_TYPE`] payload: one table's new version.
+ */
+export type TableChanged = {
+    /**
+     * The database the table belongs to.
+     */
+    databaseId: string;
+    /**
+     * The table that changed.
+     */
+    tableId: string;
+    /**
+     * The table's version after the write.
+     */
+    version: TableVersion;
+};
+
+/**
  * One table with its columns and SQL name.
  */
 export type TableDetail = {
@@ -11712,12 +11743,8 @@ export type TableDetail = {
      */
     columns: Array<ColumnDetail>;
     /**
-     * The same name; kept for clients that still distinguish reads.
-     */
-    read_sql_name: string;
-    /**
-     * The name SQL refers to the table by: its display name, quoted when it
-     * needs it (`FROM "Table 1"`), optionally qualified by the database's.
+     * The name SQL refers to the table by: its display name quoted and
+     * qualified by the database's (`FROM "Plans"."Table 1"`).
      */
     sql_name: string;
     /**
@@ -15900,7 +15927,7 @@ export type ShareDatabaseAwarenessError = ShareDatabaseAwarenessErrors[keyof Sha
 
 export type ShareDatabaseAwarenessResponses = {
     /**
-     * Relayed
+     * Relayed to the database's other viewers
      */
     204: void;
 };
