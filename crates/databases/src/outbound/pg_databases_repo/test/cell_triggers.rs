@@ -11,14 +11,14 @@ async fn insert_cell(
     definition: Uuid,
     value: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO entity_properties (id, entity_id, entity_type, property_definition_id, values)
          VALUES ($1, $2, 'DATABASE_ROW', $3, jsonb_build_object('type', 'String', 'value', $4::text))",
+        macro_uuid::generate_uuid_v7(),
+        row,
+        definition,
+        value,
     )
-    .bind(macro_uuid::generate_uuid_v7())
-    .bind(row)
-    .bind(definition)
-    .bind(value)
     .execute(pool)
     .await
     .map(|_| ())
@@ -26,14 +26,17 @@ async fn insert_cell(
 
 /// Every stored row cell as (row, definition, text), in a stable order.
 async fn stored_cells(pool: &PgPool) -> Vec<(String, Uuid, String)> {
-    sqlx::query_as(
-        "SELECT entity_id, property_definition_id, values ->> 'value'
+    sqlx::query!(
+        r#"SELECT entity_id, property_definition_id, values ->> 'value' AS "value!"
          FROM entity_properties WHERE entity_type = 'DATABASE_ROW'
-         ORDER BY values ->> 'value'",
+         ORDER BY values ->> 'value'"#,
     )
     .fetch_all(pool)
     .await
     .unwrap()
+    .into_iter()
+    .map(|cell| (cell.entity_id, cell.property_definition_id, cell.value))
+    .collect()
 }
 
 /// The SQLSTATE and message a refused statement failed with.
@@ -103,11 +106,11 @@ async fn a_cell_of_a_column_of_another_table_is_refused(pool: PgPool) {
     );
 
     insert_cell(&pool, &sam, name, "Sam").await.unwrap();
-    let moved = sqlx::query(
+    let moved = sqlx::query!(
         "UPDATE entity_properties SET property_definition_id = $1 WHERE entity_id = $2",
+        email,
+        &sam,
     )
-    .bind(email)
-    .bind(&sam)
     .execute(&pool)
     .await;
     assert_eq!(
@@ -217,12 +220,14 @@ async fn deleting_a_column_deletes_its_cells_in_that_table_only(pool: PgPool) {
         .unwrap();
     insert_cell(&pool, &host, name, "Ada").await.unwrap();
 
-    sqlx::query("DELETE FROM database_columns WHERE table_id = $1 AND property_definition_id = $2")
-        .bind(guests.id)
-        .bind(name)
-        .execute(&pool)
-        .await
-        .unwrap();
+    sqlx::query!(
+        "DELETE FROM database_columns WHERE table_id = $1 AND property_definition_id = $2",
+        guests.id,
+        name,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
 
     assert_eq!(
         stored_cells(&pool).await,
@@ -241,13 +246,13 @@ async fn rebinding_a_column_deletes_the_old_definitions_cells(pool: PgPool) {
     let sam = rows[0].id.to_string();
     insert_cell(&pool, &sam, name, "Sam").await.unwrap();
 
-    sqlx::query(
+    sqlx::query!(
         "UPDATE database_columns SET property_definition_id = $3
          WHERE table_id = $1 AND property_definition_id = $2",
+        table.id,
+        name,
+        title,
     )
-    .bind(table.id)
-    .bind(name)
-    .bind(title)
     .execute(&pool)
     .await
     .unwrap();
