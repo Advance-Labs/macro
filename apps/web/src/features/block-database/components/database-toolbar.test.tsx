@@ -623,7 +623,10 @@ describe('database toolbar view controls', () => {
             query: { filter: null, sort: [] },
             layout: {
               kind: 'table',
-              columns: [{ column: 'due', width: 180, hidden: true }],
+              columns: [
+                { column: 'due', width: 180, hidden: true },
+                { column: 'name', width: 240, hidden: false },
+              ],
             },
             createdAt: '2026-09-01T00:00:00Z',
             updatedAt: '2026-09-01T00:00:00Z',
@@ -638,7 +641,10 @@ describe('database toolbar view controls', () => {
           query: { filter: null, sort: [] },
           layout: {
             kind: 'table',
-            columns: [{ column: 'due', width: 180, hidden: true }],
+            columns: [
+              { column: 'due', width: 180, hidden: true },
+              { column: 'name', width: 240, hidden: false },
+            ],
           },
           createdAt: '2026-09-01T00:00:00Z',
           updatedAt: '2026-09-01T00:00:00Z',
@@ -672,14 +678,20 @@ describe('database toolbar view controls', () => {
         kind: 'table',
         columns: [
           { column: 'due', width: 180, hidden: true },
-          { column: 'name', width: null, hidden: false },
+          { column: 'name', width: 240, hidden: false },
           { column: 'status', width: null, hidden: true },
         ],
       },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Show all columns' }));
     expect(change).toHaveBeenLastCalledWith({
-      layout: { kind: 'table', columns: [] },
+      layout: {
+        kind: 'table',
+        columns: [
+          { column: 'due', width: 180, hidden: false },
+          { column: 'name', width: 240, hidden: false },
+        ],
+      },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Board' }));
     expect(change).toHaveBeenLastCalledWith({

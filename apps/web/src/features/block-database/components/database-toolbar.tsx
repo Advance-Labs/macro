@@ -472,11 +472,19 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
                   size="sm"
                   variant="ghost"
                   class="mt-2"
-                  onClick={() =>
+                  onClick={() => {
+                    const current = layout();
+                    if (current.kind !== 'table') return;
                     props.onChangeView({
-                      layout: { kind: 'table', columns: [] },
-                    })
-                  }
+                      layout: {
+                        ...current,
+                        columns: current.columns.map((entry) => ({
+                          ...entry,
+                          hidden: false,
+                        })),
+                      },
+                    });
+                  }}
                 >
                   Show all columns
                 </Button>
