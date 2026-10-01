@@ -69,7 +69,8 @@ The pointer can pass over the rows while reordering. Hold it at the grid's left
 or right edge to scroll to other columns. Drops move immediately while saves are
 queued, so another drag does not need to wait for the previous save.
 
-The first nonempty entry in a new default Text column sets its type. A plain number
+The first nonempty entry in a new default Text column, including a new database's
+or table's Name column, sets its type. A plain number
 becomes Number; starting with `@` and choosing an item makes it the corresponding
 reference type. Other entries keep Text, and identifiers with leading zeros stay
 text. Choosing Text explicitly disables inference. Populated columns never infer a

@@ -175,20 +175,23 @@ pub(crate) async fn insert_owned_database(
     Ok(database)
 }
 
-/// Insert a column placement bound to `definition_id` inside `transaction`.
+/// Insert a column placement bound to `definition_id` inside `transaction`;
+/// `infer_type` lets its first value settle a plain text column's type.
 pub(crate) async fn insert_column(
     transaction: &mut Transaction<'static, Postgres>,
     column_id: ColumnId,
     table_id: TableId,
     definition_id: PropertyDefinitionId,
     position: &Position,
+    infer_type: bool,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        "INSERT INTO database_columns (id, table_id, property_definition_id, position, infer_type) VALUES ($1, $2, $3, $4, false)",
+        "INSERT INTO database_columns (id, table_id, property_definition_id, position, infer_type) VALUES ($1, $2, $3, $4, $5)",
         column_id.into_uuid(),
         table_id.into_uuid(),
         definition_id,
         position.as_str(),
+        infer_type,
     )
     .execute(&mut **transaction)
     .await?;
@@ -287,6 +290,7 @@ where
             table_id,
             title.definition.id,
             &position_after(None)?,
+            true,
         )
         .await?;
         transaction.commit().await?;

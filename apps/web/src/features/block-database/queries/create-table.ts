@@ -10,8 +10,9 @@ import type { DatabaseSchemaChange } from '../core/column-schema';
 import type { TableCreationResult } from '../core/table-creation';
 
 /**
- * Create a table with its Name column in one batch, then load it. Retrying
- * with `existingTableId` only loads the table a committed create left.
+ * Create a table with its Name column, which infers its type like any new
+ * text column, in one batch, then load it. Retrying with `existingTableId`
+ * only loads the table a committed create left.
  */
 export function createTableWithName(params: {
   databaseId: string;
@@ -57,7 +58,12 @@ function createWithName(
       kind: 'create_column',
       table: tableId,
       id: uuidv7(),
-      definition: { source: 'new', name: 'Name', type: { type: 'text' } },
+      definition: {
+        source: 'new',
+        name: 'Name',
+        type: { type: 'text' },
+        inferType: true,
+      },
     },
   ]).map(() => tableId);
 }

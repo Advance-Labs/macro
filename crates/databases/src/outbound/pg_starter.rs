@@ -183,6 +183,7 @@ where
                 table_id,
                 definition_id,
                 &position,
+                false,
             )
             .await?;
         }

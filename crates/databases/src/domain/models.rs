@@ -190,7 +190,7 @@ pub struct RowRef {
 }
 
 /// What a new database starts with: one table whose only column, a text
-/// column, holds each row's title.
+/// column that infers its type from its first value, holds each row's title.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FirstTable {
     /// The table's display name.

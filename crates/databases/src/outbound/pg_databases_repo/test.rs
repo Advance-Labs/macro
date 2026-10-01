@@ -207,7 +207,7 @@ async fn fixture(pool: &PgPool) -> (PgDatabasesRepo<PropertiesPgRepo>, Table, Uu
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn a_new_database_starts_with_a_table_holding_a_text_title_column(pool: PgPool) {
+async fn a_new_database_starts_with_a_title_column_that_infers_its_type(pool: PgPool) {
     insert_user(&pool).await;
     let repo = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
     let database = repo
@@ -231,7 +231,7 @@ async fn a_new_database_starts_with_a_table_holding_a_text_title_column(pool: Pg
     let columns = repo.columns_for_tables(&[tables[0].id]).await.unwrap();
     assert_eq!(columns.len(), 1);
     assert_eq!(columns[0].display_name, None);
-    assert!(!columns[0].infer_type);
+    assert!(columns[0].infer_type);
     assert!(columns[0].config.is_none());
     let definitions = crate::outbound::pg_definition_store::PgDefinitionStore::new(
         pool.clone(),
