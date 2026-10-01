@@ -15,9 +15,11 @@ import {
   createUrqlInfiniteQuery,
   type UrqlInfiniteData,
 } from '@app/lib/urql-solid';
+import { createBrowserOfflineSignal } from '@core/util/connectivity';
 import { isTransientRequestError } from '@core/util/request-error';
 import { Telemetry } from '@macro-inc/observability';
 import { useInstructionsMdIdQuery } from '@queries/storage/instructions-md';
+import type { SoupApiItem } from '@service-storage/generated/schemas';
 import {
   ChannelListItemFieldsFragmentDoc,
   ChannelListSoupDocument,
@@ -86,6 +88,8 @@ export type GraphqlSoupAstItemsQueryArgs = {
 
 export type GraphqlSoupAstItemsQueryOptions = {
   enabled: boolean;
+  /** Reuse local Mail evaluation beneath a separately subscribed grouped query. */
+  localOnly?: boolean;
   networkPaused?: boolean;
   keepPreviousData?: boolean;
   projection?: 'channel-list';
@@ -95,6 +99,8 @@ export type GraphqlSoupAstItemsQueryOptions = {
 };
 
 export type GraphqlSoupAstItemsQuery = {
+  localRevision?: Accessor<CacheRevision | undefined>;
+  localOptimistic?: Accessor<boolean>;
   data: Accessor<SoupAstItemsData | undefined>;
   /** Latest GraphQL transport or application error. */
   error: Accessor<CombinedError | undefined>;
@@ -113,6 +119,11 @@ export type GraphqlSoupAstItemsQuery = {
   refresh: () => Promise<void>;
 };
 
+const itemsById = (items: readonly SoupApiItem[]) =>
+  Object.fromEntries(
+    items.map((item) => [mapApiSoupItemToEntity(item).id, item])
+  );
+
 /** Creates the live urql query for a flat Soup AST request. */
 export function createGraphqlSoupAstItemsQuery(
   args: Accessor<GraphqlSoupAstItemsQueryArgs>,
@@ -122,18 +133,7 @@ export function createGraphqlSoupAstItemsQuery(
   const pendingDeleteIds = usePendingGraphqlSoupDeleteIds();
   const pendingDone = usePendingGraphqlSoupDone();
   const excludesDone = createMemo(() => soupQueryExcludesDone([args().body]));
-  const [offline, setOffline] = createSignal(
-    typeof navigator !== 'undefined' && !navigator.onLine
-  );
-  const updateConnectivity = () => setOffline(!navigator.onLine);
-  if (typeof window !== 'undefined') {
-    window.addEventListener('online', updateConnectivity);
-    window.addEventListener('offline', updateConnectivity);
-    onCleanup(() => {
-      window.removeEventListener('online', updateConnectivity);
-      window.removeEventListener('offline', updateConnectivity);
-    });
-  }
+  const offline = createBrowserOfflineSignal();
   const [fetchingMailPage, setFetchingMailPage] = createSignal(false);
 
   const inputForCursor = (
@@ -165,6 +165,7 @@ export function createGraphqlSoupAstItemsQuery(
     mail?: {
       nextCursor: string | null;
       revision: CacheRevision;
+      optimistic: boolean;
       records: GraphqlSoupItem[];
     };
   };
@@ -354,7 +355,12 @@ export function createGraphqlSoupAstItemsQuery(
       (networkAuthorityInput === input &&
         networkAuthorityRevision() === revision &&
         !offline() &&
-        !query.error?.networkError) ||
+        !query.error?.networkError &&
+        !(
+          input &&
+          'initial' in input &&
+          isCachedMailView(input.initial?.emailView)
+        )) ||
       !queryOptions.enabled ||
       !graphqlSoupProjectionSupported() ||
       !input ||
@@ -510,12 +516,14 @@ export function createGraphqlSoupAstItemsQuery(
                     mail: {
                       nextCursor: result.nextCursor,
                       revision: result.revision,
+                      optimistic: result.optimistic,
                       records: reconciledRecords,
                     },
                   }
                 : {}),
               data: {
                 cachedMail: result.kind === 'mail-page',
+                itemsById: itemsById(items),
                 entities: mapSoupPageToEntityList(
                   { items, next_cursor: undefined },
                   {
@@ -630,7 +638,10 @@ export function createGraphqlSoupAstItemsQuery(
       },
       getNextPageParam: (lastPage) =>
         lastPage.user.soup.nextCursor ?? undefined,
-      enabled: queryOptions.enabled && firstInput !== undefined,
+      enabled:
+        queryOptions.enabled &&
+        !queryOptions.localOnly &&
+        firstInput !== undefined,
       requestPolicy: queryOptions.networkPaused
         ? 'cache-only'
         : 'cache-and-network',
@@ -662,7 +673,8 @@ export function createGraphqlSoupAstItemsQuery(
                 )
               ).set(page.pageIndex, pending)
             );
-            setLocalProjection(undefined);
+            // Retain pending Mail rows while the new server page is persisted.
+            if (!untrack(localProjection)?.mail) setLocalProjection(undefined);
           });
           recordAuthority('network');
           finishStaleFallback('network');
@@ -680,7 +692,9 @@ export function createGraphqlSoupAstItemsQuery(
         batch(() => {
           setCurrentCacheRevision(metadata.revision);
           setNetworkAuthorityRevision(metadata.revision);
-          setLocalProjection(undefined);
+          // Keep same-view Mail evidence while checking the new revision.
+          // A server page cannot supersede an unsettled offline draft.
+          if (!untrack(localProjection)?.mail) setLocalProjection(undefined);
         });
         recordAuthority('network');
         finishStaleFallback('network');
@@ -771,12 +785,13 @@ export function createGraphqlSoupAstItemsQuery(
     return local;
   };
   const networkIsAuthoritative = (): boolean =>
-    hasUnpersistedPages(firstPageInput()) ||
-    (!offline() &&
-      !query.error?.networkError &&
-      networkAuthorityInput === firstPageInput() &&
-      networkAuthorityRevision() !== undefined &&
-      networkAuthorityRevision() === currentCacheRevision());
+    !displayLocalProjection()?.mail?.optimistic &&
+    (hasUnpersistedPages(firstPageInput()) ||
+      (!offline() &&
+        !query.error?.networkError &&
+        networkAuthorityInput === firstPageInput() &&
+        networkAuthorityRevision() !== undefined &&
+        networkAuthorityRevision() === currentCacheRevision()));
 
   // An overlay covers only the server rows that existed when it was evaluated.
   // New server pages must render immediately, even if the next evaluation stalls
@@ -836,6 +851,8 @@ export function createGraphqlSoupAstItemsQuery(
   );
 
   return {
+    localRevision: () => displayLocalProjection()?.mail?.revision,
+    localOptimistic: () => displayLocalProjection()?.mail?.optimistic ?? false,
     data: createMemo(() => {
       const data = displayData();
       return withoutPendingGraphqlSoupDeletes(
@@ -937,10 +954,12 @@ export function createGraphqlSoupAstItemsQuery(
           mail: {
             nextCursor: result.nextCursor,
             revision: result.revision,
+            optimistic: result.optimistic,
             records,
           },
           data: {
             cachedMail: true,
+            itemsById: itemsById(items),
             entities: mapSoupPageToEntityList(
               { items, next_cursor: undefined },
               {

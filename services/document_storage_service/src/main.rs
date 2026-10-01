@@ -338,7 +338,11 @@ async fn run() -> anyhow::Result<()> {
         event_broker_tracker.clone(),
     );
     let bots_repo = PgBotsRepo::new(db.clone());
-    let bots_service = BotServiceImpl::new(bots_repo, macro_event_broker.clone());
+    // The agent API checks a newly selected MCP app against Pipedream's
+    // directory, the same check the ConfigureAgent tool makes.
+    let bots_service = BotServiceImpl::new(bots_repo, macro_event_broker.clone()).with_mcp_apps(
+        ai_tools::PipedreamMcpAppCatalog::new(ai_tools::pipedream_client_from_env()?),
+    );
 
     let authorization_service: AuthorizationService = MacroAuthorizationServiceImpl::new(
         MacroAuthJwtValidator::new(jwt_validation_args.clone()),
@@ -1235,7 +1239,22 @@ async fn run() -> anyhow::Result<()> {
 
     // Held by value here and behind an `Arc` in the router state: the impl is a
     // pool handle, so cloning is cheap and `SoupImpl` needs an owned service.
-    let reminders_service = RemindersServiceImpl::new(PgRemindersRepo::new(db.clone()));
+    // Additional connections for guards spanning email I/O. HTTP requests and
+    // dispatch share this budget, independently of the main data pool.
+    let followup_lock_capacity = match config.environment {
+        Environment::Production => 32,
+        Environment::Develop => 16,
+        Environment::Local => 8,
+    };
+    let email_followups = reminders::domain::email_followup::service::EmailFollowupService::new(
+        PgRemindersRepo::with_followup_lock_capacity(db.clone(), followup_lock_capacity),
+        email_service.clone(),
+    );
+    let reminders_service =
+        reminders::domain::email_followup::reminder_service::EmailRemindersService::new(
+            RemindersServiceImpl::new(PgRemindersRepo::new(db.clone())),
+            email_followups.clone(),
+        );
 
     let document_creator = documents_hex::domain::create::DocumentCreator::new(
         document_service.clone(),
@@ -1546,7 +1565,13 @@ async fn run() -> anyhow::Result<()> {
             NotificationReminderNotifier::new((*notification_ingress_service).clone()),
             queue.clone(),
         );
-        DispatchWorker::new(dispatch_service, queue)
+        DispatchWorker::new(
+            reminders::domain::email_followup::dispatch::EmailReminderDispatch::new(
+                dispatch_service,
+                email_followups.clone(),
+            ),
+            queue,
+        )
     };
 
     consumer_tracker.spawn({

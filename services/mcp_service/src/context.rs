@@ -377,7 +377,7 @@ async fn build_tool_context(args: ToolContextBuildArgs<'_>) -> anyhow::Result<To
         entity_access_service.clone(),
         document_tool_context.service.clone(),
         chat_tool_context.service.clone(),
-        user_email_service,
+        user_email_service.clone(),
     );
 
     let search_service_client = Arc::new(search_service_client);
@@ -439,6 +439,7 @@ async fn build_tool_context(args: ToolContextBuildArgs<'_>) -> anyhow::Result<To
         notification_tool_context,
         reminders_tool_context: ai_tools::build_reminders_tool_context(
             db.clone(),
+            user_email_service.clone(),
             entity_access_service.clone(),
         ),
         databases_tool_context,
@@ -451,6 +452,7 @@ async fn build_tool_context(args: ToolContextBuildArgs<'_>) -> anyhow::Result<To
             ai_tools::MaybeToolEventBroker::Real(macro_event_broker.clone()),
             entity_access_service.clone(),
             dss_url,
+            ai_tools::pipedream_client_from_env()?,
         ),
         project_tool_context,
         initiative_tool_context,
@@ -461,7 +463,6 @@ async fn build_tool_context(args: ToolContextBuildArgs<'_>) -> anyhow::Result<To
         anthropic_tool_context: ai_tools::build_anthropic_tool_context(),
         admission: ai_billing::composition::pg_admission_service(
             db.clone(),
-            config.environment,
             config.enable_ai_usage_enforcement,
         ),
         recorder: ai_usage::pg_recorder_with_enforcement(

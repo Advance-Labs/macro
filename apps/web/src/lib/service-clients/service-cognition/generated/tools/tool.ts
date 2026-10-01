@@ -37,6 +37,10 @@ type ToolParserMap = {
     call: types.CommentOnDocument;
     response: types.CommentOnDocumentResponse;
   };
+  ConfigureAgent: {
+    call: types.ConfigureAgent;
+    response: types.ConfigureAgentResponse;
+  };
   ConfigureBot: {
     call: types.ConfigureBot;
     response: types.ConfigureBotResponse;
@@ -139,6 +143,7 @@ type ToolParserMap = {
     call: types.IssueBotCredential;
     response: types.IssueBotCredentialResponse;
   };
+  ListAgents: { call: types.ListAgents; response: types.ListAgentsResponse };
   ListBots: { call: types.ListBots; response: types.ListBotsResponse };
   ListCalendarEvents: {
     call: types.ListCalendarEvents;
@@ -386,6 +391,10 @@ const toolParserMap = {
     call: schemas.CommentOnDocument,
     response: schemas.CommentOnDocumentResponse,
   },
+  ConfigureAgent: {
+    call: schemas.ConfigureAgent,
+    response: schemas.ConfigureAgentResponse,
+  },
   ConfigureBot: {
     call: schemas.ConfigureBot,
     response: schemas.ConfigureBotResponse,
@@ -499,6 +508,10 @@ const toolParserMap = {
   IssueBotCredential: {
     call: schemas.IssueBotCredential,
     response: schemas.IssueBotCredentialResponse,
+  },
+  ListAgents: {
+    call: schemas.ListAgents,
+    response: schemas.ListAgentsResponse,
   },
   ListBots: { call: schemas.ListBots, response: schemas.ListBotsResponse },
   ListCalendarEvents: {
@@ -785,6 +798,10 @@ type ToolDataMap = {
     call: types.CommentOnDocument;
     response: types.CommentOnDocumentResponse;
   };
+  ConfigureAgent: {
+    call: types.ConfigureAgent;
+    response: types.ConfigureAgentResponse;
+  };
   ConfigureBot: {
     call: types.ConfigureBot;
     response: types.ConfigureBotResponse;
@@ -887,6 +904,7 @@ type ToolDataMap = {
     call: types.IssueBotCredential;
     response: types.IssueBotCredentialResponse;
   };
+  ListAgents: { call: types.ListAgents; response: types.ListAgentsResponse };
   ListBots: { call: types.ListBots; response: types.ListBotsResponse };
   ListCalendarEvents: {
     call: types.ListCalendarEvents;

@@ -364,6 +364,9 @@ export const storageExcluded = [
 ] as const satisfies readonly (keyof StorageSdk)[];
 
 export const storageBacklog = [
+  // Email follow-ups are available through the generated client, like reminders.
+  'getEmailFollowup',
+  'setEmailFollowup',
   'approveHarnessPairing',
   'assignInitiativeTasks',
   'claimHarnessPairing',

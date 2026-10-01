@@ -428,7 +428,7 @@ pub async fn build_tool_service_context_from_env(
         entity_access_service.clone(),
         document_tool_context.service.clone(),
         chat_tool_context.service.clone(),
-        user_email_service,
+        user_email_service.clone(),
     );
 
     let anthropic_tool_context = build_anthropic_tool_context();
@@ -486,6 +486,7 @@ pub async fn build_tool_service_context_from_env(
         notification_tool_context,
         reminders_tool_context: crate::tool_context::build_reminders_tool_context(
             pool.clone(),
+            user_email_service.clone(),
             entity_access_service.clone(),
         ),
         databases_tool_context,
@@ -498,6 +499,7 @@ pub async fn build_tool_service_context_from_env(
             crate::tool_context::MaybeToolEventBroker::Real(macro_event_broker.clone()),
             entity_access_service.clone(),
             document_storage_service_url,
+            crate::mcp_app_catalog::pipedream_client_from_env()?,
         ),
         project_tool_context,
         initiative_tool_context,
@@ -506,11 +508,7 @@ pub async fn build_tool_service_context_from_env(
         skill_tool_context,
         schedule_tool_context: crate::NoOpScheduleContext,
         anthropic_tool_context,
-        admission: ai_billing::composition::pg_admission_service(
-            pool.clone(),
-            environment,
-            enforcement,
-        ),
+        admission: ai_billing::composition::pg_admission_service(pool.clone(), enforcement),
         recorder: ai_usage::pg_recorder_with_enforcement(pool.clone(), enforcement),
         usage_context: ai_usage::UsageContext::system(ai_usage::AiFeature::Chat),
     })

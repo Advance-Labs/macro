@@ -290,7 +290,7 @@ must be saved before persistent comments are available.
 ## Ask Macro about a spreadsheet
 
 **Ask Macro** sits immediately left of **Share**. Select the relevant cells, then
-click it to open a new chat in a split beside the workbook. The composer starts
+click it to open a new agent session in a split beside the workbook. The composer starts
 with the workbook mention followed by one space; nothing sends automatically.
 The mention captures the active sheet ID/name and normalized selected range at
 click time. Changing the selection later does not change that draft attachment.
@@ -587,6 +587,10 @@ retains the draft. The timeline initially loads a bounded page with up to three
 preview replies per thread. Expand a thread to load its replies;
 `Load earlier comments` pages backward. Live updates preserve unsent replies
 and edits while updating the surrounding thread.
+
+Discussion and comment headers include the date for older messages (for example,
+`Yesterday at 4:37 PM` or `09/24/26 at 4:37 PM`). Regular channel timelines retain
+their date dividers and time-only message headers.
 
 When verifying `@` mentions, compare the same person query in the document body
 and the Discussion composer: shared contacts use the same recent-interaction
