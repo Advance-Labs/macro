@@ -1,7 +1,5 @@
-//! Databases service implementation.
-//!
-//! All authorization policy (beyond receipt minting at the edge) and all
-//! use-case orchestration live here, behind fake-able ports.
+//! The databases service: all authorization policy beyond receipt minting,
+//! and every use case's orchestration, over its ports.
 
 mod casts;
 mod column_types;

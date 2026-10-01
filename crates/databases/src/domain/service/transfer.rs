@@ -5,9 +5,19 @@ use crate::domain::transfer::{
 use models_properties::service::property_value::PropertyValue;
 use sha2::{Digest, Sha256};
 
+/// Most columns one import creates.
+const MAX_IMPORT_COLUMNS: usize = 100;
+/// Most rows one import creates.
+const MAX_IMPORT_ROWS: usize = 10_000;
+/// Largest an import may be, encoded.
+const MAX_IMPORT_BYTES: usize = 16 * 1024 * 1024;
+
 fn validate_import(request: &mut ImportTable) -> Result<ImportFingerprint, DatabaseError> {
     request.name = validate_name(&request.name)?;
-    if request.columns.is_empty() || request.columns.len() > 100 || request.rows.len() > 10_000 {
+    if request.columns.is_empty()
+        || request.columns.len() > MAX_IMPORT_COLUMNS
+        || request.rows.len() > MAX_IMPORT_ROWS
+    {
         return Err(DatabaseError::from(SchemaError::ImportTooWide));
     }
     let mut names = HashSet::new();
@@ -33,7 +43,7 @@ fn validate_import(request: &mut ImportTable) -> Result<ImportFingerprint, Datab
         return Err(DatabaseError::from(SchemaError::NullCharacterInImport));
     }
     let encoded = serde_json::to_vec(request).map_err(repo_err)?;
-    if encoded.len() > 16 * 1024 * 1024 {
+    if encoded.len() > MAX_IMPORT_BYTES {
         return Err(DatabaseError::from(SchemaError::ImportTooLarge));
     }
     Ok(ImportFingerprint(format!("{:x}", Sha256::digest(encoded))))

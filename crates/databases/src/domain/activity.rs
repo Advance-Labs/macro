@@ -1,7 +1,5 @@
-//! What counts as activity in the databases domain.
-//!
-//! Databases have no entity-exclusive actions, so every mapping goes through
-//! [`Activity::attributed`] with a [`CommonAction`].
+//! What counts as activity in the databases domain: every event maps through
+//! `Activity::attributed` with a `CommonAction`.
 
 #[cfg(test)]
 mod test;

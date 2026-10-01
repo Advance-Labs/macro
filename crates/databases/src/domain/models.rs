@@ -17,15 +17,11 @@ mod schema_error;
 
 pub use schema_error::{ConversionRefusal, Misfit, MisfitGroup, SchemaError, SharingError};
 
-// ===== Identifiers =====
-
 pub use models_databases::views::{CardPosition, DatabaseView, ViewId, ViewPosition};
 pub use models_databases::{ColumnId, DatabaseId, RowId, TableId, TableVersion};
 
 /// Identifier of a `models_properties` property definition bound as a column.
 pub type PropertyDefinitionId = Uuid;
-
-// ===== Entities =====
 
 /// A database: a named collection of tables, owned and shared as one entity.
 #[derive(utoipa::ToSchema, Debug, Clone, Serialize, Deserialize)]
@@ -231,8 +227,6 @@ pub struct RowRef {
     pub position: String,
 }
 
-// ===== Schema operations (the structured, non-SQL part of the API) =====
-
 /// Command to create a database (with one starter table).
 #[derive(Debug, Clone)]
 pub struct CreateDatabase {
@@ -350,8 +344,6 @@ pub struct AddColumnOptions {
     pub labels: Vec<String>,
 }
 
-// ===== Acting viewer =====
-
 /// The acting viewer: the user a listing, a read or a write is scoped to.
 #[derive(Debug, Clone)]
 pub struct Viewer {
@@ -362,8 +354,6 @@ pub struct Viewer {
     /// `user_id`.
     pub acting_bot: Option<BotId>,
 }
-
-// ===== Batched writes =====
 
 /// A select option an op names by a label its column does not have yet,
 /// under an id minted before anything is written.
@@ -632,8 +622,6 @@ impl std::fmt::Display for OpRefusal {
     }
 }
 
-// ===== Saved queries =====
-
 /// Identifier of a saved query.
 pub type QueryId = Uuid;
 
@@ -751,8 +739,6 @@ pub enum TableDeletion {
     LastTable,
 }
 
-// ===== Access & rendering models =====
-
 /// A database as listed for a viewer.
 #[derive(utoipa::ToSchema, Debug, Clone, Serialize)]
 pub struct ListedDatabase {
@@ -813,8 +799,6 @@ pub struct ColumnDetail {
     pub shared_outside_database: bool,
 }
 
-// ===== Awareness =====
-
 /// Where one viewer is inside a database right now: ephemeral, relayed to
 /// the other viewers and never stored. A missing row or column means the
 /// viewer is on the table but on no cell.
@@ -839,8 +823,6 @@ pub struct Awareness {
     #[serde(default)]
     pub left: bool,
 }
-
-// ===== Errors =====
 
 /// Errors for schema and persistence operations.
 #[derive(Debug, thiserror::Error)]

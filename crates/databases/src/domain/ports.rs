@@ -1,13 +1,5 @@
-//! Ports: the contracts between the domain service and its adapters.
-//!
-//! Persistence is split by ownership. [`DatabasesRepo`] owns the databases,
-//! tables, column placements and row identities (`database_rows`: id,
-//! table, position). [`CellStore`] owns nothing: it is the domain's view of
-//! the properties system, where a row's cells live as entity properties of
-//! the `DATABASE_ROW` entity that the row id names; for a batch of row writes
-//! it is also the one place row identities and cells commit together.
-//! [`ColumnDefinitionStore`] is the same boundary for the definitions behind
-//! columns.
+//! Ports between the service and its adapters. `CellStore` is the one place
+//! row identities, cells and options commit together.
 
 use std::collections::HashMap;
 

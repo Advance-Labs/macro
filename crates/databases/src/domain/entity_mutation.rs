@@ -1,10 +1,5 @@
-//! Unified entity-mutation capability impls for databases.
-//!
-//! Databases support the lifecycle capabilities only: rename, trash, restore,
-//! and permanent deletion. They are not project members and carry no share
-//! policy of their own, so move, share-policy updates, and duplication have no
-//! meaning for them and are deliberately not implemented — the router reports
-//! them as unsupported.
+//! The entity-mutation lifecycle capabilities for databases: rename, trash,
+//! restore and permanent delete; the router reports the rest unsupported.
 
 use entity_access::domain::models::{EditAccessLevel, EntityAccessReceipt, OwnerAccessLevel};
 use entity_mutation::{

@@ -1,7 +1,5 @@
 //! Converting a column's cells to another type, one cell at a time, after
-//! `models_databases::cast` has said the change can work at all. A cell that
-//! does not fit is a [`Misfit`]: counted and quoted when the change is
-//! refused, emptied when the caller asked to clear what does not fit.
+//! the cast rule has said the change can work at all.
 
 use super::*;
 use crate::domain::catalog::PropertyType;

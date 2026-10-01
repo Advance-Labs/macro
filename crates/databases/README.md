@@ -29,8 +29,8 @@ through `apply_ops`.
 | Domain contracts and orchestration | `src/domain/models.rs`, `ports.rs`, `service.rs` |
 | Catalog entries | `src/domain/catalog.rs` |
 | Typed ops | `src/domain/service/ops.rs`, `models_databases` |
-| Rows, cells, and column definitions | `src/outbound/pg_databases_repo.rs`, `pg_cell_store.rs`, `pg_definition_store.rs` |
-| Column casts and inference | `src/domain/service/columns.rs`, `column_types.rs`, `infer_column_type.rs` |
+| Rows, cells, imports, and column definitions | `src/outbound/pg_databases_repo.rs`, `pg_cell_store.rs`, `pg_definition_store.rs` |
+| Column casts and inference | `src/domain/service/columns.rs`, `casts.rs`, `column_types.rs`, `infer_column_type.rs` |
 | Typed views and a board's card places | `models_databases::views`, `src/domain/service/ops/views.rs`, `src/outbound/pg_databases_repo/views.rs` |
 | Saved queries, sharing, imports, starter data | Corresponding modules under `src/domain/` |
 | HTTP transport | `src/inbound/axum_router.rs`, `starter_router.rs` |
@@ -53,7 +53,6 @@ cargo test -p databases --features postgres,inbound,ai_tools,gateway,entity_muta
 ```
 
 The suite covers permission scoping, typed round trips, relations, safe casts,
-rollback, stale/concurrent writes, sharing, typed views and card moves, the
-fractional-position migration, and retry-safe
-import/starter provisioning. SQLx tests
-create isolated databases using the repository migrator.
+rollback, stale/concurrent writes, sharing, typed views and card moves, and
+retry-safe import/starter provisioning. SQLx tests create isolated databases
+using the repository migrator.

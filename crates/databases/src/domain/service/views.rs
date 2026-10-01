@@ -1,6 +1,5 @@
-//! Views outside the ops: a board's card positions as the browser reads
-//! them, and what removing or retyping a column does to the views that
-//! refer to it.
+//! Views outside the ops: a board's card positions, and what removing or
+//! retyping a column does to the views that refer to it.
 
 use chrono::{DateTime, Utc};
 

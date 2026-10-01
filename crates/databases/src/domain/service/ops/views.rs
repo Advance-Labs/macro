@@ -1,6 +1,5 @@
-//! The view ops: creating, changing, removing and ordering a table's views,
-//! and moving a board's cards. Each is checked against the views and options
-//! the ops before it in the batch leave.
+//! The view ops: creating, changing, removing and ordering views, and moving
+//! a board's cards, each checked against what earlier ops leave.
 
 use std::collections::{HashMap, HashSet};
 

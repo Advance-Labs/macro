@@ -1,12 +1,5 @@
-//! Kafka event models for the `macro.databases` topic.
-//!
-//! Follows the canonical pattern in `macro_event_broker/examples/example_event.rs`:
-//! per-variant metadata structs, a [`TopicEvent`] enum tagged by `event_type`,
-//! and a [`MacroEvent`] wrapper keyed by database id.
-//!
-//! These are the durable facts other domains consume (activity today). The
-//! gateway fan-out that keeps open grids fresh is a separate, best-effort
-//! liveness channel; see `outbound::gateway_event_publisher`.
+//! The durable `macro.databases` events other domains consume; open grids'
+//! liveness pings are the separate `TableEventPublisher`.
 
 use activity::Actor;
 use bot_id::BotId;

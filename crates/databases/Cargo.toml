@@ -16,7 +16,7 @@ ai_tools = [
   "models_databases/schema",
   "ports",
 ]
-# Axum HTTP router: the SQL-first API surface (exec, snapshot, schema ops).
+# Axum HTTP router: ops, schema ops, and saved queries.
 inbound = [
   "dep:axum",
   "dep:macro_authorization",

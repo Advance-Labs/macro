@@ -1,7 +1,5 @@
-//! Sharing uses the same explicit channel grants as other collaboration
-//! entities, over the shared `SharePermissionV2` wire shape. Databases have
-//! no share link and no team share yet: both read back as `null`, and a
-//! request to turn either on is refused.
+//! Sharing by explicit channel grants over `SharePermissionV2`; databases
+//! have no share link or team share, and refuse turning either on.
 
 use entity_access::domain::models::{EntityAccessReceipt, OwnerAccessLevel};
 use models_permissions::share_permission::channel_share_permission::{

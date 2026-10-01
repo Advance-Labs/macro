@@ -1,6 +1,5 @@
-//! Typed ops: the batched write surface. Every op is checked against the
-//! receipt's database before anything is written, and the writes they become
-//! commit in one transaction.
+//! Typed ops: every op is checked against the receipt's database before
+//! anything is written, and their writes commit in one transaction.
 
 mod views;
 

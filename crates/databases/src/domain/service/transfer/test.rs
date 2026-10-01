@@ -25,9 +25,19 @@ fn import_validation_preserves_text_and_fingerprints_normalized_headers() {
 fn import_rejects_ambiguous_headers_and_non_rectangular_rows() {
     let mut value = request();
     value.columns = vec!["Name".into(), "name".into()];
-    assert!(validate_import(&mut value).is_err());
+    assert!(matches!(
+        validate_import(&mut value),
+        Err(DatabaseError::InvalidSchemaOperation(
+            SchemaError::DuplicateImportColumn
+        ))
+    ));
     value.columns = vec!["Name".into()];
-    assert!(validate_import(&mut value).is_err());
+    assert!(matches!(
+        validate_import(&mut value),
+        Err(DatabaseError::InvalidSchemaOperation(
+            SchemaError::RaggedImportRow
+        ))
+    ));
     value.rows.clear();
     assert!(validate_import(&mut value).is_ok());
 }
@@ -36,5 +46,10 @@ fn import_rejects_ambiguous_headers_and_non_rectangular_rows() {
 fn import_rejects_null_characters_before_creating_properties() {
     let mut value = request();
     value.rows[0][0] = "invalid\0text".into();
-    assert!(validate_import(&mut value).is_err());
+    assert!(matches!(
+        validate_import(&mut value),
+        Err(DatabaseError::InvalidSchemaOperation(
+            SchemaError::NullCharacterInImport
+        ))
+    ));
 }
