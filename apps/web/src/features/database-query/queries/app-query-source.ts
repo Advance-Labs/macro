@@ -18,6 +18,7 @@ import { useDatabaseTableChanges } from '@queries/storage/databases-sync';
 import { databasesKeys } from '@queries/storage/keys';
 import { useEntitySubscription } from '@service-connection/client';
 import { storageServiceClient } from '@service-storage/client';
+import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import { ResultAsync } from 'neverthrow';
 import type { Accessor } from 'solid-js';
 import type { QueryCapabilities } from '../context/query-context';
@@ -36,6 +37,15 @@ const databasesFailure = (thrown: unknown): QueryFailure => ({
   kind: 'databases',
   error: thrownServiceError(thrown),
 });
+
+function viewerDatabases(): ResultAsync<DatabaseDetail[], QueryFailure> {
+  return fetchViewerDatabases().mapErr(
+    (errors): QueryFailure => ({
+      kind: 'databases',
+      error: serviceError(errors),
+    })
+  );
+}
 
 function generateDatabaseQuery(
   input: Parameters<QueryCapabilities['generate']>[0]
@@ -60,12 +70,10 @@ export const queryCapabilities: QueryCapabilities = createQuestionCapabilities({
   generate: generateDatabaseQuery,
   // A draft question may read any database the viewer can reach.
   read: (sql) =>
-    ResultAsync.fromPromise(fetchViewerDatabases(), databasesFailure).andThen(
-      (databases) =>
-        readDatabaseSql({ schema: databaseSqlSchema(databases), sql }).map(
-          ({ catalog, outcome }) =>
-            databaseSqlAnswer(outcome, catalog, databases)
-        )
+    viewerDatabases().andThen((databases) =>
+      readDatabaseSql({ schema: databaseSqlSchema(databases), sql }).map(
+        ({ catalog, outcome }) => databaseSqlAnswer(outcome, catalog, databases)
+      )
     ),
   describe: (databaseId) =>
     ResultAsync.fromPromise(
@@ -121,7 +129,7 @@ export function saveQuestionSql(input: {
   sql: string;
   databaseId?: string;
 }): ResultAsync<string, QueryFailure> {
-  return ResultAsync.fromPromise(fetchViewerDatabases(), databasesFailure)
+  return viewerDatabases()
     .andThen((databases) =>
       checkDatabaseSql({
         schema: databaseSqlSchema(databases),

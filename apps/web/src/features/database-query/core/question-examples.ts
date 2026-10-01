@@ -10,7 +10,7 @@ export function questionExamples(schema: QuerySchema): string[] {
     ];
   const table =
     schema.tables.find((entry) => entry.id === schema.focusTableId) ??
-    schema.tables.find((entry) => !entry.id.startsWith('platform:'));
+    schema.tables.find((entry) => !entry.platform);
   if (!table) return ['Ask anything about your data…'];
   const examples = [
     `How many records are in ${table.name}?`,

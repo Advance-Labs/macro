@@ -24,6 +24,7 @@ export function toQuerySchema(
     {
       id: 'platform:people',
       name: 'People in your teams',
+      platform: true,
       sqlName: 'macro.people',
       primaryKey: 'id',
       columns: ['id', 'name', 'email'].map((name) => ({

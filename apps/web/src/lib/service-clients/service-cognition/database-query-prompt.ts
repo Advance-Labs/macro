@@ -1,9 +1,30 @@
-import type { QuerySchema } from '../../../features/database-query/core/query';
+/** The source a question is asked over, sent to the model as JSON. */
+export type DatabaseQuestionSchema = {
+  /** Absent when the source is chosen automatically. */
+  databaseId?: string;
+  name: string;
+  focusTableId?: string;
+  tables: {
+    id: string;
+    name: string;
+    platform?: true;
+    sqlName: string;
+    primaryKey?: string;
+    columns: {
+      name: string;
+      sqlName: string;
+      type: string;
+      options: string[];
+      multiple: boolean;
+      relation?: { databaseId: string; tableId: string; writable: boolean };
+    }[];
+  }[];
+};
 
 export type DatabaseQuestionInput = {
   prompt: string;
   sql: string;
-  schema: QuerySchema;
+  schema: DatabaseQuestionSchema;
 };
 
 const queryInstructions = `Return one read-only SELECT, a concise explanation, and a short descriptive title (2–6 words, at most 80 characters). The title labels the answer, such as "Open tickets" or "Revenue by month"; never repeat the question or include instructions like "Show me". The app executes that SQL to display real, live results; never embed fabricated answer values in a SELECT. SQL is the source of the answer, not a transcript of actions.

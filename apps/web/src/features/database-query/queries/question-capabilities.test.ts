@@ -164,6 +164,53 @@ describe('automatic question source verification', () => {
     expect(describe).not.toHaveBeenCalled();
   });
 
+  it('refuses an answer over several databases that names none of them', async () => {
+    const describe = vi.fn<Describe>(() => okAsync(detail));
+    const capabilities = createQuestionCapabilities({
+      generate: () => okAsync(proposal),
+      describe,
+      read: () =>
+        okAsync({
+          columns: [{ name: 'Count', kind: 'number' }],
+          rows: [[{ type: 'number', value: 1 }]],
+          rowIds: [],
+          readTables: ['Tickets', 'Deals'],
+          readDatabaseIds: ['support', 'sales'],
+          truncatedTables: [],
+        }),
+    });
+    const result = await capabilities.read(
+      'SELECT COUNT(*) FROM support.Tickets JOIN sales.Deals ON Tickets.deal = Deals.row_id'
+    );
+    expect(result._unsafeUnwrapErr()).toEqual({ kind: 'ambiguous-source' });
+    expect(describe).not.toHaveBeenCalled();
+  });
+
+  it('leaves an automatic answer that reads no database without a source', async () => {
+    const capabilities = createQuestionCapabilities({
+      generate: () => okAsync(proposal),
+      describe: vi.fn<Describe>(),
+      read: () =>
+        okAsync({
+          columns: [{ name: 'name', kind: 'text' }],
+          rows: [[{ type: 'text', value: 'Ada' }]],
+          rowIds: [],
+          readTables: [],
+          readDatabaseIds: [],
+          truncatedTables: [],
+        }),
+    });
+    const result = await capabilities.read('SELECT name FROM macro.people');
+    expect(result._unsafeUnwrap()).toEqual({
+      columns: [{ name: 'name', kind: 'text' }],
+      rows: [[{ type: 'text', value: 'Ada' }]],
+      rowIds: [],
+      readTables: [],
+      readDatabaseIds: [],
+      truncatedTables: [],
+    });
+  });
+
   it('discovers without a chosen source and verifies access to the entire resolved database', async () => {
     const describe = vi.fn<Describe>(() => okAsync(detail));
     const generate = vi.fn<QueryCapabilities['generate']>(() =>

@@ -27,17 +27,16 @@ export function createQuestionCapabilities(
           )
             return errAsync({ kind: 'other-database' });
           const claimedId = context?.source?.databaseId;
-          const databaseId =
-            claimedId && databaseIds.includes(claimedId)
-              ? claimedId
-              : databaseIds.toSorted()[0];
+          const claimed = !!claimedId && databaseIds.includes(claimedId);
+          if (!claimed && databaseIds.length > 1)
+            return errAsync({ kind: 'ambiguous-source' });
+          const databaseId = claimed ? claimedId : databaseIds[0];
           if (!databaseId)
-            return okAsync({
-              ...answer,
-              source: context?.databaseId
-                ? context.source
-                : { name: 'Automatic', tables: [] },
-            });
+            return okAsync(
+              context?.databaseId && context.source
+                ? { ...answer, source: context.source }
+                : answer
+            );
           const knownSource = context?.source;
           const source: ResultAsync<QuerySchema, QueryFailure> =
             knownSource?.databaseId === databaseId &&
@@ -77,9 +76,7 @@ export function createQuestionCapabilities(
           // schema if it encounters a new table; avoid another sequential fetch.
           if (
             request.schema.databaseId === databaseId &&
-            request.schema.tables.some(
-              (table) => !table.id.startsWith('platform:')
-            )
+            request.schema.tables.some((table) => !table.platform)
           )
             return okAsync({ ...proposal, source: request.schema });
           return input.describe(databaseId).andThen((detail) =>

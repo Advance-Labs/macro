@@ -3,9 +3,9 @@ import { enableDatabases } from '@core/constant/featureFlags';
 import {
   $createDatabaseQueryNode,
   $isDatabaseQueryNode,
-  type DatabaseQueryData,
   type DatabaseQueryDecoratorProps,
 } from '@macro-inc/lexical-core/nodes/DatabaseQueryNode';
+import type { DatabaseQueryData } from '@macro-inc/lexical-core/nodes/databaseQueryData';
 import { cn } from '@ui';
 import {
   $createNodeSelection,
@@ -22,6 +22,7 @@ import {
   onCleanup,
   Show,
   Suspense,
+  splitProps,
   useContext,
 } from 'solid-js';
 import { LexicalWrapperContext } from '../../context/LexicalWrapperContext';
@@ -105,15 +106,7 @@ export function DatabaseQuery(props: DatabaseQueryDecoratorProps) {
       return;
     selectBlock();
   };
-  const source = (): DatabaseQueryData => ({
-    queryId: props.queryId,
-    databaseId: props.databaseId,
-    tableId: props.tableId,
-    prompt: props.prompt,
-    title: props.title,
-    displayMode: props.displayMode,
-    chart: props.chart,
-  });
+  const [, source] = splitProps(props, ['key', 'theme']);
   const save = (data: DatabaseQueryData) => {
     if (!canEdit() || !wrapper) return;
     wrapper.editor.update(() => {
@@ -154,7 +147,7 @@ export function DatabaseQuery(props: DatabaseQueryDecoratorProps) {
       render={() => (
         <Suspense fallback={placeholder()}>
           <LiveQuestion
-            source={source()}
+            source={source}
             onSave={canEdit() ? save : undefined}
             onDiscard={canEdit() ? discard : undefined}
           />
