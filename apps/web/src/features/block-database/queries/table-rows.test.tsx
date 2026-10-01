@@ -479,6 +479,172 @@ describe('database view reads', () => {
   });
 });
 
+describe('a column type change', () => {
+  it('keeps the column’s last type and cells until the read of its new type lands', async () => {
+    const before = detail();
+    const [nameColumn] = before.tables[0].columns;
+    const after: DatabaseDetail = {
+      ...before,
+      tables: [
+        {
+          ...before.tables[0],
+          table: { ...before.tables[0].table, version: 6 },
+          columns: [
+            {
+              ...nameColumn,
+              column: {
+                ...nameColumn.column,
+                property_definition_id: 'number-definition',
+              },
+              definition: {
+                ...nameColumn.definition,
+                definition: {
+                  ...nameColumn.definition.definition,
+                  id: 'number-definition',
+                  data_type: 'NUMBER',
+                },
+              },
+            },
+          ],
+        },
+      ],
+    };
+    let finishNumbers!: (outcome: Outcome) => void;
+    const numbers = new Promise<Outcome>((resolve) => {
+      finishNumbers = resolve;
+    });
+    const fetch: Step = {
+      step: 'fetch',
+      id: 0,
+      query: {
+        type: 'soup',
+        table: 'guests-table',
+        propf: null,
+        keyHint: null,
+      },
+      needs: [],
+      cursor: null,
+      limit: 500,
+    };
+    const answering = (outcome: Outcome) => ({
+      start: () => fetch,
+      feed_page: () => ({ step: 'done' as const, ...outcome }),
+      feed_bins: () => {
+        throw 'no bins';
+      },
+      free: () => {},
+    });
+    const client = createClient({
+      url: 'http://test.invalid/graphql',
+      exchanges: [
+        () => (incoming) =>
+          pipe(
+            incoming,
+            mergeMap((operation) => {
+              if (operation.kind === 'teardown') return empty;
+              const data: SoupQuery = {
+                user: {
+                  id: 'macro|viewer@databases.test',
+                  emailLinks: [],
+                  soup: { items: [], nextCursor: null },
+                },
+              };
+              return fromValue({
+                operation,
+                data,
+                stale: false,
+                hasNext: false,
+              });
+            })
+          ),
+      ],
+    });
+    const [table, setTable] = createSignal(before.tables[0]);
+    queryClient.setQueryData(databasesKeys.detail('db').queryKey, before);
+    let source!: DatabaseRowsSource;
+    function Harness() {
+      source = createDatabaseRowsSource({
+        databaseId: 'db',
+        table,
+        view: () => allGuests,
+        search: () => '',
+        applyOps: vi.fn<ApplyOps>(),
+        read: {
+          client: () => client,
+          cacheHost: () => undefined,
+          people: async () => [],
+          catalog: async (schema) => ({
+            tables: [
+              {
+                id: 'guests-table',
+                databaseId: 'db',
+                database: 'Personal',
+                name: 'Guests',
+                source: 'database',
+                columns: schema.databases[0].tables[0].columns.map(
+                  (column) => ({
+                    id: column.definition,
+                    placement: column.id,
+                    name: column.name,
+                    kind:
+                      column.definition === 'number-definition'
+                        ? { kind: 'number' }
+                        : { kind: 'text' },
+                  })
+                ),
+              },
+            ],
+          }),
+          openView: async (catalog) =>
+            answering(
+              catalog.tables[0].columns[0].id === 'number-definition'
+                ? await numbers
+                : guests()
+            ),
+        },
+        onTableChanged: () => {},
+        applyVersions: () => {},
+        addOption: () => okAsync(undefined),
+      });
+      return null;
+    }
+    render(() => (
+      <QueryClientProvider client={queryClient}>
+        <Harness />
+      </QueryClientProvider>
+    ));
+    await waitFor(() =>
+      expect(source.snapshot()?.rows).toEqual([
+        { rowId: 'record', cells: { name: 'Ada' } },
+      ])
+    );
+
+    queryClient.setQueryData(databasesKeys.detail('db').queryKey, after);
+    setTable(after.tables[0]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(source.columns()[0].dataType).toBe('STRING');
+    expect(source.snapshot()?.rows).toEqual([
+      { rowId: 'record', cells: { name: 'Ada' } },
+    ]);
+
+    finishNumbers({
+      columns: [{ name: 'Name', column: 'number-definition', kind: 'number' }],
+      rows: [[{ type: 'number', value: 7 }]],
+      rowIds: ['record'],
+      readTables: ['guests-table'],
+      truncated: false,
+      insertedRowIds: [],
+      changesApplied: 0,
+    });
+    await waitFor(() =>
+      expect(source.snapshot()?.rows).toEqual([
+        { rowId: 'record', cells: { name: 7 } },
+      ])
+    );
+    expect(source.columns()[0].dataType).toBe('NUMBER');
+  });
+});
+
 describe('database rows SQL names', () => {
   it('replaces a relation cell with a list of row ids', async () => {
     const schema = detail();
