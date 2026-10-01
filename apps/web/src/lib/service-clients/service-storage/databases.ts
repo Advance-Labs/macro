@@ -7,8 +7,8 @@ import {
   fetchWithToken,
 } from '@core/util/fetchWithToken';
 import type { ObjectLike, ResultError } from '@core/util/result';
+import { statusError } from '@core/util/safeFetch';
 import { ResultAsync } from 'neverthrow';
-import { match, P } from 'ts-pattern';
 import type { AddColumnOptionsRequest } from './generated/schemas/addColumnOptionsRequest';
 import type { ApplyOpsResponse } from './generated/schemas/applyOpsResponse';
 import type { Awareness } from './generated/schemas/awareness';
@@ -19,6 +19,8 @@ import type { ColumnSchemaOutcome } from './generated/schemas/columnSchemaOutcom
 import type { ColumnTypeChangeOutcome } from './generated/schemas/columnTypeChangeOutcome';
 import type { CreateColumnRequest } from './generated/schemas/createColumnRequest';
 import type { CreateColumnResponse } from './generated/schemas/createColumnResponse';
+import type { CreateDatabaseRequest } from './generated/schemas/createDatabaseRequest';
+import type { CreateTableRequest } from './generated/schemas/createTableRequest';
 import type { Database } from './generated/schemas/database';
 import type { DatabaseDetail } from './generated/schemas/databaseDetail';
 import type { DeleteColumnRequest } from './generated/schemas/deleteColumnRequest';
@@ -32,10 +34,11 @@ import type { RenameColumnOutcome } from './generated/schemas/renameColumnOutcom
 import type { RenameColumnRequest } from './generated/schemas/renameColumnRequest';
 import type { RenameTableRequest } from './generated/schemas/renameTableRequest';
 import type { ReorderColumnsRequest } from './generated/schemas/reorderColumnsRequest';
+import type { ReorderTablesRequest } from './generated/schemas/reorderTablesRequest';
 import type { SharePermissionV2 } from './generated/schemas/sharePermissionV2';
 import type { StarterDatabase } from './generated/schemas/starterDatabase';
 import type { Table } from './generated/schemas/table';
-import type { UpdateChannelSharePermission } from './generated/schemas/updateChannelSharePermission';
+import type { UpdateSharePermissionRequestV2 } from './generated/schemas/updateSharePermissionRequestV2';
 import type { ViewPositionsResponse } from './generated/schemas/viewPositionsResponse';
 
 /** A schema change the service refused as invalid (400), e.g. a taken name. */
@@ -86,26 +89,17 @@ export async function errorBody(
   };
 }
 
+/** A 400 is the route's own refusal, `invalid`; any other status keeps safeFetch's code. */
 function statusCode<Invalid extends string>(
   status: number,
-  invalid: Invalid
+  invalid: Invalid | undefined
 ): FetchWithTokenErrorCode | Invalid {
-  if (status === 400) return invalid;
-  return match(status)
-    .returnType<FetchWithTokenErrorCode>()
-    .with(401, () => 'UNAUTHORIZED')
-    .with(403, () => 'FORBIDDEN')
-    .with(404, () => 'NOT_FOUND')
-    .with(409, () => 'CONFLICT')
-    .with(410, () => 'GONE')
-    .with(P.number.gte(500), () => 'SERVER_ERROR')
-    .otherwise(() => 'HTTP_ERROR');
+  return status === 400 && invalid !== undefined
+    ? invalid
+    : statusError(status).code;
 }
 
-/**
- * One `/databases` request. A 400 is the route's own refusal, `invalid`;
- * every other failure keeps the transport's code and the service's message.
- */
+/** One `/databases` request; a failure carries the service's own message. */
 function databasesFetch<T extends ObjectLike, Invalid extends string = never>(
   path: string,
   init: Omit<FetchWithTokenInit, 'errorResponseHandler'> & {
@@ -117,23 +111,29 @@ function databasesFetch<T extends ObjectLike, Invalid extends string = never>(
     fetchWithToken<T, Invalid>(`${documentStorageHost}${path}`, {
       ...request,
       errorResponseHandler: async (response) => ({
-        code: statusCode<Invalid | 'HTTP_ERROR'>(
-          response.status,
-          invalid ?? 'HTTP_ERROR'
-        ),
+        code: statusCode(response.status, invalid),
         message: (await errorBody(response)).message,
       }),
     })
   );
 }
 
-const json = (body: object) => JSON.stringify(body);
+/** The refusal the `/ops` error handler attached; transport failures (a 401) carry none. */
+function withRefusal(
+  error: ResultError<DatabaseOpsErrorCode>
+): DatabaseOpsError {
+  return {
+    ...error,
+    refusal:
+      'refusal' in error && isOpRefusal(error.refusal) ? error.refusal : null,
+  };
+}
 
 export const databasesClient = {
   importTable({ id, request }: { id: string; request: ImportTable }) {
     return databasesFetch<Table, 'INVALID_SCHEMA'>(`/databases/${id}/import`, {
       method: 'POST',
-      body: json(request),
+      body: JSON.stringify(request),
       invalid: 'INVALID_SCHEMA',
     });
   },
@@ -142,15 +142,15 @@ export const databasesClient = {
     return databasesFetch<SharePermissionV2>(`/databases/${id}/permissions`);
   },
 
-  updatePermissions(params: {
-    id: string;
-    channelSharePermissions: UpdateChannelSharePermission[];
-  }) {
+  updatePermissions({
+    id,
+    ...request
+  }: { id: string } & UpdateSharePermissionRequestV2) {
     return databasesFetch<SharePermissionV2, 'INVALID_SHARING'>(
-      `/databases/${params.id}/permissions`,
+      `/databases/${id}/permissions`,
       {
         method: 'PATCH',
-        body: json({ channelSharePermissions: params.channelSharePermissions }),
+        body: JSON.stringify(request),
         invalid: 'INVALID_SHARING',
       }
     );
@@ -170,28 +170,32 @@ export const databasesClient = {
     return databasesFetch<DatabaseDetail>(`/databases/${id}`);
   },
 
-  create({ name }: { name: string }) {
+  create(request: CreateDatabaseRequest) {
     return databasesFetch<Database, 'INVALID_SCHEMA'>('/databases', {
       method: 'POST',
-      body: json({ name }),
+      body: JSON.stringify(request),
       invalid: 'INVALID_SCHEMA',
     });
   },
 
-  createTable({ id, name }: { id: string; name: string }) {
+  createTable({ id, ...request }: { id: string } & CreateTableRequest) {
     return databasesFetch<Table, 'INVALID_SCHEMA'>(`/databases/${id}/tables`, {
       method: 'POST',
-      body: json({ name }),
+      body: JSON.stringify(request),
       invalid: 'INVALID_SCHEMA',
     });
   },
 
-  renameTable(params: { id: string; tableId: string } & RenameTableRequest) {
+  renameTable({
+    id,
+    tableId,
+    ...request
+  }: { id: string; tableId: string } & RenameTableRequest) {
     return databasesFetch<Table, 'INVALID_SCHEMA'>(
-      `/databases/${params.id}/tables/${params.tableId}`,
+      `/databases/${id}/tables/${tableId}`,
       {
         method: 'PATCH',
-        body: json({ name: params.name, previousName: params.previousName }),
+        body: JSON.stringify(request),
         invalid: 'INVALID_SCHEMA',
       }
     );
@@ -201,12 +205,12 @@ export const databasesClient = {
    * Set the tab order. `tableIds` names every table of the database exactly
    * once; a stale list is refused, and the caller refetches.
    */
-  reorderTables(params: { id: string; tableIds: string[] }) {
+  reorderTables({ id, ...request }: { id: string } & ReorderTablesRequest) {
     return databasesFetch<Table[], 'INVALID_SCHEMA'>(
-      `/databases/${params.id}/tables/order`,
+      `/databases/${id}/tables/order`,
       {
         method: 'PUT',
-        body: json({ tableIds: params.tableIds }),
+        body: JSON.stringify(request),
         invalid: 'INVALID_SCHEMA',
       }
     );
@@ -223,22 +227,25 @@ export const databasesClient = {
   }) {
     return databasesFetch<CreateColumnResponse, 'INVALID_SCHEMA'>(
       `/databases/${id}/tables/${tableId}/columns`,
-      { method: 'POST', body: json(request), invalid: 'INVALID_SCHEMA' }
+      {
+        method: 'POST',
+        body: JSON.stringify(request),
+        invalid: 'INVALID_SCHEMA',
+      }
     );
   },
 
-  renameColumn(
-    params: {
-      id: string;
-      tableId: string;
-      columnId: string;
-    } & RenameColumnRequest
-  ) {
+  renameColumn({
+    id,
+    tableId,
+    columnId,
+    ...request
+  }: { id: string; tableId: string; columnId: string } & RenameColumnRequest) {
     return databasesFetch<RenameColumnOutcome, 'INVALID_SCHEMA'>(
-      `/databases/${params.id}/tables/${params.tableId}/columns/${params.columnId}`,
+      `/databases/${id}/tables/${tableId}/columns/${columnId}`,
       {
         method: 'PATCH',
-        body: json({ name: params.name, previousName: params.previousName }),
+        body: JSON.stringify(request),
         invalid: 'INVALID_SCHEMA',
       }
     );
@@ -252,7 +259,11 @@ export const databasesClient = {
   }) {
     return databasesFetch<ColumnTypeChangeOutcome, 'INVALID_SCHEMA'>(
       `/databases/${params.id}/tables/${params.tableId}/columns/${params.columnId}/type`,
-      { method: 'PATCH', body: json(params.request), invalid: 'INVALID_SCHEMA' }
+      {
+        method: 'PATCH',
+        body: JSON.stringify(params.request),
+        invalid: 'INVALID_SCHEMA',
+      }
     );
   },
 
@@ -263,34 +274,32 @@ export const databasesClient = {
     );
   },
 
-  deleteColumn(
-    params: {
-      id: string;
-      tableId: string;
-      columnId: string;
-    } & DeleteColumnRequest
-  ) {
+  deleteColumn({
+    id,
+    tableId,
+    columnId,
+    ...request
+  }: { id: string; tableId: string; columnId: string } & DeleteColumnRequest) {
     return databasesFetch<ColumnSchemaOutcome, 'INVALID_SCHEMA'>(
-      `/databases/${params.id}/tables/${params.tableId}/columns/${params.columnId}`,
+      `/databases/${id}/tables/${tableId}/columns/${columnId}`,
       {
         method: 'DELETE',
-        body: json({ baseVersion: params.baseVersion }),
+        body: JSON.stringify(request),
         invalid: 'INVALID_SCHEMA',
       }
     );
   },
 
-  reorderColumns(
-    params: { id: string; tableId: string } & ReorderColumnsRequest
-  ) {
+  reorderColumns({
+    id,
+    tableId,
+    ...request
+  }: { id: string; tableId: string } & ReorderColumnsRequest) {
     return databasesFetch<ColumnSchemaOutcome, 'INVALID_SCHEMA'>(
-      `/databases/${params.id}/tables/${params.tableId}/columns/order`,
+      `/databases/${id}/tables/${tableId}/columns/order`,
       {
         method: 'PATCH',
-        body: json({
-          columnIds: params.columnIds,
-          baseVersion: params.baseVersion,
-        }),
+        body: JSON.stringify(request),
         invalid: 'INVALID_SCHEMA',
       }
     );
@@ -304,7 +313,11 @@ export const databasesClient = {
   }) {
     return databasesFetch<InferColumnTypeOutcome, 'INVALID_SCHEMA'>(
       `/databases/${params.id}/tables/${params.tableId}/columns/${params.columnId}/infer-type`,
-      { method: 'POST', body: json(params.request), invalid: 'INVALID_SCHEMA' }
+      {
+        method: 'POST',
+        body: JSON.stringify(params.request),
+        invalid: 'INVALID_SCHEMA',
+      }
     );
   },
 
@@ -325,7 +338,11 @@ export const databasesClient = {
   }) {
     return databasesFetch<ColumnDetail, 'INVALID_SCHEMA'>(
       `/databases/${id}/tables/${tableId}/columns/${columnId}/options`,
-      { method: 'POST', body: json(request), invalid: 'INVALID_SCHEMA' }
+      {
+        method: 'POST',
+        body: JSON.stringify(request),
+        invalid: 'INVALID_SCHEMA',
+      }
     );
   },
 
@@ -335,28 +352,27 @@ export const databasesClient = {
     request,
   }: {
     id: string;
+    /** The engine's ops: the generated `ApplyOpsRequest` drops `null` from optional fields. */
     request: { ops: DatabaseOp[] };
   }): ResultAsync<ApplyOpsResponse, DatabaseOpsError[]> {
-    let refusal: OpRefusalResponse | null = null;
     return new ResultAsync(
       fetchWithToken<ApplyOpsResponse, 'INVALID_OP'>(
         `${documentStorageHost}/databases/${id}/ops`,
         {
           method: 'POST',
-          body: json(request),
-          errorResponseHandler: async (response) => {
+          body: JSON.stringify(request),
+          errorResponseHandler: async (response): Promise<DatabaseOpsError> => {
             const { body, message } = await errorBody(response);
-            refusal = isOpRefusal(body) ? body : null;
-            return { code: statusCode(response.status, 'INVALID_OP'), message };
+            const code = statusCode(response.status, 'INVALID_OP');
+            return {
+              code,
+              message,
+              refusal: code === 'INVALID_OP' && isOpRefusal(body) ? body : null,
+            };
           },
         }
       )
-    ).mapErr((errors) =>
-      errors.map((error) => ({
-        ...error,
-        refusal: error.code === 'INVALID_OP' ? refusal : null,
-      }))
-    );
+    ).mapErr((errors) => errors.map(withRefusal));
   },
 
   /** Where a board's cards sit: each placed card's lane and key there. */
@@ -367,10 +383,10 @@ export const databasesClient = {
   },
 
   /** Tell the database's other viewers where the caller is. Responds 204. */
-  shareAwareness(databaseId: string, state: Awareness) {
-    return databasesFetch<Record<string, never>>(
-      `/databases/${databaseId}/awareness`,
-      { method: 'PUT', body: json(state) }
-    );
+  shareAwareness({ id, state }: { id: string; state: Awareness }) {
+    return databasesFetch<Record<string, never>>(`/databases/${id}/awareness`, {
+      method: 'PUT',
+      body: JSON.stringify(state),
+    });
   },
 };

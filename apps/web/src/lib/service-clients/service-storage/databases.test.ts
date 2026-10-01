@@ -75,9 +75,14 @@ describe('databases client failures', () => {
       },
     ]);
 
+    answer(500, 'Internal server error');
+    expect((await databasesClient.list())._unsafeUnwrapErr()).toEqual([
+      { code: 'SERVER_ERROR', message: 'Internal server error' },
+    ]);
+
     answer(502, 'Bad gateway');
     expect((await databasesClient.list())._unsafeUnwrapErr()).toEqual([
-      { code: 'SERVER_ERROR', message: 'Bad gateway' },
+      { code: 'HTTP_ERROR', message: 'Bad gateway' },
     ]);
   });
 
@@ -139,6 +144,27 @@ describe('databases client failures', () => {
         message: 'op 0: the table has no rows',
         refusal: null,
       },
+    ]);
+  });
+
+  it('gives an /ops failure that is not a refusal no refusal', async () => {
+    answer(
+      409,
+      JSON.stringify({
+        message: 'The table changed.',
+        op: 0,
+        row: 1,
+        column: 'col-status',
+      })
+    );
+
+    const applied = await databasesClient.applyOps({
+      id: 'db',
+      request: { ops: [] },
+    });
+
+    expect(applied._unsafeUnwrapErr()).toEqual([
+      { code: 'CONFLICT', message: 'The table changed.', refusal: null },
     ]);
   });
 
