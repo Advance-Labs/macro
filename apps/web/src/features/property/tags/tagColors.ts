@@ -35,8 +35,6 @@ const everyColorListed: Exclude<
   : never = true;
 void everyColorListed;
 
-export const TAG_COLORS = TAG_COLOR_OPTIONS.map((option) => option.color);
-
 export const DEFAULT_TAG_COLOR: string = TAG_COLOR_OPTIONS[11].color;
 
 /** The palette colour an option's stored hex value is, matched without regard to case. */

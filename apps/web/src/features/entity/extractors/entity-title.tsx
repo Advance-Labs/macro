@@ -47,7 +47,7 @@ function extractRawTitle(entity: EntityData): JSX.Element {
       .with({ type: 'calendar_event' }, (e) => e.name || '(No title)')
       .with(
         { type: 'database' },
-        (e) => e.name || blockNameToDefaultFile('database')
+        (entity) => entity.name || blockNameToDefaultFile('database')
       )
       .otherwise(() => 'Unknown')
   );

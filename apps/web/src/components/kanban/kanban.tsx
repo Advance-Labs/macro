@@ -159,7 +159,8 @@ export function Kanban(props: {
       onDragStart={({ draggable }) => {
         suppressClick = true;
         const bounds = draggable.node.getBoundingClientRect();
-        const copy = draggable.node.cloneNode(true) as HTMLElement;
+        const copy = draggable.node.cloneNode(true);
+        if (!(copy instanceof HTMLElement)) return;
         copy.removeAttribute('id');
         copy
           .querySelectorAll('[id]')
@@ -219,7 +220,9 @@ function DragSession(props: {
   onCancel: () => void;
   getViewport?: () => HTMLElement | undefined;
 }) {
-  const [state, actions] = useDragDropContext()!;
+  const context = useDragDropContext();
+  if (!context) throw new Error('DragSession requires DragDropProvider');
+  const [state, actions] = context;
   createDragAutoScroll({
     getViewport: () => props.getViewport?.(),
     axis: 'both',

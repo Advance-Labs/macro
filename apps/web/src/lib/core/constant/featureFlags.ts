@@ -113,9 +113,8 @@ export const enableDatabases = defineFlag({
 });
 
 /**
- * Shows the SQL behind database answers: the question editor's SQL toggle,
- * "View SQL", and statements in database tool results. Off everywhere; SQL
- * still runs underneath. Turn on locally with VITE_SHOW_DATABASE_SQL=true.
+ * Shows the SQL behind database answers and tool results. Off everywhere;
+ * turn on locally with VITE_SHOW_DATABASE_SQL=true.
  */
 export const showDatabaseSql = defineFlag({
   env: 'SHOW_DATABASE_SQL',

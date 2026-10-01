@@ -61,7 +61,8 @@ export const MODEL_PROVIDER_ICON: ExhaustiveMap = {
  * default model (Sonnet 5 = 1). Mirrors the per-token rates in `ai_pricing`
  * (output price, which dominates chat cost): Haiku $5, Sonnet $10, Opus $25,
  * Fable $50, GPT-6 Astra $50, GPT-5.6 $30, GPT-5.6 mini $4.50, Gemini 3.8
- * Flash $3.75 per million tokens. Shown in the picker so choosing a heavy model is a deliberate trade.
+ * Flash $3.75 per million tokens. Shown in the picker so choosing a heavy
+ * model is a deliberate trade.
  */
 export const MODEL_USAGE_MULTIPLIER: { [K in TModel]: number } = {
   'anthropic/claude-sonnet-5': 1,
@@ -95,9 +96,8 @@ export const DEFAULT_MODEL: TModel = Model.sonnet5;
 export const FREE_DEFAULT_MODEL: TModel = Model.haiku45;
 
 /**
- * Model for database AI: SQL generation, the database assistant, and chats
- * opened from a database. Paid-only on the backend, like every model but
- * {@link FREE_DEFAULT_MODEL}.
+ * Model for database AI: question answering, the database assistant, and chats
+ * opened from a database. Paid-only, like every model but {@link FREE_DEFAULT_MODEL}.
  */
 export const DATABASE_MODEL: TModel = Model.gemini38Flash;
 

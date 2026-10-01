@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_TAG_COLOR, optionColorOf, TAG_COLORS } from './tagColors';
+import {
+  DEFAULT_TAG_COLOR,
+  optionColorOf,
+  TAG_COLOR_OPTIONS,
+} from './tagColors';
 
 describe('option colours', () => {
   it('names the palette colour an option stores, in any case', () => {
@@ -22,7 +26,7 @@ describe('option colours', () => {
   });
 
   it('keeps the picker order, gray last as the default', () => {
-    expect(TAG_COLORS).toEqual([
+    expect(TAG_COLOR_OPTIONS.map((option) => option.color)).toEqual([
       '#E5484D',
       '#E54D2E',
       '#F76B15',

@@ -375,11 +375,7 @@ export type CrmContactEntity = EntityBase & {
   hidden: boolean;
 };
 
-/**
- * A Macro Database: SQL-native user tables. Not a Soup entity — rows come
- * from `GET /databases` and carry no view history, so `createdAt` is the only
- * timestamp.
- */
+/** A Macro Database. Not a Soup entity: it has no view history, so `createdAt` is its only timestamp. */
 export type DatabaseEntity = EntityBase & {
   type: 'database';
   /** What the viewer may do with the database. */
@@ -631,12 +627,6 @@ export const isCrmContactEntity = (
   entity: EntityData
 ): entity is CrmContactEntity => {
   return entity.type === 'crm_contact';
-};
-
-export const isDatabaseEntity = (
-  entity: EntityData
-): entity is DatabaseEntity => {
-  return entity.type === 'database';
 };
 
 export const isDocumentEntity = (

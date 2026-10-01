@@ -3,6 +3,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { trackMention } = vi.hoisted(() => ({ trackMention: vi.fn() }));
 vi.mock('@core/signal/mention', () => ({ trackMention }));
+vi.mock('@service-connection/websocket', () => ({
+  ws: { send() {}, addEventListener() {}, removeEventListener() {} },
+  state: () => 'closed',
+  createConnectionBlockWebsocketEffect() {},
+  createConnectionWebsocketEffect() {},
+  parseWebsocketPayload: () => undefined,
+}));
+vi.mock('@service-storage/websocket', () => ({
+  storageWS: { send() {}, addEventListener() {}, removeEventListener() {} },
+  createWebSocketJob() {},
+}));
 vi.mock('../../../../plugins', () => ({
   REMOVE_INLINE_SEARCH_COMMAND: 'remove-search',
 }));

@@ -63,6 +63,15 @@ const MAX_ITEMS = 8;
 const VIRTUAL_ITEM_HEIGHT = 36;
 // Height consumed by Surface's p-px border (2px) + py-2 padding (16px)
 const PANEL_DECORATION_HEIGHT = 18;
+const DEFAULT_DOCUMENT_BUCKETS: EntityBucket[] = [
+  'note',
+  'task',
+  'snippet',
+  'document',
+  'project',
+  'chat',
+  'database',
+];
 
 type MentionsMenuProps = {
   menu: MenuOperations;
@@ -139,15 +148,7 @@ function MentionsMenuInner(props: MentionsMenuProps) {
   const customDocs = props.entities
     ? useEntityMentionFromList({
         items: props.entities,
-        buckets: props.documentBuckets ?? [
-          'note',
-          'task',
-          'snippet',
-          'document',
-          'project',
-          'chat',
-          'database',
-        ],
+        buckets: props.documentBuckets ?? DEFAULT_DOCUMENT_BUCKETS,
         searchTerm,
       })
     : undefined;
@@ -172,15 +173,7 @@ function MentionsMenuInner(props: MentionsMenuProps) {
   const docsMention =
     customDocs ??
     useEntityMention({
-      buckets: props.documentBuckets ?? [
-        'note',
-        'task',
-        'snippet',
-        'document',
-        'project',
-        'chat',
-        'database',
-      ],
+      buckets: props.documentBuckets ?? DEFAULT_DOCUMENT_BUCKETS,
       searchTerm: activeSearchTerm,
     });
   const docs = docsMention.entities;

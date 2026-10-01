@@ -20,8 +20,7 @@ import { $getCaretRect } from '../../utils';
 
 /**
  * Block decorators that arrow keys stop on: the first press selects the block,
- * the next moves past it. Lexical's own handling only stops on decorators
- * beside the caret inside one element, so top-level blocks were skipped.
+ * the next moves past it. Lexical only stops on decorators inside one element.
  */
 const STOPPING_BLOCK_TYPES = new Set([
   'image',
@@ -72,11 +71,7 @@ function $neighbor(node: LexicalNode, direction: Direction) {
     : node.getPreviousSibling();
 }
 
-/**
- * A caret on the root itself sits between two blocks, e.g. before a block that
- * opens the document. Returns the block it would step onto, or `undefined`
- * when the caret is inside a block instead.
- */
+/** The block a caret sitting on the root (between blocks) steps onto; `undefined` when the caret is inside a block. */
 function $blockBesideRootCaret(
   selection: RangeSelection,
   direction: Direction
@@ -138,11 +133,7 @@ export function blockDecoratorNavigationPlugin() {
     );
 }
 
-/**
- * Where the caret lands when it walks into the document from above, e.g. from
- * the title: a block that opens the document is selected, as it would be from
- * any line above it.
- */
+/** Enter the document from above (e.g. the title), selecting a block decorator that opens it. */
 export function $selectDocumentStart() {
   const first = $getRoot().getFirstChild();
   if ($isStoppingBlock(first)) $selectBlock(first);
