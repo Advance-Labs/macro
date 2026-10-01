@@ -6865,7 +6865,9 @@ export const getDatabaseResponse = zod
                           .object({
                             cardFields: zod
                               .array(zod.uuid())
-                              .describe('The columns a card shows, in order.'),
+                              .describe(
+                                'The columns a card shows under its title, in order.'
+                              ),
                             groupBy: zod
                               .uuid()
                               .describe(
@@ -6898,6 +6900,11 @@ export const getDatabaseResponse = zod
                               )
                               .describe(
                                 "How lanes show, in display order. A lane left out shows after the\nlisted ones, options in the column's order; the lane of cards\nwithout an option first."
+                              ),
+                            title: zod
+                              .uuid()
+                              .describe(
+                                "The column a card is titled by, of any type. Removing it titles\nthe cards by the table's first remaining column."
                               ),
                           })
                           .describe(
@@ -8267,11 +8274,13 @@ export const applyDatabaseOpsBody = zod
                           .object({
                             cardFields: zod
                               .array(zod.uuid())
-                              .describe('The columns a card shows, in order.'),
+                              .describe(
+                                'The columns a card shows under its title, in order.'
+                              ),
                             groupBy: zod
                               .uuid()
                               .describe(
-                                'The single-select column whose options are the lanes; moving a\ncard to another lane sets this column.'
+                                'The single-select column whose options are the lanes.'
                               ),
                             hideEmptyLanes: zod
                               .boolean()
@@ -8298,15 +8307,21 @@ export const applyDatabaseOpsBody = zod
                                     'How one lane shows in a board layout.'
                                   )
                               )
+                              .describe('How lanes show, in display order.'),
+                            title: zod
+                              .uuid()
+                              .optional()
                               .describe(
-                                "How lanes show, in display order. A lane left out shows after the\nlisted ones, options in the column's order; the lane of cards\nwithout an option first."
+                                "The column a card is titled by. Left out, a board keeps the\ntitle it has, and a new board takes the table's first column."
                               ),
                           })
                           .describe(
-                            'Cards in lanes, one lane per option of a single-select column plus\none for cards without one. A multi-select column cannot group a\nboard: a card is in exactly one lane, so a card in several would need\na place in each.'
+                            'Cards in lanes, one lane per option of a single-select column plus\none for cards without one.'
                           ),
                       ])
-                      .describe('How a view draws its rows.'),
+                      .describe(
+                        'A layout as an op asks for it: a board may leave its card title out.'
+                      ),
                     name: zod.string().describe('Its name.'),
                     query: zod
                       .object({
@@ -8570,11 +8585,13 @@ export const applyDatabaseOpsBody = zod
                       .object({
                         cardFields: zod
                           .array(zod.uuid())
-                          .describe('The columns a card shows, in order.'),
+                          .describe(
+                            'The columns a card shows under its title, in order.'
+                          ),
                         groupBy: zod
                           .uuid()
                           .describe(
-                            'The single-select column whose options are the lanes; moving a\ncard to another lane sets this column.'
+                            'The single-select column whose options are the lanes.'
                           ),
                         hideEmptyLanes: zod
                           .boolean()
@@ -8597,16 +8614,22 @@ export const applyDatabaseOpsBody = zod
                               })
                               .describe('How one lane shows in a board layout.')
                           )
+                          .describe('How lanes show, in display order.'),
+                        title: zod
+                          .uuid()
+                          .optional()
                           .describe(
-                            "How lanes show, in display order. A lane left out shows after the\nlisted ones, options in the column's order; the lane of cards\nwithout an option first."
+                            "The column a card is titled by. Left out, a board keeps the\ntitle it has, and a new board takes the table's first column."
                           ),
                       })
                       .describe(
-                        'Cards in lanes, one lane per option of a single-select column plus\none for cards without one. A multi-select column cannot group a\nboard: a card is in exactly one lane, so a card in several would need\na place in each.'
+                        'Cards in lanes, one lane per option of a single-select column plus\none for cards without one.'
                       ),
                   ])
                   .optional()
-                  .describe('How a view draws its rows.'),
+                  .describe(
+                    'A layout as an op asks for it: a board may leave its card title out.'
+                  ),
                 name: zod.string().optional().describe('Its new name.'),
                 query: zod
                   .object({
@@ -9107,7 +9130,9 @@ export const applyDatabaseOpsResponse = zod
                           .object({
                             cardFields: zod
                               .array(zod.uuid())
-                              .describe('The columns a card shows, in order.'),
+                              .describe(
+                                'The columns a card shows under its title, in order.'
+                              ),
                             groupBy: zod
                               .uuid()
                               .describe(
@@ -9140,6 +9165,11 @@ export const applyDatabaseOpsResponse = zod
                               )
                               .describe(
                                 "How lanes show, in display order. A lane left out shows after the\nlisted ones, options in the column's order; the lane of cards\nwithout an option first."
+                              ),
+                            title: zod
+                              .uuid()
+                              .describe(
+                                "The column a card is titled by, of any type. Removing it titles\nthe cards by the table's first remaining column."
                               ),
                           })
                           .describe(

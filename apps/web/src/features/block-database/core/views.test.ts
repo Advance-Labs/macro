@@ -108,6 +108,7 @@ describe('table layouts', () => {
 const board = {
   kind: 'board' as const,
   groupBy: 'rsvp',
+  title: 'name',
   lanes: [{ option: 'yes', hidden: true }],
   cardFields: ['guests'],
   hideEmptyLanes: false,

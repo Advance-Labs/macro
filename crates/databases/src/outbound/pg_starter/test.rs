@@ -113,6 +113,7 @@ async fn concurrent_starter_requests_create_one_complete_editable_example(pool: 
                 &ViewQuery::default(),
                 &ViewLayout::Board {
                     group_by: columns[1].id,
+                    title: columns[0].id,
                     lanes: stages
                         .iter()
                         .map(|option| Lane {
@@ -120,7 +121,7 @@ async fn concurrent_starter_requests_create_one_complete_editable_example(pool: 
                             hidden: false,
                         })
                         .collect(),
-                    card_fields: vec![columns[0].id],
+                    card_fields: vec![],
                     hide_empty_lanes: false,
                 }
             ),

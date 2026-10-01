@@ -700,6 +700,7 @@ describe('database toolbar view controls', () => {
     expect(change).toHaveBeenLastCalledWith({
       layout: {
         kind: 'board',
+        title: 'name',
         groupBy: 'status',
         lanes: [],
         cardFields: ['due'],
@@ -751,6 +752,7 @@ describe('database toolbar view controls', () => {
             query: { filter: null, sort: [] },
             layout: {
               kind: 'board',
+              title: 'name',
               groupBy: 'status',
               lanes: [
                 { option: 'option-done', hidden: true },
@@ -772,6 +774,7 @@ describe('database toolbar view controls', () => {
           query: { filter: null, sort: [] },
           layout: {
             kind: 'board',
+            title: 'name',
             groupBy: 'status',
             lanes: [
               { option: 'option-done', hidden: true },
@@ -802,6 +805,7 @@ describe('database toolbar view controls', () => {
     expect(change).toHaveBeenLastCalledWith({
       layout: {
         kind: 'board',
+        title: 'name',
         groupBy: 'status',
         lanes: [
           { option: 'option-done', hidden: true },
@@ -818,6 +822,7 @@ describe('database toolbar view controls', () => {
     expect(change).toHaveBeenLastCalledWith({
       layout: {
         kind: 'board',
+        title: 'name',
         groupBy: 'status',
         lanes: [
           { option: 'option-done', hidden: false },
@@ -833,6 +838,7 @@ describe('database toolbar view controls', () => {
     expect(change).toHaveBeenLastCalledWith({
       layout: {
         kind: 'board',
+        title: 'name',
         groupBy: 'status',
         lanes: [
           { option: 'option-done', hidden: true },
@@ -846,6 +852,7 @@ describe('database toolbar view controls', () => {
     expect(change).toHaveBeenLastCalledWith({
       layout: {
         kind: 'board',
+        title: 'name',
         groupBy: 'status',
         lanes: [
           { option: 'option-done', hidden: true },
@@ -864,6 +871,7 @@ describe('database toolbar view controls', () => {
     expect(change).toHaveBeenLastCalledWith({
       layout: {
         kind: 'board',
+        title: 'name',
         groupBy: 'priority',
         lanes: [],
         cardFields: ['priority'],
@@ -1011,6 +1019,7 @@ describe('database toolbar view controls', () => {
             query: { filter: null, sort: [] },
             layout: {
               kind: 'board',
+              title: 'name',
               groupBy: 'status',
               lanes: [],
               cardFields: [],
@@ -1029,6 +1038,7 @@ describe('database toolbar view controls', () => {
           query: { filter: null, sort: [] },
           layout: {
             kind: 'board',
+            title: 'name',
             groupBy: 'status',
             lanes: [],
             cardFields: [],

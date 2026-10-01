@@ -5,7 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { DatabaseOpOneOfThreefourKind } from './databaseOpOneOfThreefourKind';
-import type { ViewLayout } from './viewLayout';
+import type { RequestedLayout } from './requestedLayout';
 import type { ViewQuery } from './viewQuery';
 
 /**
@@ -14,8 +14,9 @@ import type { ViewQuery } from './viewQuery';
 export type DatabaseOpOneOfThreefour = {
   kind: DatabaseOpOneOfThreefourKind;
   /** Its new layout. A board grouped by another column forgets where
-its cards were. */
-  layout?: ViewLayout;
+its cards were; a board left without a card title keeps the one
+it has, or takes the table's first column. */
+  layout?: RequestedLayout;
   /** Its new name. */
   name?: string;
   /** Its new query. */

@@ -48,6 +48,7 @@ fn cards_sit_in_their_lanes_in_hand_arranged_order() {
         ViewQuery::default(),
         ViewLayout::Board {
             group_by: STATUS_PLACEMENT,
+            title: SUMMARY_PLACEMENT,
             lanes: vec![Lane {
                 option: Some(DOING),
                 hidden: false,
@@ -150,6 +151,7 @@ fn unpositioned_cards_follow_positioned_ones_by_row_id() {
         ViewQuery::default(),
         ViewLayout::Board {
             group_by: STATUS_PLACEMENT,
+            title: SUMMARY_PLACEMENT,
             lanes: vec![],
             card_fields: vec![SUMMARY_PLACEMENT],
             hide_empty_lanes: false,
@@ -198,6 +200,7 @@ fn a_sorted_view_keeps_the_read_order_in_every_lane() {
         },
         ViewLayout::Board {
             group_by: STATUS_PLACEMENT,
+            title: SUMMARY_PLACEMENT,
             lanes: vec![],
             card_fields: vec![SUMMARY_PLACEMENT],
             hide_empty_lanes: false,
@@ -315,6 +318,7 @@ fn listed_lanes_come_first_and_keep_their_hidden_flag() {
             ViewQuery::default(),
             ViewLayout::Board {
                 group_by: STATUS_PLACEMENT,
+                title: SUMMARY_PLACEMENT,
                 lanes,
                 card_fields: vec![SUMMARY_PLACEMENT],
                 hide_empty_lanes,
@@ -342,6 +346,7 @@ fn an_empty_options_cell_is_a_card_without_an_option() {
         ViewQuery::default(),
         ViewLayout::Board {
             group_by: STATUS_PLACEMENT,
+            title: SUMMARY_PLACEMENT,
             lanes: vec![],
             card_fields: vec![SUMMARY_PLACEMENT],
             hide_empty_lanes: false,
@@ -375,6 +380,7 @@ fn only_a_board_view_of_a_visible_table_lays_out() {
             ViewQuery::default(),
             ViewLayout::Board {
                 group_by: STATUS_PLACEMENT,
+                title: SUMMARY_PLACEMENT,
                 lanes: vec![],
                 card_fields: vec![SUMMARY_PLACEMENT],
                 hide_empty_lanes: false,
@@ -390,6 +396,7 @@ fn only_a_board_view_of_a_visible_table_lays_out() {
         ViewQuery::default(),
         ViewLayout::Board {
             group_by: LABELS_PLACEMENT,
+            title: SUMMARY_PLACEMENT,
             lanes: vec![],
             card_fields: vec![],
             hide_empty_lanes: false,

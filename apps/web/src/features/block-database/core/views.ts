@@ -115,15 +115,20 @@ export function boardGroupColumns(
   return columns.filter(isBoardGroupColumn);
 }
 
-/** A new board grouped by `groupBy`, its cards showing the first few other fields. */
+/**
+ * A new board grouped by `groupBy`, its cards titled by the first column and
+ * showing the first few other fields.
+ */
 export function boardLayout(
   groupBy: string,
   columns: readonly DatabaseViewColumn[]
 ): ViewLayout {
-  const title = titleColumn(columns)?.id;
+  // `groupBy` is one of the columns, so there is a first one.
+  const title = titleColumn(columns)?.id ?? groupBy;
   return {
     kind: 'board',
     groupBy,
+    title,
     lanes: [],
     cardFields: columns
       .filter((column) => column.id !== groupBy && column.id !== title)
@@ -145,6 +150,14 @@ export function laneLabel(
 }
 
 type BoardLayout = Extract<ViewLayout, { kind: 'board' }>;
+
+/** The column a board titles its cards by. */
+export function cardTitleColumn(
+  layout: BoardLayout,
+  columns: readonly DatabaseViewColumn[]
+): DatabaseViewColumn | undefined {
+  return columns.find((column) => column.id === layout.title);
+}
 
 /** The board with its lanes in `order`, keeping each lane's hidden flag. */
 export function withLaneOrder(

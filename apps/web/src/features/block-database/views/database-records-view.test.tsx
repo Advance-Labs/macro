@@ -97,6 +97,7 @@ const statusBoard: DatabaseView = {
   ...allRecords,
   layout: {
     kind: 'board',
+    title: 'title',
     groupBy: 'status',
     lanes: [
       { option: 'done', hidden: false },
@@ -1511,6 +1512,7 @@ describe('database table view', () => {
             ...allRecords,
             layout: {
               kind: 'board',
+              title: 'title',
               groupBy: 'group',
               lanes: [{ option: option.id, hidden: false }],
               cardFields: [],

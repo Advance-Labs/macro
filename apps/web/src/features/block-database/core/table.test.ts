@@ -24,7 +24,7 @@ describe('record title', () => {
     );
   });
 
-  it('prefers the text title even when an entity column comes first', () => {
+  it('names a record by the first column, even when a text column follows', () => {
     const name: DatabaseViewColumn = {
       ...entity,
       id: 'name',
@@ -39,6 +39,15 @@ describe('record title', () => {
           cells: { person: 'macro|ada@example.com', name: 'Launch plan' },
         },
         [entity, name]
+      )
+    ).toBe('Linked record');
+    expect(
+      rowTitle(
+        {
+          rowId: 'row',
+          cells: { person: 'macro|ada@example.com', name: 'Launch plan' },
+        },
+        [name, entity]
       )
     ).toBe('Launch plan');
   });

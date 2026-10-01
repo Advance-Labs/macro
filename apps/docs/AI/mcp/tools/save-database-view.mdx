@@ -1,11 +1,11 @@
 ---
 title: SaveDatabaseView
-description: "Save a table or kanban board view of a Macro database table. Views are shared: everyone who can open the database sees them, so saving one needs edit access. DescribeDatabase first: every reference in a view is an id from it, columns by their id and select options by their option id, never by name. The view filters and sorts the table's own rows: its filter conditions combine with one `and` or `or`, and each test must fit its column's type (text, number, date, checkbox, options, entities, or presence for any column). A board groups its cards by a single-select column, one lane per option. Saving a view under a name the table already has replaces that view, so read `created` in the result. This changes presentation only, never records, and cannot save charts or SQL."
+description: "Save a table or kanban board view of a Macro database table. Views are shared: everyone who can open the database sees them, so saving one needs edit access. DescribeDatabase first: every reference in a view is an id from it, columns by their id and select options by their option id, never by name. The view filters and sorts the table's own rows: its filter conditions combine with one `and` or `or`, and each test must fit its column's type (text, number, date, checkbox, options, entities, or presence for any column). A board groups its cards by a single-select column, one lane per option, and titles each card by its `title` column. Saving a view under a name the table already has replaces that view, so read `created` in the result. This changes presentation only, never records, and cannot save charts or SQL."
 ---
 
 # SaveDatabaseView
 
-Save a table or kanban board view of a Macro database table. Views are shared: everyone who can open the database sees them, so saving one needs edit access. DescribeDatabase first: every reference in a view is an id from it, columns by their id and select options by their option id, never by name. The view filters and sorts the table's own rows: its filter conditions combine with one `and` or `or`, and each test must fit its column's type (text, number, date, checkbox, options, entities, or presence for any column). A board groups its cards by a single-select column, one lane per option. Saving a view under a name the table already has replaces that view, so read `created` in the result. This changes presentation only, never records, and cannot save charts or SQL.
+Save a table or kanban board view of a Macro database table. Views are shared: everyone who can open the database sees them, so saving one needs edit access. DescribeDatabase first: every reference in a view is an id from it, columns by their id and select options by their option id, never by name. The view filters and sorts the table's own rows: its filter conditions combine with one `and` or `or`, and each test must fit its column's type (text, number, date, checkbox, options, entities, or presence for any column). A board groups its cards by a single-select column, one lane per option, and titles each card by its `title` column. Saving a view under a name the table already has replaces that view, so read `created` in the result. This changes presentation only, never records, and cannot save charts or SQL.
 
 ## Parameters
 
@@ -16,4 +16,4 @@ Save a table or kanban board view of a Macro database table. Views are shared: e
 | `name` | string | Yes | Name shown in the table's view tabs. |
 | `filter` | ToolFilter | No | Which rows the view shows; every row when left out. |
 | `sort` | SortKey[] | No | The sort keys, first key first; the table's own order when empty. |
-| `layout` | ViewLayout | Yes | How a view draws its rows. |
+| `layout` | RequestedLayout | Yes | A layout as an op asks for it: a board may leave its card title out. |

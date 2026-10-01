@@ -40,26 +40,40 @@ export function rowValue(
   return row.cells[columnId] ?? null;
 }
 
+/** The column a row is named by outside a board: the table's first. */
 export function titleColumn(columns: readonly DatabaseViewColumn[]) {
-  return columns.find(
-    (column) =>
-      column.dataType === 'STRING' && !column.isMultiSelect && !column.relation
-  );
+  return columns[0];
+}
+
+/** A row's name as `column` holds it, or `Unnamed` when it holds nothing. */
+export function cellTitle(
+  row: DatabaseRow,
+  column: DatabaseViewColumn | undefined
+) {
+  if (!column) return 'Unnamed';
+  const value = rowValue(row, column.id);
+  if (value === null || value === '') return 'Unnamed';
+  if (column.dataType === 'ENTITY' && !column.relation) return 'Linked record';
+  return formatCellValue(column, value) || 'Unnamed';
 }
 
 export function rowTitle(
   row: DatabaseRow,
   columns: readonly DatabaseViewColumn[]
 ) {
-  const column = titleColumn(columns) ?? columns[0];
-  const value = column ? rowValue(row, column.id) : null;
-  if (value === null || value === '') return 'Unnamed';
-  if (column?.relation) return formatCellValue(column, value) || 'Unnamed';
-  return column?.dataType === 'ENTITY'
-    ? 'Linked record'
-    : column?.dataType === 'STRING'
-      ? markdownToPlainText(String(value))
-      : String(value);
+  return cellTitle(row, titleColumn(columns));
+}
+
+/** Whether a typed title can be written into `column` as it is. */
+export function isWritableText(
+  column: DatabaseViewColumn | undefined
+): column is DatabaseViewColumn {
+  return (
+    !!column?.writable &&
+    column.dataType === 'STRING' &&
+    !column.isMultiSelect &&
+    !column.relation
+  );
 }
 
 export function canEditCell(column: DatabaseViewColumn): boolean {

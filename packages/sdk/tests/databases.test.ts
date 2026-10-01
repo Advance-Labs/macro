@@ -717,6 +717,7 @@ describe('Database', () => {
       layout: {
         kind: 'board',
         groupBy: columnId,
+        title: columnId,
         cardFields: [columnId],
         hideEmptyLanes: false,
         lanes: [{ option: optionId }],
@@ -754,6 +755,7 @@ describe('Database', () => {
     await expect(view.layout()).resolves.toEqual({
       kind: 'board',
       groupBy: columnId,
+      title: columnId,
       cardFields: [columnId],
       hideEmptyLanes: false,
       lanes: [{ option: optionId }],

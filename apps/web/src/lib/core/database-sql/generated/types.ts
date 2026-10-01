@@ -470,9 +470,10 @@ export type DatabaseOp =
       query?: ViewQuery | null;
       /**
        *  Its new layout. A board grouped by another column forgets where
-       *  its cards were.
+       *  its cards were; a board left without a card title keeps the one
+       *  it has, or takes the table's first column.
        */
-      layout?: ViewLayout | null;
+      layout?: RequestedLayout | null;
     }
   /**  Remove a view, with where its cards were. */
   | {
@@ -845,8 +846,11 @@ export type NewView = {
   name: string;
   /**  Which rows it shows, in what order. */
   query?: ViewQuery;
-  /**  How it draws them. */
-  layout: ViewLayout;
+  /**
+   *  How it draws them; a board left without a card title gets the
+   *  table's first column.
+   */
+  layout: RequestedLayout;
 };
 
 /**  How a number cell compares to a number. */
@@ -1274,6 +1278,38 @@ export type Request = {
   /**  At most this many rows. */
   limit: number;
 };
+
+/**  A layout as an op asks for it: a board may leave its card title out. */
+export type RequestedLayout =
+  /**  A grid with a row per row. */
+  | {
+      kind: 'table';
+      /**
+       *  How columns show, in display order. A column left out shows
+       *  after the listed ones, in the table's order.
+       */
+      columns: ViewColumn[];
+    }
+  /**
+   *  Cards in lanes, one lane per option of a single-select column plus
+   *  one for cards without one.
+   */
+  | {
+      kind: 'board';
+      /**  The single-select column whose options are the lanes. */
+      groupBy: ColumnId;
+      /**
+       *  The column a card is titled by. Left out, a board keeps the
+       *  title it has, and a new board takes the table's first column.
+       */
+      title?: ColumnId | null;
+      /**  How lanes show, in display order. */
+      lanes: Lane[];
+      /**  The columns a card shows under its title, in order. */
+      cardFields: ColumnId[];
+      /**  Whether a lane with no cards is hidden. */
+      hideEmptyLanes: boolean;
+    };
 
 /**  Why a statement could not be bound to the catalog. */
 export type ResolveError =
@@ -1978,12 +2014,17 @@ export type ViewLayout =
        */
       groupBy: ColumnId;
       /**
+       *  The column a card is titled by, of any type. Removing it titles
+       *  the cards by the table's first remaining column.
+       */
+      title: ColumnId;
+      /**
        *  How lanes show, in display order. A lane left out shows after the
        *  listed ones, options in the column's order; the lane of cards
        *  without an option first.
        */
       lanes: Lane[];
-      /**  The columns a card shows, in order. */
+      /**  The columns a card shows under its title, in order. */
       cardFields: ColumnId[];
       /**  Whether a lane with no cards is hidden. */
       hideEmptyLanes: boolean;

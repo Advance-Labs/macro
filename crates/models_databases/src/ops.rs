@@ -15,7 +15,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::ids::{ColumnId, DatabaseId, OptionId, PropertyId, RowId, TableId, TableVersion};
 use crate::views::{
-    CardPosition, DatabaseView, NewView, ViewId, ViewLayout, ViewPosition, ViewQuery,
+    CardPosition, DatabaseView, NewView, RequestedLayout, ViewId, ViewPosition, ViewQuery,
 };
 
 /// One write to a database: its tables, columns, options, rows or views. A
@@ -268,11 +268,12 @@ pub enum DatabaseOp {
         #[specta(optional)]
         query: Option<ViewQuery>,
         /// Its new layout. A board grouped by another column forgets where
-        /// its cards were.
+        /// its cards were; a board left without a card title keeps the one
+        /// it has, or takes the table's first column.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[schema(nullable = false)]
         #[specta(optional)]
-        layout: Option<ViewLayout>,
+        layout: Option<RequestedLayout>,
     },
     /// Remove a view, with where its cards were.
     DeleteView {

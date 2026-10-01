@@ -4,7 +4,7 @@
 
 use models_databases::views::{
     Conjunction, FilterCondition, FilterGroup, FilterNode, FilterTest, NewView, PresenceOperator,
-    SortDirection, SortKey, TextOperator, ViewLayout, ViewQuery,
+    RequestedLayout, SortDirection, SortKey, TextOperator, ViewQuery,
 };
 use models_databases::{
     CellValue, CellWrite, ColumnKind, DatabaseOp, NewColumn, NewOption, OpResult, OptionId,
@@ -506,7 +506,7 @@ async fn a_type_change_converts_stored_cells_and_rewrites_views_testing_the_colu
                                 direction: SortDirection::Ascending,
                             }],
                         },
-                        layout: ViewLayout::Table { columns: vec![] },
+                        layout: RequestedLayout::Table { columns: vec![] },
                     },
                 },
             ]

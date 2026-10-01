@@ -28,7 +28,7 @@ function relatedRows(
 ): DatabaseRelatedRow[] {
   const { columns } = table;
   const viewColumns = columns.map(toViewColumn);
-  const title = titleColumn(viewColumns) ?? viewColumns[0];
+  const title = titleColumn(viewColumns);
   const titleDefinition = columns.find(
     (column) => column.column.id === title?.id
   )?.definition.definition.id;

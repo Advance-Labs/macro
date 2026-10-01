@@ -192,7 +192,12 @@ impl Planner {
         };
         let column = column_of(entry, place)?;
         let now = self.now;
-        let views = views_without_column(self.views_of(entry), column_id, now)
+        let next_title = entry
+            .columns
+            .iter()
+            .map(|other| other.column.id)
+            .find(|other| *other != column_id);
+        let views = views_without_column(self.views_of(entry), column_id, next_title, now)
             .map_err(|reason| place.refuse(reason.to_string()))?;
         self.store_views(entry.table.id, &views);
         let related = match column.column.config {
