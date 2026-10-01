@@ -78,7 +78,7 @@ use collab_surface::{
 };
 use databases::{
     inbound::axum_router::DatabasesRouterState,
-    outbound::{build::PgDatabasesService, gateway_event_publisher::GatewayTableEventPublisher},
+    outbound::gateway_event_publisher::GatewayTableEventPublisher, wiring::PgDatabasesService,
 };
 use foreign_entity::{
     domain::service::ForeignEntityServiceImpl, inbound::axum_router::ForeignEntityRouterState,
@@ -495,7 +495,7 @@ pub(crate) type DssUserApiKeyState =
 
 /// Type alias for the databases service.
 pub(crate) type DatabasesServiceType =
-    PgDatabasesService<GatewayTableEventPublisher, DssEventBroker>;
+    PgDatabasesService<GatewayTableEventPublisher, DssEventBroker, EntityAccessService>;
 
 /// Type alias for the databases router state.
 pub(crate) type DssDatabasesState =

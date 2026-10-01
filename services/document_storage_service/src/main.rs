@@ -1259,8 +1259,9 @@ async fn run() -> anyhow::Result<()> {
     );
 
     // Shared by the databases router and the unified entity-mutation router.
-    let databases_service = Arc::new(databases::outbound::build_service(
+    let databases_service = Arc::new(databases::wiring::build_service(
         db.clone(),
+        entity_access_service.clone(),
         databases::outbound::gateway_event_publisher::GatewayTableEventPublisher::new(
             conn_gateway_client.as_ref().clone(),
         ),

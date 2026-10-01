@@ -9,3 +9,6 @@ pub mod inbound;
 
 #[cfg(feature = "outbound")]
 pub mod outbound;
+
+#[cfg(feature = "postgres")]
+pub mod wiring;

@@ -1054,8 +1054,11 @@ pub use databases::outbound::gateway_event_publisher::MaybeGatewayTableEventPubl
 
 /// Type alias for the databases service implementation used by AI tools:
 /// the same port implementations the HTTP surface runs on.
-pub type ToolDatabasesService =
-    databases::outbound::build::PgDatabasesService<ToolTableEventPublisher, MaybeToolEventBroker>;
+pub type ToolDatabasesService = databases::wiring::PgDatabasesService<
+    ToolTableEventPublisher,
+    MaybeToolEventBroker,
+    ToolEntityAccessService,
+>;
 
 /// Type alias for the databases tool context.
 pub type ToolDatabasesToolContext =
@@ -1070,7 +1073,7 @@ pub fn build_databases_tool_context(
     broker: MaybeToolEventBroker,
 ) -> ToolDatabasesToolContext {
     DatabasesToolContext::new(
-        databases::outbound::build_service(pool, events, broker),
+        databases::wiring::build_service(pool, entity_access_service.clone(), events, broker),
         entity_access_service,
     )
 }

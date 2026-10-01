@@ -18,9 +18,3 @@ pub mod pg_cell_store;
 
 #[cfg(feature = "gateway")]
 pub mod gateway_event_publisher;
-
-#[cfg(feature = "postgres")]
-pub mod build;
-
-#[cfg(feature = "postgres")]
-pub use build::build_service;

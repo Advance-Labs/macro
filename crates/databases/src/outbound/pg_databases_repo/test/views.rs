@@ -2,23 +2,20 @@
 //! column compares in, and views and card places through the ops as hosts
 //! build the service.
 
-use macro_event_broker::NoopMacroEventBroker;
 use models_databases::position::{key_between, keys_between};
 use models_databases::views::{CardPosition, Lane, NewView, ViewLayout, ViewQuery};
 use models_databases::{CellValue, CellWrite, DatabaseOp, OpResult, OptionRef};
 use models_properties::service::property_value::PropertyValue;
 use properties::outbound::properties_pg_repo::PropertiesPgRepo;
 
-use super::apply_ops::{Guests, cells, edit, guests, viewer};
+use super::apply_ops::{Guests, cells, edit, guests, service, viewer};
 use super::*;
 use crate::domain::ports::{CellStore, ColumnDefinitionStore, DatabasesService};
-use crate::outbound::build::build_service;
-use crate::outbound::gateway_event_publisher::NoOpTableEventPublisher;
 use crate::outbound::pg_definition_store::PgDefinitionStore;
 
 /// Insert one row per status into the guests table, answering their ids.
 async fn insert_statuses(pool: &PgPool, guests: &Guests, statuses: &[&str]) -> Vec<Uuid> {
-    let results = build_service(pool.clone(), NoOpTableEventPublisher, NoopMacroEventBroker)
+    let results = service(pool)
         .apply_ops(
             edit(guests.database_id),
             viewer(),
@@ -114,7 +111,7 @@ async fn positions_compare_as_bytes_as_the_keys_sort(pool: PgPool) {
 async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgPool) {
     let guests = guests(&pool).await;
     let rows = insert_statuses(&pool, &guests, &["Going", "Maybe", "Going"]).await;
-    let service = build_service(pool.clone(), NoOpTableEventPublisher, NoopMacroEventBroker);
+    let service = service(&pool);
     let options = PgDefinitionStore::new(PropertiesPgRepo::new(pool.clone()))
         .definitions(&[guests.status_definition])
         .await
@@ -263,7 +260,7 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn removing_a_column_rewrites_the_views_that_named_it(pool: PgPool) {
     let guests = guests(&pool).await;
-    let service = build_service(pool.clone(), NoOpTableEventPublisher, NoopMacroEventBroker);
+    let service = service(&pool);
     let results = service
         .apply_ops(
             edit(guests.database_id),

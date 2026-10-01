@@ -1,9 +1,10 @@
 //! Which databases a viewer can reach, asked of the owning `entity_access`
-//! domain. Which source ids stand for a viewer, and which grant wins, are its
-//! rules; a second copy here is a permission bug waiting to happen.
+//! domain, whose source-id and highest-grant rules are not copied here.
 
 #[cfg(all(test, feature = "postgres"))]
 mod test;
+
+use std::sync::Arc;
 
 use entity_access::domain::models::{AccessError, AccessLevel, EntityType};
 use entity_access::domain::ports::{AccessibleDatabases, EntityAccessService};
@@ -19,12 +20,12 @@ pub struct EntityAccessDirectoryError(#[from] AccessError);
 /// [`AccessDirectory`] over the entity access service.
 #[derive(Debug, Clone)]
 pub struct EntityAccessDirectory<Access> {
-    access: Access,
+    access: Arc<Access>,
 }
 
 impl<Access> EntityAccessDirectory<Access> {
-    /// Wrap the entity access service.
-    pub fn new(access: Access) -> Self {
+    /// Wrap the host's entity access service.
+    pub fn new(access: Arc<Access>) -> Self {
         Self { access }
     }
 }

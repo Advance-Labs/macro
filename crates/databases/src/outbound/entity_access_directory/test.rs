@@ -6,6 +6,8 @@
 //! that cache is process-wide while each `sqlx::test` gets its own database —
 //! so every test here mints unique user ids rather than sharing a constant.
 
+use std::sync::Arc;
+
 use entity_access::domain::service::EntityAccessServiceImpl;
 use entity_access::outbound::PgAccessRepository;
 use macro_db_migrator::MACRO_DB_MIGRATIONS;
@@ -63,8 +65,8 @@ async fn create_database(pool: &PgPool, owner: &MacroUserIdStr<'static>) -> Data
 }
 
 fn directory(pool: &PgPool) -> EntityAccessDirectory<EntityAccessServiceImpl<PgAccessRepository>> {
-    EntityAccessDirectory::new(EntityAccessServiceImpl::new(PgAccessRepository::new(
-        pool.clone(),
+    EntityAccessDirectory::new(Arc::new(EntityAccessServiceImpl::new(
+        PgAccessRepository::new(pool.clone()),
     )))
 }
 

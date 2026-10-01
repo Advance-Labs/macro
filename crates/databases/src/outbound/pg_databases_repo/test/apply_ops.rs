@@ -2,9 +2,13 @@
 //! row identities, cells and new options commit in one transaction, and a
 //! refused op leaves nothing of its batch behind.
 
+use std::sync::Arc;
+
 use entity_access::domain::models::{
     AccessLevel, EditAccessLevel, Entity, EntityAccessReceipt, EntityPermission, EntityType,
 };
+use entity_access::domain::service::EntityAccessServiceImpl;
+use entity_access::outbound::PgAccessRepository;
 use macro_db_migrator::MACRO_DB_MIGRATIONS;
 use macro_event_broker::NoopMacroEventBroker;
 use macro_user_id::{cowlike::CowLike, user_id::MacroUserIdStr};
@@ -24,11 +28,11 @@ use crate::domain::models::{
     DatabaseError, DatabaseId, OpRefusal, TableVersion, Viewer,
 };
 use crate::domain::ports::{CellStore, ColumnDefinitionStore, DatabasesRepo, DatabasesService};
-use crate::outbound::build::build_service;
 use crate::outbound::gateway_event_publisher::NoOpTableEventPublisher;
 use crate::outbound::pg_cell_store::PgCellStore;
 use crate::outbound::pg_databases_repo::PgDatabasesRepo;
 use crate::outbound::pg_definition_store::PgDefinitionStore;
+use crate::wiring::{PgDatabasesService, build_service};
 
 const USER: &str = "macro|apply-ops@macro.com";
 
@@ -83,7 +87,7 @@ pub(super) struct Guests {
 
 pub(super) async fn guests(pool: &PgPool) -> Guests {
     insert_user(pool).await;
-    let service = build_service(pool.clone(), NoOpTableEventPublisher, NoopMacroEventBroker);
+    let service = service(&pool);
     let database = service
         .create_database(CreateDatabase {
             name: "Offsite".into(),
@@ -148,6 +152,24 @@ pub(super) async fn guests(pool: &PgPool) -> Guests {
     }
 }
 
+/// The service as hosts build it, with no liveness or domain events.
+pub(super) fn service(
+    pool: &PgPool,
+) -> PgDatabasesService<
+    NoOpTableEventPublisher,
+    NoopMacroEventBroker,
+    EntityAccessServiceImpl<PgAccessRepository>,
+> {
+    build_service(
+        pool.clone(),
+        Arc::new(EntityAccessServiceImpl::new(PgAccessRepository::new(
+            pool.clone(),
+        ))),
+        NoOpTableEventPublisher,
+        NoopMacroEventBroker,
+    )
+}
+
 pub(super) fn cells(pool: &PgPool) -> PgCellStore<PropertiesPgRepo> {
     PgCellStore::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
 }
@@ -162,7 +184,7 @@ pub(super) async fn version(pool: &PgPool, table_id: Uuid) -> TableVersion {
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn ops_insert_update_and_delete_rows_bumping_the_table_once_per_request(pool: PgPool) {
     let guests = guests(&pool).await;
-    let service = build_service(pool.clone(), NoOpTableEventPublisher, NoopMacroEventBroker);
+    let service = service(&pool);
     let before = version(&pool, guests.table_id).await;
 
     let inserted = service
@@ -314,7 +336,7 @@ async fn ops_insert_update_and_delete_rows_bumping_the_table_once_per_request(po
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn a_new_label_becomes_a_palette_coloured_option_and_an_unknown_one_is_refused(pool: PgPool) {
     let guests = guests(&pool).await;
-    let service = build_service(pool.clone(), NoOpTableEventPublisher, NoopMacroEventBroker);
+    let service = service(&pool);
     let definitions = PgDefinitionStore::new(PropertiesPgRepo::new(pool.clone()));
 
     let refused = service
@@ -385,7 +407,7 @@ async fn a_new_label_becomes_a_palette_coloured_option_and_an_unknown_one_is_ref
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn a_refused_op_leaves_nothing_of_its_batch_behind(pool: PgPool) {
     let guests = guests(&pool).await;
-    let service = build_service(pool.clone(), NoOpTableEventPublisher, NoopMacroEventBroker);
+    let service = service(&pool);
     let before = version(&pool, guests.table_id).await;
     let ghost = macro_uuid::generate_uuid_v7();
 
@@ -499,7 +521,7 @@ async fn a_refused_op_leaves_nothing_of_its_batch_behind(pool: PgPool) {
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn a_relation_cell_holds_rows_of_its_target_table(pool: PgPool) {
     let guests = guests(&pool).await;
-    let service = build_service(pool.clone(), NoOpTableEventPublisher, NoopMacroEventBroker);
+    let service = service(&pool);
     let sessions = service
         .create_table(
             edit(guests.database_id),
@@ -629,7 +651,7 @@ async fn a_relation_cell_holds_rows_of_its_target_table(pool: PgPool) {
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn a_type_change_through_ops_converts_like_change_column_type(pool: PgPool) {
     let guests = guests(&pool).await;
-    let service = build_service(pool.clone(), NoOpTableEventPublisher, NoopMacroEventBroker);
+    let service = service(&pool);
     let inserted = service
         .apply_ops(
             edit(guests.database_id),
@@ -741,7 +763,7 @@ async fn a_type_change_through_ops_converts_like_change_column_type(pool: PgPool
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn an_option_is_relabelled_and_recoloured_in_place(pool: PgPool) {
     let guests = guests(&pool).await;
-    let service = build_service(pool.clone(), NoOpTableEventPublisher, NoopMacroEventBroker);
+    let service = service(&pool);
     let definitions = PgDefinitionStore::new(PropertiesPgRepo::new(pool.clone()));
     let going = definitions
         .definitions(&[guests.status_definition])
@@ -793,7 +815,7 @@ async fn an_option_is_relabelled_and_recoloured_in_place(pool: PgPool) {
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn a_removed_option_leaves_its_cells_empty_and_the_others_alone(pool: PgPool) {
     let guests = guests(&pool).await;
-    let service = build_service(pool.clone(), NoOpTableEventPublisher, NoopMacroEventBroker);
+    let service = service(&pool);
     let inserted = service
         .apply_ops(
             edit(guests.database_id),
