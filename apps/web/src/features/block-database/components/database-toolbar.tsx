@@ -41,6 +41,7 @@ import {
 } from '../core/write-failure';
 import type { ViewChange } from '../queries/views';
 import { FilterPanel, filterConditionCount } from './database-view-filters';
+import { createInlineRename } from './inline-rename';
 import { type NewView, NewViewDialog } from './new-view-dialog';
 import { ToolbarPopover } from './view-control-popover';
 import { ViewSelect } from './view-select';
@@ -73,10 +74,6 @@ type DatabaseToolbarProps = {
 
 /** View controls contain no data fetching or mutation implementation. */
 export function DatabaseToolbar(props: DatabaseToolbarProps) {
-  const [renaming, setRenaming] = createSignal<{ view: DatabaseView }>();
-  const [renameDraft, setRenameDraft] = createSignal('');
-  const [renamePending, setRenamePending] = createSignal(false);
-  const [viewError, setViewError] = createSignal('');
   const [creating, setCreating] = createSignal<HTMLElement>();
   const [deleting, setDeleting] = createSignal<{ view: DatabaseView }>();
   const [searchOpen, setSearchOpen] = createSignal(false);
@@ -93,46 +90,21 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
     return current.kind === 'board' ? current : undefined;
   };
   const sort = () => props.view.query.sort ?? [];
-  function beginRename(view: DatabaseView) {
-    if (!props.canEdit || renamePending()) return;
-    setRenaming({ view });
-    setRenameDraft(view.name);
-    setViewError('');
-    queueMicrotask(() => {
-      renameInput?.focus();
-      renameInput?.select();
-    });
-  }
-  /** The tab is drawn again when the rename input goes, so focus finds it by its view. */
-  function finishRename(restoreFocus: boolean) {
-    const id = renaming()?.view.id;
-    setRenaming(undefined);
-    setViewError('');
-    if (restoreFocus && id)
-      queueMicrotask(() =>
-        viewRail?.querySelector<HTMLElement>(`[data-view-id="${id}"]`)?.focus()
-      );
-  }
-  async function saveRename(restoreFocus: boolean) {
-    const target = renaming();
-    if (!target || renamePending()) return;
-    const name = renameDraft().trim();
-    if (!name) {
-      setViewError('Enter a view name.');
-      return;
-    }
-    if (name === target.view.name) {
-      finishRename(restoreFocus);
-      return;
-    }
-    setRenamePending(true);
-    const renamed = await props.onRenameView(target.view, name);
-    setRenamePending(false);
-    renamed.match(
-      () => finishRename(restoreFocus),
-      (failure) => setViewError(databaseOpMessage(failure, 'this view'))
-    );
-  }
+  const viewRename = createInlineRename({
+    name: (view: DatabaseView) => view.name,
+    rename: (view, name) => props.onRenameView(view, name),
+    failureMessage: (failure: DatabaseOpFailure) =>
+      databaseOpMessage(failure, 'this view'),
+    emptyName: { message: 'Enter a view name.', onBlur: 'keep-editing' },
+    input: () => renameInput,
+    // The tab is drawn again when the rename input goes, so focus finds it by its view.
+    restoreFocus: (view) =>
+      viewRail
+        ?.querySelector<HTMLElement>(`[data-view-id="${view.id}"]`)
+        ?.focus(),
+  });
+  const viewError = viewRename.error;
+  const setViewError = viewRename.setError;
   function reorder(id: string, targetId: string) {
     const order = props.views.map((view) => view.id);
     const moved = movedViewOrder(order, id, targetId);
@@ -194,22 +166,21 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
                       view={view()}
                       selected={props.selectedViewId === view().id}
                       canEdit={props.canEdit}
-                      renaming={renaming()?.view.id === view().id}
-                      renameDraft={renameDraft()}
-                      renamePending={renamePending()}
+                      renaming={viewRename.target()?.id === view().id}
+                      renameDraft={viewRename.draft()}
+                      renamePending={viewRename.pending()}
                       renameInput={(element) => {
                         renameInput = element;
                       }}
-                      onRenameInput={(name) => {
-                        setRenameDraft(name);
-                        setViewError('');
-                      }}
+                      onRenameInput={viewRename.setDraft}
                       onRenameSave={(restoreFocus) =>
-                        void saveRename(restoreFocus)
+                        void viewRename.save(restoreFocus)
                       }
-                      onRenameCancel={() => finishRename(true)}
+                      onRenameCancel={() => viewRename.cancel(true)}
                       onSelect={() => props.onSelectView(view().id)}
-                      onRename={() => beginRename(view())}
+                      onRename={() => {
+                        if (props.canEdit) viewRename.begin(view());
+                      }}
                       onDelete={() => {
                         setViewError('');
                         setDeleting({ view: view() });
@@ -636,7 +607,7 @@ function ViewTab(props: {
                 if (event.key !== 'Escape') return;
                 event.preventDefault();
                 event.stopPropagation();
-                if (!props.renamePending) props.onRenameCancel();
+                props.onRenameCancel();
               }}
             />
           </form>

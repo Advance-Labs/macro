@@ -36,6 +36,7 @@ import {
   ColumnTypeMenu,
   type DatabaseColumnClearingChoice,
 } from './column-type-menu';
+import { createInlineRename } from './inline-rename';
 import { OptionEditor } from './option-editor';
 import { PropertyIcon } from './property-icon';
 import { OptionPill } from './select-pill';
@@ -74,13 +75,7 @@ export type DatabaseColumnHeaderProps = {
 
 /** Header interactions stay local; the host supplies the persisted rename. */
 export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
-  const [draft, setDraft] = createSignal<{
-    id: string;
-    name: string;
-    previousName: string;
-  }>();
-  const [pending, setPending] = createSignal(false);
-  const [error, setError] = createSignal('');
+  const [operating, setOperating] = createSignal(false);
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [deleteOpen, setDeleteOpen] = createSignal(false);
   const [clearing, setClearing] = createSignal<DatabaseColumnClearingChoice>();
@@ -106,73 +101,48 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
     props.registerRename?.(undefined);
   });
   const canRename = () => !!props.canRename && !!props.onRename;
-  const restoreFocus = () =>
-    queueMicrotask(() => header?.isConnected && header.focus());
+  const focusHeader = () => header?.isConnected && header.focus();
+  const restoreFocus = () => queueMicrotask(focusHeader);
+  const columnRename = createInlineRename({
+    name: (target: { id: string; name: string }) => target.name,
+    rename: (target, name) => {
+      if (!props.onRename) throw new Error('Renaming a column needs onRename');
+      return props.onRename(target.id, name, target.name);
+    },
+    failureMessage: columnSchemaMessage,
+    emptyName: { message: 'Enter a column name.', onBlur: 'cancel' },
+    input: () => input,
+    restoreFocus: focusHeader,
+  });
+  const error = columnRename.error;
+  const setError = columnRename.setError;
+  const pending = () => operating() || columnRename.pending();
   const rename = () => {
     if (!canRename() || pending()) return;
     setMenuOpen(false);
-    setError('');
-    setDraft({
-      id: props.column.id,
-      name: props.column.name,
-      previousName: props.column.name,
-    });
-    queueMicrotask(() => {
-      input?.focus();
-      input?.select();
-    });
+    columnRename.begin({ id: props.column.id, name: props.column.name });
   };
-  const cancel = (returnFocus = true) => {
-    if (pending()) return;
-    setDraft(undefined);
-    setError('');
-    if (returnFocus) restoreFocus();
-  };
-  /** Blurring away keeps focus where the user put it, and drops an emptied name. */
-  const save = async (returnFocus = true) => {
-    const current = draft();
-    const onRename = props.onRename;
-    if (!current || pending() || !canRename() || !onRename) return;
-    const name = current.name.trim();
-    if (!name && returnFocus) {
-      setError('Enter a column name.');
-      return;
-    }
-    if (!name || name === current.previousName) {
-      cancel(returnFocus);
-      return;
-    }
-    setPending(true);
-    setError('');
-    const renamed = await onRename(current.id, name, current.previousName);
-    if (!mounted) return;
-    setPending(false);
-    renamed.match(
-      () => {
-        setDraft(undefined);
-        if (returnFocus) restoreFocus();
-      },
-      (errors) => setError(columnSchemaMessage(errors))
-    );
+  const save = (restoreFocus: boolean) => {
+    if (canRename()) void columnRename.save(restoreFocus);
   };
   props.registerRename?.(rename);
   async function changeType(change: DatabaseColumnTypeChange) {
     if (!canRename() || !props.onChangeType || pending()) return;
     setMenuOpen(false);
     setError('');
-    setPending(true);
+    setOperating(true);
     const changed = await props.onChangeType(props.column.id, change);
     if (!mounted) return;
-    setPending(false);
+    setOperating(false);
     if (changed.isErr()) setError(columnSchemaMessage(changed.error));
   }
   async function remove() {
     if (!canRename() || !props.onDelete || pending()) return;
     setError('');
-    setPending(true);
+    setOperating(true);
     const deleted = await props.onDelete(props.column.id);
     if (!mounted) return;
-    setPending(false);
+    setOperating(false);
     deleted.match(
       () => setDeleteOpen(false),
       (errors) => setError(columnSchemaMessage(errors))
@@ -301,8 +271,8 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
             .with(undefined, () => 'none' as const)
             .exhaustive()}
           aria-keyshortcuts={canRename() ? 'F2 Shift+F10' : 'Shift+F10'}
-          tabIndex={draft() ? -1 : 0}
-          disabled={!!draft()}
+          tabIndex={columnRename.target() ? -1 : 0}
+          disabled={!!columnRename.target()}
           class="relative min-w-0 border-r border-edge-muted/50 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink/50 [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-ink/50"
           onDblClick={(
             event: MouseEvent & { currentTarget: HTMLDivElement }
@@ -345,7 +315,7 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
           }}
         >
           <Show
-            when={draft()}
+            when={columnRename.target()}
             fallback={
               <div
                 class="flex min-h-10 items-center gap-2 px-3 text-xs font-medium text-ink-muted"
@@ -379,7 +349,7 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
                   <Dropdown.Content
                     class="min-w-44"
                     onCloseAutoFocus={(event) => {
-                      if (draft()) event.preventDefault();
+                      if (columnRename.target()) event.preventDefault();
                       openRequestedOptions(event);
                     }}
                   >
@@ -449,44 +419,41 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
               </div>
             }
           >
-            {(current) => (
-              <div
-                class="flex min-h-10 items-center gap-2 px-3 text-xs text-ink-muted"
-                aria-busy={pending()}
-              >
-                <PropertyIcon
-                  relation={!!props.column.relation}
-                  type={props.column.dataType}
-                  entityType={props.column.specificEntityType}
-                />
-                <input
-                  ref={input}
-                  aria-label="Column name"
-                  aria-invalid={!!error()}
-                  aria-describedby={error() ? errorId : undefined}
-                  maxlength={200}
-                  value={current().name}
-                  readOnly={pending()}
-                  class="-mx-1.5 h-7 min-w-0 flex-1 rounded-md border border-ink/40 bg-input px-1.5 text-xs font-medium text-ink outline-none aria-invalid:border-failure-ink"
-                  onInput={(event) => {
-                    setDraft({ ...current(), name: event.currentTarget.value });
-                    setError('');
-                  }}
-                  onBlur={() => void save(false)}
-                  onKeyDown={(event) => {
-                    event.stopPropagation();
-                    if (event.isComposing || event.keyCode === 229) return;
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      void save();
-                    } else if (event.key === 'Escape') {
-                      event.preventDefault();
-                      cancel();
-                    }
-                  }}
-                />
-              </div>
-            )}
+            <div
+              class="flex min-h-10 items-center gap-2 px-3 text-xs text-ink-muted"
+              aria-busy={pending()}
+            >
+              <PropertyIcon
+                relation={!!props.column.relation}
+                type={props.column.dataType}
+                entityType={props.column.specificEntityType}
+              />
+              <input
+                ref={input}
+                aria-label="Column name"
+                aria-invalid={!!error()}
+                aria-describedby={error() ? errorId : undefined}
+                maxlength={200}
+                value={columnRename.draft()}
+                readOnly={pending()}
+                class="-mx-1.5 h-7 min-w-0 flex-1 rounded-md border border-ink/40 bg-input px-1.5 text-xs font-medium text-ink outline-none aria-invalid:border-failure-ink"
+                onInput={(event) =>
+                  columnRename.setDraft(event.currentTarget.value)
+                }
+                onBlur={() => save(false)}
+                onKeyDown={(event) => {
+                  event.stopPropagation();
+                  if (event.isComposing || event.keyCode === 229) return;
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    save(true);
+                  } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    columnRename.cancel(true);
+                  }
+                }}
+              />
+            </div>
           </Show>
           {props.resizeHandle}
           <Show when={error() && !deleteOpen()}>
@@ -503,7 +470,7 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
           <ContextMenuContent
             class="min-w-44"
             onCloseAutoFocus={(event) => {
-              if (draft()) event.preventDefault();
+              if (columnRename.target()) event.preventDefault();
               openRequestedOptions(event);
             }}
           >

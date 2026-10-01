@@ -35,6 +35,7 @@ import {
 import { isDatabaseNameTaken } from '../core/property-creation';
 import type { CreateTable } from '../core/table-creation';
 import { CreateTableDialog } from './create-table-dialog';
+import { createInlineRename } from './inline-rename';
 
 export function TableNavigation(props: {
   tables: { id: string; name: string }[];
@@ -52,15 +53,6 @@ export function TableNavigation(props: {
 }) {
   const [open, setOpen] = createSignal(false);
   const [tabRail, setTabRail] = createSignal<HTMLDivElement>();
-  const [renaming, setRenaming] = createSignal<{
-    id: string;
-    name: string;
-    width: string;
-    origin?: HTMLElement;
-  }>();
-  const [renameDraft, setRenameDraft] = createSignal('');
-  const [renamePending, setRenamePending] = createSignal(false);
-  const [renameError, setRenameError] = createSignal('');
   const renameErrorId = createUniqueId();
   const [menuTarget, setMenuTarget] = createSignal<{
     table: { id: string; name: string };
@@ -104,15 +96,34 @@ export function TableNavigation(props: {
     if (target)
       moveTable(tableId, target.id, direction < 0 ? 'before' : 'after');
   };
+  const tableRename = createInlineRename({
+    name: (target: RenamingTable) => target.name,
+    rename: (target, name) => {
+      if (!props.onRename) throw new Error('Renaming a table needs onRename');
+      return props.onRename(target.id, name, target.name);
+    },
+    failureMessage: tableRenameMessage,
+    emptyName: { message: 'Enter a table name.', onBlur: 'keep-editing' },
+    validate: (name, target) =>
+      isDatabaseNameTaken(
+        name,
+        props.tables
+          .filter((table) => table.id !== target.id)
+          .map((table) => table.name)
+      )
+        ? 'A table with this name already exists. Try another name.'
+        : undefined,
+    input: () => renameInput,
+    restoreFocus: (target) => target.origin?.focus(),
+  });
+  const renaming = tableRename.target;
   const rename = (
     table: { id: string; name: string },
     origin?: HTMLElement
   ) => {
-    if (!canRename() || renamePending()) return;
-    setRenameDraft(table.name);
-    setRenameError('');
+    if (!canRename()) return;
     const width = origin?.getBoundingClientRect().width;
-    setRenaming({
+    tableRename.begin({
       id: table.id,
       name: table.name,
       width: width
@@ -120,50 +131,6 @@ export function TableNavigation(props: {
         : `${Math.max(10, Math.min(24, table.name.length + 5))}ch`,
       origin,
     });
-    queueMicrotask(() => {
-      renameInput?.focus();
-      renameInput?.select();
-    });
-  };
-  const finishRename = (restoreFocus: boolean) => {
-    const origin = renaming()?.origin;
-    setRenaming(undefined);
-    setRenameError('');
-    if (restoreFocus) queueMicrotask(() => origin?.focus());
-  };
-  const saveRename = async (restoreFocus: boolean) => {
-    const target = renaming();
-    if (!target || renamePending() || !props.onRename) return;
-    const name = renameDraft().trim();
-    if (!name) {
-      setRenameError('Enter a table name.');
-      return;
-    }
-    if (
-      isDatabaseNameTaken(
-        name,
-        props.tables
-          .filter((table) => table.id !== target.id)
-          .map((table) => table.name)
-      )
-    ) {
-      setRenameError(
-        'A table with this name already exists. Try another name.'
-      );
-      return;
-    }
-    if (name === target.name) {
-      finishRename(restoreFocus);
-      return;
-    }
-    setRenamePending(true);
-    setRenameError('');
-    const renamed = await props.onRename(target.id, name, target.name);
-    setRenamePending(false);
-    renamed.match(
-      () => finishRename(restoreFocus),
-      (errors) => setRenameError(tableRenameMessage(errors))
-    );
   };
   const openMenu = (
     table: { id: string; name: string },
@@ -321,24 +288,23 @@ export function TableNavigation(props: {
                         <input
                           ref={renameInput}
                           aria-label="Table name"
-                          aria-invalid={!!renameError()}
+                          aria-invalid={!!tableRename.error()}
                           aria-describedby={
-                            renameError() ? renameErrorId : undefined
+                            tableRename.error() ? renameErrorId : undefined
                           }
-                          aria-busy={renamePending()}
+                          aria-busy={tableRename.pending()}
                           maxlength={200}
-                          value={renameDraft()}
-                          readOnly={renamePending()}
+                          value={tableRename.draft()}
+                          readOnly={tableRename.pending()}
                           onFocusIn={(event) => event.stopPropagation()}
                           onMouseDown={(event) => event.stopPropagation()}
                           class="h-8 w-full min-w-0 rounded-md border border-ink/40 bg-input px-2 text-xs text-ink outline-none"
-                          onInput={(event) => {
-                            setRenameDraft(event.currentTarget.value);
-                            setRenameError('');
-                          }}
+                          onInput={(event) =>
+                            tableRename.setDraft(event.currentTarget.value)
+                          }
                           onBlur={(event) => {
                             event.stopPropagation();
-                            void saveRename(false);
+                            void tableRename.save(false);
                           }}
                           onKeyDown={(event) => {
                             event.stopPropagation();
@@ -346,10 +312,10 @@ export function TableNavigation(props: {
                               return;
                             if (event.key === 'Enter') {
                               event.preventDefault();
-                              void saveRename(true);
+                              void tableRename.save(true);
                             } else if (event.key === 'Escape') {
                               event.preventDefault();
-                              if (!renamePending()) finishRename(true);
+                              tableRename.cancel(true);
                             }
                           }}
                         />
@@ -390,9 +356,9 @@ export function TableNavigation(props: {
           </Button>
         </Show>
       </div>
-      <Show when={renameError()}>
+      <Show when={tableRename.error()}>
         <p id={renameErrorId} role="alert" class="mt-1 text-xs text-failure">
-          {renameError()}
+          {tableRename.error()}
         </p>
       </Show>
       <ContextMenu.Portal>
@@ -450,6 +416,15 @@ export function TableNavigation(props: {
     </ContextMenu>
   );
 }
+
+type RenamingTable = {
+  id: string;
+  name: string;
+  /** The input keeps the tab's width, so the strip does not shift. */
+  width: string;
+  /** The tab that takes focus back once the rename is done. */
+  origin?: HTMLElement;
+};
 
 /** How far above or below the tab strip a drag may stray and still drop. */
 const DROP_SLACK_PX = 24;
