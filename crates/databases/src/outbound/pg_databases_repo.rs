@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use models_databases::position::{PositionError, key_between, keys_between};
 
 use macro_user_id::user_id::MacroUserIdStr;
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 
 use entity_access_db_utils::{AccessLevel, EntityAccessSourceType};
 use model_entity::EntityType;
@@ -85,6 +85,53 @@ impl From<TableRecord> for Table {
 /// (the columns are `COLLATE "C"`), so the largest is the last.
 fn position_after(last: Option<&str>) -> Result<String, PositionError> {
     key_between(last, None)
+}
+
+/// Insert a database, its first table and its owner's grant inside
+/// `transaction`, so no database can exist that nobody can open.
+pub(crate) async fn insert_owned_database(
+    transaction: &mut Transaction<'static, Postgres>,
+    database_id: DatabaseId,
+    name: &str,
+    owner_id: &str,
+    table_id: TableId,
+    table_name: &str,
+) -> Result<Database, PgDatabasesRepoError> {
+    let database = sqlx::query_as!(
+        Database,
+        r#"
+            INSERT INTO databases (id, name, owner_id)
+            VALUES ($1, $2, $3)
+            RETURNING id, name, owner_id, created_at, trashed_at
+            "#,
+        database_id,
+        name,
+        owner_id,
+    )
+    .fetch_one(&mut **transaction)
+    .await?;
+    sqlx::query!(
+        r#"
+            INSERT INTO database_tables (id, database_id, name, position)
+            VALUES ($1, $2, $3, $4)
+            "#,
+        table_id,
+        database_id,
+        table_name,
+        position_after(None)?,
+    )
+    .execute(&mut **transaction)
+    .await?;
+    entity_access_db_utils::insert_entity_access_row(
+        transaction,
+        &database_id,
+        EntityType::Database,
+        owner_id,
+        EntityAccessSourceType::User,
+        AccessLevel::Owner,
+    )
+    .await?;
+    Ok(database)
 }
 
 /// [`DatabasesRepo`] backed by MacroDB.
@@ -162,49 +209,16 @@ impl DatabasesRepo for PgDatabasesRepo {
         command: &CreateDatabase,
         starter_table_name: &str,
     ) -> Result<Database, Self::Error> {
-        // Time-ordered v7 so ids sort by creation and are known before insert.
-        let id = macro_uuid::generate_uuid_v7();
         let mut transaction = self.pool.begin().await?;
-
-        let database = sqlx::query_as!(
-            Database,
-            r#"
-            INSERT INTO databases (id, name, owner_id)
-            VALUES ($1, $2, $3)
-            RETURNING id, name, owner_id, created_at, trashed_at
-            "#,
-            id,
-            command.name,
-            command.owner_id.as_ref(),
-        )
-        .fetch_one(&mut *transaction)
-        .await?;
-
-        sqlx::query!(
-            r#"
-            INSERT INTO database_tables (id, database_id, name, position)
-            VALUES ($1, $2, $3, $4)
-            "#,
-            macro_uuid::generate_uuid_v7(),
-            id,
-            starter_table_name,
-            position_after(None)?,
-        )
-        .execute(&mut *transaction)
-        .await?;
-
-        // The creator's owner grant lives in the same transaction, so a
-        // database can never exist that nobody can open.
-        entity_access_db_utils::insert_entity_access_row(
+        let database = insert_owned_database(
             &mut transaction,
-            &id,
-            EntityType::Database,
+            macro_uuid::generate_uuid_v7(),
+            &command.name,
             command.owner_id.as_ref(),
-            EntityAccessSourceType::User,
-            AccessLevel::Owner,
+            macro_uuid::generate_uuid_v7(),
+            starter_table_name,
         )
         .await?;
-
         transaction.commit().await?;
         Ok(database)
     }

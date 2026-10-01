@@ -1,50 +1,52 @@
-//! Atomic starter provisioning; foreign tables stay behind their owning ports.
+//! Starter provisioning: the database, its schema, rows, cells and views
+//! commit together, so a retry never finds half an example.
 
 #[cfg(test)]
 mod test;
-use entity_access_db_utils::{AccessLevel, EntityAccessSourceType};
-use model_entity::EntityType;
-use models_databases::position::{PositionError, key_between, keys_between};
+use models_databases::position::{PositionError, keys_between};
 use models_properties::DataType;
+use models_properties::EntityReference;
 use models_properties::service::property_value::PropertyValue;
+use properties::domain::database_cell_writer::DatabaseCellWriter;
 use properties::domain::database_definition_writer::{
     DatabaseDefinitionWriter, NewDatabaseDefinition,
 };
-use properties::domain::ports::PropertiesRepo;
 use sqlx::{PgPool, Postgres, Transaction};
 
 use crate::domain::models::Viewer;
 use crate::domain::starter::{DatabaseStarterRepo, StarterBlueprint, StarterDatabase};
-use crate::outbound::pg_databases_repo::{PgDatabasesRepoError, views};
+use crate::outbound::pg_databases_repo::{
+    PgDatabasesRepoError, insert_owned_database, rows, views,
+};
 
-/// Errors retain the owning port's original failure.
+/// Starter seeding errors; any of them rolls the whole seed back.
 #[derive(Debug, thiserror::Error)]
 pub enum PgStarterError {
-    /// Database failure rolls back the entire seed.
+    /// A statement of the seed failed.
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
-    /// The property definition writer failed.
+    /// The properties writer failed.
     #[error("starter dependency failed: {0}")]
     Dependency(#[source] Box<dyn std::error::Error + Send + Sync>),
-    /// A view could not be stored.
-    #[error("starter views failed: {0}")]
-    Views(#[from] PgDatabasesRepoError),
+    /// A repository statement of the seed failed.
+    #[error("starter statement failed: {0}")]
+    Repository(#[from] PgDatabasesRepoError),
     /// The seed's positions could not be minted.
     #[error("starter positions failed: {0}")]
     Position(#[from] PositionError),
-    /// The seed rows' cells could not be written after the rows committed.
-    #[error("starter cells failed: {0}")]
-    Cells(#[source] anyhow::Error),
+    /// A seed row names a stage the blueprint does not have.
+    #[error("starter row names stage {0}, which the blueprint does not have")]
+    MissingStage(usize),
 }
 
-/// Composition receives the owning property port, never constructs it.
+/// [`DatabaseStarterRepo`] over Postgres and the properties writers.
 pub struct PgDatabaseStarterRepo<Properties> {
     pool: PgPool,
     properties: Properties,
 }
 
 impl<Properties> PgDatabaseStarterRepo<Properties> {
-    /// Build the atomic adapter in a composition root.
+    /// Wrap the pool and the properties writers.
     pub fn new(pool: PgPool, properties: Properties) -> Self {
         Self { pool, properties }
     }
@@ -54,13 +56,17 @@ fn dependency(error: impl std::error::Error + Send + Sync + 'static) -> PgStarte
     PgStarterError::Dependency(Box::new(error))
 }
 
-impl<P> DatabaseStarterRepo for PgDatabaseStarterRepo<P>
+impl<Properties> DatabaseStarterRepo for PgDatabaseStarterRepo<Properties>
 where
-    P: DatabaseDefinitionWriter<Transaction = Transaction<'static, Postgres>>
-        + PropertiesRepo<Err = anyhow::Error>,
+    Properties: DatabaseDefinitionWriter<Transaction = Transaction<'static, Postgres>>
+        + DatabaseCellWriter<Transaction = Transaction<'static, Postgres>>
+        + Send
+        + Sync
+        + 'static,
 {
     type Error = PgStarterError;
 
+    #[tracing::instrument(err, skip(self, viewer, blueprint))]
     async fn ensure_starter(
         &self,
         viewer: &Viewer,
@@ -69,13 +75,20 @@ where
         let mut transaction = self.pool.begin().await?;
         let user_id = viewer.user_id.as_ref();
         let claimed = sqlx::query_scalar!(
-            "INSERT INTO database_starter_seeds (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING RETURNING user_id", user_id,
-        ).fetch_optional(&mut *transaction).await?.is_some();
+            "INSERT INTO database_starter_seeds (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING RETURNING user_id",
+            user_id,
+        )
+        .fetch_optional(&mut *transaction)
+        .await?
+        .is_some();
         if !claimed {
             let database_id = sqlx::query_scalar!(
                 r#"SELECT d.id FROM database_starter_seeds s JOIN databases d ON d.id = s.database_id
-                   WHERE s.user_id = $1 AND d.trashed_at IS NULL"#, user_id,
-            ).fetch_optional(&mut *transaction).await?;
+                   WHERE s.user_id = $1 AND d.trashed_at IS NULL"#,
+                user_id,
+            )
+            .fetch_optional(&mut *transaction)
+            .await?;
             return Ok(StarterDatabase {
                 database_id,
                 table_id: None,
@@ -101,22 +114,14 @@ where
         }
         let database_id = blueprint.database_id;
         let table_id = blueprint.table_id;
-        sqlx::query!(
-            "INSERT INTO databases (id, name, owner_id) VALUES ($1, $2, $3)",
+        insert_owned_database(
+            &mut transaction,
             database_id,
             blueprint.name,
-            user_id
-        )
-        .execute(&mut *transaction)
-        .await?;
-        sqlx::query!(
-            "INSERT INTO database_tables (id, database_id, name, position, version) VALUES ($1, $2, $3, $4, 1)",
+            user_id,
             table_id,
-            database_id,
             blueprint.table_name,
-            key_between(None, None)?,
         )
-        .execute(&mut *transaction)
         .await?;
         let title = self
             .properties
@@ -150,32 +155,60 @@ where
             .map_err(dependency)?;
         let title_column_id = macro_uuid::generate_uuid_v7();
         let stage_column_id = macro_uuid::generate_uuid_v7();
-        let [title_position, stage_position] = keys_between(None, None, 2)?
-            .try_into()
-            .expect("two keys were asked for");
-        for (column_id, definition_id, position) in [
-            (title_column_id, title.definition.id, title_position),
-            (stage_column_id, stage.definition.id, stage_position),
-        ] {
-            sqlx::query!("INSERT INTO database_columns (id, table_id, property_definition_id, position, infer_type) VALUES ($1, $2, $3, $4, false)", column_id, table_id, definition_id, position)
-                .execute(&mut *transaction).await?;
+        let column_positions = keys_between(None, None, 2)?;
+        for ((column_id, definition_id), position) in [
+            (title_column_id, title.definition.id),
+            (stage_column_id, stage.definition.id),
+        ]
+        .into_iter()
+        .zip(column_positions)
+        {
+            sqlx::query!(
+                "INSERT INTO database_columns (id, table_id, property_definition_id, position, infer_type) VALUES ($1, $2, $3, $4, false)",
+                column_id,
+                table_id,
+                definition_id,
+                position,
+            )
+            .execute(&mut *transaction)
+            .await?;
         }
-        let mut seeded = Vec::with_capacity(blueprint.rows.len());
+        rows::bump_table_version(&mut *transaction, table_id)
+            .await
+            .map_err(PgDatabasesRepoError::from)?;
         let positions = keys_between(None, None, blueprint.rows.len())?;
         for ((name, stage_index), position) in blueprint.rows.iter().zip(positions) {
+            let stage_option = stage
+                .property_options
+                .get(*stage_index)
+                .ok_or(PgStarterError::MissingStage(*stage_index))?;
             let row_id = macro_uuid::generate_uuid_v7();
-            sqlx::query!("INSERT INTO database_rows (id, table_id, position, created_by) VALUES ($1, $2, $3, $4)", row_id, table_id, position, user_id)
-                .execute(&mut *transaction).await?;
-            seeded.push((
+            sqlx::query!(
+                "INSERT INTO database_rows (id, table_id, position, created_by) VALUES ($1, $2, $3, $4)",
                 row_id,
-                [
-                    (title.definition.id, PropertyValue::Str((*name).into())),
-                    (
-                        stage.definition.id,
-                        PropertyValue::SelectOption(vec![stage.property_options[*stage_index].id]),
-                    ),
-                ],
-            ));
+                table_id,
+                position,
+                user_id,
+            )
+            .execute(&mut *transaction)
+            .await?;
+            let row = EntityReference {
+                entity_id: row_id.to_string(),
+                entity_type: models_properties::EntityType::DatabaseRow,
+                specific_message_id: None,
+            };
+            for (definition_id, value) in [
+                (title.definition.id, PropertyValue::Str((*name).into())),
+                (
+                    stage.definition.id,
+                    PropertyValue::SelectOption(vec![stage_option.id]),
+                ),
+            ] {
+                self.properties
+                    .upsert_entity_property_in(&mut transaction, &row, definition_id, Some(value))
+                    .await
+                    .map_err(dependency)?;
+            }
         }
         let stage_options: Vec<_> = stage
             .property_options
@@ -190,15 +223,6 @@ where
         )?;
         views::insert_view(&mut *transaction, &table_view).await?;
         views::insert_view(&mut *transaction, &board).await?;
-        entity_access_db_utils::insert_entity_access_row(
-            &mut transaction,
-            &database_id,
-            EntityType::Database,
-            user_id,
-            EntityAccessSourceType::User,
-            AccessLevel::Owner,
-        )
-        .await?;
         sqlx::query!(
             "UPDATE database_starter_seeds SET database_id = $2 WHERE user_id = $1",
             user_id,
@@ -207,21 +231,6 @@ where
         .execute(&mut *transaction)
         .await?;
         transaction.commit().await?;
-        // Cells are entity properties of the rows, so they follow the rows'
-        // commit through the properties system's own writer.
-        for (row_id, cells) in seeded {
-            for (definition_id, value) in cells {
-                self.properties
-                    .upsert_entity_property(
-                        &row_id.to_string(),
-                        models_properties::EntityType::DatabaseRow,
-                        definition_id,
-                        Some(value),
-                    )
-                    .await
-                    .map_err(PgStarterError::Cells)?;
-            }
-        }
         Ok(StarterDatabase {
             database_id: Some(database_id),
             table_id: Some(table_id),

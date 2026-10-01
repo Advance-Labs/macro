@@ -283,3 +283,40 @@ async fn failed_dependency_rolls_back_content_and_marker_then_retry_succeeds(poo
     assert!(success.created);
     assert_eq!(success.database_id, Some(blueprint.database_id));
 }
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn a_failed_cell_rolls_back_the_whole_seed(pool: PgPool) {
+    insert_user(&pool).await;
+    sqlx::raw_sql(
+        "CREATE FUNCTION refuse_cells() RETURNS trigger LANGUAGE plpgsql AS $$
+         BEGIN RAISE EXCEPTION 'injected cell failure'; END $$;
+         CREATE TRIGGER refuse_cells BEFORE INSERT ON entity_properties
+         FOR EACH ROW EXECUTE FUNCTION refuse_cells();",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let blueprint = StarterBlueprint::default();
+    assert!(
+        repo(&pool)
+            .ensure_starter(&viewer(), &blueprint)
+            .await
+            .is_err()
+    );
+    assert!(
+        PgDatabasesRepo::new(pool.clone())
+            .get_database(blueprint.database_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    sqlx::raw_sql("DROP TRIGGER refuse_cells ON entity_properties")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let retried = repo(&pool)
+        .ensure_starter(&viewer(), &blueprint)
+        .await
+        .unwrap();
+    assert!(retried.created);
+}
