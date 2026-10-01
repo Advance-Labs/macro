@@ -3,14 +3,13 @@ import { Badge } from '@ui';
 import { Show } from 'solid-js';
 import type { DatabaseViewColumn } from '../core/database-view';
 
-/** An option value drawn like a task's: tags carry their stored colour. */
-export function SelectPill(props: {
+/** An option value drawn like a task's: tags and coloured options carry a dot. */
+export function OptionPill(props: {
   label: string;
-  column?: DatabaseViewColumn;
+  color?: string | null;
+  tag?: boolean;
   empty?: boolean;
 }) {
-  const color = () => props.column?.optionColors?.[props.label];
-  const isTag = () => props.column?.dataType === 'TAG';
   return (
     <Badge
       variant="outline"
@@ -19,10 +18,26 @@ export function SelectPill(props: {
       classList={{ 'text-ink-placeholder': props.empty }}
       title={props.label}
     >
-      <Show when={!props.empty && (isTag() || color())}>
-        <TagDot color={color()} class="size-2" />
+      <Show when={!props.empty && (props.tag || props.color)}>
+        <TagDot color={props.color ?? undefined} class="size-2" />
       </Show>
       <span class="truncate">{props.label}</span>
     </Badge>
+  );
+}
+
+/** A grid column's option, with the colour the column stores for its label. */
+export function SelectPill(props: {
+  label: string;
+  column?: DatabaseViewColumn;
+  empty?: boolean;
+}) {
+  return (
+    <OptionPill
+      label={props.label}
+      color={props.column?.optionColors?.[props.label]}
+      tag={props.column?.dataType === 'TAG'}
+      empty={props.empty}
+    />
   );
 }

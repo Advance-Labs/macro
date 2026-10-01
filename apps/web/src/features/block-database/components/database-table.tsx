@@ -42,6 +42,7 @@ import type {
 import type {
   DatabaseColumnCastsSource,
   DatabaseColumnTypeChange,
+  DatabaseSchemaChange,
 } from '../core/column-schema';
 import type {
   DatabaseViewColumn,
@@ -106,8 +107,8 @@ export function DatabaseTable(props: {
   onChangeColumnType?: (
     columnId: string,
     change: DatabaseColumnTypeChange
-  ) => Promise<void>;
-  onDeleteColumn?: (columnId: string) => Promise<void>;
+  ) => DatabaseSchemaChange;
+  onDeleteColumn?: (columnId: string) => DatabaseSchemaChange;
   onReorderColumn?: (
     columnId: string,
     targetId: string,
@@ -117,7 +118,7 @@ export function DatabaseTable(props: {
     columnId: string,
     name: string,
     previousName: string
-  ) => Promise<void>;
+  ) => DatabaseSchemaChange;
   onSort: (columnId: string, direction: 'asc' | 'desc' | null) => void;
   onHide?: (columnId: string) => void;
   onMove?: (columnId: string, direction: 'left' | 'right') => void;

@@ -96,11 +96,7 @@ export function DatabaseRelationCell(props: DatabaseRelationCellProps) {
       // Stop on failure so a later selection cannot mask a rejected write.
       if (previous && !(await previous)) return false;
       if (!editable()) return false;
-      try {
-        return await props.onWrite(next.length ? JSON.stringify(next) : null);
-      } catch {
-        return false;
-      }
+      return props.onWrite(next.length ? JSON.stringify(next) : null);
     })();
     pendingWrite = save;
     try {
@@ -149,11 +145,8 @@ export function DatabaseRelationCell(props: DatabaseRelationCellProps) {
   }
   async function refresh() {
     setLoadError(false);
-    try {
-      await props.source.refresh();
-    } catch {
-      setLoadError(true);
-    }
+    const refreshed = await props.source.refresh();
+    setLoadError(refreshed.isErr());
   }
   onMount(() =>
     props.onReady?.({

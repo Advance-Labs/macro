@@ -2,7 +2,10 @@ import { queryClient } from '@queries/client';
 import { invalidateDatabase } from '@queries/storage/databases';
 import { databasesKeys } from '@queries/storage/keys';
 import { storageServiceClient } from '@service-storage/client';
-import type { DatabaseDetail } from '@service-storage/databases';
+import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
+import type { Table } from '@service-storage/generated/schemas/table';
+import { ResultAsync } from 'neverthrow';
+import type { DatabaseSchemaChange } from '../core/column-schema';
 
 function withTableOrder(
   detail: DatabaseDetail,
@@ -19,7 +22,7 @@ function withTableOrder(
   };
 }
 
-const writes = new Map<string, Promise<unknown>>();
+const writes = new Map<string, PromiseLike<unknown>>();
 
 function tableOrderOf(detail: DatabaseDetail | undefined) {
   return detail?.tables.map((entry) => entry.table.id).join(',');
@@ -30,42 +33,50 @@ function tableOrderOf(detail: DatabaseDetail | undefined) {
  * goes back to what it was, unless a newer move has replaced it since, and the
  * database is refetched so a stale list of tables corrects itself.
  */
-export async function reorderDatabaseTables(params: {
+export function reorderDatabaseTables(params: {
   databaseId: string;
   tableIds: string[];
-}): Promise<void> {
+}): DatabaseSchemaChange {
   const key = databasesKeys.detail(params.databaseId).queryKey;
-  // An in-flight read must not paint the old order over the optimistic one.
-  await queryClient.cancelQueries({ queryKey: key });
-  const previous = queryClient.getQueryData<DatabaseDetail>(key);
-  const optimistic = previous && withTableOrder(previous, params.tableIds);
-  if (optimistic) queryClient.setQueryData(key, optimistic);
+  const reorder = async () => {
+    // An in-flight read must not paint the old order over the optimistic one.
+    await queryClient.cancelQueries({ queryKey: key });
+    const previous = queryClient.getQueryData<DatabaseDetail>(key);
+    const optimistic = previous && withTableOrder(previous, params.tableIds);
+    if (optimistic) queryClient.setQueryData(key, optimistic);
 
-  // Requests go out in move order, so the last move is the one that sticks.
-  const request = (writes.get(params.databaseId) ?? Promise.resolve()).then(
-    () =>
-      storageServiceClient.databases.reorderTables({
+    // Requests go out in move order, so the last move is the one that sticks.
+    const earlier = writes.get(params.databaseId);
+    const send = async () => {
+      await earlier;
+      return storageServiceClient.databases.reorderTables({
         id: params.databaseId,
         tableIds: params.tableIds,
-      })
-  );
-  writes.set(params.databaseId, request);
-  const result = await request;
-  if (writes.get(params.databaseId) === request)
-    writes.delete(params.databaseId);
-  if (result.isErr()) {
-    if (
-      previous &&
-      tableOrderOf(queryClient.getQueryData<DatabaseDetail>(key)) ===
-        tableOrderOf(optimistic)
-    )
-      queryClient.setQueryData(key, previous);
-    void invalidateDatabase(params.databaseId);
-    throw new Error(
-      'Could not move this table. The tables may have changed; try again.'
-    );
-  }
-  const committed = new Map(result.value.map((table) => [table.id, table]));
+      });
+    };
+    const request = send();
+    writes.set(params.databaseId, request);
+    const result = await request;
+    if (writes.get(params.databaseId) === request)
+      writes.delete(params.databaseId);
+    if (result.isErr()) {
+      if (
+        previous &&
+        tableOrderOf(queryClient.getQueryData<DatabaseDetail>(key)) ===
+          tableOrderOf(optimistic)
+      )
+        queryClient.setQueryData(key, previous);
+      void invalidateDatabase(params.databaseId);
+      return result.map(() => undefined);
+    }
+    commit(key, result.value);
+    return result.map(() => undefined);
+  };
+  return new ResultAsync(reorder());
+}
+
+function commit(key: readonly unknown[], tables: Table[]) {
+  const committed = new Map(tables.map((table) => [table.id, table]));
   queryClient.setQueryData(key, (current: DatabaseDetail | undefined) =>
     current
       ? {

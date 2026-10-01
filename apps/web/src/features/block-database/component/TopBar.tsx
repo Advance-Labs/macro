@@ -15,26 +15,29 @@ import { ShareTrigger } from '@core/component/TopBar/ShareButton';
 import { useShareModal } from '@core/component/TopBar/shareModal';
 import { useCanEdit, useGetPermissions } from '@core/signal/permissions';
 import SparkleIcon from '@phosphor/sparkle.svg';
-import type {
-  DatabaseDetail,
-  DatabaseTableDetail,
-} from '@service-storage/databases';
+import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
+import type { TableDetail } from '@service-storage/generated/schemas/tableDetail';
 import { getEntityGraphqlClient } from '@service-storage/graphql-soup';
 import { Button } from '@ui';
+import type { ResultAsync } from 'neverthrow';
 import { Show } from 'solid-js';
 import { DatabaseTitle } from '../components/database-title';
+import {
+  type DatabaseEntityFailure,
+  databaseEntityMessage,
+} from '../core/write-failure';
 import { renameDatabase } from '../queries/rename-database';
 import { DatabasePageActions } from '../views/database-page-actions';
 import { TableTabs } from './TableTabs';
 
 export function TopBar(props: {
   detail: DatabaseDetail | undefined;
-  activeTable: DatabaseTableDetail | undefined;
+  activeTable: TableDetail | undefined;
   /** Opens the title for typing, as for a freshly created database. */
   autoFocusTitle: boolean;
   onTitleConfirm: () => void;
   onSelectTable: (tableId: string) => void;
-  onDelete: () => Promise<void>;
+  onDelete: () => ResultAsync<void, DatabaseEntityFailure>;
   openingChat: boolean;
   onOpenChat: () => void;
 }) {
@@ -56,8 +59,8 @@ export function TopBar(props: {
     };
   });
   const rename = (next: string) =>
-    void renameDatabase(getEntityGraphqlClient(), databaseId, next).catch(() =>
-      toast.failure('Could not rename this database.')
+    void renameDatabase(getEntityGraphqlClient(), databaseId, next).mapErr(
+      (failure) => toast.failure(databaseEntityMessage(failure, 'rename'))
     );
 
   return (

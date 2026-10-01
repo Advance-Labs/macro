@@ -386,10 +386,11 @@ const Block: Component = () => {
           onSelectTable={(tableId) =>
             setSelection((current) => ({ ...current, tableId }))
           }
-          onDelete={async () => {
-            await trashDatabase(getEntityGraphqlClient(), databaseId);
-            returnSplitToRecentListView(panel.handle);
-          }}
+          onDelete={() =>
+            trashDatabase(getEntityGraphqlClient(), databaseId).map(() =>
+              returnSplitToRecentListView(panel.handle)
+            )
+          }
           openingChat={openingChat()}
           onOpenChat={() => void openDatabaseChat()}
         />

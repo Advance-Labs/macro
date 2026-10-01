@@ -1,72 +1,66 @@
-import { databaseSqlAnswer } from '@core/database-sql/answer';
 import { databaseSqlSchema } from '@core/database-sql/catalog';
+import type { DatabaseSqlFailure } from '@core/database-sql/driver';
+import type { ResultError } from '@core/util/result';
 import { readDatabaseSql } from '@queries/database-sql/create-database-sql-query';
 import { invalidateDatabase } from '@queries/storage/databases';
 import { storageServiceClient } from '@service-storage/client';
-import type {
-  DatabaseDetail,
-  DatabaseTableDetail,
-  ImportDatabaseTableRequest,
-  SqlValue,
-} from '@service-storage/databases';
+import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
+import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
+import type { ImportTable } from '@service-storage/generated/schemas/importTable';
+import type { Table } from '@service-storage/generated/schemas/table';
+import type { TableDetail } from '@service-storage/generated/schemas/tableDetail';
+import { err, ok, type ResultAsync } from 'neverthrow';
 import { encodeDatabaseCsv } from '../core/csv';
-import { resultColumnName, tableRowsStatement } from '../sql';
+import { gridRows } from '../core/grid-cells';
+import { tableRowsStatement } from '../sql';
 
 /** Request IDs survive a transport error; retrying resolves the original import. */
-export async function importDatabaseTable(
+export function importDatabaseTable(
   databaseId: string,
-  request: ImportDatabaseTableRequest
-) {
-  const result = await storageServiceClient.databases.importTable({
-    id: databaseId,
-    request,
-  });
-  if (result.isErr())
-    throw Object.assign(
-      new Error(
-        result.error[0]?.message ?? 'Could not import this CSV. Try again.'
-      ),
-      { code: result.error[0]?.code }
-    );
-  // A cache refresh failure must not turn a committed import into a failed one.
-  await invalidateDatabase(databaseId);
-  return result.value;
+  request: ImportTable
+): ResultAsync<Table, ResultError<DatabaseSchemaErrorCode>[]> {
+  return storageServiceClient.databases
+    .importTable({ id: databaseId, request })
+    .map(async (table) => {
+      await invalidateDatabase(databaseId);
+      return table;
+    });
 }
 
+/** The table's rows could not be read, or not all of them. */
+export type DatabaseExportFailure = DatabaseSqlFailure | { kind: 'too-large' };
+
 /** Never silently export a partial read. */
-export async function exportDatabaseTableCsv(
+export function exportDatabaseTableCsv(
   database: DatabaseDetail,
-  table: DatabaseTableDetail
-): Promise<Blob> {
+  table: TableDetail
+): ResultAsync<Blob, DatabaseExportFailure> {
   const columns = table.columns.filter(
     (column) => column.column.config?.kind !== 'lookup'
   );
-  const { catalog, outcome } = await readDatabaseSql({
+  return readDatabaseSql({
     schema: databaseSqlSchema([{ ...database, tables: [table] }]),
     scope: database.database.id,
     sql: tableRowsStatement(table.sql_name),
+  }).andThen(({ catalog, outcome }) => {
+    if (outcome.truncated) return err({ kind: 'too-large' as const });
+    const rows = gridRows(outcome, catalog, columns).map((row) =>
+      columns.map((column) => row.cells[column.column.id] ?? null)
+    );
+    return ok(
+      new Blob(
+        [
+          encodeDatabaseCsv(
+            columns.map(
+              (column) =>
+                column.column.display_name ??
+                column.definition.definition.display_name
+            ),
+            rows
+          ),
+        ],
+        { type: 'text/csv;charset=utf-8' }
+      )
+    );
   });
-  if (outcome.truncated)
-    throw new Error('This table is too large for CSV export.');
-  const result = databaseSqlAnswer(outcome, catalog, [database]).results[0];
-  if (!result) throw new Error('The table could not be exported.');
-  const indexes = columns.map((column) =>
-    result.columns.findIndex((field) => field.name === resultColumnName(column))
-  );
-  const rows: SqlValue[][] = result.rows.map((row) =>
-    indexes.map((index) => row[index])
-  );
-  return new Blob(
-    [
-      encodeDatabaseCsv(
-        columns.map(
-          (column) =>
-            column.column.display_name ??
-            column.definition.definition.display_name
-        ),
-        rows
-      ),
-    ],
-    { type: 'text/csv;charset=utf-8' }
-  );
 }

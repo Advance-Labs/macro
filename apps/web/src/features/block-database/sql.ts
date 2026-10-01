@@ -9,7 +9,6 @@
  * (`"Guest List"`) and are used verbatim; nothing in this module should ever
  * concatenate a raw string into a statement.
  */
-import type { DatabaseColumnDetail } from '@service-storage/databases';
 import { match, P } from 'ts-pattern';
 import {
   type DatabaseFilter,
@@ -21,24 +20,14 @@ import {
   filterOperatorsFor,
 } from './core/database-view';
 
-/** The virtual row identity column, first in every row-shaped SELECT. */
-export const ROW_ID_COLUMN = 'row_id';
+/** The virtual row identity column. */
+const ROW_ID_COLUMN = 'row_id';
 
 /**
  * The virtual column holding a row's place in its table. Rows arrive in no
  * particular order, so every read that lists rows ends its ORDER BY with it.
  */
 const ROW_POSITION_COLUMN = 'row_position';
-
-/**
- * The name a result column carries for this table column: its display name,
- * unquoted — `sql_name` is the same name quoted for use in statements.
- */
-export function resultColumnName(column: DatabaseColumnDetail): string {
-  return (
-    column.column.display_name ?? column.definition.definition.display_name
-  );
-}
 
 /**
  * A quoted name from the table detail.

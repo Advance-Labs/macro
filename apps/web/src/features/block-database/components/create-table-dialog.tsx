@@ -33,20 +33,23 @@ export function CreateTableDialog(props: {
     if (pending() || !name().trim() || duplicate()) return;
     setPending(true);
     setError('');
-    try {
-      const result = await props.onCreate(name().trim(), createdTableId());
-      if (result.ready) openTable(result.tableId);
-      else {
-        setCreatedTableId(result.tableId);
-        setError(result.message);
-      }
-    } catch {
-      setError(
-        'Could not create this table. Check your connection and try again.'
-      );
-    } finally {
-      setPending(false);
-    }
+    const created = await props.onCreate(name().trim(), createdTableId());
+    setPending(false);
+    created.match(
+      (result) => {
+        if (result.ready) openTable(result.tableId);
+        else {
+          setCreatedTableId(result.tableId);
+          setError(result.message);
+        }
+      },
+      (errors) =>
+        setError(
+          errors[0]?.code === 'INVALID_SCHEMA'
+            ? errors[0].message
+            : 'Could not create this table. Check your connection and try again.'
+        )
+    );
   };
 
   return (

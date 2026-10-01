@@ -1,23 +1,28 @@
-import type { ImportDatabaseTableRequest } from '@service-storage/databases';
+import type { ResultError } from '@core/util/result';
+import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
+import type { ImportTable } from '@service-storage/generated/schemas/importTable';
 import { Button } from '@ui/components/Button';
 import { Dialog } from '@ui/components/Dialog';
 import { Input } from '@ui/components/Input';
 import { Panel } from '@ui/components/Panel';
+import type { ResultAsync } from 'neverthrow';
 import { createSignal, For, Show } from 'solid-js';
 import { v7 as uuidv7 } from 'uuid';
-import type { DatabaseCsv } from '../core/csv';
+import { csvImportMessage, type DatabaseCsv } from '../core/csv';
 
 export function CsvImportDialog(props: {
   data: DatabaseCsv;
   initialName: string;
-  onImport: (request: ImportDatabaseTableRequest) => Promise<void>;
+  onImport: (
+    request: ImportTable
+  ) => ResultAsync<void, ResultError<DatabaseSchemaErrorCode>[]>;
   onClose: () => void;
   returnFocus?: HTMLElement;
 }) {
   const [name, setName] = createSignal(props.initialName);
   const [pending, setPending] = createSignal(false);
   const [error, setError] = createSignal('');
-  const [request, setRequest] = createSignal<ImportDatabaseTableRequest>();
+  const [request, setRequest] = createSignal<ImportTable>();
   async function submit(event: SubmitEvent) {
     event.preventDefault();
     if (pending() || !name().trim()) return;
@@ -29,26 +34,18 @@ export function CsvImportDialog(props: {
     setRequest(attempt);
     setPending(true);
     setError('');
-    try {
-      await props.onImport(attempt);
-      props.onClose();
-    } catch (error) {
-      setError(
-        error instanceof Error
-          ? error.message
-          : 'Could not import the CSV. Please try again.'
-      );
-      // A validation refusal has no committed table. Transport failures retain
-      // the original request and name so a retry cannot duplicate an import.
-      if (
-        error instanceof Error &&
-        'code' in error &&
-        error.code === 'INVALID_SCHEMA'
-      )
-        setRequest(undefined);
-    } finally {
-      setPending(false);
-    }
+    const imported = await props.onImport(attempt);
+    setPending(false);
+    imported.match(
+      () => props.onClose(),
+      (errors) => {
+        setError(csvImportMessage(errors));
+        // A validation refusal has no committed table. Transport failures retain
+        // the original request and name so a retry cannot duplicate an import.
+        if (errors.some((error) => error.code === 'INVALID_SCHEMA'))
+          setRequest(undefined);
+      }
+    );
   }
   return (
     <Dialog

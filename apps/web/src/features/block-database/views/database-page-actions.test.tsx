@@ -1,7 +1,5 @@
-import type {
-  DatabaseDetail,
-  DatabaseTableDetail,
-} from '@service-storage/databases';
+import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
+import type { TableDetail } from '@service-storage/generated/schemas/tableDetail';
 import {
   cleanup,
   fireEvent,
@@ -10,8 +8,10 @@ import {
   waitFor,
   within,
 } from '@solidjs/testing-library';
+import { errAsync, okAsync, type ResultAsync } from 'neverthrow';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DatabaseTitle } from '../components/database-title';
+import type { DatabaseEntityFailure } from '../core/write-failure';
 import { DatabasePageActions } from './database-page-actions';
 
 const mocks = vi.hoisted(() => ({
@@ -36,7 +36,7 @@ beforeEach(() => {
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
   Element.prototype.scrollIntoView = vi.fn();
   mocks.download.mockReset();
-  mocks.csv.mockReset().mockResolvedValue(new Blob(['Name\nAcme']));
+  mocks.csv.mockReset().mockReturnValue(okAsync(new Blob(['Name\nAcme'])));
 });
 afterEach(() => {
   cleanup();
@@ -46,7 +46,9 @@ afterEach(() => {
 
 function setup(
   grant: DatabaseDetail['grant'] = 'owner',
-  remove = vi.fn(async () => {})
+  remove = vi.fn(
+    (): ResultAsync<void, DatabaseEntityFailure> => okAsync(undefined)
+  )
 ) {
   let editTitle: (() => void) | undefined;
   render(() => (
@@ -65,9 +67,7 @@ function setup(
             tables: [],
           } as unknown as DatabaseDetail
         }
-        table={
-          { table: { id: 'table', name: 'Contacts' } } as DatabaseTableDetail
-        }
+        table={{ table: { id: 'table', name: 'Contacts' } } as TableDetail}
         onImported={vi.fn()}
         onRename={() => editTitle?.()}
         onDelete={remove}
@@ -161,8 +161,8 @@ describe('database page actions', () => {
   it('confirms deletion and retains a failed dialog for retry', async () => {
     const remove = vi
       .fn()
-      .mockRejectedValueOnce(new Error('Connection lost'))
-      .mockResolvedValueOnce(undefined);
+      .mockReturnValueOnce(errAsync({ kind: 'unreachable' }))
+      .mockReturnValueOnce(okAsync(undefined));
     setup('owner', remove);
     await openMenu();
     selectItem('Delete');
@@ -172,7 +172,7 @@ describe('database page actions', () => {
     expect(remove).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
     expect((await within(dialog).findByRole('alert')).textContent).toBe(
-      'Connection lost'
+      'Could not delete this database. Try again.'
     );
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());

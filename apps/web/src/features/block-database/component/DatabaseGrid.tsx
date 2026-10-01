@@ -10,7 +10,7 @@ import {
   useDatabaseAwareness,
   useDatabaseTableChanges,
 } from '@queries/storage/databases-sync';
-import type { DatabaseTableDetail } from '@service-storage/databases';
+import type { TableDetail } from '@service-storage/generated/schemas/tableDetail';
 import {
   createMemo,
   createSignal,
@@ -47,7 +47,7 @@ import { AddColumnMenu, createDefaultColumn } from './AddColumnMenu';
 
 export type DatabaseGridProps = {
   databaseId: string;
-  table: DatabaseTableDetail;
+  table: TableDetail;
   canEdit: boolean;
   view?: DatabaseViewConfig;
   onViewChange?: (view: DatabaseViewConfig) => void;
@@ -89,7 +89,17 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
     ...new Set(relatedTargets().map((target) => target.database_id)),
   ];
   const relations = createDatabaseRelations({
-    columns: () => table().columns,
+    targets: () =>
+      table().columns.flatMap((column) =>
+        column.column.config?.kind === 'link'
+          ? [
+              {
+                databaseId: column.column.config.database_id,
+                tableId: column.column.config.table_id,
+              },
+            ]
+          : []
+      ),
     onTableChanged: (listener) =>
       useDatabaseTableChanges((change) => listener(change.tableId)),
   });
@@ -104,15 +114,13 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
       }),
     applyVersions: (versions) =>
       applyDatabaseTableVersions(databaseId, versions),
-    addOption: async (columnId, label) => {
-      const updated = await addDatabaseColumnOptions({
+    addOption: (columnId, label) =>
+      addDatabaseColumnOptions({
         databaseId,
         tableId: props.tableId,
         columnId,
         labels: [label],
-      });
-      if (!updated) throw new Error('That option could not be added.');
-    },
+      }).map(() => undefined),
   });
   const [focusedCell, setFocusedCell] = createSignal<DatabaseCellFocus>();
   const awareness = useDatabaseAwareness(

@@ -5,10 +5,12 @@ import {
   screen,
   waitFor,
 } from '@solidjs/testing-library';
+import { okAsync } from 'neverthrow';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type {
   DatabaseColumnCasts,
   DatabaseColumnTypeChange,
+  DatabaseSchemaChange,
 } from '../core/column-schema';
 import type { DatabaseViewColumn } from '../core/database-view';
 import { DatabaseColumnHeader } from './database-column-header';
@@ -91,14 +93,14 @@ afterEach(() => {
 
 function renderHeader() {
   const changeType = vi.fn<
-    (columnId: string, change: DatabaseColumnTypeChange) => Promise<void>
-  >(async () => {});
+    (columnId: string, change: DatabaseColumnTypeChange) => DatabaseSchemaChange
+  >(() => okAsync(undefined));
   const opened: string[] = [];
   render(() => (
     <DatabaseColumnHeader
       column={column}
       canRename
-      onRename={vi.fn()}
+      onRename={vi.fn(() => okAsync(undefined))}
       onSort={vi.fn()}
       onChangeType={changeType}
       columnCasts={(columnId, open) => () => {

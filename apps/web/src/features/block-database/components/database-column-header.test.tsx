@@ -1,3 +1,5 @@
+import type { ResultError } from '@core/util/result';
+import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
 import {
   cleanup,
   fireEvent,
@@ -5,6 +7,7 @@ import {
   screen,
   waitFor,
 } from '@solidjs/testing-library';
+import { err, errAsync, okAsync, type Result, ResultAsync } from 'neverthrow';
 import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DatabaseViewColumn } from '../core/database-view';
@@ -48,7 +51,7 @@ describe('column header interactions', () => {
       <DatabaseColumnHeader
         column={column}
         canRename
-        onRename={vi.fn(async () => {})}
+        onRename={vi.fn(() => okAsync(undefined))}
         onSort={sort}
       />
     ));
@@ -82,7 +85,7 @@ describe('column header interactions', () => {
       <DatabaseColumnHeader
         column={column}
         canRename
-        onRename={vi.fn(async () => {})}
+        onRename={vi.fn(() => okAsync(undefined))}
         onSort={vi.fn()}
         onInsert={insert}
       />
@@ -106,16 +109,26 @@ describe('column header interactions', () => {
   });
 
   it('retains a failed draft and its original identity across refresh, then retries without duplicate writes', async () => {
-    let reject!: (error: Error) => void;
+    let settle!: (
+      result: Result<void, ResultError<DatabaseSchemaErrorCode>[]>
+    ) => void;
     const rename = vi
-      .fn<(id: string, name: string, previousName: string) => Promise<void>>()
+      .fn<
+        (
+          id: string,
+          name: string,
+          previousName: string
+        ) => ResultAsync<void, ResultError<DatabaseSchemaErrorCode>[]>
+      >()
       .mockImplementationOnce(
         () =>
-          new Promise((_resolve, fail) => {
-            reject = fail;
-          })
+          new ResultAsync(
+            new Promise((resolve) => {
+              settle = resolve;
+            })
+          )
       )
-      .mockResolvedValue(undefined);
+      .mockReturnValue(okAsync(undefined));
     const [current, setCurrent] = createSignal(column);
     render(() => (
       <DatabaseColumnHeader
@@ -138,9 +151,9 @@ describe('column header interactions', () => {
     expect(rename).toHaveBeenCalledExactlyOnceWith('name', 'Task', 'Name');
     expect(input.readOnly).toBe(true);
     expect(screen.getByLabelText('Column name')).toBe(input);
-    reject(new Error('Connection lost'));
+    settle(err([{ code: 'NETWORK_ERROR', message: 'Connection lost' }]));
     expect((await screen.findByRole('alert')).textContent).toBe(
-      'Connection lost'
+      'Your change could not be sent. Check your connection.'
     );
     expect(input.value).toBe(' Task ');
     fireEvent.keyDown(input, { key: 'Enter' });
@@ -151,7 +164,7 @@ describe('column header interactions', () => {
   });
 
   it('supports F2, cancels with Escape, and ignores composing Enter', async () => {
-    const rename = vi.fn(async () => {});
+    const rename = vi.fn(() => okAsync(undefined));
     render(() => (
       <DatabaseColumnHeader
         column={column}
@@ -174,7 +187,7 @@ describe('column header interactions', () => {
   });
 
   it('saves on blur without taking focus back, and drops a name emptied before blurring', async () => {
-    const rename = vi.fn(async () => {});
+    const rename = vi.fn(() => okAsync(undefined));
     render(() => (
       <>
         <DatabaseColumnHeader
@@ -208,7 +221,7 @@ describe('column header interactions', () => {
   });
 
   it('keeps sort and view controls available without exposing rename to a viewer', async () => {
-    const rename = vi.fn(async () => {});
+    const rename = vi.fn(() => okAsync(undefined));
     const hide = vi.fn();
     render(() => (
       <DatabaseColumnHeader
@@ -243,14 +256,16 @@ describe('column header interactions', () => {
 });
 
 it('requires confirmation before deleting a column and retains a failed deletion', async () => {
-  const remove = vi.fn(async () => {
-    throw new Error('This table changed. Refresh and try again.');
-  });
+  const remove = vi.fn(() =>
+    errAsync<void, ResultError<DatabaseSchemaErrorCode>[]>([
+      { code: 'CONFLICT', message: 'Version conflict' },
+    ])
+  );
   render(() => (
     <DatabaseColumnHeader
       column={column}
       canRename
-      onRename={vi.fn()}
+      onRename={vi.fn(() => okAsync(undefined))}
       onSort={vi.fn()}
       onDelete={remove}
     />
@@ -276,14 +291,19 @@ it('requires confirmation before deleting a column and retains a failed deletion
 });
 
 it('uses the type submenu and surfaces lossless conversion failures without changing the label', async () => {
-  const changeType = vi.fn(async () => {
-    throw new Error('Some text cannot become a number without changing it.');
-  });
+  const changeType = vi.fn(() =>
+    errAsync<void, ResultError<DatabaseSchemaErrorCode>[]>([
+      {
+        code: 'INVALID_SCHEMA',
+        message: 'Some text cannot become a number without changing it.',
+      },
+    ])
+  );
   render(() => (
     <DatabaseColumnHeader
       column={column}
       canRename
-      onRename={vi.fn()}
+      onRename={vi.fn(() => okAsync(undefined))}
       onSort={vi.fn()}
       onChangeType={changeType}
     />

@@ -1,3 +1,5 @@
+import type { ResultError } from '@core/util/result';
+import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
 import {
   cleanup,
   fireEvent,
@@ -7,13 +9,21 @@ import {
   within,
 } from '@solidjs/testing-library';
 import userEvent from '@testing-library/user-event';
+import {
+  err,
+  errAsync,
+  ok,
+  okAsync,
+  type Result,
+  ResultAsync,
+} from 'neverthrow';
 import { type Accessor, createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DatabaseToolbar } from '../components/database-toolbar';
-import {
-  type DatabaseRowsSnapshot,
-  type DatabaseRowsSource,
-  DatabaseWriteOutcomeUnknown,
+import type {
+  DatabaseRowsSnapshot,
+  DatabaseRowsSource,
+  DatabaseWriteResult,
 } from '../context/table-source';
 import {
   type DatabaseViewColumn,
@@ -21,6 +31,7 @@ import {
   defaultDatabaseView,
 } from '../core/database-view';
 import type { DatabaseRow } from '../core/table';
+import type { DatabaseWriteFailure } from '../core/write-failure';
 import {
   type DatabaseTableActions,
   DatabaseTableView,
@@ -44,6 +55,11 @@ const columns: DatabaseViewColumn[] = [
     writable: true,
   },
 ];
+
+const lostConnection: DatabaseWriteFailure = {
+  kind: 'ops',
+  error: { code: 'NETWORK_ERROR', message: 'Connection lost', refusal: null },
+};
 
 /** What the fake table holds, before the view's statement narrows it. */
 type StoredTable = Omit<DatabaseRowsSnapshot, 'retained'>;
@@ -73,9 +89,11 @@ function sourceFixture() {
     loading: () => false,
     refreshing: () => false,
     error: () => undefined,
-    refresh: vi.fn(async () => {}),
-    write: vi.fn(async () => ({ version: 2, insertedRowIds: [] })),
-    addOption: vi.fn(async () => {}),
+    refresh: vi.fn<DatabaseRowsSource['refresh']>(() => okAsync(undefined)),
+    write: vi.fn<DatabaseRowsSource['write']>(() =>
+      okAsync({ version: 2, insertedRowIds: [] })
+    ),
+    addOption: vi.fn<DatabaseRowsSource['addOption']>(() => okAsync(undefined)),
     retain: (rowIds) => setRetainedIds(() => rowIds),
   };
   return { source, table, setSnapshot, setColumns, setAnswerView };
@@ -97,7 +115,7 @@ function persistWrites({
   setSnapshot,
 }: ReturnType<typeof sourceFixture>) {
   let createdCount = 0;
-  vi.mocked(source.write).mockImplementation(async (mutation) => {
+  vi.mocked(source.write).mockImplementation((mutation) => {
     const snapshot = table();
     const version = (snapshot.version ?? 0) + 1;
     const insertedRowIds =
@@ -121,21 +139,26 @@ function persistWrites({
             ];
           });
     setSnapshot({ version, rows });
-    return { version, insertedRowIds };
+    return okAsync({ version, insertedRowIds });
   });
 }
 
 function deferWrites(source: DatabaseRowsSource) {
-  const writes: { resolve: () => void; reject: (error: Error) => void }[] = [];
+  const writes: {
+    resolve: () => void;
+    reject: (failure: DatabaseWriteFailure) => void;
+  }[] = [];
   vi.mocked(source.write).mockImplementation(
     (_mutation, version) =>
-      new Promise((resolve, reject) => {
-        writes.push({
-          resolve: () =>
-            resolve({ version: (version ?? 0) + 1, insertedRowIds: [] }),
-          reject,
-        });
-      })
+      new ResultAsync(
+        new Promise((resolve) => {
+          writes.push({
+            resolve: () =>
+              resolve(ok({ version: (version ?? 0) + 1, insertedRowIds: [] })),
+            reject: (failure) => resolve(err(failure)),
+          });
+        })
+      )
   );
   return writes;
 }
@@ -152,11 +175,21 @@ function columnOrderFixture() {
     hiddenColumns: ['status'],
   });
   const changeView = vi.fn((value: DatabaseViewConfig) => setView(value));
-  const requests: { resolve: () => void; reject: (error: Error) => void }[] =
-    [];
+  const requests: {
+    resolve: () => void;
+    reject: (errors: ResultError<DatabaseSchemaErrorCode>[]) => void;
+  }[] = [];
   const reorder = vi.fn(
     (_order: string[]) =>
-      new Promise<void>((resolve, reject) => requests.push({ resolve, reject }))
+      new ResultAsync(
+        new Promise<Result<void, ResultError<DatabaseSchemaErrorCode>[]>>(
+          (resolve) =>
+            requests.push({
+              resolve: () => resolve(ok(undefined)),
+              reject: (errors) => resolve(err(errors)),
+            })
+        )
+      )
   );
   const mounted = render(() => (
     <DatabaseTableView
@@ -304,9 +337,11 @@ describe('manual board placement', () => {
     let finish!: () => void;
     vi.mocked(source.write).mockImplementation(
       () =>
-        new Promise((resolve) => {
-          finish = () => resolve({ version: 2, insertedRowIds: [] });
-        })
+        new ResultAsync(
+          new Promise((resolve) => {
+            finish = () => resolve(ok({ version: 2, insertedRowIds: [] }));
+          })
+        )
     );
     expect(cards()).toEqual(['zeta', 'alpha']);
     drop('row', 100, 200);
@@ -341,11 +376,13 @@ describe('manual board placement', () => {
     const saves: (() => void)[] = [];
     vi.mocked(source.write).mockImplementation(
       (_mutation, version) =>
-        new Promise((resolve) => {
-          saves.push(() =>
-            resolve({ version: (version ?? 0) + 1, insertedRowIds: [] })
-          );
-        })
+        new ResultAsync(
+          new Promise((resolve) => {
+            saves.push(() =>
+              resolve(ok({ version: (version ?? 0) + 1, insertedRowIds: [] }))
+            );
+          })
+        )
     );
     drop('row', 100, 200);
     await waitFor(() => expect(source.write).toHaveBeenCalledOnce());
@@ -379,7 +416,7 @@ describe('manual board placement', () => {
 
   it('restores the original lane and ordering when a cross-lane write fails', async () => {
     const { source, view, drop, cards } = cardPlacementFixture(true);
-    vi.mocked(source.write).mockRejectedValue(new Error('Connection lost'));
+    vi.mocked(source.write).mockReturnValue(errAsync(lostConnection));
     drop('row', 100, 200);
     expect(cards()).toEqual(['zeta', 'row', 'alpha']);
     await screen.findByRole('alert');
@@ -400,10 +437,10 @@ describe('manual board placement', () => {
     drop('row', 100, 200);
     await waitFor(() => expect(writes).toHaveLength(1));
     drop('row', 400, 80);
-    writes[0].reject(new Error('First move rejected'));
+    writes[0].reject(lostConnection);
     await waitFor(() => expect(writes).toHaveLength(2));
     expect(view().sorts).toEqual([]);
-    writes[1].reject(new Error('Second move rejected'));
+    writes[1].reject(lostConnection);
     await waitFor(() =>
       expect(view().sorts).toEqual([{ columnId: 'title', direction: 'desc' }])
     );
@@ -421,7 +458,7 @@ describe('manual board placement', () => {
     drop('row', 400, 80);
     writes[0].resolve();
     await waitFor(() => expect(writes).toHaveLength(2));
-    writes[1].reject(new Error('Second move rejected'));
+    writes[1].reject(lostConnection);
     await waitFor(() => expect(view().cardOrder).toBe(savedOrder));
     expect(view().sorts).toEqual([]);
     expect(cards()).toEqual(['zeta', 'row', 'alpha']);
@@ -439,7 +476,7 @@ describe('manual board placement', () => {
     drop('row', 400, 80);
     writes[0].resolve();
     await waitFor(() => expect(writes).toHaveLength(2));
-    writes[1].reject(new Error('Later move rejected'));
+    writes[1].reject(lostConnection);
     await waitFor(() => expect(view().cardOrder).toBe(manualOrder));
     expect(view().sorts).toEqual([]);
     expect(cards()).toEqual(['row', 'zeta', 'alpha']);
@@ -457,9 +494,9 @@ describe('manual board placement', () => {
     await waitFor(() => expect(writes).toHaveLength(1));
     drop('row', 400, 80);
     setView((view) => ({ ...view, groupBy: 'priority', cardOrder: undefined }));
-    writes[0].reject(new Error('First move rejected'));
+    writes[0].reject(lostConnection);
     await waitFor(() => expect(writes).toHaveLength(2));
-    writes[1].reject(new Error('Second move rejected'));
+    writes[1].reject(lostConnection);
     await waitFor(() =>
       expect(
         document
@@ -474,12 +511,16 @@ describe('manual board placement', () => {
 
   it('preserves a sort selected while an earlier card move fails', async () => {
     const { source, view, setView, drop } = cardPlacementFixture();
-    let reject!: (error: Error) => void;
+    let settle!: (
+      result: Result<DatabaseWriteResult, DatabaseWriteFailure>
+    ) => void;
     vi.mocked(source.write).mockImplementation(
       () =>
-        new Promise((_resolve, fail) => {
-          reject = fail;
-        })
+        new ResultAsync(
+          new Promise((resolve) => {
+            settle = resolve;
+          })
+        )
     );
     drop('row', 100, 200);
     await waitFor(() => expect(source.write).toHaveBeenCalledOnce());
@@ -487,7 +528,7 @@ describe('manual board placement', () => {
       ...view,
       sorts: [{ columnId: 'title', direction: 'asc' }],
     }));
-    reject(new Error('Connection lost'));
+    settle(err(lostConnection));
     await screen.findByRole('alert');
     expect(view().sorts).toEqual([{ columnId: 'title', direction: 'asc' }]);
   });
@@ -501,10 +542,12 @@ describe('database table view', () => {
     persistWrites(fixture);
     const commit = vi.mocked(fixture.source.write).getMockImplementation()!;
     vi.mocked(fixture.source.write).mockImplementationOnce(
-      async (mutation, version, createOptions) => {
-        await commit(mutation, version, createOptions);
-        throw new DatabaseWriteOutcomeUnknown('The response was lost.');
-      }
+      (mutation, version, createOptions) =>
+        commit(mutation, version, createOptions).andThen(() =>
+          errAsync<DatabaseWriteResult, DatabaseWriteFailure>({
+            kind: 'outcome-unknown',
+          })
+        )
     );
     render(() => (
       <DatabaseTableView
@@ -710,12 +753,13 @@ describe('database table view', () => {
     const fixture = sourceFixture();
     fixture.setColumns([columns[0]]);
     let complete!: () => void;
-    vi.mocked(fixture.source.write).mockImplementationOnce(async () => {
-      await new Promise<void>((resolve) => {
-        complete = resolve;
-      });
-      return { version: 2, insertedRowIds: [] };
-    });
+    vi.mocked(fixture.source.write).mockImplementationOnce(() =>
+      ResultAsync.fromSafePromise(
+        new Promise<void>((resolve) => {
+          complete = resolve;
+        })
+      ).map(() => ({ version: 2, insertedRowIds: [] }))
+    );
     render(() => (
       <DatabaseTableView
         name="Projects"
@@ -792,14 +836,14 @@ describe('database table view', () => {
       { ...columns[0], id: 'notes', name: 'Notes' },
     ]);
     const [view, setView] = createSignal(defaultDatabaseView());
-    const reorder = vi.fn(async (_order: string[]) => {});
-    const createColumn = vi.fn(async () => {
+    const reorder = vi.fn((_order: string[]) => okAsync(undefined));
+    const createColumn = vi.fn(() => {
       fixture.setColumns([
         columns[0],
         { ...columns[0], id: 'notes', name: 'Notes' },
         { ...columns[0], id: 'added', name: 'Column 3' },
       ]);
-      return 'added';
+      return okAsync('added');
     });
     render(() => (
       <DatabaseTableView
@@ -809,7 +853,7 @@ describe('database table view', () => {
         view={view()}
         onViewChange={setView}
         onReorderColumns={reorder}
-        onRenameColumn={vi.fn(async () => {})}
+        onRenameColumn={vi.fn(() => okAsync(undefined))}
         createColumn={createColumn}
         addColumn={() => null}
       />
@@ -955,7 +999,7 @@ describe('database table view', () => {
         name="Projects"
         source={fixture.source}
         canEdit
-        onRenameColumn={vi.fn(async () => {})}
+        onRenameColumn={vi.fn(() => okAsync(undefined))}
         view={defaultDatabaseView()}
         addColumn={() => null}
         renderToolbar={(value) => {
@@ -1016,8 +1060,8 @@ describe('database table view', () => {
   it('retries a failed duplicate from its row menu once and focuses the new inline name', async () => {
     const fixture = sourceFixture();
     persistWrites(fixture);
-    vi.mocked(fixture.source.write).mockRejectedValueOnce(
-      new Error('Connection lost')
+    vi.mocked(fixture.source.write).mockReturnValueOnce(
+      errAsync(lostConnection)
     );
     render(() => (
       <DatabaseTableView
@@ -1067,8 +1111,8 @@ describe('database table view', () => {
         },
       ],
     });
-    vi.mocked(fixture.source.write).mockRejectedValueOnce(
-      new Error('Connection lost')
+    vi.mocked(fixture.source.write).mockReturnValueOnce(
+      errAsync(lostConnection)
     );
     render(() => (
       <DatabaseTableView
@@ -1118,11 +1162,12 @@ describe('database table view', () => {
         complete = resolve;
       });
       vi.mocked(fixture.source.write)
-        .mockRejectedValueOnce(new Error('Connection lost'))
-        .mockImplementationOnce(async (mutation, version, createOptions) => {
-          await pending;
-          return await commit(mutation, version, createOptions);
-        });
+        .mockReturnValueOnce(errAsync(lostConnection))
+        .mockImplementationOnce((mutation, version, createOptions) =>
+          ResultAsync.fromSafePromise(pending).andThen(() =>
+            commit(mutation, version, createOptions)
+          )
+        );
       render(() => (
         <DatabaseTableView
           name="Projects"
@@ -1362,11 +1407,12 @@ describe('database table view', () => {
 
   it('keeps an acknowledged new record in the view when its refresh fails, without offering a duplicate create retry', async () => {
     const { source } = sourceFixture();
-    vi.mocked(source.write).mockResolvedValue({
-      version: 2,
-      insertedRowIds: ['created'],
-    });
-    vi.mocked(source.refresh).mockRejectedValue(new Error('Connection lost'));
+    vi.mocked(source.write).mockReturnValue(
+      okAsync({ version: 2, insertedRowIds: ['created'] })
+    );
+    vi.mocked(source.refresh).mockReturnValue(
+      errAsync({ kind: 'fetch', message: 'Connection lost' })
+    );
     render(() => (
       <DatabaseTableView
         name="Projects"
@@ -1401,8 +1447,8 @@ describe('database table view', () => {
         rows.filter((row) => row.cells.status === 'To do')
     );
     persistWrites(fixture);
-    vi.mocked(fixture.source.write).mockRejectedValueOnce(
-      new Error('Connection lost')
+    vi.mocked(fixture.source.write).mockReturnValueOnce(
+      errAsync(lostConnection)
     );
     const changeView = vi.fn();
     render(() => (
@@ -1709,7 +1755,7 @@ describe('database table view', () => {
 
   it('shows save failures and a working retry inside the record panel', async () => {
     const { source } = sourceFixture();
-    vi.mocked(source.write).mockRejectedValueOnce(new Error('Offline'));
+    vi.mocked(source.write).mockReturnValueOnce(errAsync(lostConnection));
     render(() => (
       <DatabaseTableView
         name="Projects"
@@ -1857,7 +1903,7 @@ describe('database table view', () => {
       ...defaultDatabaseView(),
       hiddenColumns: ['status'],
     });
-    const reorder = vi.fn(async (_order: string[]) => {});
+    const reorder = vi.fn((_order: string[]) => okAsync(undefined));
     render(() => (
       <DatabaseTableView
         name="Projects"
@@ -1887,12 +1933,16 @@ describe('database table view', () => {
     await waitFor(() =>
       expect(view().columnOrder).toEqual(['notes', 'status', 'title'])
     );
-    expect(reorder).toHaveBeenNthCalledWith(1, ['notes', 'status', 'title']);
+    await waitFor(() =>
+      expect(reorder).toHaveBeenNthCalledWith(1, ['notes', 'status', 'title'])
+    );
     await moveName('left');
     await waitFor(() =>
       expect(view().columnOrder).toEqual(['title', 'status', 'notes'])
     );
-    expect(reorder).toHaveBeenNthCalledWith(2, ['title', 'status', 'notes']);
+    await waitFor(() =>
+      expect(reorder).toHaveBeenNthCalledWith(2, ['title', 'status', 'notes'])
+    );
     expect(source.write).not.toHaveBeenCalled();
   });
 
@@ -1942,7 +1992,9 @@ describe('database table view', () => {
     fixture.requests[0].resolve();
     await waitFor(() => expect(fixture.requests).toHaveLength(2));
     fixture.setView({ ...fixture.view(), search: 'Plan' });
-    fixture.requests[1].reject(new Error('This table changed. Try again.'));
+    fixture.requests[1].reject([
+      { code: 'INVALID_SCHEMA', message: 'This table changed. Try again.' },
+    ]);
     await screen.findByRole('alert');
     expect(fixture.view().columnOrder).toEqual([
       'notes',
@@ -1962,14 +2014,18 @@ describe('database table view', () => {
     const fixture = columnOrderFixture();
     await fixture.moveName('right');
     await fixture.moveName('right');
-    fixture.requests[0].reject(new Error('First save failed'));
+    fixture.requests[0].reject([
+      { code: 'INVALID_SCHEMA', message: 'First save failed' },
+    ]);
     await waitFor(() => expect(fixture.requests).toHaveLength(2));
     expect(fixture.headers()).toEqual([
       'Notes column menu',
       'Owner column menu',
       'Name column menu',
     ]);
-    fixture.requests[1].reject(new Error('Final save failed'));
+    fixture.requests[1].reject([
+      { code: 'INVALID_SCHEMA', message: 'Final save failed' },
+    ]);
     await screen.findByText('Final save failed');
     expect(fixture.view().columnOrder).toEqual([
       'title',
@@ -1988,7 +2044,9 @@ describe('database table view', () => {
     };
     fixture.setView(selected);
     fixture.changeView.mockClear();
-    fixture.requests[0].reject(new Error('Save failed'));
+    fixture.requests[0].reject([
+      { code: 'INVALID_SCHEMA', message: 'Save failed' },
+    ]);
     await screen.findByText('Save failed');
     expect(fixture.changeView).not.toHaveBeenCalled();
     expect(fixture.view()).toEqual(selected);
@@ -2126,9 +2184,11 @@ describe('database table view', () => {
     await waitFor(() =>
       expect(fixture.source.snapshot()?.rows).toHaveLength(1)
     );
-    expect(
-      screen.getByRole('button', { name: /Name: First record/ })
-    ).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole('button', { name: /Name: First record/ })
+      ).toHaveLength(1)
+    );
     expect(
       screen.getByRole('button', { name: 'Name: Unnamed. Click to edit' })
     ).toBeTruthy();

@@ -1,3 +1,13 @@
+import type { ResultError } from '@core/util/result';
+import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
+import {
+  err,
+  errAsync,
+  ok,
+  okAsync,
+  type Result,
+  ResultAsync,
+} from 'neverthrow';
 import { createRoot, createSignal } from 'solid-js';
 import { describe, expect, it, vi } from 'vitest';
 import type {
@@ -6,6 +16,7 @@ import type {
   DatabaseWriteResult,
 } from '../context/table-source';
 import type { DatabaseRowMutation } from '../core/table';
+import type { DatabaseWriteFailure } from '../core/write-failure';
 
 import { createTableController } from './table-controller';
 
@@ -22,6 +33,13 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+type WriteOutcome = Result<DatabaseWriteResult, DatabaseWriteFailure>;
+
+const offline: DatabaseWriteFailure = {
+  kind: 'ops',
+  error: { code: 'NETWORK_ERROR', message: 'Offline', refusal: null },
+};
+
 function setup(onSaved?: Parameters<typeof createTableController>[1]) {
   const [snapshot, setSnapshot] = createSignal<StoredTable>({
     rows: [
@@ -35,12 +53,11 @@ function setup(onSaved?: Parameters<typeof createTableController>[1]) {
     loading: () => false,
     refreshing: () => false,
     error: () => undefined,
-    refresh: vi.fn(async () => {}),
-    write: vi.fn(async (_mutation, version) => ({
-      insertedRowIds: [],
-      version: (version ?? 0) + 1,
-    })),
-    addOption: vi.fn(async () => {}),
+    refresh: vi.fn<DatabaseRowsSource['refresh']>(() => okAsync(undefined)),
+    write: vi.fn<DatabaseRowsSource['write']>((_mutation, version) =>
+      okAsync({ insertedRowIds: [], version: (version ?? 0) + 1 })
+    ),
+    addOption: vi.fn<DatabaseRowsSource['addOption']>(() => okAsync(undefined)),
     retain: () => {},
   };
   let dispose!: () => void;
@@ -61,10 +78,14 @@ const move: DatabaseRowMutation = {
 describe('table controller', () => {
   it('serializes adding a group with row writes and uses the schema refresh version', async () => {
     const { controller, source, setSnapshot, snapshot, dispose } = setup();
-    const option = deferred<void>();
-    vi.mocked(source.addOption).mockImplementation(() => option.promise);
-    vi.mocked(source.refresh).mockImplementation(async () => {
+    const option =
+      deferred<Result<void, ResultError<DatabaseSchemaErrorCode>[]>>();
+    vi.mocked(source.addOption).mockImplementation(
+      () => new ResultAsync(option.promise)
+    );
+    vi.mocked(source.refresh).mockImplementation(() => {
       setSnapshot({ ...snapshot(), version: 4 });
+      return okAsync(undefined);
     });
     const group = controller.addGroup('status', 'Done');
     const write = controller.save(move);
@@ -72,7 +93,7 @@ describe('table controller', () => {
       expect(source.addOption).toHaveBeenCalledWith('status', 'Done')
     );
     expect(source.write).not.toHaveBeenCalled();
-    option.resolve();
+    option.resolve(ok(undefined));
     await Promise.all([group, write]);
     expect(source.write).toHaveBeenCalledWith(move, 4, false);
     expect(controller.pending()).toBe(false);
@@ -80,8 +101,10 @@ describe('table controller', () => {
   });
   it('serializes rapid edits and uses each acknowledged version even before the cache catches up', async () => {
     const { controller, source, dispose } = setup();
-    const first = deferred<DatabaseWriteResult>();
-    vi.mocked(source.write).mockImplementationOnce(() => first.promise);
+    const first = deferred<WriteOutcome>();
+    vi.mocked(source.write).mockImplementationOnce(
+      () => new ResultAsync(first.promise)
+    );
     const a = controller.save(move, 'Status');
     const b = controller.save(
       {
@@ -97,7 +120,7 @@ describe('table controller', () => {
       status: 'Done',
       title: 'Ship launch',
     });
-    first.resolve({ insertedRowIds: [], version: 2 });
+    first.resolve(ok({ insertedRowIds: [], version: 2 }));
     await Promise.all([a, b]);
     expect(vi.mocked(source.write).mock.calls.map((call) => call[1])).toEqual([
       1, 2,
@@ -108,12 +131,15 @@ describe('table controller', () => {
 
   it('retains each failed edit for an explicit retry or dismissal', async () => {
     const { controller, source, dispose } = setup();
-    vi.mocked(source.write).mockRejectedValue(new Error('Offline'));
+    vi.mocked(source.write).mockImplementation(() => errAsync(offline));
     await Promise.all([
       controller.save(move, 'Status'),
       controller.save({ kind: 'delete', rowId: 'record' }, 'Delete'),
     ]);
-    expect(controller.failure()?.label).toBe('Status');
+    expect(controller.failure()).toMatchObject({
+      label: 'Status',
+      failure: offline,
+    });
     controller.dismissFailure();
     expect(controller.failure()?.label).toBe('Delete');
     expect(controller.rows()).toHaveLength(1);
@@ -122,16 +148,17 @@ describe('table controller', () => {
 
   it('does not report a committed insert as failed or offer a duplicate insert retry if refresh fails', async () => {
     const { controller, source, setSnapshot, snapshot, dispose } = setup();
-    vi.mocked(source.write).mockResolvedValue({
-      insertedRowIds: ['new-row'],
-      version: 2,
-    });
-    vi.mocked(source.refresh).mockRejectedValue(new Error('Offline'));
+    vi.mocked(source.write).mockImplementation(() =>
+      okAsync({ insertedRowIds: ['new-row'], version: 2 })
+    );
+    vi.mocked(source.refresh).mockImplementation(() =>
+      errAsync({ kind: 'fetch', message: 'Offline' })
+    );
     const result = await controller.save({
       kind: 'create',
       values: { status: 'Done' },
     });
-    expect(result?.insertedRowIds).toEqual(['new-row']);
+    expect(result).toEqual(ok({ insertedRowIds: ['new-row'], version: 2 }));
     expect(controller.rows()).toContainEqual({
       rowId: 'new-row',
       cells: { status: 'Done' },
@@ -159,7 +186,7 @@ describe('table controller', () => {
   it('announces only committed writes, including a successful explicit retry', async () => {
     const saved = vi.fn();
     const { controller, source, dispose } = setup(saved);
-    vi.mocked(source.write).mockRejectedValueOnce(new Error('Offline'));
+    vi.mocked(source.write).mockImplementationOnce(() => errAsync(offline));
     await controller.save(move);
     expect(saved).not.toHaveBeenCalled();
     await controller.retry();
@@ -174,8 +201,10 @@ describe('table controller', () => {
   it('replaces a failed board draft on resubmit and retires its old Retry action', async () => {
     const { controller, source, dispose } = setup();
     vi.mocked(source.write)
-      .mockRejectedValueOnce(new Error('Offline'))
-      .mockResolvedValue({ insertedRowIds: ['created'], version: 2 });
+      .mockImplementationOnce(() => errAsync(offline))
+      .mockImplementation(() =>
+        okAsync({ insertedRowIds: ['created'], version: 2 })
+      );
     await controller.save(
       { kind: 'create', values: { title: 'First draft' } },
       'new record',
@@ -202,8 +231,10 @@ describe('table controller', () => {
     const saved = vi.fn();
     const { controller, source, dispose } = setup(saved);
     vi.mocked(source.write)
-      .mockRejectedValueOnce(new Error('Offline'))
-      .mockResolvedValue({ insertedRowIds: ['created'], version: 2 });
+      .mockImplementationOnce(() => errAsync(offline))
+      .mockImplementation(() =>
+        okAsync({ insertedRowIds: ['created'], version: 2 })
+      );
     await controller.save(
       { kind: 'create', values: { title: 'Draft' } },
       'new record',
@@ -218,7 +249,7 @@ describe('table controller', () => {
         undefined,
         'draft'
       )
-    ).resolves.toEqual({ insertedRowIds: ['created'], version: 2 });
+    ).resolves.toEqual(ok({ insertedRowIds: ['created'], version: 2 }));
     expect(source.write).toHaveBeenCalledTimes(2);
     expect(saved).toHaveBeenCalledTimes(1);
     dispose();
@@ -227,8 +258,10 @@ describe('table controller', () => {
   it('serializes simultaneous retries of one draft into one insert and one completion notice', async () => {
     const saved = vi.fn();
     const { controller, source, dispose } = setup(saved);
-    const first = deferred<DatabaseWriteResult>();
-    vi.mocked(source.write).mockImplementationOnce(() => first.promise);
+    const first = deferred<WriteOutcome>();
+    vi.mocked(source.write).mockImplementationOnce(
+      () => new ResultAsync(first.promise)
+    );
     const a = controller.save(
       { kind: 'create', values: { title: 'Draft' } },
       'new record',
@@ -242,10 +275,10 @@ describe('table controller', () => {
       'draft'
     );
     await vi.waitFor(() => expect(source.write).toHaveBeenCalledTimes(1));
-    first.resolve({ insertedRowIds: ['created'], version: 2 });
+    first.resolve(ok({ insertedRowIds: ['created'], version: 2 }));
     expect(await Promise.all([a, b])).toEqual([
-      { insertedRowIds: ['created'], version: 2 },
-      { insertedRowIds: ['created'], version: 2 },
+      ok({ insertedRowIds: ['created'], version: 2 }),
+      ok({ insertedRowIds: ['created'], version: 2 }),
     ]);
     expect(source.write).toHaveBeenCalledTimes(1);
     expect(saved).toHaveBeenCalledTimes(1);
@@ -254,10 +287,9 @@ describe('table controller', () => {
 
   it('retains an acknowledged insert while a successful read is waiting to publish its newer snapshot', async () => {
     const { controller, source, setSnapshot, snapshot, dispose } = setup();
-    vi.mocked(source.write).mockResolvedValue({
-      insertedRowIds: ['created'],
-      version: 2,
-    });
+    vi.mocked(source.write).mockImplementation(() =>
+      okAsync({ insertedRowIds: ['created'], version: 2 })
+    );
     await controller.save({ kind: 'create', values: { title: 'Draft' } });
     expect(controller.refreshWarning()).toBe(false);
     expect(controller.rows()).toContainEqual({
@@ -279,7 +311,9 @@ describe('table controller', () => {
 
   it('keeps a committed cell visible if refresh fails, until a newer snapshot arrives', async () => {
     const { controller, source, setSnapshot, dispose } = setup();
-    vi.mocked(source.refresh).mockRejectedValue(new Error('Offline'));
+    vi.mocked(source.refresh).mockImplementation(() =>
+      errAsync({ kind: 'fetch', message: 'Offline' })
+    );
     await controller.save(move);
     expect(controller.rows()[0].cells.status).toBe('Done');
     setSnapshot({
@@ -300,8 +334,10 @@ describe('table controller', () => {
 
   it('finishes already queued edits on the owned source after disposal and accepts no new edits', async () => {
     const { controller, source, dispose } = setup();
-    const first = deferred<DatabaseWriteResult>();
-    vi.mocked(source.write).mockImplementationOnce(() => first.promise);
+    const first = deferred<WriteOutcome>();
+    vi.mocked(source.write).mockImplementationOnce(
+      () => new ResultAsync(first.promise)
+    );
     const a = controller.save(move);
     const b = controller.save({
       kind: 'cell',
@@ -311,9 +347,11 @@ describe('table controller', () => {
     });
     await vi.waitFor(() => expect(source.write).toHaveBeenCalledTimes(1));
     dispose();
-    first.resolve({ insertedRowIds: [], version: 2 });
+    first.resolve(ok({ insertedRowIds: [], version: 2 }));
     await Promise.all([a, b]);
-    await controller.save({ kind: 'delete', rowId: 'record' });
+    expect(await controller.save({ kind: 'delete', rowId: 'record' })).toEqual(
+      err({ kind: 'unmounted' })
+    );
     expect(source.write).toHaveBeenCalledTimes(2);
     expect(vi.mocked(source.write).mock.calls[1][1]).toBe(2);
   });

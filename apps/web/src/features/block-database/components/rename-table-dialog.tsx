@@ -3,6 +3,10 @@ import { Dialog } from '@ui/components/Dialog';
 import { Panel } from '@ui/components/Panel';
 import { TextField } from '@ui/components/TextField';
 import { createSignal } from 'solid-js';
+import {
+  type DatabaseSchemaChange,
+  tableRenameMessage,
+} from '../core/column-schema';
 import { isDatabaseNameTaken } from '../core/property-creation';
 
 export function RenameTableDialog(props: {
@@ -12,7 +16,7 @@ export function RenameTableDialog(props: {
     tableId: string,
     name: string,
     previousName: string
-  ) => Promise<void>;
+  ) => DatabaseSchemaChange;
   onClose: () => void;
   returnFocus?: HTMLElement;
 }) {
@@ -24,21 +28,21 @@ export function RenameTableDialog(props: {
   const submit = async (event: SubmitEvent) => {
     event.preventDefault();
     if (pending() || !name().trim() || duplicate()) return;
+    if (name().trim() === originalName) {
+      props.onClose();
+      return;
+    }
     setPending(true);
     setError('');
-    try {
-      if (name().trim() !== originalName)
-        await props.onRename(props.table.id, name().trim(), originalName);
-      props.onClose();
-    } catch (error) {
-      setError(
-        error instanceof Error
-          ? error.message
-          : 'Could not rename this table. Try again.'
-      );
-    } finally {
-      setPending(false);
-    }
+    const renamed = await props.onRename(
+      props.table.id,
+      name().trim(),
+      originalName
+    );
+    setPending(false);
+    renamed.match(props.onClose, (errors) =>
+      setError(tableRenameMessage(errors))
+    );
   };
   return (
     <Dialog

@@ -31,6 +31,10 @@ import {
   Show,
 } from 'solid-js';
 import { createDragAutoScroll } from '../../../components/drag-drop/create-drag-auto-scroll';
+import {
+  type DatabaseSchemaChange,
+  tableRenameMessage,
+} from '../core/column-schema';
 import { isDatabaseNameTaken } from '../core/property-creation';
 import type { CreateTable } from '../core/table-creation';
 import { CreateTableDialog } from './create-table-dialog';
@@ -45,7 +49,7 @@ export function TableNavigation(props: {
     tableId: string,
     name: string,
     previousName: string
-  ) => Promise<void>;
+  ) => DatabaseSchemaChange;
   /** Persist a new tab order: every table id, left to right. */
   onReorder?: (tableIds: string[]) => void;
 }) {
@@ -154,18 +158,12 @@ export function TableNavigation(props: {
     }
     setRenamePending(true);
     setRenameError('');
-    try {
-      await props.onRename(target.id, name, target.name);
-      finishRename(restoreFocus);
-    } catch (error) {
-      setRenameError(
-        error instanceof Error
-          ? error.message
-          : 'Could not rename this table. Try again.'
-      );
-    } finally {
-      setRenamePending(false);
-    }
+    const renamed = await props.onRename(target.id, name, target.name);
+    setRenamePending(false);
+    renamed.match(
+      () => finishRename(restoreFocus),
+      (errors) => setRenameError(tableRenameMessage(errors))
+    );
   };
   const openMenu = (
     table: { id: string; name: string },
@@ -504,9 +502,7 @@ export function TableNavigation(props: {
               text="Move left"
               icon={ArrowLeftIcon}
               closeOnSelect
-              disabled={
-                !canReorder() || !neighbour(menuTarget()?.table.id, -1)
-              }
+              disabled={!canReorder() || !neighbour(menuTarget()?.table.id, -1)}
               onClick={() => {
                 const target = menuTarget();
                 if (target) moveBy(target.table.id, -1);
@@ -516,9 +512,7 @@ export function TableNavigation(props: {
               text="Move right"
               icon={ArrowRightIcon}
               closeOnSelect
-              disabled={
-                !canReorder() || !neighbour(menuTarget()?.table.id, 1)
-              }
+              disabled={!canReorder() || !neighbour(menuTarget()?.table.id, 1)}
               onClick={() => {
                 const target = menuTarget();
                 if (target) moveBy(target.table.id, 1);

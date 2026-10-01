@@ -20,9 +20,11 @@ import { DeleteDialog } from '@ui/components/DeleteDialog';
 import { Dropdown } from '@ui/components/Dropdown';
 import type { JSX } from 'solid-js';
 import { createSignal, createUniqueId, For, onCleanup, Show } from 'solid-js';
-import type {
-  DatabaseColumnCastsSource,
-  DatabaseColumnTypeChange,
+import {
+  columnSchemaMessage,
+  type DatabaseColumnCastsSource,
+  type DatabaseColumnTypeChange,
+  type DatabaseSchemaChange,
 } from '../core/column-schema';
 import type { DatabaseViewColumn } from '../core/database-view';
 import {
@@ -37,8 +39,8 @@ export type DatabaseColumnHeaderProps = {
   onChangeType?: (
     columnId: string,
     change: DatabaseColumnTypeChange
-  ) => Promise<void>;
-  onDelete?: (columnId: string) => Promise<void>;
+  ) => DatabaseSchemaChange;
+  onDelete?: (columnId: string) => DatabaseSchemaChange;
   relationTables?: { id: string; name: string }[];
   /** The type menu's dry run; without it every type is offered as is. */
   columnCasts?: DatabaseColumnCastsSource;
@@ -51,7 +53,7 @@ export type DatabaseColumnHeaderProps = {
     columnId: string,
     name: string,
     previousName: string
-  ) => Promise<void>;
+  ) => DatabaseSchemaChange;
   onSort: (columnId: string, direction: 'asc' | 'desc' | null) => void;
   onHide?: (columnId: string) => void;
   onMove?: (columnId: string, direction: 'left' | 'right') => void;
@@ -120,21 +122,16 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
     }
     setPending(true);
     setError('');
-    try {
-      await onRename(current.id, name, current.previousName);
-      if (!mounted) return;
-      setDraft(undefined);
-      if (returnFocus) restoreFocus();
-    } catch (caught) {
-      if (mounted)
-        setError(
-          caught instanceof Error
-            ? caught.message
-            : 'Could not rename this column. Try again.'
-        );
-    } finally {
-      if (mounted) setPending(false);
-    }
+    const renamed = await onRename(current.id, name, current.previousName);
+    if (!mounted) return;
+    setPending(false);
+    renamed.match(
+      () => {
+        setDraft(undefined);
+        if (returnFocus) restoreFocus();
+      },
+      (errors) => setError(columnSchemaMessage(errors))
+    );
   };
   props.registerRename?.(rename);
   async function changeType(change: DatabaseColumnTypeChange) {
@@ -142,36 +139,22 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
     setMenuOpen(false);
     setError('');
     setPending(true);
-    try {
-      await props.onChangeType(props.column.id, change);
-    } catch (caught) {
-      if (mounted)
-        setError(
-          caught instanceof Error
-            ? caught.message
-            : 'Could not change column type.'
-        );
-    } finally {
-      if (mounted) setPending(false);
-    }
+    const changed = await props.onChangeType(props.column.id, change);
+    if (!mounted) return;
+    setPending(false);
+    if (changed.isErr()) setError(columnSchemaMessage(changed.error));
   }
   async function remove() {
     if (!canRename() || !props.onDelete || pending()) return;
     setError('');
     setPending(true);
-    try {
-      await props.onDelete(props.column.id);
-      if (mounted) setDeleteOpen(false);
-    } catch (caught) {
-      if (mounted)
-        setError(
-          caught instanceof Error
-            ? caught.message
-            : 'Could not delete this column.'
-        );
-    } finally {
-      if (mounted) setPending(false);
-    }
+    const deleted = await props.onDelete(props.column.id);
+    if (!mounted) return;
+    setPending(false);
+    deleted.match(
+      () => setDeleteOpen(false),
+      (errors) => setError(columnSchemaMessage(errors))
+    );
   }
   const actions = () => [
     ...(canRename()

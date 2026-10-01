@@ -1,6 +1,6 @@
 import { storageServiceClient } from '@service-storage/client';
-import type { DatabaseDetail } from '@service-storage/databases';
 import type { AccessLevel } from '@service-storage/generated/schemas/accessLevel';
+import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 
 /** The block's view of a database: its grant is the viewer's access level. */
 export type LoadedDatabase = DatabaseDetail & { userAccessLevel: AccessLevel };

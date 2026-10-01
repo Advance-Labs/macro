@@ -1,13 +1,14 @@
 import { toast } from '@core/component/Toast/Toast';
-import type { DatabaseTableDetail } from '@service-storage/databases';
+import type { TableDetail } from '@service-storage/generated/schemas/tableDetail';
 import { TableNavigation } from '../components/table-navigation';
+import { tableOrderMessage } from '../core/column-schema';
 import { createTableWithName } from '../queries/create-table';
 import { renameDatabaseTable } from '../queries/rename-table';
 import { reorderDatabaseTables } from '../queries/reorder-tables';
 
 export function TableTabs(props: {
   databaseId: string;
-  tables: DatabaseTableDetail[];
+  tables: TableDetail[];
   activeTableId: string | undefined;
   canEdit: boolean;
   onSelect: (tableId: string) => void;
@@ -30,16 +31,10 @@ export function TableTabs(props: {
         })
       }
       onReorder={(tableIds) =>
-        reorderDatabaseTables({
+        void reorderDatabaseTables({
           databaseId: props.databaseId,
           tableIds,
-        }).catch((error: unknown) => {
-          toast.failure(
-            error instanceof Error
-              ? error.message
-              : 'Could not move this table.'
-          );
-        })
+        }).mapErr((errors) => toast.failure(tableOrderMessage(errors)))
       }
       onCreate={(name, existingTableId) =>
         createTableWithName({

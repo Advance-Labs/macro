@@ -1,11 +1,14 @@
 import { isEditableInput } from '@core/util/isEditableInput';
+import type { ResultError } from '@core/util/result';
 import CheckIcon from '@phosphor/check.svg';
 import GripIcon from '@phosphor/dots-six-vertical.svg';
 import DotsIcon from '@phosphor/dots-three.svg';
 import PlusIcon from '@phosphor/plus.svg';
+import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
 import { Key } from '@solid-primitives/keyed';
 import { Button } from '@ui/components/Button';
 import { Dropdown } from '@ui/components/Dropdown';
+import { ok, type Result } from 'neverthrow';
 import type { JSX } from 'solid-js';
 import {
   createMemo,
@@ -22,6 +25,7 @@ import {
   KanbanHandle,
   KanbanLane,
 } from '../../../components/kanban/kanban';
+import { columnSchemaMessage } from '../core/column-schema';
 import {
   boardMoveValue,
   type DatabaseCellValue,
@@ -41,6 +45,9 @@ import {
 } from '../core/table';
 import { PropertyIcon } from './property-icon';
 import { SelectPill } from './select-pill';
+
+/** A new board group's option, added or refused. */
+type DatabaseGroupAdded = Result<void, ResultError<DatabaseSchemaErrorCode>[]>;
 
 type BoardGroup = ReturnType<typeof groupDatabaseRows<DatabaseRow>>[number];
 
@@ -83,7 +90,7 @@ type DatabaseBoardProps = {
     intentId: string,
     options?: { open: true }
   ) => Promise<boolean>;
-  onAddGroup?: (label: string) => Promise<void>;
+  onAddGroup?: (label: string) => Promise<DatabaseGroupAdded>;
   /** Hands the host a way to start a card, as the toolbar's New record does. */
   controlsRef?: (controls: DatabaseBoardControls) => void;
 };
@@ -334,9 +341,9 @@ export function DatabaseBoard(props: DatabaseBoardProps) {
           >
             <NewBoardGroup
               column={props.groupColumn}
-              onSave={async (label) => {
-                await props.onAddGroup?.(label);
-              }}
+              onSave={(label) =>
+                props.onAddGroup?.(label) ?? Promise.resolve(ok(undefined))
+              }
             />
           </Show>
         </div>
@@ -503,7 +510,7 @@ function BoardLane(
 
 function NewBoardGroup(props: {
   column: DatabaseViewColumn;
-  onSave: (label: string) => Promise<void>;
+  onSave: (label: string) => Promise<DatabaseGroupAdded>;
 }) {
   const [adding, setAdding] = createSignal(false);
   const [draft, setDraft] = createSignal('');
@@ -541,19 +548,15 @@ function NewBoardGroup(props: {
     }
     setPending(true);
     setError('');
-    try {
-      await props.onSave(label);
-      setAdding(false);
-      setDraft('');
-    } catch (error) {
-      setError(
-        error instanceof Error
-          ? error.message
-          : 'Could not add this group. Try again.'
-      );
-    } finally {
-      setPending(false);
-    }
+    const added = await props.onSave(label);
+    setPending(false);
+    added.match(
+      () => {
+        setAdding(false);
+        setDraft('');
+      },
+      (errors) => setError(columnSchemaMessage(errors))
+    );
   }
   return (
     <div class="w-64 shrink-0 pt-2">

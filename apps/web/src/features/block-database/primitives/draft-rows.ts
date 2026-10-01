@@ -70,81 +70,65 @@ export function createDraftRows(writer: Writer) {
       ),
     }));
   }
+  const failed = (id: string) => {
+    update(id, (row) => ({
+      ...row,
+      error: 'Could not save this row. Your entries are kept here.',
+    }));
+    return false;
+  };
   async function drain(id: string, writes: AcceptedDraftWrites) {
     update(id, (row) => ({ ...row, error: undefined }));
-    try {
-      while (true) {
-        const current = entry(id);
-        if (!current?.started) return true;
-        const rowId = serverId(id);
-        if (!rowId) {
-          const values = { ...current.cells };
-          const options = { ...current.options };
-          const result = await writes.save(
-            {
-              kind: 'create',
-              values,
-              ...(Object.keys(current.columnTypes).length
-                ? { columnTypes: { ...current.columnTypes } }
-                : {}),
-            },
-            'new record',
-            Object.values(options)[0],
-            id
-          );
-          if (!result?.insertedRowIds[0]) {
-            update(id, (row) => ({
-              ...row,
-              error: 'Could not save this row. Your entries are kept here.',
-            }));
-            return false;
-          }
-          acknowledge(id, values, options);
-          continue;
-        }
-        const field = Object.entries(current.cells)[0];
-        if (!field) return true;
-        let rowMutations = mutations.get(id);
-        if (!rowMutations) {
-          rowMutations = new Map();
-          mutations.set(id, rowMutations);
-        }
-        const mutation = rowMutations.get(field[0]) ?? {
-          kind: 'cell' as const,
-          rowId,
-          columnId: field[0],
-          value: field[1],
-        };
-        mutation.value = field[1];
-        if (current.columnTypes[field[0]])
-          mutation.columnTypes = { [field[0]]: current.columnTypes[field[0]] };
-        else delete mutation.columnTypes;
-        rowMutations.set(field[0], mutation);
-        const option = current.options[field[0]];
-        const result = await writes.save(mutation, 'cell', option);
-        if (!result) {
-          update(id, (row) => ({
-            ...row,
-            error: 'Could not save this row. Your entries are kept here.',
-          }));
-          return false;
-        }
-        acknowledge(
-          id,
-          { [field[0]]: field[1] },
-          option === undefined ? {} : { [field[0]]: option }
+    while (true) {
+      const current = entry(id);
+      if (!current?.started) return true;
+      const rowId = serverId(id);
+      if (!rowId) {
+        const values = { ...current.cells };
+        const options = { ...current.options };
+        const saved = await writes.save(
+          {
+            kind: 'create',
+            values,
+            ...(Object.keys(current.columnTypes).length
+              ? { columnTypes: { ...current.columnTypes } }
+              : {}),
+          },
+          'new record',
+          Object.values(options)[0],
+          id
         );
-        rowMutations.delete(field[0]);
+        if (saved.isErr() || !saved.value.insertedRowIds[0]) return failed(id);
+        acknowledge(id, values, options);
+        continue;
       }
-    } catch (error) {
-      update(id, (row) => ({
-        ...row,
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Could not save this row. Try again.',
-      }));
-      return false;
+      const field = Object.entries(current.cells)[0];
+      if (!field) return true;
+      let rowMutations = mutations.get(id);
+      if (!rowMutations) {
+        rowMutations = new Map();
+        mutations.set(id, rowMutations);
+      }
+      const mutation = rowMutations.get(field[0]) ?? {
+        kind: 'cell' as const,
+        rowId,
+        columnId: field[0],
+        value: field[1],
+      };
+      mutation.value = field[1];
+      if (current.columnTypes[field[0]])
+        mutation.columnTypes = { [field[0]]: current.columnTypes[field[0]] };
+      else delete mutation.columnTypes;
+      rowMutations.set(field[0], mutation);
+      const option = current.options[field[0]];
+      const saved = await writes.save(mutation, 'cell', option);
+      if (saved.isErr()) return failed(id);
+      acknowledge(
+        id,
+        { [field[0]]: field[1] },
+        option === undefined ? {} : { [field[0]]: option }
+      );
+      rowMutations.delete(field[0]);
     }
   }
   async function flushAccepted(

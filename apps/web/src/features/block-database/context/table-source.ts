@@ -1,6 +1,13 @@
+import type { ResultError } from '@core/util/result';
+import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
+import type { ResultAsync } from 'neverthrow';
 import type { Accessor } from 'solid-js';
 import type { DatabaseViewColumn } from '../core/database-view';
 import type { DatabaseRow, DatabaseRowMutation } from '../core/table';
+import type {
+  DatabaseReadFailure,
+  DatabaseWriteFailure,
+} from '../core/write-failure';
 
 export type DatabaseRowsSnapshot = {
   /** The rows the view's statement returned, in its order. */
@@ -20,18 +27,18 @@ export type DatabaseRowsSource = {
   snapshot: Accessor<DatabaseRowsSnapshot | undefined>;
   loading: Accessor<boolean>;
   refreshing: Accessor<boolean>;
-  error: Accessor<Error | undefined>;
-  refresh(): Promise<void>;
+  error: Accessor<DatabaseReadFailure | undefined>;
+  refresh(): ResultAsync<void, DatabaseReadFailure>;
   /** `createOptions` lets labels a column lacks become new options. */
   write(
     mutation: DatabaseRowMutation,
     version: number | undefined,
     createOptions: boolean
-  ): Promise<DatabaseWriteResult>;
-  addOption(columnId: string, label: string): Promise<void>;
+  ): ResultAsync<DatabaseWriteResult, DatabaseWriteFailure>;
+  addOption(
+    columnId: string,
+    label: string
+  ): ResultAsync<void, ResultError<DatabaseSchemaErrorCode>[]>;
   /** Keep reading these rows by id, whether or not the view shows them. */
   retain(rowIds: Accessor<readonly string[]>): void;
 };
-
-/** A create request may have committed before its response was lost. */
-export class DatabaseWriteOutcomeUnknown extends Error {}

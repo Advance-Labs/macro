@@ -5,6 +5,7 @@ import {
   screen,
   waitFor,
 } from '@solidjs/testing-library';
+import { okAsync } from 'neverthrow';
 import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
@@ -30,7 +31,7 @@ const source = {
   ],
   loading: () => false,
   error: () => undefined,
-  refresh: async () => {},
+  refresh: () => okAsync(undefined),
 };
 let presenceStyles: HTMLStyleElement;
 beforeEach(() => {

@@ -1,4 +1,4 @@
-import type { DatabaseColumnCast as ServerColumnCast } from '@service-storage/databases';
+import type { ColumnCast as ServerColumnCast } from '@service-storage/generated/schemas/columnCast';
 import { cleanup, render, waitFor } from '@solidjs/testing-library';
 import { QueryClient, QueryClientProvider } from '@tanstack/solid-query';
 import { ok } from 'neverthrow';

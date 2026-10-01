@@ -1,14 +1,12 @@
 import type { Catalog, Outcome } from '@core/database-sql/generated/types';
 import type { DatabaseSqlQueryCapabilities } from '@queries/database-sql/create-database-sql-query';
-import type {
-  DatabaseColumnDetail,
-  DatabaseDetail,
-} from '@service-storage/databases';
+import type { ColumnDetail } from '@service-storage/generated/schemas/columnDetail';
+import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import type { SoupQuery } from '@service-storage/graphql/generated/graphql';
 import { cleanup, render, waitFor } from '@solidjs/testing-library';
 import { QueryClient, QueryClientProvider } from '@tanstack/solid-query';
 import { createClient, type Exchange } from '@urql/core';
-import { ok } from 'neverthrow';
+import { okAsync } from 'neverthrow';
 import { afterEach, expect, it, vi } from 'vitest';
 import { empty, fromValue, mergeMap, pipe } from 'wonka';
 import type { DatabaseRelationSource } from '../context/relation-source';
@@ -18,7 +16,7 @@ const transport = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock('@service-storage/client', () => ({
   storageServiceClient: { databases: transport },
 }));
-const nameColumn: DatabaseColumnDetail = {
+const nameColumn: ColumnDetail = {
   column: {
     id: 'name',
     table_id: 'customers',
@@ -63,6 +61,7 @@ const detail: DatabaseDetail = {
         version: 1,
       },
       sql_name: '"Customers"',
+      read_sql_name: '"Customers"',
       columns: [nameColumn],
     },
   ],
@@ -162,7 +161,7 @@ afterEach(() => {
 
 it('shares one target-table read across relation columns and reads it again when the table changes', async () => {
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  transport.get.mockResolvedValue(ok(detail));
+  transport.get.mockImplementation(() => okAsync(detail));
   let names = ['Acme'];
   const { read, reads } = engine(() => names);
   let tableChanged: (tableId: string) => void = () => {};
@@ -170,19 +169,11 @@ it('shares one target-table read across relation columns and reads it again when
   let second!: DatabaseRelationSource;
   function Harness() {
     const relations = createDatabaseRelations({
-      columns: () =>
-        ['customer', 'billing-customer'].map((id) => ({
-          ...nameColumn,
-          column: {
-            ...nameColumn.column,
-            id,
-            config: {
-              kind: 'link' as const,
-              database_id: 'db',
-              table_id: 'customers',
-            },
-          },
-        })),
+      // A customer and a billing-customer relation column.
+      targets: () => [
+        { databaseId: 'db', tableId: 'customers' },
+        { databaseId: 'db', tableId: 'customers' },
+      ],
       read,
       onTableChanged: (listener) => {
         tableChanged = listener;

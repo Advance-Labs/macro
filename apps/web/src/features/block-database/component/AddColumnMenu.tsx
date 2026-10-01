@@ -1,9 +1,10 @@
 import PlusIcon from '@phosphor/plus.svg';
 import { createDatabaseColumn } from '@queries/storage/databases';
-import type { DatabaseColumnDetail } from '@service-storage/databases';
+import type { ColumnDetail } from '@service-storage/generated/schemas/columnDetail';
 import { Button } from '@ui/components/Button';
 import { createSignal, Show } from 'solid-js';
 import type { PropertyCreatorVariant } from '../components/property-creator';
+import { columnSchemaMessage } from '../core/column-schema';
 import {
   type DatabasePropertyType,
   defaultDatabaseColumnName,
@@ -13,22 +14,22 @@ import {
  * Add a Text column with the next free default name at the table's end; its
  * type is inferred from what is typed. Returns the new column's id.
  */
-export async function createDefaultColumn(args: {
+export function createDefaultColumn(args: {
   databaseId: string;
   tableId: string;
-  columns: DatabaseColumnDetail[];
-}): Promise<string> {
+  columns: ColumnDetail[];
+}) {
   const name = defaultDatabaseColumnName(
     args.columns.map(
       (entry) =>
         entry.column.display_name ?? entry.definition.definition.display_name
     )
   );
-  const id = await createDatabaseColumn({
+  return createDatabaseColumn({
     databaseId: args.databaseId,
     tableId: args.tableId,
     request: {
-      infer_type: true,
+      inferType: true,
       binding: {
         kind: 'new',
         name,
@@ -37,15 +38,13 @@ export async function createDefaultColumn(args: {
       },
     },
   });
-  if (!id) throw new Error('Could not add this column.');
-  return id;
 }
 
 /** A new column starts as Text; name and type are edited in its header. */
 export function AddColumnMenu(props: {
   databaseId: string;
   tableId: string;
-  columns: DatabaseColumnDetail[];
+  columns: ColumnDetail[];
   label?: string;
   variant?: PropertyCreatorVariant;
   initialType?: DatabasePropertyType;
@@ -57,16 +56,12 @@ export function AddColumnMenu(props: {
     if (pending()) return;
     setPending(true);
     setError('');
-    try {
-      const id = await createDefaultColumn(props);
-      props.onCreated?.(id);
-    } catch (error) {
-      setError(
-        error instanceof Error ? error.message : 'Could not add this column.'
-      );
-    } finally {
-      setPending(false);
-    }
+    const created = await createDefaultColumn(props);
+    setPending(false);
+    created.match(
+      (id) => props.onCreated?.(id),
+      (errors) => setError(columnSchemaMessage(errors))
+    );
   }
   return (
     <div class="relative">

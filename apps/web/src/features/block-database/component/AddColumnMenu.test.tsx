@@ -1,3 +1,5 @@
+import type { ResultError } from '@core/util/result';
+import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
 import {
   cleanup,
   fireEvent,
@@ -5,6 +7,7 @@ import {
   screen,
   waitFor,
 } from '@solidjs/testing-library';
+import { err, okAsync, type Result, ResultAsync } from 'neverthrow';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AddColumnMenu } from './AddColumnMenu';
 
@@ -20,7 +23,7 @@ afterEach(() => {
 
 describe('immediate column creation', () => {
   it('creates an inferred Text column without a popup and focuses its header', async () => {
-    createColumn.mockResolvedValue('column');
+    createColumn.mockReturnValue(okAsync('column'));
     const created = vi.fn(() => true);
     render(() => (
       <AddColumnMenu
@@ -38,7 +41,7 @@ describe('immediate column creation', () => {
       databaseId: 'db',
       tableId: 'table',
       request: {
-        infer_type: true,
+        inferType: true,
         binding: {
           kind: 'new',
           name: 'Unnamed',
@@ -50,12 +53,18 @@ describe('immediate column creation', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
   it('prevents repeated clicks during creation and preserves errors', async () => {
-    let reject!: (error: Error) => void;
+    let settle!: (
+      result: Result<string, ResultError<DatabaseSchemaErrorCode>[]>
+    ) => void;
     createColumn.mockImplementation(
       () =>
-        new Promise((_, fail) => {
-          reject = fail;
-        })
+        new ResultAsync(
+          new Promise<Result<string, ResultError<DatabaseSchemaErrorCode>[]>>(
+            (resolve) => {
+              settle = resolve;
+            }
+          )
+        )
     );
     render(() => (
       <AddColumnMenu databaseId="db" tableId="table" columns={[]} />
@@ -64,9 +73,9 @@ describe('immediate column creation', () => {
     fireEvent.click(add);
     fireEvent.click(add);
     expect(createColumn).toHaveBeenCalledTimes(1);
-    reject(new Error('Connection lost'));
+    settle(err([{ code: 'NETWORK_ERROR', message: 'Connection lost' }]));
     expect((await screen.findByRole('alert')).textContent).toBe(
-      'Connection lost'
+      'Your change could not be sent. Check your connection.'
     );
   });
 });

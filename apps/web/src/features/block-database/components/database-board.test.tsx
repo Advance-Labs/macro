@@ -1,3 +1,5 @@
+import type { ResultError } from '@core/util/result';
+import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
 import {
   cleanup,
   fireEvent,
@@ -6,6 +8,7 @@ import {
   waitFor,
   within,
 } from '@solidjs/testing-library';
+import { err, ok, type Result } from 'neverthrow';
 import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DatabaseViewColumn } from '../core/database-view';
@@ -84,8 +87,15 @@ describe('database board', () => {
   });
 
   it('keeps a failed new-group draft and lets the user retry it', async () => {
-    const onAddGroup = vi.fn(async (_label: string) => {});
-    onAddGroup.mockRejectedValueOnce(new Error('Connection unavailable'));
+    const onAddGroup = vi.fn(
+      async (
+        _label: string
+      ): Promise<Result<void, ResultError<DatabaseSchemaErrorCode>[]>> =>
+        ok(undefined)
+    );
+    onAddGroup.mockResolvedValueOnce(
+      err([{ code: 'NETWORK_ERROR', message: 'Connection unavailable' }])
+    );
     render(() => (
       <DatabaseBoard
         rows={initialRows}
@@ -107,7 +117,7 @@ describe('database board', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add group' }));
     await waitFor(() =>
       expect(screen.getByRole('alert').textContent).toBe(
-        'Connection unavailable'
+        'Your change could not be sent. Check your connection.'
       )
     );
     expect(input.value).toBe('In review');
@@ -117,7 +127,12 @@ describe('database board', () => {
   });
 
   it('validates numeric groups and sends their canonical SQL labels', async () => {
-    const onAddGroup = vi.fn(async (_label: string) => {});
+    const onAddGroup = vi.fn(
+      async (
+        _label: string
+      ): Promise<Result<void, ResultError<DatabaseSchemaErrorCode>[]>> =>
+        ok(undefined)
+    );
     const groupColumn = {
       ...columns[1],
       dataType: 'SELECT_NUMBER',

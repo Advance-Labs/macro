@@ -1,4 +1,5 @@
 import type { Client } from '@urql/core';
+import { err, ok } from 'neverthrow';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { trashDatabase } from './trash-database';
 
@@ -24,7 +25,7 @@ describe('trash database', () => {
         trashEntities: { results: [{ __typename: 'GraphqlMutationSuccess' }] },
       },
     });
-    await trashDatabase(client, 'db');
+    expect(await trashDatabase(client, 'db')).toEqual(ok(undefined));
     expect(mutation).toHaveBeenCalledWith(
       expect.not.stringContaining('effects'),
       { entities: [{ type: 'DATABASE', id: 'db' }] }
@@ -36,25 +37,34 @@ describe('trash database', () => {
     expect(cache.invalidateQueries).toHaveBeenCalledTimes(2);
   });
   it.each([
-    { error: new Error('Offline') },
     {
-      data: {
-        trashEntities: {
-          results: [
-            {
-              __typename: 'GraphqlMutationError',
-              message: 'Owner access required',
-            },
-          ],
+      response: { error: new Error('Offline') },
+      failure: { kind: 'unreachable' },
+    },
+    {
+      response: {
+        data: {
+          trashEntities: {
+            results: [
+              {
+                __typename: 'GraphqlMutationError',
+                message: 'Owner access required',
+              },
+            ],
+          },
         },
       },
+      failure: { kind: 'refused', message: 'Owner access required' },
     },
-    { data: { trashEntities: { results: [] } } },
+    {
+      response: { data: { trashEntities: { results: [] } } },
+      failure: { kind: 'unreachable' },
+    },
   ])(
     'leaves cached databases intact on a rejected or missing outcome',
-    async (response) => {
+    async ({ response, failure }) => {
       const { client } = clientWith(response);
-      await expect(trashDatabase(client, 'db')).rejects.toThrow();
+      expect(await trashDatabase(client, 'db')).toEqual(err(failure));
       expect(cache.setQueryData).not.toHaveBeenCalled();
       expect(cache.invalidateQueries).not.toHaveBeenCalled();
     }

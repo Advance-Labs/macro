@@ -1,29 +1,36 @@
+import type { ResultError } from '@core/util/result';
+import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
 import { Mutex } from 'async-mutex';
+import { err, ok, type Result } from 'neverthrow';
 import { batch, createMemo, createSignal, onCleanup } from 'solid-js';
-import {
-  type DatabaseRowsSource,
-  DatabaseWriteOutcomeUnknown,
-  type DatabaseWriteResult,
+import type {
+  DatabaseRowsSource,
+  DatabaseWriteResult,
 } from '../context/table-source';
 import {
   type DatabaseRow,
   type DatabaseRowMutation,
   optimisticRows,
 } from '../core/table';
+import type { DatabaseWriteFailure } from '../core/write-failure';
 
 type PendingWrite = {
   id: number;
   mutation: DatabaseRowMutation;
   createIntentId?: string;
 };
-type FailedWrite = {
+export type FailedWrite = {
   mutation: DatabaseRowMutation;
   label: string;
   option?: string;
   createIntentId?: string;
-  message: string;
-  outcomeUnknown: boolean;
+  failure: DatabaseWriteFailure;
 };
+
+/** A save that did not land: the write failed, or the table was closed. */
+export type DatabaseSaveFailure = DatabaseWriteFailure | { kind: 'unmounted' };
+
+export type DatabaseSave = Result<DatabaseWriteResult, DatabaseSaveFailure>;
 
 export type AcceptedDraftWrites = {
   save: (
@@ -31,8 +38,10 @@ export type AcceptedDraftWrites = {
     label?: string,
     option?: string,
     createIntentId?: string
-  ) => Promise<DatabaseWriteResult | undefined>;
+  ) => Promise<DatabaseSave>;
 };
+
+const UNMOUNTED = { kind: 'unmounted' } as const;
 
 /** One writer per mounted table. A queued edit always uses the latest completed read/write. */
 export function createTableController(
@@ -68,15 +77,15 @@ export function createTableController(
     label = 'change',
     option?: string,
     createIntentId?: string
-  ): Promise<DatabaseWriteResult | undefined> {
+  ): Promise<DatabaseSave> {
     const completed = createIntentId && completedCreates().get(createIntentId);
-    if (completed) return completed;
+    if (completed) return ok(completed);
     const id = ++sequence;
     setPending((writes) => [...writes, { id, mutation, createIntentId }]);
-    let result: DatabaseWriteResult | undefined;
+    let result: DatabaseSave;
     let didWrite = false;
     try {
-      result = await mutex.runExclusive(async () => {
+      result = await mutex.runExclusive(async (): Promise<DatabaseSave> => {
         // A new table version cannot prove whether this INSERT committed.
         // Keep the same draft blocked even after refresh or banner dismissal.
         const uncertain =
@@ -86,76 +95,36 @@ export function createTableController(
           setFailures((failed) =>
             failed.includes(uncertain) ? failed : [...failed, uncertain]
           );
-          return undefined;
+          return err(uncertain.failure);
         }
         // Draft submit and the error-banner Retry can be queued together.
         const completed =
           createIntentId && completedCreates().get(createIntentId);
-        if (completed) return completed;
-        try {
-          const readVersion = source.snapshot()?.version;
-          const version =
-            readVersion === undefined
-              ? lastWrittenVersion
-              : lastWrittenVersion === undefined
-                ? readVersion
-                : Math.max(readVersion, lastWrittenVersion);
-          // A new option is created by the write that first uses it.
-          const written = await source.write(
-            mutation,
-            version,
-            option !== undefined
-          );
-          didWrite = true;
-          batch(() => {
-            if (createIntentId)
-              setCompletedCreates((creates) =>
-                new Map(creates).set(createIntentId, written)
-              );
-            lastWrittenVersion = written.version ?? lastWrittenVersion;
-            // A later successful edit must not hide an earlier rejected edit.
-            setFailures((failed) =>
-              failed.filter(
-                (entry) =>
-                  entry.mutation !== mutation &&
-                  (createIntentId === undefined ||
-                    entry.createIntentId !== createIntentId)
-              )
-            );
-            setCommitted((writes) => [
-              ...writes,
-              {
-                mutation,
-                version: written.version,
-                insertedRowIds: written.insertedRowIds,
-              },
-            ]);
-          });
-          // A failed refresh cannot turn a committed write into a failed edit.
-          try {
-            await source.refresh();
-            setRefreshWarning(false);
-            pruneCommitted();
-          } catch {
+        if (completed) return ok(completed);
+        const readVersion = source.snapshot()?.version;
+        const version =
+          readVersion === undefined
+            ? lastWrittenVersion
+            : lastWrittenVersion === undefined
+              ? readVersion
+              : Math.max(readVersion, lastWrittenVersion);
+        // A new option is created by the write that first uses it.
+        const written = await source.write(
+          mutation,
+          version,
+          option !== undefined
+        );
+        if (written.isErr()) {
+          const failure = written.error;
+          const outcomeUnknown = failure.kind === 'outcome-unknown';
+          if (outcomeUnknown && (await source.refresh()).isErr())
             setRefreshWarning(true);
-          }
-          return written;
-        } catch (error) {
-          const outcomeUnknown = error instanceof DatabaseWriteOutcomeUnknown;
-          if (outcomeUnknown) {
-            try {
-              await source.refresh();
-            } catch {
-              setRefreshWarning(true);
-            }
-          }
-          const failed = {
+          const failed: FailedWrite = {
             mutation,
             label,
             option,
             createIntentId,
-            outcomeUnknown,
-            message: error instanceof Error ? error.message : String(error),
+            failure,
           };
           if (outcomeUnknown) {
             uncertainMutations.set(mutation, failed);
@@ -170,13 +139,43 @@ export function createTableController(
             ),
             failed,
           ]);
-          return undefined;
+          return err(failure);
         }
+        didWrite = true;
+        const saved = written.value;
+        batch(() => {
+          if (createIntentId)
+            setCompletedCreates((creates) =>
+              new Map(creates).set(createIntentId, saved)
+            );
+          lastWrittenVersion = saved.version ?? lastWrittenVersion;
+          // A later successful edit must not hide an earlier rejected edit.
+          setFailures((failed) =>
+            failed.filter(
+              (entry) =>
+                entry.mutation !== mutation &&
+                (createIntentId === undefined ||
+                  entry.createIntentId !== createIntentId)
+            )
+          );
+          setCommitted((writes) => [
+            ...writes,
+            {
+              mutation,
+              version: saved.version,
+              insertedRowIds: saved.insertedRowIds,
+            },
+          ]);
+        });
+        // A failed refresh cannot turn a committed write into a failed edit.
+        await refresh();
+        return ok(saved);
       });
     } finally {
       setPending((writes) => writes.filter((write) => write.id !== id));
     }
-    if (result && didWrite && !disposed) onSaved?.(mutation, result);
+    if (result.isOk() && didWrite && !disposed)
+      onSaved?.(mutation, result.value);
     return result;
   }
 
@@ -184,7 +183,7 @@ export function createTableController(
     if (disposed) return;
     const failed = failures()[0];
     if (!failed) return;
-    if (failed.outcomeUnknown) {
+    if (failed.failure.kind === 'outcome-unknown') {
       await refresh();
       return;
     }
@@ -209,23 +208,23 @@ export function createTableController(
   }
 
   async function refresh() {
-    try {
-      await source.refresh();
-      setRefreshWarning(false);
-      pruneCommitted();
-    } catch {
-      setRefreshWarning(true);
-    }
+    const refreshed = await source.refresh();
+    setRefreshWarning(refreshed.isErr());
+    if (refreshed.isOk()) pruneCommitted();
   }
 
   /** Schema changes share the row-write queue because both advance the table version. */
-  async function addGroup(columnId: string, label: string) {
+  async function addGroup(
+    columnId: string,
+    label: string
+  ): Promise<Result<void, ResultError<DatabaseSchemaErrorCode>[]>> {
     setSchemaPending((count) => count + 1);
     try {
-      await mutex.runExclusive(async () => {
-        await source.addOption(columnId, label);
+      return await mutex.runExclusive(async () => {
+        const added = await source.addOption(columnId, label);
         // The option is saved even if its subsequent rows refresh fails.
-        await refresh();
+        if (added.isOk()) await refresh();
+        return added;
       });
     } finally {
       setSchemaPending((count) => count - 1);
@@ -284,8 +283,8 @@ export function createTableController(
       ),
     failure: () => failures()[0],
     refreshWarning,
-    save: (...args: Parameters<typeof save>) =>
-      disposed ? Promise.resolve(undefined) : save(...args),
+    save: (...args: Parameters<typeof save>): Promise<DatabaseSave> =>
+      disposed ? Promise.resolve(err(UNMOUNTED)) : save(...args),
     // A draft may need its inserted row ID before it can submit later fields.
     // Admit the whole drain while mounted so those accepted writes survive a tab switch.
     runDraftWrites: (
@@ -294,7 +293,7 @@ export function createTableController(
     retry,
     refresh,
     addGroup: (...args: Parameters<typeof addGroup>) =>
-      disposed ? Promise.resolve() : addGroup(...args),
+      disposed ? Promise.resolve(ok(undefined)) : addGroup(...args),
     dismissFailure: () => setFailures((failed) => failed.slice(1)),
   };
 }

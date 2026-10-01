@@ -1,5 +1,5 @@
-import { databaseSqlAnswer } from '@core/database-sql/answer';
 import { databaseSqlSchema } from '@core/database-sql/catalog';
+import type { Outcome } from '@core/database-sql/generated/types';
 import { throwOnErr } from '@core/util/result';
 import {
   createDatabaseSqlQuery,
@@ -10,22 +10,22 @@ import {
 } from '@queries/database-sql/create-database-sql-query';
 import { databasesKeys } from '@queries/storage/keys';
 import { storageServiceClient } from '@service-storage/client';
-import type {
-  DatabaseColumnDetail,
-  DatabaseTableDetail,
-  QueryResult,
-} from '@service-storage/databases';
+import type { TableDetail } from '@service-storage/generated/schemas/tableDetail';
 import { useQueries } from '@tanstack/solid-query';
+import { err, ok, okAsync, type Result, ResultAsync } from 'neverthrow';
 import { type Accessor, createMemo, mapArray } from 'solid-js';
-import type { DatabaseRelationSource } from '../context/relation-source';
+import type {
+  DatabaseRelationFailure,
+  DatabaseRelationSource,
+} from '../context/relation-source';
 import type { DatabaseRelatedRow } from '../core/database-relations';
-import { ROW_ID_COLUMN, resultColumnName, tableRowsStatement } from '../sql';
+import { tableRowsStatement } from '../sql';
 
+/** A table's rows by id, named by its title column. */
 export function relatedRows(
-  table: DatabaseTableDetail,
-  result: QueryResult | undefined
+  table: TableDetail,
+  outcome: Outcome
 ): DatabaseRelatedRow[] {
-  if (!result) return [];
   const title =
     table.columns.find(
       (column) =>
@@ -37,44 +37,35 @@ export function relatedRows(
       (column) =>
         !column.column.config && !column.definition.definition.is_multi_select
     );
-  const rowIndex = result.columns.findIndex(
-    (column) => column.name === ROW_ID_COLUMN
+  const titleIndex = outcome.columns.findIndex(
+    (column) => !!title && column.column === title.definition.definition.id
   );
-  const titleIndex = result.columns.findIndex(
-    (column) => !!title && column.name === resultColumnName(title)
-  );
-  return result.rows.flatMap((row) =>
-    typeof row[rowIndex] === 'string'
-      ? [
-          {
-            id: String(row[rowIndex]),
-            name: String(row[titleIndex] ?? '').trim() || 'Unnamed',
-          },
-        ]
-      : []
-  );
+  return outcome.rowIds.map((id, index) => {
+    const cell = outcome.rows[index]?.[titleIndex];
+    const name =
+      cell?.type === 'text' || cell?.type === 'number'
+        ? String(cell.value).trim()
+        : '';
+    return { id, name: name || 'Unnamed' };
+  });
 }
+
+/** A related table: the one a relation column's rows belong to. */
+export type DatabaseRelationTarget = { databaseId: string; tableId: string };
 
 /** One live read per target table, shared by every visible relation cell. */
 export function createDatabaseRelations(props: {
-  columns: Accessor<DatabaseColumnDetail[]>;
+  targets: Accessor<DatabaseRelationTarget[]>;
   /** Where the engine reads rows from; the app's GraphQL client by default. */
   read?: DatabaseSqlQueryCapabilities;
   /** Calls back with the table of each change the gateway reports. */
   onTableChanged: (listener: (tableId: string) => void) => void;
 }) {
-  const targets = createMemo(() => {
-    const unique = new Map<string, { databaseId: string; tableId: string }>();
-    for (const column of props.columns()) {
-      const config = column.column.config;
-      if (config?.kind === 'link')
-        unique.set(config.table_id, {
-          databaseId: config.database_id,
-          tableId: config.table_id,
-        });
-    }
-    return [...unique.values()];
-  });
+  const targets = createMemo(() => [
+    ...new Map(
+      props.targets().map((target) => [target.tableId, target] as const)
+    ).values(),
+  ]);
   const databases = createMemo(() => [
     ...new Set(targets().map((target) => target.databaseId)),
   ]);
@@ -122,14 +113,8 @@ export function createDatabaseRelations(props: {
         const query = createDatabaseSqlQuery(statement, props.read);
         const rows = createMemo(() => {
           const outcome = query.outcome();
-          const catalog = query.catalog();
           const target = table();
-          return outcome && catalog && target
-            ? relatedRows(
-                target,
-                databaseSqlAnswer(outcome, catalog, []).results[0]
-              )
-            : [];
+          return outcome && target ? relatedRows(target, outcome) : [];
         });
         return { tableId, detail, table, query, rows };
       }
@@ -161,9 +146,18 @@ export function createDatabaseRelations(props: {
         if (!current?.detail()?.isPending && !current?.table())
           return 'This related table is unavailable.';
       },
-      refresh: async () => {
-        await read()?.detail()?.refetch({ throwOnError: true });
-        await read()?.query.refresh();
+      refresh: () => {
+        const current = read();
+        if (!current) return okAsync(undefined);
+        const refetch = async (): Promise<
+          Result<void, DatabaseRelationFailure>
+        > =>
+          (await current.detail()?.refetch())?.isError
+            ? err({ kind: 'table-unavailable' })
+            : ok(undefined);
+        return new ResultAsync(refetch()).andThen(() =>
+          current.query.refresh()
+        );
       },
     };
   };

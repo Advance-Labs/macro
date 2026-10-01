@@ -1,8 +1,6 @@
-import { databaseSqlAnswer } from '@core/database-sql/answer';
 import { databaseSqlSchema } from '@core/database-sql/catalog';
-import { DatabaseSqlError } from '@core/database-sql/driver';
 import type { DatabaseOp, OpResult } from '@core/database-sql/generated/types';
-import { throwOnErr } from '@core/util/result';
+import { type ResultError, throwOnErr } from '@core/util/result';
 import {
   createDatabaseSqlQuery,
   type DatabaseSqlQuery,
@@ -11,19 +9,22 @@ import {
   refreshInBackground,
   sameDatabaseSqlStatement,
 } from '@queries/database-sql/create-database-sql-query';
-import { DatabaseOpsError } from '@queries/storage/databases';
 import { databasesKeys } from '@queries/storage/keys';
 import { storageServiceClient } from '@service-storage/client';
 import type {
-  DatabaseColumnDetail,
-  DatabaseDetail,
-  DatabaseTableDetail,
+  DatabaseOpsError,
+  DatabaseSchemaErrorCode,
 } from '@service-storage/databases';
+import type { ColumnDetail } from '@service-storage/generated/schemas/columnDetail';
+import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
+import type { TableDetail } from '@service-storage/generated/schemas/tableDetail';
 import { useQueryClient } from '@tanstack/solid-query';
+import { err, ok, okAsync, type Result, ResultAsync } from 'neverthrow';
 import { type Accessor, createMemo, createSignal, untrack } from 'solid-js';
-import {
-  type DatabaseRowsSource,
-  DatabaseWriteOutcomeUnknown,
+import { match, P } from 'ts-pattern';
+import type {
+  DatabaseRowsSource,
+  DatabaseWriteResult,
 } from '../context/table-source';
 import { mutationOp } from '../core/cell-ops';
 import {
@@ -34,15 +35,16 @@ import type {
   DatabaseViewColumn,
   DatabaseViewConfig,
 } from '../core/database-view';
+import { gridRows } from '../core/grid-cells';
 import type { DatabaseRow, DatabaseRowMutation } from '../core/table';
-import {
-  ROW_ID_COLUMN,
-  resultColumnName,
-  rowsByIdStatement,
-  viewSelectStatement,
-} from '../sql';
+import type {
+  DatabaseCellFailure,
+  DatabaseReadFailure,
+  DatabaseWriteFailure,
+} from '../core/write-failure';
+import { rowsByIdStatement, viewSelectStatement } from '../sql';
 
-export function toViewColumn(column: DatabaseColumnDetail): DatabaseViewColumn {
+export function toViewColumn(column: ColumnDetail): DatabaseViewColumn {
   const relation =
     column.column.config?.kind === 'link' ? column.column.config : undefined;
   return {
@@ -74,22 +76,38 @@ export function toViewColumn(column: DatabaseColumnDetail): DatabaseViewColumn {
 }
 
 /** Lookup columns are not part of the grid, so a view never names them. */
-function isGridColumn(column: DatabaseColumnDetail) {
+function isGridColumn(column: ColumnDetail) {
   return column.column.config?.kind !== 'lookup';
 }
 
 /** A stale table or column name, which a refreshed schema may resolve. */
-function isStaleSchemaError(error: unknown): error is Error {
+function isStaleSchema(
+  failure: DatabaseReadFailure | DatabaseWriteFailure
+): boolean {
   return (
-    error instanceof DatabaseSqlError ||
-    (error instanceof DatabaseOpsError && error.code === 'INVALID_OP')
+    failure.kind === 'engine' ||
+    (failure.kind === 'ops' && failure.error.code === 'INVALID_OP')
   );
 }
 
-function readError(error: unknown): Error | undefined {
-  if (error === undefined || error instanceof Error) return error;
-  return new Error(String(error));
+/** The service answered and refused: the write certainly did not land. */
+function isDefiniteRefusal(error: DatabaseOpsError): boolean {
+  return match(error.code)
+    .with(
+      P.union(
+        'INVALID_OP',
+        'UNAUTHORIZED',
+        'FORBIDDEN',
+        'NOT_FOUND',
+        'CONFLICT',
+        'GONE'
+      ),
+      () => true
+    )
+    .otherwise(() => false);
 }
+
+const TABLE_UNAVAILABLE = { kind: 'table-unavailable' } as const;
 
 function sameIds(left: readonly string[], right: readonly string[]) {
   return (
@@ -100,22 +118,25 @@ function sameIds(left: readonly string[], right: readonly string[]) {
 
 export function createDatabaseRowsSource(props: {
   databaseId: string;
-  table: Accessor<DatabaseTableDetail>;
+  table: Accessor<TableDetail>;
   /** The engine searches, filters and sorts the rows for this view. */
   view: Accessor<DatabaseViewConfig>;
   /** Applies a write's ops to this database; reads run in the browser's SQL engine. */
-  applyOps: (ops: DatabaseOp[]) => Promise<OpResult[]>;
+  applyOps: (ops: DatabaseOp[]) => ResultAsync<OpResult[], DatabaseOpsError>;
   /** Where the engine reads rows from; the app's GraphQL client by default. */
   read?: DatabaseSqlQueryCapabilities;
   /** Calls back with the version of each change the gateway reports for this table. */
   onTableChanged: (listener: (version: number) => void) => void;
   applyVersions: (versions: Record<string, number>) => void;
-  addOption: (columnId: string, label: string) => Promise<void>;
+  addOption: (
+    columnId: string,
+    label: string
+  ) => ResultAsync<void, ResultError<DatabaseSchemaErrorCode>[]>;
 }): DatabaseRowsSource {
   const queryClient = useQueryClient();
   const tableId = props.table().table.id;
   const detailKey = databasesKeys.detail(props.databaseId).queryKey;
-  let staleSchemaError: Error | undefined;
+  let schemaStale = false;
   // Only advance across schema changes this writer has itself acknowledged.
   const inferredVersions = new Map<number, number>();
   const cachedDetail = () =>
@@ -127,21 +148,28 @@ export function createDatabaseRowsSource(props: {
   // reach the retry even when the table prop has not caught up.
   const [schemaRefreshes, setSchemaRefreshes] = createSignal(0);
 
-  async function refreshSchema() {
-    await queryClient.cancelQueries({ queryKey: detailKey, exact: true });
-    const detail = await queryClient.fetchQuery({
-      queryKey: detailKey,
-      queryFn: () =>
-        throwOnErr(() =>
-          storageServiceClient.databases.get({ id: props.databaseId })
-        ),
-      staleTime: 0,
-      retry: false,
-    });
-    if (!detail.tables.some((entry) => entry.table.id === tableId))
-      throw new Error('This table is no longer available.');
-    staleSchemaError = undefined;
-    setSchemaRefreshes((count) => count + 1);
+  function refreshSchema(): ResultAsync<void, DatabaseReadFailure> {
+    const fetched = async () => {
+      await queryClient.cancelQueries({ queryKey: detailKey, exact: true });
+      return queryClient.fetchQuery({
+        queryKey: detailKey,
+        queryFn: () =>
+          throwOnErr(() =>
+            storageServiceClient.databases.get({ id: props.databaseId })
+          ),
+        staleTime: 0,
+        retry: false,
+      });
+    };
+    return ResultAsync.fromPromise(fetched(), () => TABLE_UNAVAILABLE).andThen(
+      (detail) => {
+        if (!detail.tables.some((entry) => entry.table.id === tableId))
+          return err(TABLE_UNAVAILABLE);
+        schemaStale = false;
+        setSchemaRefreshes((count) => count + 1);
+        return ok(undefined);
+      }
+    );
   }
   // Version-only schema updates must not recreate columns and remount editors.
   const details = createMemo(() => props.table().columns);
@@ -149,15 +177,13 @@ export function createDatabaseRowsSource(props: {
     details().filter(isGridColumn).map(toViewColumn)
   );
   /** A statement over this table alone, built from the cached schema. */
-  const tableStatement = (
-    sql: (table: DatabaseTableDetail) => string | undefined
-  ) =>
+  const tableStatement = (sql: (table: TableDetail) => string | undefined) =>
     createMemo(
       (): DatabaseSqlStatement | undefined => {
         props.table();
         schemaRefreshes();
         const detail = cachedDetail();
-        if (!detail) throw new Error('The database is not loaded.');
+        if (!detail) return undefined;
         const table = currentTable();
         const text = sql(table);
         if (text === undefined) return undefined;
@@ -205,30 +231,7 @@ export function createDatabaseRowsSource(props: {
     const outcome = query.outcome();
     const catalog = query.catalog();
     if (!outcome || !catalog) return undefined;
-    const result = databaseSqlAnswer(outcome, catalog, []).results[0];
-    const rowIdIndex =
-      result?.columns.findIndex((column) => column.name === ROW_ID_COLUMN) ??
-      -1;
-    const indexes = props.table().columns.map((column) => ({
-      id: column.column.id,
-      index:
-        result?.columns.findIndex(
-          (entry) => entry.name === resultColumnName(column)
-        ) ?? -1,
-    }));
-    return (result?.rows ?? []).flatMap((row) => {
-      const rowId = row[rowIdIndex];
-      return typeof rowId === 'string'
-        ? [
-            {
-              rowId,
-              cells: Object.fromEntries(
-                indexes.map(({ id, index }) => [id, row[index] ?? null])
-              ),
-            },
-          ]
-        : [];
-    });
+    return gridRows(outcome, catalog, props.table().columns);
   }
   const retainedRows = () => {
     const ids = retainedRowIds();
@@ -244,20 +247,19 @@ export function createDatabaseRowsSource(props: {
   };
 
   /** Read from the network again; what comes back is at least `version`. */
-  async function readAgain(version: number) {
-    await Promise.all([
+  function readAgain(version: number): ResultAsync<void, DatabaseReadFailure> {
+    return ResultAsync.combine([
       rowsQuery.refresh(),
-      retainedRowIds().length ? retainedQuery.refresh() : undefined,
-    ]);
-    setReadVersion((previous) => Math.max(previous, version));
+      retainedRowIds().length ? retainedQuery.refresh() : okAsync(undefined),
+    ]).map(() => {
+      setReadVersion((previous) => Math.max(previous, version));
+    });
   }
-  async function refresh() {
+  function refresh(): ResultAsync<void, DatabaseReadFailure> {
     const failed = rowsQuery.error();
-    if (isStaleSchemaError(failed)) {
-      staleSchemaError = failed;
-      await refreshSchema();
-    }
-    await readAgain(currentTable().table.version);
+    const schema =
+      failed && isStaleSchema(failed) ? refreshSchema() : okAsync(undefined);
+    return schema.andThen(() => readAgain(currentTable().table.version));
   }
   // Another viewer's edit. This writer's own edits read their version back.
   props.onTableChanged((version) => {
@@ -267,42 +269,49 @@ export function createDatabaseRowsSource(props: {
     });
   });
 
-  function columnForWrite(table: DatabaseTableDetail, columnId: string) {
+  function columnForWrite(
+    table: TableDetail,
+    columnId: string
+  ): Result<ColumnDetail, DatabaseCellFailure> {
     const column = table.columns.find(
       (column) => column.column.id === columnId
     );
-    if (!column?.writable) throw new Error('This property is read-only.');
-    return column;
+    return column?.writable ? ok(column) : err({ kind: 'read-only-column' });
   }
 
+  /** Settle the type of new columns from their first value, then fit values to their columns. */
   async function prepareFirstValues(
     mutation: DatabaseRowMutation,
     baseVersion: number | undefined
-  ) {
+  ): Promise<
+    Result<
+      { mutation: DatabaseRowMutation; version: number | undefined },
+      DatabaseWriteFailure
+    >
+  > {
     let version = baseVersion;
     while (version !== undefined && inferredVersions.has(version))
       version = inferredVersions.get(version);
-    if (mutation.kind === 'delete') return { mutation, version };
+    if (mutation.kind === 'delete') return ok({ mutation, version });
     const values =
       mutation.kind === 'cell'
         ? { [mutation.columnId]: mutation.value }
         : { ...mutation.values };
     for (const [columnId, value] of Object.entries(values)) {
       if (value === null || value === '') continue;
-      let column = columnForWrite(currentTable(), columnId);
+      const found = columnForWrite(currentTable(), columnId);
+      if (found.isErr()) return err(found.error);
+      let column = found.value;
       if (column.column.config?.kind === 'link') continue;
       const requested = mutation.columnTypes?.[columnId];
       if (column.column.infer_type) {
-        if (version === undefined)
-          throw new Error(
-            'Refresh this table before entering its first value.'
-          );
+        if (version === undefined) return err({ kind: 'needs-refresh' });
         const numeric =
           typeof value === 'number' ? value : inferDatabaseNumber(value);
         const type: DatabaseColumnType = requested ?? {
           dataType: numeric === undefined ? 'STRING' : 'NUMBER',
         };
-        const result = await storageServiceClient.databases.inferColumnType({
+        const inferred = await storageServiceClient.databases.inferColumnType({
           id: props.databaseId,
           tableId,
           columnId,
@@ -314,29 +323,30 @@ export function createDatabaseRowsSource(props: {
             base_version: version,
           },
         });
-        if (result.isErr()) {
-          const competing = result.error.some(
-            (error) => error.code === 'VERSION_CONFLICT'
+        if (inferred.isErr()) {
+          const competing = inferred.error.some(
+            (error) => error.code === 'CONFLICT'
           );
-          try {
-            await refreshSchema();
-          } catch {
-            // Preserve the rejected entry and its actual validation error.
-          }
-          // Another first entry typed this column meanwhile: write against it.
+          // A failed refresh keeps the rejected entry and its own error.
+          await refreshSchema();
           const refreshed = columnForWrite(currentTable(), columnId);
-          if (competing && !refreshed.column.infer_type) {
-            column = refreshed;
-            version = currentTable().table.version;
-          } else
-            throw new Error(
-              result.error[0]?.message ??
-                'Could not set the column type. Your entry is kept.'
-            );
+          if (refreshed.isErr()) return err(refreshed.error);
+          // Another first entry typed this column meanwhile: write against it.
+          if (!competing || refreshed.value.column.infer_type)
+            return err({
+              kind: 'type-refused',
+              error: inferred.error[0] ?? {
+                code: 'UNKNOWN_ERROR',
+                message: 'Could not set the column type.',
+              },
+            });
+          column = refreshed.value;
+          version = currentTable().table.version;
         } else {
-          column = result.value.column;
-          inferredVersions.set(version, result.value.table_version);
-          version = result.value.table_version;
+          const settled = inferred.value;
+          column = settled.column;
+          inferredVersions.set(version, settled.table_version);
+          version = settled.table_version;
           await queryClient.cancelQueries({ queryKey: detailKey, exact: true });
           queryClient.setQueryData(
             detailKey,
@@ -345,16 +355,16 @@ export function createDatabaseRowsSource(props: {
                 ...previous,
                 tables: previous.tables.map((entry) =>
                   entry.table.id === tableId &&
-                  entry.table.version <= result.value.table_version
+                  entry.table.version <= settled.table_version
                     ? {
                         ...entry,
                         table: {
                           ...entry.table,
-                          version: result.value.table_version,
+                          version: settled.table_version,
                         },
                         columns: entry.columns.map((existing) =>
                           existing.column.id === columnId
-                            ? result.value.column
+                            ? settled.column
                             : existing
                         ),
                       }
@@ -370,25 +380,78 @@ export function createDatabaseRowsSource(props: {
         (definition.data_type !== 'ENTITY' ||
           definition.specific_entity_type !== requested.entityType)
       )
-        throw new Error(
-          'This column has a different type. Choose a matching mention or add a new column.'
-        );
+        return err({ kind: 'type-mismatch' });
       if (definition.data_type === 'NUMBER' && typeof value === 'string') {
         const numeric = inferDatabaseNumber(value);
-        if (numeric === undefined)
-          throw new Error(
-            'This column expects a number. Your entry is kept so you can correct it.'
-          );
+        if (numeric === undefined) return err({ kind: 'not-a-number' });
         values[columnId] = numeric;
       }
     }
-    return {
+    return ok({
       mutation:
         mutation.kind === 'cell'
           ? { ...mutation, value: values[mutation.columnId] }
           : { ...mutation, values },
       version,
-    };
+    });
+  }
+
+  async function writeRows(
+    mutation: DatabaseRowMutation,
+    version: number | undefined,
+    createOptions: boolean
+  ): Promise<Result<DatabaseWriteResult, DatabaseWriteFailure>> {
+    const prepared = await prepareFirstValues(mutation, version);
+    if (prepared.isErr()) return err(prepared.error);
+    // Read the refreshed cache directly; Solid props may notify after fetchQuery resolves.
+    const table = currentTable();
+    const op = mutationOp(
+      tableId,
+      prepared.value.mutation,
+      (columnId) => columnForWrite(table, columnId),
+      createOptions
+    );
+    if (op.isErr()) return err(op.error);
+    const applied = await props.applyOps([op.value]);
+    if (applied.isErr())
+      return err(
+        mutation.kind === 'create' && !isDefiniteRefusal(applied.error)
+          ? { kind: 'outcome-unknown' }
+          : { kind: 'ops', error: applied.error }
+      );
+    const [written] = applied.value;
+    if (written?.kind !== 'rows_written')
+      return err({ kind: 'unexpected-result' });
+    props.applyVersions({ [tableId]: written.tableVersion });
+    // New options live in the schema; read it again in the background
+    // so they show as options without suspending the grid.
+    if (createOptions)
+      void queryClient.invalidateQueries({
+        queryKey: detailKey,
+        exact: true,
+      });
+    return ok({
+      insertedRowIds: written.inserted,
+      version: written.tableVersion,
+    });
+  }
+
+  async function write(
+    mutation: DatabaseRowMutation,
+    version: number | undefined,
+    createOptions: boolean
+  ): Promise<Result<DatabaseWriteResult, DatabaseWriteFailure>> {
+    if (schemaStale) {
+      const refreshed = await refreshSchema();
+      if (refreshed.isErr()) return err(TABLE_UNAVAILABLE);
+    }
+    const written = await writeRows(mutation, version, createOptions);
+    if (written.isErr() && isStaleSchema(written.error)) {
+      schemaStale = true;
+      // The failed edit keeps its own error; the next write refreshes first.
+      await refreshSchema();
+    }
+    return written;
   }
 
   return {
@@ -396,69 +459,11 @@ export function createDatabaseRowsSource(props: {
     snapshot,
     loading: () => !rowsQuery.outcome() && rowsQuery.error() === undefined,
     refreshing: rowsQuery.loading,
-    error: () => readError(rowsQuery.error()),
+    error: rowsQuery.error,
     refresh,
     addOption: props.addOption,
     retain: (rowIds) => setRetainedIds(() => rowIds),
-    write: async (mutation, version, createOptions) => {
-      const previousSchemaError = staleSchemaError;
-      if (previousSchemaError) {
-        try {
-          await refreshSchema();
-        } catch {
-          throw previousSchemaError;
-        }
-      }
-      try {
-        const prepared = await prepareFirstValues(mutation, version);
-        // Read the refreshed cache directly; Solid props may notify after fetchQuery resolves.
-        const table = currentTable();
-        const op = mutationOp(
-          tableId,
-          prepared.mutation,
-          (columnId) => columnForWrite(table, columnId),
-          createOptions
-        );
-        let written: OpResult | undefined;
-        try {
-          [written] = await props.applyOps([op]);
-        } catch (error) {
-          if (
-            mutation.kind === 'create' &&
-            !(error instanceof DatabaseOpsError && error.definite)
-          )
-            throw new DatabaseWriteOutcomeUnknown(
-              'This row may already be saved. Check the latest rows before creating it again. Your draft is kept here.'
-            );
-          throw error;
-        }
-        if (written?.kind !== 'rows_written')
-          throw new Error(
-            'The database answered the edit with something else.'
-          );
-        props.applyVersions({ [tableId]: written.tableVersion });
-        // New options live in the schema; read it again in the background
-        // so they show as options without suspending the grid.
-        if (createOptions)
-          void queryClient.invalidateQueries({
-            queryKey: detailKey,
-            exact: true,
-          });
-        return {
-          insertedRowIds: written.inserted,
-          version: written.tableVersion,
-        };
-      } catch (error) {
-        if (isStaleSchemaError(error)) {
-          staleSchemaError = error;
-          try {
-            await refreshSchema();
-          } catch {
-            // Keep the original failed edit; the next write must refresh first.
-          }
-        }
-        throw error;
-      }
-    },
+    write: (mutation, version, createOptions) =>
+      new ResultAsync(write(mutation, version, createOptions)),
   };
 }

@@ -1,3 +1,5 @@
+import type { ResultError } from '@core/util/result';
+import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
 import {
   cleanup,
   fireEvent,
@@ -5,6 +7,7 @@ import {
   screen,
   waitFor,
 } from '@solidjs/testing-library';
+import { err, okAsync, type Result, ResultAsync } from 'neverthrow';
 import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RenameTableDialog } from './rename-table-dialog';
@@ -29,16 +32,26 @@ afterEach(() => {
 
 describe('rename table dialog', () => {
   it('keeps a failed draft, prevents duplicate submissions, and retries the original name', async () => {
-    let reject!: (error: Error) => void;
+    let settle!: (
+      result: Result<void, ResultError<DatabaseSchemaErrorCode>[]>
+    ) => void;
     const rename = vi
-      .fn<(id: string, name: string, previousName: string) => Promise<void>>()
+      .fn<
+        (
+          id: string,
+          name: string,
+          previousName: string
+        ) => ResultAsync<void, ResultError<DatabaseSchemaErrorCode>[]>
+      >()
       .mockImplementationOnce(
         () =>
-          new Promise((_resolve, fail) => {
-            reject = fail;
-          })
+          new ResultAsync(
+            new Promise((resolve) => {
+              settle = resolve;
+            })
+          )
       )
-      .mockResolvedValue(undefined);
+      .mockReturnValue(okAsync(undefined));
     const close = vi.fn();
     render(() => (
       <RenameTableDialog
@@ -64,8 +77,10 @@ describe('rename table dialog', () => {
     ).toBe(true);
     fireEvent.keyDown(input, { key: 'Escape' });
     expect(close).not.toHaveBeenCalled();
-    reject(new Error('Connection lost'));
-    await screen.findByRole('alert');
+    settle(err([{ code: 'NETWORK_ERROR', message: 'Connection lost' }]));
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'Could not rename this table.'
+    );
     expect((input as HTMLInputElement).value).toBe(' Attendees ');
     expect((input as HTMLInputElement).readOnly).toBe(false);
     fireEvent.submit(input.closest('form')!);
@@ -79,7 +94,7 @@ describe('rename table dialog', () => {
       { id: 'teams', name: 'Teams' },
     ]);
     const [selected, setSelected] = createSignal('guests');
-    const rename = vi.fn(async () => {});
+    const rename = vi.fn(() => okAsync(undefined));
     render(() => (
       <TableNavigation
         tables={tables()}
@@ -87,7 +102,7 @@ describe('rename table dialog', () => {
         canCreate
         onSelect={setSelected}
         onRename={rename}
-        onCreate={async () => ({ tableId: 'created', ready: true })}
+        onCreate={() => okAsync({ tableId: 'created', ready: true } as const)}
       />
     ));
     fireEvent.dblClick(screen.getByRole('tab', { name: 'Guests' }));
@@ -110,7 +125,7 @@ describe('rename table dialog', () => {
   });
 
   it('does not expose rename through the button, double click, or F2 without edit access', async () => {
-    const rename = vi.fn(async () => {});
+    const rename = vi.fn(() => okAsync(undefined));
     render(() => (
       <TableNavigation
         tables={[{ id: 'guests', name: 'Guests' }]}
@@ -118,7 +133,7 @@ describe('rename table dialog', () => {
         canCreate={false}
         onSelect={() => {}}
         onRename={rename}
-        onCreate={async () => ({ tableId: 'created', ready: true })}
+        onCreate={() => okAsync({ tableId: 'created', ready: true } as const)}
       />
     ));
     const tab = screen.getByRole('tab', { name: 'Guests' });

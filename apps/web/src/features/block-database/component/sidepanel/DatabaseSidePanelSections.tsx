@@ -4,12 +4,12 @@ import {
   OwnerValue,
   SidePanel,
 } from '@components/app/side-panel';
-import type { DatabaseSummary } from '@service-storage/databases';
+import type { Database } from '@service-storage/generated/schemas/database';
 import { Show } from 'solid-js';
 
 export function DatabaseSidePanelSections(props: {
   databaseId: string;
-  database: DatabaseSummary | undefined;
+  database: Database | undefined;
 }) {
   return (
     <>

@@ -1,8 +1,7 @@
 import type { Catalog, Outcome } from '@core/database-sql/generated/types';
-import type {
-  DatabaseDetail,
-  DatabaseTableDetail,
-} from '@service-storage/databases';
+import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
+import type { TableDetail } from '@service-storage/generated/schemas/tableDetail';
+import { errAsync, ok, okAsync } from 'neverthrow';
 import { describe, expect, it, vi } from 'vitest';
 import { exportDatabaseTableCsv, importDatabaseTable } from './transfer';
 
@@ -39,7 +38,7 @@ const table = {
       },
     },
   ],
-} as unknown as DatabaseTableDetail;
+} as unknown as TableDetail;
 const database = {
   database: { id: 'database', name: 'CRM' },
   grant: 'view',
@@ -82,8 +81,10 @@ function outcome(names: string[], truncated = false): Outcome {
 
 describe('CSV transfers', () => {
   it('exports user-facing headers, quotes values, and excludes internal row IDs, in table order', async () => {
-    mocks.read.mockResolvedValueOnce(read(['00123', 'a,b']));
-    const blob = await exportDatabaseTableCsv(database, table);
+    mocks.read.mockReturnValueOnce(okAsync(read(['00123', 'a,b'])));
+    const blob = (
+      await exportDatabaseTableCsv(database, table)
+    )._unsafeUnwrap();
     const text = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(String(reader.result));
@@ -126,10 +127,10 @@ describe('CSV transfers', () => {
     });
   });
   it('refuses a truncated read instead of downloading partial CSV', async () => {
-    mocks.read.mockResolvedValueOnce(read([], true));
-    await expect(exportDatabaseTableCsv(database, table)).rejects.toThrow(
-      'too large'
-    );
+    mocks.read.mockReturnValueOnce(okAsync(read([], true)));
+    expect(await exportDatabaseTableCsv(database, table)).toMatchObject({
+      error: { kind: 'too-large' },
+    });
   });
   it('retains the same import identity and reports validation errors', async () => {
     const request = {
@@ -138,23 +139,16 @@ describe('CSV transfers', () => {
       columns: ['Name'],
       rows: [['Ada']],
     };
-    mocks.import.mockResolvedValueOnce({
-      isErr: () => true,
+    mocks.import.mockReturnValueOnce(
+      errAsync([{ code: 'INVALID_SCHEMA', message: 'Choose another name.' }])
+    );
+    expect(await importDatabaseTable('database', request)).toMatchObject({
       error: [{ code: 'INVALID_SCHEMA', message: 'Choose another name.' }],
     });
-    await expect(
-      importDatabaseTable('database', request)
-    ).rejects.toMatchObject({
-      message: 'Choose another name.',
-      code: 'INVALID_SCHEMA',
-    });
-    mocks.import.mockResolvedValueOnce({
-      isErr: () => false,
-      value: { id: 'imported' },
-    });
-    expect(await importDatabaseTable('database', request)).toEqual({
-      id: 'imported',
-    });
+    mocks.import.mockReturnValueOnce(okAsync({ id: 'imported' }));
+    expect(await importDatabaseTable('database', request)).toEqual(
+      ok({ id: 'imported' })
+    );
     expect(mocks.import).toHaveBeenLastCalledWith({ id: 'database', request });
     expect(mocks.invalidate).toHaveBeenCalledWith('database');
   });

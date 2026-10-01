@@ -6,6 +6,7 @@ import { until } from '@solid-primitives/promise';
 import { Button } from '@ui/components/Button';
 import { DeleteDialog } from '@ui/components/DeleteDialog';
 import { Mutex } from 'async-mutex';
+import { ok, okAsync } from 'neverthrow';
 import {
   type Accessor,
   createMemo,
@@ -41,9 +42,11 @@ import {
   mergeDatabaseColumnOrder,
   reorderDatabaseColumns,
 } from '../core/column-order';
-import type {
-  DatabaseColumnCastsSource,
-  DatabaseColumnTypeChange,
+import {
+  columnSchemaMessage,
+  type DatabaseColumnCastsSource,
+  type DatabaseColumnTypeChange,
+  type DatabaseSchemaChange,
 } from '../core/column-schema';
 import {
   type DatabaseCellValue,
@@ -64,8 +67,18 @@ import {
   rowValue,
   titleColumn,
 } from '../core/table';
+import {
+  databaseReadMessage,
+  databaseWriteMessage,
+} from '../core/write-failure';
 import { createDraftRows } from '../primitives/draft-rows';
-import { createTableController } from '../primitives/table-controller';
+import {
+  createTableController,
+  type FailedWrite,
+} from '../primitives/table-controller';
+
+const outcomeUnknown = (failure: FailedWrite) =>
+  failure.failure.kind === 'outcome-unknown';
 
 export type DatabaseTableActions = {
   createRecord: () => Promise<boolean>;
@@ -107,17 +120,17 @@ export function DatabaseTableView(props: {
   onChangeColumnType?: (
     columnId: string,
     change: DatabaseColumnTypeChange
-  ) => Promise<void>;
-  onDeleteColumn?: (columnId: string) => Promise<void>;
-  onReorderColumns?: (columnIds: string[]) => Promise<void>;
+  ) => DatabaseSchemaChange;
+  onDeleteColumn?: (columnId: string) => DatabaseSchemaChange;
+  onReorderColumns?: (columnIds: string[]) => DatabaseSchemaChange;
   onRenameColumn?: (
     columnId: string,
     name: string,
     previousName: string
-  ) => Promise<void>;
+  ) => DatabaseSchemaChange;
   renderToolbar?: (actions: DatabaseTableActions) => JSX.Element;
   /** Create a new column at the end of the table and return its id. */
-  createColumn?: () => Promise<string | undefined>;
+  createColumn?: () => DatabaseSchemaChange<string>;
   addColumn: (
     label?: string,
     initialType?: DatabasePropertyType,
@@ -271,7 +284,7 @@ export function DatabaseTableView(props: {
     draftRows.has(rowId) ? draftRows.serverId(rowId) : rowId;
   async function retry() {
     const failure = controller.failure();
-    if (failure?.outcomeUnknown) {
+    if (failure?.failure.kind === 'outcome-unknown') {
       await controller.refresh();
       return;
     }
@@ -283,7 +296,7 @@ export function DatabaseTableView(props: {
   }
   function dismissSaveFailure() {
     const failure = controller.failure();
-    if (failure?.outcomeUnknown && failure.createIntentId)
+    if (failure?.failure.kind === 'outcome-unknown' && failure.createIntentId)
       draftRows.discardUncertain(failure.createIntentId);
     controller.dismissFailure();
   }
@@ -366,9 +379,10 @@ export function DatabaseTableView(props: {
       undefined,
       intent
     );
-    const createdId = result?.insertedRowIds[0];
+    if (result.isErr()) return false;
+    const createdId = result.value.insertedRowIds[0];
     if (createdId) editCreatedRow(createdId);
-    return Boolean(result);
+    return true;
   }
   function requestDelete(rowId: string) {
     const actualId = actualRowId(rowId);
@@ -385,7 +399,7 @@ export function DatabaseTableView(props: {
     const mutation =
       deletionMutations.get(rowId) ?? ({ kind: 'delete', rowId } as const);
     deletionMutations.set(rowId, mutation);
-    return Boolean(await controller.save(mutation, 'delete record'));
+    return (await controller.save(mutation, 'delete record')).isOk();
   }
   function navigate(delta: number) {
     const row = rows()[selectedPosition() + delta];
@@ -400,19 +414,18 @@ export function DatabaseTableView(props: {
   ) {
     if (!props.canEdit || !column.writable) return false;
     if (option === undefined && rowValue(row, column.id) === value) return true;
-    return Boolean(
-      await controller.save(
-        {
-          kind: 'cell',
-          rowId: row.rowId,
-          columnId: column.id,
-          value,
-          ...(columnType ? { columnTypes: { [column.id]: columnType } } : {}),
-        },
-        column.name,
-        option
-      )
+    const saved = await controller.save(
+      {
+        kind: 'cell',
+        rowId: row.rowId,
+        columnId: column.id,
+        value,
+        ...(columnType ? { columnTypes: { [column.id]: columnType } } : {}),
+      },
+      column.name,
+      option
     );
+    return saved.isOk();
   }
   function renderCell(
     row: Accessor<DatabaseRow>,
@@ -508,9 +521,10 @@ export function DatabaseTableView(props: {
       undefined,
       createIntentId
     );
-    const rowId = saved?.insertedRowIds[0];
+    if (saved.isErr()) return false;
+    const rowId = saved.value.insertedRowIds[0];
     if (rowId && openAfterCreate) editCreatedRow(rowId);
-    return Boolean(saved);
+    return true;
   }
   function focusFirstCell(): Promise<void> {
     if (firstCellRequest) return firstCellRequest;
@@ -653,12 +667,12 @@ export function DatabaseTableView(props: {
         column.name
       );
       // An older response cannot replace a newer accepted same-lane placement.
-      if (saved && sequence > burst.confirmedSequence) {
+      if (saved.isOk() && sequence > burst.confirmedSequence) {
         burst.confirmed = order;
         burst.confirmedSequence = sequence;
       }
       if (
-        !saved &&
+        saved.isErr() &&
         !disposed &&
         sequence === burst.sequence &&
         props.view.groupBy === column.id &&
@@ -667,7 +681,7 @@ export function DatabaseTableView(props: {
       ) {
         props.onViewChange({ ...props.view, ...burst.confirmed });
       }
-      return Boolean(saved);
+      return saved.isOk();
     } finally {
       burst.pending--;
     }
@@ -699,13 +713,16 @@ export function DatabaseTableView(props: {
     try {
       // Each request reads the schema version refreshed by the previous write.
       // Queue complete orders so a later drop includes all optimistic moves.
-      await columnOrderMutex.runExclusive(async () => {
-        await persist(nextOrder);
-        confirmedColumnOrder = nextOrder;
+      const persisted = await columnOrderMutex.runExclusive(async () => {
+        const result = await persist(nextOrder);
+        if (result.isOk()) confirmedColumnOrder = nextOrder;
+        return result;
       });
-      if (!disposed && sequence === columnOrderSequence) setSchemaError('');
-    } catch (error) {
       if (disposed || sequence !== columnOrderSequence) return;
+      if (persisted.isOk()) {
+        setSchemaError('');
+        return;
+      }
       const currentOrder = orderDatabaseColumns(
         columns(),
         props.view.columnOrder
@@ -719,9 +736,7 @@ export function DatabaseTableView(props: {
           ...props.view,
           columnOrder: confirmedColumnOrder,
         });
-      setSchemaError(
-        error instanceof Error ? error.message : 'Could not reorder columns.'
-      );
+      setSchemaError(columnSchemaMessage(persisted.error));
     } finally {
       pendingColumnOrders--;
     }
@@ -730,22 +745,21 @@ export function DatabaseTableView(props: {
     const create = props.createColumn;
     if (!create) return;
     setSchemaError('');
-    try {
-      const created = await create();
-      if (!created || disposed) return;
-      // The new column arrives with the refreshed schema, at the table's end.
-      await until(() => columns().some((column) => column.id === created));
-      await reorderColumn(
-        created,
-        targetId,
-        side === 'left' ? 'before' : 'after'
-      );
-      focusColumn(created);
-    } catch (error) {
-      setSchemaError(
-        error instanceof Error ? error.message : 'Could not add this column.'
-      );
+    const result = await create();
+    if (disposed) return;
+    if (result.isErr()) {
+      setSchemaError(columnSchemaMessage(result.error));
+      return;
     }
+    const created = result.value;
+    // The new column arrives with the refreshed schema, at the table's end.
+    await until(() => columns().some((column) => column.id === created));
+    await reorderColumn(
+      created,
+      targetId,
+      side === 'left' ? 'before' : 'after'
+    );
+    focusColumn(created);
   }
   function moveColumn(columnId: string, direction: 'left' | 'right') {
     const columns = visibleColumns();
@@ -795,14 +809,14 @@ export function DatabaseTableView(props: {
               <WarningIcon class="mt-0.5 size-4 shrink-0 text-warning-ink" />
               <div class="min-w-0 flex-1">
                 <p class="font-medium text-ink">
-                  {failure().outcomeUnknown
+                  {outcomeUnknown(failure())
                     ? 'This row may already be saved.'
                     : `Could not save ${failure().label}.`}
                 </p>
                 <p class="mt-1 text-ink-muted">
-                  {failure().outcomeUnknown
+                  {outcomeUnknown(failure())
                     ? 'Check the latest rows against your draft, then discard the draft. Refreshing will not submit it again.'
-                    : failure().message}
+                    : databaseWriteMessage(failure().failure)}
                 </p>
               </div>
               <Button
@@ -811,11 +825,11 @@ export function DatabaseTableView(props: {
                 disabled={controller.pending()}
                 onClick={() => void retry()}
               >
-                {failure().outcomeUnknown ? 'Refresh' : 'Retry'}
+                {outcomeUnknown(failure()) ? 'Refresh' : 'Retry'}
               </Button>
               <Show
                 when={
-                  failure().outcomeUnknown &&
+                  outcomeUnknown(failure()) &&
                   failure().createIntentId &&
                   draftRows.has(failure().createIntentId!)
                 }
@@ -944,7 +958,12 @@ export function DatabaseTableView(props: {
                   This table could not be loaded
                 </p>
                 <p class="max-w-96 text-xs text-ink-muted">
-                  {props.source.error()?.message ?? 'Try refreshing the table.'}
+                  <Show
+                    when={props.source.error()}
+                    fallback="Try refreshing the table."
+                  >
+                    {(failure) => databaseReadMessage(failure())}
+                  </Show>
                 </p>
                 <Button
                   size="sm"
@@ -996,27 +1015,30 @@ export function DatabaseTableView(props: {
                   onChangeColumnType={props.onChangeColumnType}
                   onDeleteColumn={
                     props.onDeleteColumn
-                      ? async (columnId) => {
-                          await props.onDeleteColumn?.(columnId);
-                          props.onViewChange?.({
-                            ...props.view,
-                            columnOrder: props.view.columnOrder?.filter(
-                              (id) => id !== columnId
-                            ),
-                            hiddenColumns: props.view.hiddenColumns.filter(
-                              (id) => id !== columnId
-                            ),
-                            filters: props.view.filters.filter(
-                              (filter) => filter.columnId !== columnId
-                            ),
-                            sorts: props.view.sorts.filter(
-                              (sort) => sort.columnId !== columnId
-                            ),
-                            ...(props.view.groupBy === columnId
-                              ? { groupBy: null, layout: 'table' }
-                              : {}),
-                          });
-                        }
+                      ? (columnId) =>
+                          (
+                            props.onDeleteColumn?.(columnId) ??
+                            okAsync(undefined)
+                          ).map(() =>
+                            props.onViewChange?.({
+                              ...props.view,
+                              columnOrder: props.view.columnOrder?.filter(
+                                (id) => id !== columnId
+                              ),
+                              hiddenColumns: props.view.hiddenColumns.filter(
+                                (id) => id !== columnId
+                              ),
+                              filters: props.view.filters.filter(
+                                (filter) => filter.columnId !== columnId
+                              ),
+                              sorts: props.view.sorts.filter(
+                                (sort) => sort.columnId !== columnId
+                              ),
+                              ...(props.view.groupBy === columnId
+                                ? { groupBy: null, layout: 'table' }
+                                : {}),
+                            })
+                          )
                       : undefined
                   }
                   onReorderColumn={reorderColumn}
@@ -1103,19 +1125,12 @@ export function DatabaseTableView(props: {
                       const row = controller
                         .knownRows()
                         .find((row) => row.rowId === rowId);
-                      return row
-                        ? Boolean(
-                            await controller.save(
-                              {
-                                kind: 'cell',
-                                rowId,
-                                columnId: group().id,
-                                value,
-                              },
-                              group().name
-                            )
-                          )
-                        : false;
+                      if (!row) return false;
+                      const saved = await controller.save(
+                        { kind: 'cell', rowId, columnId: group().id, value },
+                        group().name
+                      );
+                      return saved.isOk();
                     }}
                     onCreate={(value, title, intentId, options) =>
                       createRow(value, title, options?.open ?? false, intentId)
@@ -1123,10 +1138,11 @@ export function DatabaseTableView(props: {
                     controlsRef={(controls) => {
                       boardControls = controls;
                     }}
-                    onAddGroup={async (label) => {
+                    onAddGroup={(label) => {
                       const column = group();
-                      if (!props.canEdit || !column.writable) return;
-                      await controller.addGroup(column.id, label);
+                      return props.canEdit && column.writable
+                        ? controller.addGroup(column.id, label)
+                        : Promise.resolve(ok(undefined));
                     }}
                   />
                 )}

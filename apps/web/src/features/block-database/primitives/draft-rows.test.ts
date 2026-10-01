@@ -1,17 +1,31 @@
+import {
+  err,
+  errAsync,
+  ok,
+  okAsync,
+  type Result,
+  ResultAsync,
+} from 'neverthrow';
 import { createRoot, createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  type DatabaseRowsSnapshot,
-  type DatabaseRowsSource,
-  DatabaseWriteOutcomeUnknown,
+import type {
+  DatabaseRowsSnapshot,
+  DatabaseRowsSource,
+  DatabaseWriteResult,
 } from '../context/table-source';
 import type { DatabaseRowMutation } from '../core/table';
+import type { DatabaseWriteFailure } from '../core/write-failure';
 
 import { createDraftRows } from './draft-rows';
 import { createTableController } from './table-controller';
 
 /** What the fake table holds; it retains no rows beyond the view's. */
 type StoredTable = Omit<DatabaseRowsSnapshot, 'retained'>;
+
+const offline: DatabaseWriteFailure = {
+  kind: 'ops',
+  error: { code: 'NETWORK_ERROR', message: 'Offline', refusal: null },
+};
 
 const disposers: (() => void)[] = [];
 afterEach(() => {
@@ -27,10 +41,10 @@ function fixture() {
     let database: StoredTable = { version: 1, rows: [] };
     let sequence = 0;
     const persisted: DatabaseRowMutation[] = [];
-    const persist = async (
+    const persist = (
       mutation: DatabaseRowMutation,
       version: number | undefined
-    ) => {
+    ): DatabaseWriteResult => {
       expect(version).toBe(database.version);
       persisted.push(structuredClone(mutation));
       const insertedRowIds =
@@ -67,12 +81,16 @@ function fixture() {
       loading: () => false,
       refreshing: () => false,
       error: () => undefined,
-      write: vi.fn(persist),
-      refresh: vi.fn(async () => {
+      write: vi.fn<DatabaseRowsSource['write']>((mutation, version) =>
+        okAsync(persist(mutation, version))
+      ),
+      refresh: vi.fn<DatabaseRowsSource['refresh']>(() => {
         setSnapshot(database);
+        return okAsync(undefined);
       }),
-      addOption: vi.fn(async () => {
+      addOption: vi.fn<DatabaseRowsSource['addOption']>(() => {
         database = { ...database, version: (database.version ?? 0) + 1 };
+        return okAsync(undefined);
       }),
       retain: () => {},
     };
@@ -93,15 +111,13 @@ function fixture() {
 describe('editable blank row', () => {
   it('preserves an uncertain draft without inserting it twice after refresh, retry, dismissal, or more typing', async () => {
     const { source, controller, drafts, persist, database } = fixture();
-    vi.mocked(source.write).mockImplementationOnce(
-      async (mutation, version) => {
-        await persist(mutation, version);
-        throw new DatabaseWriteOutcomeUnknown('The response was lost.');
-      }
-    );
+    vi.mocked(source.write).mockImplementationOnce((mutation, version) => {
+      persist(mutation, version);
+      return errAsync({ kind: 'outcome-unknown' });
+    });
     const id = drafts.blankId();
     expect(await drafts.write(id, 'name', 'Saved once')).toBe(false);
-    expect(controller.failure()?.outcomeUnknown).toBe(true);
+    expect(controller.failure()?.failure).toEqual({ kind: 'outcome-unknown' });
     expect(controller.rows()).toEqual(database().rows);
     expect(drafts.project(controller.rows())).toContainEqual({
       rowId: id,
@@ -144,13 +160,12 @@ describe('editable blank row', () => {
       dispose,
     } = fixture();
     let release!: () => void;
-    vi.mocked(source.write).mockImplementationOnce(
-      async (mutation, version) => {
-        await new Promise<void>((resolve) => {
+    vi.mocked(source.write).mockImplementationOnce((mutation, version) =>
+      ResultAsync.fromSafePromise(
+        new Promise<void>((resolve) => {
           release = resolve;
-        });
-        return persist(mutation, version);
-      }
+        })
+      ).map(() => persist(mutation, version))
     );
     const id = drafts.blankId();
     const name = drafts.write(id, 'name', 'First table record');
@@ -162,8 +177,10 @@ describe('editable blank row', () => {
     expect(await drafts.retry(id)).toBe(false);
     expect(
       await controller.save({ kind: 'create', values: { name: 'Too late' } })
-    ).toBeUndefined();
-    await controller.addGroup('status', 'Too late');
+    ).toEqual(err({ kind: 'unmounted' }));
+    expect(await controller.addGroup('status', 'Too late')).toEqual(
+      ok(undefined)
+    );
     expect(source.addOption).not.toHaveBeenCalled();
 
     release();
@@ -194,13 +211,12 @@ describe('editable blank row', () => {
   it('finishes an accepted new option and its field after the create owner is disposed', async () => {
     const { source, drafts, persist, database, dispose } = fixture();
     let release!: () => void;
-    vi.mocked(source.write).mockImplementationOnce(
-      async (mutation, version) => {
-        await new Promise<void>((resolve) => {
+    vi.mocked(source.write).mockImplementationOnce((mutation, version) =>
+      ResultAsync.fromSafePromise(
+        new Promise<void>((resolve) => {
           release = resolve;
-        });
-        return persist(mutation, version);
-      }
+        })
+      ).map(() => persist(mutation, version))
     );
     const id = drafts.blankId();
     const name = drafts.write(id, 'name', 'Accepted record');
@@ -233,8 +249,14 @@ describe('editable blank row', () => {
 
   it('drops a failed mention type when its draft is replaced with plain text', async () => {
     const { source, drafts, persisted, database } = fixture();
-    vi.mocked(source.write).mockRejectedValueOnce(
-      new Error('Could not infer the column type')
+    vi.mocked(source.write).mockImplementationOnce(() =>
+      errAsync({
+        kind: 'type-refused',
+        error: {
+          code: 'INVALID_SCHEMA',
+          message: 'Could not infer the column type',
+        },
+      })
     );
     const id = drafts.blankId();
     expect(
@@ -257,13 +279,12 @@ describe('editable blank row', () => {
   it('carries a mention type through creation and queued field writes', async () => {
     const { source, drafts, persist, persisted } = fixture();
     let release!: () => void;
-    vi.mocked(source.write).mockImplementationOnce(
-      async (mutation, version) => {
-        await new Promise<void>((resolve) => {
+    vi.mocked(source.write).mockImplementationOnce((mutation, version) =>
+      ResultAsync.fromSafePromise(
+        new Promise<void>((resolve) => {
           release = resolve;
-        });
-        return persist(mutation, version);
-      }
+        })
+      ).map(() => persist(mutation, version))
     );
     const id = drafts.blankId();
     const first = drafts.write(
@@ -309,13 +330,12 @@ describe('editable blank row', () => {
     const { source, controller, drafts, persist, database, persisted } =
       fixture();
     let release!: () => void;
-    vi.mocked(source.write).mockImplementationOnce(
-      async (mutation, version) => {
-        await new Promise<void>((resolve) => {
+    vi.mocked(source.write).mockImplementationOnce((mutation, version) =>
+      ResultAsync.fromSafePromise(
+        new Promise<void>((resolve) => {
           release = resolve;
-        });
-        return persist(mutation, version);
-      }
+        })
+      ).map(() => persist(mutation, version))
     );
     const id = drafts.blankId();
     const first = drafts.write(id, 'name', 'First name');
@@ -351,12 +371,16 @@ describe('editable blank row', () => {
   it('retries a failed creation with all fields typed since its first request', async () => {
     const { source, controller, drafts, database } = fixture();
     let reject!: () => void;
-    vi.mocked(source.write).mockImplementationOnce(async () => {
-      await new Promise<void>((_resolve, fail) => {
-        reject = () => fail(new Error('Offline'));
-      });
-      throw new Error('unreachable');
-    });
+    vi.mocked(source.write).mockImplementationOnce(
+      () =>
+        new ResultAsync(
+          new Promise<Result<DatabaseWriteResult, DatabaseWriteFailure>>(
+            (resolve) => {
+              reject = () => resolve(err(offline));
+            }
+          )
+        )
+    );
     const id = drafts.blankId();
     const first = drafts.write(id, 'name', 'Old name');
     const next = drafts.write(id, 'notes', 'Keep these notes');
@@ -384,7 +408,9 @@ describe('editable blank row', () => {
 
   it('does not insert twice after an acknowledged create whose refresh fails', async () => {
     const { source, controller, drafts, database, persisted } = fixture();
-    vi.mocked(source.refresh).mockRejectedValueOnce(new Error('Read offline'));
+    vi.mocked(source.refresh).mockImplementationOnce(() =>
+      errAsync({ kind: 'fetch', message: 'Read offline' })
+    );
     const id = drafts.blankId();
     expect(await drafts.write(id, 'name', 'Saved record')).toBe(true);
     expect(controller.refreshWarning()).toBe(true);
@@ -422,7 +448,7 @@ describe('editable blank row', () => {
 
   it('retains a new option and row when the write creating them fails, and retries them together', async () => {
     const { source, drafts, database } = fixture();
-    vi.mocked(source.write).mockRejectedValueOnce(new Error('Offline'));
+    vi.mocked(source.write).mockImplementationOnce(() => errAsync(offline));
     const id = drafts.blankId();
     expect(await drafts.write(id, 'status', 'In review', 'In review')).toBe(
       false
@@ -445,7 +471,7 @@ describe('editable blank row', () => {
     const { source, controller, drafts, database } = fixture();
     const id = drafts.blankId();
     await drafts.write(id, 'name', 'New record');
-    vi.mocked(source.write).mockRejectedValueOnce(new Error('Offline'));
+    vi.mocked(source.write).mockImplementationOnce(() => errAsync(offline));
     expect(await drafts.write(id, 'notes', 'Old draft')).toBe(false);
     expect(await drafts.write(id, 'notes', 'Updated draft')).toBe(true);
     expect(controller.failure()).toBeUndefined();

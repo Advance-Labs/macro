@@ -10,11 +10,13 @@ import type {
   CellWrite,
   DatabaseOp,
 } from '@core/database-sql/generated/types';
-import type { DatabaseColumnDetail } from '@service-storage/databases';
+import type { ColumnDetail } from '@service-storage/generated/schemas/columnDetail';
+import { err, ok, Result } from 'neverthrow';
 import { match } from 'ts-pattern';
 import { relatedRowIds } from './database-relations';
 import type { DatabaseCellValue } from './database-view';
 import type { DatabaseRowMutation } from './table';
+import type { DatabaseCellFailure } from './write-failure';
 
 const CLEAR: CellValue = { type: 'clear' };
 
@@ -37,13 +39,11 @@ function listedValues(value: DatabaseCellValue): string[] {
 }
 
 /** The kind of entity an entity column's references point at. */
-function referenceKind(column: DatabaseColumnDetail) {
+function referenceKind(column: ColumnDetail) {
   const target = column.definition.definition.specific_entity_type ?? 'USER';
-  if (target === 'DATABASE_ROW')
-    throw new Error(
-      'This column holds related records; edit it as a relation.'
-    );
-  return target;
+  return target === 'DATABASE_ROW'
+    ? err<never, DatabaseCellFailure>({ kind: 'relation-as-entity' })
+    : ok(target);
 }
 
 /** A calendar day or an instant, as the instant a date cell stores. */
@@ -56,57 +56,55 @@ function instant(value: string): string {
  * any cell but a text one, which keeps the empty text.
  */
 export function cellValue(
-  column: DatabaseColumnDetail,
+  column: ColumnDetail,
   value: DatabaseCellValue
-): CellValue {
+): Result<CellValue, DatabaseCellFailure> {
   const definition = column.definition.definition;
   if (column.column.config?.kind === 'link') {
     const rows = relatedRowIds(value);
-    return rows.length ? { type: 'rows', value: rows } : CLEAR;
+    return ok(rows.length ? { type: 'rows', value: rows } : CLEAR);
   }
   if (definition.is_multi_select) {
     const values = listedValues(value);
-    if (!values.length) return CLEAR;
+    if (!values.length) return ok(CLEAR);
     return definition.data_type === 'ENTITY'
-      ? {
+      ? referenceKind(column).map((entityType) => ({
           type: 'entities',
-          value: values.map((entityId) => ({
-            entityType: referenceKind(column),
-            entityId,
-          })),
-        }
-      : { type: 'options', value: values.map((label) => ({ label })) };
+          value: values.map((entityId) => ({ entityType, entityId })),
+        }))
+      : ok({ type: 'options', value: values.map((label) => ({ label })) });
   }
-  if (value === null) return CLEAR;
-  if (value === '' && definition.data_type !== 'STRING') return CLEAR;
+  if (value === null) return ok(CLEAR);
+  if (value === '' && definition.data_type !== 'STRING') return ok(CLEAR);
   return match(definition.data_type)
-    .returnType<CellValue>()
-    .with('STRING', () => ({ type: 'text', value: String(value) }))
+    .returnType<Result<CellValue, DatabaseCellFailure>>()
+    .with('STRING', () => ok({ type: 'text', value: String(value) }))
     .with('NUMBER', () => {
       const number = typeof value === 'number' ? value : Number(value);
-      if (!Number.isFinite(number))
-        throw new Error(
-          'This column expects a number. Your entry is kept so you can correct it.'
-        );
-      return { type: 'number', value: number };
+      return Number.isFinite(number)
+        ? ok({ type: 'number', value: number })
+        : err({ kind: 'not-a-number' });
     })
-    .with('BOOLEAN', () => ({
-      type: 'boolean',
-      value:
-        typeof value === 'number'
-          ? value !== 0
-          : ['1', 'true'].includes(value.toLowerCase()),
-    }))
-    .with('DATE', () => ({ type: 'date', value: instant(String(value)) }))
-    .with('LINK', () => ({ type: 'link', value: [String(value)] }))
-    .with('SELECT_STRING', 'SELECT_NUMBER', 'TAG', () => ({
-      type: 'options',
-      value: [{ label: String(value) }],
-    }))
-    .with('ENTITY', () => ({
-      type: 'entities',
-      value: [{ entityType: referenceKind(column), entityId: String(value) }],
-    }))
+    .with('BOOLEAN', () =>
+      ok({
+        type: 'boolean',
+        value:
+          typeof value === 'number'
+            ? value !== 0
+            : ['1', 'true'].includes(value.toLowerCase()),
+      })
+    )
+    .with('DATE', () => ok({ type: 'date', value: instant(String(value)) }))
+    .with('LINK', () => ok({ type: 'link', value: [String(value)] }))
+    .with('SELECT_STRING', 'SELECT_NUMBER', 'TAG', () =>
+      ok({ type: 'options', value: [{ label: String(value) }] })
+    )
+    .with('ENTITY', () =>
+      referenceKind(column).map((entityType) => ({
+        type: 'entities',
+        value: [{ entityType, entityId: String(value) }],
+      }))
+    )
     .exhaustive();
 }
 
@@ -118,38 +116,38 @@ export function cellValue(
 export function mutationOp(
   tableId: string,
   mutation: DatabaseRowMutation,
-  columnFor: (columnId: string) => DatabaseColumnDetail,
+  columnFor: (columnId: string) => Result<ColumnDetail, DatabaseCellFailure>,
   createOptions: boolean
-): DatabaseOp {
-  const cell = (columnId: string, value: DatabaseCellValue): CellWrite => ({
-    column: columnId,
-    value: cellValue(columnFor(columnId), value),
-  });
+): Result<DatabaseOp, DatabaseCellFailure> {
+  const cell = (columnId: string, value: DatabaseCellValue) =>
+    columnFor(columnId)
+      .andThen((column) => cellValue(column, value))
+      .map((written): CellWrite => ({ column: columnId, value: written }));
   return match(mutation)
-    .returnType<DatabaseOp>()
-    .with({ kind: 'cell' }, ({ rowId, columnId, value }) => ({
-      kind: 'update_rows',
-      table: tableId,
-      changes: {
-        kind: 'per_row',
-        rows: [{ row: rowId, cells: [cell(columnId, value)] }],
-      },
-      createMissingOptions: createOptions,
-    }))
-    .with({ kind: 'create' }, ({ values }) => ({
-      kind: 'insert_rows',
-      table: tableId,
-      rows: [
-        Object.entries(values).map(([columnId, value]) =>
-          cell(columnId, value)
-        ),
-      ],
-      createMissingOptions: createOptions,
-    }))
-    .with({ kind: 'delete' }, ({ rowId }) => ({
-      kind: 'delete_rows',
-      table: tableId,
-      rows: [rowId],
-    }))
+    .returnType<Result<DatabaseOp, DatabaseCellFailure>>()
+    .with({ kind: 'cell' }, ({ rowId, columnId, value }) =>
+      cell(columnId, value).map((written) => ({
+        kind: 'update_rows',
+        table: tableId,
+        changes: {
+          kind: 'per_row',
+          rows: [{ row: rowId, cells: [written] }],
+        },
+        createMissingOptions: createOptions,
+      }))
+    )
+    .with({ kind: 'create' }, ({ values }) =>
+      Result.combine(
+        Object.entries(values).map(([columnId, value]) => cell(columnId, value))
+      ).map((cells) => ({
+        kind: 'insert_rows',
+        table: tableId,
+        rows: [cells],
+        createMissingOptions: createOptions,
+      }))
+    )
+    .with({ kind: 'delete' }, ({ rowId }) =>
+      ok({ kind: 'delete_rows', table: tableId, rows: [rowId] })
+    )
     .exhaustive();
 }

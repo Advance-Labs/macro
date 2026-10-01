@@ -1,6 +1,6 @@
 import { throwOnErr } from '@core/util/result';
 import { storageServiceClient } from '@service-storage/client';
-import type { DatabaseColumnCast as ServerColumnCast } from '@service-storage/databases';
+import type { ColumnCast as ServerColumnCast } from '@service-storage/generated/schemas/columnCast';
 import { useQuery } from '@tanstack/solid-query';
 import type { Accessor } from 'solid-js';
 import { match } from 'ts-pattern';

@@ -1,9 +1,11 @@
 import { queryClient } from '@queries/client';
 import { databasesKeys } from '@queries/storage/keys';
-import type { DatabaseDetail, DatabaseTable } from '@service-storage/databases';
+import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
+import type { Table } from '@service-storage/generated/schemas/table';
 import { QueryObserver } from '@tanstack/solid-query';
-import { err, type Ok, ok } from 'neverthrow';
+import { errAsync, ok, okAsync, type Result, ResultAsync } from 'neverthrow';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { tableRenameMessage } from '../core/column-schema';
 import { renameDatabaseTable } from './rename-table';
 
 const transport = vi.hoisted(() => ({ renameTable: vi.fn() }));
@@ -19,14 +21,14 @@ vi.mock('@queries/client', async () => {
   };
 });
 
-const original: DatabaseTable = {
+const original: Table = {
   id: 'guests',
   database_id: 'db',
   name: 'Guests',
   position: 'a',
   version: 5,
 };
-const renamed: DatabaseTable = { ...original, name: 'Attendees', version: 6 };
+const renamed: Table = { ...original, name: 'Attendees', version: 6 };
 const detail: DatabaseDetail = {
   database: {
     id: 'db',
@@ -40,11 +42,13 @@ const detail: DatabaseDetail = {
     {
       table: original,
       sql_name: 'guests',
+      read_sql_name: 'guests',
       columns: [],
     },
     {
       table: { ...original, id: 'other', name: 'Other' },
       sql_name: 'other',
+      read_sql_name: 'other',
       columns: [],
     },
   ],
@@ -60,7 +64,7 @@ const key = databasesKeys.detail('db').queryKey;
 beforeEach(() => {
   vi.resetAllMocks();
   queryClient.setQueryData(key, detail);
-  transport.renameTable.mockResolvedValue(ok(renamed));
+  transport.renameTable.mockImplementation(() => okAsync(renamed));
 });
 afterEach(() => queryClient.clear());
 
@@ -71,7 +75,7 @@ describe('table rename cache', () => {
       ...detail,
       database: { ...detail.database, id: 'other-db' },
     });
-    await renameDatabaseTable(parameters);
+    expect(await renameDatabaseTable(parameters)).toEqual(ok(undefined));
     expect(transport.renameTable).toHaveBeenCalledExactlyOnceWith({
       id: 'db',
       tableId: 'guests',
@@ -88,10 +92,11 @@ describe('table rename cache', () => {
   it('preserves the cache after a rejected rename and refreshes its database for recovery', async () => {
     const otherKey = databasesKeys.detail('other-db').queryKey;
     queryClient.setQueryData(otherKey, detail);
-    transport.renameTable.mockResolvedValue(
-      err([{ code: 'HTTP_ERROR', message: 'Name changed' }])
+    transport.renameTable.mockImplementation(() =>
+      errAsync([{ code: 'HTTP_ERROR', message: 'Name changed' }])
     );
-    await expect(renameDatabaseTable(parameters)).rejects.toThrow(
+    const result = await renameDatabaseTable(parameters);
+    expect(result.isErr() && tableRenameMessage(result.error)).toContain(
       'reopen Rename table'
     );
     expect(queryClient.getQueryData(key)).toEqual(detail);
@@ -111,7 +116,7 @@ describe('table rename cache', () => {
     });
     const unsubscribe = observer.subscribe(() => {});
     try {
-      await expect(renameDatabaseTable(parameters)).resolves.toBeUndefined();
+      expect(await renameDatabaseTable(parameters)).toEqual(ok(undefined));
       expect(refresh).toHaveBeenCalledTimes(1);
       expect(
         queryClient.getQueryData<DatabaseDetail>(key)?.tables[0].table
@@ -123,12 +128,14 @@ describe('table rename cache', () => {
   });
 
   it('does not replace a newer cached table with a delayed rename acknowledgment', async () => {
-    let complete!: (value: Ok<DatabaseTable, never>) => void;
+    let complete!: (value: Result<Table, never>) => void;
     transport.renameTable.mockImplementation(
       () =>
-        new Promise((resolve) => {
-          complete = resolve;
-        })
+        new ResultAsync(
+          new Promise<Result<Table, never>>((resolve) => {
+            complete = resolve;
+          })
+        )
     );
     const pending = renameDatabaseTable(parameters);
     const newer = { ...renamed, name: 'Team attendees', version: 7 };

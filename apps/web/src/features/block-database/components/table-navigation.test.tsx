@@ -1,3 +1,5 @@
+import type { ResultError } from '@core/util/result';
+import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
 import {
   cleanup,
   fireEvent,
@@ -5,9 +7,10 @@ import {
   screen,
   waitFor,
 } from '@solidjs/testing-library';
+import { err, errAsync, okAsync, type Result, ResultAsync } from 'neverthrow';
 import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CreateTable } from '../core/table-creation';
+import type { CreateTable, TableCreationResult } from '../core/table-creation';
 import { TableNavigation } from './table-navigation';
 
 vi.mock('@core/mobile/isMobile', () => ({ isMobile: () => false }));
@@ -83,7 +86,7 @@ describe('table creation and navigation', () => {
       { id: 'people', name: 'People' },
     ]);
     const [active, setActive] = createSignal('tasks');
-    const rename = vi.fn(async () => {});
+    const rename = vi.fn(() => okAsync(undefined));
     render(() => (
       <TableNavigation
         tables={tables()}
@@ -129,7 +132,7 @@ describe('table creation and navigation', () => {
         canCreate
         onCreate={vi.fn<CreateTable>()}
         onSelect={select}
-        onRename={vi.fn(async () => {})}
+        onRename={vi.fn(() => okAsync(undefined))}
       />
     ));
     const tab = screen.getByRole('tab', { name: 'People' });
@@ -159,7 +162,7 @@ describe('table creation and navigation', () => {
         canCreate
         onCreate={vi.fn<CreateTable>()}
         onSelect={vi.fn()}
-        onRename={vi.fn(async () => {})}
+        onRename={vi.fn(() => okAsync(undefined))}
       />
     ));
     const tab = screen.getByRole('tab', { name: 'Tasks' });
@@ -177,7 +180,7 @@ describe('table creation and navigation', () => {
   });
 
   it('saves a renamed table on blur without taking focus back', async () => {
-    const rename = vi.fn(async () => {});
+    const rename = vi.fn(() => okAsync(undefined));
     render(() => (
       <>
         <TableNavigation
@@ -221,8 +224,10 @@ describe('table creation and navigation', () => {
     ]);
     const rename = vi
       .fn()
-      .mockRejectedValueOnce(new Error('Offline'))
-      .mockResolvedValueOnce(undefined);
+      .mockReturnValueOnce(
+        errAsync([{ code: 'NETWORK_ERROR', message: 'Offline' }])
+      )
+      .mockReturnValueOnce(okAsync(undefined));
     render(() => (
       <TableNavigation
         tables={tables()}
@@ -238,7 +243,9 @@ describe('table creation and navigation', () => {
     const name = await screen.findByLabelText('Table name');
     fireEvent.input(name, { target: { value: 'Team' } });
     fireEvent.keyDown(name, { key: 'Enter' });
-    expect((await screen.findByRole('alert')).textContent).toBe('Offline');
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Could not rename this table. Its name may have changed. Check your connection, or reopen Rename table and try again.'
+    );
     setTables((current) => current.map((table) => ({ ...table })));
     expect(screen.getByLabelText('Table name')).toBe(name);
     expect((name as HTMLInputElement).value).toBe('Team');
@@ -251,7 +258,7 @@ describe('table creation and navigation', () => {
   });
 
   it('rejects duplicate names and lets Escape discard the inline draft', async () => {
-    const rename = vi.fn(async () => {});
+    const rename = vi.fn(() => okAsync(undefined));
     render(() => (
       <TableNavigation
         tables={[
@@ -330,10 +337,9 @@ describe('table creation and navigation', () => {
   });
 
   it('focuses the name, validates duplicates, creates the named table and opens it', async () => {
-    const create = vi.fn<CreateTable>(async () => ({
-      tableId: 'projects',
-      ready: true,
-    }));
+    const create = vi.fn<CreateTable>(() =>
+      okAsync({ tableId: 'projects', ready: true })
+    );
     const select = navigation(create);
     expect(
       screen.getByRole('tab', { name: 'Tasks' }).getAttribute('aria-selected')
@@ -357,12 +363,19 @@ describe('table creation and navigation', () => {
   });
 
   it('keeps the draft after a failed create and prevents double submission', async () => {
-    let reject: (error: Error) => void = () => {};
+    let settle: (
+      result: Result<
+        TableCreationResult,
+        ResultError<DatabaseSchemaErrorCode>[]
+      >
+    ) => void = () => {};
     const create = vi.fn<CreateTable>(
       () =>
-        new Promise((_resolve, fail) => {
-          reject = fail;
-        })
+        new ResultAsync(
+          new Promise((resolve) => {
+            settle = resolve;
+          })
+        )
     );
     navigation(create);
     fireEvent.click(screen.getByRole('button', { name: 'New table' }));
@@ -371,8 +384,10 @@ describe('table creation and navigation', () => {
     fireEvent.submit(name.closest('form')!);
     fireEvent.submit(name.closest('form')!);
     expect(create).toHaveBeenCalledTimes(1);
-    reject(new Error('Offline'));
-    await screen.findByRole('alert');
+    settle(err([{ code: 'NETWORK_ERROR', message: 'Offline' }]));
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Could not create this table. Check your connection and try again.'
+    );
     expect((name as HTMLInputElement).value).toBe('Projects');
     expect((name as HTMLInputElement).readOnly).toBe(false);
   });
@@ -380,12 +395,14 @@ describe('table creation and navigation', () => {
   it('resumes setup for the already-created table instead of creating another', async () => {
     const create = vi
       .fn<CreateTable>()
-      .mockResolvedValueOnce({
-        tableId: 'projects',
-        ready: false,
-        message: 'Your table was created. Retry setup.',
-      })
-      .mockResolvedValueOnce({ tableId: 'projects', ready: true });
+      .mockReturnValueOnce(
+        okAsync({
+          tableId: 'projects',
+          ready: false,
+          message: 'Your table was created. Retry setup.',
+        })
+      )
+      .mockReturnValueOnce(okAsync({ tableId: 'projects', ready: true }));
     const select = navigation(create);
     fireEvent.click(screen.getByRole('button', { name: 'New table' }));
     const name = await screen.findByLabelText('Table name');
@@ -447,7 +464,7 @@ describe('dragging tabs', () => {
         canCreate
         onCreate={vi.fn<CreateTable>()}
         onSelect={vi.fn()}
-        onRename={vi.fn(async () => {})}
+        onRename={vi.fn(() => okAsync(undefined))}
         onReorder={reorder}
       />
     ));
