@@ -9,10 +9,10 @@ use crate::domain::models::{KvKey, KvNamespace, KvValue, UserKvEntry, UserKvErro
 use crate::domain::ports::{UserKvRepo, UserKvService};
 
 /// Largest value accepted, measured as compact JSON.
-pub const MAX_VALUE_BYTES: usize = 16 * 1024;
+pub const MAX_VALUE_BYTES: usize = 64 * 1024;
 
 /// Most entries one user may hold across all namespaces.
-pub const MAX_ENTRIES_PER_USER: usize = 1000;
+pub const MAX_ENTRIES_PER_USER: usize = 10_000;
 
 /// Concrete key-value service backed by a [UserKvRepo].
 #[derive(Debug, Clone)]

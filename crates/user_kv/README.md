@@ -7,15 +7,15 @@ In-app tour progress is the first use.
 
 ## Rules
 
-- **Namespaces and keys:** 1–64 characters of `a-z`, `0-9`, `_`, `.` or `-`,
+- **Namespaces and keys:** 1–128 characters of `a-z`, `0-9`, `_`, `.` or `-`,
   starting with a letter or digit. Namespaces are free-form; pick one per use
   case and keep it stable.
-- **Values:** a JSON object of at most 16 KiB as compact JSON. The store
+- **Values:** a JSON object of at most 64 KiB as compact JSON. The store
   doesn't check the object's shape, so each use case parses and validates its
   own values and falls back to a default on anything it doesn't recognize.
 - **Writes replace the whole value.** There is no partial update or conflict
   check: the last write wins.
-- **Limit:** at most 1,000 entries per user across all namespaces.
+- **Limit:** at most 10,000 entries per user across all namespaces.
 - **Lifetime:** entries are deleted with the user.
 
 ## HTTP

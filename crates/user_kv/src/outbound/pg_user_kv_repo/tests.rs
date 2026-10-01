@@ -10,7 +10,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::PgUserKvRepo;
-use crate::domain::models::{KvKey, KvNamespace, KvValue};
+use crate::domain::models::{KvKey, KvNamespace, KvValue, MAX_SLUG_LEN};
 use crate::domain::ports::UserKvRepo;
 
 const USER_A: &str = "macro|user-a@macro.com";
@@ -207,10 +207,21 @@ async fn table_checks_reject_bad_rows_the_service_would_catch(pool: PgPool) {
         "object only"
     );
     assert!(
-        insert("tours", "big", json!({ "blob": "x".repeat(40_000) }))
+        insert("tours", "big", json!({ "blob": "x".repeat(140_000) }))
             .await
             .is_err(),
         "size backstop"
+    );
+    // The table and `KvKey::parse` agree on the longest slug.
+    let longest: &'static str = "a".repeat(MAX_SLUG_LEN).leak();
+    let too_long: &'static str = "a".repeat(MAX_SLUG_LEN + 1).leak();
+    assert!(
+        insert("tours", longest, json!({})).await.is_ok(),
+        "longest slug"
+    );
+    assert!(
+        insert("tours", too_long, json!({})).await.is_err(),
+        "slug length"
     );
     assert!(
         insert("tours", "calendar", json!({ "ok": true }))
