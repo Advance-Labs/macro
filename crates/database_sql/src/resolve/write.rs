@@ -15,7 +15,7 @@ use super::{
     UpdateQuery, column_key, filter, names, select,
 };
 
-pub fn resolve(table: &Table, insert: Insert) -> Result<InsertQuery, ResolveError> {
+pub fn resolve_insert(table: &Table, insert: Insert) -> Result<InsertQuery, ResolveError> {
     let mut columns = Vec::with_capacity(insert.columns.len());
     for name in &insert.columns {
         let column = names::column(table, name)?;
@@ -23,7 +23,7 @@ pub fn resolve(table: &Table, insert: Insert) -> Result<InsertQuery, ResolveErro
             .iter()
             .any(|seen: &&crate::catalog::Column| seen.id == column.id)
         {
-            return Err(ResolveError::DuplicateInsertColumn {
+            return Err(ResolveError::DuplicateColumn {
                 column: column.name.clone(),
             });
         }
@@ -55,7 +55,7 @@ pub fn resolve_update(catalog: &Catalog, update: Update) -> Result<UpdateQuery, 
     for (name, value) in update.assignments {
         let column = names::column(table, &name)?;
         if assignments.iter().any(|seen| seen.column == column.id) {
-            return Err(ResolveError::DuplicateInsertColumn {
+            return Err(ResolveError::DuplicateColumn {
                 column: column.name.clone(),
             });
         }

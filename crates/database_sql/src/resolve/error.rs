@@ -132,7 +132,8 @@ pub enum ResolveError {
         column: String,
     },
     /// A column named twice in an `INSERT` column list or `UPDATE`.
-    DuplicateInsertColumn {
+    #[serde(rename = "duplicateInsertColumn")]
+    DuplicateColumn {
         /// The column.
         column: String,
     },
@@ -220,8 +221,10 @@ impl fmt::Display for ResolveError {
                 Ok(())
             }
             Self::AmbiguousTable { name, databases } => {
-                let qualified: Vec<String> =
-                    databases.iter().map(|db| format!("{db}.{name}")).collect();
+                let qualified: Vec<String> = databases
+                    .iter()
+                    .map(|database| format!("{database}.{name}"))
+                    .collect();
                 write!(
                     f,
                     "table \"{name}\" exists in {} — qualify it as {}",
@@ -321,8 +324,8 @@ impl fmt::Display for ResolveError {
                 f,
                 "compare \"{column}\" to one value; lists are for INSERT and UPDATE"
             ),
-            Self::DuplicateInsertColumn { column } => {
-                write!(f, "\"{column}\" is listed twice in the column list")
+            Self::DuplicateColumn { column } => {
+                write!(f, "\"{column}\" is listed twice")
             }
             Self::DuplicateAlias { alias, table } => write!(
                 f,

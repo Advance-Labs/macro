@@ -730,7 +730,7 @@ fn rejections_quote_what_the_agent_wrote() {
         ),
         (
             "INSERT INTO crm.deals (name, name) VALUES ('a', 'b')",
-            "\"name\" is listed twice in the column list",
+            "\"name\" is listed twice",
         ),
         (
             "UPDATE crm.deals SET stage = 'Won' WHERE row_id = 'first'",
@@ -738,7 +738,7 @@ fn rejections_quote_what_the_agent_wrote() {
         ),
         (
             "UPDATE crm.deals SET stage = 'Won', stage = 'Lead' WHERE row_id = '00000000-0000-0000-0000-0000000000a1'",
-            "\"stage\" is listed twice in the column list",
+            "\"stage\" is listed twice",
         ),
         (
             "UPDATE crm.deals SET amount = 'lots' WHERE row_id = '00000000-0000-0000-0000-0000000000a1'",

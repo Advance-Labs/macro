@@ -40,8 +40,8 @@ pub fn virtual_columns(table: Uuid) -> [Column; 2] {
 }
 
 /// Case-insensitive equality on names.
-fn same(a: &str, b: &str) -> bool {
-    a.eq_ignore_ascii_case(b)
+fn same(left: &str, right: &str) -> bool {
+    left.eq_ignore_ascii_case(right)
 }
 
 /// The catalog table a statement names.
@@ -75,18 +75,8 @@ pub fn table<'c>(catalog: &'c Catalog, name: &TableName) -> Result<&'c Table, Re
         [table] => Ok(table),
         [] => Err(ResolveError::UnknownTable {
             name: written(name),
-            suggestion: closest(
-                &name.table.0,
-                catalog.tables.iter().map(|table| table.name.as_str()),
-            )
-            .map(|closest| {
-                let table = catalog
-                    .tables
-                    .iter()
-                    .find(|table| table.name == closest)
-                    .expect("closest name came from the catalog");
-                format!("{}.{}", table.database, table.name)
-            }),
+            suggestion: closest(&name.table.0, catalog.tables.iter(), |table| &table.name)
+                .map(qualified),
         }),
         several => Err(ResolveError::AmbiguousTable {
             name: name.table.0.clone(),
@@ -117,10 +107,8 @@ pub fn column<'t>(table: &'t Table, name: &Identifier) -> Result<&'t Column, Res
         .ok_or_else(|| ResolveError::UnknownColumn {
             name: name.0.clone(),
             table: qualified(table),
-            suggestion: closest(
-                &name.0,
-                table.columns.iter().map(|column| column.name.as_str()),
-            ),
+            suggestion: closest(&name.0, table.columns.iter(), |column| &column.name)
+                .map(|column| column.name.clone()),
         })
 }
 
@@ -227,13 +215,15 @@ impl<'c> Scope<'c> {
             .iter()
             .filter_map(|&index| self.bind(index, name))
             .collect();
-        match found.len() {
-            1 => Ok(found.into_iter().next().expect("one match")),
-            0 => Err(self.unknown_column(&candidates, name)),
-            _ => Err(ResolveError::AmbiguousColumn {
+        let mut found = found.into_iter();
+        match (found.next(), found.next()) {
+            (Some(bound), None) => Ok(bound),
+            (None, _) => Err(self.unknown_column(&candidates, name)),
+            (Some(first), Some(second)) => Err(ResolveError::AmbiguousColumn {
                 name: name.clone(),
-                qualified: found
-                    .iter()
+                qualified: [first, second]
+                    .into_iter()
+                    .chain(found)
                     .map(|bound| format!("{}.{}", self.relations[bound.relation].alias, name))
                     .collect(),
             }),
@@ -280,10 +270,10 @@ impl<'c> Scope<'c> {
                 .join(" or "),
             suggestion: closest(
                 name,
-                tables
-                    .iter()
-                    .flat_map(|table| table.columns.iter().map(|column| column.name.as_str())),
-            ),
+                tables.iter().flat_map(|table| table.columns.iter()),
+                |column| &column.name,
+            )
+            .map(|column| column.name.clone()),
         }
     }
 
@@ -309,28 +299,38 @@ impl<'c> Scope<'c> {
     }
 }
 
-/// The candidate within a small edit distance of `name`, if any.
-pub fn closest<'a>(name: &str, candidates: impl Iterator<Item = &'a str>) -> Option<String> {
+/// The candidate whose name is within a small edit distance of `name`, if
+/// any.
+fn closest<'candidate, Candidate>(
+    name: &str,
+    candidates: impl Iterator<Item = &'candidate Candidate>,
+    name_of: impl Fn(&Candidate) -> &str,
+) -> Option<&'candidate Candidate> {
     let limit = (name.len() / 3).clamp(1, 3);
     candidates
-        .map(|candidate| (edit_distance(name, candidate), candidate))
+        .map(|candidate| (edit_distance(name, name_of(candidate)), candidate))
         .filter(|(distance, _)| *distance <= limit)
         .min_by_key(|(distance, _)| *distance)
-        .map(|(_, candidate)| candidate.to_owned())
+        .map(|(_, candidate)| candidate)
 }
 
 /// Levenshtein distance, case-insensitive.
-fn edit_distance(a: &str, b: &str) -> usize {
-    let a: Vec<char> = a.to_lowercase().chars().collect();
-    let b: Vec<char> = b.to_lowercase().chars().collect();
-    let mut previous: Vec<usize> = (0..=b.len()).collect();
-    for (i, ca) in a.iter().enumerate() {
-        let mut current = vec![i + 1];
-        for (j, cb) in b.iter().enumerate() {
-            let substitution = previous[j] + usize::from(ca != cb);
-            current.push(substitution.min(previous[j + 1] + 1).min(current[j] + 1));
+fn edit_distance(left: &str, right: &str) -> usize {
+    let left: Vec<char> = left.to_lowercase().chars().collect();
+    let right: Vec<char> = right.to_lowercase().chars().collect();
+    let mut previous: Vec<usize> = (0..=right.len()).collect();
+    for (left_index, left_character) in left.iter().enumerate() {
+        let mut current = vec![left_index + 1];
+        for (right_index, right_character) in right.iter().enumerate() {
+            let substitution =
+                previous[right_index] + usize::from(left_character != right_character);
+            current.push(
+                substitution
+                    .min(previous[right_index + 1] + 1)
+                    .min(current[right_index] + 1),
+            );
         }
         previous = current;
     }
-    previous[b.len()]
+    previous[right.len()]
 }

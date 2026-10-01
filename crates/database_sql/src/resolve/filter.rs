@@ -151,6 +151,8 @@ fn check_operator(column: &Column, operator: ComparisonOperator) -> Result<(), R
     Ok(())
 }
 
+const DATE_HINT: &str = "compare it to an ISO date like '2026-09-01' or '2026-09-01T09:00:00Z'";
+
 /// Type a literal a column is compared to. Lists belong to writes.
 pub fn typed(column: &Column, lit: Literal) -> Result<Value, ResolveError> {
     if matches!(lit, Literal::List(_)) {
@@ -170,9 +172,10 @@ pub fn typed_cell(column: &Column, lit: Literal) -> Result<Value, ResolveError> 
         single => vec![single],
     };
     if !column.kind.is_multi() {
-        return match elements.len() {
-            1 => typed_one(column, elements.into_iter().next().expect("one element")),
-            count => Err(ResolveError::ListOnSingleValued {
+        let count = elements.len();
+        return match <[Literal; 1]>::try_from(elements) {
+            Ok([single]) => typed_one(column, single),
+            Err(_) => Err(ResolveError::ListOnSingleValued {
                 column: column.name.clone(),
                 count,
             }),
@@ -207,18 +210,10 @@ fn typed_one(column: &Column, lit: Literal) -> Result<Value, ResolveError> {
         (ColumnKind::Number, _) => Err(mismatch("number", "compare it to a number")),
         (ColumnKind::Boolean, Literal::Boolean(b)) => Ok(Value::Bool(b)),
         (ColumnKind::Boolean, _) => Err(mismatch("checkbox", "compare it to TRUE or FALSE")),
-        (ColumnKind::Date, Literal::Text(text)) => {
-            parse_date(&text).map(Value::Date).ok_or_else(|| {
-                mismatch(
-                    "date",
-                    "compare it to an ISO date like '2026-09-01' or '2026-09-01T09:00:00Z'",
-                )
-            })
-        }
-        (ColumnKind::Date, _) => Err(mismatch(
-            "date",
-            "compare it to an ISO date like '2026-09-01' or '2026-09-01T09:00:00Z'",
-        )),
+        (ColumnKind::Date, Literal::Text(text)) => parse_date(&text)
+            .map(Value::Date)
+            .ok_or_else(|| mismatch("date", DATE_HINT)),
+        (ColumnKind::Date, _) => Err(mismatch("date", DATE_HINT)),
         (ColumnKind::Select { options, .. }, Literal::Text(label)) => options
             .iter()
             .find(|option| option.label.eq_ignore_ascii_case(&label))

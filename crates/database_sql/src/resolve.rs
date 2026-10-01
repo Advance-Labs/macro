@@ -8,11 +8,11 @@
 
 mod error;
 mod filter;
-mod insert;
 mod names;
 mod select;
 #[cfg(test)]
 mod test;
+mod write;
 
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
@@ -105,8 +105,8 @@ pub struct Binding {
 }
 
 /// The key of a column: the definition id itself in the `FROM` table, so a
-/// single-table query is keyed exactly as before, and a name derived from it
-/// in each joined table.
+/// single-table query's keys are its definition ids, and a name derived from
+/// it in each joined table.
 pub fn column_key(relation: usize, column: Uuid) -> Uuid {
     if relation == 0 {
         column
@@ -321,11 +321,11 @@ pub fn resolve(catalog: &Catalog, statement: Statement) -> Result<Query, Resolve
         Statement::Select(select) => select::resolve(catalog, select).map(Query::Select),
         Statement::Insert(insert) => {
             let table = writable(names::table(catalog, &insert.table)?)?;
-            insert::resolve(table, insert).map(Query::Insert)
+            write::resolve_insert(table, insert).map(Query::Insert)
         }
         Statement::Update(update) => {
             writable(names::table(catalog, &update.table)?)?;
-            insert::resolve_update(catalog, update).map(Query::Update)
+            write::resolve_update(catalog, update).map(Query::Update)
         }
         Statement::AlterColumnType(alter) => {
             let table = writable(names::table(catalog, &alter.table)?)?;
@@ -352,7 +352,7 @@ pub fn resolve(catalog: &Catalog, statement: Statement) -> Result<Query, Resolve
         }
         Statement::Delete(delete) => {
             writable(names::table(catalog, &delete.table)?)?;
-            insert::resolve_delete(catalog, delete).map(Query::Delete)
+            write::resolve_delete(catalog, delete).map(Query::Delete)
         }
     }
 }
