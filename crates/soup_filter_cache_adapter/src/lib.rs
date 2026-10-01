@@ -210,7 +210,7 @@ fn walk_authoritative_object(
             == vocabulary::channel_partition()
             || partition == vocabulary::database_row_partition()
         {
-            match channels::selected_object(object, &fields) {
+            match direct_patch::selected_object(object, &fields) {
                 Ok(selected) => (selected, true),
                 // Use the original ID only to invalidate a conflicting snapshot;
                 // never interpret conflicting nullable aliases as absent facts.

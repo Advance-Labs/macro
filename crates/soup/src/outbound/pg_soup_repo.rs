@@ -62,7 +62,7 @@ impl SoupRepo for PgSoupRepo {
         &self,
         req: SimpleSortRequest<'a>,
     ) -> Result<Vec<SoupProjectionHydration>, Self::Err> {
-        let calendar_req = req.clone();
+        let cursor_request = req.clone();
         let sort = *req.cursor.sort_method();
         let limit = req.limit;
         let mut items = match req.cursor {
@@ -126,7 +126,7 @@ impl SoupRepo for PgSoupRepo {
             }
         };
         items.extend(
-            calendar_event::cursor_soup(&self.pool.0, calendar_req.clone())
+            calendar_event::cursor_soup(&self.pool.0, cursor_request.clone())
                 .await?
                 .into_iter()
                 .map(|item| SoupProjectionHydration {
@@ -135,7 +135,7 @@ impl SoupRepo for PgSoupRepo {
                 }),
         );
         items.extend(
-            agent_session::cursor_soup(&self.pool.0, calendar_req)
+            agent_session::cursor_soup(&self.pool.0, cursor_request)
                 .await?
                 .into_iter()
                 .map(|item| SoupProjectionHydration {
@@ -151,7 +151,7 @@ impl SoupRepo for PgSoupRepo {
         &self,
         req: SimpleSortRequest<'a>,
     ) -> Result<Vec<SoupItem<()>>, Self::Err> {
-        let calendar_req = req.clone();
+        let cursor_request = req.clone();
         let sort = *req.cursor.sort_method();
         let limit = req.limit;
         let mut items = match req.cursor {
@@ -184,8 +184,8 @@ impl SoupRepo for PgSoupRepo {
                 .await?
             }
         };
-        items.extend(calendar_event::cursor_soup(&self.pool.0, calendar_req.clone()).await?);
-        items.extend(agent_session::cursor_soup(&self.pool.0, calendar_req).await?);
+        items.extend(calendar_event::cursor_soup(&self.pool.0, cursor_request.clone()).await?);
+        items.extend(agent_session::cursor_soup(&self.pool.0, cursor_request).await?);
         sort_and_truncate(&mut items, sort, limit);
         Ok(items)
     }
@@ -206,7 +206,7 @@ impl SoupRepo for PgSoupRepo {
         &self,
         req: AdvancedSortParams<'a>,
     ) -> Result<Vec<SoupProjectionHydration>, Self::Err> {
-        let calendar_req = req.clone();
+        let by_ids_request = req.clone();
         let mut items = expanded::by_ids::expanded_soup_by_ids_with_projection(
             &self.pool.0,
             req.user_id,
@@ -214,7 +214,7 @@ impl SoupRepo for PgSoupRepo {
         )
         .await?;
         items.extend(
-            calendar_event::by_ids(&self.pool.0, calendar_req.clone())
+            calendar_event::by_ids(&self.pool.0, by_ids_request.clone())
                 .await?
                 .into_iter()
                 .map(|item| SoupProjectionHydration {
@@ -223,7 +223,7 @@ impl SoupRepo for PgSoupRepo {
                 }),
         );
         items.extend(
-            agent_session::by_ids(&self.pool.0, calendar_req.clone())
+            agent_session::by_ids(&self.pool.0, by_ids_request.clone())
                 .await?
                 .into_iter()
                 .map(|item| SoupProjectionHydration {
@@ -232,7 +232,7 @@ impl SoupRepo for PgSoupRepo {
                 }),
         );
         items.extend(
-            initiative::by_ids(&self.pool.0, calendar_req.clone())
+            initiative::by_ids(&self.pool.0, by_ids_request.clone())
                 .await?
                 .into_iter()
                 .map(|item| SoupProjectionHydration {
@@ -241,7 +241,7 @@ impl SoupRepo for PgSoupRepo {
                 }),
         );
         items.extend(
-            database_row::by_ids(&self.pool.0, calendar_req)
+            database_row::by_ids(&self.pool.0, by_ids_request)
                 .await?
                 .into_iter()
                 .map(|item| SoupProjectionHydration {
@@ -256,14 +256,14 @@ impl SoupRepo for PgSoupRepo {
         &self,
         req: AdvancedSortParams<'a>,
     ) -> Result<Vec<SoupItem<()>>, Self::Err> {
-        let calendar_req = req.clone();
+        let by_ids_request = req.clone();
         let mut items =
             unexpanded::by_ids::unexpanded_soup_by_ids(&self.pool.0, req.user_id, req.entities)
                 .await?;
-        items.extend(calendar_event::by_ids(&self.pool.0, calendar_req.clone()).await?);
-        items.extend(agent_session::by_ids(&self.pool.0, calendar_req.clone()).await?);
-        items.extend(initiative::by_ids(&self.pool.0, calendar_req.clone()).await?);
-        items.extend(database_row::by_ids(&self.pool.0, calendar_req).await?);
+        items.extend(calendar_event::by_ids(&self.pool.0, by_ids_request.clone()).await?);
+        items.extend(agent_session::by_ids(&self.pool.0, by_ids_request.clone()).await?);
+        items.extend(initiative::by_ids(&self.pool.0, by_ids_request.clone()).await?);
+        items.extend(database_row::by_ids(&self.pool.0, by_ids_request).await?);
         Ok(items)
     }
 

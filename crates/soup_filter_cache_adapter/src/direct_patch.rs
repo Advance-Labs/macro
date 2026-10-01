@@ -5,6 +5,22 @@ use predicate_index::{IntegerAttributePatch, IntegerFact, utc_timestamp_micros};
 
 type Object = serde_json::Map<String, serde_json::Value>;
 
+/// The selected fields keyed by field name rather than alias; `Err` when two
+/// aliases of one field disagree.
+pub(super) fn selected_object(object: &Object, fields: &[&FieldNode]) -> Result<Object, ()> {
+    let mut selected = Object::new();
+    for field in fields {
+        let Some(value) = object.get(&field.response_key) else {
+            continue;
+        };
+        if selected.get(&field.name).is_some_and(|old| old != value) {
+            return Err(());
+        }
+        selected.insert(field.name.clone(), value.clone());
+    }
+    Ok(selected)
+}
+
 /// The non-empty `ownerId` patch, when the object carries one.
 pub(super) fn owner(object: &Object) -> Result<Option<ExactAttributePatch>, ()> {
     let Some(value) = object.get("ownerId") else {
