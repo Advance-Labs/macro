@@ -15,7 +15,12 @@ describe('QueryDatabase tool results as answers', () => {
                 options: [{ id: 'option-yes', label: 'Yes' }],
               },
               { name: 'Host', kind: 'entity', target: 'USER' },
-              { name: 'Parties', kind: 'entity', target: 'DATABASE_ROW' },
+              {
+                name: 'Parties',
+                kind: 'entity',
+                target: 'DATABASE_ROW',
+                relatedTable: 'table-parties',
+              },
               { name: 'Starts', kind: 'date' },
             ],
             rows: [
@@ -69,7 +74,7 @@ describe('QueryDatabase tool results as answers', () => {
               options: [],
               tag: false,
               target: 'DATABASE_ROW',
-              relatedTable: null,
+              relatedTable: 'table-parties',
             },
           },
           { name: 'Starts', kind: 'date' },

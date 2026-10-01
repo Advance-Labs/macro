@@ -10,6 +10,7 @@ import type { QueryAnswer } from './query';
 function toolColumn(column: ResultColumn): AnswerColumn {
   const options = column.options ?? [];
   const target = column.target ?? null;
+  const relatedTable = column.relatedTable ?? null;
   if (!options.length && !target)
     return { name: column.name, kind: column.kind };
   return {
@@ -20,7 +21,7 @@ function toolColumn(column: ResultColumn): AnswerColumn {
       options: options.map((option) => ({ ...option, color: null })),
       tag: false,
       target,
-      relatedTable: null,
+      relatedTable,
     },
   };
 }

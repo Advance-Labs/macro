@@ -151,7 +151,7 @@ describe('question result display', () => {
           source: {
             ...plain,
             target: 'DATABASE_ROW',
-            relatedTable: { databaseId: 'party-planner', tableId: 'vendors' },
+            relatedTable: 'vendors',
           },
         },
         {
@@ -160,7 +160,7 @@ describe('question result display', () => {
           source: {
             ...plain,
             target: 'DATABASE_ROW',
-            relatedTable: { databaseId: 'party-planner', tableId: 'venues' },
+            relatedTable: 'venues',
           },
         },
       ],

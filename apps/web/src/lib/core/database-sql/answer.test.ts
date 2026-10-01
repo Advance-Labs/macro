@@ -403,7 +403,7 @@ describe('databaseSqlAnswer', () => {
           source: {
             ...noSource,
             target: 'DATABASE_ROW',
-            relatedTable: { databaseId: 'db-party', tableId: 'table-parties' },
+            relatedTable: 'table-parties',
           },
         },
         {

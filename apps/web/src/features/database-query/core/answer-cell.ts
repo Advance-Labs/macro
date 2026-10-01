@@ -66,7 +66,7 @@ export function resultCell(
         return {
           kind: 'rows',
           ids: value,
-          table: source?.relatedTable?.tableId ?? null,
+          table: source?.relatedTable ?? null,
         };
       return target
         ? { kind: 'mentions', entityType: target, ids: value }

@@ -150,7 +150,7 @@ describe('result cells from the engine’s typed cells', () => {
             options: [],
             tag: false,
             target: 'DATABASE_ROW',
-            relatedTable: { databaseId: 'db-party', tableId: 'table-parties' },
+            relatedTable: 'table-parties',
           },
         }
       )

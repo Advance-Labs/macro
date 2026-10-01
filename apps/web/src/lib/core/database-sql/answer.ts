@@ -29,7 +29,7 @@ export type AnswerSource = {
   /** What entity ids point at; rows of another table for a relation. */
   target: EntityKind | null;
   /** The table a relation's rows belong to. */
-  relatedTable: { databaseId: string; tableId: string } | null;
+  relatedTable: string | null;
 };
 
 export type AnswerColumn = {
@@ -78,9 +78,7 @@ function answerSource(
         : [],
     tag: detail?.definition.definition.data_type === 'TAG',
     target: kind.kind === 'entity' ? kind.target : null,
-    relatedTable: link
-      ? { databaseId: link.database_id, tableId: link.table_id }
-      : null,
+    relatedTable: link ? link.table_id : null,
   };
 }
 

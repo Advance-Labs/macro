@@ -445,7 +445,7 @@ describe('chart data', () => {
             options: [],
             tag: false,
             target: 'DATABASE_ROW',
-            relatedTable: { databaseId: 'db', tableId: 'people' },
+            relatedTable: 'people',
           },
         },
         { name: 'Tickets', kind: 'number' },
