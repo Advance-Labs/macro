@@ -28,10 +28,7 @@ const MAX_CHART_SERIES: usize = 5;
 #[serde(rename_all = "camelCase")]
 #[schemars(
     title = "SaveDatabaseQuery",
-    description = concat!(
-        include_str!("save_database_query.md"),
-        include_str!("sql_guide.md"),
-    )
+    description = include_str!("save_database_query.md")
 )]
 pub struct SaveDatabaseQuery {
     /// The database the question is about.
