@@ -571,12 +571,12 @@ export const CREATABLE_BLOCKS: CreatableBlock[] = [
     icon: getIconConfig('database').icon,
     description: 'Create database',
     launcherHint: 'Tables and boards',
-    keywords: ['new', 'make', 'add', 'database', 'table', 'db', 'sql'],
+    keywords: ['new', 'make', 'add', 'database', 'table', 'db'],
     blockName: 'database',
     enabled: () => isFeatureEnabled(enableDatabases),
     hotkeyToken: TOKENS.create.database,
     altHotkeyToken: TOKENS.create.databaseNewSplit,
-    hotkey: 'b',
+    hotkey: 'l',
     keyDownHandler: () => {
       runCreateAction('database', { shouldInsert: pressedKeys().has('shift') });
       return true;
@@ -726,7 +726,7 @@ export const CREATABLE_BLOCKS: CreatableBlock[] = [
     blockName: 'spreadsheet',
     hotkeyToken: TOKENS.create.spreadsheet,
     altHotkeyToken: TOKENS.create.spreadsheetNewSplit,
-    hotkey: 'w',
+    hotkey: 'b',
     keyDownHandler: () => {
       runCreateAction('spreadsheet', {
         shouldInsert: pressedKeys().has('shift'),

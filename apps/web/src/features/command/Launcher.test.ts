@@ -63,12 +63,12 @@ describe('create-menu keyboard shortcuts', () => {
       // Registration overrides earlier entries with the same key. Both pilots
       // must survive, alongside every other available create action.
       expect(bindings.size).toBe(enabled.length);
-      expect(bindings.get('b')).toMatchObject({
+      expect(bindings.get('l')).toMatchObject({
         blockName: 'database',
         hotkeyToken: TOKENS.create.database,
         altHotkeyToken: TOKENS.create.databaseNewSplit,
       });
-      expect(bindings.get('w')).toMatchObject({
+      expect(bindings.get('b')).toMatchObject({
         blockName: 'spreadsheet',
         hotkeyToken: TOKENS.create.spreadsheet,
         altHotkeyToken: TOKENS.create.spreadsheetNewSplit,
