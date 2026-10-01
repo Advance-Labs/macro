@@ -388,8 +388,14 @@ pub(crate) async fn populate_properties(
             .collect());
     }
 
+    // A database row's cells are its properties, so a row carries every one
+    // of them; any other item carries the system properties and the
+    // viewer's tags.
+    let (row_refs, entity_refs): (Vec<_>, Vec<_>) = entity_refs
+        .into_iter()
+        .partition(|reference| reference.entity_type == models_properties::EntityType::DatabaseRow);
     let property_ids = SystemPropertyKey::all_system_property_keys();
-    let properties_map =
+    let mut properties_map =
         properties::outbound::entity_properties_get_query::get_bulk_entity_properties_values_filtered(
             db,
             &entity_refs,
@@ -398,6 +404,13 @@ pub(crate) async fn populate_properties(
         )
         .await
         .map_err(|e| sqlx::Error::Decode(e.into()))?;
+    properties_map.extend(
+        properties::outbound::entity_properties_get_query::get_bulk_entity_properties_values(
+            db, &row_refs,
+        )
+        .await
+        .map_err(|e| sqlx::Error::Decode(e.into()))?,
+    );
 
     // Items may repeat an id when grouped, so use `get` rather than `remove`.
     Ok(items

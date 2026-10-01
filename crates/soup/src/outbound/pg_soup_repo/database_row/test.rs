@@ -17,6 +17,7 @@ use macro_db_migrator::MACRO_DB_MIGRATIONS;
 use macro_user_id::user_id::MacroUserIdStr;
 use models_grouping::{GroupByField, GroupingConfig};
 use models_pagination::{Identify, Query, SimpleSortMethod};
+use models_properties::service::property_value::PropertyValue;
 use models_soup::database_row::SoupDatabaseRow;
 use std::sync::Arc;
 
@@ -229,5 +230,35 @@ async fn hydrating_by_id_keeps_the_database_access_rule(pool: PgPool) {
     assert_eq!(
         items.iter().map(Identify::id).collect::<Vec<_>>(),
         vec![DEAL_1]
+    );
+}
+
+/// A row's cells are properties of database-owned definitions, which are
+/// neither system properties nor the viewer's tags: a row carries them all.
+#[sqlx::test(fixtures("test/database_rows.sql"), migrator = "MACRO_DB_MIGRATIONS")]
+async fn a_row_carries_every_cell_as_a_property(pool: PgPool) {
+    let items = page(
+        &pool,
+        viewer(),
+        rows_of(Some(Expr::val(DatabaseRowLiteral::Id(DEAL_1)))),
+    )
+    .await;
+
+    let rows = crate::outbound::pg_soup_repo::populate_properties(&pool, viewer(), items)
+        .await
+        .unwrap();
+
+    let [SoupItem::DatabaseRow(row)] = rows.as_slice() else {
+        panic!("expected one database row, got {rows:?}");
+    };
+    let cells: Vec<(Uuid, Option<PropertyValue>)> = row
+        .extra
+        .properties
+        .iter()
+        .map(|property| (property.definition.id, property.value.clone()))
+        .collect();
+    assert_eq!(
+        cells,
+        vec![(STAGE, Some(PropertyValue::SelectOption(vec![WON])))]
     );
 }
