@@ -6,6 +6,7 @@
 //! pushed — every viewer re-executes as themselves.
 
 use connection_gateway_client::client::ConnectionGatewayClient;
+use macro_user_id::user_id::MacroUserIdStr;
 use model_entity::EntityType;
 
 use crate::domain::models::{Awareness, DatabaseId, TableId, TableVersion};
@@ -66,7 +67,7 @@ impl TableEventPublisher for GatewayTableEventPublisher {
     async fn awareness(
         &self,
         database_id: DatabaseId,
-        user_id: &str,
+        user_id: &MacroUserIdStr<'_>,
         state: &Awareness,
     ) -> Result<(), Self::Err> {
         self.client
@@ -75,7 +76,7 @@ impl TableEventPublisher for GatewayTableEventPublisher {
                 AWARENESS_MESSAGE_TYPE.to_string(),
                 serde_json::json!({
                     "databaseId": database_id,
-                    "userId": user_id,
+                    "userId": user_id.as_ref(),
                     "state": state,
                     "ts": chrono::Utc::now().timestamp_millis(),
                 }),
@@ -106,7 +107,7 @@ impl TableEventPublisher for NoOpTableEventPublisher {
     async fn awareness(
         &self,
         _database_id: DatabaseId,
-        _user_id: &str,
+        _user_id: &MacroUserIdStr<'_>,
         _state: &Awareness,
     ) -> Result<(), Self::Err> {
         Ok(())
@@ -158,7 +159,7 @@ impl TableEventPublisher for MaybeGatewayTableEventPublisher {
     async fn awareness(
         &self,
         database_id: DatabaseId,
-        user_id: &str,
+        user_id: &MacroUserIdStr<'_>,
         state: &Awareness,
     ) -> Result<(), Self::Err> {
         match self {

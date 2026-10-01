@@ -575,13 +575,13 @@ impl DatabasesRepo for FakeRepo {
         &self,
         database_id: Option<DatabaseId>,
         definition: &QueryDefinition,
-        created_by: &str,
+        created_by: &MacroUserIdStr<'_>,
     ) -> Result<SavedQuery, FakeError> {
         let saved = SavedQuery {
             id: Uuid::now_v7(),
             definition: definition.clone(),
             database_id,
-            created_by: Some(created_by.to_string()),
+            created_by: Some(created_by.as_ref().to_string()),
             created_at: Utc::now(),
         };
         self.0.lock().unwrap().queries.push(saved.clone());
@@ -1138,14 +1138,14 @@ impl TableEventPublisher for FakeEvents {
     async fn awareness(
         &self,
         database_id: DatabaseId,
-        user_id: &str,
+        user_id: &MacroUserIdStr<'_>,
         state: &Awareness,
     ) -> Result<(), FakeError> {
-        self.0
-            .lock()
-            .unwrap()
-            .awareness
-            .push((database_id, user_id.to_string(), state.clone()));
+        self.0.lock().unwrap().awareness.push((
+            database_id,
+            user_id.as_ref().to_string(),
+            state.clone(),
+        ));
         Ok(())
     }
 }

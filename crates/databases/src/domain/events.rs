@@ -16,7 +16,7 @@ use macro_event_topics::MacroDatabasesTopic;
 use macro_user_id::user_id::MacroUserIdStr;
 use serde::{Deserialize, Serialize};
 
-use crate::domain::models::{TableId, TableVersion};
+use crate::domain::models::{DatabaseId, TableId, TableVersion};
 
 /// Who performed a write: the principal that mechanically acted and, when a
 /// bot acted for a user, the user whose feed the action belongs on.
@@ -54,24 +54,22 @@ impl Attribution {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DatabaseCreatedMetadata {
     /// The id of the created database.
-    pub database_id: String,
+    pub database_id: DatabaseId,
     /// The owner (creator) of the database.
     pub owner: MacroUserIdStr<'static>,
     /// The display name it was created with.
     pub name: String,
     /// Creation timestamp reported by the repository.
     pub created_at: DateTime<Utc>,
-    /// Who created it. Absent on events from before attribution, which read
-    /// as the owner acting.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub attribution: Option<Attribution>,
+    /// Who created it.
+    pub attribution: Attribution,
 }
 
 /// Metadata for [`DatabaseTopicEvent::Renamed`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DatabaseRenamedMetadata {
     /// The id of the renamed database.
-    pub database_id: String,
+    pub database_id: DatabaseId,
     /// Who renamed it; `None` for internal callers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attribution: Option<Attribution>,
@@ -83,7 +81,7 @@ pub struct DatabaseRenamedMetadata {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DatabaseTrashedMetadata {
     /// The id of the trashed database.
-    pub database_id: String,
+    pub database_id: DatabaseId,
     /// Who trashed it; `None` for internal callers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attribution: Option<Attribution>,
@@ -93,7 +91,7 @@ pub struct DatabaseTrashedMetadata {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DatabaseRestoredMetadata {
     /// The id of the restored database.
-    pub database_id: String,
+    pub database_id: DatabaseId,
     /// Who restored it; `None` for internal callers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attribution: Option<Attribution>,
@@ -103,14 +101,14 @@ pub struct DatabaseRestoredMetadata {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DatabasePurgedMetadata {
     /// The id of the permanently deleted database.
-    pub database_id: String,
+    pub database_id: DatabaseId,
 }
 
 /// Metadata for [`DatabaseTopicEvent::SharingChanged`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DatabaseSharingChangedMetadata {
     /// The database whose sharing changed.
-    pub database_id: String,
+    pub database_id: DatabaseId,
     /// Who changed it; `None` for internal callers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attribution: Option<Attribution>,
@@ -129,7 +127,7 @@ pub struct TableVersionChange {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DatabaseTablesChangedMetadata {
     /// The database the tables belong to.
-    pub database_id: String,
+    pub database_id: DatabaseId,
     /// Who wrote; `None` for internal callers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attribution: Option<Attribution>,
@@ -181,7 +179,7 @@ impl DatabaseMacroEvent {
     /// Build a created event keyed by the new database id.
     pub fn created(metadata: DatabaseCreatedMetadata) -> Self {
         Self::new(
-            metadata.database_id.clone(),
+            metadata.database_id.to_string(),
             DatabaseTopicEvent::Created(metadata),
         )
     }
@@ -189,7 +187,7 @@ impl DatabaseMacroEvent {
     /// Build a renamed event keyed by the database id.
     pub fn renamed(metadata: DatabaseRenamedMetadata) -> Self {
         Self::new(
-            metadata.database_id.clone(),
+            metadata.database_id.to_string(),
             DatabaseTopicEvent::Renamed(metadata),
         )
     }
@@ -197,7 +195,7 @@ impl DatabaseMacroEvent {
     /// Build a trashed event keyed by the database id.
     pub fn trashed(metadata: DatabaseTrashedMetadata) -> Self {
         Self::new(
-            metadata.database_id.clone(),
+            metadata.database_id.to_string(),
             DatabaseTopicEvent::Trashed(metadata),
         )
     }
@@ -205,7 +203,7 @@ impl DatabaseMacroEvent {
     /// Build a restored event keyed by the database id.
     pub fn restored(metadata: DatabaseRestoredMetadata) -> Self {
         Self::new(
-            metadata.database_id.clone(),
+            metadata.database_id.to_string(),
             DatabaseTopicEvent::Restored(metadata),
         )
     }
@@ -213,7 +211,7 @@ impl DatabaseMacroEvent {
     /// Build a purged event keyed by the database id.
     pub fn purged(metadata: DatabasePurgedMetadata) -> Self {
         Self::new(
-            metadata.database_id.clone(),
+            metadata.database_id.to_string(),
             DatabaseTopicEvent::Purged(metadata),
         )
     }
@@ -221,7 +219,7 @@ impl DatabaseMacroEvent {
     /// Build a tables-changed event keyed by the database id.
     pub fn tables_changed(metadata: DatabaseTablesChangedMetadata) -> Self {
         Self::new(
-            metadata.database_id.clone(),
+            metadata.database_id.to_string(),
             DatabaseTopicEvent::TablesChanged(metadata),
         )
     }
@@ -229,7 +227,7 @@ impl DatabaseMacroEvent {
     /// Build a sharing-changed event keyed by the database id.
     pub fn sharing_changed(metadata: DatabaseSharingChangedMetadata) -> Self {
         Self::new(
-            metadata.database_id.clone(),
+            metadata.database_id.to_string(),
             DatabaseTopicEvent::SharingChanged(metadata),
         )
     }

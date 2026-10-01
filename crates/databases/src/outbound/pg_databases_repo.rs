@@ -22,6 +22,7 @@ use std::collections::HashMap;
 
 use models_databases::position::{PositionError, key_between, keys_between};
 
+use macro_user_id::user_id::MacroUserIdStr;
 use sqlx::PgPool;
 
 use entity_access_db_utils::{AccessLevel, EntityAccessSourceType};
@@ -118,9 +119,10 @@ impl DatabasesRepo for PgDatabasesRepo {
         &self,
         database_id: Option<DatabaseId>,
         definition: &QueryDefinition,
-        created_by: &str,
+        created_by: &MacroUserIdStr<'_>,
     ) -> Result<SavedQuery, Self::Err> {
-        self.insert_query(database_id, definition, created_by).await
+        self.insert_query(database_id, definition, created_by.as_ref())
+            .await
     }
 
     #[tracing::instrument(err, skip(self))]

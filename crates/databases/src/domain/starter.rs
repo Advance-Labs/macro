@@ -167,11 +167,11 @@ impl<Repo: DatabaseStarterRepo, Broker: MacroEventBroker> DatabaseStarterService
             .map_err(|error| DatabaseError::Repo(rootcause::Report::new(error).into_dynamic()))?;
         if outcome.created {
             let event = DatabaseMacroEvent::created(DatabaseCreatedMetadata {
-                database_id: blueprint.database_id.to_string(),
+                database_id: blueprint.database_id,
                 owner: viewer.user_id.clone(),
                 name: blueprint.name.into(),
                 created_at: Utc::now(),
-                attribution: Some(Attribution::acting(viewer.user_id, viewer.acting_bot)),
+                attribution: Attribution::acting(viewer.user_id, viewer.acting_bot),
             });
             if let Err(error) = self.broker.send_event(&event) {
                 tracing::warn!(?error, "failed to publish starter database creation");

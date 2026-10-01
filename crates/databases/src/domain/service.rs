@@ -387,7 +387,7 @@ where
             tables.sort_by_key(|change| change.table_id);
             self.emit(DatabaseMacroEvent::tables_changed(
                 DatabaseTablesChangedMetadata {
-                    database_id: database_id.to_string(),
+                    database_id,
                     attribution: attribution.clone(),
                     tables,
                 },
@@ -490,11 +490,11 @@ where
             .await
             .map_err(repo_err)?;
         self.emit(DatabaseMacroEvent::created(DatabaseCreatedMetadata {
-            database_id: database.id.to_string(),
+            database_id: database.id,
             owner: cmd.owner_id.clone(),
             name: database.name.clone(),
             created_at: database.created_at,
-            attribution: Some(events::Attribution::acting(cmd.owner_id, cmd.acting_bot)),
+            attribution: events::Attribution::acting(cmd.owner_id, cmd.acting_bot),
         }));
         Ok(database)
     }
@@ -514,7 +514,7 @@ where
             .await
             .map_err(repo_err)?;
         self.emit(DatabaseMacroEvent::renamed(DatabaseRenamedMetadata {
-            database_id: database.id.to_string(),
+            database_id: database.id,
             attribution: receipt_attribution(&receipt),
             name: name.clone(),
         }));
@@ -535,7 +535,7 @@ where
             .await
             .map_err(repo_err)?;
         self.emit(DatabaseMacroEvent::trashed(DatabaseTrashedMetadata {
-            database_id: database.id.to_string(),
+            database_id: database.id,
             attribution: receipt_attribution(&receipt),
         }));
         Ok(())
@@ -555,7 +555,7 @@ where
             .await
             .map_err(repo_err)?;
         self.emit(DatabaseMacroEvent::restored(DatabaseRestoredMetadata {
-            database_id: database.id.to_string(),
+            database_id: database.id,
             attribution: receipt_attribution(&receipt),
         }));
         Ok(())
@@ -574,7 +574,7 @@ where
             .await
             .map_err(repo_err)?;
         self.emit(DatabaseMacroEvent::purged(DatabasePurgedMetadata {
-            database_id: database.id.to_string(),
+            database_id: database.id,
         }));
         Ok(())
     }
@@ -1128,7 +1128,7 @@ where
         let database_id = receipt_database_id(&receipt)?;
         if let Err(error) = self
             .events
-            .awareness(database_id, viewer.user_id.as_ref(), &state)
+            .awareness(database_id, &viewer.user_id, &state)
             .await
         {
             tracing::warn!(error = ?error, %database_id, "failed to relay awareness");

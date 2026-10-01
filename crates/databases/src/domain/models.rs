@@ -552,7 +552,7 @@ impl Write {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Writes {
     /// Who the inserted rows are created by.
-    pub created_by: String,
+    pub created_by: MacroUserIdStr<'static>,
     /// Options to create before any cell names them.
     pub options: Vec<NewOption>,
     /// The writes, in the order the ops were sent.

@@ -29,7 +29,7 @@ where
             return Err(SavedQueryError::NotFound);
         }
         self.repo
-            .save_query(database_id, &definition, viewer.user_id.as_ref())
+            .save_query(database_id, &definition, &viewer.user_id)
             .await
             .map_err(|error| SavedQueryError::Repo(rootcause::Report::new(error).into_dynamic()))
     }

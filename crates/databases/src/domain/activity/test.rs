@@ -1,4 +1,4 @@
-use ::activity::{Action, activity_id};
+use ::activity::{Action, Actor, activity_id};
 use chrono::{TimeZone as _, Utc};
 use macro_event_broker::Event;
 use macro_user_id::user_id::MacroUserIdStr;
@@ -41,11 +41,11 @@ fn by_user(id: &str) -> Option<EventAttribution> {
 fn created_maps_to_a_created_activity_at_the_repository_timestamp() {
     let created_at = Utc.with_ymd_and_hms(2026, 9, 1, 12, 0, 0).unwrap();
     let event = envelope(DatabaseTopicEvent::Created(DatabaseCreatedMetadata {
-        database_id: DATABASE_ID.to_string(),
+        database_id: DATABASE_ID.parse().unwrap(),
         owner: user("macro|creator@example.com"),
         name: "Roadmap".to_string(),
         created_at,
-        attribution: None,
+        attribution: EventAttribution::user(user("macro|creator@example.com")),
     }));
 
     let activity = single_activity(event.event.ingest(event.event_id));
@@ -62,16 +62,16 @@ fn created_maps_to_a_created_activity_at_the_repository_timestamp() {
 fn renamed_restored_and_tables_changed_map_to_edited() {
     let events = [
         DatabaseTopicEvent::Renamed(DatabaseRenamedMetadata {
-            database_id: DATABASE_ID.to_string(),
+            database_id: DATABASE_ID.parse().unwrap(),
             attribution: by_user("macro|editor@example.com"),
             name: "Renamed".to_string(),
         }),
         DatabaseTopicEvent::Restored(DatabaseRestoredMetadata {
-            database_id: DATABASE_ID.to_string(),
+            database_id: DATABASE_ID.parse().unwrap(),
             attribution: by_user("macro|editor@example.com"),
         }),
         DatabaseTopicEvent::TablesChanged(DatabaseTablesChangedMetadata {
-            database_id: DATABASE_ID.to_string(),
+            database_id: DATABASE_ID.parse().unwrap(),
             attribution: by_user("macro|editor@example.com"),
             tables: vec![TableVersionChange {
                 table_id: Uuid::new_v4(),
@@ -96,14 +96,14 @@ fn an_agent_creation_lands_on_the_owners_feed_as_the_agent() {
     let bot = Actor::try_from("bot|00000000-0000-0000-0000-00000000a1a1".to_string())
         .expect("valid bot actor");
     let event = envelope(DatabaseTopicEvent::Created(DatabaseCreatedMetadata {
-        database_id: DATABASE_ID.to_string(),
+        database_id: DATABASE_ID.parse().unwrap(),
         owner: user("macro|creator@example.com"),
         name: "Roadmap".to_string(),
         created_at,
-        attribution: Some(EventAttribution {
+        attribution: EventAttribution {
             actor: bot.clone(),
             on_behalf_of: Some(user("macro|creator@example.com")),
-        }),
+        },
     }));
 
     let activity = single_activity(event.event.ingest(event.event_id));
@@ -117,7 +117,7 @@ fn an_agent_creation_lands_on_the_owners_feed_as_the_agent() {
 fn sharing_changed_maps_to_edited() {
     let event = envelope(DatabaseTopicEvent::SharingChanged(
         DatabaseSharingChangedMetadata {
-            database_id: DATABASE_ID.to_string(),
+            database_id: DATABASE_ID.parse().unwrap(),
             attribution: by_user("macro|owner@example.com"),
         },
     ));
@@ -133,7 +133,7 @@ fn sharing_changed_maps_to_edited() {
 #[test]
 fn trashed_maps_to_deleted() {
     let event = envelope(DatabaseTopicEvent::Trashed(DatabaseTrashedMetadata {
-        database_id: DATABASE_ID.to_string(),
+        database_id: DATABASE_ID.parse().unwrap(),
         attribution: by_user("macro|owner@example.com"),
     }));
 
@@ -148,7 +148,7 @@ fn delegated_writes_land_on_the_subjects_feed() {
         .expect("valid bot actor");
     let event = envelope(DatabaseTopicEvent::TablesChanged(
         DatabaseTablesChangedMetadata {
-            database_id: DATABASE_ID.to_string(),
+            database_id: DATABASE_ID.parse().unwrap(),
             attribution: Some(EventAttribution {
                 actor: bot.clone(),
                 on_behalf_of: Some(user("macro|asker@example.com")),
@@ -165,7 +165,7 @@ fn delegated_writes_land_on_the_subjects_feed() {
 #[test]
 fn unattributed_mutations_are_ignored() {
     let event = envelope(DatabaseTopicEvent::Renamed(DatabaseRenamedMetadata {
-        database_id: DATABASE_ID.to_string(),
+        database_id: DATABASE_ID.parse().unwrap(),
         attribution: None,
         name: "Internal".to_string(),
     }));
@@ -176,7 +176,7 @@ fn unattributed_mutations_are_ignored() {
 #[test]
 fn purged_purges_the_database() {
     let event = envelope(DatabaseTopicEvent::Purged(DatabasePurgedMetadata {
-        database_id: DATABASE_ID.to_string(),
+        database_id: DATABASE_ID.parse().unwrap(),
     }));
 
     assert_eq!(
@@ -188,7 +188,7 @@ fn purged_purges_the_database() {
 #[test]
 fn events_round_trip_through_json() {
     let event = DatabaseTopicEvent::TablesChanged(DatabaseTablesChangedMetadata {
-        database_id: DATABASE_ID.to_string(),
+        database_id: DATABASE_ID.parse().unwrap(),
         attribution: by_user("macro|editor@example.com"),
         tables: vec![TableVersionChange {
             table_id: Uuid::new_v4(),

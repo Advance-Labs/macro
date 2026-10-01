@@ -131,7 +131,7 @@ where
             .map(|(index, op)| planner.write(index, op))
             .collect::<Result<Vec<_>, _>>()?;
         let row_writes = Writes {
-            created_by: viewer.user_id.as_ref().to_string(),
+            created_by: viewer.user_id.clone(),
             options: planner.options,
             writes,
             related_rows: planner

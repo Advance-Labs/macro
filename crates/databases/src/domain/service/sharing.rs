@@ -88,7 +88,7 @@ where
         if !grants.is_empty() {
             self.emit(DatabaseMacroEvent::sharing_changed(
                 events::DatabaseSharingChangedMetadata {
-                    database_id: database.id.to_string(),
+                    database_id: database.id,
                     attribution: receipt_attribution(&receipt),
                 },
             ));

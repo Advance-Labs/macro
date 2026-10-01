@@ -7,12 +7,13 @@
 mod test;
 
 use ::activity::{
-    Activity, ActivitySource, Actor, Attribution, CommonAction, EntityType, Ingest, event_time,
+    Activity, ActivitySource, Attribution, CommonAction, EntityType, Ingest, event_time,
 };
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use super::events::{self, DatabaseTopicEvent};
+use super::models::DatabaseId;
 
 impl ActivitySource for DatabaseTopicEvent {
     /// Maps one `macro.databases` event to its ingest outcome.
@@ -22,14 +23,14 @@ impl ActivitySource for DatabaseTopicEvent {
     fn ingest(&self, event_id: Uuid) -> Ingest {
         let single = |attribution: Attribution,
                       action: CommonAction,
-                      database_id: &str,
+                      database_id: DatabaseId,
                       occurred_at: DateTime<Utc>| {
             Ingest::Insert(vec![Activity::attributed(
                 event_id,
                 0,
                 attribution,
                 EntityType::Database,
-                database_id,
+                &database_id.to_string(),
                 action,
                 occurred_at,
             )])
@@ -38,7 +39,7 @@ impl ActivitySource for DatabaseTopicEvent {
         // nobody's feed and are dropped.
         let attributed = |attribution: &Option<events::Attribution>,
                           action: CommonAction,
-                          database_id: &str| match attribution {
+                          database_id: DatabaseId| match attribution {
             Some(attribution) => single(
                 Attribution::new(attribution.actor.clone(), attribution.on_behalf_of.clone()),
                 action,
@@ -50,47 +51,45 @@ impl ActivitySource for DatabaseTopicEvent {
 
         match self {
             DatabaseTopicEvent::Created(metadata) => single(
-                match &metadata.attribution {
-                    Some(attribution) => Attribution::new(
-                        attribution.actor.clone(),
-                        attribution.on_behalf_of.clone(),
-                    ),
-                    None => Attribution::direct(Actor::new_from_user(metadata.owner.clone())),
-                },
+                Attribution::new(
+                    metadata.attribution.actor.clone(),
+                    metadata.attribution.on_behalf_of.clone(),
+                ),
                 CommonAction::Created,
-                &metadata.database_id,
+                metadata.database_id,
                 metadata.created_at,
             ),
             DatabaseTopicEvent::Renamed(metadata) => attributed(
                 &metadata.attribution,
                 CommonAction::Edited,
-                &metadata.database_id,
+                metadata.database_id,
             ),
             DatabaseTopicEvent::Trashed(metadata) => attributed(
                 &metadata.attribution,
                 CommonAction::Deleted,
-                &metadata.database_id,
+                metadata.database_id,
             ),
             // Coming back from the trash is a change to the database, not a
             // second creation.
             DatabaseTopicEvent::Restored(metadata) => attributed(
                 &metadata.attribution,
                 CommonAction::Edited,
-                &metadata.database_id,
+                metadata.database_id,
             ),
             DatabaseTopicEvent::TablesChanged(metadata) => attributed(
                 &metadata.attribution,
                 CommonAction::Edited,
-                &metadata.database_id,
+                metadata.database_id,
             ),
             DatabaseTopicEvent::SharingChanged(metadata) => attributed(
                 &metadata.attribution,
                 CommonAction::Edited,
-                &metadata.database_id,
+                metadata.database_id,
             ),
-            DatabaseTopicEvent::Purged(metadata) => {
-                Ingest::Purge(vec![(EntityType::Database, metadata.database_id.clone())])
-            }
+            DatabaseTopicEvent::Purged(metadata) => Ingest::Purge(vec![(
+                EntityType::Database,
+                metadata.database_id.to_string(),
+            )]),
         }
     }
 }

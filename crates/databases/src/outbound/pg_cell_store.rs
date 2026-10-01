@@ -262,7 +262,7 @@ where
                     let Some(minted) = rows::append_rows(
                         &mut transaction,
                         *table_id,
-                        &writes.created_by,
+                        writes.created_by.as_ref(),
                         rows.len(),
                     )
                     .await?

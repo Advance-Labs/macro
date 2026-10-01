@@ -8,7 +8,7 @@ async fn a_saved_query_round_trips_and_outlives_its_database(pool: PgPool) {
     };
 
     let scoped = repo
-        .save_query(Some(table.database_id), &definition, USER)
+        .save_query(Some(table.database_id), &definition, &user())
         .await
         .unwrap();
     assert_eq!(scoped.database_id, Some(table.database_id));
@@ -30,7 +30,7 @@ async fn a_saved_query_round_trips_and_outlives_its_database(pool: PgPool) {
         serde_json::json!({"version": 1, "query": "SELECT COUNT(*) FROM \"Guests\""})
     );
 
-    let unscoped = repo.save_query(None, &definition, USER).await.unwrap();
+    let unscoped = repo.save_query(None, &definition, &user()).await.unwrap();
     assert_eq!(unscoped.database_id, None);
     assert_ne!(unscoped.id, scoped.id);
 
