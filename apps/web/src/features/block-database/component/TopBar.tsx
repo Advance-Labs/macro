@@ -8,12 +8,11 @@ import {
   SplitToolbarLeft,
   SplitToolbarRight,
 } from '@components/app/split-layout/components/SplitToolbar';
-import { useBlockId } from '@core/block';
 import { BlockLiveIndicators } from '@core/component/LiveIndicators';
 import { toast } from '@core/component/Toast/Toast';
 import { ShareTrigger } from '@core/component/TopBar/ShareButton';
 import { useShareModal } from '@core/component/TopBar/shareModal';
-import { useCanEdit, useGetPermissions } from '@core/signal/permissions';
+import { useGetPermissions } from '@core/signal/permissions';
 import SparkleIcon from '@phosphor/sparkle.svg';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import type { TableDetail } from '@service-storage/generated/schemas/tableDetail';
@@ -31,7 +30,9 @@ import { DatabasePageActions } from '../views/database-page-actions';
 import { TableTabs } from './TableTabs';
 
 export function TopBar(props: {
+  databaseId: string;
   detail: DatabaseDetail | undefined;
+  canEdit: boolean;
   activeTable: TableDetail | undefined;
   /** Opens the title for typing, as for a freshly created database. */
   autoFocusTitle: boolean;
@@ -41,8 +42,7 @@ export function TopBar(props: {
   openingChat: boolean;
   onOpenChat: () => void;
 }) {
-  const databaseId = useBlockId();
-  const canEdit = useCanEdit();
+  const databaseId = props.databaseId;
   const permissions = useGetPermissions();
   let editTitle: (() => void) | undefined;
   const name = () => props.detail?.database.name ?? 'Database';
@@ -72,7 +72,7 @@ export function TopBar(props: {
             <Show when={props.detail}>
               <DatabaseTitle
                 name={name()}
-                canEdit={canEdit()}
+                canEdit={props.canEdit}
                 autoFocus={props.autoFocusTitle}
                 onConfirm={props.onTitleConfirm}
                 onEditReady={(edit) => (editTitle = edit)}
@@ -97,7 +97,7 @@ export function TopBar(props: {
                 databaseId={databaseId}
                 tables={detail().tables}
                 activeTableId={props.activeTable?.table.id}
-                canEdit={canEdit()}
+                canEdit={props.canEdit}
                 onSelect={props.onSelectTable}
               />
             </SplitToolbarLeft>
