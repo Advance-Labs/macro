@@ -333,6 +333,11 @@ and expands its thread. A collapsed unread reply in a visible thread is reachabl
 with the bottom chip. A visible target has no chip. Notifications are marked seen
 when their message mounts, including virtualized overscan. Collapsed replies that
 are not rendered remain unread.
+An unrendered target is placed by the row order the list actually shows, not by
+message timestamps: concurrent sends reach the client in delivery order, so a row
+can sit below the viewport while carrying an older timestamp than the rows above
+it. Check a burst of simultaneous messages followed by a reply to one of their
+threads; the chip must point at the row's rendered side.
 The count and target update as notifications arrive or become seen. Check an old
 thread receiving a new reply while a newer thread is also unread: the chip must
 point upward to the old thread, still show two stacks, and preserve the scroll

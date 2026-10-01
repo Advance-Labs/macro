@@ -53,16 +53,32 @@ export function unreadThreads(
 export type ThreadPosition = { id: string; created_at: string };
 export type VisibleThreadRange = { first: string; last: string };
 
+export type ThreadRowOrder = {
+  /** Loaded rows in the order the list renders them, oldest first. */
+  rows: readonly ThreadPosition[];
+  /** Thread roots resolved outside the loaded window, keyed by id. */
+  unloaded: ReadonlyMap<string, ThreadPosition>;
+};
+
 export type UnreadNotificationChip = {
   thread: UnreadThread;
   count: number;
   direction: 'above' | 'below';
 };
 
+/** The timeline's own ordering: millisecond, then raw timestamp, then id. */
+function isBefore(left: ThreadPosition, right: ThreadPosition): boolean {
+  const delta = Date.parse(left.created_at) - Date.parse(right.created_at);
+  if (delta !== 0) return delta < 0;
+  if (left.created_at !== right.created_at)
+    return left.created_at < right.created_at;
+  return left.id < right.id;
+}
+
 /** Target recency and placement are separate: a new reply can be far above. */
 export function unreadNotificationChip(
   threads: readonly UnreadThread[],
-  positions: ReadonlyMap<string, ThreadPosition>,
+  order: ThreadRowOrder,
   visible: VisibleThreadRange | undefined,
   targetPosition?: 'above' | 'below' | 'visible'
 ): UnreadNotificationChip | undefined {
@@ -70,17 +86,29 @@ export function unreadNotificationChip(
   if (!thread || !visible || targetPosition === 'visible') return;
   if (targetPosition)
     return { thread, count: threads.length, direction: targetPosition };
-  const root = positions.get(thread.threadId);
-  const first = positions.get(visible.first);
-  if (!root || !first) return;
-  const order =
-    Date.parse(root.created_at) - Date.parse(first.created_at) ||
-    root.id.localeCompare(first.id);
+  // Place by rendered row order, not by timestamp: concurrent realtime inserts
+  // append in delivery order, so a row can sit below the viewport while
+  // carrying an older `created_at` than the rows above it.
+  const first = order.rows.findIndex((row) => row.id === visible.first);
+  if (first < 0) return;
+  const row = order.rows.findIndex(
+    (candidate) => candidate.id === thread.threadId
+  );
   // A collapsed reply in a visible thread lies below its parent. Clicking opens
   // it; merely seeing the parent must not clear that thread's unread count.
+  if (row >= 0)
+    return {
+      thread,
+      count: threads.length,
+      direction: row < first ? 'above' : 'below',
+    };
+  // An unloaded root sits outside the window entirely, so one bound decides it.
+  const root = order.unloaded.get(thread.threadId);
+  const oldest = order.rows[0];
+  if (!root || !oldest) return;
   return {
     thread,
     count: threads.length,
-    direction: order < 0 ? 'above' : 'below',
+    direction: isBefore(root, oldest) ? 'above' : 'below',
   };
 }

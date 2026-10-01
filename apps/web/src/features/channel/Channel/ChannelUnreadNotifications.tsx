@@ -68,13 +68,12 @@ export function ChannelUnreadNotifications(props: {
     }
   );
   const unreadChip = createMemo(() => {
-    const positions = new Map(
+    const unloaded = new Map(
       (queryReadyGate(unreadRoots) ? unreadRoots.data : []).map((message) => [
         message.id,
         message,
       ])
     );
-    for (const message of props.messages()) positions.set(message.id, message);
     const scroll = props.scrollState();
     const target = unread()[0];
     const container = props.container();
@@ -98,7 +97,7 @@ export function ChannelUnreadNotifications(props: {
     }
     return unreadNotificationChip(
       unread(),
-      positions,
+      { rows: props.messages(), unloaded },
       scroll?.didInitialScroll ? scroll.visibleRange : undefined,
       targetPosition
     );
