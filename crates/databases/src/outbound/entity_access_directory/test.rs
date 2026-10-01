@@ -1,10 +1,5 @@
-//! Postgres test for the access directory over the real entity access
-//! service. The source-id and highest-grant rules are `entity_access`'s and
-//! are tested there; this checks the directory asks it correctly.
-//!
-//! `entity_access` memoizes a user's source ids for 10s, keyed by user id, and
-//! that cache is process-wide while each `sqlx::test` gets its own database —
-//! so every test here mints unique user ids rather than sharing a constant.
+//! The access directory over the real entity access service. Its source-id
+//! cache is process-wide, so every test mints its own user ids.
 
 use std::sync::Arc;
 

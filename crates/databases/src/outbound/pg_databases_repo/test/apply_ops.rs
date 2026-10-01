@@ -1,6 +1,5 @@
-//! Typed ops through the service as hosts build it, over a real Postgres:
-//! row identities, cells and new options commit in one transaction, and a
-//! refused op leaves nothing of its batch behind.
+//! Typed ops through the service as hosts build it, over Postgres: a batch
+//! commits whole, and a refused op leaves nothing of it behind.
 
 use std::sync::Arc;
 

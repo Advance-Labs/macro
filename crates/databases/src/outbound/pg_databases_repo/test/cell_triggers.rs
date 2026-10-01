@@ -1,6 +1,5 @@
-//! The schema's own guarantees about cells, whichever writer touches
-//! `entity_properties`: a cell belongs to an existing row and to a column of
-//! that row's table, and goes with its row or its column.
+//! The schema's guarantees about cells: a cell belongs to an existing row and
+//! a column of that row's table, and goes with either.
 
 use super::*;
 

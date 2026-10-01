@@ -1,6 +1,5 @@
-//! Positions and views over a real Postgres: the byte order every position
-//! column compares in, and views and card places through the ops as hosts
-//! build the service.
+//! Positions and views over Postgres: the byte order positions compare in,
+//! and views and card places through the ops.
 
 use models_databases::position::{key_between, keys_between};
 use models_databases::views::{CardPosition, Lane, NewView, ViewLayout, ViewQuery};

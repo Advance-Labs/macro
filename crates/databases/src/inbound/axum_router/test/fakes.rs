@@ -1,6 +1,5 @@
-//! Just enough of the router's collaborators to drive a request through its
-//! extractors: a user whose bearer token is `valid`, a directory granting
-//! them one fixed level, and a service that only counts applied batches.
+//! The router's collaborators, just enough to drive a request: a `valid`
+//! bearer token, one fixed grant, and a service counting applied batches.
 
 use std::sync::{Arc, Mutex};
 
