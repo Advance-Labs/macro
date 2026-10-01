@@ -102,3 +102,13 @@ fn the_response_serializes_with_camel_case_keys() {
     assert!(json["tables"][0]["sqlName"].is_string());
     assert!(json["tables"][0]["columns"][0]["isMultiSelect"].is_boolean());
 }
+
+#[test]
+fn a_version_conflict_tells_the_model_to_describe_and_retry() {
+    let error = database_error(DatabaseError::VersionConflict);
+    assert_eq!(
+        error.description,
+        "The table changed since it was described. Call DescribeDatabase for its current \
+         schema and version, then retry."
+    );
+}

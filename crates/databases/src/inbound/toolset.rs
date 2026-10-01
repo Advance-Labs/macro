@@ -305,7 +305,12 @@ pub(crate) fn database_error(error: DatabaseError) -> ToolCallError {
         }
         DatabaseError::InvalidSchemaOperation(reason) => reason.to_string(),
         DatabaseError::InvalidSharing(reason) => reason.to_string(),
-        DatabaseError::VersionConflict | DatabaseError::InvalidOp(_) => error.to_string(),
+        DatabaseError::VersionConflict => {
+            "The table changed since it was described. Call DescribeDatabase for its current \
+             schema and version, then retry."
+                .to_string()
+        }
+        DatabaseError::InvalidOp(_) => error.to_string(),
         DatabaseError::Repo(_) => "The databases service failed.".to_string(),
     };
 

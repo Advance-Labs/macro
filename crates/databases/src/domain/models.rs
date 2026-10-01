@@ -363,7 +363,7 @@ pub struct InferColumnType {
 /// Settled schema and the version against which its first value can be written.
 #[derive(utoipa::ToSchema, Debug, Clone, Serialize)]
 pub struct InferColumnTypeOutcome {
-    /// Updated placement, property definition, and stable SQL identifier.
+    /// Updated placement, property definition, and SQL name.
     pub column: ColumnDetail,
     /// Version after settling the column.
     pub table_version: TableVersion,
@@ -912,7 +912,7 @@ pub enum DatabaseError {
     #[error("invalid sharing change: {0}")]
     InvalidSharing(SharingError),
     /// The schema changed after the client read its version.
-    #[error("The table changed. Refresh before entering this value.")]
+    #[error("The table changed since it was read. Refresh and try again.")]
     VersionConflict,
     /// An op of a batch was refused, so none of the batch was written.
     #[error("{0}")]
