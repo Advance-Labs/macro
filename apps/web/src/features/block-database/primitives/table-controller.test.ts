@@ -362,7 +362,9 @@ describe('table controller', () => {
 
     setSnapshot({
       version: 2,
-      rows: [{ rowId: 'record', cells: { status: 'Done', title: 'Plan launch' } }],
+      rows: [
+        { rowId: 'record', cells: { status: 'Done', title: 'Plan launch' } },
+      ],
     });
     expect(controller.rows()).toEqual([
       { rowId: 'record', cells: { status: 'Done', title: 'Plan launch' } },
