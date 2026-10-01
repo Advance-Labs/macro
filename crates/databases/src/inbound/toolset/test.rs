@@ -170,11 +170,11 @@ fn detail(grant: AccessLevel) -> DatabaseDetail {
 impl DatabasesService for FakeService {
     async fn create_database(
         &self,
-        cmd: crate::domain::models::CreateDatabase,
+        command: crate::domain::models::CreateDatabase,
     ) -> Result<Database, DatabaseError> {
         let mut calls = self.calls.lock().unwrap();
-        calls.created_databases.push(cmd.name);
-        calls.acting_bots.push(cmd.acting_bot);
+        calls.created_databases.push(command.name);
+        calls.acting_bots.push(command.acting_bot);
         Ok(database())
     }
 
@@ -353,11 +353,15 @@ impl DatabasesService for FakeService {
         &self,
         _: EntityAccessReceipt<EditAccessLevel>,
         _: Viewer,
-        cmd: crate::domain::models::ChangeColumnType,
+        command: crate::domain::models::ChangeColumnType,
     ) -> Result<crate::domain::models::ColumnTypeChangeOutcome, DatabaseError> {
-        let table_id = cmd.table_id;
-        let cleared_cells = if cmd.clear_invalid { 2 } else { 0 };
-        self.calls.lock().unwrap().changed_column_types.push(cmd);
+        let table_id = command.table_id;
+        let cleared_cells = if command.clear_invalid { 2 } else { 0 };
+        self.calls
+            .lock()
+            .unwrap()
+            .changed_column_types
+            .push(command);
         Ok(crate::domain::models::ColumnTypeChangeOutcome {
             table_versions: HashMap::from([(table_id, TableVersion(4))]),
             cleared_cells,
@@ -451,9 +455,9 @@ impl DatabasesService for FakeService {
     async fn create_table(
         &self,
         _receipt: EntityAccessReceipt<EditAccessLevel>,
-        cmd: crate::domain::models::CreateTable,
+        command: crate::domain::models::CreateTable,
     ) -> Result<Table, DatabaseError> {
-        self.calls.lock().unwrap().created_tables.push(cmd.name);
+        self.calls.lock().unwrap().created_tables.push(command.name);
         Ok(table())
     }
 
@@ -461,19 +465,19 @@ impl DatabasesService for FakeService {
         &self,
         _receipt: EntityAccessReceipt<EditAccessLevel>,
         _viewer: Viewer,
-        cmd: crate::domain::models::CreateColumn,
+        command: crate::domain::models::CreateColumn,
     ) -> Result<crate::domain::models::ColumnId, DatabaseError> {
         let crate::domain::models::ColumnBinding::NewDefinition {
             data_type,
             is_multi_select,
             options,
             ..
-        } = cmd.binding
+        } = command.binding
         else {
             panic!("the tool only ever creates fresh definitions");
         };
         self.calls.lock().unwrap().created_columns.push((
-            cmd.table_id,
+            command.table_id,
             data_type,
             is_multi_select,
             options,
@@ -485,15 +489,15 @@ impl DatabasesService for FakeService {
         &self,
         _receipt: EntityAccessReceipt<EditAccessLevel>,
         _viewer: Viewer,
-        cmd: crate::domain::models::AddColumnOptions,
+        command: crate::domain::models::AddColumnOptions,
     ) -> Result<ColumnDetail, DatabaseError> {
         self.calls
             .lock()
             .unwrap()
             .added_options
-            .push((cmd.column_id, cmd.labels.clone()));
+            .push((command.column_id, command.labels.clone()));
         let mut column = status_column();
-        for (offset, label) in cmd.labels.iter().enumerate() {
+        for (offset, label) in command.labels.iter().enumerate() {
             column
                 .definition
                 .property_options

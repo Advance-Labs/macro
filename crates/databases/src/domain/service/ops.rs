@@ -97,17 +97,18 @@ where
             .apply_writes(&row_writes)
             .await
             .map_err(repository_error)?;
-        let (inserted, table_versions) = applied(outcome, &ops, &planner.related)?;
+        let committed = applied(outcome, &ops, &planner.related)?;
 
         self.publish(
             attribution,
-            &table_versions
+            &committed
+                .table_versions
                 .iter()
                 .map(|(table, version)| (database_id, *table, *version))
                 .collect::<Vec<_>>(),
         )
         .await;
-        op_results(&entries, &row_writes, inserted, &table_versions)
+        op_results(&entries, &row_writes, committed)
     }
 
     /// A batch's only op, a column type change, applied as
@@ -287,17 +288,28 @@ fn refuse_foreign_tables(entries: &[TableEntry], ops: &[DatabaseOp]) -> Result<(
     Ok(())
 }
 
+/// What a batch's writes committed.
+struct Committed {
+    /// Per write, the rows it inserted.
+    inserted: Vec<Vec<RowId>>,
+    /// The new version of every table a write changed.
+    table_versions: HashMap<TableId, TableVersion>,
+}
+
 /// What the cell store committed, or the op its refusal points at.
 fn applied(
     outcome: WritesOutcome,
     ops: &[DatabaseOp],
     related: &[RelatedRow],
-) -> Result<(Vec<Vec<RowId>>, HashMap<TableId, TableVersion>), DatabaseError> {
+) -> Result<Committed, DatabaseError> {
     match outcome {
         WritesOutcome::Applied {
             inserted,
             table_versions,
-        } => Ok((inserted, table_versions)),
+        } => Ok(Committed {
+            inserted,
+            table_versions,
+        }),
         WritesOutcome::TableNotFound(_) => Err(DatabaseError::NotFound),
         WritesOutcome::MissingOption { write } => Err(refuse(
             write,
@@ -353,13 +365,13 @@ fn applied(
 fn op_results(
     entries: &[TableEntry],
     row_writes: &Writes,
-    inserted: Vec<Vec<RowId>>,
-    table_versions: &HashMap<TableId, TableVersion>,
+    committed: Committed,
 ) -> Result<Vec<OpResult>, DatabaseError> {
+    let table_versions = committed.table_versions;
     row_writes
         .writes
         .iter()
-        .zip(inserted)
+        .zip(committed.inserted)
         .map(|(write, inserted)| {
             // A write that changed nothing leaves its table where it was.
             let table_version = match table_versions.get(&write.table_id()) {
