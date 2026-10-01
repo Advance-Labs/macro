@@ -113,8 +113,8 @@ pub fn build_image_generator_from_env() -> Arc<dyn ImageGenerator> {
 /// `DOCUMENT_STORAGE_SERVICE_CLOUDFRONT_DISTRIBUTION_URL`,
 /// `DOCUMENT_STORAGE_SERVICE_CLOUDFRONT_SIGNER_PUBLIC_KEY_ID`,
 /// `DOCUMENT_STORAGE_SERVICE_CLOUDFRONT_SIGNER_PRIVATE_KEY_SECRET_NAME`,
-/// `INTERNAL_API_KEY` (presented to the connection gateway for realtime
-/// channel side effects), `KAFKA_BROKERS`.
+/// `INTERNAL_API_KEY` (presented to the lexical service and to the
+/// connection gateway for realtime channel side effects), `KAFKA_BROKERS`.
 ///
 /// Service URLs are resolved through the `macro_service_urls` crate, and queue
 /// names through the `macro_queues` crate (both using optional `OVERRIDE_*` env
@@ -215,10 +215,7 @@ pub async fn build_tool_service_context_from_env(
         sync_service_url,
     ));
     let email_ext_client = Arc::new(EmailServiceClientExternal::new(email_service_url.clone()));
-    let lexical_client = LexicalClient::new(
-        env.document_storage_service_auth_key.to_string(),
-        lexical_service_url,
-    );
+    let lexical_client = LexicalClient::new(env.internal_api_key.to_string(), lexical_service_url);
 
     let frecency_storage = FrecencyPgStorage::new(pool.clone());
     let frecency_service = FrecencyQueryServiceImpl::new(frecency_storage.clone());
@@ -309,6 +306,7 @@ pub async fn build_tool_service_context_from_env(
         sqs: aws_sqs_client,
         macro_event_broker: macro_event_broker.clone(),
     };
+    let databases_gateway = side_effect_clients.connection_gateway.as_ref().clone();
     let channel_tool_context = crate::tool_context::build_channel_tool_context_with_side_effects(
         pool.clone(),
         Arc::new(lexical_client.clone()),
@@ -446,6 +444,22 @@ pub async fn build_tool_service_context_from_env(
         side_effect_clients.macro_event_broker,
     );
 
+    let databases_tool_context = crate::tool_context::build_databases_tool_context(
+        pool.clone(),
+        entity_access_service.clone(),
+        crate::tool_context::ToolTableEventPublisher::Gateway(
+            databases::outbound::gateway_event_publisher::GatewayTableEventPublisher::new(
+                databases_gateway,
+            ),
+        ),
+        crate::tool_context::MaybeToolEventBroker::Real(macro_event_broker.clone()),
+    );
+    let databases_sql_tool_context = crate::tool_context::build_databases_sql_tool_context(
+        &databases_tool_context,
+        soup_service.clone(),
+        pool.clone(),
+    );
+
     Ok(ToolServiceContext {
         search_service_client: search_client.clone(),
         email_service_client: email_ext_client,
@@ -470,12 +484,14 @@ pub async fn build_tool_service_context_from_env(
             pool.clone(),
             entity_access_service.clone(),
         ),
+        databases_tool_context,
+        databases_sql_tool_context,
         import_tool_context: ToolImportToolContext::unwired(),
         chat_tool_context,
         channel_tool_context,
         bot_tool_context: crate::tool_context::build_bot_tool_context(
             pool.clone(),
-            crate::tool_context::ToolBotEventBroker::Real(macro_event_broker.clone()),
+            crate::tool_context::MaybeToolEventBroker::Real(macro_event_broker.clone()),
             entity_access_service.clone(),
             document_storage_service_url,
         ),

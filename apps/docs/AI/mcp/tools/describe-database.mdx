@@ -1,0 +1,16 @@
+---
+title: DescribeDatabase
+description: "Read one database's schema: its tables with their quoted `sqlName` and version, and each table's columns with their SQL names, value types, whether they hold multiple values, the exact labels a select column accepts, and the target table of a relation column.  **Call this before writing SQL for a database you have not already described in this conversation.** Guessing table or column names is the single most common way a query fails, and the schema is small. Get the `databaseId` from ListDatabases. QueryDatabase describes the SQL dialect."
+---
+
+# DescribeDatabase
+
+Read one database's schema: its tables with their quoted `sqlName` and version, and each table's columns with their SQL names, value types, whether they hold multiple values, the exact labels a select column accepts, and the target table of a relation column.
+
+**Call this before writing SQL for a database you have not already described in this conversation.** Guessing table or column names is the single most common way a query fails, and the schema is small. Get the `databaseId` from ListDatabases. QueryDatabase describes the SQL dialect.
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `databaseId` | string | Yes | Id of the database to describe, as returned by ListDatabases. |

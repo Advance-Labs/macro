@@ -853,6 +853,8 @@ dependencies = [
  "contacts",
  "cool_asserts",
  "crm",
+ "databases",
+ "databases_sql",
  "dateparser",
  "documents",
  "email",
@@ -5390,6 +5392,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "databases_sql"
+version = "0.1.0"
+dependencies = [
+ "ai_toolset",
+ "anyhow",
+ "async-trait",
+ "bot_id",
+ "chrono",
+ "contacts",
+ "database_sql",
+ "databases",
+ "email",
+ "entity_access",
+ "filter_ast",
+ "item_filters",
+ "macro_user_id",
+ "model_owner",
+ "models_databases",
+ "models_grouping",
+ "models_pagination",
+ "models_properties",
+ "models_soup",
+ "rootcause",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "soup",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+ "workspace-hack",
+]
+
+[[package]]
 name = "dataloss_prevention_handler"
 version = "0.1.0"
 dependencies = [
@@ -5845,6 +5882,8 @@ dependencies = [
  "connection_gateway_client",
  "cookie",
  "crm",
+ "databases",
+ "databases_sql",
  "document_storage_service_client",
  "documents",
  "doppleganger",
@@ -11495,6 +11534,7 @@ dependencies = [
  "connection_gateway_client",
  "crm",
  "database_env_vars",
+ "databases",
  "documents",
  "doppler-config",
  "email",

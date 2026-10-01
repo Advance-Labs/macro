@@ -463,6 +463,18 @@ export type CreateChatRequest = {
     projectId?: string | null;
 };
 
+/**
+ * What a successful tool call committed to the user's databases.
+ */
+export type DatabaseChange = {
+    kind: 'none';
+} | {
+    kind: 'schema';
+} | {
+    count: number;
+    kind: 'rows';
+};
+
 export type DocumentCognitionServiceApiVersion = 'v1' | 'v2';
 
 export type DocumentReference = UserPdfRect & {
@@ -1421,6 +1433,14 @@ export type StructuredCompletionError = {
     error: string;
 };
 
+export type StructuredCompletionOutcome = {
+    result: unknown;
+    status: 'completed';
+} | {
+    reason: string;
+    status: 'interrupted';
+};
+
 export type StructuredCompletionRequest = {
     additional_instructions?: string | null;
     model: string;
@@ -1430,7 +1450,19 @@ export type StructuredCompletionRequest = {
 };
 
 export type StructuredCompletionResponse = {
-    result: unknown;
+    outcome: StructuredCompletionOutcome;
+    /**
+     * Actual completed tools, independent of the model's claims.
+     */
+    toolActivity: Array<StructuredToolActivity>;
+};
+
+/**
+ * One tool call the agent finished, and what it did.
+ */
+export type StructuredToolActivity = {
+    name: string;
+    outcome: ToolOutcome;
 };
 
 /**
@@ -1438,10 +1470,21 @@ export type StructuredCompletionResponse = {
  */
 export type TargetType = 'user' | 'team';
 
+export type ToolOutcome = {
+    changes: DatabaseChange;
+    status: 'succeeded';
+} | {
+    status: 'failed';
+};
+
 export type ToolSet = {
     type: 'all';
 } | {
     type: 'none';
+} | {
+    type: 'databases';
+} | {
+    type: 'databases_read_only';
 };
 
 export type UpdateChannelSharePermission = {
@@ -2808,6 +2851,10 @@ export type StructuredCompletionErrors = {
      * Payment required
      */
     402: unknown;
+    /**
+     * No access to the requested model
+     */
+    403: StructuredCompletionError;
     /**
      * Internal error
      */

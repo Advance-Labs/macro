@@ -26,8 +26,14 @@ use chat::inbound::toolset::ChatToolContext;
 use chat::outbound::postgres::PgChatRepo;
 use connection::domain::ports::ConnectionService;
 use connection_gateway_client::ConnectionGatewayClient;
-use contacts::{domain::service::SqsContactsIngress, outbound::ingress::SqsContactsQueue};
+use contacts::domain::service::{ContactsDomainService, SqsContactsIngress};
+use contacts::outbound::gateway::ConnectionGatewayNotifier;
+use contacts::outbound::ingress::SqsContactsQueue;
+use contacts::outbound::repository::DbContactsRepository;
 use crm::inbound::toolset::CrmToolContext;
+use databases::inbound::toolset::DatabasesToolContext;
+use databases_sql::DatabasesSql;
+use databases_sql::toolset::DatabasesSqlToolContext;
 use documents::{
     domain::ports::{TaskPropertiesPort, task_property_edit_receipt},
     inbound::toolset::DocumentToolContext,
@@ -111,17 +117,17 @@ pub type ToolEmailService = EmailServiceImpl<
 /// graceful shutdown by the hosting process.
 pub type ToolEventBroker = MacroEventBrokerService<KafkaEventPublisher, TaskTracker>;
 
-/// Event broker used by bot tools across hosts that either do or do not have
-/// Kafka lifecycle publishing configured.
+/// Event broker for tool domains (bots, databases) across hosts that either
+/// do or do not have Kafka configured.
 #[derive(Clone)]
-pub enum ToolBotEventBroker {
-    /// Publish bot lifecycle events through the shared Kafka broker.
+pub enum MaybeToolEventBroker {
+    /// Publish through the shared Kafka broker.
     Real(ToolEventBroker),
-    /// Drop lifecycle events in hosts that do not configure Kafka.
+    /// Drop events in hosts that do not configure Kafka.
     NoOp(NoopMacroEventBroker),
 }
 
-impl MacroEventBroker for ToolBotEventBroker {
+impl MacroEventBroker for MaybeToolEventBroker {
     fn send_event<E: MacroEvent + ?Sized>(
         &self,
         event: &E,
@@ -134,7 +140,7 @@ impl MacroEventBroker for ToolBotEventBroker {
 }
 
 /// Concrete bot domain service used by AI tools.
-pub type ToolBotService = BotServiceImpl<PgBotsRepo, ToolBotEventBroker>;
+pub type ToolBotService = BotServiceImpl<PgBotsRepo, MaybeToolEventBroker>;
 
 /// Bot-management AI tool context.
 pub type ToolBotToolContext = BotToolContext<ToolBotService, ToolEntityAccessService>;
@@ -143,7 +149,7 @@ pub type ToolBotToolContext = BotToolContext<ToolBotService, ToolEntityAccessSer
 /// entity-access service.
 pub fn build_bot_tool_context(
     pool: sqlx::PgPool,
-    event_broker: ToolBotEventBroker,
+    event_broker: MaybeToolEventBroker,
     entity_access_service: Arc<ToolEntityAccessService>,
     document_storage_service_url: String,
 ) -> ToolBotToolContext {
@@ -915,7 +921,7 @@ pub type ToolPropertiesService = properties::PropertiesServiceImpl<
     properties::PropertiesPgRepo,
     properties::PermissionServiceImpl<ToolEntityAccessService>,
     NoOpNotificationService,
-    ToolBotEventBroker,
+    MaybeToolEventBroker,
 >;
 
 /// Imported-document property enrichment backed by the AI tool host's Properties service.
@@ -934,7 +940,7 @@ pub fn build_properties_service(
     properties_service_with_events(
         pool,
         entity_access_service,
-        ToolBotEventBroker::NoOp(Default::default()),
+        MaybeToolEventBroker::NoOp(Default::default()),
     )
 }
 
@@ -947,14 +953,14 @@ pub fn build_properties_service_with_broker(
     properties_service_with_events(
         pool,
         entity_access_service,
-        ToolBotEventBroker::Real(broker),
+        MaybeToolEventBroker::Real(broker),
     )
 }
 
 fn properties_service_with_events(
     pool: sqlx::PgPool,
     entity_access_service: Arc<ToolEntityAccessService>,
-    broker: ToolBotEventBroker,
+    broker: MaybeToolEventBroker,
 ) -> Arc<ToolPropertiesService> {
     Arc::new(
         properties::PropertiesServiceImpl::new(
@@ -1056,6 +1062,67 @@ pub fn build_reminders_tool_context(
         ),
         entity_access_service,
     )
+}
+
+/// Table-changed fan-out for AI tool hosts, the databases crate's publisher.
+pub use databases::outbound::gateway_event_publisher::MaybeGatewayTableEventPublisher as ToolTableEventPublisher;
+
+/// Type alias for the databases service implementation used by AI tools:
+/// the same port implementations the HTTP surface runs on.
+pub type ToolDatabasesService = databases::wiring::PgDatabasesService<
+    ToolTableEventPublisher,
+    MaybeToolEventBroker,
+    ToolEntityAccessService,
+>;
+
+/// Type alias for the databases tool context.
+pub type ToolDatabasesToolContext =
+    DatabasesToolContext<ToolDatabasesService, ToolEntityAccessService>;
+
+/// Build the databases tool context: `events` reaches open clients, `broker`
+/// the acting user's activity feed.
+pub fn build_databases_tool_context(
+    pool: sqlx::PgPool,
+    entity_access_service: Arc<ToolEntityAccessService>,
+    events: ToolTableEventPublisher,
+    broker: MaybeToolEventBroker,
+) -> ToolDatabasesToolContext {
+    DatabasesToolContext::new(
+        databases::wiring::build_service(pool, entity_access_service.clone(), events, broker),
+        entity_access_service,
+    )
+}
+
+/// The contacts the SQL tools read `macro.people` from. Reads only, so
+/// nothing is ever invalidated through a notifier.
+pub type ToolContactsService =
+    ContactsDomainService<DbContactsRepository, Option<ConnectionGatewayNotifier>>;
+
+/// Type alias for the SQL tools' context: SQL over the same databases
+/// service the schema tools use, reading rows through Soup.
+pub type ToolDatabasesSqlToolContext = DatabasesSqlToolContext<
+    ToolDatabasesService,
+    ToolEntityAccessService,
+    ToolSoupService,
+    ToolContactsService,
+>;
+
+/// Build the SQL tools' context over the schema tools' databases service
+/// and entity access, and the host's Soup.
+pub fn build_databases_sql_tool_context(
+    databases: &ToolDatabasesToolContext,
+    soup_service: Arc<ToolSoupService>,
+    pool: sqlx::PgPool,
+) -> ToolDatabasesSqlToolContext {
+    DatabasesSqlToolContext::new(DatabasesSql::new(
+        databases.service.clone(),
+        databases.entity_access_service.clone(),
+        soup_service,
+        Arc::new(ContactsDomainService {
+            repository: DbContactsRepository::new(pool),
+            notifier: None,
+        }),
+    ))
 }
 
 /// Type alias for the chat service implementation used by AI tools.
@@ -1502,6 +1569,8 @@ pub struct ToolServiceContext {
     pub calendar_tool_context: ToolCalendarToolContext,
     pub notification_tool_context: ToolNotificationToolContext,
     pub reminders_tool_context: ToolRemindersToolContext,
+    pub databases_tool_context: ToolDatabasesToolContext,
+    pub databases_sql_tool_context: ToolDatabasesSqlToolContext,
     /// Import staging/tracking tools. `unwired` in hosts that can't build
     /// the import service — calls there fail with a clear error.
     pub import_tool_context: ToolImportToolContext,
@@ -1549,6 +1618,8 @@ impl ToolServiceContext {
         self.project_tool_context = self.project_tool_context.with_actor(actor);
         self.initiative_tool_context = self.initiative_tool_context.with_actor(actor);
         self.channel_tool_context = self.channel_tool_context.with_actor(actor);
+        self.databases_tool_context = self.databases_tool_context.with_actor(actor);
+        self.databases_sql_tool_context = self.databases_sql_tool_context.with_actor(actor);
         self
     }
 
