@@ -297,14 +297,12 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
                 columns: table().columns,
               })
             }
-            addColumn={(label, initialType, variant, onCreated) => (
+            addColumn={(label, onCreated) => (
               <AddColumnMenu
                 databaseId={databaseId}
                 tableId={props.tableId}
                 columns={table().columns}
                 label={label}
-                variant={variant}
-                initialType={initialType}
                 onCreated={onCreated}
               />
             )}

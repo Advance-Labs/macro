@@ -1,24 +1,18 @@
-/**
- * Relabelling, recolouring and removing a select column's options. Each
- * shows at once wherever the column's definition is bound in this database,
- * and is read back from the server if it is refused.
- */
-import type { OptionColor } from '@core/database-sql/generated/types';
+/** Relabelling, recolouring and removing a select column's options, shown at once wherever its definition is bound. */
 import { TAG_COLOR_OPTIONS } from '@property/tags/tagColors';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import type { PropertyOption } from '@service-storage/generated/schemas/propertyOption';
 import type { ResultAsync } from 'neverthrow';
+import type { OptionChange } from '../context/option-editing';
 import type { DatabaseOpFailure } from '../core/write-failure';
 import { applyOp, patchDetail } from './detail-cache';
 
-export type OptionTarget = {
+type OptionTarget = {
   databaseId: string;
   tableId: string;
   columnId: string;
   optionId: string;
 };
-
-export type OptionChange = { label?: string; color?: OptionColor };
 
 function definitionOf(
   detail: DatabaseDetail,

@@ -14,16 +14,6 @@ import {
 import { focusAdjacent } from '../components/cell-focus';
 import { OptionPicker } from '../components/option-picker';
 import { SelectPill } from '../components/select-pill';
-import type {
-  GridCellControl,
-  GridCellEditorOptions,
-} from '../core/grid-cell-editor';
-
-export type {
-  GridCellControl,
-  GridCellEditorOptions,
-} from '../core/grid-cell-editor';
-
 import { useOptionEditing } from '../context/option-editing';
 import { fromCellDate, toCellDate } from '../core/cell-date';
 import type {
@@ -35,6 +25,10 @@ import {
   type DatabaseViewColumn,
   databaseCellValues,
 } from '../core/database-view';
+import type {
+  GridCellControl,
+  GridCellEditorOptions,
+} from '../core/grid-cell-editor';
 import { canEditCell, formatCellValue } from '../core/table';
 
 export type DatabaseMentionPickerProps = {
@@ -165,8 +159,24 @@ export function GridCell(props: GridCellProps) {
     if (restoreFocus)
       queueMicrotask(() => (editing() ? focusEditor?.() : trigger?.focus()));
   };
+  async function writeMention(
+    onMention: (mention: DatabaseMention) => Promise<boolean>,
+    preview: { mention: DatabaseMention; originalValue: DatabaseCellValue }
+  ) {
+    await onMention(preview.mention);
+    setSelectedMention((current) => {
+      if (current !== preview) return current;
+      if (
+        props.value !== preview.originalValue &&
+        props.value !== preview.mention.id
+      )
+        return undefined;
+      return { mention: preview.mention, originalValue: props.value };
+    });
+  }
   const selectMention = (mention: DatabaseMention, direction?: 1 | -1) => {
-    if (!mentionsEnabled()) return;
+    const onMention = props.onMention;
+    if (!mentionsEnabled() || !onMention) return;
     const preview = {
       mention,
       originalValue: props.value,
@@ -174,14 +184,7 @@ export function GridCell(props: GridCellProps) {
     setSelectedMention(preview);
     setEditing(false);
     setMentionOpen(false);
-    void props.onMention?.(mention).then(() => {
-      setSelectedMention((current) => {
-        if (current !== preview) return current;
-        if (props.value !== preview.originalValue && props.value !== mention.id)
-          return undefined;
-        return { mention, originalValue: props.value };
-      });
-    });
+    void writeMention(onMention, preview);
     if (direction && props.onNavigate?.(direction)) return;
     queueMicrotask(() => {
       if (direction) focusAdjacent(trigger, direction);
@@ -327,8 +330,9 @@ export function GridCell(props: GridCellProps) {
                               when={
                                 isEntity() &&
                                 typeof props.value === 'string' &&
-                                props.column.specificEntityType &&
                                 props.renderMentionValue
+                                  ? props.column.specificEntityType
+                                  : undefined
                               }
                               fallback={
                                 (props.column.dataType === 'STRING' &&
@@ -345,9 +349,13 @@ export function GridCell(props: GridCellProps) {
                                 )
                               }
                             >
-                              {props.renderMentionValue?.(
-                                String(props.value),
-                                props.column.specificEntityType!
+                              {(entityType) => (
+                                <>
+                                  {props.renderMentionValue?.(
+                                    String(props.value),
+                                    entityType()
+                                  )}
+                                </>
                               )}
                             </Show>
                           }
@@ -556,7 +564,7 @@ function InlineEditor(props: {
     }
     if (event.key === 'Enter') {
       event.preventDefault();
-      void commit();
+      commit();
     }
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -604,7 +612,7 @@ function InlineEditor(props: {
               setError('');
             }}
             onBlur={() => {
-              if (!props.mentionOpen) void commit(false);
+              if (!props.mentionOpen) commit(false);
             }}
             onKeyDown={onKeyDown}
             class="min-h-9 w-full min-w-0 rounded border border-ink/40 bg-input-focus px-2.5 py-1.5 text-[13px] text-ink outline-none ring-2 ring-ink/10"

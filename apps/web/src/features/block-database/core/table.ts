@@ -93,7 +93,7 @@ export function formatCellValue(
       const values: unknown = JSON.parse(String(value));
       if (Array.isArray(values)) return values.map(String).join(', ');
     } catch {
-      // Older / unknown values remain visible instead of disappearing.
+      // Not a JSON array: shown as the one value it is.
     }
   }
   if (column.dataType === 'STRING') return markdownToPlainText(String(value));

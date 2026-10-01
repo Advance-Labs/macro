@@ -1362,12 +1362,12 @@ describe('database table view', () => {
 
   it.each([
     {
-      dataType: 'SELECT_STRING',
+      dataType: 'SELECT_STRING' as const,
       name: 'Status',
       option: { id: 'done', label: 'Done', color: null },
     },
     {
-      dataType: 'SELECT_NUMBER',
+      dataType: 'SELECT_NUMBER' as const,
       name: 'Priority',
       option: { id: 'two', label: '2', color: null },
     },

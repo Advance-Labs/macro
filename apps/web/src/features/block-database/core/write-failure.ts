@@ -21,7 +21,7 @@ export type DatabaseWriteFailure =
   /** A mention was picked for a column of another type. */
   | { kind: 'type-mismatch' }
   /** Settling a new column's type from its first value was refused. */
-  | { kind: 'type-refused'; error: ResultError<DatabaseSchemaErrorCode> }
+  | { kind: 'type-refused'; errors: ResultError<DatabaseSchemaErrorCode>[] }
   /** The service refused the write, or never answered it. */
   | { kind: 'ops'; error: DatabaseOpsError }
   /** A new row may have been saved before its answer was lost. */
@@ -97,10 +97,10 @@ export function databaseWriteMessage(failure: DatabaseWriteFailure): string {
       () =>
         'This column has a different type. Choose a matching mention or add a new column.'
     )
-    .with({ kind: 'type-refused' }, ({ error }) =>
-      error.code === 'INVALID_SCHEMA'
-        ? error.message
-        : 'Could not set the column type. Your entry is kept.'
+    .with({ kind: 'type-refused' }, ({ errors }) =>
+      match(errors[0])
+        .with({ code: 'INVALID_SCHEMA' }, ({ message }) => message)
+        .otherwise(() => 'Could not set the column type. Your entry is kept.')
     )
     .with({ kind: 'ops' }, ({ error }) =>
       match(error.code)

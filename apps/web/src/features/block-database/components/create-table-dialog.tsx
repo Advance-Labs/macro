@@ -5,6 +5,7 @@ import { Dialog } from '@ui/components/Dialog';
 import { Panel } from '@ui/components/Panel';
 import { TextField } from '@ui/components/TextField';
 import { createSignal, Show } from 'solid-js';
+import { tableCreateMessage } from '../core/column-schema';
 import { isDatabaseNameTaken } from '../core/property-creation';
 import type { CreateTable } from '../core/table-creation';
 
@@ -43,12 +44,7 @@ export function CreateTableDialog(props: {
           setError(result.message);
         }
       },
-      (errors) =>
-        setError(
-          errors[0]?.code === 'INVALID_SCHEMA'
-            ? errors[0].message
-            : 'Could not create this table. Check your connection and try again.'
-        )
+      (errors) => setError(tableCreateMessage(errors))
     );
   };
 

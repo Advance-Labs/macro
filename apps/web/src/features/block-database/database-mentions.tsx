@@ -11,6 +11,7 @@ import { UserIcon } from '@core/component/UserIcon';
 import { encodeCellMention } from '@macro-inc/spreadsheet/cell-mentions';
 import { usePropertyEntityDisplay } from '@property/hooks/usePropertyEntityDisplay';
 import { ErrorBoundary, Show, Suspense } from 'solid-js';
+import { match } from 'ts-pattern';
 import type {
   DatabaseMentionPickerProps,
   DatabaseTextEditorProps,
@@ -65,20 +66,25 @@ export function DatabaseMentionPicker(props: DatabaseMentionPickerProps) {
 }
 
 function encodedMention(item: MentionItem): string | undefined {
-  if (item.kind === 'user')
-    return encodeCellMention({
-      type: 'user',
-      userId: item.data.id,
-      email: item.data.email,
-      displayName: item.data.name,
-    });
-  if (item.kind === 'entity')
-    return encodeCellMention({
-      type: 'document',
-      documentId: item.data.id,
-      documentName: item.data.name ?? '',
-      blockName: getBlockNameFromEntity(item),
-    });
+  return match(item)
+    .returnType<string | undefined>()
+    .with({ kind: 'user' }, ({ data }) =>
+      encodeCellMention({
+        type: 'user',
+        userId: data.id,
+        email: data.email,
+        displayName: data.name,
+      })
+    )
+    .with({ kind: 'entity' }, (entity) =>
+      encodeCellMention({
+        type: 'document',
+        documentId: entity.data.id,
+        documentName: entity.data.name ?? '',
+        blockName: getBlockNameFromEntity(entity),
+      })
+    )
+    .otherwise(() => undefined);
 }
 
 export function DatabaseTextEditor(props: DatabaseTextEditorProps) {

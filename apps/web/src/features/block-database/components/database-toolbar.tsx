@@ -29,6 +29,7 @@ import { withSort } from '../core/view-query';
 import {
   boardGroupColumns,
   boardLayout,
+  laneLabel,
   layoutColumns,
   movedViewOrder,
   withLaneHidden,
@@ -44,7 +45,7 @@ import { NewViewDialog, type NewViewLayout } from './new-view-dialog';
 import { ToolbarPopover } from './view-control-popover';
 import { ViewSelect } from './view-select';
 
-export type DatabaseToolbarProps = {
+type DatabaseToolbarProps = {
   columns: DatabaseViewColumn[];
   /** The table's stored views, in order. */
   views: DatabaseView[];
@@ -144,15 +145,16 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
   }
   const groupColumn = () =>
     props.columns.find((column) => column.id === board()?.groupBy);
-  const hiddenLanes = () =>
-    (board()?.lanes ?? [])
+  const hiddenLanes = () => {
+    const column = groupColumn();
+    if (!column) return [];
+    return (board()?.lanes ?? [])
       .filter((lane) => lane.hidden)
       .map((lane) => ({
         option: lane.option,
-        label:
-          groupColumn()?.options.find((option) => option.id === lane.option)
-            ?.label ?? `No ${groupColumn()?.name.toLocaleLowerCase() ?? ''}`,
+        label: laneLabel(column, lane.option),
       }));
+  };
   return (
     <div
       class="@container/view-toolbar shrink-0 border-b border-edge-muted bg-canvas-base [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-ink/50"
@@ -283,13 +285,10 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
               size="sm"
               class="w-32 @min-[640px]/view-toolbar:w-44"
               onFocusOut={(event) => {
-                if (
-                  !event.currentTarget.contains(
-                    event.relatedTarget as Node | null
-                  ) &&
-                  !props.search
-                )
-                  setSearchOpen(false);
+                const next = event.relatedTarget;
+                if (next instanceof Node && event.currentTarget.contains(next))
+                  return;
+                if (!props.search) setSearchOpen(false);
               }}
             >
               <InputGroup.Addon align="inline-start">
@@ -792,10 +791,7 @@ function SortPanel(props: {
                       position === index
                         ? {
                             ...item,
-                            direction:
-                              direction === 'descending'
-                                ? 'descending'
-                                : 'ascending',
+                            direction,
                           }
                         : item
                     )

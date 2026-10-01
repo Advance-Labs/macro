@@ -24,7 +24,7 @@ import type {
 import type { GridCellEditorOptions } from '../core/grid-cell-editor';
 import { focusAdjacent } from './cell-focus';
 
-export type DatabaseRelationCellProps = GridCellEditorOptions & {
+type DatabaseRelationCellProps = GridCellEditorOptions & {
   column: DatabaseViewColumn;
   value: DatabaseCellValue;
   canEdit: boolean;
@@ -354,9 +354,7 @@ export function DatabaseRelationCell(props: DatabaseRelationCellProps) {
                         variant="plain"
                         size="xs"
                         class="min-w-0 gap-1"
-                        disabled={
-                          !props.source.rows().some((row) => row.id === id)
-                        }
+                        disabled={!available(id)}
                         title={`Open ${name(id)}`}
                         onClick={() => openRecord(id)}
                       >

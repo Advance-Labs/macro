@@ -104,31 +104,32 @@ export function createDraftRows(writer: Writer) {
       }
       const field = Object.entries(current.cells)[0];
       if (!field) return true;
+      const [columnId, value] = field;
       let rowMutations = mutations.get(id);
       if (!rowMutations) {
         rowMutations = new Map();
         mutations.set(id, rowMutations);
       }
-      const mutation = rowMutations.get(field[0]) ?? {
+      const mutation = rowMutations.get(columnId) ?? {
         kind: 'cell' as const,
         rowId,
-        columnId: field[0],
-        value: field[1],
+        columnId,
+        value,
       };
-      mutation.value = field[1];
-      if (current.columnTypes[field[0]])
-        mutation.columnTypes = { [field[0]]: current.columnTypes[field[0]] };
+      mutation.value = value;
+      const columnType = current.columnTypes[columnId];
+      if (columnType) mutation.columnTypes = { [columnId]: columnType };
       else delete mutation.columnTypes;
-      rowMutations.set(field[0], mutation);
-      const option = current.options[field[0]];
+      rowMutations.set(columnId, mutation);
+      const option = current.options[columnId];
       const saved = await writes.save(mutation, 'cell', option);
       if (saved.isErr()) return failed(id);
       acknowledge(
         id,
-        { [field[0]]: field[1] },
-        option === undefined ? {} : { [field[0]]: option }
+        { [columnId]: value },
+        option === undefined ? {} : { [columnId]: option }
       );
-      rowMutations.delete(field[0]);
+      rowMutations.delete(columnId);
     }
   }
   async function flushAccepted(

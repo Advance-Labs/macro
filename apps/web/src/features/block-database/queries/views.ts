@@ -1,8 +1,4 @@
-/**
- * A table's typed views and a board's card places, written as ops. Each
- * change shows in the cached detail before the server answers; a refusal
- * reads the detail again.
- */
+/** A table's typed views and a board's card places, written as ops and shown in the cached detail ahead of the answer. */
 
 import { throwOnErr } from '@core/util/result';
 import { queryClient } from '@queries/client';

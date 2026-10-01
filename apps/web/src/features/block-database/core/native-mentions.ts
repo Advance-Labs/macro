@@ -1,19 +1,11 @@
 import type { MentionBucketId } from '@core/component/LexicalMarkdown/component/menu/MentionsMenu/MentionsMenuController';
 import type { MentionItem } from '@core/component/LexicalMarkdown/utils/mentionsUtils';
 import type { EntityBucket } from '@core/context/quickAccess';
+import { match } from 'ts-pattern';
 import type { DatabaseEntityType, DatabaseMention } from './column-inference';
 
-export function databaseMentionFromItem(
-  item: MentionItem
-): DatabaseMention | undefined {
-  if (item.kind === 'user')
-    return {
-      id: item.data.id,
-      entityType: 'USER',
-      label: item.data.name || item.data.email,
-    };
-  if (item.kind !== 'entity') return;
-  const type: Partial<Record<EntityBucket, DatabaseEntityType>> = {
+const ENTITY_TYPE_OF_BUCKET: Partial<Record<EntityBucket, DatabaseEntityType>> =
+  {
     task: 'TASK',
     note: 'DOCUMENT',
     snippet: 'DOCUMENT',
@@ -25,28 +17,57 @@ export function databaseMentionFromItem(
     email: 'THREAD',
     crm_company: 'COMPANY',
   };
-  const entityType = type[item.bucket];
-  if (entityType)
-    return { id: item.data.id, entityType, label: item.data.name || 'Unnamed' };
+
+export function databaseMentionFromItem(
+  item: MentionItem
+): DatabaseMention | undefined {
+  return match(item)
+    .returnType<DatabaseMention | undefined>()
+    .with({ kind: 'user' }, ({ data }) => ({
+      id: data.id,
+      entityType: 'USER',
+      label: data.name || data.email,
+    }))
+    .with({ kind: 'entity' }, ({ bucket, data }) => {
+      const entityType = ENTITY_TYPE_OF_BUCKET[bucket];
+      return entityType
+        ? { id: data.id, entityType, label: data.name || 'Unnamed' }
+        : undefined;
+    })
+    .otherwise(() => undefined);
 }
 
-export function databaseMentionScope(type?: DatabaseEntityType): {
+type DatabaseMentionScope = {
   sources: MentionBucketId[];
   documentBuckets?: EntityBucket[];
-} {
-  if (!type) return { sources: ['users', 'documents', 'channels', 'emails'] };
-  if (type === 'USER') return { sources: ['users'] };
-  if (type === 'CHANNEL') return { sources: ['channels'] };
-  if (type === 'THREAD') return { sources: ['emails'] };
-  if (type === 'COMPANY') return { sources: ['companies'] };
-  const buckets: Partial<Record<DatabaseEntityType, EntityBucket[]>> = {
-    TASK: ['task'],
-    DOCUMENT: ['note', 'snippet', 'document'],
-    PROJECT: ['project'],
-    CHAT: ['chat'],
-  };
-  return {
-    sources: buckets[type] ? ['documents'] : [],
-    documentBuckets: buckets[type],
-  };
+};
+
+function documentScope(documentBuckets: EntityBucket[]): DatabaseMentionScope {
+  return { sources: ['documents'], documentBuckets };
+}
+
+export function databaseMentionScope(
+  type?: DatabaseEntityType
+): DatabaseMentionScope {
+  return match(type)
+    .returnType<DatabaseMentionScope>()
+    .with(undefined, () => ({
+      sources: ['users', 'documents', 'channels', 'emails'],
+    }))
+    .with('USER', () => ({ sources: ['users'] }))
+    .with('CHANNEL', () => ({ sources: ['channels'] }))
+    .with('THREAD', () => ({ sources: ['emails'] }))
+    .with('COMPANY', () => ({ sources: ['companies'] }))
+    .with('TASK', () => documentScope(['task']))
+    .with('DOCUMENT', () => documentScope(['note', 'snippet', 'document']))
+    .with('PROJECT', () => documentScope(['project']))
+    .with('CHAT', () => documentScope(['chat']))
+    .with(
+      'CALENDAR_EVENT',
+      'CALL_RECORD',
+      'DATABASE_ROW',
+      'INITIATIVE',
+      () => ({ sources: [], documentBuckets: undefined })
+    )
+    .exhaustive();
 }

@@ -11,7 +11,6 @@ import {
   tryMacroId,
 } from '@core/user';
 import { ContextMenu } from '@kobalte/core/context-menu';
-import { paletteColorForKey } from '@macro-inc/collaboration/palette';
 import ArrowSquareOutIcon from '@phosphor/arrow-square-out.svg';
 import CopyIcon from '@phosphor/copy.svg';
 import PencilIcon from '@phosphor/pencil-simple.svg';
@@ -25,6 +24,7 @@ import {
   DragOverlay,
   useDragDropContext,
 } from '@thisbeyond/solid-dnd';
+import { getHashedPaletteColor } from '@ui/utils/palette';
 import {
   type Accessor,
   createEffect,
@@ -37,15 +37,15 @@ import {
 } from 'solid-js';
 import { createDragAutoScroll } from '../../../components/drag-drop/create-drag-auto-scroll';
 import type {
-  GridCellControl,
-  GridCellEditorOptions,
-} from '../component/GridCell';
-import type {
   DatabaseColumnCastsSource,
   DatabaseColumnTypeChange,
   DatabaseSchemaChange,
 } from '../core/column-schema';
 import type { DatabaseViewColumn } from '../core/database-view';
+import type {
+  GridCellControl,
+  GridCellEditorOptions,
+} from '../core/grid-cell-editor';
 import { canEditCell, type DatabaseRow } from '../core/table';
 import type { DatabaseColumnHeaderProps } from './database-column-header';
 import { DatabaseColumnHeader } from './database-column-header';
@@ -586,8 +586,8 @@ export function DatabaseTable(props: {
                     as="div"
                     ref={(element: HTMLElement) => {
                       createEffect(
-                        on(highlighted, (on) => {
-                          if (!on) return;
+                        on(highlighted, (isHighlighted) => {
+                          if (!isHighlighted) return;
                           element.scrollIntoView({ block: 'nearest' });
                           const first = props.columns[0];
                           if (first) control(row().rowId, first.id)?.focus();
@@ -838,7 +838,7 @@ export function DatabaseTable(props: {
 
 /** Same color for the same viewer on every client's grid. */
 function presenceColor(userId: string) {
-  return `var(--color-${paletteColorForKey(userId)}, var(--color-pink))`;
+  return `var(--color-${getHashedPaletteColor(userId)}, var(--color-pink))`;
 }
 
 function presenceOutline(
@@ -895,10 +895,10 @@ function ColumnResizeHandle(props: {
   onCommit: (width: number) => void;
 }) {
   let start: { x: number; width: number } | undefined;
-  const widthAt = (event: PointerEvent) =>
+  const widthAt = (origin: { x: number; width: number }, event: PointerEvent) =>
     Math.max(
       MIN_COLUMN_WIDTH,
-      Math.round((start?.width ?? 0) + event.clientX - (start?.x ?? 0))
+      Math.round(origin.width + event.clientX - origin.x)
     );
   return (
     <div
@@ -918,11 +918,11 @@ function ColumnResizeHandle(props: {
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
       onPointerMove={(event) => {
-        if (start) props.onPreview(widthAt(event));
+        if (start) props.onPreview(widthAt(start, event));
       }}
       onPointerUp={(event) => {
         if (!start) return;
-        props.onCommit(widthAt(event));
+        props.onCommit(widthAt(start, event));
         start = undefined;
       }}
       onMouseDown={(event) => event.stopPropagation()}

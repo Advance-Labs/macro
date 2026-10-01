@@ -3,12 +3,8 @@ import { createDatabaseColumn } from '@queries/storage/databases';
 import type { ColumnDetail } from '@service-storage/generated/schemas/columnDetail';
 import { Button } from '@ui/components/Button';
 import { createSignal, Show } from 'solid-js';
-import type { PropertyCreatorVariant } from '../components/property-creator';
 import { columnSchemaMessage } from '../core/column-schema';
-import {
-  type DatabasePropertyType,
-  defaultDatabaseColumnName,
-} from '../core/property-creation';
+import { defaultDatabaseColumnName } from '../core/property-creation';
 
 /**
  * Add a Text column with the next free default name at the table's end; its
@@ -46,8 +42,6 @@ export function AddColumnMenu(props: {
   tableId: string;
   columns: ColumnDetail[];
   label?: string;
-  variant?: PropertyCreatorVariant;
-  initialType?: DatabasePropertyType;
   onCreated?: (columnId: string) => boolean;
 }) {
   const [pending, setPending] = createSignal(false);

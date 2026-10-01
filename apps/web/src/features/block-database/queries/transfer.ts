@@ -28,7 +28,7 @@ export function importDatabaseTable(
 }
 
 /** The table's rows could not be read, or not all of them. */
-export type DatabaseExportFailure = DatabaseSqlFailure | { kind: 'too-large' };
+type DatabaseExportFailure = DatabaseSqlFailure | { kind: 'too-large' };
 
 /** Never silently export a partial read. */
 export function exportDatabaseTableCsv(

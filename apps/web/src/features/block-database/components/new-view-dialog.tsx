@@ -141,7 +141,7 @@ export function NewViewDialog(props: {
                 <span class="font-medium text-ink">Group by</span>
                 <ViewSelect
                   label="Group board by"
-                  value={groupBy() ?? ''}
+                  value={groupBy()}
                   options={groups().map((column) => ({
                     value: column.id,
                     label: column.name,

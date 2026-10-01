@@ -21,8 +21,8 @@ export type DatabaseCsvFailure =
   | { kind: 'long-row'; row: number };
 
 export const MAX_CSV_BYTES = 8 * 1024 * 1024;
-export const MAX_CSV_ROWS = 10_000;
-export const MAX_CSV_COLUMNS = 100;
+const MAX_CSV_ROWS = 10_000;
+const MAX_CSV_COLUMNS = 100;
 const MAX_COLUMN_NAME = 200;
 
 /** Keep every CSV value as text: importing must not round numbers or lose zeroes. */
@@ -104,11 +104,10 @@ export function databaseCsvMessage(failure: DatabaseCsvFailure): string {
 export function csvImportMessage(
   errors: readonly ResultError<DatabaseSchemaErrorCode>[]
 ): string {
-  const error = errors[0];
-  return match(error?.code)
-    .with('INVALID_SCHEMA', () => error?.message ?? '')
+  return match(errors[0])
+    .with({ code: 'INVALID_SCHEMA' }, ({ message }) => message)
     .with(
-      'NETWORK_ERROR',
+      { code: 'NETWORK_ERROR' },
       () => 'The CSV could not be sent. Check your connection and try again.'
     )
     .otherwise(() => 'Could not import the CSV. Please try again.');

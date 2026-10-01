@@ -1,3 +1,4 @@
+import type { DataType } from '@service-storage/generated/schemas/dataType';
 import type { DatabaseEntityType } from './column-inference';
 import { relatedRowIds } from './database-relations';
 
@@ -14,7 +15,7 @@ export type DatabaseOption = {
 export type DatabaseViewColumn = {
   id: string;
   name: string;
-  dataType: string;
+  dataType: DataType;
   isMultiSelect: boolean;
   options: DatabaseOption[];
   writable: boolean;
@@ -67,7 +68,7 @@ export function databaseCellValues(
             typeof item === 'number'
         );
     } catch {
-      // Older scalar values remain searchable when a property becomes multi-value.
+      // Not a JSON array: shown as the one value it is.
     }
   }
   return [value];

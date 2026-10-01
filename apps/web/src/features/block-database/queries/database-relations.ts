@@ -22,7 +22,7 @@ import type { DatabaseRelatedRow } from '../core/database-relations';
 import { tableRowsStatement } from '../sql';
 
 /** A table's rows by id, named by its title column. */
-export function relatedRows(
+function relatedRows(
   table: TableDetail,
   outcome: Outcome
 ): DatabaseRelatedRow[] {
@@ -51,7 +51,7 @@ export function relatedRows(
 }
 
 /** A related table: the one a relation column's rows belong to. */
-export type DatabaseRelationTarget = { databaseId: string; tableId: string };
+type DatabaseRelationTarget = { databaseId: string; tableId: string };
 
 /** One live read per target table, shared by every visible relation cell. */
 export function createDatabaseRelations(props: {

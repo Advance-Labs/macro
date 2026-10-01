@@ -198,7 +198,10 @@ const Block: Component = () => {
     Record<string, DatabaseView>
   >({});
   const [searches, setSearches] = createSignal<Record<string, string>>({});
-  const search = () => searches()[activeTableId() ?? ''] ?? '';
+  const search = () => {
+    const tableId = activeTableId();
+    return tableId ? (searches()[tableId] ?? '') : '';
+  };
   const view = (): DatabaseView | undefined => {
     const table = activeTable();
     if (!table) return undefined;
@@ -238,19 +241,18 @@ const Block: Component = () => {
     }));
   }
   function createView(
+    current: DatabaseView,
     name: string,
     layout: NewViewLayout,
     groupBy: string | undefined
   ) {
-    const tableId = activeTableId() ?? '';
-    const current = view();
-    return createDatabaseView(databaseId, tableId, {
+    return createDatabaseView(databaseId, current.tableId, {
       name,
-      query: current?.query ?? { filter: null, sort: [] },
+      query: current.query,
       layout:
         layout === 'board' && groupBy
           ? boardLayout(groupBy, columns())
-          : current?.layout.kind === 'table'
+          : current.layout.kind === 'table'
             ? current.layout
             : { kind: 'table', columns: [] },
     }).map((created) => selectView(created.id));
@@ -391,7 +393,14 @@ const Block: Component = () => {
                                     onSearchChange={setSearch}
                                     onSelectView={selectView}
                                     onChangeView={changeView}
-                                    onCreateView={createView}
+                                    onCreateView={(name, layout, groupBy) =>
+                                      createView(
+                                        shown().view,
+                                        name,
+                                        layout,
+                                        groupBy
+                                      )
+                                    }
                                     onRenameView={(target, name) =>
                                       updateDatabaseView(target, { name }).map(
                                         () => undefined

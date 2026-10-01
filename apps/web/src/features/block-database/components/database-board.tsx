@@ -11,7 +11,7 @@ import type { ViewLayout } from '@service-storage/generated/schemas/viewLayout';
 import { Key } from '@solid-primitives/keyed';
 import { Button } from '@ui/components/Button';
 import { Dropdown } from '@ui/components/Dropdown';
-import { ok, type Result } from 'neverthrow';
+import type { Result } from 'neverthrow';
 import type { JSX } from 'solid-js';
 import {
   createMemo,
@@ -42,6 +42,7 @@ import {
   rowValue,
   titleColumn,
 } from '../core/table';
+import { laneLabel } from '../core/views';
 import { OptionEditor } from './option-editor';
 import { PropertyIcon } from './property-icon';
 import { SelectPill } from './select-pill';
@@ -125,8 +126,7 @@ export function DatabaseBoard(props: DatabaseBoardProps) {
         return {
           key: laneKey(lane.option),
           option,
-          label:
-            option?.label ?? `No ${props.groupColumn.name.toLocaleLowerCase()}`,
+          label: laneLabel(props.groupColumn, lane.option),
           rows: lane.cards.flatMap((id) => {
             const row = rows.get(id);
             return row ? [row] : [];
@@ -299,12 +299,9 @@ export function DatabaseBoard(props: DatabaseBoardProps) {
               props.canEdit && props.groupColumn.writable && props.onAddGroup
             }
           >
-            <NewBoardGroup
-              column={props.groupColumn}
-              onSave={(label) =>
-                props.onAddGroup?.(label) ?? Promise.resolve(ok(undefined))
-              }
-            />
+            {(addGroup) => (
+              <NewBoardGroup column={props.groupColumn} onSave={addGroup()} />
+            )}
           </Show>
         </div>
       </Kanban>
@@ -395,12 +392,18 @@ function BoardLane(
           {props.group.rows.length + savingCount()}
         </span>
         <span class="ml-auto flex items-center" data-kanban-no-drag>
-          <Show when={props.group.option && editing && props.canEdit}>
-            <OptionEditor
-              column={props.groupColumn}
-              option={props.group.option!}
-              editing={editing!}
-            />
+          <Show when={editing}>
+            {(optionEditing) => (
+              <Show when={props.canEdit && props.group.option}>
+                {(option) => (
+                  <OptionEditor
+                    column={props.groupColumn}
+                    option={option()}
+                    editing={optionEditing()}
+                  />
+                )}
+              </Show>
+            )}
           </Show>
           <Show when={props.onHideLane || props.onHideEmptyLanes}>
             <Dropdown>
@@ -644,6 +647,13 @@ function BoardCard(props: {
   onMove: (rowId: string, lane: BoardGroup) => void;
 }) {
   const title = () => rowTitle(props.row, props.columns);
+  const renderedTitle = () => {
+    const column = titleColumn(props.columns);
+    if (!props.renderTextValue || !column) return title();
+    return props.renderTextValue(
+      String(rowValue(props.row, column.id) || 'Unnamed')
+    );
+  };
   const metadata = () =>
     props.cardFields.flatMap((id) => {
       const column = props.columns.find((entry) => entry.id === id);
@@ -673,14 +683,7 @@ function BoardCard(props: {
           class="block break-words text-[13px] font-medium leading-5 text-ink"
           classList={{ 'pr-10': props.canEdit }}
         >
-          {props.renderTextValue && titleColumn(props.columns)
-            ? props.renderTextValue(
-                String(
-                  rowValue(props.row, titleColumn(props.columns)!.id) ||
-                    'Unnamed'
-                )
-              )
-            : title()}
+          {renderedTitle()}
         </span>
         <Show when={metadata().length}>
           <span class="mt-3 flex flex-col gap-2 border-t border-edge-muted/50 pt-2.5">

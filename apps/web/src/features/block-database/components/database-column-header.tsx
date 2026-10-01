@@ -23,6 +23,7 @@ import { DeleteDialog } from '@ui/components/DeleteDialog';
 import { Dropdown } from '@ui/components/Dropdown';
 import type { JSX } from 'solid-js';
 import { createSignal, createUniqueId, For, onCleanup, Show } from 'solid-js';
+import { match } from 'ts-pattern';
 import { useOptionEditing } from '../context/option-editing';
 import {
   columnSchemaMessage,
@@ -294,13 +295,11 @@ export function DatabaseColumnHeader(props: DatabaseColumnHeaderProps) {
           }}
           role="columnheader"
           aria-label={props.column.name}
-          aria-sort={
-            props.sortDirection === 'asc'
-              ? 'ascending'
-              : props.sortDirection === 'desc'
-                ? 'descending'
-                : 'none'
-          }
+          aria-sort={match(props.sortDirection)
+            .with('asc', () => 'ascending' as const)
+            .with('desc', () => 'descending' as const)
+            .with(undefined, () => 'none' as const)
+            .exhaustive()}
           aria-keyshortcuts={canRename() ? 'F2 Shift+F10' : 'Shift+F10'}
           tabIndex={draft() ? -1 : 0}
           disabled={!!draft()}

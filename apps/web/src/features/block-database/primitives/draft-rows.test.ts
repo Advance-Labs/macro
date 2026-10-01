@@ -253,10 +253,12 @@ describe('editable blank row', () => {
     vi.mocked(source.write).mockImplementationOnce(() =>
       errAsync({
         kind: 'type-refused',
-        error: {
-          code: 'INVALID_SCHEMA',
-          message: 'Could not infer the column type',
-        },
+        errors: [
+          {
+            code: 'INVALID_SCHEMA',
+            message: 'Could not infer the column type',
+          },
+        ],
       })
     );
     const id = drafts.blankId();

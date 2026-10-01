@@ -1,9 +1,4 @@
-import {
-  defineBlock,
-  type ExtractLoadType,
-  LoadErrors,
-  loadResult,
-} from '@core/block';
+import { defineBlock, LoadErrors, loadResult } from '@core/block';
 import NotFound from '@core/component/AccessErrorViews/NotFound';
 import { lazy } from 'solid-js';
 import { waitForDatabaseRollout } from './queries/database-rollout';
@@ -34,5 +29,3 @@ export const definition = defineBlock({
   accepted: {},
   defaultFilename: 'Untitled database',
 });
-
-export type DatabaseData = ExtractLoadType<(typeof definition)['load']>;

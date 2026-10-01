@@ -1,8 +1,10 @@
 import type { ResultError } from '@core/util/result';
 import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
+import type { ChangeColumnTypeRequest } from '@service-storage/generated/schemas/changeColumnTypeRequest';
+import type { DataType } from '@service-storage/generated/schemas/dataType';
 import type { ResultAsync } from 'neverthrow';
 import type { Accessor } from 'solid-js';
-import { match } from 'ts-pattern';
+import { match, P } from 'ts-pattern';
 import type { DatabaseEntityType } from './column-inference';
 
 /** What the tabs say when a table rename was refused. */
@@ -13,6 +15,17 @@ export function tableRenameMessage(
   return error?.code === 'INVALID_SCHEMA'
     ? error.message
     : 'Could not rename this table. Its name may have changed. Check your connection, or reopen Rename table and try again.';
+}
+
+/** What the create dialog says when the service refused a new table. */
+export function tableCreateMessage(
+  errors: readonly ResultError<DatabaseSchemaErrorCode>[]
+): string {
+  return match(errors[0])
+    .with({ code: 'INVALID_SCHEMA' }, ({ message }) => message)
+    .otherwise(
+      () => 'Could not create this table. Check your connection and try again.'
+    );
 }
 
 /** What the tabs say when a new tab order was refused. */
@@ -39,34 +52,31 @@ export type DatabaseSchemaChange<Value = void> = ResultAsync<
 export function columnSchemaMessage(
   errors: readonly ResultError<DatabaseSchemaErrorCode>[]
 ): string {
-  const error = errors[0];
-  return match(error?.code)
-    .with('INVALID_SCHEMA', () => error?.message ?? '')
-    .with('CONFLICT', () => 'This table changed. Refresh and try again.')
-    .with('FORBIDDEN', () => 'You can’t change this table.')
-    .with('NOT_FOUND', 'GONE', () => 'This table is no longer available.')
+  return match(errors[0])
+    .with({ code: 'INVALID_SCHEMA' }, ({ message }) => message)
     .with(
-      'NETWORK_ERROR',
+      { code: 'CONFLICT' },
+      () => 'This table changed. Refresh and try again.'
+    )
+    .with({ code: 'FORBIDDEN' }, () => 'You can’t change this table.')
+    .with(
+      { code: P.union('NOT_FOUND', 'GONE') },
+      () => 'This table is no longer available.'
+    )
+    .with(
+      { code: 'NETWORK_ERROR' },
       () => 'Your change could not be sent. Check your connection.'
     )
     .otherwise(() => 'This column could not be updated. Try again.');
 }
 
 /** Explicit changes are validated against every stored value by the server. */
-export type DatabaseColumnTypeChange = {
-  dataType:
-    | 'STRING'
-    | 'NUMBER'
-    | 'BOOLEAN'
-    | 'DATE'
-    | 'SELECT_STRING'
-    | 'LINK'
-    | 'ENTITY';
-  isMultiSelect?: boolean;
+export type DatabaseColumnTypeChange = Pick<
+  ChangeColumnTypeRequest,
+  'dataType' | 'isMultiSelect' | 'clearInvalid'
+> & {
   specificEntityType?: DatabaseEntityType;
   linkToTableId?: string;
-  /** Empty the values that do not fit instead of refusing the change. */
-  clearInvalid?: boolean;
 };
 
 /** What changing a column to one type would do to its values. */
@@ -83,8 +93,8 @@ export type DatabaseColumnCast =
   | { verdict: 'never'; reason: string };
 
 /** A type the menu offers; `relation` stands for every related table. */
-export type DatabaseColumnCastTarget = {
-  dataType: string;
+type DatabaseColumnCastTarget = {
+  dataType: DataType;
   isMultiSelect: boolean;
   specificEntityType?: DatabaseEntityType;
   relation: boolean;

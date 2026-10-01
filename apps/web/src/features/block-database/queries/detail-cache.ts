@@ -1,8 +1,4 @@
-/**
- * The cached database detail as option and view ops change it: patched at
- * once, so the change shows before the server answers, and read again when
- * the server refuses it.
- */
+/** The cached database detail, patched as option and view ops are sent and read again when one is refused. */
 import type { DatabaseOp } from '@core/database-sql/generated/types';
 import { queryClient } from '@queries/client';
 import {

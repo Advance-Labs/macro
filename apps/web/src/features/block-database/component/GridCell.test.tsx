@@ -13,11 +13,11 @@ import type {
   DatabaseCellValue,
   DatabaseViewColumn,
 } from '../core/database-view';
+import type { GridCellControl } from '../core/grid-cell-editor';
 import {
   type DatabaseMentionPickerProps,
   type DatabaseTextEditorProps,
   GridCell,
-  type GridCellControl,
 } from './GridCell';
 
 // The date selector's focus helper waits on IntersectionObserver, and the
@@ -84,7 +84,7 @@ function MentionPicker(props: DatabaseMentionPickerProps) {
 }
 
 describe('grid cell', () => {
-  it.each(['STRING', 'SELECT_STRING'])(
+  it.each(['STRING', 'SELECT_STRING'] as const)(
     'lets Tab leave a %s editor at a grid boundary',
     async (dataType) => {
       let control: GridCellControl | undefined;

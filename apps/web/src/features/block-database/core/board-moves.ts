@@ -1,8 +1,6 @@
 /**
- * A card dragged on a board, as the `move_card` op names it and as the board
- * shows it before the server answers. The placement mirrors the server's
- * (`models_databases::views::lanes::place_card`), so the optimistic keys are
- * the ones it writes when the view shows every card of the lane.
+ * A dragged card as the `move_card` op names it and as it shows before the
+ * answer; placement mirrors `models_databases::views::lanes::place_card`.
  */
 import type { Board } from '@core/database-sql/generated/types';
 import type { CardPosition } from '@service-storage/generated/schemas/cardPosition';
@@ -16,13 +14,10 @@ export type CardMove = {
 };
 
 /** The fractional key between two others; `null` leaves that side open. */
-export type KeyBetween = (
-  before: string | null,
-  after: string | null
-) => string;
+type KeyBetween = (before: string | null, after: string | null) => string;
 
 /** One lane's cards as the board shows them, with the place stored for that lane. */
-export type LaneCard = { row: string; position: string | null };
+type LaneCard = { row: string; position: string | null };
 
 function cardsOf(board: Board, lane: string | null): string[] {
   return board.lanes.find((entry) => entry.option === lane)?.cards ?? [];

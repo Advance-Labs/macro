@@ -8,7 +8,15 @@ import PlusIcon from '@phosphor/plus.svg';
 import XIcon from '@phosphor/x.svg';
 import { Button } from '@ui/components/Button';
 import { Dropdown } from '@ui/components/Dropdown';
-import { createSignal, For, Index, Match, Show, Switch } from 'solid-js';
+import {
+  createSignal,
+  For,
+  Index,
+  type JSX,
+  Match,
+  Show,
+  Switch,
+} from 'solid-js';
 import type { DatabaseViewColumn } from '../core/database-view';
 import {
   addCondition,
@@ -141,13 +149,9 @@ function GroupEditor(props: {
                   value={props.group.conjunction}
                   class="w-16 shrink-0"
                   options={CONJUNCTIONS}
-                  onChange={(value) =>
+                  onChange={(conjunction) =>
                     props.onChange(
-                      setConjunction(
-                        props.root,
-                        props.path,
-                        value === 'or' ? 'or' : 'and'
-                      )
+                      setConjunction(props.root, props.path, conjunction)
                     )
                   }
                 />
@@ -258,9 +262,7 @@ function ConditionEditor(props: {
           <>
             <ViewSelect
               label="Filter condition"
-              value={
-                operatorChoiceOf(current(), props.condition.test)?.id ?? ''
-              }
+              value={operatorChoiceOf(current(), props.condition.test)?.id}
               class="w-32 min-w-0"
               options={filterOperators(current()).map((choice) => ({
                 value: choice.id,
@@ -294,8 +296,15 @@ function ConditionEditor(props: {
   );
 }
 
-const VALUE_INPUT =
-  'h-8 min-w-28 flex-1 rounded-md border border-edge-muted bg-input px-2 text-xs outline-none placeholder:text-ink-placeholder focus:border-ink/50';
+function FilterValueInput(props: JSX.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <input
+      aria-label="Filter value"
+      class="h-8 min-w-28 flex-1 rounded-md border border-edge-muted bg-input px-2 text-xs outline-none placeholder:text-ink-placeholder focus:border-ink/50"
+      {...props}
+    />
+  );
+}
 
 /** What a test compares against: text, a number, a day, or options. */
 function TestValue(props: {
@@ -312,11 +321,9 @@ function TestValue(props: {
     <Switch>
       <Match when={text()}>
         {(test) => (
-          <input
-            aria-label="Filter value"
+          <FilterValueInput
             value={test().value}
             placeholder="Enter a value…"
-            class={VALUE_INPUT}
             onInput={(event) =>
               props.onChange({ ...test(), value: event.currentTarget.value })
             }
@@ -325,12 +332,10 @@ function TestValue(props: {
       </Match>
       <Match when={number()}>
         {(test) => (
-          <input
-            aria-label="Filter value"
+          <FilterValueInput
             type="number"
             value={Number.isFinite(test().value) ? test().value : ''}
             placeholder="Enter a number…"
-            class={VALUE_INPUT}
             onInput={(event) =>
               props.onChange({
                 ...test(),
@@ -345,11 +350,9 @@ function TestValue(props: {
       </Match>
       <Match when={date()}>
         {(test) => (
-          <input
-            aria-label="Filter value"
+          <FilterValueInput
             type="date"
             value={test().value.slice(0, 10)}
-            class={VALUE_INPUT}
             onInput={(event) =>
               props.onChange({
                 ...test(),

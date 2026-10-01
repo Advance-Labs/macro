@@ -8,11 +8,11 @@ import { Key } from '@solid-primitives/keyed';
 import { Button, buttonClasses } from '@ui/components/Button';
 import { Dialog } from '@ui/components/Dialog';
 import { type Accessor, type JSX, Show } from 'solid-js';
+import type { DatabaseViewColumn } from '../core/database-view';
 import type {
   GridCellControl,
   GridCellEditorOptions,
-} from '../component/GridCell';
-import type { DatabaseViewColumn } from '../core/database-view';
+} from '../core/grid-cell-editor';
 import {
   canEditCell,
   type DatabaseRow,
@@ -201,9 +201,11 @@ function RecordFields(
       },
       onNavigate: (direction) => {
         if (!props.canEdit) return false;
-        const ordered = [...(title() ? [title()!] : []), ...fields()].filter(
-          canEditCell
-        );
+        const titleField = title();
+        const ordered = [
+          ...(titleField ? [titleField] : []),
+          ...fields(),
+        ].filter(canEditCell);
         const next =
           ordered[
             ordered.findIndex((field) => field.id === column().id) + direction

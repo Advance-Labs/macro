@@ -28,9 +28,9 @@ export type FailedWrite = {
 };
 
 /** A save that did not land: the write failed, or the table was closed. */
-export type DatabaseSaveFailure = DatabaseWriteFailure | { kind: 'unmounted' };
+type DatabaseSaveFailure = DatabaseWriteFailure | { kind: 'unmounted' };
 
-export type DatabaseSave = Result<DatabaseWriteResult, DatabaseSaveFailure>;
+type DatabaseSave = Result<DatabaseWriteResult, DatabaseSaveFailure>;
 
 export type AcceptedDraftWrites = {
   save: (
@@ -283,8 +283,8 @@ export function createTableController(
       ),
     failure: () => failures()[0],
     refreshWarning,
-    save: (...args: Parameters<typeof save>): Promise<DatabaseSave> =>
-      disposed ? Promise.resolve(err(UNMOUNTED)) : save(...args),
+    save: (...request: Parameters<typeof save>): Promise<DatabaseSave> =>
+      disposed ? Promise.resolve(err(UNMOUNTED)) : save(...request),
     // A draft may need its inserted row ID before it can submit later fields.
     // Admit the whole drain while mounted so those accepted writes survive a tab switch.
     runDraftWrites: (
@@ -292,8 +292,8 @@ export function createTableController(
     ) => (disposed ? Promise.resolve(false) : drain({ save })),
     retry,
     refresh,
-    addGroup: (...args: Parameters<typeof addGroup>) =>
-      disposed ? Promise.resolve(ok(undefined)) : addGroup(...args),
+    addGroup: (...request: Parameters<typeof addGroup>) =>
+      disposed ? Promise.resolve(ok(undefined)) : addGroup(...request),
     dismissFailure: () => setFailures((failed) => failed.slice(1)),
   };
 }

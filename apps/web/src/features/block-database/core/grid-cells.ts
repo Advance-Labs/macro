@@ -1,7 +1,6 @@
 /**
- * The engine's cells as the grid's own editing values: an option's label,
- * an entity's or a related row's id, a checkbox as 0 or 1, a date as its
- * instant, and a JSON array for a multi-valued cell.
+ * The engine's cells as the grid's editing values: option labels, ids, a
+ * checkbox as 0 or 1, and a JSON array for a multi-valued cell.
  */
 
 import type {
@@ -19,7 +18,7 @@ function listed(values: string[], multi: boolean): DatabaseCellValue {
   return multi ? JSON.stringify(values) : (values[0] ?? null);
 }
 
-export function gridValue(
+function gridValue(
   cell: Cell | null,
   kind: ColumnKind | undefined
 ): DatabaseCellValue {

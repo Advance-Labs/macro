@@ -51,10 +51,8 @@ export type BoardPositions = {
 };
 
 /**
- * A board view: its lanes and cards as the engine lays out the view's rows
- * with the stored card places, and drags written as `move_card`. A move shows
- * at once, with a key computed here, and settles on the places the server
- * wrote. A sorted board keeps the sort's order, so a drag asks to remove it.
+ * A board laid out by the engine from the view's rows and card places. A move
+ * shows at once and settles on the server's places; on a sorted board a drag first asks to remove the sort.
  */
 export function DatabaseBoardView(props: {
   view: DatabaseView;

@@ -18,11 +18,7 @@ import {
   Show,
   untrack,
 } from 'solid-js';
-import {
-  GridCell,
-  type GridCellEditorOptions,
-  type GridCellProps,
-} from '../component/GridCell';
+import { GridCell, type GridCellProps } from '../component/GridCell';
 import type { DatabaseBoardControls } from '../components/database-board';
 import {
   type DatabaseCellFocus,
@@ -30,7 +26,6 @@ import {
   DatabaseTable,
 } from '../components/database-table';
 import { filterConditionCount } from '../components/database-view-filters';
-import type { PropertyCreatorVariant } from '../components/property-creator';
 import { RecordPanel } from '../components/record-panel';
 import type {
   DatabaseRowsSource,
@@ -49,7 +44,7 @@ import {
   type DatabaseViewColumn,
   isBoardGroupColumn,
 } from '../core/database-view';
-import type { DatabasePropertyType } from '../core/property-creation';
+import type { GridCellEditorOptions } from '../core/grid-cell-editor';
 import {
   canEditCell,
   type DatabaseRow,
@@ -130,8 +125,6 @@ export function DatabaseTableView(props: {
   createColumn?: () => DatabaseSchemaChange<string>;
   addColumn: (
     label?: string,
-    initialType?: DatabasePropertyType,
-    variant?: PropertyCreatorVariant,
     onCreated?: (columnId: string) => boolean
   ) => JSX.Element;
 }) {
@@ -904,8 +897,6 @@ export function DatabaseTableView(props: {
                   pending={controller.pending()}
                   addColumn={props.addColumn(
                     columns().length ? undefined : 'Add first column',
-                    undefined,
-                    undefined,
                     focusColumn
                   )}
                   renderCell={renderCell}

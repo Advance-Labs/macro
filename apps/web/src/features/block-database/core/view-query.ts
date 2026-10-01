@@ -1,7 +1,6 @@
 /**
- * Editing a view's typed query: its filter, a tree of conditions and nested
- * groups that name columns and options by id, and its sort keys. A node is
- * addressed by its path of indexes from the root group; `[]` is the root.
+ * Editing a view's typed filter tree and sort keys. A node is addressed by its
+ * path of indexes from the root group; `[]` is the root.
  */
 import type {
   Conjunction,
@@ -26,7 +25,7 @@ export type FilterPath = readonly number[];
 type Condition = Extract<FilterNode, { kind: 'condition' }>;
 
 /** A test without its value: what an operator menu chooses between. */
-export type FilterOperator =
+type FilterOperator =
   | { kind: 'presence'; operator: PresenceOperator }
   | { kind: 'text'; operator: TextOperator }
   | { kind: 'number'; operator: NumberOperator }
@@ -34,7 +33,7 @@ export type FilterOperator =
   | { kind: 'checkbox'; checked: boolean }
   | { kind: 'options'; operator: SetOperator };
 
-export type FilterOperatorChoice = {
+type FilterOperatorChoice = {
   /** Stable across renders, for a select control. */
   id: string;
   label: string;
@@ -42,7 +41,7 @@ export type FilterOperatorChoice = {
 };
 
 /** What a column holds, as filter tests tell values apart. */
-export function columnValueKind(column: DatabaseViewColumn): ValueKind {
+function columnValueKind(column: DatabaseViewColumn): ValueKind {
   if (column.relation) return 'entities';
   return match(column.dataType)
     .returnType<ValueKind>()
@@ -51,7 +50,8 @@ export function columnValueKind(column: DatabaseViewColumn): ValueKind {
     .with('DATE', () => 'date')
     .with('BOOLEAN', () => 'checkbox')
     .with('SELECT_STRING', 'SELECT_NUMBER', 'TAG', () => 'options')
-    .otherwise(() => 'entities');
+    .with('ENTITY', () => 'entities')
+    .exhaustive();
 }
 
 function operatorId(test: FilterOperator | FilterTest): string {

@@ -1,8 +1,6 @@
 /**
- * Grid edits as the typed ops of `POST /databases/{id}/ops`: a cell edit
- * updates one row, a new record inserts one, a deletion deletes one. Values
- * are the grid's own (labels for options, JSON-array strings for
- * multi-valued cells) and become the op's cell values here.
+ * Grid edits as the typed ops of `POST /databases/{id}/ops`, from the grid's
+ * own values (option labels, JSON-array strings for multi-valued cells).
  */
 
 import type {

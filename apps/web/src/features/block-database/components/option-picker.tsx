@@ -29,7 +29,7 @@ function createdOf(row: PickerRow): string | undefined {
 }
 
 /** The label a typed name becomes: a numeric select's options are canonical numbers. */
-export function optionLabelFor(
+function optionLabelFor(
   column: DatabaseViewColumn,
   typed: string
 ): string | undefined {
@@ -77,15 +77,18 @@ export function OptionPicker(props: {
       ? label
       : undefined;
   };
-  const rows = createMemo((): PickerRow[] => [
-    ...(props.selected.length && !props.search.trim()
-      ? [{ kind: 'clear' } as const]
-      : []),
-    ...matches().map((option) => ({ kind: 'option', option }) as const),
-    ...(creatable() !== undefined
-      ? [{ kind: 'create', label: creatable() ?? '' } as const]
-      : []),
-  ]);
+  const rows = createMemo((): PickerRow[] => {
+    const created = creatable();
+    return [
+      ...(props.selected.length && !props.search.trim()
+        ? [{ kind: 'clear' } as const]
+        : []),
+      ...matches().map((option) => ({ kind: 'option', option }) as const),
+      ...(created !== undefined
+        ? [{ kind: 'create', label: created } as const]
+        : []),
+    ];
+  });
   const rowId = (index: number) => `${listId}-${index}`;
   const isPicked = (row: PickerRow) => {
     const option = optionOf(row);

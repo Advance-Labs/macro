@@ -350,13 +350,7 @@ export function createDatabaseRowsSource(props: {
           if (refreshed.isErr()) return err(refreshed.error);
           // Another first entry typed this column meanwhile: write against it.
           if (!competing || refreshed.value.column.infer_type)
-            return err({
-              kind: 'type-refused',
-              error: inferred.error[0] ?? {
-                code: 'UNKNOWN_ERROR',
-                message: 'Could not set the column type.',
-              },
-            });
+            return err({ kind: 'type-refused', errors: inferred.error });
           column = refreshed.value;
           version = currentTable().table.version;
         } else {

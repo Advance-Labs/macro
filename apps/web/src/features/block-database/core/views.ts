@@ -1,8 +1,4 @@
-/**
- * A table's typed views as the grid and board draw them: which columns a
- * table layout shows, in what order and how wide, and the layouts new views
- * start with.
- */
+/** A table's typed views as the grid and board draw them, and the layouts new views start with. */
 import type { FilterNode } from '@core/database-sql/generated/types';
 import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
 import type { ViewColumn } from '@service-storage/generated/schemas/viewColumn';
@@ -11,7 +7,7 @@ import { type DatabaseViewColumn, isBoardGroupColumn } from './database-view';
 import { titleColumn } from './table';
 
 /** A table layout's column, with how it shows. */
-export type LayoutColumn = {
+type LayoutColumn = {
   column: DatabaseViewColumn;
   width: number | null;
   hidden: boolean;
@@ -135,16 +131,15 @@ export function boardLayout(
   };
 }
 
-/** A name like `base` that no other view of the table has, ignoring case. */
-export function freeViewName(
-  base: string,
-  views: readonly Pick<DatabaseView, 'name'>[]
+/** What a board lane is called: its option's label, or `No <column>` for cards without one. */
+export function laneLabel(
+  groupColumn: DatabaseViewColumn,
+  option: string | null
 ): string {
-  const taken = new Set(views.map((view) => view.name.toLocaleLowerCase()));
-  if (!taken.has(base.toLocaleLowerCase())) return base;
-  let suffix = 2;
-  while (taken.has(`${base} ${suffix}`.toLocaleLowerCase())) suffix++;
-  return `${base} ${suffix}`;
+  return (
+    groupColumn.options.find((entry) => entry.id === option)?.label ??
+    `No ${groupColumn.name.toLocaleLowerCase()}`
+  );
 }
 
 type BoardLayout = Extract<ViewLayout, { kind: 'board' }>;

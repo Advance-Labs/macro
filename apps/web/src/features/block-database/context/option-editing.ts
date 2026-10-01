@@ -3,12 +3,15 @@ import type { ResultAsync } from 'neverthrow';
 import { createContext, useContext } from 'solid-js';
 import type { DatabaseOpFailure } from '../core/write-failure';
 
+/** A new label, colour, or both, for one option. */
+export type OptionChange = { label?: string; color?: OptionColor };
+
 /** Changes to a column's options, for the table the grid shows. */
 export type OptionEditing = {
   update: (
     columnId: string,
     optionId: string,
-    change: { label?: string; color?: OptionColor }
+    change: OptionChange
   ) => ResultAsync<void, DatabaseOpFailure>;
   remove: (
     columnId: string,
