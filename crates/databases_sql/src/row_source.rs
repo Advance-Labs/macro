@@ -1,15 +1,10 @@
-//! The engine's row source on the server: a table's rows are read as Soup
-//! database rows, with the same filters the browser's GraphQL source sends,
-//! so agents and the grid see rows with one set of semantics. `people` are
-//! the viewer's contacts.
-//!
-//! Rows come newest first: Soup's cursor orders by creation, so a statement
-//! without `ORDER BY` lists rows in that order, as it does in the browser.
+//! The engine's row source on the server: table rows read through Soup with
+//! the browser's filters (newest first, as there), and `people` from contacts.
 
 #[cfg(test)]
 mod test;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use contacts::domain::ports::ContactsService;
@@ -73,11 +68,17 @@ where
         match query {
             GqlQuery::Soup {
                 table,
-                propf,
+                property_filter,
                 key_hint,
             } => {
-                self.soup_page(*table, propf.as_ref(), key_hint.as_ref(), cursor, limit)
-                    .await
+                self.soup_page(
+                    *table,
+                    property_filter.as_ref(),
+                    key_hint.as_ref(),
+                    cursor,
+                    limit,
+                )
+                .await
             }
             GqlQuery::People { ids } => self.people_page(ids.as_deref()).await,
             GqlQuery::GroupSoup { .. } => Err(SourceError(
@@ -89,7 +90,7 @@ where
     async fn bins(&self, query: &GqlQuery) -> Result<Vec<Bin>, SourceError> {
         let GqlQuery::GroupSoup {
             table,
-            propf,
+            property_filter,
             group_by,
         } = query
         else {
@@ -108,7 +109,7 @@ where
             limit: 1,
             cursor: Query::Sort(
                 SimpleSortMethod::CreatedAt,
-                rows_filter(*table, propf.as_ref(), None),
+                rows_filter(*table, property_filter.as_ref(), None),
             ),
             user_id: self.viewer.clone(),
             grouping: GroupingConfig {
@@ -126,16 +127,19 @@ where
             .await
             .map_err(|error| SourceError(error.to_string()))?;
         let mut bins: Vec<Bin> = Vec::new();
-        let mut seen: Vec<String> = Vec::new();
-        for item in items {
-            if seen.contains(&item.key) {
-                continue;
+        let mut seen: HashSet<String> = HashSet::new();
+        // A group lists its items in order; only its first carries the bin.
+        for item in items.filter(|item| item.index_in_group == 0) {
+            if !seen.insert(item.key.clone()) {
+                return Err(SourceError(format!(
+                    "Soup returned the group {} twice",
+                    item.key
+                )));
             }
             bins.push(Bin {
                 key: bin_key(kind, &item.key, *group_by)?,
                 count: item.total_group_count as u64,
             });
-            seen.push(item.key);
         }
         Ok(bins)
     }
@@ -149,7 +153,7 @@ where
     async fn soup_page(
         &self,
         table: Uuid,
-        propf: Option<&Expr<PropertiesLiteral>>,
+        property_filter: Option<&Expr<PropertiesLiteral>>,
         key_hint: Option<&KeyHint>,
         cursor: Option<String>,
         limit: usize,
@@ -157,7 +161,7 @@ where
         let cursor = match cursor {
             None => SoupQuery::new_sort_simple(
                 SimpleSortMethod::CreatedAt,
-                rows_filter(table, propf, key_hint),
+                rows_filter(table, property_filter, key_hint),
             ),
             Some(cursor) => SoupQuery::new_cursor_simple(
                 Base64Str::<CursorWithValAndFilter<Uuid, SimpleSortMethod, EntityFilterAst>>::new_from_string(cursor)
@@ -247,11 +251,11 @@ fn bin_key(kind: &ColumnKind, key: &str, column: Uuid) -> Result<Option<Cell>, S
 /// join's narrowing.
 fn rows_filter(
     table: Uuid,
-    propf: Option<&Expr<PropertiesLiteral>>,
+    property_filter: Option<&Expr<PropertiesLiteral>>,
     key_hint: Option<&KeyHint>,
 ) -> EntityFilterAst {
     let mut rows = Expr::val(DatabaseRowLiteral::TableId(table));
-    let mut properties = propf.cloned();
+    let mut properties = property_filter.cloned();
     match key_hint.and_then(narrowing) {
         Some(Narrowing::Rows(ids)) => rows = Expr::and(rows, ids),
         Some(Narrowing::Properties(values)) => {

@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use soup::domain::ports::SoupService;
 use uuid::Uuid;
 
-use super::{DatabasesSqlToolContext, sql_error, sql_guide};
+use super::{DatabasesSqlToolContext, sql_error};
 use crate::outcome::{AlteredColumn, ResultSet, SqlOutcome};
 use crate::service::SqlRequest;
 
@@ -26,43 +26,9 @@ use crate::service::SqlRequest;
 #[schemars(
     title = "QueryDatabase",
     description = concat!(
-        "\
-Run SQL against the current user's Macro databases — the only way to read or change their \
-rows. SELECT to answer a question, INSERT/UPDATE/DELETE to change data. One statement per \
-call.\n\
-\n\
-**Every table the user can see is already in scope, across all of their databases.** The \
-statement runs as the user against exactly what they are allowed to read: a table they cannot \
-see simply does not exist, and a table they only have view access to is read-only. Always pass \
-`databaseId` for the database the statement is about, so its tables win name ties.\n\
-\n\
-**Call DescribeDatabase first unless you already know the exact table and column names.** \
-Names are the display names the user typed, so quote the ones with spaces. If a statement \
-fails, the error names what was wrong and suggests the closest name — read it, fix it, retry.\n\
-\n\
-## Dialect\n\
-\n",
-        sql_guide!(),
-        "\n\
-\n\
-To change records, first SELECT the rows you mean (their ids are in `rowIds`), then \
-UPDATE or DELETE each one by its id. After changing rows, SELECT the affected records to \
-verify the actual result. On a connection failure, inspect before retrying an INSERT.\n\
-To create a row and relate it in one go, INSERT it with the relation column set to the target \
-row ids (`INSERT INTO invites (guest, status) VALUES (['<guest row id>'], 'Sent')`); the new \
-row's id is in `insertedRowIds`.\n\
-\n\
-Results come back as columns and rows of typed cells (`{\"type\": \"text\", \"value\": \"Sam\"}`; \
-`null` is an empty cell), with `rowIds`, the id of the row behind each result row of a \
-row-shaped SELECT. Each column names its `kind`. A select column lists its `options`, and its \
-cells hold option ids: read their labels there. An entity column names its `target`, which \
-is how the app renders its ids as clickable chips — prefer selecting an entity column over \
-stringifying it. Writes report `changesApplied` and, for inserts, the `insertedRowIds` the \
-server minted.\n\
-\n\
-To answer a question about the data or draw a chart for the user, check the SELECT here, then \
-save it with SaveDatabaseQuery and paste the block it returns: it stays live, where a pasted \
-result goes stale."
+        include_str!("query_database.md"),
+        include_str!("sql_guide.md"),
+        include_str!("query_database_writes.md"),
     )
 )]
 pub struct QueryDatabase {
@@ -123,7 +89,7 @@ pub enum QueryDatabaseDisplay {
     title = "QueryDatabase",
     description = concat!(
         "Read Macro database records with a SELECT. Discover the relevant database with ListDatabases, then call DescribeDatabase to see ALL of its tables and exact columns. This tool cannot change records, schema, or saved views; the query service rejects writes regardless of the caller's edit permission. Results are permission-filtered for the current user. Inspect truncatedTables before reporting totals.\n\n## Dialect\n\n",
-        sql_guide!(),
+        include_str!("sql_guide.md"),
     )
 )]
 pub struct ReadOnlyQueryDatabase {
@@ -224,8 +190,6 @@ where
         service_context: ServiceContext<DatabasesSqlToolContext<Databases, Access, Soup, Contacts>>,
         request_context: RequestContext,
     ) -> ToolResult<Self::Output> {
-        tracing::info!("Query database");
-
         // No receipt here, and that is the design: the catalog built for this
         // viewer *is* the authorization for reads, and each write mints its
         // own edit receipt for the database it lands in.
@@ -307,14 +271,14 @@ fn altered_summary(altered: &AlteredColumn) -> String {
 /// Say what happened, so a model does not have to infer "it worked" from an
 /// empty result set — which reads identically to "nothing matched".
 fn summarize(results: &[ResultSet], changes_applied: usize, truncated_tables: &[String]) -> String {
-    let rows: usize = results.iter().map(|r| r.rows.len()).sum();
+    let rows: usize = results.iter().map(|result| result.rows.len()).sum();
     let mut parts = Vec::new();
 
     if !results.is_empty() {
         parts.push(match rows {
             0 => "No rows matched.".to_string(),
             1 => "Returned 1 row.".to_string(),
-            n => format!("Returned {n} rows."),
+            count => format!("Returned {count} rows."),
         });
     }
     if changes_applied > 0 {
@@ -325,8 +289,8 @@ fn summarize(results: &[ResultSet], changes_applied: usize, truncated_tables: &[
         // A capped table looks exactly like a complete one in the result set,
         // and a model that cannot tell will report a partial COUNT as a total.
         parts.push(format!(
-            "These tables hit their row cap and are incomplete: {}. Narrow the query rather \
-             than treating any aggregate over them as a total.",
+            "A read hit the row cap, so these tables may be incomplete: {}. Narrow the query \
+             rather than treating any aggregate over them as a total.",
             truncated_tables.join(", ")
         ));
     }

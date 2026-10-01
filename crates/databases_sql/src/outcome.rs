@@ -1,6 +1,5 @@
-//! What a statement did, shaped for agents and the chat that shows them: the
-//! engine's typed cells with, per result column, what renders them; the
-//! versions a follow-up write can guard on; and what a write changed.
+//! What a statement did, shaped for agents and the chat that shows them:
+//! typed cells with what renders them, versions read and written, and changes.
 
 use std::collections::HashMap;
 
@@ -25,8 +24,9 @@ pub struct SqlOutcome {
     pub new_versions: HashMap<TableId, TableVersion>,
     /// The version of every table read, for a follow-up write to guard on.
     pub read_versions: HashMap<TableId, TableVersion>,
-    /// Tables whose read hit the engine's row cap, so aggregates over them
-    /// are partial.
+    /// Every table the statement read, when any read hit the engine's row
+    /// cap: the engine reports the cap per statement, so aggregates over any
+    /// of them may be partial.
     pub truncated_tables: Vec<String>,
     /// The column an `ALTER COLUMN … TYPE` changed.
     pub altered_column: Option<AlteredColumn>,
@@ -56,14 +56,14 @@ pub struct ResultColumn {
     /// What its cells hold.
     pub kind: OutcomeKind,
     /// For a select column, its options: its cells hold their ids.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<SelectOption>,
     /// For an entity column, what its ids point at; `DATABASE_ROW` for a
     /// relation, whose ids are rows of another table.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub target: Option<EntityKind>,
     /// For a relation, the table its rows belong to.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub related_table: Option<TableId>,
 }
 
