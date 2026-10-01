@@ -1,11 +1,26 @@
 import { queryClient } from '@queries/client';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
+import { errAsync, okAsync } from 'neverthrow';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { applyDatabaseTableVersions } from './databases';
+import {
+  applyDatabaseTableVersions,
+  createDatabase,
+  fetchViewerDatabases,
+} from './databases';
 import { databasesKeys } from './keys';
 
-vi.mock('@app/lib/analytics', () => ({ analytics: { track: vi.fn() } }));
-vi.mock('@service-storage/client', () => ({ storageServiceClient: {} }));
+const mock = vi.hoisted(() => ({
+  create: vi.fn(),
+  list: vi.fn(),
+  get: vi.fn(),
+  track: vi.fn(),
+}));
+vi.mock('@app/lib/analytics', () => ({ analytics: { track: mock.track } }));
+vi.mock('@service-storage/client', () => ({
+  storageServiceClient: {
+    databases: { create: mock.create, list: mock.list, get: mock.get },
+  },
+}));
 vi.mock('@queries/client', async () => {
   const { QueryClient } = await import('@tanstack/solid-query');
   return {
@@ -55,7 +70,10 @@ const detail: DatabaseDetail = {
 };
 const key = databasesKeys.detail('db').queryKey;
 
-afterEach(() => queryClient.clear());
+afterEach(() => {
+  queryClient.clear();
+  vi.clearAllMocks();
+});
 
 describe('database write version acknowledgments', () => {
   it('preserves a newer schema refresh when an older write response arrives later', async () => {
@@ -98,5 +116,111 @@ describe('database write version acknowledgments', () => {
       table: { ...detail.tables[0].table, version: 6 },
     });
     expect(updated.tables[1]).toEqual(detail.tables[1]);
+  });
+});
+
+describe('creating a database', () => {
+  it('asks the service once and returns the new id', async () => {
+    mock.create.mockReturnValue(
+      okAsync({
+        id: 'db',
+        name: 'Untitled database',
+        owner_id: 'owner',
+        created_at: '',
+        trashed_at: null,
+      })
+    );
+
+    const created = await createDatabase({
+      name: 'Untitled database',
+      source: 'launcher',
+    });
+
+    expect(created._unsafeUnwrap()).toBe('db');
+    expect(mock.create).toHaveBeenCalledWith({ name: 'Untitled database' });
+    expect(mock.get).not.toHaveBeenCalled();
+    expect(mock.track).toHaveBeenCalledWith('create_entity', {
+      entityType: 'database',
+      entityId: 'db',
+      source: 'launcher',
+    });
+  });
+
+  it('hands a refusal back to the caller', async () => {
+    mock.create.mockReturnValue(
+      errAsync([{ code: 'INVALID_SCHEMA', message: 'name is empty' }])
+    );
+
+    const created = await createDatabase({ name: '' });
+
+    expect(created._unsafeUnwrapErr()).toEqual([
+      { code: 'INVALID_SCHEMA', message: 'name is empty' },
+    ]);
+    expect(mock.track).not.toHaveBeenCalled();
+  });
+});
+
+describe('reading every viewer database once', () => {
+  it('reads each live database and skips the trashed', async () => {
+    mock.list.mockReturnValue(
+      okAsync([
+        {
+          database: {
+            id: 'db',
+            name: 'Planning',
+            owner_id: 'owner',
+            created_at: '',
+            trashed_at: null,
+          },
+          grant: 'owner',
+          tables: [],
+        },
+        {
+          database: {
+            id: 'old',
+            name: 'Archive',
+            owner_id: 'owner',
+            created_at: '',
+            trashed_at: '2026-09-01T00:00:00Z',
+          },
+          grant: 'owner',
+          tables: [],
+        },
+      ])
+    );
+    mock.get.mockReturnValue(okAsync(detail));
+
+    const databases = await fetchViewerDatabases();
+
+    expect(databases._unsafeUnwrap()).toEqual([detail]);
+    expect(mock.get).toHaveBeenCalledWith({ id: 'db' });
+    expect(mock.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the failure a detail read gave', async () => {
+    mock.list.mockReturnValue(
+      okAsync([
+        {
+          database: {
+            id: 'db',
+            name: 'Planning',
+            owner_id: 'owner',
+            created_at: '',
+            trashed_at: null,
+          },
+          grant: 'owner',
+          tables: [],
+        },
+      ])
+    );
+    mock.get.mockReturnValue(
+      errAsync([{ code: 'FORBIDDEN', message: 'no access' }])
+    );
+
+    const databases = await fetchViewerDatabases();
+
+    expect(databases._unsafeUnwrapErr()).toEqual([
+      { code: 'FORBIDDEN', message: 'no access' },
+    ]);
   });
 });

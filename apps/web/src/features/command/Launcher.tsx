@@ -19,6 +19,7 @@ import { useSplitLayout } from '@components/app/split-layout/layout';
 import type { BlockAlias, BlockName } from '@core/block';
 import { CHAT_INPUT_TEXT_AREA_ID } from '@core/component/AI/component/input/ChatInput';
 import { getIconConfig } from '@core/component/EntityIcon';
+import { toast } from '@core/component/Toast/Toast';
 import {
   enableChatV3Agents,
   enableDatabases,
@@ -409,7 +410,17 @@ export function runCreateAction(
       createBlock({
         blockName: 'database',
         loading: true,
-        createFn: () => createDatabase({ name: 'Untitled database', source }),
+        createFn: async () => {
+          const created = await createDatabase({
+            name: 'Untitled database',
+            source,
+          });
+          if (created.isErr()) {
+            toast.failure('Could not create the database');
+            return;
+          }
+          return created.value;
+        },
         shouldInsert,
       });
       return;

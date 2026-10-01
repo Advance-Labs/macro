@@ -1,9 +1,9 @@
 /** Database schemas and typed row ops; row reads run in `@queries/database-sql`. */
 import { analytics } from '@app/lib/analytics';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
-import { enableDatabases, isFeatureEnabled } from '@core/constant/featureFlags';
+import { enableDatabases } from '@core/constant/featureFlags';
 import type { DatabaseOp } from '@core/database-sql/generated/types';
-import { type ResultError, throwOnErr } from '@core/util/result';
+import { catchToResult, type ResultError, throwOnErr } from '@core/util/result';
 import { storageServiceClient } from '@service-storage/client';
 import type {
   DatabaseOpsError,
@@ -15,7 +15,7 @@ import type { DatabaseDetail } from '@service-storage/generated/schemas/database
 import type { ListedDatabase } from '@service-storage/generated/schemas/listedDatabase';
 import type { OpResult } from '@service-storage/generated/schemas/opResult';
 import { useQueries, useQuery } from '@tanstack/solid-query';
-import { okAsync, type ResultAsync } from 'neverthrow';
+import { ResultAsync } from 'neverthrow';
 import type { Accessor } from 'solid-js';
 import { queryClient } from '../client';
 import { databasesKeys } from './keys';
@@ -82,24 +82,26 @@ export function useViewerDatabases(): {
   };
 }
 
-/** {@link useViewerDatabases}, read once. */
-export async function fetchViewerDatabases(): Promise<DatabaseDetail[]> {
-  const listed = await queryClient.fetchQuery(databaseListQueryOptions);
-  return Promise.all(
-    liveDatabaseIds(listed).map((id) =>
-      queryClient.fetchQuery(databaseDetailQueryOptions(id))
-    )
-  );
+/** A cached read; the query's thrown errors come back as the client's own. */
+function fetchCached<Data>(options: {
+  queryKey: readonly unknown[];
+  queryFn: () => Promise<Data>;
+  staleTime: number;
+}): ResultAsync<Data, ResultError[]> {
+  return new ResultAsync(catchToResult(() => queryClient.fetchQuery(options)));
 }
 
-/** The batch's refusal; the service answers with one error. */
-function firstOpsError(errors: DatabaseOpsError[]): DatabaseOpsError {
-  return (
-    errors[0] ?? {
-      code: 'UNKNOWN_ERROR',
-      message: 'The database could not apply that change.',
-      refusal: null,
-    }
+/** {@link useViewerDatabases}, read once. */
+export function fetchViewerDatabases(): ResultAsync<
+  DatabaseDetail[],
+  ResultError[]
+> {
+  return fetchCached(databaseListQueryOptions).andThen((listed) =>
+    ResultAsync.combine(
+      liveDatabaseIds(listed).map((id) =>
+        fetchCached(databaseDetailQueryOptions(id))
+      )
+    )
   );
 }
 
@@ -108,10 +110,13 @@ export function applyDatabaseOps(
   databaseId: string,
   ops: DatabaseOp[]
 ): ResultAsync<OpResult[], DatabaseOpsError> {
-  return storageServiceClient.databases
-    .applyOps({ id: databaseId, request: { ops } })
-    .map((response) => response.results)
-    .mapErr(firstOpsError);
+  return (
+    storageServiceClient.databases
+      .applyOps({ id: databaseId, request: { ops } })
+      .map((response) => response.results)
+      // A refused batch is one error: the first op the service could not apply.
+      .mapErr(([refusal]) => refusal)
+  );
 }
 
 /** Re-read one database's schema; open reads rerun only when their catalog changes. */
@@ -203,52 +208,25 @@ export function addDatabaseColumnOptions(params: {
     });
 }
 
-/**
- * Create a database and return its id, giving the seeded starter table a Name column.
- * If that setup fails the database still opens; its empty state offers adding a column.
- */
-export async function createDatabase(params: {
+/** Create a database; the service gives it a first table with a Name column. */
+export function createDatabase(params: {
   name: string;
   /** UI surface the creation originated from, for analytics. */
   source?: string;
-}): Promise<string | undefined> {
-  if (!isFeatureEnabled(enableDatabases)) return undefined;
-  const created = await storageServiceClient.databases
+}): ResultAsync<string, ResultError<DatabaseSchemaErrorCode>[]> {
+  return storageServiceClient.databases
     .create({ name: params.name })
-    .andThen(({ id }) =>
-      storageServiceClient.databases
-        .get({ id })
-        .andThen((detail) => {
-          const starter = detail.tables[0];
-          return starter && starter.columns.length === 0
-            ? storageServiceClient.databases.createColumn({
-                id,
-                tableId: starter.table.id,
-                request: {
-                  binding: {
-                    kind: 'new',
-                    name: 'Name',
-                    data_type: 'STRING',
-                    is_multi_select: false,
-                  },
-                },
-              })
-            : okAsync(undefined);
-        })
-        .orElse(() => okAsync(undefined))
-        .map(() => id)
-    );
-  if (created.isErr()) return undefined;
-  const databaseId = created.value;
-  analytics.track('create_entity', {
-    entityType: 'database',
-    entityId: databaseId,
-    source: params.source,
-  });
-  await queryClient.invalidateQueries({
-    queryKey: databasesKeys.list.queryKey,
-  });
-  return databaseId;
+    .map(async ({ id }) => {
+      analytics.track('create_entity', {
+        entityType: 'database',
+        entityId: id,
+        source: params.source,
+      });
+      await queryClient.invalidateQueries({
+        queryKey: databasesKeys.list.queryKey,
+      });
+      return id;
+    });
 }
 
 /** Native sharing adapters retain Result so the shared dialog can render failures. */
