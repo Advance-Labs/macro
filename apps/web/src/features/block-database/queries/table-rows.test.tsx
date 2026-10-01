@@ -5,7 +5,9 @@ import type {
   Step,
   ViewQuery,
 } from '@core/database-sql/generated/types';
+import { queryClient } from '@queries/client';
 import type { DatabaseSqlQueryCapabilities } from '@queries/database-sql/create-database-sql-query';
+import { applyDatabaseTableVersions } from '@queries/storage/databases';
 import { databasesKeys } from '@queries/storage/keys';
 import type { DatabaseOpsError } from '@service-storage/databases';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
@@ -13,7 +15,7 @@ import type { DatabaseView } from '@service-storage/generated/schemas/databaseVi
 import type { OpResult } from '@service-storage/generated/schemas/opResult';
 import type { SoupQuery } from '@service-storage/graphql/generated/graphql';
 import { cleanup, render, waitFor } from '@solidjs/testing-library';
-import { QueryClient, QueryClientProvider } from '@tanstack/solid-query';
+import { QueryClientProvider } from '@tanstack/solid-query';
 import { CombinedError, createClient, type Exchange } from '@urql/core';
 import { err, errAsync, ok, okAsync, ResultAsync } from 'neverthrow';
 import { type Accessor, createSignal } from 'solid-js';
@@ -33,6 +35,14 @@ const transport = vi.hoisted(() => ({
 vi.mock('@service-storage/client', () => ({
   storageServiceClient: { databases: transport },
 }));
+vi.mock('@queries/client', async () => {
+  const { QueryClient } = await import('@tanstack/solid-query');
+  return {
+    queryClient: new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    }),
+  };
+});
 
 function detail(sqlName = '"guests"'): DatabaseDetail {
   return {
@@ -149,7 +159,6 @@ const edit: DatabaseRowMutation = {
   columnId: 'name',
   value: 'Grace',
 };
-const clients: QueryClient[] = [];
 
 const allGuests = allRecordsView({ id: 'guests-table', database_id: 'db' });
 
@@ -259,27 +268,11 @@ function setup(
     search?: Accessor<string>;
   } = {}
 ) {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  clients.push(client);
+  const client = queryClient;
   client.setQueryData(databasesKeys.detail('db').queryKey, initialDetail);
-  // Like the app, a write's versions land in the cached schema.
+  // As in the app, a write's versions land in the cached schema.
   const applyVersions = vi.fn((versions: Record<string, number>) =>
-    client.setQueryData(
-      databasesKeys.detail('db').queryKey,
-      (previous: DatabaseDetail | undefined) =>
-        previous && {
-          ...previous,
-          tables: previous.tables.map((entry) => ({
-            ...entry,
-            table: {
-              ...entry.table,
-              version: versions[entry.table.id] ?? entry.table.version,
-            },
-          })),
-        }
-    )
+    applyDatabaseTableVersions('db', versions)
   );
   let tableChanged: (version: number) => void = () => {};
   let source!: DatabaseRowsSource;
@@ -317,8 +310,7 @@ function setup(
 
 afterEach(() => {
   cleanup();
-  for (const client of clients) client.clear();
-  clients.length = 0;
+  queryClient.clear();
   vi.resetAllMocks();
 });
 
@@ -697,7 +689,7 @@ describe('database rows SQL names', () => {
     );
     // The schema stays stale, so the next write is blocked before it is sent.
     expect(await source.write(edit, 5, false)).toEqual(
-      err({ kind: 'table-unavailable' })
+      err({ kind: 'schema-unreachable' })
     );
     expect(transport.get).toHaveBeenCalledTimes(2);
     expect(applyOps).toHaveBeenCalledTimes(1);
@@ -713,6 +705,45 @@ describe('database rows SQL names', () => {
     expect(applyOps).toHaveBeenLastCalledWith(
       nameEdit({ type: 'text', value: 'Grace' })
     );
+  });
+
+  it('calls the table unavailable only when its database is gone or no longer lists it', async () => {
+    const applyOps = vi.fn<ApplyOps>(() => okAsync(written));
+    const { source, client } = setup(detail(), applyOps);
+    await waitFor(() => expect(source.loading()).toBe(false));
+    const collision: DatabaseOpsError = {
+      code: 'INVALID_OP',
+      message: 'op 0, row 0, column name: no such column in this table',
+      refusal: {
+        message: 'op 0, row 0, column name: no such column in this table',
+        op: 0,
+        row: 0,
+        column: 'name',
+      },
+    };
+    transport.get.mockImplementation(() =>
+      errAsync([{ code: 'NOT_FOUND', message: 'Database not found' }])
+    );
+    applyOps.mockReturnValueOnce(errAsync(collision));
+
+    expect(await source.write(edit, 5, false)).toEqual(
+      err({ kind: 'ops', error: collision })
+    );
+    expect(await source.write(edit, 5, false)).toEqual(
+      err({ kind: 'table-unavailable' })
+    );
+
+    client.setQueryData(databasesKeys.detail('db').queryKey, {
+      ...detail(),
+      tables: [],
+    });
+    transport.get.mockImplementation(() =>
+      okAsync({ ...detail(), tables: [] })
+    );
+    expect(await source.write(edit, 5, false)).toEqual(
+      err({ kind: 'table-unavailable' })
+    );
+    expect(applyOps).toHaveBeenCalledTimes(1);
   });
 
   it('recovers a read of a stale table through the refreshed schema', async () => {

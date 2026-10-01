@@ -11,6 +11,7 @@ import type { ColumnDetail } from '@service-storage/generated/schemas/columnDeta
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
 import type { OpResult } from '@service-storage/generated/schemas/opResult';
+import type { QueryClient } from '@tanstack/solid-query';
 import { errAsync, okAsync, type ResultAsync } from 'neverthrow';
 import type { DatabaseOpFailure } from '../core/write-failure';
 
@@ -50,32 +51,42 @@ export function patchViews(
 /**
  * Change one cached column as the service answered it, at the table version
  * it answered with. A cached table already past that version may hold a
- * later change to the column, so it is left alone.
+ * later change to the column, so it is left alone. An in-flight read is
+ * cancelled first so its older answer cannot land over the change.
  */
-export function patchTableColumn(params: {
-  databaseId: string;
-  tableId: string;
-  columnId: string;
-  tableVersion: number;
-  change: (column: ColumnDetail) => ColumnDetail;
-}): Promise<void> {
-  return patchDetail(params.databaseId, (detail) => ({
-    ...detail,
-    tables: detail.tables.map((entry) =>
-      entry.table.id === params.tableId &&
-      entry.table.version <= params.tableVersion
-        ? {
-            ...entry,
-            table: { ...entry.table, version: params.tableVersion },
-            columns: entry.columns.map((column) =>
-              column.column.id === params.columnId
-                ? params.change(column)
-                : column
-            ),
-          }
-        : entry
-    ),
-  }));
+export async function patchTableColumn(
+  client: QueryClient,
+  params: {
+    databaseId: string;
+    tableId: string;
+    columnId: string;
+    tableVersion: number;
+    change: (column: ColumnDetail) => ColumnDetail;
+  }
+): Promise<void> {
+  const queryKey = databasesKeys.detail(params.databaseId).queryKey;
+  await client.cancelQueries({ queryKey, exact: true });
+  client.setQueryData(
+    queryKey,
+    (previous: DatabaseDetail | undefined) =>
+      previous && {
+        ...previous,
+        tables: previous.tables.map((entry) =>
+          entry.table.id === params.tableId &&
+          entry.table.version <= params.tableVersion
+            ? {
+                ...entry,
+                table: { ...entry.table, version: params.tableVersion },
+                columns: entry.columns.map((column) =>
+                  column.column.id === params.columnId
+                    ? params.change(column)
+                    : column
+                ),
+              }
+            : entry
+        ),
+      }
+  );
 }
 
 function isResult<Kind extends OpResult['kind']>(

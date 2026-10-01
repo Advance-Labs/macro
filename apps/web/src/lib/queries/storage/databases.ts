@@ -37,7 +37,8 @@ export function useDatabasesQuery() {
   }));
 }
 
-function databaseDetailQueryOptions(id: string) {
+/** One database's schema; spread it and override what a read needs differently. */
+export function databaseDetailQueryOptions(id: string) {
   return {
     queryKey: databasesKeys.detail(id).queryKey,
     queryFn: (): Promise<DatabaseDetail> =>

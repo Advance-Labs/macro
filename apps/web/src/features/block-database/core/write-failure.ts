@@ -33,8 +33,10 @@ export type DatabaseWriteFailure =
   | { kind: 'ops'; error: DatabaseOpsError }
   /** A new row may have been saved before its answer was lost. */
   | { kind: 'outcome-unknown' }
-  /** The table's schema could not be read again. */
+  /** The table is no longer in its database. */
   | { kind: 'table-unavailable' }
+  /** The table's schema could not be read again. */
+  | { kind: 'schema-unreachable' }
   /** The service answered the write with something other than rows. */
   | { kind: 'unexpected-result' };
 
@@ -155,6 +157,11 @@ export function databaseWriteMessage(failure: DatabaseWriteFailure): string {
     .with(
       { kind: 'table-unavailable' },
       () => 'This table is no longer available.'
+    )
+    .with(
+      { kind: 'schema-unreachable' },
+      () =>
+        'This table could not be read again. Check your connection; your entry is kept.'
     )
     .with(
       { kind: 'unexpected-result' },

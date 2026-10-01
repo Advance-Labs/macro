@@ -1,6 +1,5 @@
 import { databaseSqlSchema } from '@core/database-sql/catalog';
 import type { Outcome } from '@core/database-sql/generated/types';
-import { throwOnErr } from '@core/util/result';
 import {
   createDatabaseSqlQuery,
   type DatabaseSqlQueryCapabilities,
@@ -8,8 +7,7 @@ import {
   refreshInBackground,
   sameDatabaseSqlStatement,
 } from '@queries/database-sql/create-database-sql-query';
-import { databasesKeys } from '@queries/storage/keys';
-import { storageServiceClient } from '@service-storage/client';
+import { databaseDetailQueryOptions } from '@queries/storage/databases';
 import type { TableDetail } from '@service-storage/generated/schemas/tableDetail';
 import { useQueries } from '@tanstack/solid-query';
 import { err, ok, okAsync, type Result, ResultAsync } from 'neverthrow';
@@ -19,26 +17,24 @@ import type {
   DatabaseRelationSource,
 } from '../context/relation-source';
 import type { DatabaseRelatedRow } from '../core/database-relations';
+import { titleColumn } from '../core/table';
 import { tableRowsStatement } from '../sql';
+import { isGridColumn, toViewColumn } from './table-rows';
 
-/** A table's rows by id, named by its title column. */
+/** A table's rows by id, named by its title column as a row title is. */
 function relatedRows(
   table: TableDetail,
   outcome: Outcome
 ): DatabaseRelatedRow[] {
-  const title =
-    table.columns.find(
-      (column) =>
-        !column.column.config &&
-        column.definition.definition.data_type === 'STRING' &&
-        !column.definition.definition.is_multi_select
-    ) ??
-    table.columns.find(
-      (column) =>
-        !column.column.config && !column.definition.definition.is_multi_select
-    );
+  const columns = table.columns.filter(isGridColumn);
+  const viewColumns = columns.map(toViewColumn);
+  const title = titleColumn(viewColumns) ?? viewColumns[0];
+  const titleDefinition = columns.find(
+    (column) => column.column.id === title?.id
+  )?.definition.definition.id;
   const titleIndex = outcome.columns.findIndex(
-    (column) => !!title && column.column === title.definition.definition.id
+    (column) =>
+      titleDefinition !== undefined && column.column === titleDefinition
   );
   return outcome.rowIds.map((id, index) => {
     const cell = outcome.rows[index]?.[titleIndex];
@@ -71,10 +67,7 @@ export function createDatabaseRelations(props: {
   ]);
   const details = useQueries(() => ({
     queries: databases().map((id) => ({
-      queryKey: databasesKeys.detail(id).queryKey,
-      queryFn: () =>
-        throwOnErr(() => storageServiceClient.databases.get({ id })),
-      staleTime: 30_000,
+      ...databaseDetailQueryOptions(id),
       throwOnError: false,
     })),
   }));

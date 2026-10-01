@@ -28,7 +28,7 @@ export function renameDatabaseColumn(params: {
     .map(async (renamed) => {
       // A newer version may contain another rename, so a delayed response
       // must not replace it.
-      await patchTableColumn({
+      await patchTableColumn(queryClient, {
         databaseId: params.databaseId,
         tableId: params.tableId,
         columnId: params.columnId,

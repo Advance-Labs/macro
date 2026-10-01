@@ -38,10 +38,14 @@ export type DatabaseRowsSource = {
   refreshing: Accessor<boolean>;
   error: Accessor<DatabaseReadFailure | undefined>;
   refresh(): ResultAsync<void, DatabaseReadFailure>;
-  /** `createOptions` lets labels a column lacks become new options. */
+  /**
+   * `inferenceBaseVersion` is the table version a new column's type is
+   * settled against from its first value; ops themselves carry no version.
+   * `createOptions` lets labels a column lacks become new options.
+   */
   write(
     mutation: DatabaseRowMutation,
-    version: number | undefined,
+    inferenceBaseVersion: number | undefined,
     createOptions: boolean
   ): ResultAsync<DatabaseWriteResult, DatabaseWriteFailure>;
   addOption(

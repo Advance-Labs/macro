@@ -1,5 +1,5 @@
-import { throwOnErr } from '@core/util/result';
 import { queryClient } from '@queries/client';
+import { databaseDetailQueryOptions } from '@queries/storage/databases';
 import { databasesKeys } from '@queries/storage/keys';
 import { storageServiceClient } from '@service-storage/client';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
@@ -16,15 +16,10 @@ export function createTableWithName(params: {
   const queryKey = databasesKeys.detail(params.databaseId).queryKey;
   const refresh = () => {
     const fetched = async () => {
-      await queryClient.cancelQueries({ queryKey });
+      await queryClient.cancelQueries({ queryKey, exact: true });
       return queryClient.fetchQuery({
-        queryKey,
-        queryFn: () =>
-          throwOnErr(() =>
-            storageServiceClient.databases.get({ id: params.databaseId })
-          ),
+        ...databaseDetailQueryOptions(params.databaseId),
         staleTime: 0,
-        retry: false,
       });
     };
     return ResultAsync.fromPromise(fetched(), () => 'unloaded' as const);
