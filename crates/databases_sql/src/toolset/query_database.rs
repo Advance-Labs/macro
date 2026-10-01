@@ -164,9 +164,10 @@ pub struct QueryDatabaseResponse {
     /// baseVersions to guard tables a later edit writes. Tables it only reads
     /// are not guarded.
     pub read_versions: Vec<ToolTableVersion>,
-    /// Tables whose read hit the row cap. Any aggregate over one of these is
-    /// computed on a partial table — say so rather than reporting the number
-    /// as a total.
+    /// Every table the query read, when a read hit the row cap: the cap is
+    /// reported per statement, so any aggregate over these tables may be
+    /// computed on a partial table — say so rather than reporting it as a
+    /// total.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub truncated_tables: Vec<String>,
     /// A human-readable summary of what the statement did.
