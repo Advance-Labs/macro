@@ -60,6 +60,8 @@ export type ThreadRowOrder = {
   unloaded: ReadonlyMap<string, ThreadPosition>;
 };
 
+export type ThreadPlacement = 'above' | 'below' | 'visible';
+
 export type UnreadNotificationChip = {
   thread: UnreadThread;
   count: number;
@@ -75,40 +77,48 @@ function isBefore(left: ThreadPosition, right: ThreadPosition): boolean {
   return left.id < right.id;
 }
 
-/** Target recency and placement are separate: a new reply can be far above. */
-export function unreadNotificationChip(
-  threads: readonly UnreadThread[],
+/**
+ * Where a thread sits when none of it is rendered. Rows are placed by the order
+ * the list shows them, not by timestamp: concurrent realtime inserts append in
+ * delivery order, so a row can sit below the viewport while carrying an older
+ * `created_at` than the rows above it.
+ */
+function placeUnrenderedThread(
+  thread: UnreadThread,
   order: ThreadRowOrder,
-  visible: VisibleThreadRange | undefined,
-  targetPosition?: 'above' | 'below' | 'visible'
-): UnreadNotificationChip | undefined {
-  const thread = threads[0];
-  if (!thread || !visible || targetPosition === 'visible') return;
-  if (targetPosition)
-    return { thread, count: threads.length, direction: targetPosition };
-  // Place by rendered row order, not by timestamp: concurrent realtime inserts
-  // append in delivery order, so a row can sit below the viewport while
-  // carrying an older `created_at` than the rows above it.
+  visible: VisibleThreadRange
+): ThreadPlacement | undefined {
   const first = order.rows.findIndex((row) => row.id === visible.first);
-  if (first < 0) return;
+  const last = order.rows.findIndex((row) => row.id === visible.last);
+  if (first < 0 || last < 0) return;
   const row = order.rows.findIndex(
     (candidate) => candidate.id === thread.threadId
   );
-  // A collapsed reply in a visible thread lies below its parent. Clicking opens
-  // it; merely seeing the parent must not clear that thread's unread count.
-  if (row >= 0)
-    return {
-      thread,
-      count: threads.length,
-      direction: row < first ? 'above' : 'below',
-    };
+  if (row >= 0) return row < first ? 'above' : row > last ? 'below' : 'visible';
   // An unloaded root sits outside the window entirely, so one bound decides it.
   const root = order.unloaded.get(thread.threadId);
   const oldest = order.rows[0];
   if (!root || !oldest) return;
-  return {
-    thread,
-    count: threads.length,
-    direction: isBefore(root, oldest) ? 'above' : 'below',
-  };
+  return isBefore(root, oldest) ? 'above' : 'below';
+}
+
+/**
+ * Target recency and placement are separate: a new reply can be far above. The
+ * chip only ever points off screen, so it skips threads the reader can already
+ * see and names the newest unread one they cannot.
+ */
+export function unreadNotificationChip(
+  threads: readonly UnreadThread[],
+  order: ThreadRowOrder,
+  visible: VisibleThreadRange | undefined,
+  /** Measured placement of a thread's unread content while it is rendered. */
+  measure: (thread: UnreadThread) => ThreadPlacement | undefined
+): UnreadNotificationChip | undefined {
+  if (!visible) return;
+  for (const thread of threads) {
+    const placement =
+      measure(thread) ?? placeUnrenderedThread(thread, order, visible);
+    if (placement === 'above' || placement === 'below')
+      return { thread, count: threads.length, direction: placement };
+  }
 }
