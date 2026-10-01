@@ -236,7 +236,7 @@ function ReviewFile(
         </span>
         <Button
           size="icon-xs"
-          variant="plain"
+          variant="ghost"
           label="Find in file (/)"
           onClick={() => props.onSearch(props.entry.path)}
         >
@@ -250,7 +250,7 @@ function ReviewFile(
             <p>{props.entry.collapsed}</p>
             <Button
               size="sm"
-              variant="plain"
+              variant="ghost"
               class="mt-2"
               onClick={() => props.onExpand(props.entry.path)}
             >
@@ -266,7 +266,7 @@ function ReviewFile(
               {errorMessage(source.error())}{' '}
               <Button
                 size="sm"
-                variant="plain"
+                variant="ghost"
                 onClick={() => void source.refresh()}
               >
                 Retry

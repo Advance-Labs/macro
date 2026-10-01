@@ -47,7 +47,7 @@ export function ReviewWalkthrough(props: {
         </span>
         <Button
           size="icon-xs"
-          variant="plain"
+          variant="ghost"
           label="Previous chapter"
           disabled={props.index === 0}
           onClick={() => props.onChapter(props.index - 1)}
@@ -56,7 +56,7 @@ export function ReviewWalkthrough(props: {
         </Button>
         <Button
           size="icon-xs"
-          variant="plain"
+          variant="ghost"
           label="Next chapter"
           disabled={props.index + 1 >= props.count}
           onClick={() => props.onChapter(props.index + 1)}

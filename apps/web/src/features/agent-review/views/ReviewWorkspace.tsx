@@ -288,13 +288,13 @@ export default function ReviewWorkspace() {
         <Button
           size="icon-sm"
           label="Review navigation"
-          variant="plain"
+          variant="ghost"
           class="@min-[800px]/review:hidden"
           onClick={() => setSidebar((open) => !open)}
         >
           <ListIcon />
         </Button>
-        <Button size="sm" variant="plain" onClick={host.back}>
+        <Button size="sm" variant="ghost" onClick={host.back}>
           <ArrowLeftIcon />
           Back to session
         </Button>
@@ -332,7 +332,7 @@ export default function ReviewWorkspace() {
                 <p class="my-2 whitespace-pre-wrap">{note.text}</p>
                 <Button
                   size="xs"
-                  variant="plain"
+                  variant="ghost"
                   disabled={
                     !host.canEdit() ||
                     !model.target() ||
@@ -366,7 +366,7 @@ export default function ReviewWorkspace() {
         <div role="alert" class="p-6 text-sm">
           {errorMessage(model.source.manifest.error())}{' '}
           <Button
-            variant="plain"
+            variant="ghost"
             onClick={() => void model.source.manifest.refresh()}
           >
             Retry
@@ -411,7 +411,7 @@ export default function ReviewWorkspace() {
             </span>
             <Button
               size="sm"
-              variant="plain"
+              variant="ghost"
               onClick={() => model.chooseRevision(model.latest()!)}
             >
               View latest <ArrowRightIcon />
@@ -579,7 +579,7 @@ export default function ReviewWorkspace() {
                   </label>
                   <Button
                     size="icon-xs"
-                    variant="plain"
+                    variant="ghost"
                     label="Close search"
                     onClick={closeSearch}
                   >

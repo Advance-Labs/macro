@@ -76,6 +76,8 @@ use collab_surface::{
     outbound::pg_collab_surface_repo::PgCollabSurfaceRepo,
     outbound::surface_init::LexicalSyncSurfaceInitializer,
 };
+use entity_registry::OwnerGrantPolicy;
+use entity_registry_db_utils::OwnedEntityRegistrar;
 use foreign_entity::{
     domain::service::ForeignEntityServiceImpl, inbound::axum_router::ForeignEntityRouterState,
     outbound::pg_foreign_entity_repo::PgForeignEntityRepo,
@@ -384,7 +386,8 @@ pub(crate) type DssChannelsState =
     ChannelsRouterState<DssChannelService, EntityAccessService, AuthorizationService>;
 
 /// Type alias for the bots service wired into DSS.
-pub(crate) type DssBotService = BotServiceImpl<PgBotsRepo, DssEventBroker>;
+pub(crate) type DssBotService =
+    BotServiceImpl<PgBotsRepo, DssEventBroker, ai_tools::PipedreamMcpAppCatalog>;
 
 /// Type alias for the bots router state.
 pub(crate) type DssBotsState =
@@ -445,7 +448,7 @@ pub(crate) type DssCallInternalState = InternalCallRouterState<DssCallService>;
 
 /// Chat service used by the unified entity mutation adapter.
 pub(crate) type DssChatMutationService = chat::domain::service::ChatServiceImpl<
-    chat::outbound::postgres::PgChatRepo,
+    chat::outbound::postgres::PgChatRepo<PgBotsRepo>,
     (),
     EntityAccessManagementService,
 >;
@@ -489,7 +492,13 @@ pub(crate) type DssUserApiKeyState =
     UserApiKeyRouterState<UserApiKeyServiceType, AuthorizationService>;
 
 /// Type alias for the reminders service.
-pub(crate) type RemindersServiceType = RemindersServiceImpl<PgRemindersRepo>;
+pub(crate) type RemindersServiceType =
+    reminders::domain::email_followup::reminder_service::EmailRemindersService<
+        RemindersServiceImpl<PgRemindersRepo>,
+        PgRemindersRepo,
+        DssEmailService,
+        reminders::domain::ports::SystemClock,
+    >;
 
 /// Type alias for the reminders router state.
 pub(crate) type DssRemindersState =
@@ -600,6 +609,7 @@ pub(crate) struct ApiContext {
     pub reminders_state: DssRemindersState,
     pub initiative_state: DssInitiativeState,
     pub graphql_initiative_context: graphql_initiative::InitiativeGraphqlContext,
+    pub graphql_scheduled_action_context: graphql_scheduled_action::ScheduledActionGraphqlContext,
     pub graphql_initiative_entity_loader: graphql_initiative::InitiativeEntityLoader,
     pub collab_surface_state: DssCollabSurfaceState,
     pub foreign_entity_state: DssForeignEntityState,
@@ -675,7 +685,12 @@ impl From<&ApiContext> for SearchHandlerState {
             entity_access_service: ctx.entity_access_service.clone(),
             authorization_state: ctx.authorization_state.clone(),
             agent_session_search_metadata: Arc::new(AgentSessionSearchMetadataServiceImpl::new(
-                PgAgentSessionRepo::new(ctx.db.clone()),
+                PgAgentSessionRepo::new(
+                    ctx.db.clone(),
+                    OwnedEntityRegistrar::new(OwnerGrantPolicy::new(PgBotsRepo::new(
+                        ctx.db.clone(),
+                    ))),
+                ),
             ))
                 as Arc<dyn AgentSessionSearchMetadataService>,
             calendar_search_enabled: ctx.config.calendar_search_enabled,

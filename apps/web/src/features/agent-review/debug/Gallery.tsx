@@ -340,7 +340,7 @@ export default function AgentReviewGallery() {
       <div class={cn('flex min-h-0 flex-1 flex-col', !inReview() && 'hidden')}>
         <header class="flex shrink-0 items-center gap-3 border-b border-edge-muted px-4 py-3">
           <Button
-            variant="plain"
+            variant="ghost"
             size="sm"
             label="Back to session"
             onClick={() => setInReview(false)}
@@ -368,7 +368,7 @@ export default function AgentReviewGallery() {
           </span>
           <Button
             size="sm"
-            variant="plain"
+            variant="ghost"
             onClick={() => {
               setTab('History');
               setSidebar(true);
@@ -483,7 +483,7 @@ export default function AgentReviewGallery() {
                     {(path) => (
                       <Button
                         size="xs"
-                        variant="navigation"
+                        variant="ghost"
                         aria-pressed={currentFile().path === path}
                         onClick={() =>
                           navigate({
@@ -522,7 +522,7 @@ export default function AgentReviewGallery() {
               </span>
               <Button
                 size="sm"
-                variant="navigation"
+                variant="ghost"
                 aria-pressed={viewed().has(currentFile().path)}
                 onClick={toggleViewed}
               >
@@ -551,7 +551,7 @@ export default function AgentReviewGallery() {
               <Show when={tab() === 'Walkthrough'}>
                 <Button
                   size="sm"
-                  variant="plain"
+                  variant="ghost"
                   disabled={chapter() === 0}
                   onClick={() => selectChapter(chapter() - 1)}
                 >

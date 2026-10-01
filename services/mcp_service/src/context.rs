@@ -212,10 +212,9 @@ async fn build_tool_context(args: ToolContextBuildArgs<'_>) -> anyhow::Result<To
         config.document_storage_bucket.as_ref(),
         config.docx_document_upload_bucket.as_ref(),
     );
-    let document_repo = PgDocumentRepo::new(
-        db.clone(),
-        OwnedEntityRegistrar::new(OwnerGrantPolicy::new(PgBotsRepo::new(db.clone()))),
-    );
+    let owned_entity_registrar =
+        OwnedEntityRegistrar::new(OwnerGrantPolicy::new(PgBotsRepo::new(db.clone())));
+    let document_repo = PgDocumentRepo::new(db.clone(), owned_entity_registrar.clone());
     let cloudfront_private_key = LocalOrRemoteSecret::new_from_secret_manager(
         config
             .document_storage_service_cloudfront_signer_private_key_secret_name
@@ -355,7 +354,7 @@ async fn build_tool_context(args: ToolContextBuildArgs<'_>) -> anyhow::Result<To
 
     let chat_tool_context = chat::inbound::toolset::ChatToolContext::new(
         chat::domain::service::ChatServiceImpl::new(
-            chat::outbound::postgres::PgChatRepo::new(db.clone()),
+            chat::outbound::postgres::PgChatRepo::new(db.clone(), owned_entity_registrar),
             Arc::new(ai_toolset::AsyncToolCollection::new()),
             (),
             entity_access_management::domain::service::EntityAccessManagementServiceImpl::new(
@@ -377,12 +376,15 @@ async fn build_tool_context(args: ToolContextBuildArgs<'_>) -> anyhow::Result<To
         entity_access_service.clone(),
         document_tool_context.service.clone(),
         chat_tool_context.service.clone(),
-        user_email_service,
+        user_email_service.clone(),
     );
 
     let search_service_client = Arc::new(search_service_client);
-    let skill_tool_context =
-        ai_tools::build_skill_tool_context(search_service_client.clone(), soup_service.clone());
+    let skill_tool_context = ai_tools::build_skill_tool_context(
+        search_service_client.clone(),
+        soup_service.clone(),
+        &document_tool_context,
+    );
     let initiative_tool_context = ai_tools::build_initiative_tool_context(
         db.clone(),
         &document_tool_context,
@@ -404,6 +406,10 @@ async fn build_tool_context(args: ToolContextBuildArgs<'_>) -> anyhow::Result<To
             properties_service,
             entity_access_service.clone(),
         ),
+        image_generation_tool_context: ai_tools::build_image_generation_tool_context(
+            &document_tool_context,
+            ai_tools::build_image_generator_from_env(),
+        )?,
         document_tool_context,
         properties_tool_context,
         email_tool_context,
@@ -416,6 +422,7 @@ async fn build_tool_context(args: ToolContextBuildArgs<'_>) -> anyhow::Result<To
         notification_tool_context,
         reminders_tool_context: ai_tools::build_reminders_tool_context(
             db.clone(),
+            user_email_service.clone(),
             entity_access_service.clone(),
         ),
         import_tool_context: ToolImportToolContext::unwired(),
@@ -426,6 +433,7 @@ async fn build_tool_context(args: ToolContextBuildArgs<'_>) -> anyhow::Result<To
             ai_tools::ToolBotEventBroker::Real(macro_event_broker.clone()),
             entity_access_service.clone(),
             dss_url,
+            ai_tools::pipedream_client_from_env()?,
         ),
         project_tool_context,
         initiative_tool_context,
@@ -434,7 +442,14 @@ async fn build_tool_context(args: ToolContextBuildArgs<'_>) -> anyhow::Result<To
         skill_tool_context,
         schedule_tool_context: NoOpScheduleContext,
         anthropic_tool_context: ai_tools::build_anthropic_tool_context(),
-        recorder: ai_usage::pg_recorder(db.clone()),
+        admission: ai_billing::composition::pg_admission_service(
+            db.clone(),
+            config.enable_ai_usage_enforcement,
+        ),
+        recorder: ai_usage::pg_recorder_with_enforcement(
+            db.clone(),
+            config.enable_ai_usage_enforcement,
+        ),
         usage_context: ai_usage::UsageContext::system(ai_usage::AiFeature::Chat),
     };
 

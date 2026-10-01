@@ -28,7 +28,7 @@ export function ReviewGraphNode(props: {
     props.node.height * props.zoom >= 180;
   const fileControl = () => (
     <Button
-      variant="plain"
+      variant="ghost"
       size="sm"
       tabIndex={-1}
       class="pointer-events-auto -ml-1.5 h-6 gap-1 rounded-md px-1.5 text-[11px]"
@@ -91,7 +91,7 @@ export function ReviewGraphNode(props: {
         <Show when={props.expanded}>{fileControl()}</Show>
         <Show when={props.node.children}>
           <Button
-            variant="plain"
+            variant="ghost"
             size="sm"
             class="pointer-events-auto h-5 shrink-0 gap-1 rounded-md bg-ink/5 px-1.5 text-[10px] tabular-nums hover:bg-ink/10"
             tabIndex={-1}

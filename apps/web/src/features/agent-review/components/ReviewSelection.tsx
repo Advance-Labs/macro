@@ -34,7 +34,7 @@ export function ReviewSelection(props: {
       </span>
       <Button
         size="xs"
-        variant="plain"
+        variant="ghost"
         disabled={props.disabled || props.readOnly}
         onClick={props.onComment}
       >
@@ -43,7 +43,7 @@ export function ReviewSelection(props: {
       </Button>
       <Button
         size="icon-xs"
-        variant="plain"
+        variant="ghost"
         label={
           props.location.endLine &&
           props.location.endLine !== props.location.line
@@ -57,7 +57,7 @@ export function ReviewSelection(props: {
       </Button>
       <Button
         size="icon-xs"
-        variant="plain"
+        variant="ghost"
         label="Clear selection"
         onClick={props.onDismiss}
       >

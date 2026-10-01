@@ -143,6 +143,8 @@ dependencies = [
  "async-stream",
  "async-trait",
  "attachment",
+ "bytes",
+ "chrono",
  "futures",
  "genai_telemetry",
  "macro_env_var",
@@ -153,6 +155,7 @@ dependencies = [
  "opentelemetry_sdk",
  "prompt",
  "regex",
+ "reqwest 0.13.4",
  "rig-agent",
  "rig-core",
  "schemars 1.2.1",
@@ -326,6 +329,7 @@ dependencies = [
  "agent_runtime_protocol",
  "agent_session",
  "agent_trigger",
+ "ai_billing",
  "ai_usage",
  "anyhow",
  "async-trait",
@@ -398,6 +402,7 @@ dependencies = [
  "agent_runtime_protocol",
  "agent_session",
  "agent_trigger",
+ "ai_billing",
  "ai_tools",
  "ai_toolset",
  "ai_usage",
@@ -422,8 +427,11 @@ dependencies = [
  "cursor_cloud_agents",
  "database_env_vars",
  "diffd-core",
+ "document_storage_service_client",
  "doppler-config",
  "entity_access",
+ "entity_registry",
+ "entity_registry_db_utils",
  "futures",
  "github",
  "harness_id",
@@ -453,6 +461,7 @@ dependencies = [
  "redis",
  "reqwest 0.13.4",
  "rmcp",
+ "roles_and_permissions",
  "rootcause",
  "secretsmanager_client",
  "serde",
@@ -460,6 +469,7 @@ dependencies = [
  "sqlx",
  "static_file",
  "static_file_service_client",
+ "teams",
  "tokio",
  "tokio-retry",
  "tokio-util",
@@ -482,6 +492,7 @@ dependencies = [
  "agent_fold",
  "agent_runtime_protocol",
  "agent_session",
+ "ai_billing",
  "ai_tools",
  "ai_toolset",
  "ai_usage",
@@ -521,6 +532,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "url",
  "workspace-hack",
 ]
 
@@ -636,6 +648,7 @@ dependencies = [
  "agent-client-protocol",
  "agent_fold",
  "agent_runtime_protocol",
+ "ai_billing",
  "ai_toolset",
  "ai_usage",
  "anyhow",
@@ -649,6 +662,7 @@ dependencies = [
  "dashmap",
  "entity_access",
  "entity_access_db_utils",
+ "entity_registry",
  "entity_registry_db_utils",
  "genai_telemetry",
  "harness_id",
@@ -694,6 +708,7 @@ version = "0.1.0"
 dependencies = [
  "agent",
  "agent_session",
+ "ai_billing",
  "ai_usage",
  "anyhow",
  "async-trait",
@@ -702,6 +717,8 @@ dependencies = [
  "channel_sender",
  "channels",
  "chrono",
+ "document_storage_service_client",
+ "document_sub_type",
  "entity_access",
  "lexical_client",
  "macro_event_broker",
@@ -712,11 +729,15 @@ dependencies = [
  "mime",
  "mockall",
  "model_owner",
+ "models_properties",
+ "properties",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "sqlx",
  "static_file",
  "strum 0.27.2",
+ "system_properties",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -729,13 +750,18 @@ version = "0.1.0"
 dependencies = [
  "agent_session",
  "agent_trigger",
+ "ai_billing",
  "ai_usage",
  "anyhow",
  "bots",
  "channels",
+ "connection_gateway_client",
  "crm",
  "database_env_vars",
+ "document_storage_service_client",
  "entity_access",
+ "entity_registry",
+ "entity_registry_db_utils",
  "initiative",
  "kafka_util",
  "lexical_client",
@@ -746,9 +772,12 @@ dependencies = [
  "macro_service_urls",
  "messages",
  "rdkafka",
+ "roles_and_permissions",
+ "rootcause",
  "serde_json",
  "sqlx",
  "static_file",
+ "teams",
  "tokio",
  "tracing",
  "workspace-hack",
@@ -788,7 +817,6 @@ dependencies = [
  "chrono",
  "macro_authorization",
  "macro_db_migrator",
- "macro_env",
  "macro_user_id",
  "macro_uuid",
  "roles_and_permissions",
@@ -802,6 +830,7 @@ dependencies = [
  "tokio",
  "tracing",
  "utoipa 5.5.0",
+ "wiremock",
  "workspace-hack",
 ]
 
@@ -876,6 +905,7 @@ version = "0.1.0"
 dependencies = [
  "activity",
  "agent",
+ "ai_billing",
  "ai_toolset",
  "ai_usage",
  "anthropic",
@@ -908,6 +938,7 @@ dependencies = [
  "foreign_entity",
  "frecency",
  "futures",
+ "image_generation",
  "import",
  "initiative",
  "initiative_documents",
@@ -958,6 +989,7 @@ dependencies = [
  "soup",
  "sqlx",
  "sqs_client",
+ "static_file",
  "strum 0.27.2",
  "sync_service_client",
  "system_properties",
@@ -1005,6 +1037,7 @@ dependencies = [
  "chrono",
  "macro_authorization",
  "macro_db_migrator",
+ "macro_env_var",
  "macro_user_id",
  "macro_uuid",
  "rootcause",
@@ -1138,7 +1171,9 @@ dependencies = [
 name = "anthropic"
 version = "0.2.0"
 dependencies = [
+ "ai_billing",
  "ai_toolset",
+ "ai_usage",
  "anyhow",
  "async-openai",
  "async-stream",
@@ -1147,6 +1182,7 @@ dependencies = [
  "futures",
  "lazy_static",
  "macro_env_var",
+ "macro_user_id",
  "rand 0.9.4",
  "regex",
  "reqwest 0.13.4",
@@ -1839,6 +1875,7 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm 0.10.3",
  "ai_billing",
+ "ai_usage",
  "analytics_client",
  "anyhow",
  "async-stripe",
@@ -3158,6 +3195,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum",
+ "axum-extra",
  "bot_id",
  "bot_token",
  "channels",
@@ -3353,7 +3391,7 @@ dependencies = [
 
 [[package]]
 name = "cache-wasm"
-version = "0.6.28"
+version = "0.6.37"
 dependencies = [
  "async-lock",
  "cache-core",
@@ -3739,6 +3777,7 @@ name = "channel_bots"
 version = "0.1.0"
 dependencies = [
  "agent",
+ "ai_billing",
  "ai_tools",
  "ai_toolset",
  "ai_usage",
@@ -3891,6 +3930,7 @@ dependencies = [
  "entity_access_db_utils",
  "entity_access_management",
  "entity_mutation",
+ "entity_registry",
  "entity_registry_db_utils",
  "futures",
  "http-body-util",
@@ -4319,6 +4359,7 @@ dependencies = [
  "graphql_notification",
  "graphql_permission",
  "graphql_properties",
+ "graphql_scheduled_action",
  "graphql_soup",
  "macro_authorization",
  "macro_user_id",
@@ -4332,6 +4373,7 @@ dependencies = [
  "notification",
  "predicate-index",
  "rootcause",
+ "scheduled_action",
  "serde",
  "soup",
  "soup-filter-projection",
@@ -5942,6 +5984,7 @@ dependencies = [
  "activity",
  "agent_changes",
  "agent_session",
+ "ai_billing",
  "ai_tools",
  "ai_usage",
  "analytics_client",
@@ -5997,6 +6040,7 @@ dependencies = [
  "futures",
  "github",
  "graphql_initiative",
+ "graphql_scheduled_action",
  "graphql_soup",
  "harnesses",
  "hex",
@@ -6054,9 +6098,11 @@ dependencies = [
  "regex",
  "reminders",
  "reqwest 0.13.4",
+ "roles_and_permissions",
  "rootcause",
  "s3_key",
  "saved_views",
+ "scheduled_action",
  "schemars 1.2.1",
  "search_service",
  "secretsmanager_client",
@@ -6072,6 +6118,7 @@ dependencies = [
  "sync_service_hex",
  "system_properties",
  "task_dedup",
+ "teams",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
@@ -6181,6 +6228,7 @@ name = "documents"
 version = "0.1.0"
 dependencies = [
  "activity",
+ "ai_billing",
  "ai_toolset",
  "ai_usage",
  "anyhow",
@@ -7086,6 +7134,7 @@ dependencies = [
 name = "entity_registry"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "bot_id",
  "chrono",
  "harness_id",
@@ -8285,6 +8334,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "graphql_scheduled_action"
+version = "0.1.0"
+dependencies = [
+ "async-graphql",
+ "chrono",
+ "macro_user_id",
+ "macro_uuid",
+ "model_owner",
+ "rootcause",
+ "scheduled_action",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "workspace-hack",
+]
+
+[[package]]
 name = "graphql_soup"
 version = "0.1.0"
 dependencies = [
@@ -9454,6 +9520,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "image_generation"
+version = "0.1.0"
+dependencies = [
+ "ai_toolset",
+ "anyhow",
+ "async-trait",
+ "attachment",
+ "base64 0.22.1",
+ "bot_id",
+ "documents",
+ "entity_access",
+ "macro_user_id",
+ "model",
+ "model-entity",
+ "model_owner",
+ "models_permissions",
+ "non_empty",
+ "reqwest 0.13.4",
+ "rootcause",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+ "wiremock",
+ "workspace-hack",
+]
+
+[[package]]
 name = "image_optimizer"
 version = "0.1.0"
 dependencies = [
@@ -9520,6 +9617,7 @@ name = "import"
 version = "0.1.0"
 dependencies = [
  "agent",
+ "ai_billing",
  "ai_toolset",
  "ai_usage",
  "anyhow",
@@ -10515,6 +10613,7 @@ dependencies = [
  "futures",
  "local_e2e_test_support",
  "reqwest 0.13.4",
+ "rustls 0.23.45",
  "serde",
  "serde_json",
  "sqlx",
@@ -11387,6 +11486,7 @@ dependencies = [
 name = "mcp_service"
 version = "0.1.0"
 dependencies = [
+ "ai_billing",
  "ai_tools",
  "ai_toolset",
  "ai_usage",
@@ -11435,6 +11535,7 @@ dependencies = [
  "reminders",
  "reqwest 0.13.4",
  "rmcp",
+ "roles_and_permissions",
  "search_service_client",
  "secretsmanager_client",
  "serde_json",
@@ -11442,6 +11543,7 @@ dependencies = [
  "sqlx",
  "sqs_client",
  "sync_service_client",
+ "teams",
  "tokio",
  "tokio-util",
  "tracing",
@@ -14121,10 +14223,13 @@ dependencies = [
  "async-trait",
  "aws-sdk-secretsmanager",
  "axum",
+ "bots",
  "connection_gateway_client",
  "database_env_vars",
  "doppler-config",
  "entity_access",
+ "entity_registry",
+ "entity_registry_db_utils",
  "macro_auth",
  "macro_authorization",
  "macro_aws_config",
@@ -15083,6 +15188,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "cron",
+ "email",
  "entity_access",
  "http-body-util",
  "macro_authorization",
@@ -15844,6 +15950,9 @@ version = "0.1.0"
 dependencies = [
  "activity",
  "agent",
+ "agent_runtime_protocol",
+ "agent_session",
+ "ai_billing",
  "ai_tools",
  "ai_toolset",
  "ai_usage",
@@ -15851,6 +15960,8 @@ dependencies = [
  "aws-sdk-secretsmanager",
  "aws-sdk-sqs",
  "axum",
+ "bot_id",
+ "bots",
  "channel_sender",
  "channels",
  "chat",
@@ -15862,6 +15973,8 @@ dependencies = [
  "documents",
  "doppler-config",
  "entity_access",
+ "entity_access_db_utils",
+ "entity_registry",
  "entity_registry_db_utils",
  "futures",
  "kafka_util",
@@ -15889,12 +16002,15 @@ dependencies = [
  "models_permissions",
  "notification",
  "rdkafka",
+ "reqwest 0.13.4",
+ "roles_and_permissions",
  "rootcause",
  "secretsmanager_client",
  "serde",
  "serde_json",
  "share_permission_db_utils",
  "sqlx",
+ "teams",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
@@ -16022,6 +16138,7 @@ dependencies = [
  "aws-sdk-s3",
  "aws-sdk-sqs",
  "axum",
+ "bots",
  "calendar_events",
  "call",
  "channels",
@@ -16034,6 +16151,8 @@ dependencies = [
  "email",
  "email_db_client",
  "ensure_exists",
+ "entity_registry",
+ "entity_registry_db_utils",
  "futures",
  "http-body-util",
  "kafka_util",
@@ -16996,9 +17115,12 @@ dependencies = [
  "chrono",
  "cowlike",
  "document_sub_type",
+ "documents",
  "email",
+ "entity_access",
  "filter_ast",
  "item_filters",
+ "lexical_client",
  "macro_user_id",
  "models_pagination",
  "models_search",
@@ -17006,6 +17128,7 @@ dependencies = [
  "schemars 1.2.1",
  "search_service_client",
  "serde",
+ "serde_json",
  "soup",
  "system_skills",
  "thiserror 2.0.18",
@@ -20995,6 +21118,7 @@ dependencies = [
  "ahash",
  "aho-corasick",
  "anyhow",
+ "async-graphql",
  "async-openai",
  "aws-config",
  "aws-credential-types",

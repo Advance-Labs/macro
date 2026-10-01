@@ -39,6 +39,7 @@ import type { ApiChannelAttachmentsPage } from './generated/schemas/apiChannelAt
 import type { ApiChannelParticipant } from './generated/schemas/apiChannelParticipant';
 import type { Bot } from './generated/schemas/bot';
 import type { BotChannel } from './generated/schemas/botChannel';
+import type { BotOwnerProfile } from './generated/schemas/botOwnerProfile';
 import type { BotToken } from './generated/schemas/botToken';
 import type { CalendarMentionPreviewRequest } from './generated/schemas/calendarMentionPreviewRequest';
 import type { CalendarMentionPreviewResponse } from './generated/schemas/calendarMentionPreviewResponse';
@@ -92,6 +93,8 @@ import type { DocumentResponseMetadataWithContent } from './generated/schemas/do
 import type { DocumentTeamShareResponse } from './generated/schemas/documentTeamShareResponse';
 import type { EditAnchorResponse } from './generated/schemas/editAnchorResponse';
 import type { EditCommentResponse } from './generated/schemas/editCommentResponse';
+import type { EmailFollowup } from './generated/schemas/emailFollowup';
+import type { EmailFollowupCommand } from './generated/schemas/emailFollowupCommand';
 import type { ExportDocumentResponse } from './generated/schemas/exportDocumentResponse';
 import type { Favorite } from './generated/schemas/favorite';
 import type { FavoritesList } from './generated/schemas/favoritesList';
@@ -658,6 +661,18 @@ export const storageServiceClient = {
     return (
       await dssFetch<Bot>(`/bots/${args.bot_id}`, {
         method: 'GET',
+      })
+    ).map((result) => result);
+  },
+
+  async getBotOwnerProfiles(args: { ids: string[]; signal?: AbortSignal }) {
+    const query = new URLSearchParams();
+    args.ids.forEach((id) => query.append('ids', id));
+    const qs = query.toString();
+    return (
+      await dssFetch<BotOwnerProfile[]>(`/bots/profiles${qs ? `?${qs}` : ''}`, {
+        method: 'GET',
+        signal: args.signal,
       })
     ).map((result) => result);
   },
@@ -2437,6 +2452,20 @@ export const storageServiceClient = {
     },
   },
   reminders: {
+    async getEmailFollowup(threadId: string) {
+      return (
+        await dssFetch<{ followup: EmailFollowup | null }>(
+          `/reminders/email/${threadId}`,
+          { method: 'GET' }
+        )
+      ).map((response) => response.followup);
+    },
+    async setEmailFollowup(threadId: string, command: EmailFollowupCommand) {
+      return await dssFetch<EmailFollowup>(`/reminders/email/${threadId}`, {
+        method: 'PUT',
+        body: JSON.stringify(command),
+      });
+    },
     async createReminder(params: CreateReminderRequest) {
       return await dssFetch<Reminder>('/reminders', {
         method: 'POST',

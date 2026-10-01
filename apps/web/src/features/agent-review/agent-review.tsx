@@ -166,7 +166,7 @@ export function ReviewToggle() {
   const host = useOptionalReviewHost();
   return (
     <Show when={host?.available()}>
-      <Button variant="plain" size="sm" onClick={() => host?.show()}>
+      <Button variant="ghost" size="sm" onClick={() => host?.show()}>
         <GitDiffIcon />
         Review changes
       </Button>

@@ -44,6 +44,8 @@ export type QuoteInsert = (text: string) => void;
 
 export interface AgentInputProps {
   placeholder?: string;
+  /** Context to seed in the composer without sending it. */
+  initialInput?: string;
   /** The agent is working: the send button becomes a stop square. */
   busy?: boolean;
   /**
@@ -72,7 +74,7 @@ export interface AgentInputProps {
   autofocus?: boolean;
   /**
    * Slash commands the harness advertises (ACP `available_commands_update`);
-   * typing `/` opens a typeahead over them. `/` stays plain text while empty.
+   * shown alongside skills and pull requests in the `/` menu.
    */
   commands?: () => AgentCommandItem[];
   /**
@@ -112,7 +114,7 @@ export interface AgentInputProps {
 }
 
 export function AgentInput(props: AgentInputProps) {
-  const [markdown, setMarkdown] = createSignal('');
+  const [markdown, setMarkdown] = createSignal(props.initialInput ?? '');
   const [isDraggedOver, setIsDraggedOver] = createSignal(false);
   let containerRef: HTMLDivElement | undefined;
   const [layout, setLayout] = createSignal<HTMLDivElement>();
@@ -218,6 +220,9 @@ export function AgentInput(props: AgentInputProps) {
       },
     })
     .onEnter(() => {
+      // On a virtual keyboard Enter is a newline, as in channels; the send
+      // button is the only way to submit.
+      if (isTouchDevice()) return false;
       if (canSend()) send();
       else sendNext();
       return true;
@@ -354,6 +359,7 @@ export function AgentInput(props: AgentInputProps) {
                 >
                   <ComposerEditor
                     config={editor}
+                    initialValue={props.initialInput}
                     disabled={props.readOnly}
                     placeholder={
                       props.placeholder ??
@@ -409,7 +415,7 @@ export function AgentInput(props: AgentInputProps) {
                             onClick={() => props.onStop?.()}
                             class={
                               isTouchDevice()
-                                ? 'rounded-full size-7.5 text-ink-extra-muted not-disabled:bg-ink/5 not-disabled:hover:bg-ink/10'
+                                ? 'size-7.5 text-ink-extra-muted not-disabled:bg-ink/5 not-disabled:hover:bg-ink/10'
                                 : undefined
                             }
                           >

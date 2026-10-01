@@ -93,6 +93,7 @@ use github::domain::service::{GithubSyncConfig, GithubSyncServiceImpl};
 use github::outbound::connection_gateway_realtime::ConnectionGatewayGithubRealtime;
 use github::outbound::github_sync_client::GithubSyncClientImpl;
 use github::outbound::pg_github_sync_repo::PgGithubSyncRepo;
+use graphql_scheduled_action::ScheduledActionGraphqlContext;
 use harnesses::outbound::pg_harness_repo::PgHarnessRepo;
 use initiative::{
     domain::service::InitiativeServiceImpl, inbound::axum_router::InitiativeRouterState,
@@ -140,6 +141,8 @@ use reminders::{
         sqs_dispatch_queue::SqsDispatchQueue,
     },
 };
+use scheduled_action::domain::read_service::ScheduledActionReadServiceImpl;
+use scheduled_action::outbound::pg_scheduled_action_repo::PgScheduledActionRepo;
 use secretsmanager_client::SecretManager;
 use soup::{
     domain::service::SoupImpl, inbound::axum_router::SoupRouterState,
@@ -335,7 +338,11 @@ async fn run() -> anyhow::Result<()> {
         event_broker_tracker.clone(),
     );
     let bots_repo = PgBotsRepo::new(db.clone());
-    let bots_service = BotServiceImpl::new(bots_repo, macro_event_broker.clone());
+    // The agent API checks a newly selected MCP app against Pipedream's
+    // directory, the same check the ConfigureAgent tool makes.
+    let bots_service = BotServiceImpl::new(bots_repo, macro_event_broker.clone()).with_mcp_apps(
+        ai_tools::PipedreamMcpAppCatalog::new(ai_tools::pipedream_client_from_env()?),
+    );
 
     let authorization_service: AuthorizationService = MacroAuthorizationServiceImpl::new(
         MacroAuthJwtValidator::new(jwt_validation_args.clone()),
@@ -513,12 +520,12 @@ async fn run() -> anyhow::Result<()> {
 
     let chat_mutation_service =
         Arc::new(chat::domain::service::ChatServiceImpl::new_without_tools(
-            chat::outbound::postgres::PgChatRepo::new(db.clone()),
+            chat::outbound::postgres::PgChatRepo::new(db.clone(), owned_entity_registrar.clone()),
             entity_access_management_service.clone(),
         ));
 
     let project_service = Arc::new(ProjectServiceImpl::new(
-        PgProjectRepo::new(db.clone(), owned_entity_registrar),
+        PgProjectRepo::new(db.clone(), owned_entity_registrar.clone()),
         S3ProjectUploadAdapter::new(
             macro_aws_config::s3_client().await,
             config.document_storage_bucket.as_ref(),
@@ -680,7 +687,9 @@ async fn run() -> anyhow::Result<()> {
         recording_storage,
         config.livekit_server_url.as_ref(),
     )
-    .with_summarizer(AiCallSummarizer::new(ai_usage::pg_recorder(db.clone())));
+    .with_summarizer(AiCallSummarizer::new(
+        ai_usage::pg_recorder_with_enforcement(db.clone(), config.enable_ai_usage_enforcement),
+    ));
     if let Some(secret) = internal_call_secret {
         call_service_builder = call_service_builder.with_internal_call_secret(secret);
     }
@@ -989,7 +998,7 @@ async fn run() -> anyhow::Result<()> {
         dictation::domain::DictationServiceImpl::new(
             dictation::outbound::WhisperTranscriber::new(&config.openai_api_key)?,
             dictation::outbound::SymphoniaRecordingInspector,
-            ai_usage::pg_recorder(db.clone()),
+            ai_usage::pg_recorder_with_enforcement(db.clone(), config.enable_ai_usage_enforcement),
         ),
         RateLimitServiceImpl {
             repo: RedisRateLimitAdapter {
@@ -1002,7 +1011,9 @@ async fn run() -> anyhow::Result<()> {
         TextEmbedding3Small::new(openai_api_key),
         PgTaskVectorDb::new(db.clone()),
         CohereReranker::new(cohere_api_key),
-        Arc::new(AgentDuplicateJudge::new(ai_usage::pg_recorder(db.clone()))),
+        Arc::new(AgentDuplicateJudge::new(
+            ai_usage::pg_recorder_with_enforcement(db.clone(), config.enable_ai_usage_enforcement),
+        )),
         Arc::new(ConnectionGatewayTaskDedupNotifier::new(
             conn_gateway_client.clone(),
         )),
@@ -1161,10 +1172,13 @@ async fn run() -> anyhow::Result<()> {
     // Agent sessions belong to a different bot entirely
     // (`bot_id::MACRO_NEW_BOT_ID`, served by the harness), so the two paths
     // can never answer the same mention.
-    let mut macro_agent_tool_context =
-        ai_tools::build_tool_service_context_from_env(db.clone(), event_broker_tracker.clone())
-            .await
-            .context("failed to build Macro agent tool context")?;
+    let mut macro_agent_tool_context = ai_tools::build_tool_service_context_from_env(
+        db.clone(),
+        event_broker_tracker.clone(),
+        config.enable_ai_usage_enforcement,
+    )
+    .await
+    .context("failed to build Macro agent tool context")?;
     // Wire the agent's SendChannelMessage tool to this service's own
     // side-effect pipeline so agent-posted messages share the exact instance
     // used by the HTTP API, including the in-process bot trigger sender (the
@@ -1182,7 +1196,8 @@ async fn run() -> anyhow::Result<()> {
             entity_access_service.clone(),
         ),
     );
-    let bot_trigger_router = channel_bots::inbound::BotTriggerRouter::new(
+    let admission = macro_agent_tool_context.admission.clone();
+    let bot_trigger_router = channel_bots::inbound::BotTriggerRouter::new_with_admission(
         message_service.clone(),
         conversation_access.clone(),
         Arc::new(channel_bots::outbound::AgentLoopResponder::new(
@@ -1194,9 +1209,13 @@ async fn run() -> anyhow::Result<()> {
                 message_service.clone(),
                 conversation_access,
                 Arc::new(channel_bots::outbound::FastModelTriggerClassifier::new(
-                    ai_usage::pg_recorder(db.clone()),
+                    ai_usage::pg_recorder_with_enforcement(
+                        db.clone(),
+                        config.enable_ai_usage_enforcement,
+                    ),
                 )),
-            ),
+            )
+            .with_admission(admission.clone()),
         ),
         Arc::new(channel_bots::outbound::PrimaryCalendarTimeZones::new(
             Arc::new(calendar_events::domain::service::CalendarService::new(
@@ -1206,6 +1225,7 @@ async fn run() -> anyhow::Result<()> {
         Arc::new(channel_bots::outbound::LexicalCommentMarks::new(
             (*lexical_client).clone(),
         )),
+        admission,
     );
     bot_trigger_router.spawn(bot_trigger_receiver);
 
@@ -1219,7 +1239,22 @@ async fn run() -> anyhow::Result<()> {
 
     // Held by value here and behind an `Arc` in the router state: the impl is a
     // pool handle, so cloning is cheap and `SoupImpl` needs an owned service.
-    let reminders_service = RemindersServiceImpl::new(PgRemindersRepo::new(db.clone()));
+    // Additional connections for guards spanning email I/O. HTTP requests and
+    // dispatch share this budget, independently of the main data pool.
+    let followup_lock_capacity = match config.environment {
+        Environment::Production => 32,
+        Environment::Develop => 16,
+        Environment::Local => 8,
+    };
+    let email_followups = reminders::domain::email_followup::service::EmailFollowupService::new(
+        PgRemindersRepo::with_followup_lock_capacity(db.clone(), followup_lock_capacity),
+        email_service.clone(),
+    );
+    let reminders_service =
+        reminders::domain::email_followup::reminder_service::EmailRemindersService::new(
+            RemindersServiceImpl::new(PgRemindersRepo::new(db.clone())),
+            email_followups.clone(),
+        );
 
     let document_creator = documents_hex::domain::create::DocumentCreator::new(
         document_service.clone(),
@@ -1520,7 +1555,13 @@ async fn run() -> anyhow::Result<()> {
             NotificationReminderNotifier::new((*notification_ingress_service).clone()),
             queue.clone(),
         );
-        DispatchWorker::new(dispatch_service, queue)
+        DispatchWorker::new(
+            reminders::domain::email_followup::dispatch::EmailReminderDispatch::new(
+                dispatch_service,
+                email_followups.clone(),
+            ),
+            queue,
+        )
     };
 
     consumer_tracker.spawn({
@@ -1586,6 +1627,17 @@ async fn run() -> anyhow::Result<()> {
             )),
         ));
 
+    // Routine writes still use the scheduled-action service. Read from the
+    // primary pool here so the GraphQL list cannot restore stale state after
+    // a REST write.
+    let scheduled_action_read_service = Arc::new(ScheduledActionReadServiceImpl::new(
+        Arc::new(PgScheduledActionRepo::new(
+            db.clone(),
+            owned_entity_registrar.clone(),
+        )),
+        entity_access_service.clone(),
+    ));
+
     let api_context = ApiContext {
         dictation_state,
         contacts_ingress: contacts_ingress.clone(),
@@ -1627,6 +1679,9 @@ async fn run() -> anyhow::Result<()> {
         graphql_initiative_context: graphql_initiative::InitiativeGraphqlContext::new(
             initiative_service.clone(),
             entity_access_service.clone(),
+        ),
+        graphql_scheduled_action_context: ScheduledActionGraphqlContext::new(
+            scheduled_action_read_service,
         ),
         initiative_state: InitiativeRouterState::new(
             initiative_service,
@@ -1682,6 +1737,7 @@ async fn run() -> anyhow::Result<()> {
             service: project_service,
             access_service: entity_access_service.clone(),
             authorization_state: authorization_state.clone(),
+            non_user_owners,
         },
         documents_state: DocumentRouterState {
             service: document_service,

@@ -101,6 +101,9 @@ export function ChatComposer(props: {
       },
     })
     .onEnter((_event, markdown) => {
+      // On a virtual keyboard Enter is a newline, as in channels; the send
+      // button is the only way to submit.
+      if (isTouchDevice()) return false;
       if (markdown.trim() || attachments().length > 0) send(markdown);
       else if (canSendNext()) sendNext();
       return true;
@@ -346,7 +349,7 @@ export function ChatComposer(props: {
 
 /** Adapt the session's controls to the same input used for a new Chat. */
 export function ChatSessionInput(props: AgentInputProps) {
-  const [draft, setDraft] = createSignal('');
+  const [draft, setDraft] = createSignal(props.initialInput ?? '');
   return (
     <ChatComposer
       draft={draft()}

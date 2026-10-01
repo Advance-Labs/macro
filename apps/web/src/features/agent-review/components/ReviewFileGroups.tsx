@@ -18,7 +18,7 @@ export function ReviewFileGroups(props: {
           {(group) => (
             <Button
               size="xs"
-              variant="plain"
+              variant="ghost"
               class={cn('gap-1 text-[11px]', group.hidden && 'text-ink-subtle')}
               aria-pressed={!group.hidden}
               label={`${group.hidden ? 'Show' : 'Hide'} ${group.title} (${group.files.length} files)`}

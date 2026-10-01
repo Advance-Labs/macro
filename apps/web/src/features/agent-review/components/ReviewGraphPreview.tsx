@@ -42,7 +42,7 @@ export function ReviewGraphPreview(props: {
         </span>
         <Button
           size="icon-xs"
-          variant="plain"
+          variant="ghost"
           label="Expand map"
           onClick={props.onExpand}
         >
@@ -50,7 +50,7 @@ export function ReviewGraphPreview(props: {
         </Button>
         <Button
           size="icon-xs"
-          variant="plain"
+          variant="ghost"
           label="Hide map"
           onClick={props.onClose}
         >
@@ -72,7 +72,7 @@ export function ReviewGraphPreview(props: {
       </Show>
       <ErrorBoundary
         fallback={
-          <Button variant="plain" size="sm" onClick={props.onExpand}>
+          <Button variant="ghost" size="sm" onClick={props.onExpand}>
             Open overview
           </Button>
         }

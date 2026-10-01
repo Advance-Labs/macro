@@ -1,7 +1,7 @@
 //! The per-session command queue: admission, the worker that drains it one
 //! command at a time, and routing to the replica that holds the session.
 
-use agent_fold::domain::model::{StopReason, TurnSignal};
+use agent_fold::domain::model::{StopReason, TurnId, TurnSignal};
 use agent_session::domain::error::AgentSessionError;
 use agent_session::domain::events::{
     AgentSessionLifecycleEvent, InputReceivedMetadata, SessionDeletedMetadata,
@@ -298,7 +298,7 @@ where
         match &command {
             HarnessCommand::Open(open)
                 if AgentKind::of(open.bot_id) == AgentKind::SandboxedCoder
-                    && !is_macro_staff(&open.origin.sender) =>
+                    && !is_macro_staff(open.origin.actor()) =>
             {
                 return Err(AgentSessionError::Forbidden.into());
             }
@@ -319,6 +319,9 @@ where
             | HarnessCommand::EditQueued { actor, .. }
             | HarnessCommand::RemoveQueued { actor, .. } => {
                 let session = self.sessions.get_session(session_id).await?;
+                if session.is_archived {
+                    return Err(AgentSessionError::Archived(session_id).into());
+                }
                 if AgentKind::for_session(session.bot_id, &session.harness)
                     == AgentKind::ClaudeCloud
                     && !actor
@@ -336,8 +339,12 @@ where
             HarnessCommand::Open(_)
             | HarnessCommand::Turn(_)
             | HarnessCommand::SessionStopped { .. }
-            | HarnessCommand::SetSandboxSize(_)
             | HarnessCommand::Delete => {}
+            HarnessCommand::SetSandboxSize(_) => {
+                if self.sessions.get_session(session_id).await?.is_archived {
+                    return Err(AgentSessionError::Archived(session_id).into());
+                }
+            }
         }
 
         match command {
@@ -580,10 +587,8 @@ where
     /// An action whose id this session already holds is the same action
     /// arriving twice - a caller retrying a control request under the id it
     /// named. It reports what became of the first copy instead of queueing a
-    /// second, so a retry cannot double-prompt. Only what this replica still
-    /// holds is checked: an id whose action has already finished its turn is
-    /// no longer anywhere to be seen, and accepting it again is indistinguishable
-    /// from asking for the same thing twice on purpose.
+    /// second, so a retry cannot double-prompt. Durable completion records also
+    /// suppress retries after a turn has finished or been cancelled.
     ///
     /// A channel follow-up (`announce` set) that lands on a running turn
     /// steers: it goes to the front of the queue, a stop cancels the current
@@ -594,6 +599,7 @@ where
         session_id: AgentSessionId,
         command: DeliverAction,
     ) -> Result<CommandOutcome> {
+        self.authorize_action(&command).await?;
         let action_id = command.id;
         if self.queues.contains(session_id, action_id) {
             if !self.busy.is_pending(session_id) {
@@ -619,6 +625,23 @@ where
             .await?
         {
             return Ok(CommandOutcome::Completed);
+        }
+        let session = self.sessions.get_session(session_id).await?;
+        if let Err(error) = self.admit_session(&session).await {
+            // Forwarding acknowledges bus acceptance before this worker runs.
+            // Publish even an ingress refusal so the submitting replica hears it.
+            if let HarnessError::Admission(failure) = &error {
+                self.publish_command_rejected(
+                    session_id,
+                    command.id,
+                    command.actor.clone(),
+                    None,
+                    *failure,
+                )
+                .await;
+            }
+            self.reject_waiting_on_denial(session_id, &error).await?;
+            return Err(error);
         }
         let prompt = match &command.action {
             AgentAction::Prompt(prompt) => Some(prompt.prompt.clone()),
@@ -728,6 +751,7 @@ where
         actor: Option<&MacroUserIdStr<'static>>,
         announce: Option<AnnounceOrigin>,
     ) -> Result<()> {
+        self.revalidate_queue(session_id).await?;
         if let Err(error) = self
             .deliver(
                 session_id,
@@ -747,6 +771,9 @@ where
             );
         }
 
+        // Stop may have waited for a runtime reconnect; check again before
+        // posting a pending reply for the waiting follow-up.
+        self.revalidate_queue(session_id).await?;
         // Front of the queue, so the next prompt turn is this one's.
         let prompted_message_id = self.sessions.next_prompt_message_id(session_id).await?;
         let announcement = self
@@ -781,7 +808,7 @@ where
 
     /// Persist after a working-copy mutation. A failed write reloads the last
     /// good row so this process does not keep a queue the store never saw.
-    async fn persist_or_rollback(&self, session_id: AgentSessionId) -> Result<()> {
+    pub(super) async fn persist_or_rollback(&self, session_id: AgentSessionId) -> Result<()> {
         if let Err(error) = self.write_queue(session_id).await {
             if let Err(reload) = self.reload_queue(session_id).await {
                 tracing::error!(
@@ -797,15 +824,15 @@ where
 
     /// Put a claimed entry back and persist. A persist failure here loses the
     /// in-flight item on the next restart — the same as losing the turn mark.
-    async fn requeue_claimed(&self, session_id: AgentSessionId, entry: QueuedEntry) {
+    async fn requeue_claimed(&self, session_id: AgentSessionId, entry: QueuedEntry) -> Result<()> {
         self.queues.requeue_front(session_id, entry);
-        if let Err(error) = self.write_queue(session_id).await {
+        self.write_queue(session_id).await.inspect_err(|error| {
             tracing::error!(
                 error = ?error,
                 %session_id,
                 "failed to persist a requeued agent session action"
             );
-        }
+        })
     }
 
     /// Replace the working copy from the session store.
@@ -879,6 +906,16 @@ where
     /// own action triggered this dispatch hears about it.
     #[tracing::instrument(err, skip(self), fields(%session_id))]
     pub(super) async fn dispatch_next(&self, session_id: AgentSessionId) -> Result<Dispatch> {
+        if self.sessions.get_session(session_id).await?.is_archived {
+            self.queues.drop_session(session_id);
+            self.write_queue(session_id).await?;
+            self.publish_queue(session_id).await;
+            return Ok(Dispatch::QueueEmpty);
+        }
+        if self.queues.list(session_id).is_empty() {
+            return Ok(Dispatch::QueueEmpty);
+        }
+        self.revalidate_queue(session_id).await?;
         let Some(mut entry) = self.queues.claim_next(session_id) else {
             return Ok(Dispatch::QueueEmpty);
         };
@@ -890,29 +927,40 @@ where
             return Err(error);
         }
 
-        // Compose a copy: the queued entry stays raw so a retry still edits
-        // and re-composes the user's text, and the chip (below) still shows
-        // what they typed rather than the composed payload.
-        let mut composed = entry.action.clone();
-        if let Err(error) = self
-            .compose_action(&mut composed, entry.actor.as_ref(), entry.announce.as_ref())
-            .await
-        {
-            self.requeue_claimed(session_id, entry).await;
-            return Err(error);
-        }
-
         // The turn this action opens, read before delivery appends the
         // prompt to the log. Unchanged across a failed attempt, so a retry
         // reports the same turn.
         let prompted_message_id = match self.sessions.next_prompt_message_id(session_id).await {
             Ok(message_id) => message_id,
             Err(error) => {
-                self.requeue_claimed(session_id, entry).await;
+                self.requeue_claimed(session_id, entry).await?;
                 return Err(error.into());
             }
         };
 
+        // Compose a copy: the queued entry stays raw so a retry still edits
+        // and re-composes the user's text, and the chip (below) still shows
+        // what they typed rather than the composed payload.
+        let mut composed = entry.action.clone();
+        if let Err(error) = self
+            .compose_action(
+                session_id,
+                &mut composed,
+                entry.actor.as_ref(),
+                entry.announce.as_ref(),
+                prompted_message_id.turn == TurnId(0),
+            )
+            .await
+        {
+            self.requeue_claimed(session_id, entry).await?;
+            return Err(error);
+        }
+
+        if let Err(error) = self.admit_session_id(session_id).await {
+            self.requeue_claimed(session_id, entry).await?;
+            self.reject_waiting_on_denial(session_id, &error).await?;
+            return Err(error);
+        }
         if entry.announced.is_none() {
             let announcement = match self
                 .announcement(
@@ -926,7 +974,7 @@ where
             {
                 Ok(announcement) => announcement,
                 Err(error) => {
-                    self.requeue_claimed(session_id, entry).await;
+                    self.requeue_claimed(session_id, entry).await?;
                     return Err(error);
                 }
             };
@@ -934,7 +982,7 @@ where
                 match self.announcer.announce(announcement).await {
                     Ok(announced) => entry.announced = Some(announced.message_id),
                     Err(error) => {
-                        self.requeue_claimed(session_id, entry).await;
+                        self.requeue_claimed(session_id, entry).await?;
                         return Err(error);
                     }
                 }
@@ -971,7 +1019,8 @@ where
                 Ok(Dispatch::Dispatched)
             }
             Err(error) => {
-                self.requeue_claimed(session_id, entry).await;
+                self.requeue_claimed(session_id, entry).await?;
+                self.reject_waiting_on_denial(session_id, &error).await?;
                 Err(error)
             }
         }

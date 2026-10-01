@@ -58,6 +58,10 @@ where
             announce: _,
         } = command;
 
+        if action.occupies_turn() {
+            self.admit_session_id(session_id).await?;
+        }
+
         match self
             .sessions
             .send_action(session_id, actor.clone(), action.clone(), id)
@@ -137,6 +141,9 @@ where
                         .await?;
                     self.restore_queue(session_id).await?;
                 }
+                if action.occupies_turn() {
+                    self.admit_session(&session).await?;
+                }
                 self.sessions
                     .send_action(session_id, actor, action, id)
                     .await?;
@@ -151,17 +158,33 @@ where
     /// Message context is loaded when the prompt named an origin. The actor's
     /// current access to that origin gates composition; a failed history read
     /// still composes, with empty history, so a transient context outage
-    /// cannot eat the prompt.
+    /// cannot eat the prompt. The prompt that opens a session's first turn
+    /// also carries the session's instructions, unless its runtime already
+    /// reads them as a system prompt.
     pub(super) async fn compose_action(
         &self,
+        session_id: AgentSessionId,
         action: &mut AgentAction,
         actor: Option<&MacroUserIdStr<'static>>,
         announce: Option<&AnnounceOrigin>,
+        first_turn: bool,
     ) -> Result<()> {
         let AgentAction::Prompt(prompt) = action else {
             return Ok(());
         };
         let raw_prompt = prompt.prompt.clone();
+        let session = if first_turn {
+            Some(self.sessions.get_session(session_id).await?)
+        } else {
+            None
+        };
+        let instructions = session
+            .as_ref()
+            .filter(|session| {
+                AgentKind::for_session(session.bot_id, &session.harness).folds_instructions()
+            })
+            .and_then(|session| session.instructions.as_deref())
+            .filter(|instructions| !instructions.trim().is_empty());
         let context = if let Some(origin) = announce {
             Some(self.load_prompt_context(origin, actor).await?)
         } else {
@@ -171,6 +194,7 @@ where
             .prompt_composer
             .compose(
                 &raw_prompt,
+                instructions,
                 announce.map(|origin| &origin.parent),
                 context.as_ref(),
             )
@@ -235,6 +259,7 @@ where
         let persona = self.reply_persona(&session).await?;
 
         Ok(Some(SessionAnnouncement {
+            reuse_origin_message: origin.reuse_origin_message,
             session_id,
             bot_id: session.bot_id,
             is_coding: persona.is_coding,
@@ -265,11 +290,27 @@ where
         let Some(turn) = turn else {
             return;
         };
-        let (Some(message_id), Some(origin), Some(triggered_by)) = (
+        self.resolve_announced_reply(
+            session_id,
             turn.announcement_message_id,
             turn.announce.as_ref(),
             turn.actor.as_ref(),
-        ) else {
+            outcome,
+        )
+        .await;
+    }
+
+    /// Resolve an announcement even when its queued command never opened a turn.
+    pub(super) async fn resolve_announced_reply(
+        &self,
+        session_id: AgentSessionId,
+        message_id: Option<macro_uuid::Uuid>,
+        origin: Option<&AnnounceOrigin>,
+        actor: Option<&MacroUserIdStr<'static>>,
+        outcome: ReplyOutcome,
+    ) {
+        let (Some(message_id), Some(origin), Some(triggered_by)) = (message_id, origin, actor)
+        else {
             return;
         };
         let session = match self.sessions.get_session(session_id).await {

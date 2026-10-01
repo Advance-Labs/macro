@@ -14,7 +14,7 @@ export function ReviewFold(props: {
       <Show when={props.fold.start > 0 && props.fold.count > 10}>
         <Button
           size="icon-xs"
-          variant="plain"
+          variant="ghost"
           label="Show 10 lines below"
           onClick={() =>
             props.onExpand([props.fold.start, props.fold.start + 9])
@@ -33,7 +33,7 @@ export function ReviewFold(props: {
       <Show when={props.fold.end + 1 < props.rows && props.fold.count > 10}>
         <Button
           size="icon-xs"
-          variant="plain"
+          variant="ghost"
           label="Show 10 lines above"
           onClick={() => props.onExpand([props.fold.end - 9, props.fold.end])}
         >

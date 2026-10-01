@@ -553,7 +553,7 @@ export function ReviewCode(props: {
           {matches().length.toLocaleString()} matches
           <Button
             size="xs"
-            variant="plain"
+            variant="ghost"
             disabled={!matches().length}
             onClick={() => {
               if (!matches().length) return;

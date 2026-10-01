@@ -724,7 +724,7 @@ export default function ReviewGraphCanvas(props: {
             >
               <Button
                 size="sm"
-                variant="plain"
+                variant="ghost"
                 class="h-7 shrink-0 px-2 text-xs"
                 onClick={fit}
               >
@@ -738,7 +738,7 @@ export default function ReviewGraphCanvas(props: {
                     <span class="text-ink-extra-muted">/</span>
                     <Button
                       size="sm"
-                      variant="plain"
+                      variant="ghost"
                       class="h-7 min-w-0 shrink px-2 text-xs"
                       onClick={() => reveal?.(node.id, true)}
                     >
@@ -752,7 +752,7 @@ export default function ReviewGraphCanvas(props: {
           <div class="ml-auto flex shrink-0 items-center gap-1 rounded-xl border border-edge-muted bg-surface p-1">
             <Button
               size="icon-sm"
-              variant="plain"
+              variant="ghost"
               label="Zoom out"
               onClick={() => zoom(1 / 1.2)}
             >
@@ -766,7 +766,7 @@ export default function ReviewGraphCanvas(props: {
             </span>
             <Button
               size="icon-sm"
-              variant="plain"
+              variant="ghost"
               label="Fit map"
               onClick={fit}
             >
@@ -774,7 +774,7 @@ export default function ReviewGraphCanvas(props: {
             </Button>
             <Button
               size="icon-sm"
-              variant="plain"
+              variant="ghost"
               label="Zoom in"
               onClick={() => zoom(1.2)}
             >

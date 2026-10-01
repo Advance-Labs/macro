@@ -67,7 +67,7 @@ export function ReviewCommentComposer(props: {
         <div class="flex items-center justify-end gap-2">
           <Button
             size="xs"
-            variant="plain"
+            variant="ghost"
             disabled={props.sending}
             onClick={props.onCancel}
           >

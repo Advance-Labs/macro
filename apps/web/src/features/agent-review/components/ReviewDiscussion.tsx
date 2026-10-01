@@ -83,7 +83,7 @@ export function ReviewDiscussion(props: {
         fallback={
           <div class="flex items-center justify-between border-t border-edge-muted/60 pt-1.5 mt-2">
             <Button
-              variant="plain"
+              variant="ghost"
               size="xs"
               disabled={props.readOnly}
               onClick={props.onReply}
@@ -92,7 +92,7 @@ export function ReviewDiscussion(props: {
             </Button>
             <Show when={props.thread}>
               <Button
-                variant="plain"
+                variant="ghost"
                 size="xs"
                 disabled={props.readOnly || props.sending}
                 onClick={props.onResolve}

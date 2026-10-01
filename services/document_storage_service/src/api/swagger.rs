@@ -299,6 +299,7 @@ use utoipa::OpenApi;
         bots::inbound::axum_router::list_agents_handler,
         bots::inbound::axum_router::update_agent_handler,
         bots::inbound::axum_router::get_self_bot_handler,
+        bots::inbound::axum_router::get_bot_owner_profiles_handler,
         bots::inbound::axum_router::list_bot_channels_handler,
         bots::inbound::axum_router::remove_bot_channel_handler,
         bots::inbound::channel_webhook_router::create_channel_scoped_bot_handler,
@@ -306,6 +307,8 @@ use utoipa::OpenApi;
 
         // calls
         call::inbound::axum_router::meetings::create,
+        call::inbound::axum_router::meetings::prepare,
+        call::inbound::axum_router::meetings::cancel_preparation,
         call::inbound::axum_router::meetings::update,
         call::inbound::axum_router::meetings::list,
         call::inbound::axum_router::meetings::list_active,
@@ -316,6 +319,8 @@ use utoipa::OpenApi;
         call::inbound::axum_router::meetings::invite_permissions,
         call::inbound::axum_router::meetings::invite_users,
         call::inbound::axum_router::meetings::lookup,
+        call::inbound::axum_router::meetings::participants,
+        call::inbound::axum_router::meetings::guest_participants,
         call::inbound::axum_router::meetings::guest_join,
         call::inbound::axum_router::meetings::leave,
         call::inbound::axum_router::get_or_create_call_handler,
@@ -382,6 +387,8 @@ use utoipa::OpenApi;
         user_api_key::inbound::axum_router::delete_user_api_key_handler,
 
         // reminders
+        reminders::inbound::axum_router::get_email_followup_handler,
+        reminders::inbound::axum_router::set_email_followup_handler,
         reminders::inbound::axum_router::list_reminders_handler,
         reminders::inbound::axum_router::create_reminder_handler,
         reminders::inbound::axum_router::get_reminder_handler,
@@ -708,6 +715,7 @@ use utoipa::OpenApi;
             bots::domain::models::Bot,
             bots::domain::models::BotKind,
             bots::domain::models::BotOwner,
+            bots::domain::models::BotOwnerProfile,
             bots::domain::models::BotToken,
             bots::domain::models::BotChannel,
             bots::domain::models::BotChannelType,

@@ -120,7 +120,7 @@ export function ReviewNavigation(props: {
           <Button
             size="icon-sm"
             label="Close review navigation"
-            variant="plain"
+            variant="ghost"
             onClick={props.onClose}
           >
             <XIcon />
@@ -156,7 +156,7 @@ export function ReviewNavigation(props: {
           </span>
           <Button
             size="icon-xs"
-            variant="plain"
+            variant="ghost"
             label="Collapse all"
             onClick={() =>
               setDisclosures((previous) => {
