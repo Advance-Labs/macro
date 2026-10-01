@@ -55,8 +55,25 @@ kind (for example, People shows users, Tasks shows tasks). Arrow keys navigate a
 Enter chooses; Escape returns without changing the value. Delete clears a selected
 reference cell. Text supports markdown and inline native mentions such as
 `Say hi to @Maya`, stored using the same mention encoding as documents. A mention
-inside a sentence preserves Text. Select values offer **Add option** for new choices.
-Multi-select menus toggle each option independently and keep the other selections.
+inside a sentence preserves Text.
+
+### Select options
+
+A select or multi-select cell opens a compact option picker with its search field
+focused (**Search or create…**). Typing filters the options; when the typed name is
+not an option yet, a **Create “…”** row adds it, picks it, and keeps focus (on the
+cell for a single select, in the search for a multi-select, which stays open). Arrow
+keys move through the rows and Enter picks; **Clear value** empties the cell.
+Multi-select pickers toggle each option and keep the others.
+
+Each option row has a **⋯** button (`Edit <option>`) that opens the option editor:
+**Option name** saves on Enter or when you leave it, the colour swatches (the same
+picker tags use) recolour it, and **Delete option** asks for confirmation ("Cells
+using “X” will be cleared.") before removing it and clearing it from every cell.
+When the column's property is used outside this database, the editor says
+**Changes everywhere this property is used.** The same editor opens from a column
+header's **Edit options** menu item and from a board lane header. Changes show at
+once and are rolled back if the server refuses them.
 
 **New table**, beside the table tabs in the toolbar under the split header, creates another table
 with a Name column. Enter a table name and press Enter. If the table is created
@@ -65,7 +82,7 @@ but its column setup fails,
 To rename a table, right-click its tab and choose **Rename table**, double-click
 the tab, or focus it and press F2. These actions also work on inactive tabs.
 The tab itself becomes an input. Enter or leaving the input saves; Escape cancels.
-Renaming preserves records and saved views. A concurrent rename asks you to reopen
+Renaming preserves records and views. A concurrent rename asks you to reopen
 the editor, and a failed request keeps your draft available to retry.
 To reorder tables, drag a tab along the tab strip; an accent line shows where it
 will land, and Escape cancels the drag. From the keyboard, focus a tab, press
@@ -82,16 +99,16 @@ saves and keeps that cell selected; Down then selects the same column in the
 next row, ready to type. Arrow keys inside a text editor keep their native cursor
 behavior. Escape cancels. Tab saves and immediately edits the next writable cell;
 Shift+Tab moves backward, and both wrap between rows. Read-only columns are
-skipped. Select values open a menu, including **Add option**; checkboxes change
+skipped. Select values open the option picker; checkboxes change
 directly. Type on a selected select cell to search its options; Enter chooses a
-match, and Tab chooses the focused option or typed match before moving on.
+match, and Tab chooses the highlighted option or typed match before moving on.
 Date cells open Macro's date selector (the one tasks use): type a date or phrase
 such as `tomorrow`, `3d`, or `feb 17` and press Enter, or pick **Custom date...**
 for a calendar. Typing on a selected date cell starts that search; Delete clears
 the date, and Tab leaves the selector without changing it.
 Invalid numbers remain in the editor for correction.
 Arrow keys also move between checkbox and closed select cells without changing
-their values or opening a menu. Enter opens a selected select cell's menu.
+their values or opening a picker. Enter opens a selected select cell's picker.
 Blank grid lines continue below the editable row to fill the available space.
 Rapid edits remain attached to the same row while its first save is in flight.
 Committed cell edits continue saving to their original table if you switch tables
@@ -119,11 +136,11 @@ users can open references but cannot select or remove them. Relation cells show
 current record names, and unavailable records have a readable label. Search and
 sorting skip relations; a relation filter can only test whether it is empty.
 
-Rows are read in the browser: the grid, relation pickers, CSV export and live
-answers run their SQL in the database engine over Soup GraphQL
+Rows are read in the browser: the grid runs its view, and relation pickers, CSV
+export and live answers run their SQL, in the database engine over Soup GraphQL
 (`/items/soup/graphql`), while every edit (a cell, a new or deleted record, a
-card moved between lanes, a new select option picked while editing) is one
-typed op sent to `POST /databases/{id}/ops`. The web app never calls
+card move, an option change, a view change) is one typed op sent to
+`POST /databases/{id}/ops`. The web app never calls
 `/databases/exec`; agents and MCP still write SQL there.
 Rows keep the table's order unless the view sorts them. After each of your own
 edits the grid reads its rows again, and another viewer's edit reaches an open
@@ -139,36 +156,52 @@ If a row's create response is lost, its draft remains and the notice says it may
 already be saved. **Refresh** only reads the latest rows. Compare them with the
 draft, then use **Discard draft** to remove the local draft without deleting any
 saved record. The same uncertain draft cannot submit another insert.
-View-only access allows browsing and personal view controls but disables data
-and schema changes.
+View-only access allows browsing, searching, and filtering or sorting All records
+for yourself, but disables data, schema and stored view changes.
 
 ## Table and board views
 
-Tables contain the records; the **Views** beside **All records** are saved ways to
-show those same records. **New view** offers Table and Board. A Board requires a
-Select, Multi-select, or Checkbox property; choose any compatible property in
-**Group by**. The choice is based on the table's schema, without a special Status
-property. **View settings** can change the current layout or grouping later.
-Switching to Board there without a grouping picks the first Multi-select, else the
-first Select, else the first Checkbox; an existing grouping is kept. Its
-**Columns** list shows or hides each property with a switch.
-If the table has no grouping property, **Open table** returns to its grid so you
-can create a column and choose a suitable type from its header menu.
+Tables contain the records; **Views** are shared ways to show them, stored with the
+database and the same for everyone who can open it. **All records** is always first:
+the table in its own order. Filters, sorts and column changes made on All records
+change only what you see, until you make a view of them. Viewers can search and use
+All records; only editors change stored views.
 
-Lanes start in alphabetical order, including empty options and a **No …** lane
-for unassigned records. Drag a lane header to reorder lanes, or focus its handle
-and press Alt+Left / Alt+Right. Saved views remember the lane order automatically.
-An orange line marks the lane's before/after insertion boundary. For cards, the
-line follows the gap under the pointer, including gaps within the current lane.
-Release to place the card exactly there. Dragging switches a sorted board to
-manual order without moving its other cards. Saved views remember card positions.
-Escape cancels a drag; releasing outside the board leaves the record unchanged.
-The space beneath a lane's cards also accepts drops. Hold near the board's edge
-to scroll while dragging.
-Drag anywhere on a card into another lane, keeping its original size and shape.
-The card's **Move …** menu offers the same action without dragging. On a multi-select
-board a card can appear in several lanes: moving it replaces that lane's value
-and keeps its other selections; moving it to the unassigned lane clears them.
+**New view** (the **+** beside the tabs) offers **Table** or **Board**, a name, and
+for a board **Group by**, then **Create view**. The new view starts from what is on
+screen (its filter and sort) and opens. A board groups by a single **Select**
+column; multi-selects and checkboxes cannot group one. Double-click a view tab, press
+F2, or right-click it and choose **Rename view** to rename it in place (Enter saves,
+Escape cancels). **Delete view** asks for confirmation; the records stay. Drag a tab
+to reorder the views.
+
+**Filter**, **Sort**, **Search**, and **View settings** sit at the right of the views
+row. In **Filter**, the first condition reads **Where**; the second row of a group
+has the **And**/**Or** choice for that group. **Add condition** adds a test; **Add
+group** adds a nested group joined the other way, with its own **Add condition** and
+**Remove group**. Tests fit the column: text (contains, is, starts with…), numbers,
+dates (before, after, on or before, on or after), checkboxes (checked or not), select
+options (**is any of**/**is none of**, or **has any of**/**has all of**/**has none
+of** for a multi-select, picked as coloured pills), and emptiness for any column. A
+condition still being filled in is ignored and not saved. **Sort** orders by one or
+more columns, first first. **Search** matches text cells and option labels.
+
+**View settings** switches a stored view between Table and Board. A table view's
+**Columns** switches hide or show columns; dragging a column header's right edge
+sets its width, and both are saved in the view. Header menus offer sorting, **Move
+left**, **Move right**, and **Hide column**. On All records, moving a column moves it
+in the table for everyone; a stored view keeps its own column order. A board's
+settings choose **Group by**, the **Card fields** a card shows, **Hide empty lanes**,
+and list **Hidden lanes** with **Show** to bring one back.
+
+A board has a lane per option plus one for records without one. Drag a card within
+a lane or into another lane; it moves at once, and moving it to another lane also
+sets its Select value. The order is saved for everyone and survives a reload. A
+sorted board keeps the sort's order, so dragging a card asks **Remove sort to
+arrange cards manually?**; **Remove sort** clears the sort and then places the
+card. Drag a lane header to reorder lanes. A lane header shows the option's **⋯**
+editor and a lane menu with **Hide lane** and **Hide empty lanes**. The card's
+**Move …** menu offers the same moves without dragging.
 
 **+ New** at the bottom of a lane (or the lane header's **+**) puts an empty,
 focused card title in that lane; nothing opens. Enter creates the card with the
@@ -177,49 +210,25 @@ row; each appears in place while it saves. Shift+Enter creates the card and open
 its record. Escape, or leaving an empty title, cancels; leaving a typed title
 saves it. From the keyboard, press **n** with focus on any card or control in a
 lane, or Enter on a focused lane header, to start a card there. The toolbar's
-**New** starts one in the first lane. Failed requests keep the typed draft for
-correction or retry; Enter in it retries. Open a card to edit its details. **New group** at the end of a select board adds
-another option and lane. Every new select option, a new group included, takes
-the next colour of the tag palette, so its pill is coloured wherever it shows. Hiding a property does not change the record's title.
-The table grid uses its always-ready empty row instead of a separate New button.
+**New** starts one in the first lane. **New group** at the end of a board adds
+another option and lane, coloured with the next palette colour.
 
-**Filter**, **Sort**, **Search**, and **View settings** are grouped at the right of
-the views row. Boards also offer **New**.
-**Search** expands an inline **Search records** field; **Clear search** leaves
-filters intact and keeps that field focused. Escape clears and closes search.
-In **Filter**, the first condition reads **Where** and each later one has an
-**And**/**Or** control; the choice applies to every condition at once. A
-condition with no value yet is ignored. Select and multi-select values are offered
-as the same colored pills the cells show, behind a **Choose** placeholder.
-Multi-select filters match the selected members. Search, filters, and sorting run
-in the database engine as one SQL statement, so text matches ignore case and dates
-compare by calendar day (UTC). Column headers offer sorting, **Move left**, **Move right**, and
-**Hide column** for the current view. Moves skip hidden columns; the Columns
-switches in **View settings** restore a hidden column to its saved position.
-Hidden columns remain available in the record dialog, and new columns appear
-after the saved layout.
 Creating or changing a record can make it fall outside the current search or
 filters. A saved-record notice offers **Open record** to inspect it without
 changing the view. Its record dialog explains why it is outside the view; you can
-continue editing there. A failed data refresh after creation keeps the saved
-record available rather than requiring another create.
-**New view** offers Table or Board, a name, and **Create view**. It stores the
-current filters, sorting, column order, and visible columns as a personal view
-for this table.
-Saved views appear beside **All records**. Right-click a saved view for **Rename
-view** or **Delete view**, or double-click/F2 to rename it directly in its tab.
-Enter saves and Escape cancels. These actions target the clicked view, even when
-another view is selected. **Save as new view** copies
-the active view. Shift+F10 or the keyboard menu key opens tab context menus.
-Use **Save changes** to update an edited saved view. The selected table and saved
-view, including unsaved view adjustments, are restored when reopening the database.
+continue editing there. The selected table and view are restored when reopening
+the database. Views and card places are typed data in the databases service
+(`TableDetail.views`, `GET /databases/{id}/views/{view_id}/positions`) changed
+through `POST /databases/{id}/ops` (`create_view`, `update_view`, `delete_view`,
+`reorder_views`, `move_card`); rows load by running the view in the browser's
+engine, never SQL text.
 
 ## First database
 
 When Databases is enabled and an authenticated user has no accessible databases,
 the app creates one small **Getting started** example in the background. Its
 **Ideas** table has Name and Stage columns and three cards spread across To do,
-Doing, and Done. The saved Table and Board views show the same records; the first
+Doing, and Done. Its Table and Board views show the same records; the first
 open selects Board. This example is created at most once per user. Retrying or
 opening another tab never overwrites edits, and removing the example does not
 cause it to reappear. The app waits for the feature flag and database list before
