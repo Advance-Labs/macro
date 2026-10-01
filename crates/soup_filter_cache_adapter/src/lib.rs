@@ -25,6 +25,7 @@ use std::collections::HashSet;
 
 mod channels;
 mod database_rows;
+mod direct_patch;
 pub mod mail;
 mod notifications;
 pub mod properties;
@@ -614,14 +615,14 @@ fn authoritative_v4_patch_for_object(
     partition: Token,
     object: &serde_json::Map<String, serde_json::Value>,
 ) -> Result<ProjectionMutation, ()> {
-    if partition == vocabulary::channel_partition()
-        || partition == vocabulary::database_row_partition()
-    {
-        let patch = if partition == vocabulary::channel_partition() {
-            channels::patch(record_key, object, None)?
-        } else {
-            database_rows::patch(record_key, object, None)?
-        };
+    let authoritative_patch = if partition == vocabulary::channel_partition() {
+        Some(channels::patch(record_key.clone(), object, None)?)
+    } else if partition == vocabulary::database_row_partition() {
+        Some(database_rows::patch(record_key.clone(), object, None)?)
+    } else {
+        None
+    };
+    if let Some(patch) = authoritative_patch {
         let OptimisticProjectionMutation::Patch {
             record_key,
             profile,
