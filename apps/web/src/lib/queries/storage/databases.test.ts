@@ -1,5 +1,5 @@
 import { queryClient } from '@queries/client';
-import type { DatabaseDetail } from '@service-storage/databases';
+import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applyDatabaseTableVersions } from './databases';
 import { databasesKeys } from './keys';
@@ -34,6 +34,7 @@ const detail: DatabaseDetail = {
         version: 5,
       },
       sql_name: 'tasks',
+      read_sql_name: 'tasks',
       columns: [],
     },
     {
@@ -45,6 +46,7 @@ const detail: DatabaseDetail = {
         version: 3,
       },
       sql_name: 'people',
+      read_sql_name: 'people',
       columns: [],
     },
   ],
@@ -73,6 +75,7 @@ describe('database write version acknowledgments', () => {
               ...entry,
               table: { ...entry.table, name: 'Roadmap', version: 8 },
               sql_name: 'roadmap',
+              read_sql_name: 'roadmap',
             }
           : entry
       ),

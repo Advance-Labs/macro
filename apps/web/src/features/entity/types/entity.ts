@@ -1,6 +1,5 @@
 import type { DateValue } from '@core/util/date';
 import type { ApiLabel } from '@service-email/generated/schemas';
-import type { DatabaseGrant } from '@service-storage/databases';
 import type {
   GithubPullRequestCheckRun,
   GithubPullRequestComment,
@@ -12,6 +11,7 @@ import type {
   SoupThreadReply,
   CallStatus as StorageCallStatus,
 } from '@service-storage/generated/schemas';
+import type { AccessLevel } from '@service-storage/generated/schemas/accessLevel';
 
 export type EntityBase = {
   id: string;
@@ -383,7 +383,7 @@ export type CrmContactEntity = EntityBase & {
 export type DatabaseEntity = EntityBase & {
   type: 'database';
   /** What the viewer may do with the database. */
-  grant: DatabaseGrant;
+  grant: AccessLevel;
 };
 
 export type ReminderEntity = EntityBase & {

@@ -9,18 +9,18 @@ import { analytics } from '@app/lib/analytics';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { enableDatabases, isFeatureEnabled } from '@core/constant/featureFlags';
 import type { DatabaseOp, OpResult } from '@core/database-sql/generated/types';
-import type { FetchWithTokenErrorCode } from '@core/util/fetchWithToken';
-import { throwOnErr } from '@core/util/result';
+import { type ResultError, throwOnErr } from '@core/util/result';
 import { storageServiceClient } from '@service-storage/client';
 import type {
-  CreateColumnRequest,
-  DatabaseColumnDetail,
-  DatabaseDetail,
-  DatabaseOpsErrorCode,
-  ExecErrorCode,
-  ListedDatabase,
+  DatabaseOpsError,
+  DatabaseSchemaErrorCode,
 } from '@service-storage/databases';
+import type { ColumnDetail } from '@service-storage/generated/schemas/columnDetail';
+import type { CreateColumnRequest } from '@service-storage/generated/schemas/createColumnRequest';
+import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
+import type { ListedDatabase } from '@service-storage/generated/schemas/listedDatabase';
 import { useQueries, useQuery } from '@tanstack/solid-query';
+import { okAsync, type ResultAsync } from 'neverthrow';
 import type { Accessor } from 'solid-js';
 import { queryClient } from '../client';
 import { databasesKeys } from './keys';
@@ -29,8 +29,8 @@ const DATABASE_STALE_TIME = 30 * 1000;
 
 const databaseListQueryOptions = {
   queryKey: databasesKeys.list.queryKey,
-  queryFn: async (): Promise<ListedDatabase[]> =>
-    throwOnErr(async () => await storageServiceClient.databases.list()),
+  queryFn: (): Promise<ListedDatabase[]> =>
+    throwOnErr(() => storageServiceClient.databases.list()),
   staleTime: DATABASE_STALE_TIME,
 };
 
@@ -45,8 +45,8 @@ export function useDatabasesQuery() {
 function databaseDetailQueryOptions(id: string) {
   return {
     queryKey: databasesKeys.detail(id).queryKey,
-    queryFn: async (): Promise<DatabaseDetail> =>
-      throwOnErr(async () => await storageServiceClient.databases.get({ id })),
+    queryFn: (): Promise<DatabaseDetail> =>
+      throwOnErr(() => storageServiceClient.databases.get({ id })),
     staleTime: DATABASE_STALE_TIME,
   };
 }
@@ -60,7 +60,7 @@ export function useDatabaseDetailQuery(databaseId: () => string | undefined) {
 
 function liveDatabaseIds(listed: readonly ListedDatabase[]): string[] {
   return listed
-    .filter((entry) => entry.database.trashed_at === null)
+    .filter((entry) => !entry.database.trashed_at)
     .map((entry) => entry.database.id);
 }
 
@@ -100,61 +100,29 @@ export async function fetchViewerDatabases(): Promise<DatabaseDetail[]> {
   );
 }
 
-/** A statement the server refused: the service's message plus why. */
-export class ExecError extends Error {
-  constructor(
-    readonly code: FetchWithTokenErrorCode | ExecErrorCode,
-    message: string
-  ) {
-    super(message);
-    this.name = 'ExecError';
-  }
-}
-
-/** A batch of ops the service refused or never answered; nothing of it is known written. */
-export class DatabaseOpsError extends Error {
-  constructor(
-    readonly code: FetchWithTokenErrorCode | DatabaseOpsErrorCode,
-    message: string
-  ) {
-    super(message);
-    this.name = 'DatabaseOpsError';
-  }
-
-  /** The service answered and refused: the batch was not written. */
-  get definite(): boolean {
-    return [
-      'INVALID_OP',
-      'UNAUTHORIZED',
-      'FORBIDDEN',
-      'NOT_FOUND',
-      'CONFLICT',
-      'GONE',
-    ].includes(this.code);
-  }
+/** The batch's refusal; the service answers with one error. */
+function firstOpsError(errors: DatabaseOpsError[]): DatabaseOpsError {
+  return (
+    errors[0] ?? {
+      code: 'UNKNOWN_ERROR',
+      message: 'The database could not apply that change.',
+      refusal: null,
+    }
+  );
 }
 
 /**
  * Apply ops to one database's rows as the current viewer, together or not at
- * all: the browser's `OpsSink.apply`. Throws a [`DatabaseOpsError`] on
- * failure.
+ * all: the browser's `OpsSink.apply`.
  */
-export async function applyDatabaseOps(
+export function applyDatabaseOps(
   databaseId: string,
   ops: DatabaseOp[]
-): Promise<OpResult[]> {
-  const result = await storageServiceClient.databases.applyOps({
-    id: databaseId,
-    request: { ops },
-  });
-  if (result.isErr()) {
-    const failure = result.error[0];
-    throw new DatabaseOpsError(
-      failure?.code ?? 'HTTP_ERROR',
-      failure?.message ?? 'The database could not apply that change.'
-    );
-  }
-  return result.value.results;
+): ResultAsync<OpResult[], DatabaseOpsError> {
+  return storageServiceClient.databases
+    .applyOps({ id: databaseId, request: { ops } })
+    .map((response) => response.results)
+    .mapErr(firstOpsError);
 }
 
 /**
@@ -200,66 +168,63 @@ export function applyDatabaseTableVersions(
 }
 
 /** Add a column to a table and return its id. */
-export async function createDatabaseColumn(params: {
+export function createDatabaseColumn(params: {
   databaseId: string;
   tableId: string;
   request: CreateColumnRequest;
-}): Promise<string | undefined> {
-  const result = await storageServiceClient.databases.createColumn({
-    id: params.databaseId,
-    tableId: params.tableId,
-    request: params.request,
-  });
-  if (result.isErr()) return undefined;
-
-  await invalidateDatabase(params.databaseId);
-  return result.value.columnId;
+}): ResultAsync<string, ResultError<DatabaseSchemaErrorCode>[]> {
+  return storageServiceClient.databases
+    .createColumn({
+      id: params.databaseId,
+      tableId: params.tableId,
+      request: params.request,
+    })
+    .map(async ({ columnId }) => {
+      await invalidateDatabase(params.databaseId);
+      return columnId;
+    });
 }
 
 /**
  * Add select option labels to a column and return the column as it now stands.
  *
- * Returns `undefined` if the service refused. The updated column is folded
- * into the cached schema rather than refetched, so the dropdown that asked for
- * the option can offer it on the very next open; open reads rerun with the
- * new option in their catalog.
+ * The updated column is folded into the cached schema rather than refetched,
+ * so the dropdown that asked for the option can offer it on the very next
+ * open; open reads rerun with the new option in their catalog.
  */
-export async function addDatabaseColumnOptions(params: {
+export function addDatabaseColumnOptions(params: {
   databaseId: string;
   tableId: string;
   columnId: string;
   labels: string[];
-}): Promise<DatabaseColumnDetail | undefined> {
-  const result = await storageServiceClient.databases.addColumnOptions({
-    id: params.databaseId,
-    tableId: params.tableId,
-    columnId: params.columnId,
-    request: { labels: params.labels },
-  });
-  if (result.isErr()) return undefined;
-
-  const updated = result.value;
-  queryClient.setQueryData(
-    databasesKeys.detail(params.databaseId).queryKey,
-    (previous: DatabaseDetail | undefined): DatabaseDetail | undefined => {
-      if (!previous) return previous;
-      return {
-        ...previous,
-        tables: previous.tables.map((table) =>
-          table.table.id === params.tableId
-            ? {
-                ...table,
-                columns: table.columns.map((column) =>
-                  column.column.id === params.columnId ? updated : column
-                ),
-              }
-            : table
-        ),
-      };
-    }
-  );
-
-  return updated;
+}): ResultAsync<ColumnDetail, ResultError<DatabaseSchemaErrorCode>[]> {
+  return storageServiceClient.databases
+    .addColumnOptions({
+      id: params.databaseId,
+      tableId: params.tableId,
+      columnId: params.columnId,
+      request: { labels: params.labels },
+    })
+    .map((updated) => {
+      queryClient.setQueryData(
+        databasesKeys.detail(params.databaseId).queryKey,
+        (previous: DatabaseDetail | undefined): DatabaseDetail | undefined =>
+          previous && {
+            ...previous,
+            tables: previous.tables.map((table) =>
+              table.table.id === params.tableId
+                ? {
+                    ...table,
+                    columns: table.columns.map((column) =>
+                      column.column.id === params.columnId ? updated : column
+                    ),
+                  }
+                : table
+            ),
+          }
+      );
+      return updated;
+    });
 }
 
 /**
@@ -275,30 +240,34 @@ export async function createDatabase(params: {
   source?: string;
 }): Promise<string | undefined> {
   if (!isFeatureEnabled(enableDatabases)) return undefined;
-  const result = await storageServiceClient.databases.create({
-    name: params.name,
-  });
-  if (result.isErr()) return undefined;
-
-  const databaseId = result.value.id;
-  const detail = await storageServiceClient.databases.get({ id: databaseId });
-  if (detail.isOk()) {
-    const starter = detail.value.tables[0];
-    if (starter && starter.columns.length === 0) {
-      await storageServiceClient.databases.createColumn({
-        id: databaseId,
-        tableId: starter.table.id,
-        request: {
-          binding: {
-            kind: 'new',
-            name: 'Name',
-            data_type: 'STRING',
-            is_multi_select: false,
-          },
-        },
-      });
-    }
-  }
+  const created = await storageServiceClient.databases
+    .create({ name: params.name })
+    .andThen(({ id }) =>
+      storageServiceClient.databases
+        .get({ id })
+        .andThen((detail) => {
+          const starter = detail.tables[0];
+          return starter && starter.columns.length === 0
+            ? storageServiceClient.databases.createColumn({
+                id,
+                tableId: starter.table.id,
+                request: {
+                  binding: {
+                    kind: 'new',
+                    name: 'Name',
+                    data_type: 'STRING',
+                    is_multi_select: false,
+                  },
+                },
+              })
+            : okAsync(undefined);
+        })
+        // The database exists: its empty state lets the user add a column.
+        .orElse(() => okAsync(undefined))
+        .map(() => id)
+    );
+  if (created.isErr()) return undefined;
+  const databaseId = created.value;
   analytics.track('create_entity', {
     entityType: 'database',
     entityId: databaseId,

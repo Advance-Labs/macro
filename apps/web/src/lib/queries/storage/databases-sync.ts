@@ -7,10 +7,8 @@
  */
 import { useUserId } from '@core/context/user';
 import { createConnectionWebsocketEffect } from '@service-connection/websocket';
-import {
-  type DatabaseAwareness,
-  databasesClient,
-} from '@service-storage/databases';
+import { databasesClient } from '@service-storage/databases';
+import type { Awareness } from '@service-storage/generated/schemas/awareness';
 import { ReactiveMap } from '@solid-primitives/map';
 import { debounce } from '@solid-primitives/scheduled';
 import { type Accessor, createEffect, on, onCleanup, untrack } from 'solid-js';
@@ -103,12 +101,12 @@ export type RemoteDatabaseAwareness = {
 type AwarenessMessage = {
   databaseId: string;
   userId: string;
-  state: DatabaseAwareness;
+  state: Awareness;
   ts: number;
 };
 
 type HeldAwareness = {
-  state: DatabaseAwareness;
+  state: Awareness;
   /** Server timestamp, orders messages from the same viewer. */
   ts: number;
   /** Local clock, decides expiry so clock skew cannot drop live viewers. */
@@ -130,8 +128,8 @@ export function useDatabaseAwareness(
   const userId = useUserId();
   const held = new ReactiveMap<string, HeldAwareness>();
 
-  let announced: { databaseId: string; state: DatabaseAwareness } | undefined;
-  const send = (id: string, state: DatabaseAwareness) => {
+  let announced: { databaseId: string; state: Awareness } | undefined;
+  const send = (id: string, state: Awareness) => {
     void databasesClient.shareAwareness(id, state);
   };
   const leave = () => {
@@ -150,7 +148,7 @@ export function useDatabaseAwareness(
       return;
     }
     if (announced && announced.databaseId !== id) leave();
-    const payload: DatabaseAwareness = { tableId: state.tableId };
+    const payload: Awareness = { tableId: state.tableId };
     if (state.rowId !== undefined) payload.rowId = state.rowId;
     if (state.columnId !== undefined) payload.columnId = state.columnId;
     if (state.rowId !== undefined || state.columnId !== undefined)

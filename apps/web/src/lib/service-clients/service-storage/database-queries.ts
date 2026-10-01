@@ -1,92 +1,86 @@
-/**
- * Saved database queries: immutable SQL rows a document answer points at.
- *
- * Hand-written mirror of the `/databases/queries` routes in `crates/databases`
- * until the storage-service OpenAPI generation covers them.
- */
+/** Saved database queries: immutable SQL rows a document answer points at. */
 import { SERVER_HOSTS } from '@core/constant/servers';
 import {
   type FetchWithTokenErrorCode,
-  type FetchWithTokenInit,
   fetchWithToken,
 } from '@core/util/fetchWithToken';
 import type { ObjectLike, ResultError } from '@core/util/result';
-import type { Result } from 'neverthrow';
-import { match } from 'ts-pattern';
-import type { ExecErrorCode } from './databases';
+import { ResultAsync } from 'neverthrow';
+import { match, P } from 'ts-pattern';
+import type { ErrorResponse } from './generated/schemas/errorResponse';
+import type { SavedQuery } from './generated/schemas/savedQuery';
+import type { SaveQueryRequest } from './generated/schemas/saveQueryRequest';
 
-export interface DatabaseQueryDefinition {
-  version: 1;
-  query: string;
-}
-
-export interface SavedDatabaseQuery {
-  id: string;
-  definition: DatabaseQueryDefinition;
-  databaseId: string | null;
-  createdBy: string;
-  createdAt: string;
-}
-
-export interface SaveDatabaseQueryRequest {
-  definition: DatabaseQueryDefinition;
-  databaseId?: string;
-}
-
-export type DatabaseQueryErrorCode = ExecErrorCode | 'NOT_FOUND';
+/**
+ * Why a saved query was refused: it does not compile (400), is not a SELECT
+ * (403), is gone or not visible (404), or reads too much (422).
+ */
+export type SavedQueryErrorCode =
+  | FetchWithTokenErrorCode
+  | 'INVALID_QUERY'
+  | 'READ_ONLY'
+  | 'BUDGET_EXCEEDED';
 
 const dssHost = SERVER_HOSTS['document-storage-service'];
 
-function databaseQueriesFetch<T extends ObjectLike>(
-  path: string,
-  init?: FetchWithTokenInit<DatabaseQueryErrorCode>
-): Promise<
-  Result<T, ResultError<FetchWithTokenErrorCode | DatabaseQueryErrorCode>[]>
-> {
-  return fetchWithToken<T, DatabaseQueryErrorCode>(`${dssHost}${path}`, {
-    ...init,
-    errorResponseHandler,
-  });
+function isErrorResponse(body: unknown): body is ErrorResponse {
+  return (
+    !!body &&
+    typeof body === 'object' &&
+    'message' in body &&
+    typeof body.message === 'string'
+  );
 }
 
 /** The body's `message` is the compiler's, verbatim. */
 async function errorResponseHandler(
   response: Response
-): Promise<ResultError<FetchWithTokenErrorCode | DatabaseQueryErrorCode>> {
-  const body = await response.text();
-  let message = body || `HTTP error! status: ${response.status}`;
+): Promise<ResultError<SavedQueryErrorCode>> {
+  const text = await response.text();
+  let body: unknown;
   try {
-    const parsed: unknown = JSON.parse(body);
-    if (
-      parsed &&
-      typeof parsed === 'object' &&
-      'message' in parsed &&
-      typeof parsed.message === 'string' &&
-      parsed.message
-    )
-      message = parsed.message;
+    body = JSON.parse(text);
   } catch {
     // A proxy's plain-text body is the message.
   }
-  const code = match(response.status)
-    .returnType<FetchWithTokenErrorCode | DatabaseQueryErrorCode>()
-    .with(400, () => 'SQL_ERROR')
-    .with(403, () => 'READ_ONLY')
-    .with(404, () => 'NOT_FOUND')
-    .with(422, () => 'BUDGET_EXCEEDED')
-    .otherwise(() => 'HTTP_ERROR');
-  return { code, message };
+  return {
+    code: match(response.status)
+      .returnType<SavedQueryErrorCode>()
+      .with(400, () => 'INVALID_QUERY')
+      .with(401, () => 'UNAUTHORIZED')
+      .with(403, () => 'READ_ONLY')
+      .with(404, () => 'NOT_FOUND')
+      .with(422, () => 'BUDGET_EXCEEDED')
+      .with(P.number.gte(500), () => 'SERVER_ERROR')
+      .otherwise(() => 'HTTP_ERROR'),
+    message:
+      isErrorResponse(body) && body.message
+        ? body.message
+        : text || `HTTP error! status: ${response.status}`,
+  };
 }
 
-export function saveDatabaseQuery(request: SaveDatabaseQueryRequest) {
-  return databaseQueriesFetch<SavedDatabaseQuery>('/databases/queries', {
+function savedQueriesFetch<T extends ObjectLike>(
+  path: string,
+  init?: RequestInit
+): ResultAsync<T, ResultError<SavedQueryErrorCode>[]> {
+  return new ResultAsync(
+    fetchWithToken<T, SavedQueryErrorCode>(`${dssHost}${path}`, {
+      ...init,
+      errorResponseHandler,
+    })
+  );
+}
+
+export function saveDatabaseQuery(request: SaveQueryRequest) {
+  return savedQueriesFetch<SavedQuery>('/databases/queries', {
     method: 'POST',
     body: JSON.stringify(request),
   });
 }
 
 export function getDatabaseQuery(queryId: string) {
-  return databaseQueriesFetch<SavedDatabaseQuery>(
+  return savedQueriesFetch<SavedQuery>(
     `/databases/queries/${encodeURIComponent(queryId)}`
   );
 }
