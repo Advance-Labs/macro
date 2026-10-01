@@ -28,7 +28,7 @@ impl ActivitySource for DatabaseTopicEvent {
                 0,
                 attribution,
                 EntityType::Database,
-                &database_id.to_string(),
+                database_id.to_string(),
                 action,
                 occurred_at,
             )])
