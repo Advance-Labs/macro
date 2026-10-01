@@ -36798,10 +36798,6 @@
             "format": "uuid",
             "description": "The column."
           },
-          "hidden": {
-            "type": "boolean",
-            "description": "Whether it is hidden."
-          },
           "width": {
             "type": ["integer", "null"],
             "format": "int32",

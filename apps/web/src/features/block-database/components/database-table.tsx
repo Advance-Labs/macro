@@ -122,7 +122,6 @@ export function DatabaseTable(props: {
     previousName: string
   ) => DatabaseSchemaChange;
   onSort: (columnId: string, direction: 'asc' | 'desc' | null) => void;
-  onHide?: (columnId: string) => void;
   onMove?: (columnId: string, direction: 'left' | 'right') => void;
   onInsertColumn?: (columnId: string, side: 'left' | 'right') => void;
 }) {
@@ -445,7 +444,6 @@ export function DatabaseTable(props: {
                   canRename={props.canEdit}
                   onRename={props.onRenameColumn}
                   onSort={props.onSort}
-                  onHide={props.onHide}
                   onMove={props.onMove}
                   onInsert={props.onInsertColumn}
                   canMoveLeft={index() > 0}

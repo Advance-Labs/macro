@@ -12757,10 +12757,6 @@ export type ViewColumn = {
      */
     column: string;
     /**
-     * Whether it is hidden.
-     */
-    hidden?: boolean;
-    /**
      * Its width in pixels; the default when unset.
      */
     width: number | null;

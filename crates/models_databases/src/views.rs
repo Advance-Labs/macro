@@ -442,9 +442,6 @@ pub struct ViewColumn {
     #[serde(default)]
     #[schema(required = true)]
     pub width: Option<u32>,
-    /// Whether it is hidden.
-    #[serde(default)]
-    pub hidden: bool,
 }
 
 /// How one lane shows in a board layout.

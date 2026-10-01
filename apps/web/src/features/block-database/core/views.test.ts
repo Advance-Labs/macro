@@ -42,34 +42,23 @@ describe('table layouts', () => {
       layoutColumns(
         {
           kind: 'table',
-          columns: [{ column: 'guests', width: 120, hidden: false }],
+          columns: [{ column: 'guests', width: 120 }],
         },
         [name, rsvp, guests]
       )
     ).toEqual([
-      { column: guests, width: 120, hidden: false },
-      { column: name, width: null, hidden: false },
-      { column: rsvp, width: null, hidden: false },
+      { column: guests, width: 120 },
+      { column: name, width: null },
+      { column: rsvp, width: null },
     ]);
   });
 
-  it('writes every column when one is hidden or resized', () => {
-    expect(
-      withLayoutColumn({ kind: 'table', columns: [] }, [name, rsvp], 'rsvp', {
-        hidden: true,
-      })
-    ).toEqual({
-      kind: 'table',
-      columns: [
-        { column: 'name', width: null, hidden: false },
-        { column: 'rsvp', width: null, hidden: true },
-      ],
-    });
+  it('writes every column when one is resized', () => {
     expect(
       withLayoutColumn(
         {
           kind: 'table',
-          columns: [{ column: 'rsvp', width: null, hidden: true }],
+          columns: [{ column: 'rsvp', width: 160 }],
         },
         [name, rsvp],
         'name',
@@ -78,18 +67,18 @@ describe('table layouts', () => {
     ).toEqual({
       kind: 'table',
       columns: [
-        { column: 'rsvp', width: null, hidden: true },
-        { column: 'name', width: 240, hidden: false },
+        { column: 'rsvp', width: 160 },
+        { column: 'name', width: 240 },
       ],
     });
   });
 
-  it('reorders columns, keeping each one width and visibility', () => {
+  it('reorders columns, keeping each one width', () => {
     expect(
       withLayoutOrder(
         {
           kind: 'table',
-          columns: [{ column: 'name', width: 200, hidden: false }],
+          columns: [{ column: 'name', width: 200 }],
         },
         [name, rsvp, guests],
         ['rsvp', 'name']
@@ -97,9 +86,9 @@ describe('table layouts', () => {
     ).toEqual({
       kind: 'table',
       columns: [
-        { column: 'rsvp', width: null, hidden: false },
-        { column: 'name', width: 200, hidden: false },
-        { column: 'guests', width: null, hidden: false },
+        { column: 'rsvp', width: null },
+        { column: 'name', width: 200 },
+        { column: 'guests', width: null },
       ],
     });
   });

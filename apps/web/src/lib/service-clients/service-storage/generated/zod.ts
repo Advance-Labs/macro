@@ -6837,10 +6837,6 @@ export const getDatabaseResponse = zod
                                 zod
                                   .object({
                                     column: zod.uuid().describe('The column.'),
-                                    hidden: zod
-                                      .boolean()
-                                      .optional()
-                                      .describe('Whether it is hidden.'),
                                     width: zod
                                       .number()
                                       .min(
@@ -8246,10 +8242,6 @@ export const applyDatabaseOpsBody = zod
                                 zod
                                   .object({
                                     column: zod.uuid().describe('The column.'),
-                                    hidden: zod
-                                      .boolean()
-                                      .optional()
-                                      .describe('Whether it is hidden.'),
                                     width: zod
                                       .number()
                                       .min(
@@ -8557,10 +8549,6 @@ export const applyDatabaseOpsBody = zod
                             zod
                               .object({
                                 column: zod.uuid().describe('The column.'),
-                                hidden: zod
-                                  .boolean()
-                                  .optional()
-                                  .describe('Whether it is hidden.'),
                                 width: zod
                                   .number()
                                   .min(
@@ -9102,10 +9090,6 @@ export const applyDatabaseOpsResponse = zod
                                 zod
                                   .object({
                                     column: zod.uuid().describe('The column.'),
-                                    hidden: zod
-                                      .boolean()
-                                      .optional()
-                                      .describe('Whether it is hidden.'),
                                     width: zod
                                       .number()
                                       .min(

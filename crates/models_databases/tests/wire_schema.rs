@@ -96,7 +96,6 @@ fn table() -> ViewLayout {
         columns: vec![ViewColumn {
             column: NAME,
             width: Some(120),
-            hidden: false,
         }],
     }
 }

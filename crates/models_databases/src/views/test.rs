@@ -516,12 +516,10 @@ fn removing_a_column_drops_its_conditions_sort_and_fields() {
                 ViewColumn {
                     column: NAME,
                     width: Some(240),
-                    hidden: false,
                 },
                 ViewColumn {
                     column: PLUS_ONES,
                     width: None,
-                    hidden: true,
                 },
             ],
         }
@@ -530,7 +528,6 @@ fn removing_a_column_drops_its_conditions_sort_and_fields() {
             columns: vec![ViewColumn {
                 column: PLUS_ONES,
                 width: None,
-                hidden: true,
             }],
         })
     );

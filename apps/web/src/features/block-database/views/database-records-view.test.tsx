@@ -24,7 +24,6 @@ import {
 } from 'neverthrow';
 import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DatabaseToolbar } from '../components/database-toolbar';
 import type { DatabaseWriteResult } from '../context/table-source';
 import type { DatabaseViewColumn } from '../core/database-view';
 import { allRecordsView } from '../core/views';
@@ -132,7 +131,7 @@ function columnOrderFixture() {
     view: allRecords,
   });
   setColumns([
-    ...columns,
+    columns[0],
     { ...columns[0], id: 'notes', name: 'Notes' },
     { ...columns[0], id: 'owner', name: 'Owner' },
   ]);
@@ -141,10 +140,9 @@ function columnOrderFixture() {
     layout: {
       kind: 'table',
       columns: [
-        { column: 'title', width: null, hidden: false },
-        { column: 'status', width: null, hidden: true },
-        { column: 'notes', width: null, hidden: false },
-        { column: 'owner', width: null, hidden: false },
+        { column: 'title', width: null },
+        { column: 'notes', width: null },
+        { column: 'owner', width: null },
       ],
     },
   });
@@ -666,9 +664,9 @@ describe('database table view', () => {
     expect(view().layout).toEqual({
       kind: 'table',
       columns: [
-        { column: 'title', width: null, hidden: false },
-        { column: 'added', width: null, hidden: false },
-        { column: 'notes', width: null, hidden: false },
+        { column: 'title', width: null },
+        { column: 'added', width: null },
+        { column: 'notes', width: null },
       ],
     });
     const nameField = await screen.findByLabelText('Column name');
@@ -1874,7 +1872,7 @@ describe('database table view', () => {
     );
   });
 
-  it('persists menu moves at the neighboring visible edge in both directions', async () => {
+  it('persists menu moves past the neighboring column in both directions', async () => {
     const { source, setColumns } = createFakeRowsSource({
       columns,
       table: {
@@ -1891,9 +1889,9 @@ describe('database table view', () => {
       layout: {
         kind: 'table',
         columns: [
-          { column: 'title', width: null, hidden: false },
-          { column: 'status', width: null, hidden: true },
-          { column: 'notes', width: null, hidden: false },
+          { column: 'title', width: null },
+          { column: 'status', width: null },
+          { column: 'notes', width: null },
         ],
       },
     });
@@ -1933,23 +1931,23 @@ describe('database table view', () => {
       expect(view().layout).toEqual({
         kind: 'table',
         columns: [
-          { column: 'notes', width: null, hidden: false },
-          { column: 'status', width: null, hidden: true },
-          { column: 'title', width: null, hidden: false },
+          { column: 'status', width: null },
+          { column: 'title', width: null },
+          { column: 'notes', width: null },
         ],
       })
     );
     await waitFor(() =>
-      expect(reorder).toHaveBeenNthCalledWith(1, ['notes', 'status', 'title'])
+      expect(reorder).toHaveBeenNthCalledWith(1, ['status', 'title', 'notes'])
     );
     await moveName('left');
     await waitFor(() =>
       expect(view().layout).toEqual({
         kind: 'table',
         columns: [
-          { column: 'title', width: null, hidden: false },
-          { column: 'status', width: null, hidden: true },
-          { column: 'notes', width: null, hidden: false },
+          { column: 'title', width: null },
+          { column: 'status', width: null },
+          { column: 'notes', width: null },
         ],
       })
     );
@@ -1985,9 +1983,9 @@ describe('database table view', () => {
           layout: {
             kind: 'table',
             columns: [
-              { column: 'title', width: 240, hidden: false },
-              { column: 'status', width: null, hidden: false },
-              { column: 'notes', width: null, hidden: false },
+              { column: 'title', width: 240 },
+              { column: 'status', width: null },
+              { column: 'notes', width: null },
             ],
           },
         }}
@@ -2011,9 +2009,9 @@ describe('database table view', () => {
       layout: {
         kind: 'table',
         columns: [
-          { column: 'status', width: null, hidden: false },
-          { column: 'title', width: 240, hidden: false },
-          { column: 'notes', width: null, hidden: false },
+          { column: 'status', width: null },
+          { column: 'title', width: 240 },
+          { column: 'notes', width: null },
         ],
       },
     });
@@ -2037,7 +2035,6 @@ describe('database table view', () => {
     expect(fixture.reorder).toHaveBeenCalledTimes(1);
     expect(fixture.reorder).toHaveBeenNthCalledWith(1, [
       'notes',
-      'status',
       'title',
       'owner',
     ]);
@@ -2046,7 +2043,6 @@ describe('database table view', () => {
     await waitFor(() => expect(fixture.requests).toHaveLength(2));
     expect(fixture.reorder).toHaveBeenNthCalledWith(2, [
       'notes',
-      'status',
       'owner',
       'title',
     ]);
@@ -2081,10 +2077,9 @@ describe('database table view', () => {
     expect(fixture.view().layout).toEqual({
       kind: 'table',
       columns: [
-        { column: 'notes', width: null, hidden: false },
-        { column: 'status', width: null, hidden: true },
-        { column: 'title', width: null, hidden: false },
-        { column: 'owner', width: null, hidden: false },
+        { column: 'notes', width: null },
+        { column: 'title', width: null },
+        { column: 'owner', width: null },
       ],
     });
     expect(fixture.view().query).toEqual({
@@ -2122,10 +2117,9 @@ describe('database table view', () => {
     expect(fixture.view().layout).toEqual({
       kind: 'table',
       columns: [
-        { column: 'title', width: null, hidden: false },
-        { column: 'status', width: null, hidden: true },
-        { column: 'notes', width: null, hidden: false },
-        { column: 'owner', width: null, hidden: false },
+        { column: 'title', width: null },
+        { column: 'notes', width: null },
+        { column: 'owner', width: null },
       ],
     });
   });
@@ -2140,10 +2134,10 @@ describe('database table view', () => {
       layout: {
         kind: 'table',
         columns: [
-          { column: 'owner', width: null, hidden: false },
-          { column: 'title', width: null, hidden: false },
-          { column: 'notes', width: null, hidden: false },
-          { column: 'status', width: null, hidden: false },
+          { column: 'owner', width: null },
+          { column: 'title', width: null },
+          { column: 'notes', width: null },
+          { column: 'status', width: null },
         ],
       },
     };
@@ -2159,7 +2153,7 @@ describe('database table view', () => {
     expect(fixture.view()).toEqual(selected);
   });
 
-  it('lets viewers move and hide columns while keeping every record accessible and restoring its layout', async () => {
+  it('lets viewers move columns in their own layout without writing the table', async () => {
     const { source, setColumns, setTable } = createFakeRowsSource({
       columns,
       table: {
@@ -2189,9 +2183,9 @@ describe('database table view', () => {
       layout: {
         kind: 'table',
         columns: [
-          { column: 'title', width: null, hidden: false },
-          { column: 'status', width: null, hidden: true },
-          { column: 'notes', width: null, hidden: false },
+          { column: 'title', width: null },
+          { column: 'status', width: null },
+          { column: 'notes', width: null },
         ],
       },
     });
@@ -2208,22 +2202,6 @@ describe('database table view', () => {
         onViewChange={changeView}
         addColumn={() => null}
         boardPositions={unplacedCards}
-        renderToolbar={() => (
-          <DatabaseToolbar
-            columns={source.columns()}
-            views={[]}
-            view={view()}
-            canEdit={false}
-            search=""
-            onSearchChange={vi.fn()}
-            onSelectView={vi.fn()}
-            onChangeView={changeView}
-            onCreateView={vi.fn(() => okAsync(undefined))}
-            onRenameView={vi.fn(() => okAsync(undefined))}
-            onDeleteView={vi.fn(() => okAsync(undefined))}
-            onReorderViews={vi.fn()}
-          />
-        )}
       />
     ));
     const headers = () =>
@@ -2245,23 +2223,21 @@ describe('database table view', () => {
       key: 'Enter',
     });
     await waitFor(() =>
-      expect(headers()).toEqual(['Notes column menu', 'Name column menu'])
+      expect(headers()).toEqual([
+        'Status column menu',
+        'Name column menu',
+        'Notes column menu',
+      ])
     );
     expect(view().layout).toEqual({
       kind: 'table',
       columns: [
-        { column: 'notes', width: null, hidden: false },
-        { column: 'status', width: null, hidden: true },
-        { column: 'title', width: null, hidden: false },
+        { column: 'status', width: null },
+        { column: 'title', width: null },
+        { column: 'notes', width: null },
       ],
     });
 
-    openMenu('Name');
-    fireEvent.keyDown(
-      await screen.findByRole('menuitem', { name: 'Hide column' }),
-      { key: 'Enter' }
-    );
-    await waitFor(() => expect(headers()).toEqual(['Notes column menu']));
     fireEvent.click(screen.getByRole('button', { name: 'Open Plan launch' }));
     const record = await screen.findByRole('dialog');
     expect(
@@ -2273,19 +2249,6 @@ describe('database table view', () => {
     );
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
-    fireEvent.click(screen.getByRole('button', { name: 'View settings' }));
-    fireEvent.click(await screen.findByRole('switch', { name: 'Name' }));
-    await waitFor(() =>
-      expect(headers()).toEqual(['Notes column menu', 'Name column menu'])
-    );
-    expect(view().layout).toEqual({
-      kind: 'table',
-      columns: [
-        { column: 'notes', width: null, hidden: false },
-        { column: 'status', width: null, hidden: true },
-        { column: 'title', width: null, hidden: false },
-      ],
-    });
     expect(source.write).not.toHaveBeenCalled();
   });
 

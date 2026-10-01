@@ -105,7 +105,6 @@ async fn a_new_view_goes_after_the_tables_others_and_comes_with_the_detail() {
             columns: vec![ViewColumn {
                 column: seeded.name_column.id,
                 width: Some(240),
-                hidden: false,
             }],
         },
     )
@@ -127,7 +126,6 @@ async fn a_new_view_goes_after_the_tables_others_and_comes_with_the_detail() {
             columns: vec![ViewColumn {
                 column: seeded.name_column.id,
                 width: Some(240),
-                hidden: false,
             }],
         }
     );

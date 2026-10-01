@@ -581,7 +581,7 @@ describe('database toolbar view controls', () => {
     expect(screen.getByRole('button', { name: 'Sort 1' })).toBeTruthy();
   });
 
-  it('hides a table column and switches a stored view to a board', async () => {
+  it('switches a stored table view to a board', async () => {
     const change = vi.fn();
     render(() => (
       <DatabaseToolbar
@@ -625,8 +625,8 @@ describe('database toolbar view controls', () => {
             layout: {
               kind: 'table',
               columns: [
-                { column: 'due', width: 180, hidden: true },
-                { column: 'name', width: 240, hidden: false },
+                { column: 'due', width: 180 },
+                { column: 'name', width: 240 },
               ],
             },
             createdAt: '2026-09-01T00:00:00Z',
@@ -643,8 +643,8 @@ describe('database toolbar view controls', () => {
           layout: {
             kind: 'table',
             columns: [
-              { column: 'due', width: 180, hidden: true },
-              { column: 'name', width: 240, hidden: false },
+              { column: 'due', width: 180 },
+              { column: 'name', width: 240 },
             ],
           },
           createdAt: '2026-09-01T00:00:00Z',
@@ -670,32 +670,8 @@ describe('database toolbar view controls', () => {
     expect(
       screen.getByRole('button', { name: 'Table' }).getAttribute('aria-pressed')
     ).toBe('true');
-    expect(
-      (screen.getByRole('switch', { name: 'Due' }) as HTMLInputElement).checked
-    ).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: 'Table' }));
     expect(change).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('switch', { name: 'Status' }));
-    expect(change).toHaveBeenLastCalledWith({
-      layout: {
-        kind: 'table',
-        columns: [
-          { column: 'due', width: 180, hidden: true },
-          { column: 'name', width: 240, hidden: false },
-          { column: 'status', width: null, hidden: true },
-        ],
-      },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Show all columns' }));
-    expect(change).toHaveBeenLastCalledWith({
-      layout: {
-        kind: 'table',
-        columns: [
-          { column: 'due', width: 180, hidden: false },
-          { column: 'name', width: 240, hidden: false },
-        ],
-      },
-    });
     fireEvent.click(screen.getByRole('button', { name: 'Board' }));
     expect(change).toHaveBeenLastCalledWith({
       layout: {

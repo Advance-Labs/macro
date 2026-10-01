@@ -500,7 +500,6 @@ export function DatabaseRecordsView(props: {
               onReorderColumn={columnLayout.reorderColumn}
               onRenameColumn={props.onRenameColumn}
               onSort={columnLayout.sort}
-              onHide={props.onViewChange ? columnLayout.hideColumn : undefined}
               onMove={props.onViewChange ? columnLayout.moveColumn : undefined}
               onInsertColumn={
                 props.canEdit && props.createColumn

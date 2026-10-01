@@ -1,23 +1,14 @@
 import { moveBeside } from './move-beside';
 
-/** Insert at a visible header edge while preserving each hidden column's slot. */
+/** The order with `columnId` dropped at `targetId`'s edge; `undefined` when nothing moves. */
 export function reorderDatabaseColumns(
   order: readonly string[],
-  hiddenColumns: readonly string[],
   columnId: string,
   targetId: string,
   edge: 'before' | 'after'
 ): string[] | undefined {
-  const hidden = new Set(hiddenColumns);
-  const visible = moveBeside(
-    order.filter((id) => !hidden.has(id)),
-    columnId,
-    targetId,
-    edge
-  );
-  if (!visible) return;
-  const nextOrder = mergeDatabaseColumnOrder(order, visible);
-  return nextOrder.some((id, index) => id !== order[index])
+  const nextOrder = moveBeside(order, columnId, targetId, edge);
+  return nextOrder?.some((id, index) => id !== order[index])
     ? nextOrder
     : undefined;
 }

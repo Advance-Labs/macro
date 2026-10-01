@@ -1982,8 +1982,6 @@ export type ViewColumn = {
   column: ColumnId;
   /**  Its width in pixels; the default when unset. */
   width?: number | null;
-  /**  Whether it is hidden. */
-  hidden?: boolean;
 };
 
 /**  Identifier of a saved view of a table. */

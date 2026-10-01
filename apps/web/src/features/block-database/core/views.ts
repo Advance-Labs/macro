@@ -8,11 +8,10 @@ import { type DatabaseViewColumn, isBoardGroupColumn } from './database-view';
 import { moveBeside } from './move-beside';
 import { titleColumn } from './table';
 
-/** A table layout's column, with how it shows. */
+/** A table layout's column, with its width. */
 type LayoutColumn = {
   column: DatabaseViewColumn;
   width: number | null;
-  hidden: boolean;
 };
 
 /**
@@ -27,16 +26,14 @@ export function layoutColumns(
   const byId = new Map(columns.map((column) => [column.id, column]));
   const shown = listed.flatMap((entry) => {
     const column = byId.get(entry.column);
-    return column
-      ? [{ column, width: entry.width ?? null, hidden: !!entry.hidden }]
-      : [];
+    return column ? [{ column, width: entry.width ?? null }] : [];
   });
   const named = new Set(shown.map((entry) => entry.column.id));
   return [
     ...shown,
     ...columns
       .filter((column) => !named.has(column.id))
-      .map((column) => ({ column, width: null, hidden: false })),
+      .map((column) => ({ column, width: null })),
   ];
 }
 
@@ -47,18 +44,17 @@ function tableLayout(entries: readonly LayoutColumn[]): ViewLayout {
       (entry): ViewColumn => ({
         column: entry.column.id,
         width: entry.width,
-        hidden: entry.hidden,
       })
     ),
   };
 }
 
-/** The table layout with one column's width or visibility changed. */
+/** The table layout with one column's width changed. */
 export function withLayoutColumn(
   layout: ViewLayout,
   columns: readonly DatabaseViewColumn[],
   columnId: string,
-  change: Partial<Pick<LayoutColumn, 'width' | 'hidden'>>
+  change: Partial<Pick<LayoutColumn, 'width'>>
 ): ViewLayout {
   return tableLayout(
     layoutColumns(layout, columns).map((entry) =>

@@ -19,7 +19,7 @@ import type { ViewChange } from '../queries/views';
 
 /**
  * A view's columns as the table shows them, and the header actions that
- * change them: sorting, hiding, resizing, reordering and inserting.
+ * change them: sorting, resizing, reordering and inserting.
  */
 export function createColumnLayout(options: {
   view: Accessor<DatabaseView>;
@@ -45,10 +45,7 @@ export function createColumnLayout(options: {
     disposed = true;
   });
   const layout = () => layoutColumns(options.view().layout, options.columns());
-  const visibleColumns = () =>
-    layout()
-      .filter((entry) => !entry.hidden)
-      .map((entry) => entry.column);
+  const visibleColumns = () => layout().map((entry) => entry.column);
   const widths = () =>
     Object.fromEntries(layout().map((entry) => [entry.column.id, entry.width]));
   const columnOrder = () => layout().map((entry) => entry.column.id);
@@ -68,16 +65,6 @@ export function createColumnLayout(options: {
               : 'descending'
         ),
       },
-    });
-  }
-  function hideColumn(columnId: string) {
-    options.changeView({
-      layout: withLayoutColumn(
-        options.view().layout,
-        options.columns(),
-        columnId,
-        { hidden: true }
-      ),
     });
   }
   function resizeColumn(columnId: string, width: number) {
@@ -110,15 +97,7 @@ export function createColumnLayout(options: {
     edge: 'before' | 'after'
   ) {
     const order = columnOrder();
-    const nextOrder = reorderDatabaseColumns(
-      order,
-      layout()
-        .filter((entry) => entry.hidden)
-        .map((entry) => entry.column.id),
-      columnId,
-      targetId,
-      edge
-    );
+    const nextOrder = reorderDatabaseColumns(order, columnId, targetId, edge);
     if (!nextOrder) return;
     setSchemaError('');
     const showOrder = (ids: readonly string[]) =>
@@ -199,7 +178,6 @@ export function createColumnLayout(options: {
     widths,
     schemaError,
     sort,
-    hideColumn,
     resizeColumn,
     forgetColumn,
     reorderColumn,

@@ -30,10 +30,8 @@ import {
   boardGroupColumns,
   boardLayout,
   laneLabel,
-  layoutColumns,
   movedViewOrder,
   withLaneHidden,
-  withLayoutColumn,
 } from '../core/views';
 import {
   type DatabaseOpFailure,
@@ -408,29 +406,7 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
                 <p class="px-2 pb-2 text-xs font-medium text-ink">
                   {board() ? 'Card fields' : 'Columns'}
                 </p>
-                <Show
-                  when={board()}
-                  fallback={
-                    <For each={layoutColumns(layout(), props.columns)}>
-                      {(entry) => (
-                        <ColumnSwitch
-                          name={entry.column.name}
-                          checked={!entry.hidden}
-                          onChange={(visible) =>
-                            props.onChangeView({
-                              layout: withLayoutColumn(
-                                layout(),
-                                props.columns,
-                                entry.column.id,
-                                { hidden: !visible }
-                              ),
-                            })
-                          }
-                        />
-                      )}
-                    </For>
-                  }
-                >
+                <Show when={board()}>
                   {(current) => (
                     <For
                       each={props.columns.filter(
@@ -464,32 +440,6 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
                   </p>
                 </Show>
               </div>
-              <Show
-                when={layoutColumns(layout(), props.columns).some(
-                  (entry) => entry.hidden
-                )}
-              >
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  class="mt-2"
-                  onClick={() => {
-                    const current = layout();
-                    if (current.kind !== 'table') return;
-                    props.onChangeView({
-                      layout: {
-                        ...current,
-                        columns: current.columns.map((entry) => ({
-                          ...entry,
-                          hidden: false,
-                        })),
-                      },
-                    });
-                  }}
-                >
-                  Show all columns
-                </Button>
-              </Show>
               <Show when={props.addColumn}>
                 <div class="mt-2 border-t border-edge-muted pt-3">
                   {props.addColumn}
