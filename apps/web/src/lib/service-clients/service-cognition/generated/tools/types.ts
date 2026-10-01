@@ -1598,17 +1598,18 @@ export type ReadThreadReadContent =
     };
 
 /**
- * Add a column to a table in one of the user's databases. Columns are typed, and the type is what makes the data useful later — a `date` column sorts and filters by time, a `number` column sums, a `select` column constrains what can be written to it.
+ * Add a column to a table in one of the user's databases. Type it by what its values are, not by how they were typed at you:
  *
- * Pick the type from what the values actually are, not from how they were typed at you: "Going / Maybe / Declined" is a `select`, not `text`; "$1,200" is a `number`; "Aug 13" is a `date`. Use `text` only when the values really are free-form.
+ * - a person (host, owner, assignee, attendee, author): a person column, `entity` then `USER` as below;
+ * - a Macro document, task, company, call, channel or project: `entity` with that kind;
+ * - a row of another table in this database: a relation, `entity` with `linkToTableId`;
+ * - a status, stage or category ("Going / Maybe / Declined"): `select`, with `isMultiSelect` or `tag` for several;
+ * - money, counts and scores ("$1,200"): `number`; dates ("Aug 13"): `date`; yes/no: `boolean`; URLs: `link`;
+ * - free text only: `text`. Never text for people or Macro items.
  *
- * - `isMultiSelect: true` makes the column hold several values at once. In SQL it is written as a list (`['a', 'b']`) and `col HAS 'x'` tests membership.
- * - `linkToTableId` makes it a **relation column** pointing at another table, so rows on one side reference rows on the other by row id. Write it as a list of row ids and join through it (`JOIN guests g ON i.guest = g.row_id`). The response's relation metadata gives the target table.
- * - `entity` columns hold references to Macro things (people, documents); say which with `specificEntityType`. Their values are typed ids such as `macro|sam@example.com`.
+ * `AddColumn` takes `specificEntityType` for an entity column (`USER` for a person column). A relation holds row ids of the target table and is written as a list of them. Select and tag columns accept only the labels in `options`, so list every value the data has; add more later with AddColumnOptions.
  *
- * Select and tag columns take their options as **explicit schema**: pass every label the column should accept in `options`. SQL only accepts those labels — a select column created with no options accepts nothing — and more can be added later with AddColumnOptions.
- *
- * Requires edit access. The response is the table's database schema after the change, including the new column's exact `sqlName`. If `database` is null, the column was still created; call DescribeDatabase using databaseId before continuing, without repeating AddColumn.
+ * Requires edit access. The response is the database's schema after the change, with the new column's exact `sqlName`. If `database` is null, the column was still created: call DescribeDatabase with databaseId before continuing, and do not repeat AddColumn.
  */
 export interface AddColumn {
   /**
@@ -1637,7 +1638,7 @@ export interface AddColumn {
    */
   specificEntityType?: ToolEntityType | null;
   /**
-   * Id of another table to link to, making this a link column whose rows reference rows over there. Omit for an ordinary column. The target table must be one the user can reach.
+   * Id of another table of this database, making this a relation whose cells hold that table's row ids. Omit for any other column.
    */
   linkToTableId?: string | null;
 }
@@ -1766,9 +1767,9 @@ export interface ToolColumn {
    */
   safeTypes: SpelledColumnType[];
   /**
-   * Types whose conversion checks each value first and refuses, or with
-   * `clearInvalid` empties, the ones that do not fit. Any type in neither
-   * list is refused while the column holds values.
+   * Types whose conversion checks each value first and refuses if any does
+   * not fit. Any type in neither list is refused while the column holds
+   * values.
    */
   checkedTypes: SpelledColumnType[];
 }
@@ -1801,7 +1802,7 @@ export interface ToolRelation {
 /**
  * Add allowed labels to a select, select_number, or tag column. A select column's options are explicit schema: SQL accepts exactly the labels the column carries and rejects everything else, so a value that does not exist yet has to be added here before it can be written.
  *
- * Use this when an INSERT or UPDATE was rejected for an unknown option, or when the user names a new status, stage, or category. Labels the column already has are ignored, so it is safe to send the whole set. A select_number column's labels must be numbers.
+ * Use this when the user names a new status, stage, or category, or when a write they asked for was refused for an unknown option. Labels the column already has are ignored, so it is safe to send the whole set. A select_number column's labels must be numbers.
  *
  * This is add-only — options are never renamed or removed here, because both would change what rows already holding them mean. Requires edit access. The response is the column after the change, with the labels SQL now accepts, plus the database's refreshed schema. If `database` is null, the option change was still saved; heed warning and DescribeDatabase before continuing. Do not treat a failed follow-up read as a rejected mutation.
  */
@@ -2339,13 +2340,11 @@ export interface SpreadsheetChange {
 /**
  * Change a column's type, converting every existing value. The column keeps its id and name.
  *
- * DescribeDatabase lists each column's `safeTypes` (every value converts) and `checkedTypes` (each value is checked first); any other type is refused while the column holds values, so add a new column instead. An empty column takes any type.
+ * DescribeDatabase lists each column's `safeTypes` (every value converts) and `checkedTypes` (each value is checked first). Any other type is refused while the column holds values; an empty column takes any type. If a value does not fit ("soon" as a number), or a multi-valued cell would lose values to a single-valued type, nothing changes and the error counts the misfits and quotes a few: fix them with UPDATE and retry, or add a new column. Clear values only when the user asked for that.
  *
- * Conversion is all or nothing by default: if any value cannot become the new type without losing information ("soon" as a number), nothing changes and the error counts the values and quotes a few. Fix them with UPDATE and retry, or pass `clearInvalid: true` to empty them instead; a cell with several values going to a single-valued type then keeps its first. Only clear when the user accepts losing those values. Converting to `select` or `tag` turns the distinct existing values into the column's options; pass `options` to add labels no row has yet.
- *
- * - `entity` needs `specificEntityType` (e.g. `USER` for people, `DOCUMENT`).
- * - `linkToTableId` makes it a relation to rows of another table of this database; pass `dataType: entity` with it. Relations are always multi-valued, and the column must be empty.
- * - `tag` columns are always multi-valued.
+ * - `entity` needs `specificEntityType`: `USER` makes a person column; `DOCUMENT`, `TASK` and the rest reference other Macro items.
+ * - `linkToTableId` (with `dataType: entity`) makes a relation to rows of another table of this database. Relations are always multi-valued, and the column must be empty.
+ * - Converting to `select` or `tag` turns the distinct existing values into options; `options` adds labels no row has yet. `tag` columns are always multi-valued.
  *
  * Requires edit access. The response is the schema after the change.
  */
@@ -3570,11 +3569,11 @@ export interface CreateChannelResponse {
   summary: string;
 }
 /**
- * Create a new Macro database owned by the current user — the thing they see as a table. It starts with one table, "Table 1", with no rows and one text column, "Name", for each row's title, beside the implicit `row_id`.
+ * Create a new Macro database owned by the current user — the thing they see as a table. It starts with one table, "Table 1", with no rows and one text column, "Name", which is each row's title, beside the implicit `row_id`.
  *
  * Use this when the user asks for a new tracker, list, or table ("make me a table of applicants"). Check ListDatabases first if there is any chance one already exists under that name — a second database with the same name is confusing and there is no merge.
  *
- * The response acknowledges the new database `id` and `name`, with its full schema in `database` including the starter table's id. If `database` is null, creation still succeeded: heed the warning and call DescribeDatabase with the returned id; never repeat CreateDatabase just because schema refresh failed. The usual shape of the work is: CreateDatabase, RenameTable on the starter table when the user named their table, one AddColumn per further column the user described (use Name for each row's title rather than adding another), then QueryDatabase with INSERTs for the rows. For more tables, CreateTable only after the starter table is used.
+ * The response acknowledges the new database `id` and `name`, with its full schema in `database` including the starter table's id. If `database` is null, creation still succeeded: heed the warning and call DescribeDatabase with the returned id; never repeat CreateDatabase just because schema refresh failed. The usual shape of the work is: CreateDatabase, RenameTable on the starter table when the user named their table, one AddColumn per further column the user described, typed by what it holds (use Name for each row's title rather than adding another), then QueryDatabase with INSERTs for the rows. For more tables, CreateTable only after the starter table is used.
  */
 export interface CreateDatabase {
   /**
@@ -3923,9 +3922,9 @@ export interface ToolReminder {
   enabled: boolean;
 }
 /**
- * Add a table — what the user sees as a tab — to an existing database. The new table starts empty, with no columns of its own beyond the implicit `row_id`.
+ * Add a table — what the user sees as a tab — to an existing database. The new table starts empty, with no columns beyond the implicit `row_id`; the first column you add is each row's title.
  *
- * Use this for a genuinely separate list that belongs with the others ("add a Sessions tab to the offsite tracker"), not for more columns on an existing one — that is AddColumn. Two tables in the same database can be joined in one query, and a link column between them (AddColumn with `linkToTableId`) is how rows on one side point at rows on the other.
+ * Use this for a genuinely separate list that belongs with the others ("add a Sessions tab to the offsite tracker"), not for more columns on an existing one — that is AddColumn. Tables of one database can be joined in one query, and a relation (AddColumn with `linkToTableId`) is how rows of one point at rows of the other.
  *
  * Requires edit access to the database. The response is the database's refreshed schema, so the new table's `id` and its exact `sqlName` are there without a second call — SQL names are derived from display names and disambiguated against the ones already taken, so read the `sqlName` rather than deriving it yourself. If `database` is null, creation still succeeded; call DescribeDatabase using databaseId before continuing. Do not repeat the create.
  */
@@ -4229,7 +4228,7 @@ export interface DeleteTagResponse {
   message: string;
 }
 /**
- * Read one database's schema: its tables with their quoted `sqlName` and version, and each table's columns with their SQL names, value types, whether they hold multiple values, the exact labels a select column accepts, and the target table of a relation column.
+ * Read one database's schema: its tables with their quoted `sqlName`, version and saved views, and each table's columns with their SQL names, types (with the kind of an entity column, `USER` for a person column), whether they hold several values, the labels a select column accepts, the target table of a relation, and the types the column can change to.
  *
  * **Call this before writing SQL for a database you have not already described in this conversation.** Guessing table or column names is the single most common way a query fails, and the schema is small. Get the `databaseId` from ListDatabases. QueryDatabase describes the SQL dialect.
  */
@@ -5974,20 +5973,24 @@ export interface NameSearch {
  *
  * A small SQL subset, compiled by Macro rather than run by a SQL engine. What is listed here is everything there is:
  *
- * - **Reads:** `SELECT [DISTINCT] items FROM [database.]table [alias] [JOIN [database.]table [alias] ON a.col = b.col ...] [WHERE cond] [GROUP BY col] [ORDER BY col|alias|position [ASC|DESC], ...] [LIMIT n [OFFSET m]]`. Items are `*`, columns, or `COUNT(*)`, `COUNT(col)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`, each optionally named with `AS name`; the alias names the result column and can be ordered by. No other expressions or functions, no HAVING.
- * - **Count per related row:** `SELECT p."Name" AS party, COUNT(*) AS invites FROM "Party Invites"."Invites" i JOIN "Party Invites"."Parties" p ON i."Party" = p.row_id GROUP BY p."Name" ORDER BY invites DESC`.
- * - **No subqueries** (`IN (SELECT ...)`) and no comma joins: SELECT the ids first, then use them as literals (`WHERE row_id IN ('<id>', '<id>')`), or JOIN.
- * - **Conditions:** `col = | != | < | <= | > | >= literal`, `col [NOT] IN ('a', 'b')`, `col [NOT] LIKE 'pat%'` (case-insensitive), `col IS [NOT] NULL`, `col [NOT] HAS 'x'` (membership in a multi-valued column), combined with AND, OR and parentheses.
+ * - **Reads:** `SELECT [DISTINCT] items FROM [database.]table [alias] {[LEFT] JOIN [database.]table [alias] ON a.col = b.col [AND ...]} [WHERE cond] [GROUP BY col] [ORDER BY col|alias|position [ASC|DESC], ...] [LIMIT n [OFFSET m]]`. Items are `*`, columns, or `COUNT(*)`, `COUNT(col)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`, each optionally named with `AS name`; the alias names the result column and can be ordered by. GROUP BY takes one column, and a grouped SELECT lists only that column beside its aggregates. No other expressions or functions, no HAVING, and WHERE compares a column only with a literal.
+ * - **Joins** are how tables combine:
+ *   - **What joins:** each `ON` pairs a column of the newly joined table with one of a table already in the query, by `=` (`HAS` means the same), several pairs joined by AND. Both sides are the same kind: text with text (exact and case-sensitive), number with number, date with date; a relation, person or other entity column with `row_id` or another entity column, such as `macro.people.id`. Select columns match only when they share options. Tables may come from different databases, a table may join itself under another alias, and joins chain: `SELECT t."Name", d."Name", p.email FROM "Ops"."Tasks" t JOIN "Sales"."Deals" d ON t."Deal" = d.row_id JOIN macro.people p ON d."Owner" = p.id`.
+ *   - **What comes back:** JOIN keeps only rows with a match; LEFT JOIN keeps every row of the earlier tables, with NULL in the joined table's columns where nothing matched. A multi-valued relation or person cell matches once per value, so a task with two assignees gives two rows, and an empty cell matches nothing. Aggregates count the joined rows: `SELECT p.name AS person, COUNT(*) AS tasks FROM "Tasks" t JOIN macro.people p ON t."Assignees" = p.id GROUP BY p.name ORDER BY tasks DESC`. To filter on a joined table's columns, use JOIN rather than LEFT JOIN.
+ *   - **Refused:** any `ON` test but `=` or `HAS`, OR in `ON`, an `ON` within one table, RIGHT, FULL and comma joins.
+ * - **Row cap:** each table a query reads stops at 20,000 rows and is then listed in `truncatedTables`, so any total over it is partial. Only `=`, IN and HAS tests on select, person, entity and relation columns (not `row_id`) narrow what a table reads; other conditions apply to the rows read. A joined table reads only the rows matching the values the earlier rows join on, up to 100 distinct values; past that it reads whole.
+ * - **No subqueries** (`IN (SELECT ...)`): SELECT the ids first, then use them as literals (`WHERE row_id IN ('<id>', '<id>')`), or JOIN.
+ * - **Conditions:** `col = | != | < | <= | > | >= literal`, `col [NOT] IN ('a', 'b')`, `col [NOT] LIKE '%pat%'` (case-insensitive), `col IS [NOT] NULL`, `col [NOT] HAS 'x'` (membership in a multi-valued column), combined with AND, OR and parentheses.
  * - **Literals:** `'text'` (a quote inside is doubled: `'Wolf''s place'`), numbers, TRUE/FALSE, NULL; dates are `'2026-08-13'` or an ISO date-time.
- * - **Writes:** `INSERT INTO table (col, ...) VALUES (...), (...)` or `INSERT INTO table DEFAULT VALUES`; `UPDATE table SET col = value, ... WHERE cond`; `DELETE FROM table WHERE cond`. The WHERE is required and takes any condition; `WHERE row_id = '<id>'` or `row_id IN ('<id>', ...)` names rows, and every id named must exist: read the ids first. `SET col = other_col` copies each row's own value of a column of the same kind. A multi-valued cell is written as a list: `tags = ['Urgent', 'Backend']`; `NULL` clears a cell.
- * - **`row_id`** is every row's id. A row-shaped SELECT returns each result row's in `rowIds`, and an INSERT the new rows' in `insertedRowIds`; never invent one. A row the app shows as "Unnamed" has a NULL name: find it with `WHERE "Name" IS NULL`.
- * - **Select columns take their option labels as text** (`status = 'Going'`), never option ids. Only the labels the column carries are accepted; add new ones with AddColumnOptions.
- * - **Relation columns hold the ids of rows in another table.** Write them as a list of row ids (`guests = ['<row id>']`), test them with `HAS '<row id>'`, and join through them with `ON i.guest = g.row_id` (`ON i.guest HAS g.row_id` means the same). Never compare a relation to a name.
- * - **Entity columns hold Macro ids** such as `macro|sam@example.com` for a person. Respect each column's `specificEntityType`; never invent an id or replace it with a name.
- * - **People:** `macro.people` lists everyone the user knows, with `id` (their Macro id), `name` and `email`. Join a person column to it to read emails: `JOIN macro.people p ON t."Owner" = p.id`.
- * - **Names are display names.** Quote a table or column name with double quotes when it has spaces or punctuation (`FROM "Guest List" WHERE "Due Date" < '2026-09-01'`); names match case-insensitively, and a miss suggests the closest name. A table may be qualified by its database's name (`FROM "Offsite"."Guests"`).
- * - **Changing a column's type:** `ALTER TABLE table ALTER COLUMN col TYPE type [USING NULL]`, where type is text, number, boolean, date, link, select, select_number, tag or entity(USER), entity(DOCUMENT), entity(TASK)…, with `[]` for several values (`select[]`). Pick from the column's `safeTypes` and `checkedTypes`: any other type is refused while the column holds values (add a new column instead). A value that does not fit refuses the statement, counting and quoting the misfits; fix them with UPDATE, or add `USING NULL` to empty them (a cell with several values keeps its first) only when the user accepts losing those values.
- * - **Other schema changes use tools, not SQL DDL:** CreateDatabase, RenameDatabase, CreateTable, RenameTable, ReorderTables, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.
+ * - **Writes:** `INSERT INTO table (col, ...) VALUES (...), (...)` or `INSERT INTO table DEFAULT VALUES`; `UPDATE table SET col = value, ... WHERE cond`; `DELETE FROM table WHERE cond`. The WHERE is required and takes any condition; `WHERE row_id = '<id>'` or `row_id IN ('<id>', ...)` names rows, and every id named must exist: read the ids first. `SET col = other_col` copies each row's own value of a column of the same kind. A multi-valued cell is written as a list, `['Urgent', 'Backend']`; `NULL` clears a cell.
+ * - **`row_id`** is every row's id. A row-shaped SELECT returns each result row's in `rowIds`, and an INSERT the new rows' in `insertedRowIds`; never invent one. A row's title is its first column, and a row the app shows as "Unnamed" has a NULL title: find it with `WHERE "Name" IS NULL`.
+ * - **Names are display names.** Double-quote a table or column name with spaces or punctuation (`FROM "Guest List" WHERE "Due Date" < '2026-09-01'`); names match case-insensitively, and a miss suggests the closest name. A table may be qualified by its database's name (`FROM "Offsite"."Guests"`).
+ * - **Select and tag columns take option labels** (`"Status" = 'Going'`), never option ids. Only labels the column carries are accepted; add new ones with AddColumnOptions.
+ * - **Relations hold the row ids of another table.** Write a list of row ids (`"Guests" = ['<row id>']`), test with `HAS '<row id>'`, and join with `ON i."Guest" = g.row_id`: `SELECT p."Name" AS party, COUNT(*) AS invites FROM "Invites" i JOIN "Parties" p ON i."Party" = p.row_id GROUP BY p."Name"`. Never compare a relation to a name.
+ * - **Person and other entity columns hold Macro ids,** never names: `'macro|sam@example.com'` for a person, a list for a multi-valued column. Respect each column's `specificEntityType`.
+ * - **People:** `macro.people` is everyone the user knows (contacts and teammates) with `id`, `name` and `email`, the viewer included: “me” is the row whose email is the signed-in user's. It is read-only. Find people there, then write their ids: `SELECT id, name, email FROM macro.people WHERE name LIKE '%julia%' OR email LIKE '%julia%'`, then `UPDATE "Parties" SET "Host" = 'macro|julia@example.com' WHERE row_id = '<id>'`. Join to read names or emails: `JOIN macro.people p ON t."Owner" = p.id`. Never invent a person or an id; when a name matches several people or none, ask.
+ * - **Changing a column's type:** `ALTER TABLE table ALTER COLUMN col TYPE type`, the same change as ChangeColumnType, where type is text, number, boolean, date, link, select, select_number, tag, or entity(USER), entity(DOCUMENT), entity(TASK)…, with `[]` for several values (`select[]`). Pick from the column's `safeTypes` and `checkedTypes`. A value that does not fit, or a multi-valued cell a single-valued type would truncate, refuses the statement with counts and examples: fix those values with UPDATE, or add a new column.
+ * - **Other schema changes use tools, not SQL:** CreateDatabase, RenameDatabase, CreateTable, RenameTable, ReorderTables, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns, SaveDatabaseView and DeleteDatabaseView.
  * - Tables you only hold view access on are read-only.
  *
  * To change records, first SELECT the rows you mean (their ids are in `rowIds`), then UPDATE or DELETE exactly those with `WHERE row_id IN (...)`. After changing rows, SELECT the affected records to verify the actual result. On a connection failure, inspect before retrying an INSERT.
@@ -7497,35 +7500,15 @@ export interface ResolveDocumentCommentResponse {
   resolved: boolean;
 }
 /**
- * Save a read-only SELECT as a live question and get back the block that shows its answer. Paste the returned `markdown` verbatim — into your reply, or into a document with CreateDocument/EditDocument — and it renders as a live number, table, or chart that re-runs for whoever views it, with their permissions, so it stays current as the data changes.
+ * Save a read-only SELECT as a live question and get back the block that shows its answer. Paste the returned `markdown` verbatim, into your reply or into a document with CreateDocument/EditDocument, and it renders as a live number, table, or chart that re-runs for whoever views it, with their permissions, so it stays current as the data changes.
  *
- * Use it whenever the user asks a question about their data or asks for a chart. Run the SELECT with QueryDatabase first to check it returns what you expect, then save exactly that SQL.
+ * Use it whenever the user asks a question about their data or asks for a chart. Run the SELECT with QueryDatabase first to check it returns what you expect, then save exactly that SQL. The SQL is QueryDatabase's dialect, described there, limited to one SELECT.
  *
  * - `displayMode`: `scalar` for one number (a single COUNT/SUM/AVG), `table` for rows, `bar` to compare categories, `line` for a trend over an ordered column, `area` for a trend whose series add up to a whole, `scatter` to plot one numeric column against another, `pie` for shares of a whole.
- * - `chart` (bar/line/area/scatter/pie): `x` is the label column and `y` the numeric result columns, named exactly as the result columns are — alias aggregates (`COUNT(*) AS invites`) so they have stable names. `color` names a result column whose values split one `y` series into one series per value (e.g. invites per party colored by status); `stack` stacks bar or area series instead of setting them side by side.
+ * - `chart` (bar/line/area/scatter/pie): `x` is the label column and `y` the numeric result columns, named exactly as the result columns are; alias aggregates (`COUNT(*) AS invites`) so they have stable names. `color` names a result column whose values split one `y` series into one series per value (e.g. invites per party colored by status); `stack` stacks bar or area series instead of setting them side by side.
  * - Pass `databaseId` so the question resolves against that database's tables.
  *
  * Saved questions never change. To change one, save a new one and use its new block.
- *
- * ## Dialect
- *
- * A small SQL subset, compiled by Macro rather than run by a SQL engine. What is listed here is everything there is:
- *
- * - **Reads:** `SELECT [DISTINCT] items FROM [database.]table [alias] [JOIN [database.]table [alias] ON a.col = b.col ...] [WHERE cond] [GROUP BY col] [ORDER BY col|alias|position [ASC|DESC], ...] [LIMIT n [OFFSET m]]`. Items are `*`, columns, or `COUNT(*)`, `COUNT(col)`, `SUM(col)`, `AVG(col)`, `MIN(col)`, `MAX(col)`, each optionally named with `AS name`; the alias names the result column and can be ordered by. No other expressions or functions, no HAVING.
- * - **Count per related row:** `SELECT p."Name" AS party, COUNT(*) AS invites FROM "Party Invites"."Invites" i JOIN "Party Invites"."Parties" p ON i."Party" = p.row_id GROUP BY p."Name" ORDER BY invites DESC`.
- * - **No subqueries** (`IN (SELECT ...)`) and no comma joins: SELECT the ids first, then use them as literals (`WHERE row_id IN ('<id>', '<id>')`), or JOIN.
- * - **Conditions:** `col = | != | < | <= | > | >= literal`, `col [NOT] IN ('a', 'b')`, `col [NOT] LIKE 'pat%'` (case-insensitive), `col IS [NOT] NULL`, `col [NOT] HAS 'x'` (membership in a multi-valued column), combined with AND, OR and parentheses.
- * - **Literals:** `'text'` (a quote inside is doubled: `'Wolf''s place'`), numbers, TRUE/FALSE, NULL; dates are `'2026-08-13'` or an ISO date-time.
- * - **Writes:** `INSERT INTO table (col, ...) VALUES (...), (...)` or `INSERT INTO table DEFAULT VALUES`; `UPDATE table SET col = value, ... WHERE cond`; `DELETE FROM table WHERE cond`. The WHERE is required and takes any condition; `WHERE row_id = '<id>'` or `row_id IN ('<id>', ...)` names rows, and every id named must exist: read the ids first. `SET col = other_col` copies each row's own value of a column of the same kind. A multi-valued cell is written as a list: `tags = ['Urgent', 'Backend']`; `NULL` clears a cell.
- * - **`row_id`** is every row's id. A row-shaped SELECT returns each result row's in `rowIds`, and an INSERT the new rows' in `insertedRowIds`; never invent one. A row the app shows as "Unnamed" has a NULL name: find it with `WHERE "Name" IS NULL`.
- * - **Select columns take their option labels as text** (`status = 'Going'`), never option ids. Only the labels the column carries are accepted; add new ones with AddColumnOptions.
- * - **Relation columns hold the ids of rows in another table.** Write them as a list of row ids (`guests = ['<row id>']`), test them with `HAS '<row id>'`, and join through them with `ON i.guest = g.row_id` (`ON i.guest HAS g.row_id` means the same). Never compare a relation to a name.
- * - **Entity columns hold Macro ids** such as `macro|sam@example.com` for a person. Respect each column's `specificEntityType`; never invent an id or replace it with a name.
- * - **People:** `macro.people` lists everyone the user knows, with `id` (their Macro id), `name` and `email`. Join a person column to it to read emails: `JOIN macro.people p ON t."Owner" = p.id`.
- * - **Names are display names.** Quote a table or column name with double quotes when it has spaces or punctuation (`FROM "Guest List" WHERE "Due Date" < '2026-09-01'`); names match case-insensitively, and a miss suggests the closest name. A table may be qualified by its database's name (`FROM "Offsite"."Guests"`).
- * - **Changing a column's type:** `ALTER TABLE table ALTER COLUMN col TYPE type [USING NULL]`, where type is text, number, boolean, date, link, select, select_number, tag or entity(USER), entity(DOCUMENT), entity(TASK)…, with `[]` for several values (`select[]`). Pick from the column's `safeTypes` and `checkedTypes`: any other type is refused while the column holds values (add a new column instead). A value that does not fit refuses the statement, counting and quoting the misfits; fix them with UPDATE, or add `USING NULL` to empty them (a cell with several values keeps its first) only when the user accepts losing those values.
- * - **Other schema changes use tools, not SQL DDL:** CreateDatabase, RenameDatabase, CreateTable, RenameTable, ReorderTables, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.
- * - Tables you only hold view access on are read-only.
  */
 export interface SaveDatabaseQuery {
   /**
@@ -7589,7 +7572,7 @@ export interface SaveDatabaseQueryResponse {
   markdown: string;
 }
 /**
- * Save a table or kanban board view of a Macro database table. Views are shared: everyone who can open the database sees them, so saving one needs edit access. DescribeDatabase first: every reference in a view is an id from it, columns by their id and select options by their option id, never by name. The view filters and sorts the table's own rows: its filter conditions combine with one `and` or `or`, and each test must fit its column's type (text, number, date, checkbox, options, entities, or presence for any column). A board groups its cards by a single-select column, one lane per option. Saving a view under a name the table already has replaces that view, so read `created` in the result. This changes presentation only, never records, and cannot save charts or SQL.
+ * Save a table or kanban board view of one table of a Macro database. Views are shared with everyone who can open the database, so saving one needs edit access. Call DescribeDatabase first: a view names columns and select options by their ids, never by name. The filter's conditions combine with one `and` or `or`, each test fitting its column's type (text, number, date, checkbox, options, entities, or presence for any column); sort keys order the rows. A board groups its cards into lanes by a single-select or single-person column, one lane per value plus one for cards without; a multi-valued column cannot group a board. A card's title is a column, the first by default. Saving under a name the table already has replaces that view, so read `created` in the result; DeleteDatabaseView removes one. Views change presentation, never records, and cannot save charts or SQL.
  */
 export interface SaveDatabaseView {
   /**

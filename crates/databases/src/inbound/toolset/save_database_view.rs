@@ -25,7 +25,17 @@ use crate::domain::ports::DatabasesService;
 #[serde(rename_all = "camelCase")]
 #[schemars(
     title = "SaveDatabaseView",
-    description = "Save a table or kanban board view of a Macro database table. Views are shared: everyone who can open the database sees them, so saving one needs edit access. DescribeDatabase first: every reference in a view is an id from it, columns by their id and select options by their option id, never by name. The view filters and sorts the table's own rows: its filter conditions combine with one `and` or `or`, and each test must fit its column's type (text, number, date, checkbox, options, entities, or presence for any column). A board groups its cards by a single-select column, one lane per option. Saving a view under a name the table already has replaces that view, so read `created` in the result. This changes presentation only, never records, and cannot save charts or SQL."
+    description = "\
+Save a table or kanban board view of one table of a Macro database. Views are shared with \
+everyone who can open the database, so saving one needs edit access. Call DescribeDatabase \
+first: a view names columns and select options by their ids, never by name. The filter's \
+conditions combine with one `and` or `or`, each test fitting its column's type (text, \
+number, date, checkbox, options, entities, or presence for any column); sort keys order the \
+rows. A board groups its cards into lanes by a single-select or single-person column, one \
+lane per value plus one for cards without; a multi-valued column cannot group a board. A \
+card's title is a column, the first by default. Saving under a name the table already has \
+replaces that view, so read `created` in the result; DeleteDatabaseView removes one. Views \
+change presentation, never records, and cannot save charts or SQL."
 )]
 pub struct SaveDatabaseView {
     /// Database id from ListDatabases.

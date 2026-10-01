@@ -23,7 +23,6 @@ fn database_workflow_reaches_every_agent_host_without_unrelated_scoped_tools() {
             "DeleteTable",
             "RenameColumn",
             "ChangeColumnType",
-            "clearInvalid",
             "DeleteColumn",
             "ReorderColumns",
             "ReorderTables",
@@ -31,8 +30,11 @@ fn database_workflow_reaches_every_agent_host_without_unrelated_scoped_tools() {
             "<m-db-query>",
             "verbatim",
             "databaseId",
-            "'Wolf''s place'",
-            "No subqueries",
+            "macro.people",
+            "entity(USER)",
+            "ListTeamMembers",
+            "DeleteDatabaseView",
+            "single-person column",
         ] {
             assert!(
                 text.contains(capability),
@@ -40,6 +42,8 @@ fn database_workflow_reaches_every_agent_host_without_unrelated_scoped_tools() {
             );
         }
     }
+    let text = TOOL_USE_PROMPT.to_string();
+    assert!(!text.contains("clearInvalid"), "casts never clear values");
     let scoped = DATABASE_TOOL_USE_PROMPT.to_string();
     assert_eq!(scoped, format!("{}{}", crate::BASE_PROMPT, super::PROMPT));
     // BASE_PROMPT's Markdown formatting note mentions email bodies without

@@ -22,30 +22,27 @@ use crate::domain::ports::DatabasesService;
 #[schemars(
     title = "AddColumn",
     description = "\
-Add a column to a table in one of the user's databases. Columns are typed, and the type is \
-what makes the data useful later — a `date` column sorts and filters by time, a `number` \
-column sums, a `select` column constrains what can be written to it.\n\
+Add a column to a table in one of the user's databases. Type it by what its values are, not \
+by how they were typed at you:\n\
 \n\
-Pick the type from what the values actually are, not from how they were typed at you: \"Going \
-/ Maybe / Declined\" is a `select`, not `text`; \"$1,200\" is a `number`; \"Aug 13\" is a \
-`date`. Use `text` only when the values really are free-form.\n\
+- a person (host, owner, assignee, attendee, author): a person column, `entity` then \
+`USER` as below;\n\
+- a Macro document, task, company, call, channel or project: `entity` with that kind;\n\
+- a row of another table in this database: a relation, `entity` with `linkToTableId`;\n\
+- a status, stage or category (\"Going / Maybe / Declined\"): `select`, with \
+`isMultiSelect` or `tag` for several;\n\
+- money, counts and scores (\"$1,200\"): `number`; dates (\"Aug 13\"): `date`; yes/no: \
+`boolean`; URLs: `link`;\n\
+- free text only: `text`. Never text for people or Macro items.\n\
 \n\
-- `isMultiSelect: true` makes the column hold several values at once. In SQL it is written \
-as a list (`['a', 'b']`) and `col HAS 'x'` tests membership.\n\
-- `linkToTableId` makes it a **relation column** pointing at another table, so rows on one \
-side reference rows on the other by row id. Write it as a list of row ids and join through \
-it (`JOIN guests g ON i.guest = g.row_id`). The response's relation metadata gives the \
-target table.\n\
-- `entity` columns hold references to Macro things (people, documents); say which with \
-`specificEntityType`. Their values are typed ids such as `macro|sam@example.com`.\n\
+`AddColumn` takes `specificEntityType` for an entity column (`USER` for a person column). A \
+relation holds row ids of the target table and is written as a list of them. Select and \
+tag columns accept only the labels in `options`, so list every value the data has; add \
+more later with AddColumnOptions.\n\
 \n\
-Select and tag columns take their options as **explicit schema**: pass every label the column \
-should accept in `options`. SQL only accepts those labels — a select column created with no \
-options accepts nothing — and more can be added later with AddColumnOptions.\n\
-\n\
-Requires edit access. The response is the table's database schema after the change, including \
-the new column's exact `sqlName`. If `database` is null, the column was still created; \
-call DescribeDatabase using databaseId before continuing, without repeating AddColumn."
+Requires edit access. The response is the database's schema after the change, with the new \
+column's exact `sqlName`. If `database` is null, the column was still created: call \
+DescribeDatabase with databaseId before continuing, and do not repeat AddColumn."
 )]
 pub struct AddColumn {
     /// The database the table belongs to.
@@ -70,7 +67,7 @@ pub struct AddColumn {
     #[schemars(
         description = "The kind of value the column holds: text, number, boolean, date, link \
                        (a URL), select (a fixed set of text labels), select_number, tag, or \
-                       entity (a reference to a Macro person or document)."
+                       entity (a reference to a Macro person, document, task, or other item)."
     )]
     pub data_type: ColumnType,
 
@@ -106,9 +103,8 @@ pub struct AddColumn {
 
     /// Make this a link column targeting another table.
     #[schemars(
-        description = "Id of another table to link to, making this a link column whose rows \
-                       reference rows over there. Omit for an ordinary column. The target \
-                       table must be one the user can reach."
+        description = "Id of another table of this database, making this a relation whose \
+                       cells hold that table's row ids. Omit for any other column."
     )]
     #[serde(default)]
     pub link_to_table_id: Option<TableId>,
