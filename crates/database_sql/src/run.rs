@@ -278,6 +278,7 @@ pub struct OutcomeColumn {
 
 /// The value kind of a result column.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub enum OutcomeKind {
     /// Text or link.

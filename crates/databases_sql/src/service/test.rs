@@ -9,7 +9,11 @@ use models_properties::shared::{DataType, EntityReference, EntityType as Propert
 use uuid::Uuid;
 
 use super::*;
-use crate::outcome::ResultColumn;
+use database_sql::catalog::{EntityKind, SelectOption};
+use database_sql::fold::Cell;
+use database_sql::run::OutcomeKind;
+
+use crate::outcome::{ResultColumn, ResultSet};
 use crate::test_support::{
     AppliedOps, OWNER, STRANGER, Shared, VIEWER, World, agent_for, column, database,
     relation_column, row, row_literals, select_column, sql, table,
@@ -206,11 +210,9 @@ async fn a_strangers_database_is_not_in_the_catalog() {
         .expect("the stranger reads their own table");
     assert_eq!(
         result(&outcome).rows,
-        vec![vec![
-            serde_json::json!(LAUNCH.to_string()),
-            serde_json::json!("Launch"),
-        ]]
+        vec![vec![Some(Cell::Text("Launch".into()))]]
     );
+    assert_eq!(result(&outcome).row_ids, vec![LAUNCH]);
 }
 
 #[tokio::test]
@@ -283,11 +285,11 @@ async fn a_cross_database_join_only_sees_databases_the_viewer_can_reach() {
     assert_eq!(
         result(&outcome).rows,
         vec![vec![
-            serde_json::json!(MARIA.to_string()),
-            serde_json::json!("Maria"),
-            serde_json::json!("Ballroom"),
+            Some(Cell::Text("Maria".into())),
+            Some(Cell::Text("Ballroom".into())),
         ]]
     );
+    assert_eq!(result(&outcome).row_ids, vec![MARIA]);
     let reads: Vec<Vec<DatabaseRowLiteral>> = world
         .lock()
         .unwrap()
@@ -336,7 +338,7 @@ async fn a_cross_database_join_only_sees_databases_the_viewer_can_reach() {
 // ---- reads -------------------------------------------------------------------
 
 #[tokio::test]
-async fn a_read_answers_row_ids_first_with_labels_and_entity_types() {
+async fn a_read_answers_typed_cells_with_what_renders_them() {
     let world = world();
     let outcome = sql(&world)
         .execute(
@@ -347,34 +349,44 @@ async fn a_read_answers_row_ids_first_with_labels_and_entity_types() {
         .expect("the viewer reads");
 
     assert_eq!(
-        result(&outcome).columns,
-        vec![
-            ResultColumn {
-                name: "row_id".into(),
-                entity_type: None
-            },
-            ResultColumn {
-                name: "Name".into(),
-                entity_type: None
-            },
-            ResultColumn {
-                name: "Status".into(),
-                entity_type: None
-            },
-            ResultColumn {
-                name: "Contact".into(),
-                entity_type: Some(model_entity::EntityType::User)
-            },
-        ]
-    );
-    assert_eq!(
-        result(&outcome).rows,
-        vec![vec![
-            serde_json::json!(MARIA.to_string()),
-            serde_json::json!("Maria"),
-            serde_json::json!("Going"),
-            serde_json::json!("macro|maria@macro.com"),
-        ]]
+        result(&outcome),
+        &ResultSet {
+            columns: vec![
+                ResultColumn {
+                    name: "Name".into(),
+                    kind: OutcomeKind::Text,
+                    options: vec![],
+                    target: None,
+                },
+                ResultColumn {
+                    name: "Status".into(),
+                    kind: OutcomeKind::Select,
+                    options: vec![
+                        SelectOption {
+                            id: GOING,
+                            label: "Going".into(),
+                        },
+                        SelectOption {
+                            id: MAYBE,
+                            label: "Maybe".into(),
+                        },
+                    ],
+                    target: None,
+                },
+                ResultColumn {
+                    name: "Contact".into(),
+                    kind: OutcomeKind::Entity,
+                    options: vec![],
+                    target: Some(EntityKind::User),
+                },
+            ],
+            rows: vec![vec![
+                Some(Cell::Text("Maria".into())),
+                Some(Cell::Options(vec![GOING])),
+                Some(Cell::Entities(vec!["macro|maria@macro.com".into()])),
+            ]],
+            row_ids: vec![MARIA],
+        }
     );
     assert_eq!(
         outcome.read_versions,
@@ -398,14 +410,15 @@ async fn a_count_per_option_is_read_as_soup_bins() {
         .expect("the viewer counts");
 
     let mut rows = result(&outcome).rows.clone();
-    rows.sort_by_key(|row| row[0].to_string());
+    rows.sort_by_key(|row| format!("{:?}", row[0]));
     assert_eq!(
         rows,
         vec![
-            vec![serde_json::json!("Going"), serde_json::json!(1.0)],
-            vec![serde_json::json!("Maybe"), serde_json::json!(1.0)],
+            vec![Some(Cell::Options(vec![GOING])), Some(Cell::Number(1.0))],
+            vec![Some(Cell::Options(vec![MAYBE])), Some(Cell::Number(1.0))],
         ]
     );
+    assert!(result(&outcome).row_ids.is_empty());
 }
 
 #[tokio::test]
@@ -425,9 +438,8 @@ async fn people_are_the_viewers_contacts() {
     assert_eq!(
         result(&outcome).rows,
         vec![vec![
-            serde_json::json!(MARIA.to_string()),
-            serde_json::json!("Maria"),
-            serde_json::json!("maria@macro.com"),
+            Some(Cell::Text("Maria".into())),
+            Some(Cell::Text("maria@macro.com".into())),
         ]]
     );
 }

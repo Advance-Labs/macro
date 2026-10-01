@@ -29,6 +29,7 @@ use crate::split::{Plan, Shape};
 /// A cell as fetched. An absent cell is `NULL`; an absent multi-valued cell
 /// is the empty set.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "type", content = "value", rename_all = "camelCase")]
 pub enum Cell {
     /// Text or link.

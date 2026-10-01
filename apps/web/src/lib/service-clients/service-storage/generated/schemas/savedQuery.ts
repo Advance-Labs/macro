@@ -18,7 +18,7 @@ export interface SavedQuery {
   createdBy: string;
   /** The database whose tables win name resolution; `null` once that
 database is deleted, or when none was given. */
-  databaseId?: SavedQueryDatabaseId;
+  databaseId: SavedQueryDatabaseId;
   /** What it asks. */
   definition: QueryDefinition;
   /** Identifier. */

@@ -44,8 +44,8 @@ macro_rules! sql_guide {
          must exist: read the ids first. `SET col = other_col` copies each row's own value of \
          a column of the same kind. A multi-valued cell is written as a list: \
          `tags = ['Urgent', 'Backend']`; `NULL` clears a cell.\n\
-         - **`row_id`** is every row's id. It comes back as the first column of a row-shaped \
-         SELECT and in `insertedRowIds` after an INSERT; never invent one. A row the app shows \
+         - **`row_id`** is every row's id. A row-shaped SELECT returns each result row's in \
+         `rowIds`, and an INSERT the new rows' in `insertedRowIds`; never invent one. A row the app shows \
          as \"Unnamed\" has a NULL name: find it with `WHERE \"Name\" IS NULL`.\n\
          - **Select columns take their option labels as text** (`status = 'Going'`), never \
          option ids. Only the labels the column carries are accepted; add new ones with \
@@ -94,7 +94,7 @@ use crate::service::{DatabasesSql, SqlError};
 
 pub use query_database::{
     QueryDatabase, QueryDatabaseDisplay, QueryDatabaseResponse, ReadOnlyQueryDatabase,
-    ToolResultColumn, ToolResultSet, ToolTableVersion,
+    ToolTableVersion,
 };
 pub use save_database_query::{SaveDatabaseQuery, SaveDatabaseQueryResponse, ToolChart};
 

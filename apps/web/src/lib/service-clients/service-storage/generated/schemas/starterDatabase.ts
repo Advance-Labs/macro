@@ -15,9 +15,9 @@ export interface StarterDatabase {
   /** Whether this request created the example. */
   created: boolean;
   /** Accessible starter database, if still present. */
-  databaseId?: StarterDatabaseDatabaseId;
+  databaseId: StarterDatabaseDatabaseId;
   /** Initial table, returned only on first creation. */
-  tableId?: StarterDatabaseTableId;
+  tableId: StarterDatabaseTableId;
   /** Initial board view, returned only on first creation. */
-  viewId?: StarterDatabaseViewId;
+  viewId: StarterDatabaseViewId;
 }

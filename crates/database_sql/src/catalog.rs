@@ -170,6 +170,7 @@ pub enum ColumnKind {
     strum::IntoStaticStr,
     strum::EnumIter,
 )]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE", ascii_case_insensitive)]
 pub enum EntityKind {
@@ -210,6 +211,7 @@ impl EntityKind {
 
 /// One option of a select column.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SelectOption {
     /// The option id.

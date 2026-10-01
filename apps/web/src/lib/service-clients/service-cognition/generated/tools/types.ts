@@ -834,6 +834,66 @@ export type QueryDatabaseDisplay =
   | 'scatter'
   | 'pie';
 /**
+ * The value kind of a result column.
+ */
+export type OutcomeKind =
+  | 'text'
+  | 'number'
+  | 'boolean'
+  | 'date'
+  | 'select'
+  | 'entity';
+/**
+ * What an entity column's references point at: a kind of Macro entity, or
+ * the rows of another table for a relation.
+ *
+ * Spelled as the properties system spells entity types (`USER`,
+ * `DATABASE_ROW`), on the wire and in SQL, where it parses
+ * case-insensitively.
+ */
+export type EntityKind =
+  | 'USER'
+  | 'DOCUMENT'
+  | 'TASK'
+  | 'COMPANY'
+  | 'CALL_RECORD'
+  | 'CHANNEL'
+  | 'CHAT'
+  | 'PROJECT'
+  | 'THREAD'
+  | 'CALENDAR_EVENT'
+  | 'INITIATIVE'
+  | 'DATABASE_ROW';
+/**
+ * A cell as fetched. An absent cell is `NULL`; an absent multi-valued cell
+ * is the empty set.
+ */
+export type Cell =
+  | {
+      type: 'text';
+      value: string;
+    }
+  | {
+      type: 'number';
+      value: number;
+    }
+  | {
+      type: 'bool';
+      value: boolean;
+    }
+  | {
+      type: 'date';
+      value: string;
+    }
+  | {
+      type: 'options';
+      value: string[];
+    }
+  | {
+      type: 'entities';
+      value: string[];
+    };
+/**
  * One activity action returned to the AI.
  */
 export type ToolActivityAction =
@@ -5558,7 +5618,7 @@ export interface NameSearch {
  * - **Conditions:** `col = | != | < | <= | > | >= literal`, `col [NOT] IN ('a', 'b')`, `col [NOT] LIKE 'pat%'` (case-insensitive), `col IS [NOT] NULL`, `col [NOT] HAS 'x'` (membership in a multi-valued column), combined with AND, OR and parentheses.
  * - **Literals:** `'text'` (a quote inside is doubled: `'Wolf''s place'`), numbers, TRUE/FALSE, NULL; dates are `'2026-08-13'` or an ISO date-time.
  * - **Writes:** `INSERT INTO table (col, ...) VALUES (...), (...)` or `INSERT INTO table DEFAULT VALUES`; `UPDATE table SET col = value, ... WHERE cond`; `DELETE FROM table WHERE cond`. The WHERE is required and takes any condition; `WHERE row_id = '<id>'` or `row_id IN ('<id>', ...)` names rows, and every id named must exist: read the ids first. `SET col = other_col` copies each row's own value of a column of the same kind. A multi-valued cell is written as a list: `tags = ['Urgent', 'Backend']`; `NULL` clears a cell.
- * - **`row_id`** is every row's id. It comes back as the first column of a row-shaped SELECT and in `insertedRowIds` after an INSERT; never invent one. A row the app shows as "Unnamed" has a NULL name: find it with `WHERE "Name" IS NULL`.
+ * - **`row_id`** is every row's id. A row-shaped SELECT returns each result row's in `rowIds`, and an INSERT the new rows' in `insertedRowIds`; never invent one. A row the app shows as "Unnamed" has a NULL name: find it with `WHERE "Name" IS NULL`.
  * - **Select columns take their option labels as text** (`status = 'Going'`), never option ids. Only the labels the column carries are accepted; add new ones with AddColumnOptions.
  * - **Relation columns hold the ids of rows in another table.** Write them as a list of row ids (`guests = ['<row id>']`), test them with `HAS '<row id>'`, and join through them with `ON i.guest = g.row_id` (`ON i.guest HAS g.row_id` means the same). Never compare a relation to a name.
  * - **Entity columns hold Macro ids** such as `macro|sam@example.com` for a person. Respect each column's `specificEntityType`; never invent an id or replace it with a name.
@@ -5568,10 +5628,10 @@ export interface NameSearch {
  * - **Other schema changes use tools, not SQL DDL:** CreateDatabase, RenameDatabase, CreateTable, RenameTable, ReorderTables, DeleteTable, AddColumn, AddColumnOptions, RenameColumn, ChangeColumnType, DeleteColumn, ReorderColumns and SaveDatabaseView.
  * - Tables you only hold view access on are read-only.
  *
- * To change records, first SELECT the rows you mean (the first column is `row_id`), then UPDATE or DELETE each one by its id. After changing rows, SELECT the affected records to verify the actual result. On a connection failure, inspect before retrying an INSERT.
+ * To change records, first SELECT the rows you mean (their ids are in `rowIds`), then UPDATE or DELETE each one by its id. After changing rows, SELECT the affected records to verify the actual result. On a connection failure, inspect before retrying an INSERT.
  * To create a row and relate it in one go, INSERT it with the relation column set to the target row ids (`INSERT INTO invites (guest, status) VALUES (['<guest row id>'], 'Sent')`); the new row's id is in `insertedRowIds`.
  *
- * Results come back as columns and rows. A column whose values are entity ids carries an `entityType`, which is how the app renders it as a clickable chip rather than as raw text — prefer selecting an entity column over stringifying it. Writes report `changesApplied` and, for inserts, the `insertedRowIds` the server minted.
+ * Results come back as columns and rows of typed cells (`{"type": "text", "value": "Sam"}`; `null` is an empty cell), with `rowIds`, the id of the row behind each result row of a row-shaped SELECT. Each column names its `kind`. A select column lists its `options`, and its cells hold option ids: read their labels there. An entity column names its `target`, which is how the app renders its ids as clickable chips — prefer selecting an entity column over stringifying it. Writes report `changesApplied` and, for inserts, the `insertedRowIds` the server minted.
  *
  * To answer a question about the data or draw a chart for the user, check the SELECT here, then save it with SaveDatabaseQuery and paste the block it returns: it stays live, where a pasted result goes stale.
  */
@@ -5618,7 +5678,7 @@ export interface QueryDatabaseResponse {
   /**
    * The SELECT's result set; empty for a write.
    */
-  results: ToolResultSet[];
+  results: ResultSet[];
   /**
    * How many rows the statement changed.
    */
@@ -5651,31 +5711,54 @@ export interface QueryDatabaseResponse {
   summary: string;
 }
 /**
- * One SELECT's result set.
+ * A `SELECT`'s rows, as the engine's typed cells.
  */
-export interface ToolResultSet {
+export interface ResultSet {
   /**
-   * Result columns, in select order.
+   * The columns, in select-list order.
    */
-  columns: ToolResultColumn[];
+  columns: ResultColumn[];
   /**
-   * Rows as JSON scalars, in column order.
+   * One cell per column per row; `null` is an empty cell.
    */
-  rows: unknown[][];
+  rows: (Cell | null)[][];
+  /**
+   * For a row-shaped result, the id of the row behind each result row;
+   * empty for an aggregate.
+   */
+  rowIds: string[];
 }
 /**
- * One result column, with the provenance that drives chip rendering.
+ * One result column, with what its cells mean.
  */
-export interface ToolResultColumn {
+export interface ResultColumn {
   /**
-   * Column name or alias, as the statement named it.
+   * The name or alias the statement gave it.
    */
   name: string;
+  kind: OutcomeKind;
   /**
-   * The kind of entity this column's ids refer to, when it holds ids. The
-   * app renders those as chips.
+   * For a select column, its options: its cells hold their ids.
    */
-  entityType?: string | null;
+  options?: SelectOption[];
+  /**
+   * For an entity column, what its ids point at; `DATABASE_ROW` for a
+   * relation, whose ids are rows of another table.
+   */
+  target?: EntityKind | null;
+}
+/**
+ * One option of a select column.
+ */
+export interface SelectOption {
+  /**
+   * The option id.
+   */
+  id: string;
+  /**
+   * The label users type in SQL.
+   */
+  label: string;
 }
 /**
  * Read actions attributed to the authenticated user within a time range, newest first. Use this for questions about what the user did, including actions an agent performed on their behalf. Property changes include propertyName/propertyType plus fromLabels/toLabels for resolved select and tag values; use those human-readable fields in the answer and never expose property or option ids. Do not use this for organization-wide updates or everything that happened to entities the user can access; use ListEntities for those. Returns at most 100 activities and reports when the result was truncated.
@@ -7074,7 +7157,7 @@ export interface ResolveDocumentCommentResponse {
  * - **Conditions:** `col = | != | < | <= | > | >= literal`, `col [NOT] IN ('a', 'b')`, `col [NOT] LIKE 'pat%'` (case-insensitive), `col IS [NOT] NULL`, `col [NOT] HAS 'x'` (membership in a multi-valued column), combined with AND, OR and parentheses.
  * - **Literals:** `'text'` (a quote inside is doubled: `'Wolf''s place'`), numbers, TRUE/FALSE, NULL; dates are `'2026-08-13'` or an ISO date-time.
  * - **Writes:** `INSERT INTO table (col, ...) VALUES (...), (...)` or `INSERT INTO table DEFAULT VALUES`; `UPDATE table SET col = value, ... WHERE cond`; `DELETE FROM table WHERE cond`. The WHERE is required and takes any condition; `WHERE row_id = '<id>'` or `row_id IN ('<id>', ...)` names rows, and every id named must exist: read the ids first. `SET col = other_col` copies each row's own value of a column of the same kind. A multi-valued cell is written as a list: `tags = ['Urgent', 'Backend']`; `NULL` clears a cell.
- * - **`row_id`** is every row's id. It comes back as the first column of a row-shaped SELECT and in `insertedRowIds` after an INSERT; never invent one. A row the app shows as "Unnamed" has a NULL name: find it with `WHERE "Name" IS NULL`.
+ * - **`row_id`** is every row's id. A row-shaped SELECT returns each result row's in `rowIds`, and an INSERT the new rows' in `insertedRowIds`; never invent one. A row the app shows as "Unnamed" has a NULL name: find it with `WHERE "Name" IS NULL`.
  * - **Select columns take their option labels as text** (`status = 'Going'`), never option ids. Only the labels the column carries are accepted; add new ones with AddColumnOptions.
  * - **Relation columns hold the ids of rows in another table.** Write them as a list of row ids (`guests = ['<row id>']`), test them with `HAS '<row id>'`, and join through them with `ON i.guest = g.row_id` (`ON i.guest HAS g.row_id` means the same). Never compare a relation to a name.
  * - **Entity columns hold Macro ids** such as `macro|sam@example.com` for a person. Respect each column's `specificEntityType`; never invent an id or replace it with a name.

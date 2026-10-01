@@ -136,7 +136,7 @@ fn the_toolsets_build_with_their_tools() {
 }
 
 #[tokio::test]
-async fn a_read_answers_with_row_ids_labels_and_the_versions_it_read() {
+async fn a_read_answers_typed_cells_row_ids_and_the_versions_it_read() {
     let world = world();
     let response = QueryDatabase {
         sql: "SELECT \"Name\", \"Status\" FROM \"Guests\"".into(),
@@ -152,8 +152,22 @@ async fn a_read_answers_with_row_ids_labels_and_the_versions_it_read() {
         serde_json::to_value(&response).unwrap(),
         serde_json::json!({
             "results": [{
-                "columns": [{"name": "row_id"}, {"name": "Name"}, {"name": "Status"}],
-                "rows": [[MARIA.to_string(), "Maria", "Maybe"]],
+                "columns": [
+                    {"name": "Name", "kind": "text"},
+                    {
+                        "name": "Status",
+                        "kind": "select",
+                        "options": [
+                            {"id": GOING, "label": "Going"},
+                            {"id": MAYBE, "label": "Maybe"},
+                        ],
+                    },
+                ],
+                "rows": [[
+                    {"type": "text", "value": "Maria"},
+                    {"type": "options", "value": [MAYBE]},
+                ]],
+                "rowIds": [MARIA],
             }],
             "changesApplied": 0,
             "readVersions": [{"tableId": GUESTS, "version": 1}],
@@ -289,7 +303,10 @@ async fn the_read_only_tool_never_writes_even_for_an_owner() {
     .call(ServiceContext(context(&world)), as_user(OWNER))
     .await
     .expect("document answers read");
-    assert_eq!(response.results[0].rows, vec![vec![serde_json::json!(1.0)]]);
+    assert_eq!(
+        response.results[0].rows,
+        vec![vec![Some(database_sql::fold::Cell::Number(1.0))]]
+    );
 }
 
 #[test]

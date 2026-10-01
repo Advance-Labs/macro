@@ -29,11 +29,11 @@ export interface ColumnCast {
   /** Whether the target holds several values. */
   is_multi_select: boolean;
   /** Why nothing converts, for a `never` cast. */
-  reason?: ColumnCastReason;
+  reason: ColumnCastReason;
   /** Whether the target is a relation to another table's rows. */
   relation: boolean;
-  specific_entity_type?: ColumnCastSpecificEntityType;
+  specific_entity_type: ColumnCastSpecificEntityType;
   /** For a `checked` cast with failures, what is wrong with them, as in
 `3 values aren't numbers`. */
-  summary?: ColumnCastSummary;
+  summary: ColumnCastSummary;
 }

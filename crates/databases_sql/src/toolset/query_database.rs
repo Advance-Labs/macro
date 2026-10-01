@@ -45,17 +45,20 @@ fails, the error names what was wrong and suggests the closest name — read it,
         sql_guide!(),
         "\n\
 \n\
-To change records, first SELECT the rows you mean (the first column is `row_id`), then \
+To change records, first SELECT the rows you mean (their ids are in `rowIds`), then \
 UPDATE or DELETE each one by its id. After changing rows, SELECT the affected records to \
 verify the actual result. On a connection failure, inspect before retrying an INSERT.\n\
 To create a row and relate it in one go, INSERT it with the relation column set to the target \
 row ids (`INSERT INTO invites (guest, status) VALUES (['<guest row id>'], 'Sent')`); the new \
 row's id is in `insertedRowIds`.\n\
 \n\
-Results come back as columns and rows. A column whose values are entity ids carries an \
-`entityType`, which is how the app renders it as a clickable chip rather than as raw text — \
-prefer selecting an entity column over stringifying it. Writes report `changesApplied` and, \
-for inserts, the `insertedRowIds` the server minted.\n\
+Results come back as columns and rows of typed cells (`{\"type\": \"text\", \"value\": \"Sam\"}`; \
+`null` is an empty cell), with `rowIds`, the id of the row behind each result row of a \
+row-shaped SELECT. Each column names its `kind`. A select column lists its `options`, and its \
+cells hold option ids: read their labels there. An entity column names its `target`, which \
+is how the app renders its ids as clickable chips — prefer selecting an entity column over \
+stringifying it. Writes report `changesApplied` and, for inserts, the `insertedRowIds` the \
+server minted.\n\
 \n\
 To answer a question about the data or draw a chart for the user, check the SELECT here, then \
 save it with SaveDatabaseQuery and paste the block it returns: it stays live, where a pasted \
@@ -177,50 +180,12 @@ impl ToolAnnotated for QueryDatabase {
     const ANNOTATIONS: ToolAnnotations = ToolAnnotations::destructive("Query database");
 }
 
-/// One result column, with the provenance that drives chip rendering.
-#[derive(Debug, Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ToolResultColumn {
-    /// Column name or alias, as the statement named it.
-    pub name: String,
-    /// The kind of entity this column's ids refer to, when it holds ids. The
-    /// app renders those as chips.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub entity_type: Option<String>,
-}
-
-/// One SELECT's result set.
-#[derive(Debug, Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ToolResultSet {
-    /// Result columns, in select order.
-    pub columns: Vec<ToolResultColumn>,
-    /// Rows as JSON scalars, in column order.
-    pub rows: Vec<Vec<serde_json::Value>>,
-}
-
-impl From<ResultSet> for ToolResultSet {
-    fn from(result: ResultSet) -> Self {
-        Self {
-            columns: result
-                .columns
-                .into_iter()
-                .map(|column| ToolResultColumn {
-                    name: column.name,
-                    entity_type: column.entity_type.map(|t| t.as_ref().to_string()),
-                })
-                .collect(),
-            rows: result.rows,
-        }
-    }
-}
-
 /// Response from the QueryDatabase tool.
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryDatabaseResponse {
     /// The SELECT's result set; empty for a write.
-    pub results: Vec<ToolResultSet>,
+    pub results: Vec<ResultSet>,
     /// How many rows the statement changed.
     pub changes_applied: usize,
     /// Ids the server minted for inserted rows, in insertion order.
@@ -288,7 +253,7 @@ where
 
 impl From<SqlOutcome> for QueryDatabaseResponse {
     fn from(outcome: SqlOutcome) -> Self {
-        let results: Vec<ToolResultSet> = outcome.result.into_iter().map(Into::into).collect();
+        let results: Vec<ResultSet> = outcome.result.into_iter().collect();
         let summary = match &outcome.altered_column {
             Some(altered) => altered_summary(altered),
             None => summarize(&results, outcome.changes_applied, &outcome.truncated_tables),
@@ -341,11 +306,7 @@ fn altered_summary(altered: &AlteredColumn) -> String {
 
 /// Say what happened, so a model does not have to infer "it worked" from an
 /// empty result set — which reads identically to "nothing matched".
-fn summarize(
-    results: &[ToolResultSet],
-    changes_applied: usize,
-    truncated_tables: &[String],
-) -> String {
+fn summarize(results: &[ResultSet], changes_applied: usize, truncated_tables: &[String]) -> String {
     let rows: usize = results.iter().map(|r| r.rows.len()).sum();
     let mut parts = Vec::new();
 

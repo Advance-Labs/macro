@@ -19,5 +19,5 @@ export interface Database {
   /** Owning user. */
   owner_id: string;
   /** Set when trashed. */
-  trashed_at?: DatabaseTrashedAt;
+  trashed_at: DatabaseTrashedAt;
 }
