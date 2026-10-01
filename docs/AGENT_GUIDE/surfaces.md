@@ -1202,7 +1202,20 @@ press `Join call`. Setup requests microphone permission and waits until that
 prompt finishes before requesting the camera, then previews video locally;
 sharing starts only after joining.
 Permission denial leaves the affected device off and still allows joining.
+Shared-link setup shows the people currently connected, with avatars, names, and
+an attendee count. It refreshes every 15 seconds while setup is open; guests see
+this only for standalone links. Empty calls show `No one else is here yet`; a
+failed roster request leaves joining available. Transcription agents and past
+attendees are excluded.
+
 The preview and full-width join button retain their size while joining.
+The call runtime preloads while setup is open. New-call setup also reserves an
+empty room, without starting a meeting, recording, or invitations. Leaving setup
+cancels that reservation; abandoned rooms expire after five minutes. Starting
+still works if preparation fails or expires.
+Entry waits for the room connection;
+teammate invitations continue afterward. For a newly started call, transcription
+and recording start in the background instead of delaying join credentials.
 Copying the meeting URL is available after joining, in the in-call header.
 
 The creator presses `Start call`; invitees press `Join call`. Loading the page or
@@ -1217,6 +1230,8 @@ for audio, video, device selection, screen sharing, and effects. `Leave call` re
 to Macro. `Copy Meeting Url` is available during the call.
 Rejoining from a new page waits for the prior page's pending leave cleanup before
 requesting another connection, so a slow leave cannot disconnect the replacement.
+Leaving the last participant archives the session first and tears down its media
+in the background, so the next call does not wait for that room to be deleted.
 It keeps its label and shows a checkmark for a few seconds after copying, then
 restores the copy icon.
 
