@@ -9,9 +9,11 @@ async fn discovery_includes_nested_tables_in_tab_order_but_not_private_or_trashe
         .apply_ops(
             edit(database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::CreateTable {
-                id: tickets,
-                name: "Tickets".into(),
+            OpBatch::from(vec![DatabaseOp::Table {
+                table: tickets,
+                change: TableChange::Create {
+                    name: "Tickets".into(),
+                },
             }]),
         )
         .await

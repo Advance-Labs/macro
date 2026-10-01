@@ -135,6 +135,99 @@ export type Column = {
   kind: ColumnKind;
 };
 
+/**  A change to one column. */
+export type ColumnChange =
+  /**
+   *  Add the column to the table: a new property the database owns, or an
+   *  existing one bound into the table.
+   */
+  | {
+      kind: 'create';
+      /**  What the column holds. */
+      definition: NewColumn;
+      /**
+       *  The column it goes right after; left out, it goes after the
+       *  table's last column.
+       */
+      after?: ColumnId | null;
+    }
+  /**
+   *  Rename the column. Its id, type and cells stay; SQL names it by its
+   *  new name.
+   */
+  | {
+      kind: 'rename';
+      /**  Its new name, unique within the table ignoring case. */
+      name: string;
+      /**
+       *  The name the caller saw. Given, the rename is refused if the
+       *  column goes by another one now.
+       */
+      previousName?: string | null;
+    }
+  /**
+   *  Convert the column to another type, converting its cells; its id
+   *  survives the change. A value that does not fit refuses the change,
+   *  counting and quoting the misfits: a type change never empties a
+   *  cell. To keep the original, create a column of the new type and
+   *  write it the values that convert.
+   */
+  | {
+      kind: 'change_type';
+      /**  The type it becomes. */
+      to: OpColumnKind;
+    }
+  /**
+   *  Remove the column and its cells. The views naming it forget it; a
+   *  board grouped by it must go or regroup first. A property shared
+   *  beyond the database stays, unbound here.
+   */
+  | { kind: 'delete' }
+  /**
+   *  Add options to a select or tag column, after its others. An option
+   *  whose label the column already has, ignoring case, is left out, so
+   *  re-sending a list adds only what is new. Like
+   *  [`ColumnChange::UpdateOption`], an option of a property shared beyond
+   *  the database goes everywhere it is used.
+   */
+  | {
+      kind: 'add_options';
+      /**  The options, each under an id the client mints. */
+      options: NewOption[];
+    }
+  /**
+   *  Relabel or recolour one option of a select or tag column. Every cell
+   *  holding it keeps it. A column bound to a property shared outside the
+   *  database changes wherever that property is used, so it takes the
+   *  right to edit that property.
+   */
+  | {
+      kind: 'update_option';
+      /**  The option. */
+      option: OptionId;
+      /**
+       *  Its new label; left out, it keeps its own. Labels are unique
+       *  within a column, ignoring case.
+       */
+      label?: string | null;
+      /**
+       *  Its new colour, a hex string like `#RRGGBB`, or `null` to clear
+       *  it; left out, it keeps its own. A tag option always has one.
+       */
+      color?: string | null;
+    }
+  /**
+   *  Remove one option of a select or tag column, and take it out of every
+   *  cell holding it: a single-valued cell is emptied, a multi-valued one
+   *  keeps its other options. Like [`ColumnChange::UpdateOption`], an
+   *  option of a shared property goes everywhere it is used.
+   */
+  | {
+      kind: 'delete_option';
+      /**  The option. */
+      option: OptionId;
+    };
+
 /**  Identifier of a column placement within a table. */
 export type ColumnId = string;
 
@@ -170,6 +263,30 @@ export type ColumnKind =
       /**  What the references point at. */
       target: EntityKind;
     };
+
+/**  What happened to a column. */
+export type ColumnResult =
+  /**  It was added. */
+  | { kind: 'created' }
+  /**  It was renamed. */
+  | { kind: 'renamed' }
+  /**  Its type changed, and its cells with it. */
+  | { kind: 'type_changed' }
+  /**  It was removed. */
+  | { kind: 'deleted' }
+  /**  It gained options. */
+  | {
+      kind: 'options_added';
+      /**
+       *  The options created, in order: those sent, less any whose label
+       *  the column already had.
+       */
+      added: OptionId[];
+    }
+  /**  One of its options was relabelled or recoloured. */
+  | { kind: 'option_updated' }
+  /**  One of its options was removed. */
+  | { kind: 'option_deleted' };
 
 /**  One column placement and the property definition behind it. */
 export type ColumnSchema = {
@@ -217,49 +334,59 @@ export type DataType =
 export type DatabaseId = string;
 
 /**
- *  One write to a database: its tables, columns, options, rows or views. A
- *  request's ops apply in order and together, or not at all, and every op
- *  names a table of the database the request is for (or, creating one, adds
- *  it there).
+ *  One write to a database: its tables, columns, options, rows or views,
+ *  grouped by the resource it changes. A request's ops apply in order and
+ *  together, or not at all, and every op names a table of the database the
+ *  request is for (or, creating one, adds it there).
  */
 export type DatabaseOp =
   /**
-   *  Add a table, after the database's other tables. It starts with no
-   *  columns and no rows.
+   *  A change to a table itself: its creation, name, removal, or the
+   *  order of its columns or views.
    */
   | {
-      kind: 'create_table';
+      kind: 'table';
       /**
-       *  The new table's id, minted by the client; later ops of the
-       *  request may name it.
+       *  The table; for a creation, its new id, minted by the client, which
+       *  later ops of the request may name.
        */
-      id: TableId;
-      /**  Its name, unique within the database ignoring case. */
-      name: string;
-    }
-  /**  Rename a table. Its id, columns and rows stay. */
-  | {
-      kind: 'rename_table';
-      /**  The table. */
       table: TableId;
-      /**  Its new name, unique within the database ignoring case. */
-      name: string;
-      /**
-       *  The name the caller saw. Given, the rename is refused if the
-       *  table goes by another one now, so a concurrent rename is not
-       *  overwritten.
-       */
-      previousName?: string | null;
+      /**  What changes. */
+      change: TableChange;
     }
   /**
-   *  Remove a table with its columns, rows and views. A database keeps at
-   *  least one table, and a table another table's relation points at
-   *  stays until that relation goes.
+   *  A change to one column of a table: its creation, name, type, removal
+   *  or options.
    */
   | {
-      kind: 'delete_table';
+      kind: 'column';
       /**  The table. */
       table: TableId;
+      /**
+       *  The column; for a creation, its new id, minted by the client,
+       *  which later ops of the request may name.
+       */
+      column: ColumnId;
+      /**  What changes. */
+      change: ColumnChange;
+    }
+  /**  A write to a table's rows. */
+  | {
+      kind: 'rows';
+      /**  The table the rows belong to. */
+      table: TableId;
+      /**  What changes. */
+      change: RowsChange;
+    }
+  /**  A change to one view of a table. */
+  | {
+      kind: 'view';
+      /**  The view's table. */
+      table: TableId;
+      /**  The view; for a creation, its new id, minted by the client. */
+      view: ViewId;
+      /**  What changes. */
+      change: ViewChange;
     }
   /**
    *  Set the order of the database's tables: `order` names every one of
@@ -269,245 +396,6 @@ export type DatabaseOp =
       kind: 'reorder_tables';
       /**  Every table, in its new order. */
       order: TableId[];
-    }
-  /**
-   *  Add a column to a table: a new property the database owns, or an
-   *  existing one bound into the table.
-   */
-  | {
-      kind: 'create_column';
-      /**  The table. */
-      table: TableId;
-      /**
-       *  The new column's id, minted by the client; later ops of the
-       *  request may name it.
-       */
-      id: ColumnId;
-      /**  What the column holds. */
-      definition: NewColumn;
-      /**
-       *  The column it goes right after; left out, it goes after the
-       *  table's last column.
-       */
-      after?: ColumnId | null;
-    }
-  /**
-   *  Rename a column. Its id, type and cells stay; SQL names it by its new
-   *  name.
-   */
-  | {
-      kind: 'rename_column';
-      /**  The table. */
-      table: TableId;
-      /**  The column. */
-      column: ColumnId;
-      /**  Its new name, unique within the table ignoring case. */
-      name: string;
-      /**
-       *  The name the caller saw. Given, the rename is refused if the
-       *  column goes by another one now.
-       */
-      previousName?: string | null;
-    }
-  /**
-   *  Remove a column and its cells. The views naming it forget it; a
-   *  board grouped by it must go or regroup first. A property shared
-   *  beyond the database stays, unbound here.
-   */
-  | {
-      kind: 'delete_column';
-      /**  The table. */
-      table: TableId;
-      /**  The column. */
-      column: ColumnId;
-    }
-  /**
-   *  Set the order of a table's columns: `order` names every one of them
-   *  once.
-   */
-  | {
-      kind: 'reorder_columns';
-      /**  The table. */
-      table: TableId;
-      /**  Its columns, in their new order. */
-      order: ColumnId[];
-    }
-  /**
-   *  Add options to a select or tag column, after its others. An option
-   *  whose label the column already has, ignoring case, is left out, so
-   *  re-sending a list adds only what is new. Like
-   *  [`DatabaseOp::UpdateOption`], an option of a property shared beyond
-   *  the database goes everywhere it is used.
-   */
-  | {
-      kind: 'add_options';
-      /**  The table. */
-      table: TableId;
-      /**  The select or tag column. */
-      column: ColumnId;
-      /**  The options, each under an id the client mints. */
-      options: NewOption[];
-    }
-  /**  Append rows to a table, in order, each with the cells it starts with. */
-  | {
-      kind: 'insert_rows';
-      /**  The table. */
-      table: TableId;
-      /**
-       *  One entry per new row: the cells it starts with. Columns left out
-       *  start empty.
-       */
-      rows: CellWrite[][];
-    }
-  /**
-   *  Write cells of existing rows. Last write wins: there is no version
-   *  check.
-   */
-  | {
-      kind: 'update_rows';
-      /**  The table the rows belong to. */
-      table: TableId;
-      /**  Which rows get which cells. */
-      changes: RowChanges;
-    }
-  /**  Remove rows and their cells. */
-  | {
-      kind: 'delete_rows';
-      /**  The table the rows belong to. */
-      table: TableId;
-      /**  The rows, each named once. */
-      rows: RowId[];
-    }
-  /**
-   *  Convert a column to another type, converting its cells. A value that
-   *  does not fit refuses the change, counting and quoting the misfits: a
-   *  type change never empties a cell. To keep the original, create a
-   *  column of the new type and write it the values that convert.
-   */
-  | {
-      kind: 'change_column_type';
-      /**  The table. */
-      table: TableId;
-      /**  The column placement; its id survives the change. */
-      column: ColumnId;
-      /**  The type it becomes. */
-      to: OpColumnKind;
-    }
-  /**
-   *  Relabel or recolour one option of a select or tag column. Every cell
-   *  holding it keeps it. A column bound to a property shared outside the
-   *  database changes wherever that property is used, so it takes the
-   *  right to edit that property.
-   */
-  | {
-      kind: 'update_option';
-      /**  The table. */
-      table: TableId;
-      /**  The select or tag column. */
-      column: ColumnId;
-      /**  The option. */
-      option: OptionId;
-      /**
-       *  Its new label; left out, it keeps its own. Labels are unique
-       *  within a column, ignoring case.
-       */
-      label?: string | null;
-      /**
-       *  Its new colour, a hex string like `#RRGGBB`, or `null` to clear
-       *  it; left out, it keeps its own. A tag option always has one.
-       */
-      color?: string | null;
-    }
-  /**
-   *  Remove one option of a select or tag column, and take it out of every
-   *  cell holding it: a single-valued cell is emptied, a multi-valued one
-   *  keeps its other options. Like [`DatabaseOp::UpdateOption`], an option
-   *  of a shared property goes everywhere it is used.
-   */
-  | {
-      kind: 'delete_option';
-      /**  The table. */
-      table: TableId;
-      /**  The select or tag column. */
-      column: ColumnId;
-      /**  The option. */
-      option: OptionId;
-    }
-  /**  Add a view of the table, after its other views. */
-  | {
-      kind: 'create_view';
-      /**  The table. */
-      table: TableId;
-      /**  What it shows and how. */
-      view: NewView;
-    }
-  /**  Change a view's name, query or layout; what is left out stays. */
-  | {
-      kind: 'update_view';
-      /**  The view's table. */
-      table: TableId;
-      /**  The view. */
-      view: ViewId;
-      /**  Its new name. */
-      name?: string | null;
-      /**  Its new query. */
-      query?: ViewQuery | null;
-      /**
-       *  Its new layout. A board grouped by another column forgets where
-       *  its cards were; a board left without a card title keeps the one
-       *  it has, or takes the table's first column.
-       */
-      layout?: RequestedLayout | null;
-    }
-  /**  Remove a view, with where its cards were. */
-  | {
-      kind: 'delete_view';
-      /**  The view's table. */
-      table: TableId;
-      /**  The view. */
-      view: ViewId;
-    }
-  /**
-   *  Set the order of a table's views: `order` names every one of them
-   *  once.
-   */
-  | {
-      kind: 'reorder_views';
-      /**  The table. */
-      table: TableId;
-      /**  Its views, in their new order. */
-      order: ViewId[];
-    }
-  /**
-   *  Move a board's card: into a lane, which sets the row's grouping cell
-   *  to the lane's option (or empties it for the lane without one), and to
-   *  a place there, between two of its cards. Only an unsorted board's
-   *  cards move by hand.
-   */
-  | {
-      kind: 'move_card';
-      /**  The view's table. */
-      table: TableId;
-      /**  The board. */
-      view: ViewId;
-      /**  The card's row. */
-      row: RowId;
-      /**
-       *  The lane it goes to: an option of the board's column, or `null`
-       *  for the lane of cards without one.
-       */
-      lane: OptionId | null;
-      /**
-       *  The card that ends up just before it (it lands right after this
-       *  one), if any.
-       */
-      before?: RowId | null;
-      /**
-       *  The card that ends up just after it, if any. Given with `before`,
-       *  it must be the card right after `before`; with neither, the card
-       *  goes to the end of the lane.
-       */
-      after?: RowId | null;
     };
 
 /**  One database and its tables, in order. */
@@ -920,164 +808,111 @@ export type OpEntityKind =
   /**  Initiatives. */
   | 'INITIATIVE';
 
-/**  What one op did, in the order the ops were sent. */
+/**
+ *  What one op did, in the order the ops were sent, grouped as the ops are:
+ *  a result's `kind` is its op's, naming the same resource, and its
+ *  `change` says what happened to it.
+ */
 export type OpResult =
-  /**  The table a creation added. */
+  /**  What a table op did. */
   | {
-      kind: 'table_created';
-      /**  The new table. */
+      kind: 'table';
+      /**  The table. */
       table: TableId;
-      /**  Its version once the request committed. */
-      tableVersion: TableVersion;
+      /**
+       *  Its version once the request committed; left out when the op
+       *  removed it.
+       */
+      tableVersion?: TableVersion | null;
+      /**  What happened to it. */
+      change: TableResult;
     }
-  /**  A table's rename. */
+  /**  What a column op did. */
   | {
-      kind: 'table_renamed';
+      kind: 'column';
+      /**  The table. */
+      table: TableId;
+      /**  The column. */
+      column: ColumnId;
       /**  The table's version once the request committed. */
       tableVersion: TableVersion;
+      /**  What happened to it. */
+      change: ColumnResult;
     }
-  /**  A table's removal. */
+  /**  What a rows op did. */
   | {
-      kind: 'table_deleted';
-      /**  The table removed. */
+      kind: 'rows';
+      /**  The table. */
       table: TableId;
+      /**  The table's version once the request committed. */
+      tableVersion: TableVersion;
+      /**  What happened to them. */
+      change: RowsResult;
+    }
+  /**  What a view op did. */
+  | {
+      kind: 'view';
+      /**  The view's table. */
+      table: TableId;
+      /**  The view. */
+      view: ViewId;
+      /**  The table's version once the request committed. */
+      tableVersion: TableVersion;
+      /**  What happened to it. */
+      change: ViewResult;
     }
   /**  The database's tables in their new order. */
   | {
-      kind: 'tables_reordered';
+      kind: 'reorder_tables';
       /**
        *  Every table, in its new order, with its version once the request
        *  committed.
        */
       tables: VersionedTable[];
-    }
-  /**  The column a creation added. */
-  | {
-      kind: 'column_created';
-      /**  The new column. */
-      column: ColumnId;
-      /**  The table's version once the request committed. */
-      tableVersion: TableVersion;
-    }
-  /**  A column's rename. */
-  | {
-      kind: 'column_renamed';
-      /**  The table's version once the request committed. */
-      tableVersion: TableVersion;
-    }
-  /**  A column's removal. */
-  | {
-      kind: 'column_deleted';
-      /**  The table's version once the request committed. */
-      tableVersion: TableVersion;
-    }
-  /**  A table's columns in their new order. */
-  | {
-      kind: 'columns_reordered';
-      /**  The table's version once the request committed. */
-      tableVersion: TableVersion;
-    }
-  /**  The options an addition created. */
-  | {
-      kind: 'options_added';
-      /**  The table's version once the request committed. */
-      tableVersion: TableVersion;
-      /**
-       *  The options created, in order: those sent, less any whose label
-       *  the column already had.
-       */
-      added: OptionId[];
-    }
-  /**  What an insert, update or delete did. */
-  | {
-      kind: 'rows_written';
-      /**  The table's version once the request committed. */
-      tableVersion: TableVersion;
-      /**
-       *  The rows an insert created, in the order they were sent; empty
-       *  for an update or a delete.
-       */
-      inserted: RowId[];
-      /**  How many rows the op inserted, updated or deleted. */
-      affected: number;
-    }
-  /**  What a column type change did. */
-  | {
-      kind: 'column_typed';
-      /**  The table's version after the change. */
-      tableVersion: TableVersion;
-    }
-  /**  What an option change or removal did. */
-  | {
-      kind: 'option_changed';
-      /**  The table's version after the change. */
-      tableVersion: TableVersion;
-    }
-  /**  The view a creation or change left. */
-  | {
-      kind: 'view_written';
-      /**  The table's version after the change. */
-      tableVersion: TableVersion;
-      /**  The view as stored. */
-      view: DatabaseView;
-    }
-  /**  A view's removal. */
-  | {
-      kind: 'view_deleted';
-      /**  The table's version after the change. */
-      tableVersion: TableVersion;
-    }
-  /**  The table's views' new places. */
-  | {
-      kind: 'views_reordered';
-      /**  The table's version after the change. */
-      tableVersion: TableVersion;
-      /**  Every view's key, in their new order. */
-      positions: ViewPosition[];
-    }
-  /**  Where a moved card, and any card it needed placed first, now sit. */
-  | {
-      kind: 'card_moved';
-      /**  The table's version after the change. */
-      tableVersion: TableVersion;
-      /**  The positions written, the moved card's last. */
-      positions: CardPosition[];
     };
 
-/**  The kind of an [`OpResult`]. */
+/**  The kind of an [`OpResult`], with what happened to its resource. */
 export type OpResultKind =
-  /**  [`OpResult::TableCreated`]. */
+  /**  [`TableResult::Created`] of an [`OpResult::Table`]. */
   | 'tableCreated'
-  /**  [`OpResult::TableRenamed`]. */
+  /**  [`TableResult::Renamed`] of an [`OpResult::Table`]. */
   | 'tableRenamed'
-  /**  [`OpResult::TableDeleted`]. */
+  /**  [`TableResult::Deleted`] of an [`OpResult::Table`]. */
   | 'tableDeleted'
-  /**  [`OpResult::TablesReordered`]. */
-  | 'tablesReordered'
-  /**  [`OpResult::ColumnCreated`]. */
-  | 'columnCreated'
-  /**  [`OpResult::ColumnRenamed`]. */
-  | 'columnRenamed'
-  /**  [`OpResult::ColumnDeleted`]. */
-  | 'columnDeleted'
-  /**  [`OpResult::ColumnsReordered`]. */
+  /**  [`TableResult::ColumnsReordered`] of an [`OpResult::Table`]. */
   | 'columnsReordered'
-  /**  [`OpResult::OptionsAdded`]. */
-  | 'optionsAdded'
-  /**  [`OpResult::RowsWritten`]. */
-  | 'rowsWritten'
-  /**  [`OpResult::ColumnTyped`]. */
-  | 'columnTyped'
-  /**  [`OpResult::OptionChanged`]. */
-  | 'optionChanged'
-  /**  [`OpResult::ViewWritten`]. */
-  | 'viewWritten'
-  /**  [`OpResult::ViewDeleted`]. */
-  | 'viewDeleted'
-  /**  [`OpResult::ViewsReordered`]. */
+  /**  [`TableResult::ViewsReordered`] of an [`OpResult::Table`]. */
   | 'viewsReordered'
-  /**  [`OpResult::CardMoved`]. */
-  | 'cardMoved';
+  /**  [`ColumnResult::Created`] of an [`OpResult::Column`]. */
+  | 'columnCreated'
+  /**  [`ColumnResult::Renamed`] of an [`OpResult::Column`]. */
+  | 'columnRenamed'
+  /**  [`ColumnResult::TypeChanged`] of an [`OpResult::Column`]. */
+  | 'columnTypeChanged'
+  /**  [`ColumnResult::Deleted`] of an [`OpResult::Column`]. */
+  | 'columnDeleted'
+  /**  [`ColumnResult::OptionsAdded`] of an [`OpResult::Column`]. */
+  | 'optionsAdded'
+  /**  [`ColumnResult::OptionUpdated`] of an [`OpResult::Column`]. */
+  | 'optionUpdated'
+  /**  [`ColumnResult::OptionDeleted`] of an [`OpResult::Column`]. */
+  | 'optionDeleted'
+  /**  [`RowsResult::Inserted`] of an [`OpResult::Rows`]. */
+  | 'rowsInserted'
+  /**  [`RowsResult::Updated`] of an [`OpResult::Rows`]. */
+  | 'rowsUpdated'
+  /**  [`RowsResult::Deleted`] of an [`OpResult::Rows`]. */
+  | 'rowsDeleted'
+  /**  [`ViewResult::Created`] of an [`OpResult::View`]. */
+  | 'viewCreated'
+  /**  [`ViewResult::Updated`] of an [`OpResult::View`]. */
+  | 'viewUpdated'
+  /**  [`ViewResult::Deleted`] of an [`OpResult::View`]. */
+  | 'viewDeleted'
+  /**  [`ViewResult::CardMoved`] of an [`OpResult::View`]. */
+  | 'cardMoved'
+  /**  [`OpResult::ReorderTables`]. */
+  | 'tablesReordered';
 
 /**  Identifier of an option of a select or tag column. */
 export type OptionId = string;
@@ -1572,6 +1407,57 @@ export type RowChanges =
 /**  Identifier of a row. */
 export type RowId = string;
 
+/**  A write to a table's rows. */
+export type RowsChange =
+  /**
+   *  Append rows to the table, in order, each with the cells it starts
+   *  with.
+   */
+  | {
+      kind: 'insert';
+      /**
+       *  One entry per new row: the cells it starts with. Columns left out
+       *  start empty.
+       */
+      rows: CellWrite[][];
+    }
+  /**
+   *  Write cells of existing rows. Last write wins: there is no version
+   *  check.
+   */
+  | {
+      kind: 'update';
+      /**  Which rows get which cells. */
+      changes: RowChanges;
+    }
+  /**  Remove rows and their cells. */
+  | {
+      kind: 'delete';
+      /**  The rows, each named once. */
+      rows: RowId[];
+    };
+
+/**  What happened to a table's rows. */
+export type RowsResult =
+  /**  Rows were added. */
+  | {
+      kind: 'inserted';
+      /**  The new rows, in the order they were sent. */
+      rows: RowId[];
+    }
+  /**  Rows' cells were written. */
+  | {
+      kind: 'updated';
+      /**  How many rows the op updated. */
+      affected: number;
+    }
+  /**  Rows were removed. */
+  | {
+      kind: 'deleted';
+      /**  How many rows the op deleted. */
+      affected: number;
+    };
+
 /**
  *  Why a statement did not run, as one typed union: each failure is a
  *  value the browser reads by its `stage` (and, for resolution, `kind`), and
@@ -1889,8 +1775,73 @@ export type Table = {
   source?: TableSource;
 };
 
+/**  A change to a table itself. */
+export type TableChange =
+  /**
+   *  Add the table, after the database's other tables. It starts with no
+   *  columns and no rows.
+   */
+  | {
+      kind: 'create';
+      /**  Its name, unique within the database ignoring case. */
+      name: string;
+    }
+  /**  Rename the table. Its id, columns and rows stay. */
+  | {
+      kind: 'rename';
+      /**  Its new name, unique within the database ignoring case. */
+      name: string;
+      /**
+       *  The name the caller saw. Given, the rename is refused if the
+       *  table goes by another one now, so a concurrent rename is not
+       *  overwritten.
+       */
+      previousName?: string | null;
+    }
+  /**
+   *  Remove the table with its columns, rows and views. A database keeps
+   *  at least one table, and a table another table's relation points at
+   *  stays until that relation goes.
+   */
+  | { kind: 'delete' }
+  /**
+   *  Set the order of the table's columns: `order` names every one of
+   *  them once.
+   */
+  | {
+      kind: 'reorder_columns';
+      /**  Its columns, in their new order. */
+      order: ColumnId[];
+    }
+  /**
+   *  Set the order of the table's views: `order` names every one of them
+   *  once.
+   */
+  | {
+      kind: 'reorder_views';
+      /**  Its views, in their new order. */
+      order: ViewId[];
+    };
+
 /**  Identifier of one table (tab) within a database. */
 export type TableId = string;
+
+/**  What happened to a table. */
+export type TableResult =
+  /**  It was added. */
+  | { kind: 'created' }
+  /**  It was renamed. */
+  | { kind: 'renamed' }
+  /**  It was removed. */
+  | { kind: 'deleted' }
+  /**  Its columns were reordered. */
+  | { kind: 'columns_reordered' }
+  /**  Its views were reordered. */
+  | {
+      kind: 'views_reordered';
+      /**  Every view's key, in their new order. */
+      positions: ViewPosition[];
+    };
 
 /**
  *  One table and its columns, in display order. Derived columns (lookups)
@@ -1959,6 +1910,58 @@ export type VersionedTable = {
   /**  Its version. */
   version: TableVersion;
 };
+
+/**  A change to one view. */
+export type ViewChange =
+  /**  Add the view to the table, after its other views. */
+  | {
+      kind: 'create';
+      /**  What it shows and how. */
+      view: NewView;
+    }
+  /**  Change the view's name, query or layout; what is left out stays. */
+  | {
+      kind: 'update';
+      /**  Its new name. */
+      name?: string | null;
+      /**  Its new query. */
+      query?: ViewQuery | null;
+      /**
+       *  Its new layout. A board grouped by another column forgets where
+       *  its cards were; a board left without a card title keeps the one
+       *  it has, or takes the table's first column.
+       */
+      layout?: RequestedLayout | null;
+    }
+  /**  Remove the view, with where its cards were. */
+  | { kind: 'delete' }
+  /**
+   *  Move one of the board's cards: into a lane, which sets the row's
+   *  grouping cell to the lane's option (or empties it for the lane
+   *  without one), and to a place there, between two of its cards. Only
+   *  an unsorted board's cards move by hand.
+   */
+  | {
+      kind: 'move_card';
+      /**  The card's row. */
+      row: RowId;
+      /**
+       *  The lane it goes to: an option of the board's column, or `null`
+       *  for the lane of cards without one.
+       */
+      lane: OptionId | null;
+      /**
+       *  The card that ends up just before it (it lands right after this
+       *  one), if any.
+       */
+      before?: RowId | null;
+      /**
+       *  The card that ends up just after it, if any. Given with `before`,
+       *  it must be the card right after `before`; with neither, the card
+       *  goes to the end of the lane.
+       */
+      after?: RowId | null;
+    };
 
 /**  How one column shows in a table layout. */
 export type ViewColumn = {
@@ -2105,3 +2108,26 @@ export type ViewQuery = {
    */
   sort?: SortKey[];
 };
+
+/**  What happened to a view. */
+export type ViewResult =
+  /**  It was added. */
+  | {
+      kind: 'created';
+      /**  The view as stored. */
+      view: DatabaseView;
+    }
+  /**  It was changed. */
+  | {
+      kind: 'updated';
+      /**  The view as stored. */
+      view: DatabaseView;
+    }
+  /**  It was removed. */
+  | { kind: 'deleted' }
+  /**  One of its cards moved. */
+  | {
+      kind: 'card_moved';
+      /**  The positions written, the moved card's last. */
+      positions: CardPosition[];
+    };

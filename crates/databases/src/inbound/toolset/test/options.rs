@@ -1,4 +1,4 @@
-use models_databases::{DatabaseOp, NewOption};
+use models_databases::{ColumnChange, DatabaseOp, NewOption};
 
 use super::*;
 
@@ -9,7 +9,9 @@ fn add_column_teaches_that_options_are_explicit() {
     let validated = generate_validated_input_schema::<AddColumn>().expect("schema should validate");
 
     assert!(
-        validated.description.contains("explicit schema"),
+        validated
+            .description
+            .contains("Select and tag columns accept only the labels in `options`"),
         "{}",
         validated.description
     );
@@ -64,18 +66,24 @@ async fn adding_options_returns_the_labels_sql_accepts() {
     let [batch] = calls.applied.as_slice() else {
         panic!("one batch, got {:?}", calls.applied);
     };
-    let DatabaseOp::AddOptions { options, .. } = &batch.ops[0] else {
+    let DatabaseOp::Column {
+        change: ColumnChange::AddOptions { options },
+        ..
+    } = &batch.ops[0]
+    else {
         panic!("an option addition, got {:?}", batch.ops);
     };
     assert_eq!(
         *batch,
-        OpBatch::from(vec![DatabaseOp::AddOptions {
+        OpBatch::from(vec![DatabaseOp::Column {
             table: TABLE_ID,
             column: COLUMN_ID,
-            options: vec![NewOption {
-                id: options[0].id,
-                label: "Waitlisted".to_string(),
-            }],
+            change: ColumnChange::AddOptions {
+                options: vec![NewOption {
+                    id: options[0].id,
+                    label: "Waitlisted".to_string(),
+                }],
+            },
         }])
     );
 }

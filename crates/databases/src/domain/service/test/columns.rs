@@ -18,10 +18,12 @@ async fn number_text_conversion_writes_converted_cells_through_the_cell_store() 
             edit(db),
             viewer(OWNER),
             OpBatch {
-                ops: vec![DatabaseOp::ChangeColumnType {
+                ops: vec![DatabaseOp::Column {
                     table: table_id,
                     column: plus_ones.id,
-                    to: ColumnKind::Text,
+                    change: ColumnChange::ChangeType {
+                        to: ColumnKind::Text,
+                    },
                 }],
                 base_versions: HashMap::from([(table_id, seeded_version)]),
             },
@@ -31,8 +33,11 @@ async fn number_text_conversion_writes_converted_cells_through_the_cell_store() 
     let as_text_version = TableVersion(seeded_version.0 + 1);
     assert_eq!(
         results,
-        vec![OpResult::ColumnTyped {
+        vec![OpResult::Column {
+            table: table_id,
+            column: plus_ones.id,
             table_version: as_text_version,
+            change: ColumnResult::TypeChanged,
         }]
     );
     let as_text = {
@@ -68,10 +73,12 @@ async fn number_text_conversion_writes_converted_cells_through_the_cell_store() 
         edit(db),
         viewer(OWNER),
         OpBatch {
-            ops: vec![DatabaseOp::ChangeColumnType {
+            ops: vec![DatabaseOp::Column {
                 table: table_id,
                 column: plus_ones.id,
-                to: ColumnKind::Number,
+                change: ColumnChange::ChangeType {
+                    to: ColumnKind::Number,
+                },
             }],
             base_versions: HashMap::from([(table_id, as_text_version)]),
         },
@@ -113,10 +120,12 @@ async fn invalid_or_lossy_conversions_do_not_modify_the_column() {
             .apply_ops(
                 edit(db),
                 viewer(OWNER),
-                OpBatch::from(vec![DatabaseOp::ChangeColumnType {
+                OpBatch::from(vec![DatabaseOp::Column {
                     table: table_id,
                     column: name.id,
-                    to: ColumnKind::Number,
+                    change: ColumnChange::ChangeType {
+                        to: ColumnKind::Number,
+                    },
                 }]),
             )
             .await;
@@ -153,10 +162,12 @@ async fn selecting_text_preserves_option_labels_and_select_preserves_unused_opti
     svc.apply_ops(
         edit(db),
         viewer(OWNER),
-        OpBatch::from(vec![DatabaseOp::ChangeColumnType {
+        OpBatch::from(vec![DatabaseOp::Column {
             table: table_id,
             column: status.id,
-            to: ColumnKind::Select { multi: true },
+            change: ColumnChange::ChangeType {
+                to: ColumnKind::Select { multi: true },
+            },
         }]),
     )
     .await
@@ -182,10 +193,12 @@ async fn selecting_text_preserves_option_labels_and_select_preserves_unused_opti
     svc.apply_ops(
         edit(db),
         viewer(OWNER),
-        OpBatch::from(vec![DatabaseOp::ChangeColumnType {
+        OpBatch::from(vec![DatabaseOp::Column {
             table: table_id,
             column: status.id,
-            to: ColumnKind::Text,
+            change: ColumnChange::ChangeType {
+                to: ColumnKind::Text,
+            },
         }]),
     )
     .await
@@ -224,9 +237,9 @@ async fn reorder_validates_complete_ids_and_delete_preserves_definitions() {
                 edit(db),
                 viewer(OWNER),
                 OpBatch {
-                    ops: vec![DatabaseOp::ReorderColumns {
+                    ops: vec![DatabaseOp::Table {
                         table: table_id,
-                        order: invalid,
+                        change: TableChange::ReorderColumns { order: invalid },
                     }],
                     base_versions: HashMap::from([(table_id, seeded_version)]),
                 },
@@ -246,9 +259,11 @@ async fn reorder_validates_complete_ids_and_delete_preserves_definitions() {
             edit(db),
             viewer(OWNER),
             OpBatch {
-                ops: vec![DatabaseOp::ReorderColumns {
+                ops: vec![DatabaseOp::Table {
                     table: table_id,
-                    order: vec![ids[2], ids[1], ids[0]],
+                    change: TableChange::ReorderColumns {
+                        order: vec![ids[2], ids[1], ids[0]],
+                    },
                 }],
                 base_versions: HashMap::from([(table_id, seeded_version)]),
             },
@@ -258,8 +273,10 @@ async fn reorder_validates_complete_ids_and_delete_preserves_definitions() {
     let reordered_version = TableVersion(seeded_version.0 + 1);
     assert_eq!(
         reordered,
-        vec![OpResult::ColumnsReordered {
-            table_version: reordered_version,
+        vec![OpResult::Table {
+            table: table_id,
+            table_version: Some(reordered_version),
+            change: TableResult::ColumnsReordered,
         }]
     );
     let detail = svc
@@ -280,9 +297,10 @@ async fn reorder_validates_complete_ids_and_delete_preserves_definitions() {
             edit(db),
             viewer(OWNER),
             OpBatch {
-                ops: vec![DatabaseOp::DeleteColumn {
+                ops: vec![DatabaseOp::Column {
                     table: table_id,
                     column: ids[0],
+                    change: ColumnChange::Delete,
                 }],
                 base_versions: HashMap::from([(table_id, reordered_version)]),
             },
@@ -292,8 +310,11 @@ async fn reorder_validates_complete_ids_and_delete_preserves_definitions() {
     let deleted_version = TableVersion(reordered_version.0 + 1);
     assert_eq!(
         deleted,
-        vec![OpResult::ColumnDeleted {
+        vec![OpResult::Column {
+            table: table_id,
+            column: ids[0],
             table_version: deleted_version,
+            change: ColumnResult::Deleted,
         }]
     );
     {
@@ -332,18 +353,21 @@ async fn schema_mutations_reject_wrong_database_stale_and_trashed_database() {
     ];
     let seeded_version = table_version(&world, table_id);
     let ops = [
-        DatabaseOp::ChangeColumnType {
+        DatabaseOp::Column {
             table: table_id,
             column: seeded.name_column.id,
-            to: ColumnKind::Text,
+            change: ColumnChange::ChangeType {
+                to: ColumnKind::Text,
+            },
         },
-        DatabaseOp::DeleteColumn {
+        DatabaseOp::Column {
             table: table_id,
             column: seeded.name_column.id,
+            change: ColumnChange::Delete,
         },
-        DatabaseOp::ReorderColumns {
+        DatabaseOp::Table {
             table: table_id,
-            order: ids,
+            change: TableChange::ReorderColumns { order: ids },
         },
     ];
     let at = |op: &DatabaseOp, version: TableVersion| OpBatch {

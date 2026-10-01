@@ -120,9 +120,9 @@ describe('databases client failures', () => {
       request: {
         ops: [
           {
-            kind: 'create_table',
-            id: '0199a3c4-0000-7000-8000-000000000001',
-            name: 'Tasks',
+            kind: 'table',
+            table: '0199a3c4-0000-7000-8000-000000000001',
+            change: { kind: 'create', name: 'Tasks' },
           },
         ],
       },
@@ -143,13 +143,64 @@ describe('databases client failures', () => {
     ]);
   });
 
+  it('names a view id a refused batch found already taken', async () => {
+    answer(
+      400,
+      JSON.stringify({
+        message: 'op 0: view 0199a3c4-0000-7000-8000-000000000002 exists',
+        op: 0,
+        row: null,
+        column: null,
+        taken: { kind: 'view', id: '0199a3c4-0000-7000-8000-000000000002' },
+      })
+    );
+
+    const applied = await databasesClient.applyOps({
+      id: 'db',
+      request: {
+        ops: [
+          {
+            kind: 'view',
+            table: 'table',
+            view: '0199a3c4-0000-7000-8000-000000000002',
+            change: {
+              kind: 'create',
+              view: { name: 'Board', layout: { kind: 'table', columns: [] } },
+            },
+          },
+        ],
+      },
+    });
+
+    expect(applied._unsafeUnwrapErr()).toEqual([
+      {
+        code: 'INVALID_OP',
+        message: 'op 0: view 0199a3c4-0000-7000-8000-000000000002 exists',
+        refusal: {
+          message: 'op 0: view 0199a3c4-0000-7000-8000-000000000002 exists',
+          op: 0,
+          row: null,
+          column: null,
+          taken: { kind: 'view', id: '0199a3c4-0000-7000-8000-000000000002' },
+        },
+      },
+    ]);
+  });
+
   it('sends the base versions with the ops', async () => {
     fetch.mockResolvedValue(ok({ results: [] }));
 
     await databasesClient.applyOps({
       id: 'db',
       request: {
-        ops: [{ kind: 'delete_column', table: 'table', column: 'column' }],
+        ops: [
+          {
+            kind: 'column',
+            table: 'table',
+            column: 'column',
+            change: { kind: 'delete' },
+          },
+        ],
         baseVersions: { table: 7 },
       },
     });
@@ -159,7 +210,14 @@ describe('databases client failures', () => {
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({
-          ops: [{ kind: 'delete_column', table: 'table', column: 'column' }],
+          ops: [
+            {
+              kind: 'column',
+              table: 'table',
+              column: 'column',
+              change: { kind: 'delete' },
+            },
+          ],
           baseVersions: { table: 7 },
         }),
       })

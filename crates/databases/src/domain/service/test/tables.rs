@@ -14,18 +14,21 @@ async fn create_table_announces_only_the_committed_table() {
         .apply_ops(
             edit(db),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::CreateTable {
-                id: tickets,
-                name: "Tickets".into(),
+            OpBatch::from(vec![DatabaseOp::Table {
+                table: tickets,
+                change: TableChange::Create {
+                    name: "Tickets".into(),
+                },
             }]),
         )
         .await
         .unwrap();
     assert_eq!(
         results,
-        vec![OpResult::TableCreated {
+        vec![OpResult::Table {
             table: tickets,
-            table_version: TableVersion(1),
+            table_version: Some(TableVersion(1)),
+            change: TableResult::Created,
         }]
     );
     {
@@ -48,9 +51,11 @@ async fn create_table_announces_only_the_committed_table() {
         .apply_ops(
             edit(db),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::CreateTable {
-                id: TableId::new(),
-                name: "tickets".into(),
+            OpBatch::from(vec![DatabaseOp::Table {
+                table: TableId::new(),
+                change: TableChange::Create {
+                    name: "tickets".into(),
+                },
             }]),
         )
         .await
@@ -76,9 +81,11 @@ async fn a_table_name_differing_only_in_non_ascii_case_is_taken() {
     svc.apply_ops(
         edit(db),
         viewer(OWNER),
-        OpBatch::from(vec![DatabaseOp::CreateTable {
-            id: TableId::new(),
-            name: "Ärger".into(),
+        OpBatch::from(vec![DatabaseOp::Table {
+            table: TableId::new(),
+            change: TableChange::Create {
+                name: "Ärger".into(),
+            },
         }]),
     )
     .await
@@ -88,9 +95,11 @@ async fn a_table_name_differing_only_in_non_ascii_case_is_taken() {
         .apply_ops(
             edit(db),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::CreateTable {
-                id: TableId::new(),
-                name: "ärger".into(),
+            OpBatch::from(vec![DatabaseOp::Table {
+                table: TableId::new(),
+                change: TableChange::Create {
+                    name: "ärger".into(),
+                },
             }]),
         )
         .await
@@ -123,9 +132,11 @@ async fn parent_disappearing_at_table_write_stays_not_found_and_publishes_nothin
         .apply_ops(
             edit(db),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::CreateTable {
-                id: TableId::new(),
-                name: "Unavailable".into(),
+            OpBatch::from(vec![DatabaseOp::Table {
+                table: TableId::new(),
+                change: TableChange::Create {
+                    name: "Unavailable".into(),
+                },
             }]),
         )
         .await;
@@ -133,10 +144,12 @@ async fn parent_disappearing_at_table_write_stays_not_found_and_publishes_nothin
         .apply_ops(
             edit(db),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::RenameTable {
+            OpBatch::from(vec![DatabaseOp::Table {
                 table: table_id,
-                name: "Unavailable".into(),
-                previous_name: Some("Guests".into()),
+                change: TableChange::Rename {
+                    name: "Unavailable".into(),
+                    previous_name: Some("Guests".into()),
+                },
             }]),
         )
         .await;
@@ -156,9 +169,11 @@ async fn a_new_table_is_empty_and_named_by_its_quoted_sql_name() {
     svc.apply_ops(
         edit(db),
         viewer(OWNER),
-        OpBatch::from(vec![DatabaseOp::CreateTable {
-            id: sales,
-            name: "  Ticket sales ".into(),
+        OpBatch::from(vec![DatabaseOp::Table {
+            table: sales,
+            change: TableChange::Create {
+                name: "  Ticket sales ".into(),
+            },
         }]),
     )
     .await
@@ -204,13 +219,17 @@ async fn reordering_three_tables_answers_and_lists_them_in_the_new_order() {
         edit(db),
         viewer(OWNER),
         OpBatch::from(vec![
-            DatabaseOp::CreateTable {
-                id: budget,
-                name: "Budget".into(),
+            DatabaseOp::Table {
+                table: budget,
+                change: TableChange::Create {
+                    name: "Budget".into(),
+                },
             },
-            DatabaseOp::CreateTable {
-                id: venues,
-                name: "Venues".into(),
+            DatabaseOp::Table {
+                table: venues,
+                change: TableChange::Create {
+                    name: "Venues".into(),
+                },
             },
         ]),
     )
@@ -232,7 +251,7 @@ async fn reordering_three_tables_answers_and_lists_them_in_the_new_order() {
         )
         .await
         .unwrap();
-    let [OpResult::TablesReordered { tables }] = results.as_slice() else {
+    let [OpResult::ReorderTables { tables }] = results.as_slice() else {
         panic!("expected one reorder, got {results:?}");
     };
     assert_eq!(
@@ -288,9 +307,11 @@ async fn an_order_missing_a_table_is_rejected_without_publishing() {
     svc.apply_ops(
         edit(db),
         viewer(OWNER),
-        OpBatch::from(vec![DatabaseOp::CreateTable {
-            id: TableId::new(),
-            name: "Budget".into(),
+        OpBatch::from(vec![DatabaseOp::Table {
+            table: TableId::new(),
+            change: TableChange::Create {
+                name: "Budget".into(),
+            },
         }]),
     )
     .await

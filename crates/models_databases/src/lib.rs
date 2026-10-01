@@ -13,8 +13,9 @@ pub use ids::{
     ColumnId, DatabaseId, OptionId, PropertyId, QueryId, RowId, TableId, TableVersion, ViewId,
 };
 pub use ops::{
-    CellValue, CellWrite, ColumnKind, DatabaseOp, EntityKind, EntityRef, NewColumn, NewOption,
-    OpResult, OptionRef, RowChange, RowChanges, TakenId, VersionedTable,
+    CellValue, CellWrite, ColumnChange, ColumnKind, ColumnResult, DatabaseOp, EntityKind,
+    EntityRef, NewColumn, NewOption, OpResult, OptionRef, RowChange, RowChanges, RowsChange,
+    RowsResult, TableChange, TableResult, TakenId, VersionedTable, ViewChange, ViewResult,
 };
 
 /// Longest SQL statement, run or saved, anywhere a statement is accepted.

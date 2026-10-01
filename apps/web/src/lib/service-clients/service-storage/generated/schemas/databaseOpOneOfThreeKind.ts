@@ -10,5 +10,5 @@ export type DatabaseOpOneOfThreeKind =
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const DatabaseOpOneOfThreeKind = {
-  rename_table: 'rename_table',
+  column: 'column',
 } as const;

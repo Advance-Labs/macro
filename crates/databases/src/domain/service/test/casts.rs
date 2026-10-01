@@ -9,10 +9,10 @@ fn version(world: &Shared) -> TableVersion {
 
 fn retype(seeded: &Seeded, column: ColumnId, to: ColumnKind) -> OpBatch {
     OpBatch {
-        ops: vec![DatabaseOp::ChangeColumnType {
+        ops: vec![DatabaseOp::Column {
             table: seeded.table_id,
             column,
-            to,
+            change: ColumnChange::ChangeType { to },
         }],
         base_versions: HashMap::from([(seeded.table_id, version(&seeded.world))]),
     }
@@ -96,8 +96,11 @@ async fn a_checked_cast_whose_values_all_fit_converts_them() {
 
     assert_eq!(
         outcome,
-        vec![OpResult::ColumnTyped {
+        vec![OpResult::Column {
+            table: seeded.table_id,
+            column: seeded.name_column.id,
             table_version: TableVersion(before.0 + 1),
+            change: ColumnResult::TypeChanged,
         }]
     );
     let w = seeded.world.lock().unwrap();
@@ -163,25 +166,27 @@ async fn a_cell_with_two_options_refuses_a_single_select_and_keeps_both() {
     svc.apply_ops(
         edit(seeded.database_id),
         viewer(OWNER),
-        OpBatch::from(vec![DatabaseOp::CreateColumn {
+        OpBatch::from(vec![DatabaseOp::Column {
             table: seeded.table_id,
-            id: tags,
-            definition: NewColumn::New {
-                name: "Diet".into(),
-                kind: ColumnKind::Select { multi: true },
-                options: vec![
-                    NewOption {
-                        id: OptionId::new(),
-                        label: "Vegan".into(),
-                    },
-                    NewOption {
-                        id: OptionId::new(),
-                        label: "Nut-free".into(),
-                    },
-                ],
-                infer_type: false,
+            column: tags,
+            change: ColumnChange::Create {
+                definition: NewColumn::New {
+                    name: "Diet".into(),
+                    kind: ColumnKind::Select { multi: true },
+                    options: vec![
+                        NewOption {
+                            id: OptionId::new(),
+                            label: "Vegan".into(),
+                        },
+                        NewOption {
+                            id: OptionId::new(),
+                            label: "Nut-free".into(),
+                        },
+                    ],
+                    infer_type: false,
+                },
+                after: None,
             },
-            after: None,
         }]),
     )
     .await
@@ -189,17 +194,19 @@ async fn a_cell_with_two_options_refuses_a_single_select_and_keeps_both() {
     svc.apply_ops(
         receipt(seeded.database_id, OWNER, AccessLevel::Edit),
         viewer(OWNER),
-        OpBatch::from(vec![DatabaseOp::UpdateRows {
+        OpBatch::from(vec![DatabaseOp::Rows {
             table: seeded.table_id,
-            changes: RowChanges::Uniform {
-                rows: vec![seeded.row_id],
-                cells: vec![CellWrite {
-                    column: tags,
-                    value: CellValue::Options(vec![
-                        OptionRef::Label("Vegan".into()),
-                        OptionRef::Label("Nut-free".into()),
-                    ]),
-                }],
+            change: RowsChange::Update {
+                changes: RowChanges::Uniform {
+                    rows: vec![seeded.row_id],
+                    cells: vec![CellWrite {
+                        column: tags,
+                        value: CellValue::Options(vec![
+                            OptionRef::Label("Vegan".into()),
+                            OptionRef::Label("Nut-free".into()),
+                        ]),
+                    }],
+                },
             },
         }]),
     )
@@ -339,37 +346,41 @@ async fn a_cell_with_two_references_refuses_a_single_reference_and_keeps_both() 
         edit(seeded.database_id),
         viewer(OWNER),
         OpBatch::from(vec![
-            DatabaseOp::CreateColumn {
+            DatabaseOp::Column {
                 table: seeded.table_id,
-                id: hosts,
-                definition: NewColumn::New {
-                    name: "Hosts".into(),
-                    kind: ColumnKind::Entity {
-                        target: EntityKind::User,
-                        multi: true,
+                column: hosts,
+                change: ColumnChange::Create {
+                    definition: NewColumn::New {
+                        name: "Hosts".into(),
+                        kind: ColumnKind::Entity {
+                            target: EntityKind::User,
+                            multi: true,
+                        },
+                        options: vec![],
+                        infer_type: false,
                     },
-                    options: vec![],
-                    infer_type: false,
+                    after: None,
                 },
-                after: None,
             },
-            DatabaseOp::UpdateRows {
+            DatabaseOp::Rows {
                 table: seeded.table_id,
-                changes: RowChanges::Uniform {
-                    rows: vec![seeded.row_id],
-                    cells: vec![CellWrite {
-                        column: hosts,
-                        value: CellValue::Entities(vec![
-                            EntityRef {
-                                entity_type: EntityKind::User,
-                                entity_id: "macro|ana@macro.com".into(),
-                            },
-                            EntityRef {
-                                entity_type: EntityKind::User,
-                                entity_id: "macro|ben@macro.com".into(),
-                            },
-                        ]),
-                    }],
+                change: RowsChange::Update {
+                    changes: RowChanges::Uniform {
+                        rows: vec![seeded.row_id],
+                        cells: vec![CellWrite {
+                            column: hosts,
+                            value: CellValue::Entities(vec![
+                                EntityRef {
+                                    entity_type: EntityKind::User,
+                                    entity_id: "macro|ana@macro.com".into(),
+                                },
+                                EntityRef {
+                                    entity_type: EntityKind::User,
+                                    entity_id: "macro|ben@macro.com".into(),
+                                },
+                            ]),
+                        }],
+                    },
                 },
             },
         ]),
@@ -443,16 +454,18 @@ async fn a_date_becomes_its_calendar_day_as_text_unless_it_has_a_time() {
     svc.apply_ops(
         edit(seeded.database_id),
         viewer(OWNER),
-        OpBatch::from(vec![DatabaseOp::CreateColumn {
+        OpBatch::from(vec![DatabaseOp::Column {
             table: seeded.table_id,
-            id: arrives,
-            definition: NewColumn::New {
-                name: "Arrives".into(),
-                kind: ColumnKind::Date,
-                options: vec![],
-                infer_type: false,
+            column: arrives,
+            change: ColumnChange::Create {
+                definition: NewColumn::New {
+                    name: "Arrives".into(),
+                    kind: ColumnKind::Date,
+                    options: vec![],
+                    infer_type: false,
+                },
+                after: None,
             },
-            after: None,
         }]),
     )
     .await
@@ -463,23 +476,31 @@ async fn a_date_becomes_its_calendar_day_as_text_unless_it_has_a_time() {
         .apply_ops(
             receipt(seeded.database_id, OWNER, AccessLevel::Edit),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::InsertRows {
+            OpBatch::from(vec![DatabaseOp::Rows {
                 table: seeded.table_id,
-                rows: vec![
-                    vec![CellWrite {
-                        column: arrives,
-                        value: CellValue::Date(midnight),
-                    }],
-                    vec![CellWrite {
-                        column: arrives,
-                        value: CellValue::Date(afternoon),
-                    }],
-                ],
+                change: RowsChange::Insert {
+                    rows: vec![
+                        vec![CellWrite {
+                            column: arrives,
+                            value: CellValue::Date(midnight),
+                        }],
+                        vec![CellWrite {
+                            column: arrives,
+                            value: CellValue::Date(afternoon),
+                        }],
+                    ],
+                },
             }]),
         )
         .await
         .unwrap();
-    let [OpResult::RowsWritten { inserted, .. }] = inserted.as_slice() else {
+    let [
+        OpResult::Rows {
+            change: RowsResult::Inserted { rows: inserted },
+            ..
+        },
+    ] = inserted.as_slice()
+    else {
         panic!("expected one insert, got {inserted:?}");
     };
 
@@ -523,8 +544,11 @@ async fn changing_a_column_to_its_own_type_changes_nothing() {
 
     assert_eq!(
         outcome,
-        vec![OpResult::ColumnTyped {
+        vec![OpResult::Column {
+            table: seeded.table_id,
+            column: seeded.plus_ones_column.id,
             table_version: before,
+            change: ColumnResult::TypeChanged,
         }]
     );
     let w = seeded.world.lock().unwrap();
@@ -652,16 +676,18 @@ async fn a_text_column_converts_into_a_new_number_column_beside_it() {
     svc.apply_ops(
         edit(seeded.database_id),
         viewer(OWNER),
-        OpBatch::from(vec![DatabaseOp::CreateColumn {
+        OpBatch::from(vec![DatabaseOp::Column {
             table: seeded.table_id,
-            id: size,
-            definition: NewColumn::New {
-                name: "Party size".into(),
-                kind: ColumnKind::Text,
-                options: vec![],
-                infer_type: false,
+            column: size,
+            change: ColumnChange::Create {
+                definition: NewColumn::New {
+                    name: "Party size".into(),
+                    kind: ColumnKind::Text,
+                    options: vec![],
+                    infer_type: false,
+                },
+                after: None,
             },
-            after: None,
         }]),
     )
     .await
@@ -670,27 +696,35 @@ async fn a_text_column_converts_into_a_new_number_column_beside_it() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::InsertRows {
+            OpBatch::from(vec![DatabaseOp::Rows {
                 table: seeded.table_id,
-                rows: vec![
-                    vec![CellWrite {
-                        column: size,
-                        value: CellValue::Text("1".into()),
-                    }],
-                    vec![CellWrite {
-                        column: size,
-                        value: CellValue::Text("2".into()),
-                    }],
-                    vec![CellWrite {
-                        column: size,
-                        value: CellValue::Text("soon".into()),
-                    }],
-                ],
+                change: RowsChange::Insert {
+                    rows: vec![
+                        vec![CellWrite {
+                            column: size,
+                            value: CellValue::Text("1".into()),
+                        }],
+                        vec![CellWrite {
+                            column: size,
+                            value: CellValue::Text("2".into()),
+                        }],
+                        vec![CellWrite {
+                            column: size,
+                            value: CellValue::Text("soon".into()),
+                        }],
+                    ],
+                },
             }]),
         )
         .await
         .unwrap();
-    let [OpResult::RowsWritten { inserted: rows, .. }] = inserted.as_slice() else {
+    let [
+        OpResult::Rows {
+            change: RowsResult::Inserted { rows },
+            ..
+        },
+    ] = inserted.as_slice()
+    else {
         panic!("expected one insert, got {inserted:?}");
     };
     let size_definition = seeded
@@ -748,31 +782,35 @@ async fn a_text_column_converts_into_a_new_number_column_beside_it() {
         viewer(OWNER),
         OpBatch {
             ops: vec![
-                DatabaseOp::CreateColumn {
+                DatabaseOp::Column {
                     table: seeded.table_id,
-                    id: as_number,
-                    definition: NewColumn::New {
-                        name: "Party size (number)".into(),
-                        kind: ColumnKind::Number,
-                        options: vec![],
-                        infer_type: false,
+                    column: as_number,
+                    change: ColumnChange::Create {
+                        definition: NewColumn::New {
+                            name: "Party size (number)".into(),
+                            kind: ColumnKind::Number,
+                            options: vec![],
+                            infer_type: false,
+                        },
+                        after: Some(size),
                     },
-                    after: Some(size),
                 },
-                DatabaseOp::UpdateRows {
+                DatabaseOp::Rows {
                     table: seeded.table_id,
-                    changes: RowChanges::PerRow {
-                        rows: conversion
-                            .cells
-                            .into_iter()
-                            .map(|cell| RowChange {
-                                row: cell.row,
-                                cells: vec![CellWrite {
-                                    column: as_number,
-                                    value: cell.value,
-                                }],
-                            })
-                            .collect(),
+                    change: RowsChange::Update {
+                        changes: RowChanges::PerRow {
+                            rows: conversion
+                                .cells
+                                .into_iter()
+                                .map(|cell| RowChange {
+                                    row: cell.row,
+                                    cells: vec![CellWrite {
+                                        column: as_number,
+                                        value: cell.value,
+                                    }],
+                                })
+                                .collect(),
+                        },
                     },
                 },
             ],
@@ -820,16 +858,18 @@ async fn a_text_column_converts_into_a_new_select_column_with_its_labels_as_opti
     svc.apply_ops(
         edit(seeded.database_id),
         viewer(OWNER),
-        OpBatch::from(vec![DatabaseOp::CreateColumn {
+        OpBatch::from(vec![DatabaseOp::Column {
             table: seeded.table_id,
-            id: diet,
-            definition: NewColumn::New {
-                name: "Diet".into(),
-                kind: ColumnKind::Text,
-                options: vec![],
-                infer_type: false,
+            column: diet,
+            change: ColumnChange::Create {
+                definition: NewColumn::New {
+                    name: "Diet".into(),
+                    kind: ColumnKind::Text,
+                    options: vec![],
+                    infer_type: false,
+                },
+                after: None,
             },
-            after: None,
         }]),
     )
     .await
@@ -838,27 +878,35 @@ async fn a_text_column_converts_into_a_new_select_column_with_its_labels_as_opti
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::InsertRows {
+            OpBatch::from(vec![DatabaseOp::Rows {
                 table: seeded.table_id,
-                rows: vec![
-                    vec![CellWrite {
-                        column: diet,
-                        value: CellValue::Text("Vegan".into()),
-                    }],
-                    vec![CellWrite {
-                        column: diet,
-                        value: CellValue::Text("Nut-free".into()),
-                    }],
-                    vec![CellWrite {
-                        column: diet,
-                        value: CellValue::Text("Vegan".into()),
-                    }],
-                ],
+                change: RowsChange::Insert {
+                    rows: vec![
+                        vec![CellWrite {
+                            column: diet,
+                            value: CellValue::Text("Vegan".into()),
+                        }],
+                        vec![CellWrite {
+                            column: diet,
+                            value: CellValue::Text("Nut-free".into()),
+                        }],
+                        vec![CellWrite {
+                            column: diet,
+                            value: CellValue::Text("Vegan".into()),
+                        }],
+                    ],
+                },
             }]),
         )
         .await
         .unwrap();
-    let [OpResult::RowsWritten { inserted: rows, .. }] = inserted.as_slice() else {
+    let [
+        OpResult::Rows {
+            change: RowsResult::Inserted { rows },
+            ..
+        },
+    ] = inserted.as_slice()
+    else {
         panic!("expected one insert, got {inserted:?}");
     };
     let diet_definition = seeded
@@ -910,40 +958,44 @@ async fn a_text_column_converts_into_a_new_select_column_with_its_labels_as_opti
         viewer(OWNER),
         OpBatch {
             ops: vec![
-                DatabaseOp::CreateColumn {
+                DatabaseOp::Column {
                     table: seeded.table_id,
-                    id: as_select,
-                    definition: NewColumn::New {
-                        name: "Diet (select)".into(),
-                        kind: ColumnKind::Select { multi: false },
-                        options: vec![
-                            NewOption {
-                                id: vegan,
-                                label: conversion.options[0].clone(),
-                            },
-                            NewOption {
-                                id: nut_free,
-                                label: conversion.options[1].clone(),
-                            },
-                        ],
-                        infer_type: false,
+                    column: as_select,
+                    change: ColumnChange::Create {
+                        definition: NewColumn::New {
+                            name: "Diet (select)".into(),
+                            kind: ColumnKind::Select { multi: false },
+                            options: vec![
+                                NewOption {
+                                    id: vegan,
+                                    label: conversion.options[0].clone(),
+                                },
+                                NewOption {
+                                    id: nut_free,
+                                    label: conversion.options[1].clone(),
+                                },
+                            ],
+                            infer_type: false,
+                        },
+                        after: Some(diet),
                     },
-                    after: Some(diet),
                 },
-                DatabaseOp::UpdateRows {
+                DatabaseOp::Rows {
                     table: seeded.table_id,
-                    changes: RowChanges::PerRow {
-                        rows: conversion
-                            .cells
-                            .into_iter()
-                            .map(|cell| RowChange {
-                                row: cell.row,
-                                cells: vec![CellWrite {
-                                    column: as_select,
-                                    value: cell.value,
-                                }],
-                            })
-                            .collect(),
+                    change: RowsChange::Update {
+                        changes: RowChanges::PerRow {
+                            rows: conversion
+                                .cells
+                                .into_iter()
+                                .map(|cell| RowChange {
+                                    row: cell.row,
+                                    cells: vec![CellWrite {
+                                        column: as_select,
+                                        value: cell.value,
+                                    }],
+                                })
+                                .collect(),
+                        },
                     },
                 },
             ],

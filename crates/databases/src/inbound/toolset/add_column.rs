@@ -5,7 +5,9 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
-use models_databases::{ColumnId, DatabaseId, DatabaseOp, NewColumn, NewOption, OptionId, TableId};
+use models_databases::{
+    ColumnChange, ColumnId, DatabaseId, DatabaseOp, NewColumn, NewOption, OptionId, TableId,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -167,24 +169,26 @@ where
             .apply(
                 user_id,
                 self.database_id,
-                OpBatch::from(vec![DatabaseOp::CreateColumn {
+                OpBatch::from(vec![DatabaseOp::Column {
                     table: self.table_id,
-                    id: column_id,
-                    definition: NewColumn::New {
-                        name: self.name.clone(),
-                        kind,
-                        options: self
-                            .options
-                            .iter()
-                            .flatten()
-                            .map(|label| NewOption {
-                                id: OptionId::new(),
-                                label: label.clone(),
-                            })
-                            .collect(),
-                        infer_type: false,
+                    column: column_id,
+                    change: ColumnChange::Create {
+                        definition: NewColumn::New {
+                            name: self.name.clone(),
+                            kind,
+                            options: self
+                                .options
+                                .iter()
+                                .flatten()
+                                .map(|label| NewOption {
+                                    id: OptionId::new(),
+                                    label: label.clone(),
+                                })
+                                .collect(),
+                            infer_type: false,
+                        },
+                        after: None,
                     },
-                    after: None,
                 }]),
             )
             .await?;

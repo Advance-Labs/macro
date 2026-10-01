@@ -14,9 +14,11 @@ async fn deleting_a_table_removes_its_rows_cells_and_columns() {
     svc.apply_ops(
         edit(db),
         viewer(OWNER),
-        OpBatch::from(vec![DatabaseOp::CreateTable {
-            id: tickets,
-            name: "Tickets".into(),
+        OpBatch::from(vec![DatabaseOp::Table {
+            table: tickets,
+            change: TableChange::Create {
+                name: "Tickets".into(),
+            },
         }]),
     )
     .await
@@ -32,11 +34,21 @@ async fn deleting_a_table_removes_its_rows_cells_and_columns() {
         .apply_ops(
             edit(db),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::DeleteTable { table: guests }]),
+            OpBatch::from(vec![DatabaseOp::Table {
+                table: guests,
+                change: TableChange::Delete,
+            }]),
         )
         .await
         .unwrap();
-    assert_eq!(results, vec![OpResult::TableDeleted { table: guests }]);
+    assert_eq!(
+        results,
+        vec![OpResult::Table {
+            table: guests,
+            table_version: None,
+            change: TableResult::Deleted,
+        }]
+    );
 
     {
         let w = world.lock().unwrap();
@@ -60,7 +72,10 @@ async fn deleting_a_table_removes_its_rows_cells_and_columns() {
         .apply_ops(
             edit(db),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::DeleteTable { table: tickets }]),
+            OpBatch::from(vec![DatabaseOp::Table {
+                table: tickets,
+                change: TableChange::Delete,
+            }]),
         )
         .await
         .unwrap_err();
@@ -74,7 +89,10 @@ async fn deleting_a_table_removes_its_rows_cells_and_columns() {
         .apply_ops(
             edit(db),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::DeleteTable { table: guests }]),
+            OpBatch::from(vec![DatabaseOp::Table {
+                table: guests,
+                change: TableChange::Delete,
+            }]),
         )
         .await
         .unwrap_err();
@@ -101,23 +119,27 @@ async fn a_table_another_table_relates_to_is_not_deleted() {
         edit(db),
         viewer(OWNER),
         OpBatch::from(vec![
-            DatabaseOp::CreateTable {
-                id: invites,
-                name: "Invites".into(),
-            },
-            DatabaseOp::CreateColumn {
+            DatabaseOp::Table {
                 table: invites,
-                id: ColumnId::new(),
-                definition: NewColumn::New {
-                    name: "Guest".into(),
-                    kind: ColumnKind::Relation {
-                        database: db,
-                        table: guests,
-                    },
-                    options: vec![],
-                    infer_type: false,
+                change: TableChange::Create {
+                    name: "Invites".into(),
                 },
-                after: None,
+            },
+            DatabaseOp::Column {
+                table: invites,
+                column: ColumnId::new(),
+                change: ColumnChange::Create {
+                    definition: NewColumn::New {
+                        name: "Guest".into(),
+                        kind: ColumnKind::Relation {
+                            database: db,
+                            table: guests,
+                        },
+                        options: vec![],
+                        infer_type: false,
+                    },
+                    after: None,
+                },
             },
         ]),
     )
@@ -128,7 +150,10 @@ async fn a_table_another_table_relates_to_is_not_deleted() {
         .apply_ops(
             edit(db),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::DeleteTable { table: guests }]),
+            OpBatch::from(vec![DatabaseOp::Table {
+                table: guests,
+                change: TableChange::Delete,
+            }]),
         )
         .await
         .unwrap_err();

@@ -5,15 +5,14 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { OpResultOneOfNineKind } from './opResultOneOfNineKind';
-import type { TableVersion } from './tableVersion';
+import type { VersionedTable } from './versionedTable';
 
 /**
- * The column a creation added.
+ * The database's tables in their new order.
  */
 export type OpResultOneOfNine = {
-  /** The new column. */
-  column: string;
   kind: OpResultOneOfNineKind;
-  /** The table's version once the request committed. */
-  tableVersion: TableVersion;
+  /** Every table, in its new order, with its version once the request
+committed. */
+  tables: VersionedTable[];
 };

@@ -10,5 +10,5 @@ export type OpResultOneOfSevenKind =
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const OpResultOneOfSevenKind = {
-  tables_reordered: 'tables_reordered',
+  view: 'view',
 } as const;

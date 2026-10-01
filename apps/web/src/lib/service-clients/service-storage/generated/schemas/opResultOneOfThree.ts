@@ -4,14 +4,21 @@
  * document_storage_service
  * OpenAPI spec version: 0.1.0
  */
+import type { ColumnResult } from './columnResult';
 import type { OpResultOneOfThreeKind } from './opResultOneOfThreeKind';
 import type { TableVersion } from './tableVersion';
 
 /**
- * A table's rename.
+ * What a column op did.
  */
 export type OpResultOneOfThree = {
+  /** What happened to it. */
+  change: ColumnResult;
+  /** The column. */
+  column: string;
   kind: OpResultOneOfThreeKind;
+  /** The table. */
+  table: string;
   /** The table's version once the request committed. */
   tableVersion: TableVersion;
 };

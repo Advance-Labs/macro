@@ -20,34 +20,40 @@ async fn linked() -> Linked {
             edit(seeded.database_id),
             viewer(OWNER),
             OpBatch::from(vec![
-                DatabaseOp::CreateTable {
-                    id: sessions,
-                    name: "Sessions".into(),
-                },
-                DatabaseOp::CreateColumn {
+                DatabaseOp::Table {
                     table: sessions,
-                    id: title,
-                    definition: NewColumn::New {
-                        name: "Title".into(),
-                        kind: ColumnKind::Text,
-                        options: vec![],
-                        infer_type: false,
-                    },
-                    after: None,
-                },
-                DatabaseOp::CreateColumn {
-                    table: seeded.table_id,
-                    id: relation_column,
-                    definition: NewColumn::New {
+                    change: TableChange::Create {
                         name: "Sessions".into(),
-                        kind: ColumnKind::Relation {
-                            database: seeded.database_id,
-                            table: sessions,
-                        },
-                        options: vec![],
-                        infer_type: false,
                     },
-                    after: None,
+                },
+                DatabaseOp::Column {
+                    table: sessions,
+                    column: title,
+                    change: ColumnChange::Create {
+                        definition: NewColumn::New {
+                            name: "Title".into(),
+                            kind: ColumnKind::Text,
+                            options: vec![],
+                            infer_type: false,
+                        },
+                        after: None,
+                    },
+                },
+                DatabaseOp::Column {
+                    table: seeded.table_id,
+                    column: relation_column,
+                    change: ColumnChange::Create {
+                        definition: NewColumn::New {
+                            name: "Sessions".into(),
+                            kind: ColumnKind::Relation {
+                                database: seeded.database_id,
+                                table: sessions,
+                            },
+                            options: vec![],
+                            infer_type: false,
+                        },
+                        after: None,
+                    },
                 },
             ]),
         )
@@ -58,17 +64,25 @@ async fn linked() -> Linked {
         .apply_ops(
             receipt::<EditAccessLevel>(seeded.database_id, OWNER, AccessLevel::Owner),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::InsertRows {
+            OpBatch::from(vec![DatabaseOp::Rows {
                 table: sessions,
-                rows: vec![vec![CellWrite {
-                    column: title,
-                    value: CellValue::Text("Keynote".into()),
-                }]],
+                change: RowsChange::Insert {
+                    rows: vec![vec![CellWrite {
+                        column: title,
+                        value: CellValue::Text("Keynote".into()),
+                    }]],
+                },
             }]),
         )
         .await
         .unwrap();
-    let [OpResult::RowsWritten { inserted, .. }] = keynote.as_slice() else {
+    let [
+        OpResult::Rows {
+            change: RowsResult::Inserted { rows: inserted },
+            ..
+        },
+    ] = keynote.as_slice()
+    else {
         panic!("expected one insert, got {keynote:?}");
     };
     let relation_column = seeded
@@ -110,14 +124,16 @@ async fn a_relation_write_moves_only_the_table_holding_the_cell() {
         .apply_ops(
             receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::UpdateRows {
+            OpBatch::from(vec![DatabaseOp::Rows {
                 table: table_id,
-                changes: RowChanges::Uniform {
-                    rows: vec![row_id],
-                    cells: vec![CellWrite {
-                        column: relation_column.id,
-                        value: CellValue::Rows(vec![keynote_row]),
-                    }],
+                change: RowsChange::Update {
+                    changes: RowChanges::Uniform {
+                        rows: vec![row_id],
+                        cells: vec![CellWrite {
+                            column: relation_column.id,
+                            value: CellValue::Rows(vec![keynote_row]),
+                        }],
+                    },
                 },
             }]),
         )
@@ -126,10 +142,10 @@ async fn a_relation_write_moves_only_the_table_holding_the_cell() {
 
     assert_eq!(
         written,
-        vec![OpResult::RowsWritten {
+        vec![OpResult::Rows {
+            table: table_id,
             table_version: TableVersion(before.0 + 1),
-            inserted: vec![],
-            affected: 1,
+            change: RowsResult::Updated { affected: 1 },
         }]
     );
     assert_eq!(table_version(&world, sessions_table), sessions_version);
@@ -163,14 +179,16 @@ async fn changing_a_linked_columns_type_requires_clearing_its_relations_first() 
     svc.apply_ops(
         receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
         viewer(OWNER),
-        OpBatch::from(vec![DatabaseOp::UpdateRows {
+        OpBatch::from(vec![DatabaseOp::Rows {
             table: table_id,
-            changes: RowChanges::Uniform {
-                rows: vec![row_id],
-                cells: vec![CellWrite {
-                    column: relation_column.id,
-                    value: CellValue::Rows(vec![keynote_row]),
-                }],
+            change: RowsChange::Update {
+                changes: RowChanges::Uniform {
+                    rows: vec![row_id],
+                    cells: vec![CellWrite {
+                        column: relation_column.id,
+                        value: CellValue::Rows(vec![keynote_row]),
+                    }],
+                },
             },
         }]),
     )
@@ -184,10 +202,12 @@ async fn changing_a_linked_columns_type_requires_clearing_its_relations_first() 
             edit(db),
             viewer(OWNER),
             OpBatch {
-                ops: vec![DatabaseOp::ChangeColumnType {
+                ops: vec![DatabaseOp::Column {
                     table: table_id,
                     column: relation_column.id,
-                    to: ColumnKind::Text,
+                    change: ColumnChange::ChangeType {
+                        to: ColumnKind::Text,
+                    },
                 }],
                 base_versions: HashMap::from([(table_id, before)]),
             },

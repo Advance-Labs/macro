@@ -30,11 +30,27 @@ import { DatabaseColumn } from './column';
 import { DatabaseTable } from './table';
 import type { DatabaseView } from './view';
 
-/** The result of the op kind `Kind`. */
-export type OpResultOf<Kind extends OpResult['kind']> = Extract<
-  OpResult,
-  { kind: Kind }
->;
+/** A result naming what happened to its resource: every kind but a reorder of the database's tables. */
+type ChangedResult = Extract<OpResult, { change: unknown }>;
+
+/** What a result of each op kind can say happened. */
+type ResultChanges = {
+  [Kind in ChangedResult['kind']]: Extract<
+    ChangedResult,
+    { kind: Kind }
+  >['change']['kind'];
+};
+
+/** The result of a `Kind` op whose change answered `Change`. */
+export type OpResultOf<
+  Kind extends keyof ResultChanges,
+  Change extends ResultChanges[Kind],
+> = Extract<ChangedResult, { kind: Kind }> & {
+  change: Extract<
+    Extract<ChangedResult, { kind: Kind }>['change'],
+    { kind: Change }
+  >;
+};
 
 /**
  * A type a column can have. A relation names the related table by handle;
@@ -175,22 +191,39 @@ function newOptions(labels: string[]): NewOption[] {
   return labels.map((label) => ({ id: uuidv7(), label }));
 }
 
-function isResultOf<Kind extends OpResult['kind']>(
+function isResultOf<
+  Kind extends keyof ResultChanges,
+  Change extends ResultChanges[Kind],
+>(
   result: OpResult | undefined,
   kind: Kind,
-): result is OpResultOf<Kind> {
-  return result?.kind === kind;
+  change: Change,
+): result is OpResultOf<Kind, Change> {
+  return (
+    result?.kind === kind && 'change' in result && result.change.kind === change
+  );
 }
 
-/** The one result of a one-op batch, which must be of the kind the op answers. */
-function soleResult<Kind extends OpResult['kind']>(
-  results: OpResult[],
-  kind: Kind,
-): OpResultOf<Kind> {
+/** A result as `kind.change`, for an error naming what came back. */
+function resultName(result: OpResult): string {
+  return match(result)
+    .with({ kind: 'reorder_tables' }, ({ kind }) => kind)
+    .with(
+      { kind: P.union('table', 'column', 'rows', 'view') },
+      ({ kind, change }) => `${kind}.${change.kind}`,
+    )
+    .exhaustive();
+}
+
+/** The one result of a one-op batch, which must be what the op answers. */
+function soleResult<
+  Kind extends keyof ResultChanges,
+  Change extends ResultChanges[Kind],
+>(results: OpResult[], kind: Kind, change: Change): OpResultOf<Kind, Change> {
   const [result] = results;
-  if (results.length !== 1 || !isResultOf(result, kind))
+  if (results.length !== 1 || !isResultOf(result, kind, change))
     throw new MacroError(
-      `expected one ${kind} result, got ${results.map((each) => each.kind).join(', ') || 'none'}`,
+      `expected one ${kind}.${change} result, got ${results.map(resultName).join(', ') || 'none'}`,
     );
   return result;
 }
@@ -283,9 +316,14 @@ export class Database extends MacroEntity<DatabaseDetail> {
   async createTable(options: { name: string }): Promise<DatabaseTable> {
     const { table } = soleResult(
       await this.applyOps([
-        { kind: 'create_table', id: uuidv7(), name: options.name },
+        {
+          kind: 'table',
+          table: uuidv7(),
+          change: { kind: 'create', name: options.name },
+        },
       ]),
-      'table_created',
+      'table',
+      'created',
     );
     return DatabaseTable.byId(this, table);
   }
@@ -334,12 +372,14 @@ export class Database extends MacroEntity<DatabaseDetail> {
   async reorderTables(tables: DatabaseTable[]): Promise<DatabaseTable[]> {
     for (const table of tables)
       this.assertOwns(`table ${table.id}`, table.database);
-    const reordered = soleResult(
-      await this.applyOps([
-        { kind: 'reorder_tables', order: tables.map((table) => table.id) },
-      ]),
-      'tables_reordered',
-    );
+    const results = await this.applyOps([
+      { kind: 'reorder_tables', order: tables.map((table) => table.id) },
+    ]);
+    const [reordered] = results;
+    if (results.length !== 1 || reordered?.kind !== 'reorder_tables')
+      throw new MacroError(
+        `expected one reorder_tables result, got ${results.map(resultName).join(', ') || 'none'}`,
+      );
     return reordered.tables.map(({ table }) => DatabaseTable.byId(this, table));
   }
 
@@ -351,8 +391,11 @@ export class Database extends MacroEntity<DatabaseDetail> {
   async deleteTable(table: DatabaseTable): Promise<void> {
     this.assertOwns(`table ${table.id}`, table.database);
     soleResult(
-      await this.applyOps([{ kind: 'delete_table', table: table.id }]),
-      'table_deleted',
+      await this.applyOps([
+        { kind: 'table', table: table.id, change: { kind: 'delete' } },
+      ]),
+      'table',
+      'deleted',
     );
   }
 
@@ -421,22 +464,23 @@ export class Database extends MacroEntity<DatabaseDetail> {
   async changeColumnType(
     column: DatabaseColumn,
     options: ChangeColumnTypeOptions,
-  ): Promise<OpResultOf<'column_typed'>> {
+  ): Promise<OpResultOf<'column', 'type_changed'>> {
     this.assertOwns(`column ${column.id}`, column.table.database);
     const version = await column.table.version();
     return soleResult(
       await this.applyOps(
         [
           {
-            kind: 'change_column_type',
+            kind: 'column',
             table: column.table.id,
             column: column.id,
-            to: columnKind(options.to),
+            change: { kind: 'change_type', to: columnKind(options.to) },
           },
         ],
         { baseVersions: [{ table: column.table, version }] },
       ),
-      'column_typed',
+      'column',
+      'type_changed',
     );
   }
 
@@ -474,36 +518,42 @@ export class Database extends MacroEntity<DatabaseDetail> {
     const id = uuidv7();
     const ops: DatabaseOp[] = [
       {
-        kind: 'create_column',
+        kind: 'column',
         table: column.table.id,
-        id,
-        definition: {
-          source: 'new',
-          name,
-          type: columnKind(options.to),
-          options: newOptions(conversion.options),
+        column: id,
+        change: {
+          kind: 'create',
+          definition: {
+            source: 'new',
+            name,
+            type: columnKind(options.to),
+            options: newOptions(conversion.options),
+          },
+          after: column.id,
         },
-        after: column.id,
       },
     ];
     if (conversion.cells.length > 0)
       ops.push({
-        kind: 'update_rows',
+        kind: 'rows',
         table: column.table.id,
-        changes: {
-          kind: 'per_row',
-          rows: conversion.cells.map(({ row, value }) => ({
-            row,
-            cells: [{ column: id, value }],
-          })),
+        change: {
+          kind: 'update',
+          changes: {
+            kind: 'per_row',
+            rows: conversion.cells.map(({ row, value }) => ({
+              row,
+              cells: [{ column: id, value }],
+            })),
+          },
         },
       });
     const [created] = await this.applyOps(ops, {
       baseVersions: [{ table: column.table, version: conversion.tableVersion }],
     });
-    if (!isResultOf(created, 'column_created'))
+    if (!isResultOf(created, 'column', 'created'))
       throw new MacroError(
-        `expected a column_created result, got ${created?.kind ?? 'none'}`,
+        `expected a column.created result, got ${created ? resultName(created) : 'none'}`,
       );
     return DatabaseColumn.byId(column.table, created.column);
   }
@@ -517,10 +567,18 @@ export class Database extends MacroEntity<DatabaseDetail> {
     const version = await column.table.version();
     const { tableVersion } = soleResult(
       await this.applyOps(
-        [{ kind: 'delete_column', table: column.table.id, column: column.id }],
+        [
+          {
+            kind: 'column',
+            table: column.table.id,
+            column: column.id,
+            change: { kind: 'delete' },
+          },
+        ],
         { baseVersions: [{ table: column.table, version }] },
       ),
-      'column_deleted',
+      'column',
+      'deleted',
     );
     return tableVersion;
   }
@@ -545,15 +603,23 @@ export class Database extends MacroEntity<DatabaseDetail> {
       await this.applyOps(
         [
           {
-            kind: 'reorder_columns',
+            kind: 'table',
             table: table.id,
-            order: columns.map((column) => column.id),
+            change: {
+              kind: 'reorder_columns',
+              order: columns.map((column) => column.id),
+            },
           },
         ],
         { baseVersions: [{ table, version }] },
       ),
+      'table',
       'columns_reordered',
     );
+    if (tableVersion === undefined)
+      throw new MacroError(
+        `table ${table.id} reordered its columns without a version`,
+      );
     return tableVersion;
   }
 
@@ -566,10 +632,17 @@ export class Database extends MacroEntity<DatabaseDetail> {
     const previousName = await table.name();
     const { tableVersion } = soleResult(
       await this.applyOps([
-        { kind: 'rename_table', table: table.id, name, previousName },
+        {
+          kind: 'table',
+          table: table.id,
+          change: { kind: 'rename', name, previousName },
+        },
       ]),
-      'table_renamed',
+      'table',
+      'renamed',
     );
+    if (tableVersion === undefined)
+      throw new MacroError(`table ${table.id} was renamed without a version`);
     return tableVersion;
   }
 
@@ -587,14 +660,14 @@ export class Database extends MacroEntity<DatabaseDetail> {
     const { tableVersion } = soleResult(
       await this.applyOps([
         {
-          kind: 'rename_column',
+          kind: 'column',
           table: column.table.id,
           column: column.id,
-          name,
-          previousName,
+          change: { kind: 'rename', name, previousName },
         },
       ]),
-      'column_renamed',
+      'column',
+      'renamed',
     );
     return tableVersion;
   }
@@ -649,14 +722,18 @@ export class Database extends MacroEntity<DatabaseDetail> {
     const { column } = soleResult(
       await this.applyOps([
         {
-          kind: 'create_column',
+          kind: 'column',
           table: table.id,
-          id: uuidv7(),
-          definition,
-          ...(options.after !== undefined ? { after: options.after.id } : {}),
+          column: uuidv7(),
+          change: {
+            kind: 'create',
+            definition,
+            ...(options.after !== undefined ? { after: options.after.id } : {}),
+          },
         },
       ]),
-      'column_created',
+      'column',
+      'created',
     );
     return DatabaseColumn.byId(table, column);
   }
@@ -670,17 +747,18 @@ export class Database extends MacroEntity<DatabaseDetail> {
   async addColumnOptions(
     column: DatabaseColumn,
     labels: string[],
-  ): Promise<OpResultOf<'options_added'>> {
+  ): Promise<OpResultOf<'column', 'options_added'>> {
     this.assertOwns(`column ${column.id}`, column.table.database);
     return soleResult(
       await this.applyOps([
         {
-          kind: 'add_options',
+          kind: 'column',
           table: column.table.id,
           column: column.id,
-          options: newOptions(labels),
+          change: { kind: 'add_options', options: newOptions(labels) },
         },
       ]),
+      'column',
       'options_added',
     );
   }

@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 use models_databases::cast::{Cast, Contents, cast};
 use models_databases::position::{key_between, keys_between};
 use models_databases::{ColumnKind, NewColumn, NewOption, TakenId};
+use models_properties::api::is_valid_hex_color;
 use models_properties::service::property_definition::PropertyDefinition;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
 use models_properties::service::property_option::{PropertyOption, PropertyOptionValue};
@@ -28,19 +29,14 @@ use crate::domain::models::{
 impl Planner {
     pub(super) fn create_column(
         &mut self,
-        index: usize,
+        place: Place,
         entry: &TableEntry,
-        id: ColumnId,
         definition: &NewColumn,
         after: Option<ColumnId>,
     ) -> Result<Write, DatabaseError> {
-        let place = Place {
-            op: index,
-            row: None,
-            column: id,
-        };
+        let id = place.column;
         if self.column_id_taken(id) {
-            return Err(refuse_taken(index, TakenId::Column(id)));
+            return Err(refuse_taken(place.op, TakenId::Column(id)));
         }
         let position = column_position(entry, place, after)?;
         let (definition, created, config, infer_type) = match definition {
@@ -137,18 +133,13 @@ impl Planner {
 
     pub(super) fn rename_column(
         &mut self,
-        index: usize,
+        place: Place,
         entry: &TableEntry,
-        column_id: ColumnId,
+        column: &ColumnEntry,
         name: &str,
         previous_name: Option<&str>,
     ) -> Result<Write, DatabaseError> {
-        let place = Place {
-            op: index,
-            row: None,
-            column: column_id,
-        };
-        let column = column_of(entry, place)?;
+        let column_id = place.column;
         let current = column.name().to_owned();
         let name = validate_name(name).map_err(|error| schema_refusal(place, error))?;
         // A retry after a lost response is already complete.
@@ -181,16 +172,11 @@ impl Planner {
 
     pub(super) fn delete_column(
         &mut self,
-        index: usize,
+        place: Place,
         entry: &TableEntry,
-        column_id: ColumnId,
+        column: &ColumnEntry,
     ) -> Result<Write, DatabaseError> {
-        let place = Place {
-            op: index,
-            row: None,
-            column: column_id,
-        };
-        let column = column_of(entry, place)?;
+        let column_id = place.column;
         let now = self.now;
         let next_title = entry
             .columns
@@ -264,17 +250,12 @@ impl Planner {
 
     pub(super) fn add_options(
         &mut self,
-        index: usize,
+        place: Place,
         entry: &TableEntry,
-        column_id: ColumnId,
+        column: &ColumnEntry,
         options: &[NewOption],
     ) -> Result<Write, DatabaseError> {
-        let place = Place {
-            op: index,
-            row: None,
-            column: column_id,
-        };
-        let column = self.option_column(entry, place)?;
+        self.option_column(place, column)?;
         let existing: Vec<String> = self
             .labels_of(&column.definition)
             .iter()
@@ -305,17 +286,12 @@ impl Planner {
 
     pub(super) fn change_type(
         &mut self,
-        index: usize,
+        place: Place,
         entry: &TableEntry,
-        column_id: ColumnId,
+        column: &ColumnEntry,
         to: ColumnKind,
     ) -> Result<Write, DatabaseError> {
-        let place = Place {
-            op: index,
-            row: None,
-            column: column_id,
-        };
-        let column = column_of(entry, place)?;
+        let column_id = place.column;
         let source = column.definition.definition.id;
         if self.written_tables.contains(&entry.table.id) || self.changed_options.contains(&source) {
             return Err(place.refuse(SchemaError::RetypeAfterWrites.to_string()));
@@ -454,6 +430,68 @@ impl Planner {
         })
     }
 
+    pub(super) fn update_option(
+        &mut self,
+        place: Place,
+        entry: &TableEntry,
+        column: &ColumnEntry,
+        option: OptionId,
+        label: Option<&str>,
+        color: Option<&Option<String>>,
+    ) -> Result<Write, DatabaseError> {
+        self.option_column(place, column)?;
+        self.known_option(place, column, option)?;
+        let value = label
+            .map(|label| self.relabel(place, column, option, label))
+            .transpose()?;
+        let color = match color {
+            Some(None) if column.definition.definition.data_type == DataType::Tag => {
+                return Err(place.refuse("a tag option always has a colour; pick another instead"));
+            }
+            Some(Some(color)) if !is_valid_hex_color(color) => {
+                return Err(place.refuse(format!(
+                    "{color} is not a colour; give a hex string like #RRGGBB"
+                )));
+            }
+            Some(color) => Some(color.clone()),
+            None => None,
+        };
+        let definition_id = column.definition.definition.id;
+        self.changed_options.insert(definition_id);
+        Ok(Write::UpdateOption {
+            table_id: entry.table.id,
+            tables: self.tables_binding(definition_id),
+            definition_id,
+            option_id: option,
+            value,
+            color,
+        })
+    }
+
+    pub(super) fn delete_option(
+        &mut self,
+        place: Place,
+        entry: &TableEntry,
+        column: &ColumnEntry,
+        option: OptionId,
+    ) -> Result<Write, DatabaseError> {
+        self.option_column(place, column)?;
+        self.known_option(place, column, option)?;
+        self.labels_of(&column.definition)
+            .retain(|(id, _)| *id != option);
+        let definition_id = column.definition.definition.id;
+        self.changed_options.insert(definition_id);
+        let tables = self.tables_binding(definition_id);
+        let views = self.views_without_option(&tables, definition_id, option);
+        Ok(Write::DeleteOption {
+            table_id: entry.table.id,
+            tables,
+            definition_id,
+            option_id: option,
+            views,
+        })
+    }
+
     /// Options to create, checked as labels of a column of `data_type`
     /// holding `existing`: each label valid and, under its id, new. A label
     /// already among `existing` or listed earlier is refused when `strict`,
@@ -572,15 +610,6 @@ impl Planner {
             }
         }
     }
-}
-
-/// The column of a table a column op names.
-fn column_of(entry: &TableEntry, place: Place) -> Result<&ColumnEntry, DatabaseError> {
-    entry
-        .columns
-        .iter()
-        .find(|column| column.column.id == place.column)
-        .ok_or_else(|| place.refuse("no such column in this table"))
 }
 
 /// Where a new column goes: right after `after`, or after the table's last.

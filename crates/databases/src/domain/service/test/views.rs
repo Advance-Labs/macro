@@ -34,25 +34,36 @@ async fn create_view(
     query: ViewQuery,
     layout: ViewLayout,
 ) -> DatabaseView {
+    let id = ViewId::new();
     let results = seeded
         .service
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::CreateView {
+            OpBatch::from(vec![DatabaseOp::View {
                 table: seeded.table_id,
-                view: NewView {
-                    name: name.into(),
-                    query,
-                    layout: layout.into(),
+                view: id,
+                change: ViewChange::Create {
+                    view: NewView {
+                        name: name.into(),
+                        query,
+                        layout: layout.into(),
+                    },
                 },
             }]),
         )
         .await
         .unwrap();
-    let [OpResult::ViewWritten { view, .. }] = results.as_slice() else {
+    let [
+        OpResult::View {
+            change: ViewResult::Created { view },
+            ..
+        },
+    ] = results.as_slice()
+    else {
         panic!("expected a written view, got {results:?}");
     };
+    assert_eq!(view.id, id);
     *view.clone()
 }
 
@@ -64,28 +75,38 @@ async fn three_guests(seeded: &Seeded) -> [RowId; 3] {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::InsertRows {
+            OpBatch::from(vec![DatabaseOp::Rows {
                 table: seeded.table_id,
-                rows: [("Alex", "Going"), ("Robin", "Declined")]
-                    .into_iter()
-                    .map(|(name, status)| {
-                        vec![
-                            CellWrite {
-                                column: seeded.name_column.id,
-                                value: CellValue::Text(name.into()),
-                            },
-                            CellWrite {
-                                column: seeded.status_column.id,
-                                value: CellValue::Options(vec![OptionRef::Label(status.into())]),
-                            },
-                        ]
-                    })
-                    .collect(),
+                change: RowsChange::Insert {
+                    rows: [("Alex", "Going"), ("Robin", "Declined")]
+                        .into_iter()
+                        .map(|(name, status)| {
+                            vec![
+                                CellWrite {
+                                    column: seeded.name_column.id,
+                                    value: CellValue::Text(name.into()),
+                                },
+                                CellWrite {
+                                    column: seeded.status_column.id,
+                                    value: CellValue::Options(vec![OptionRef::Label(
+                                        status.into(),
+                                    )]),
+                                },
+                            ]
+                        })
+                        .collect(),
+                },
             }]),
         )
         .await
         .unwrap();
-    let [OpResult::RowsWritten { inserted, .. }] = results.as_slice() else {
+    let [
+        OpResult::Rows {
+            change: RowsResult::Inserted { rows: inserted },
+            ..
+        },
+    ] = results.as_slice()
+    else {
         panic!("expected one insert, got {results:?}");
     };
     [seeded.row_id, inserted[0], inserted[1]]
@@ -152,12 +173,15 @@ async fn a_new_view_goes_after_the_tables_others_and_comes_with_the_detail() {
 async fn a_view_is_refused_when_it_does_not_fit_its_table() {
     let seeded = seeded().await;
     create_view(&seeded, "Everyone", ViewQuery::default(), board(&seeded)).await;
-    let create = |name: &str, query: ViewQuery, layout: ViewLayout| DatabaseOp::CreateView {
+    let create = |name: &str, query: ViewQuery, layout: ViewLayout| DatabaseOp::View {
         table: seeded.table_id,
-        view: NewView {
-            name: name.into(),
-            query,
-            layout: layout.into(),
+        view: ViewId::new(),
+        change: ViewChange::Create {
+            view: NewView {
+                name: name.into(),
+                query,
+                layout: layout.into(),
+            },
         },
     };
     let cases = [
@@ -256,12 +280,14 @@ async fn an_update_changes_what_it_names_and_a_regrouped_board_forgets_its_cards
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::UpdateView {
+            OpBatch::from(vec![DatabaseOp::View {
                 table: seeded.table_id,
                 view: stages.id,
-                name: Some("By size".into()),
-                query: Some(sorted.clone()),
-                layout: None,
+                change: ViewChange::Update {
+                    name: Some("By size".into()),
+                    query: Some(sorted.clone()),
+                    layout: None,
+                },
             }]),
         )
         .await
@@ -281,12 +307,14 @@ async fn an_update_changes_what_it_names_and_a_regrouped_board_forgets_its_cards
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::UpdateView {
+            OpBatch::from(vec![DatabaseOp::View {
                 table: seeded.table_id,
                 view: stages.id,
-                name: None,
-                query: None,
-                layout: Some(RequestedLayout::Table { columns: vec![] }),
+                change: ViewChange::Update {
+                    name: None,
+                    query: None,
+                    layout: Some(RequestedLayout::Table { columns: vec![] }),
+                },
             }]),
         )
         .await
@@ -300,9 +328,9 @@ async fn views_reorder_when_the_order_names_each_of_them_once() {
     let first = create_view(&seeded, "First", ViewQuery::default(), board(&seeded)).await;
     let second = create_view(&seeded, "Second", ViewQuery::default(), board(&seeded)).await;
     let third = create_view(&seeded, "Third", ViewQuery::default(), board(&seeded)).await;
-    let reorder = |order: Vec<ViewId>| DatabaseOp::ReorderViews {
+    let reorder = |order: Vec<ViewId>| DatabaseOp::Table {
         table: seeded.table_id,
-        order,
+        change: TableChange::ReorderViews { order },
     };
 
     let error = seeded
@@ -328,7 +356,13 @@ async fn views_reorder_when_the_order_names_each_of_them_once() {
         )
         .await
         .unwrap();
-    let [OpResult::ViewsReordered { positions, .. }] = results.as_slice() else {
+    let [
+        OpResult::Table {
+            change: TableResult::ViewsReordered { positions },
+            ..
+        },
+    ] = results.as_slice()
+    else {
         panic!("expected a reorder, got {results:?}");
     };
     assert_eq!(
@@ -383,15 +417,22 @@ async fn a_deleted_view_takes_its_card_places_with_it() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::DeleteView {
+            OpBatch::from(vec![DatabaseOp::View {
                 table: seeded.table_id,
                 view: stages.id,
+                change: ViewChange::Delete,
             }]),
         )
         .await
         .unwrap();
 
-    assert!(matches!(results.as_slice(), [OpResult::ViewDeleted { .. }]));
+    assert!(matches!(
+        results.as_slice(),
+        [OpResult::View {
+            change: ViewResult::Deleted,
+            ..
+        }]
+    ));
     let w = seeded.world.lock().unwrap();
     assert!(w.views.is_empty());
     assert_eq!(w.positions.get(&stages.id), None);
@@ -411,13 +452,15 @@ async fn moving_a_card_to_another_lane_sets_its_cell_and_places_it_there() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::MoveCard {
+            OpBatch::from(vec![DatabaseOp::View {
                 table: seeded.table_id,
                 view: stages.id,
-                row: sam,
-                lane: Some(declined),
-                before: None,
-                after: Some(robin),
+                change: ViewChange::MoveCard {
+                    row: sam,
+                    lane: Some(declined),
+                    before: None,
+                    after: Some(robin),
+                },
             }]),
         )
         .await
@@ -425,13 +468,17 @@ async fn moving_a_card_to_another_lane_sets_its_cell_and_places_it_there() {
 
     assert_eq!(
         results,
-        vec![OpResult::CardMoved {
+        vec![OpResult::View {
+            table: seeded.table_id,
+            view: stages.id,
             table_version: TableVersion(before.0 + 1),
-            positions: vec![CardPosition {
-                row: sam,
-                lane: Some(declined),
-                position: "80".parse::<Position>().unwrap(),
-            }],
+            change: ViewResult::CardMoved {
+                positions: vec![CardPosition {
+                    row: sam,
+                    lane: Some(declined),
+                    position: "80".parse::<Position>().unwrap(),
+                }],
+            },
         }]
     );
     assert_eq!(
@@ -444,13 +491,15 @@ async fn moving_a_card_to_another_lane_sets_its_cell_and_places_it_there() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::MoveCard {
+            OpBatch::from(vec![DatabaseOp::View {
                 table: seeded.table_id,
                 view: stages.id,
-                row: sam,
-                lane: None,
-                before: None,
-                after: None,
+                change: ViewChange::MoveCard {
+                    row: sam,
+                    lane: None,
+                    before: None,
+                    after: None,
+                },
             }]),
         )
         .await
@@ -473,14 +522,16 @@ async fn moving_a_card_within_its_lane_places_the_unplaced_cards_before_it() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::UpdateRows {
+            OpBatch::from(vec![DatabaseOp::Rows {
                 table: seeded.table_id,
-                changes: RowChanges::Uniform {
-                    rows: vec![extra],
-                    cells: vec![CellWrite {
-                        column: seeded.status_column.id,
-                        value: CellValue::Options(vec![OptionRef::Id(going)]),
-                    }],
+                change: RowsChange::Update {
+                    changes: RowChanges::Uniform {
+                        rows: vec![extra],
+                        cells: vec![CellWrite {
+                            column: seeded.status_column.id,
+                            value: CellValue::Options(vec![OptionRef::Id(going)]),
+                        }],
+                    },
                 },
             }]),
         )
@@ -494,21 +545,25 @@ async fn moving_a_card_within_its_lane_places_the_unplaced_cards_before_it() {
             edit(seeded.database_id),
             viewer(OWNER),
             OpBatch::from(vec![
-                DatabaseOp::MoveCard {
+                DatabaseOp::View {
                     table: seeded.table_id,
                     view: stages.id,
-                    row: sam,
-                    lane: Some(going),
-                    before: Some(alex),
-                    after: Some(extra),
+                    change: ViewChange::MoveCard {
+                        row: sam,
+                        lane: Some(going),
+                        before: Some(alex),
+                        after: Some(extra),
+                    },
                 },
-                DatabaseOp::MoveCard {
+                DatabaseOp::View {
                     table: seeded.table_id,
                     view: stages.id,
-                    row: extra,
-                    lane: Some(going),
-                    before: None,
-                    after: Some(alex),
+                    change: ViewChange::MoveCard {
+                        row: extra,
+                        lane: Some(going),
+                        before: None,
+                        after: Some(alex),
+                    },
                 },
             ]),
         )
@@ -519,7 +574,10 @@ async fn moving_a_card_within_its_lane_places_the_unplaced_cards_before_it() {
         results
             .iter()
             .map(|result| match result {
-                OpResult::CardMoved { positions, .. } => positions.clone(),
+                OpResult::View {
+                    change: ViewResult::CardMoved { positions },
+                    ..
+                } => positions.clone(),
                 other => panic!("expected a moved card, got {other:?}"),
             })
             .collect::<Vec<_>>(),
@@ -572,13 +630,15 @@ async fn a_sorted_board_keeps_its_cards_in_the_sorts_order() {
         ViewLayout::Table { columns: vec![] },
     )
     .await;
-    let move_on = |view: ViewId| DatabaseOp::MoveCard {
+    let move_on = |view: ViewId| DatabaseOp::View {
         table: seeded.table_id,
         view,
-        row: seeded.row_id,
-        lane: None,
-        before: None,
-        after: None,
+        change: ViewChange::MoveCard {
+            row: seeded.row_id,
+            lane: None,
+            before: None,
+            after: None,
+        },
     };
 
     for (view, reason) in [
@@ -631,13 +691,15 @@ async fn a_card_moves_only_next_to_cards_of_its_new_lane() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::MoveCard {
+            OpBatch::from(vec![DatabaseOp::View {
                 table: seeded.table_id,
                 view: stages.id,
-                row: sam,
-                lane: Some(going),
-                before: Some(robin),
-                after: None,
+                change: ViewChange::MoveCard {
+                    row: sam,
+                    lane: Some(going),
+                    before: Some(robin),
+                    after: None,
+                },
             }]),
         )
         .await
@@ -689,9 +751,10 @@ async fn removing_a_column_takes_it_out_of_views_unless_a_board_groups_by_it() {
                 edit(seeded.database_id),
                 viewer(OWNER),
                 OpBatch {
-                    ops: vec![DatabaseOp::DeleteColumn {
+                    ops: vec![DatabaseOp::Column {
                         table: seeded.table_id,
                         column,
+                        change: ColumnChange::Delete,
                     }],
                     base_versions: HashMap::from([(seeded.table_id, version)]),
                 },
@@ -733,9 +796,10 @@ async fn removing_a_column_takes_it_out_of_views_unless_a_board_groups_by_it() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::DeleteView {
+            OpBatch::from(vec![DatabaseOp::View {
                 table: seeded.table_id,
                 view: filtered.id,
+                change: ViewChange::Delete,
             }]),
         )
         .await
@@ -744,34 +808,97 @@ async fn removing_a_column_takes_it_out_of_views_unless_a_board_groups_by_it() {
 }
 
 #[tokio::test]
+async fn a_new_view_under_an_existing_views_id_is_refused_as_taken() {
+    let seeded = seeded().await;
+    let everyone = create_view(&seeded, "Everyone", ViewQuery::default(), board(&seeded)).await;
+    let taken = everyone.id;
+    let before = table_version(&seeded.world, seeded.table_id);
+
+    let error = seeded
+        .service
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::View {
+                table: seeded.table_id,
+                view: taken,
+                change: ViewChange::Create {
+                    view: NewView {
+                        name: "Stages".into(),
+                        query: ViewQuery::default(),
+                        layout: RequestedLayout::Table { columns: vec![] },
+                    },
+                },
+            }]),
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        refusal(error),
+        OpRefusal {
+            op: 0,
+            row: None,
+            column: None,
+            taken: Some(TakenId::View(taken)),
+            reason: format!(
+                "{taken} already names a view; mint a new id for each view a request creates"
+            ),
+        }
+    );
+    let w = seeded.world.lock().unwrap();
+    assert_eq!(w.views, vec![everyone]);
+    assert_eq!(
+        w.tables
+            .iter()
+            .find(|table| table.id == seeded.table_id)
+            .unwrap()
+            .version,
+        before
+    );
+}
+
+#[tokio::test]
 async fn a_board_created_without_a_title_is_titled_by_the_first_column() {
     let seeded = seeded().await;
+    let stages = ViewId::new();
     let results = seeded
         .service
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::CreateView {
+            OpBatch::from(vec![DatabaseOp::View {
                 table: seeded.table_id,
-                view: NewView {
-                    name: "Stages".into(),
-                    query: ViewQuery::default(),
-                    layout: RequestedLayout::Board {
-                        group_by: seeded.status_column.id,
-                        title: None,
-                        lanes: vec![],
-                        card_fields: vec![seeded.plus_ones_column.id],
-                        hide_empty_lanes: false,
+                view: stages,
+                change: ViewChange::Create {
+                    view: NewView {
+                        name: "Stages".into(),
+                        query: ViewQuery::default(),
+                        layout: RequestedLayout::Board {
+                            group_by: seeded.status_column.id,
+                            title: None,
+                            lanes: vec![],
+                            card_fields: vec![seeded.plus_ones_column.id],
+                            hide_empty_lanes: false,
+                        },
                     },
                 },
             }]),
         )
         .await
         .unwrap();
-    let [OpResult::ViewWritten { view, .. }] = results.as_slice() else {
+    let [
+        OpResult::View {
+            view: written,
+            change: ViewResult::Created { view },
+            ..
+        },
+    ] = results.as_slice()
+    else {
         panic!("expected a written view, got {results:?}");
     };
 
+    assert_eq!((*written, view.id), (stages, stages));
     assert_eq!(
         view.layout,
         ViewLayout::Board {
@@ -807,18 +934,20 @@ async fn an_update_without_a_title_keeps_the_boards_title() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::UpdateView {
+            OpBatch::from(vec![DatabaseOp::View {
                 table: seeded.table_id,
                 view: stages.id,
-                name: None,
-                query: None,
-                layout: Some(RequestedLayout::Board {
-                    group_by: seeded.status_column.id,
-                    title: None,
-                    lanes: vec![],
-                    card_fields: vec![],
-                    hide_empty_lanes: true,
-                }),
+                change: ViewChange::Update {
+                    name: None,
+                    query: None,
+                    layout: Some(RequestedLayout::Board {
+                        group_by: seeded.status_column.id,
+                        title: None,
+                        lanes: vec![],
+                        card_fields: vec![],
+                        hide_empty_lanes: true,
+                    }),
+                },
             }]),
         )
         .await
@@ -845,17 +974,20 @@ async fn a_board_titled_by_an_unknown_column_is_refused() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::CreateView {
+            OpBatch::from(vec![DatabaseOp::View {
                 table: seeded.table_id,
-                view: NewView {
-                    name: "Stages".into(),
-                    query: ViewQuery::default(),
-                    layout: RequestedLayout::Board {
-                        group_by: seeded.status_column.id,
-                        title: Some(ghost),
-                        lanes: vec![],
-                        card_fields: vec![],
-                        hide_empty_lanes: false,
+                view: ViewId::new(),
+                change: ViewChange::Create {
+                    view: NewView {
+                        name: "Stages".into(),
+                        query: ViewQuery::default(),
+                        layout: RequestedLayout::Board {
+                            group_by: seeded.status_column.id,
+                            title: Some(ghost),
+                            lanes: vec![],
+                            card_fields: vec![],
+                            hide_empty_lanes: false,
+                        },
                     },
                 },
             }]),
@@ -894,9 +1026,10 @@ async fn removing_a_boards_title_column_titles_it_by_the_next_first_column() {
             edit(seeded.database_id),
             viewer(OWNER),
             OpBatch {
-                ops: vec![DatabaseOp::DeleteColumn {
+                ops: vec![DatabaseOp::Column {
                     table: seeded.table_id,
                     column: seeded.name_column.id,
+                    change: ColumnChange::Delete,
                 }],
                 base_versions: HashMap::from([(seeded.table_id, version)]),
             },
@@ -972,10 +1105,10 @@ async fn removing_an_option_takes_it_out_of_views_lanes_and_card_places() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::DeleteOption {
+            OpBatch::from(vec![DatabaseOp::Column {
                 table: seeded.table_id,
                 column: seeded.status_column.id,
-                option: going,
+                change: ColumnChange::DeleteOption { option: going },
             }]),
         )
         .await
@@ -1040,12 +1173,11 @@ async fn a_new_type_drops_the_tests_of_the_old_one_but_not_under_a_board() {
         ViewLayout::Table { columns: vec![] },
     )
     .await;
-    let retype =
-        |column: ColumnId, to: models_databases::ColumnKind| DatabaseOp::ChangeColumnType {
-            table: seeded.table_id,
-            column,
-            to,
-        };
+    let retype = |column: ColumnId, to: models_databases::ColumnKind| DatabaseOp::Column {
+        table: seeded.table_id,
+        column,
+        change: ColumnChange::ChangeType { to },
+    };
 
     seeded
         .service

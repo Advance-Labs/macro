@@ -4,24 +4,14 @@
  * document_storage_service
  * OpenAPI spec version: 0.1.0
  */
-
 import type { DatabaseOpOneOfNineKind } from './databaseOpOneOfNineKind';
-import type { NewColumn } from './newColumn';
 
 /**
- * Add a column to a table: a new property the database owns, or an
-existing one bound into the table.
+ * Set the order of the database's tables: `order` names every one of
+them once.
  */
 export type DatabaseOpOneOfNine = {
-  /** The column it goes right after; left out, it goes after the
-table's last column. */
-  after?: string;
-  /** What the column holds. */
-  definition: NewColumn;
-  /** The new column's id, minted by the client; later ops of the
-request may name it. */
-  id: string;
   kind: DatabaseOpOneOfNineKind;
-  /** The table. */
-  table: string;
+  /** Every table, in its new order. */
+  order: string[];
 };

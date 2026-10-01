@@ -64,9 +64,11 @@ async fn database_details_answer_every_live_database_the_viewer_holds_a_grant_on
         edit(offsite),
         viewer(OWNER),
         OpBatch::from(vec![
-            DatabaseOp::CreateTable {
-                id: sessions,
-                name: "Sessions".into(),
+            DatabaseOp::Table {
+                table: sessions,
+                change: TableChange::Create {
+                    name: "Sessions".into(),
+                },
             },
             DatabaseOp::ReorderTables {
                 order: vec![sessions, guests],
@@ -197,10 +199,12 @@ async fn table_rename_moves_the_sql_name_and_retries_without_overwriting_a_new_n
     );
     let before = table_version(&world, table_id);
     let rename = |name: &str| {
-        OpBatch::from(vec![DatabaseOp::RenameTable {
+        OpBatch::from(vec![DatabaseOp::Table {
             table: table_id,
-            name: name.into(),
-            previous_name: Some("Guests".into()),
+            change: TableChange::Rename {
+                name: name.into(),
+                previous_name: Some("Guests".into()),
+            },
         }])
     };
     let renamed = svc
@@ -210,8 +214,10 @@ async fn table_rename_moves_the_sql_name_and_retries_without_overwriting_a_new_n
     let renamed_version = TableVersion(before.0 + 1);
     assert_eq!(
         renamed,
-        vec![OpResult::TableRenamed {
-            table_version: renamed_version,
+        vec![OpResult::Table {
+            table: table_id,
+            table_version: Some(renamed_version),
+            change: TableResult::Renamed,
         }]
     );
     assert_eq!(
@@ -259,18 +265,22 @@ async fn table_rename_rejects_invalid_names_foreign_tables_and_trashed_databases
     svc.apply_ops(
         edit(db),
         viewer(OWNER),
-        OpBatch::from(vec![DatabaseOp::CreateTable {
-            id: TableId::new(),
-            name: "People".into(),
+        OpBatch::from(vec![DatabaseOp::Table {
+            table: TableId::new(),
+            change: TableChange::Create {
+                name: "People".into(),
+            },
         }]),
     )
     .await
     .unwrap();
     let rename = |name: &str| {
-        OpBatch::from(vec![DatabaseOp::RenameTable {
+        OpBatch::from(vec![DatabaseOp::Table {
             table: table_id,
-            name: name.into(),
-            previous_name: Some("Guests".into()),
+            change: TableChange::Rename {
+                name: name.into(),
+                previous_name: Some("Guests".into()),
+            },
         }])
     };
     for (name, reason) in [
@@ -343,9 +353,11 @@ async fn trash_hides_the_database_and_restore_brings_it_back() {
         .apply_ops(
             receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::DeleteRows {
+            OpBatch::from(vec![DatabaseOp::Rows {
                 table: seeded.table_id,
-                rows: vec![seeded.row_id],
+                change: RowsChange::Delete {
+                    rows: vec![seeded.row_id],
+                },
             }]),
         )
         .await
@@ -432,16 +444,18 @@ async fn schema_operations_respect_receipts() {
         .apply_ops(
             edit(DatabaseId::new()),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::CreateColumn {
+            OpBatch::from(vec![DatabaseOp::Column {
                 table: table_id,
-                id: ColumnId::new(),
-                definition: NewColumn::New {
-                    name: "X".into(),
-                    kind: ColumnKind::Text,
-                    options: vec![],
-                    infer_type: false,
+                column: ColumnId::new(),
+                change: ColumnChange::Create {
+                    definition: NewColumn::New {
+                        name: "X".into(),
+                        kind: ColumnKind::Text,
+                        options: vec![],
+                        infer_type: false,
+                    },
+                    after: None,
                 },
-                after: None,
             }]),
         )
         .await

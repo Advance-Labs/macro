@@ -162,9 +162,12 @@
     {
       "results": [
         {
-          "affected": 2,
-          "inserted": [],
-          "kind": "rows_written",
+          "change": {
+            "affected": 2,
+            "kind": "updated"
+          },
+          "kind": "rows",
+          "table": "01990000-0000-7000-8000-00000000d001",
           "tableVersion": 9
         }
       ],
@@ -173,58 +176,61 @@
         "id": 1,
         "ops": [
           {
-            "changes": {
-              "kind": "per_row",
-              "rows": [
-                {
-                  "cells": [
-                    {
-                      "column": "01990000-0000-7000-8000-00000000b006",
-                      "value": {
-                        "type": "text",
-                        "value": "Acme"
+            "change": {
+              "changes": {
+                "kind": "per_row",
+                "rows": [
+                  {
+                    "cells": [
+                      {
+                        "column": "01990000-0000-7000-8000-00000000b006",
+                        "value": {
+                          "type": "text",
+                          "value": "Acme"
+                        }
+                      },
+                      {
+                        "column": "01990000-0000-7000-8000-00000000b003",
+                        "value": {
+                          "type": "options",
+                          "value": [
+                            {
+                              "label": "Lead"
+                            }
+                          ]
+                        }
                       }
-                    },
-                    {
-                      "column": "01990000-0000-7000-8000-00000000b003",
-                      "value": {
-                        "type": "options",
-                        "value": [
-                          {
-                            "label": "Lead"
-                          }
-                        ]
+                    ],
+                    "row": "01990000-0000-7000-8000-00000000e001"
+                  },
+                  {
+                    "cells": [
+                      {
+                        "column": "01990000-0000-7000-8000-00000000b006",
+                        "value": {
+                          "type": "text",
+                          "value": "Globex"
+                        }
+                      },
+                      {
+                        "column": "01990000-0000-7000-8000-00000000b003",
+                        "value": {
+                          "type": "options",
+                          "value": [
+                            {
+                              "label": "Lead"
+                            }
+                          ]
+                        }
                       }
-                    }
-                  ],
-                  "row": "01990000-0000-7000-8000-00000000e001"
-                },
-                {
-                  "cells": [
-                    {
-                      "column": "01990000-0000-7000-8000-00000000b006",
-                      "value": {
-                        "type": "text",
-                        "value": "Globex"
-                      }
-                    },
-                    {
-                      "column": "01990000-0000-7000-8000-00000000b003",
-                      "value": {
-                        "type": "options",
-                        "value": [
-                          {
-                            "label": "Lead"
-                          }
-                        ]
-                      }
-                    }
-                  ],
-                  "row": "01990000-0000-7000-8000-00000000e002"
-                }
-              ]
+                    ],
+                    "row": "01990000-0000-7000-8000-00000000e002"
+                  }
+                ]
+              },
+              "kind": "update"
             },
-            "kind": "update_rows",
+            "kind": "rows",
             "table": "01990000-0000-7000-8000-00000000d001"
           }
         ],

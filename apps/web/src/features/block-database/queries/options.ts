@@ -113,13 +113,12 @@ export function updateDatabaseOption(
         target.databaseId,
         target.tableId,
         {
-          kind: 'update_option',
+          kind: 'column',
           table: target.tableId,
           column: target.columnId,
-          option: target.optionId,
-          ...change,
+          change: { kind: 'update_option', option: target.optionId, ...change },
         },
-        'option_changed'
+        { kind: 'column', change: 'option_updated' }
       )
     )
     .map(() => undefined);
@@ -139,12 +138,12 @@ export function deleteDatabaseOption(
         target.databaseId,
         target.tableId,
         {
-          kind: 'delete_option',
+          kind: 'column',
           table: target.tableId,
           column: target.columnId,
-          option: target.optionId,
+          change: { kind: 'delete_option', option: target.optionId },
         },
-        'option_changed'
+        { kind: 'column', change: 'option_deleted' }
       )
     )
     .map(() => undefined);

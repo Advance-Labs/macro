@@ -106,7 +106,14 @@ describe('Database', () => {
           tables: support.tables.map((table) => ({ ...table, table: renamed })),
         };
         return Response.json({
-          results: [{ kind: 'table_renamed', tableVersion: 8 }],
+          results: [
+            {
+              kind: 'table',
+              table: tableId,
+              tableVersion: 8,
+              change: { kind: 'renamed' },
+            },
+          ],
         });
       }
       reads++;
@@ -122,10 +129,13 @@ describe('Database', () => {
         body: {
           ops: [
             {
-              kind: 'rename_table',
+              kind: 'table',
               table: tableId,
-              name: 'Issues',
-              previousName: 'Tickets',
+              change: {
+                kind: 'rename',
+                name: 'Issues',
+                previousName: 'Tickets',
+              },
             },
           ],
         },
@@ -153,7 +163,15 @@ describe('Database', () => {
           })),
         };
         return Response.json({
-          results: [{ kind: 'column_renamed', tableVersion: 8 }],
+          results: [
+            {
+              kind: 'column',
+              table: tableId,
+              column: columnId,
+              tableVersion: 8,
+              change: { kind: 'renamed' },
+            },
+          ],
         });
       }
       return Response.json(current);
@@ -165,11 +183,10 @@ describe('Database', () => {
     expect(renameBody).toEqual({
       ops: [
         {
-          kind: 'rename_column',
+          kind: 'column',
           table: tableId,
           column: columnId,
-          name: 'Summary',
-          previousName: 'Name',
+          change: { kind: 'rename', name: 'Summary', previousName: 'Name' },
         },
       ],
     });
@@ -223,9 +240,32 @@ describe('Database', () => {
       });
       return Response.json({
         results: [
-          [{ kind: 'column_typed', tableVersion: 8 }],
-          [{ kind: 'columns_reordered', tableVersion: 9 }],
-          [{ kind: 'column_deleted', tableVersion: 10 }],
+          [
+            {
+              kind: 'column',
+              table: tableId,
+              column: columnId,
+              tableVersion: 8,
+              change: { kind: 'type_changed' },
+            },
+          ],
+          [
+            {
+              kind: 'table',
+              table: tableId,
+              tableVersion: 9,
+              change: { kind: 'columns_reordered' },
+            },
+          ],
+          [
+            {
+              kind: 'column',
+              table: tableId,
+              column: columnId,
+              tableVersion: 10,
+              change: { kind: 'deleted' },
+            },
+          ],
         ][writes.length - 1],
       });
     });
@@ -236,7 +276,13 @@ describe('Database', () => {
     const outcome = await column.changeType({
       to: { type: 'relation', table },
     });
-    expect(outcome).toEqual({ kind: 'column_typed', tableVersion: 8 });
+    expect(outcome).toEqual({
+      kind: 'column',
+      table: tableId,
+      column: columnId,
+      tableVersion: 8,
+      change: { kind: 'type_changed' },
+    });
     expect(await table.database.reorderColumns(table, [column])).toBe(9);
     expect(await column.table.database.deleteColumn(column)).toBe(10);
     expect(writes).toEqual([
@@ -246,10 +292,13 @@ describe('Database', () => {
         body: {
           ops: [
             {
-              kind: 'change_column_type',
+              kind: 'column',
               table: tableId,
               column: columnId,
-              to: { type: 'relation', database: databaseId, table: tableId },
+              change: {
+                kind: 'change_type',
+                to: { type: 'relation', database: databaseId, table: tableId },
+              },
             },
           ],
           baseVersions: { [tableId]: 7 },
@@ -259,7 +308,13 @@ describe('Database', () => {
         method: 'POST',
         url: `${host}/databases/${databaseId}/ops`,
         body: {
-          ops: [{ kind: 'reorder_columns', table: tableId, order: [columnId] }],
+          ops: [
+            {
+              kind: 'table',
+              table: tableId,
+              change: { kind: 'reorder_columns', order: [columnId] },
+            },
+          ],
           baseVersions: { [tableId]: 7 },
         },
       },
@@ -267,7 +322,14 @@ describe('Database', () => {
         method: 'POST',
         url: `${host}/databases/${databaseId}/ops`,
         body: {
-          ops: [{ kind: 'delete_column', table: tableId, column: columnId }],
+          ops: [
+            {
+              kind: 'column',
+              table: tableId,
+              column: columnId,
+              change: { kind: 'delete' },
+            },
+          ],
           baseVersions: { [tableId]: 7 },
         },
       },
@@ -336,25 +398,42 @@ describe('Database', () => {
       return Response.json({
         results: [
           {
-            kind: 'rows_written',
-            affected: 1,
-            inserted: [rowId],
+            kind: 'rows',
+            table: tableId,
             tableVersion: 8,
+            change: { kind: 'inserted', rows: [rowId] },
           },
-          { kind: 'rows_written', affected: 1, inserted: [], tableVersion: 8 },
+          {
+            kind: 'rows',
+            table: tableId,
+            tableVersion: 8,
+            change: { kind: 'deleted', affected: 1 },
+          },
         ],
       });
     });
     const database = client().databases.byId(databaseId);
     const results = await database.applyOps([
       {
-        kind: 'insert_rows',
+        kind: 'rows',
         table: tableId,
-        rows: [
-          [{ column: columnId, value: { type: 'text', value: 'Printer jam' } }],
-        ],
+        change: {
+          kind: 'insert',
+          rows: [
+            [
+              {
+                column: columnId,
+                value: { type: 'text', value: 'Printer jam' },
+              },
+            ],
+          ],
+        },
       },
-      { kind: 'delete_rows', table: tableId, rows: [rowId] },
+      {
+        kind: 'rows',
+        table: tableId,
+        change: { kind: 'delete', rows: [rowId] },
+      },
     ]);
     expect(writes).toEqual([
       {
@@ -363,25 +442,42 @@ describe('Database', () => {
         body: {
           ops: [
             {
-              kind: 'insert_rows',
+              kind: 'rows',
               table: tableId,
-              rows: [
-                [
-                  {
-                    column: columnId,
-                    value: { type: 'text', value: 'Printer jam' },
-                  },
+              change: {
+                kind: 'insert',
+                rows: [
+                  [
+                    {
+                      column: columnId,
+                      value: { type: 'text', value: 'Printer jam' },
+                    },
+                  ],
                 ],
-              ],
+              },
             },
-            { kind: 'delete_rows', table: tableId, rows: [rowId] },
+            {
+              kind: 'rows',
+              table: tableId,
+              change: { kind: 'delete', rows: [rowId] },
+            },
           ],
         },
       },
     ]);
     expect(results).toEqual([
-      { kind: 'rows_written', affected: 1, inserted: [rowId], tableVersion: 8 },
-      { kind: 'rows_written', affected: 1, inserted: [], tableVersion: 8 },
+      {
+        kind: 'rows',
+        table: tableId,
+        tableVersion: 8,
+        change: { kind: 'inserted', rows: [rowId] },
+      },
+      {
+        kind: 'rows',
+        table: tableId,
+        tableVersion: 8,
+        change: { kind: 'deleted', affected: 1 },
+      },
     ]);
   });
 
@@ -413,13 +509,17 @@ describe('Database', () => {
         results: [
           writes.length === 1
             ? {
-                kind: 'tables_reordered',
+                kind: 'reorder_tables',
                 tables: [
                   { table: otherTableId, version: 3 },
                   { table: tableId, version: 8 },
                 ],
               }
-            : { kind: 'table_deleted', table: otherTableId },
+            : {
+                kind: 'table',
+                table: otherTableId,
+                change: { kind: 'deleted' },
+              },
         ],
       });
     });
@@ -443,7 +543,11 @@ describe('Database', () => {
       {
         method: 'POST',
         url: `${host}/databases/${databaseId}/ops`,
-        body: { ops: [{ kind: 'delete_table', table: otherTableId }] },
+        body: {
+          ops: [
+            { kind: 'table', table: otherTableId, change: { kind: 'delete' } },
+          ],
+        },
       },
     ]);
     expect(reads).toBe(3);
@@ -461,9 +565,17 @@ describe('Database', () => {
     let mintedId = '';
     intercept(async (request) => {
       createBody = await request.json();
-      mintedId = (createBody as { ops: { id: string }[] }).ops[0]?.id ?? '';
+      mintedId =
+        (createBody as { ops: { table: string }[] }).ops[0]?.table ?? '';
       return Response.json({
-        results: [{ kind: 'table_created', table: mintedId, tableVersion: 1 }],
+        results: [
+          {
+            kind: 'table',
+            table: mintedId,
+            tableVersion: 1,
+            change: { kind: 'created' },
+          },
+        ],
       });
     });
     const database = client().databases.byId(databaseId);
@@ -471,11 +583,11 @@ describe('Database', () => {
     expect(createBody).toEqual({
       ops: [
         {
-          kind: 'create_table',
-          id: expect.stringMatching(
+          kind: 'table',
+          table: expect.stringMatching(
             /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
           ),
-          name: 'Guests',
+          change: { kind: 'create', name: 'Guests' },
         },
       ],
     });
@@ -489,9 +601,17 @@ describe('Database', () => {
       if (request.method === 'GET') return Response.json(support);
       const body = await request.json();
       writes.push(body);
-      const [op] = (body as { ops: { id: string }[] }).ops;
+      const [op] = (body as { ops: { column: string }[] }).ops;
       return Response.json({
-        results: [{ kind: 'column_created', column: op?.id, tableVersion: 8 }],
+        results: [
+          {
+            kind: 'column',
+            table: tableId,
+            column: op?.column,
+            tableVersion: 8,
+            change: { kind: 'created' },
+          },
+        ],
       });
     });
     const table = await client().databases.byId(databaseId).table('Tickets');
@@ -509,25 +629,28 @@ describe('Database', () => {
       {
         ops: [
           {
-            kind: 'create_column',
+            kind: 'column',
             table: tableId,
-            id: expect.stringMatching(v7),
-            definition: {
-              source: 'new',
-              name: 'Status',
-              type: { type: 'select', multi: false },
-              options: [
-                { id: expect.stringMatching(v7), label: 'Open' },
-                { id: expect.stringMatching(v7), label: 'Closed' },
-              ],
+            column: expect.stringMatching(v7),
+            change: {
+              kind: 'create',
+              definition: {
+                source: 'new',
+                name: 'Status',
+                type: { type: 'select', multi: false },
+                options: [
+                  { id: expect.stringMatching(v7), label: 'Open' },
+                  { id: expect.stringMatching(v7), label: 'Closed' },
+                ],
+              },
+              after: columnId,
             },
-            after: columnId,
           },
         ],
       },
     ]);
-    const [op] = (writes[0] as { ops: { id: string }[] }).ops;
-    expect(status.id).toBe(op?.id ?? '');
+    const [op] = (writes[0] as { ops: { column: string }[] }).ops;
+    expect(status.id).toBe(op?.column ?? '');
     expect(status.table).toBe(table);
   });
 
@@ -555,11 +678,22 @@ describe('Database', () => {
           ],
           misfits: 1,
         });
-      const [op] = (body as { ops: { id: string }[] }).ops;
+      const [op] = (body as { ops: { column: string }[] }).ops;
       return Response.json({
         results: [
-          { kind: 'column_created', column: op?.id, tableVersion: 10 },
-          { kind: 'rows_written', tableVersion: 10 },
+          {
+            kind: 'column',
+            table: tableId,
+            column: op?.column,
+            tableVersion: 10,
+            change: { kind: 'created' },
+          },
+          {
+            kind: 'rows',
+            table: tableId,
+            tableVersion: 10,
+            change: { kind: 'updated', affected: 2 },
+          },
         ],
       });
     });
@@ -571,8 +705,8 @@ describe('Database', () => {
     });
     const v7 =
       /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-    const batch = writes[1]?.body as { ops: { id: string }[] };
-    const newColumn = batch.ops[0]?.id ?? '';
+    const batch = writes[1]?.body as { ops: { column: string }[] };
+    const newColumn = batch.ops[0]?.column ?? '';
     expect(writes).toEqual([
       {
         url: `${host}/databases/${databaseId}/tables/${tableId}/columns/${columnId}/conversion`,
@@ -583,48 +717,57 @@ describe('Database', () => {
         body: {
           ops: [
             {
-              kind: 'create_column',
+              kind: 'column',
               table: tableId,
-              id: expect.stringMatching(v7),
-              definition: {
-                source: 'new',
-                name: 'Name (Select)',
-                type: { type: 'select', multi: false },
-                options: [
-                  { id: expect.stringMatching(v7), label: 'Open' },
-                  { id: expect.stringMatching(v7), label: 'Closed' },
-                ],
+              column: expect.stringMatching(v7),
+              change: {
+                kind: 'create',
+                definition: {
+                  source: 'new',
+                  name: 'Name (Select)',
+                  type: { type: 'select', multi: false },
+                  options: [
+                    { id: expect.stringMatching(v7), label: 'Open' },
+                    { id: expect.stringMatching(v7), label: 'Closed' },
+                  ],
+                },
+                after: columnId,
               },
-              after: columnId,
             },
             {
-              kind: 'update_rows',
+              kind: 'rows',
               table: tableId,
-              changes: {
-                kind: 'per_row',
-                rows: [
-                  {
-                    row: firstRow,
-                    cells: [
-                      {
-                        column: newColumn,
-                        value: { type: 'options', value: [{ label: 'Open' }] },
-                      },
-                    ],
-                  },
-                  {
-                    row: secondRow,
-                    cells: [
-                      {
-                        column: newColumn,
-                        value: {
-                          type: 'options',
-                          value: [{ label: 'Closed' }],
+              change: {
+                kind: 'update',
+                changes: {
+                  kind: 'per_row',
+                  rows: [
+                    {
+                      row: firstRow,
+                      cells: [
+                        {
+                          column: newColumn,
+                          value: {
+                            type: 'options',
+                            value: [{ label: 'Open' }],
+                          },
                         },
-                      },
-                    ],
-                  },
-                ],
+                      ],
+                    },
+                    {
+                      row: secondRow,
+                      cells: [
+                        {
+                          column: newColumn,
+                          value: {
+                            type: 'options',
+                            value: [{ label: 'Closed' }],
+                          },
+                        },
+                      ],
+                    },
+                  ],
+                },
               },
             },
           ],
@@ -649,9 +792,17 @@ describe('Database', () => {
           cells: [],
           misfits: 3,
         });
-      const [op] = (body as { ops: { id: string }[] }).ops;
+      const [op] = (body as { ops: { column: string }[] }).ops;
       return Response.json({
-        results: [{ kind: 'column_created', column: op?.id, tableVersion: 8 }],
+        results: [
+          {
+            kind: 'column',
+            table: tableId,
+            column: op?.column,
+            tableVersion: 8,
+            change: { kind: 'created' },
+          },
+        ],
       });
     });
     const table = await client().databases.byId(databaseId).table('Tickets');
@@ -663,18 +814,21 @@ describe('Database', () => {
       body: {
         ops: [
           {
-            kind: 'create_column',
+            kind: 'column',
             table: tableId,
-            id: expect.stringMatching(
+            column: expect.stringMatching(
               /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
             ),
-            definition: {
-              source: 'new',
-              name: 'Score',
-              type: { type: 'number' },
-              options: [],
+            change: {
+              kind: 'create',
+              definition: {
+                source: 'new',
+                name: 'Score',
+                type: { type: 'number' },
+                options: [],
+              },
+              after: columnId,
             },
-            after: columnId,
           },
         ],
         baseVersions: { [tableId]: 7 },
@@ -689,7 +843,13 @@ describe('Database', () => {
       createBody = await request.json();
       return Response.json({
         results: [
-          { kind: 'column_created', column: columnId, tableVersion: 8 },
+          {
+            kind: 'column',
+            table: tableId,
+            column: columnId,
+            tableVersion: 8,
+            change: { kind: 'created' },
+          },
         ],
       });
     });
@@ -702,12 +862,15 @@ describe('Database', () => {
     expect(createBody).toEqual({
       ops: [
         {
-          kind: 'create_column',
+          kind: 'column',
           table: tableId,
-          id: expect.stringMatching(
+          column: expect.stringMatching(
             /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
           ),
-          definition: { source: 'existing', property: definitionId },
+          change: {
+            kind: 'create',
+            definition: { source: 'existing', property: definitionId },
+          },
         },
       ],
     });
@@ -722,7 +885,13 @@ describe('Database', () => {
       addBody = await request.json();
       return Response.json({
         results: [
-          { kind: 'options_added', added: [optionId], tableVersion: 8 },
+          {
+            kind: 'column',
+            table: tableId,
+            column: columnId,
+            tableVersion: 8,
+            change: { kind: 'options_added', added: [optionId] },
+          },
         ],
       });
     });
@@ -730,24 +899,29 @@ describe('Database', () => {
     const column = (await (await database.table('Tickets'))?.columns())?.[0];
     if (!column) throw new Error('Missing fixture column');
     expect(await database.addColumnOptions(column, ['Maybe'])).toEqual({
-      kind: 'options_added',
-      added: [optionId],
+      kind: 'column',
+      table: tableId,
+      column: columnId,
       tableVersion: 8,
+      change: { kind: 'options_added', added: [optionId] },
     });
     expect(addBody).toEqual({
       ops: [
         {
-          kind: 'add_options',
+          kind: 'column',
           table: tableId,
           column: columnId,
-          options: [
-            {
-              id: expect.stringMatching(
-                /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-              ),
-              label: 'Maybe',
-            },
-          ],
+          change: {
+            kind: 'add_options',
+            options: [
+              {
+                id: expect.stringMatching(
+                  /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+                ),
+                label: 'Maybe',
+              },
+            ],
+          },
         },
       ],
     });
@@ -759,7 +933,15 @@ describe('Database', () => {
       if (request.method === 'GET') return Response.json(support);
       opsBody = await request.json();
       return Response.json({
-        results: [{ kind: 'view_deleted', tableVersion: 8 }],
+        results: [
+          {
+            kind: 'view',
+            table: tableId,
+            view: '0198a4cc-e138-7670-a308-a6b766602706',
+            tableVersion: 8,
+            change: { kind: 'deleted' },
+          },
+        ],
       });
     });
     const database = client().databases.byId(databaseId);
@@ -767,11 +949,25 @@ describe('Database', () => {
     if (!table) throw new Error('Missing fixture table');
     const viewId = '0198a4cc-e138-7670-a308-a6b766602706';
     await database.applyOps(
-      [{ kind: 'delete_view', table: tableId, view: viewId }],
+      [
+        {
+          kind: 'view',
+          table: tableId,
+          view: viewId,
+          change: { kind: 'delete' },
+        },
+      ],
       { baseVersions: [{ table, version: 7 }] },
     );
     expect(opsBody).toEqual({
-      ops: [{ kind: 'delete_view', table: tableId, view: viewId }],
+      ops: [
+        {
+          kind: 'view',
+          table: tableId,
+          view: viewId,
+          change: { kind: 'delete' },
+        },
+      ],
       baseVersions: { [tableId]: 7 },
     });
   });

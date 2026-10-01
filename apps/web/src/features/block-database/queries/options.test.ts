@@ -107,7 +107,15 @@ describe('changing an option', () => {
   it('shows a number option’s new label and colour before the answer', async () => {
     queryClient.setQueryData(databasesKeys.detail('db').queryKey, detail);
     transport.applyDatabaseOps.mockReturnValue(
-      okAsync([{ kind: 'option_changed', tableVersion: 4 }])
+      okAsync([
+        {
+          kind: 'column',
+          table: 'invites',
+          column: 'guests',
+          tableVersion: 4,
+          change: { kind: 'option_updated' },
+        },
+      ])
     );
 
     const updated = await updateDatabaseOption(target, {
@@ -127,12 +135,15 @@ describe('changing an option', () => {
     });
     expect(transport.applyDatabaseOps).toHaveBeenCalledExactlyOnceWith('db', [
       {
-        kind: 'update_option',
+        kind: 'column',
         table: 'invites',
         column: 'guests',
-        option: 'two',
-        label: ' 3 ',
-        color: '#0091FF',
+        change: {
+          kind: 'update_option',
+          option: 'two',
+          label: ' 3 ',
+          color: '#0091FF',
+        },
       },
     ]);
   });

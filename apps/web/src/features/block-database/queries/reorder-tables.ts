@@ -9,7 +9,6 @@ import type { VersionedTable } from '@service-storage/generated/schemas/versione
 import { ResultAsync } from 'neverthrow';
 import type { DatabaseSchemaChange } from '../core/column-schema';
 import { createKeyedSerializer } from '../core/keyed-serializer';
-import { isResult } from './detail-cache';
 
 function withTableOrder(
   detail: DatabaseDetail,
@@ -86,7 +85,7 @@ export function reorderDatabaseTables(params: {
       return result.map(() => undefined);
     }
     const [reordered] = result.value;
-    if (isResult(reordered, 'tables_reordered')) commit(key, reordered.tables);
+    if (reordered?.kind === 'reorder_tables') commit(key, reordered.tables);
     return result.map(() => undefined);
   };
   return new ResultAsync(reorder());

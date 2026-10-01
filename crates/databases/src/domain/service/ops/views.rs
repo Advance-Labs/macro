@@ -8,10 +8,10 @@ use models_databases::views::{
     CardPosition, DatabaseView, NewView, RequestedLayout, ViewId, ViewLayout, ViewPosition,
     ViewQuery, arrange_lane, check, place_card,
 };
-use models_databases::{ColumnId, DatabaseOp, OptionId};
+use models_databases::{ColumnId, OptionId, TakenId, ViewChange};
 use models_properties::service::property_value::PropertyValue;
 
-use super::{Planner, refuse};
+use super::{Planner, refuse, refuse_taken};
 use crate::domain::catalog::{ColumnEntry, TableEntry, schema_columns};
 use crate::domain::models::{DatabaseError, Position, PropertyDefinitionId, RowId, TableId, Write};
 use crate::domain::service::{same_name, validate_name};
@@ -68,10 +68,9 @@ impl Board {
     }
 }
 
-/// What a `MoveCard` asks: which card of which board goes to which lane,
-/// next to which neighbour.
+/// What a `MoveCard` asks: which card goes to which lane, next to which
+/// neighbour.
 struct CardMove {
-    view: ViewId,
     row: RowId,
     lane: Option<OptionId>,
     before: Option<RowId>,
@@ -79,15 +78,22 @@ struct CardMove {
 }
 
 impl Planner {
+    /// A view change; a creation names a view that does not exist yet, so
+    /// only the others need the view.
     pub(super) fn view_write(
         &mut self,
         index: usize,
         entry: &TableEntry,
-        op: &DatabaseOp,
+        id: ViewId,
+        change: &ViewChange,
     ) -> Result<Write, DatabaseError> {
         let table = entry.table.id;
-        match op {
-            DatabaseOp::CreateView { view, .. } => {
+        let current = self.view(index, entry, id).cloned();
+        match change {
+            ViewChange::Create { view } => {
+                if self.view_id_taken(id) {
+                    return Err(refuse_taken(index, TakenId::View(id)));
+                }
                 let NewView {
                     name,
                     query,
@@ -101,7 +107,7 @@ impl Planner {
                 let position = key_between(views.last().map(|view| &view.position), None)
                     .map_err(|error| refuse(index, None, None, error.to_string()))?;
                 let view = DatabaseView {
-                    id: ViewId::new(),
+                    id,
                     database_id: entry.database.id,
                     table_id: table,
                     name,
@@ -114,16 +120,14 @@ impl Planner {
                 views.push(view.clone());
                 Ok(Write::CreateView { view })
             }
-            DatabaseOp::UpdateView {
-                view: id,
+            ViewChange::Update {
                 name,
                 query,
                 layout,
-                ..
             } => {
-                let current = self.view(index, entry, *id)?.clone();
+                let current = current?;
                 let name = match name {
-                    Some(name) => self.view_name(index, entry, Some(*id), name)?,
+                    Some(name) => self.view_name(index, entry, Some(id), name)?,
                     None => current.name.clone(),
                 };
                 let query = query.clone().unwrap_or_else(|| current.query.clone());
@@ -143,82 +147,97 @@ impl Planner {
                 self.replace_view(entry, view.clone());
                 Ok(Write::UpdateView { view, regrouped })
             }
-            DatabaseOp::DeleteView { view: id, .. } => {
-                self.view(index, entry, *id)?;
-                self.views_of(entry).retain(|view| view.id != *id);
+            ViewChange::Delete => {
+                current?;
+                self.views_of(entry).retain(|view| view.id != id);
                 Ok(Write::DeleteView {
                     table_id: table,
-                    view_id: *id,
+                    view_id: id,
                 })
             }
-            DatabaseOp::ReorderViews { order, .. } => {
-                let views = self.views_of(entry);
-                let current: HashSet<ViewId> = views.iter().map(|view| view.id).collect();
-                let named: HashSet<ViewId> = order.iter().copied().collect();
-                if named.len() != order.len() || named != current {
-                    return Err(refuse(
-                        index,
-                        None,
-                        None,
-                        "the order must name every view of this table exactly once",
-                    ));
-                }
-                let keys = keys_between(None, None, order.len())
-                    .map_err(|error| refuse(index, None, None, error.to_string()))?;
-                let positions: Vec<ViewPosition> = order
-                    .iter()
-                    .zip(keys)
-                    .map(|(view, position)| ViewPosition {
-                        view: *view,
-                        position,
-                    })
-                    .collect();
-                for view in views.iter_mut() {
-                    if let Some(placed) = positions.iter().find(|placed| placed.view == view.id) {
-                        view.position = placed.position.clone();
-                    }
-                }
-                views.sort_by(|left, right| left.position.cmp(&right.position));
-                Ok(Write::OrderViews {
-                    table_id: table,
-                    positions,
-                })
-            }
-            DatabaseOp::MoveCard {
-                view,
+            ViewChange::MoveCard {
                 row,
                 lane,
                 before,
                 after,
-                ..
             } => self.move_card(
                 index,
                 entry,
+                current?,
                 CardMove {
-                    view: *view,
                     row: *row,
                     lane: *lane,
                     before: *before,
                     after: *after,
                 },
             ),
-            _ => Err(refuse(index, None, None, "not a view op")),
         }
+    }
+
+    pub(super) fn order_views(
+        &mut self,
+        index: usize,
+        entry: &TableEntry,
+        order: &[ViewId],
+    ) -> Result<Write, DatabaseError> {
+        let views = self.views_of(entry);
+        let current: HashSet<ViewId> = views.iter().map(|view| view.id).collect();
+        let named: HashSet<ViewId> = order.iter().copied().collect();
+        if named.len() != order.len() || named != current {
+            return Err(refuse(
+                index,
+                None,
+                None,
+                "the order must name every view of this table exactly once",
+            ));
+        }
+        let keys = keys_between(None, None, order.len())
+            .map_err(|error| refuse(index, None, None, error.to_string()))?;
+        let positions: Vec<ViewPosition> = order
+            .iter()
+            .zip(keys)
+            .map(|(view, position)| ViewPosition {
+                view: *view,
+                position,
+            })
+            .collect();
+        for view in views.iter_mut() {
+            if let Some(placed) = positions.iter().find(|placed| placed.view == view.id) {
+                view.position = placed.position.clone();
+            }
+        }
+        views.sort_by(|left, right| left.position.cmp(&right.position));
+        Ok(Write::OrderViews {
+            table_id: entry.table.id,
+            positions,
+        })
+    }
+
+    /// Whether a view of any of the database's tables, as the ops so far
+    /// leave them, goes by `id`.
+    fn view_id_taken(&self, id: ViewId) -> bool {
+        self.entries.iter().any(|entry| {
+            self.views
+                .get(&entry.table.id)
+                .unwrap_or(&entry.views)
+                .iter()
+                .any(|view| view.id == id)
+        })
     }
 
     fn move_card(
         &mut self,
         index: usize,
         entry: &TableEntry,
+        board: DatabaseView,
         CardMove {
-            view,
             row,
             lane,
             before,
             after,
         }: CardMove,
     ) -> Result<Write, DatabaseError> {
-        let board = self.view(index, entry, view)?.clone();
+        let view = board.id;
         let ViewLayout::Board { group_by, .. } = board.layout else {
             return Err(refuse(
                 index,

@@ -175,9 +175,12 @@
     {
       "results": [
         {
-          "affected": 1,
-          "inserted": [],
-          "kind": "rows_written",
+          "change": {
+            "affected": 1,
+            "kind": "deleted"
+          },
+          "kind": "rows",
+          "table": "01990000-0000-7000-8000-00000000d001",
           "tableVersion": 10
         }
       ],
@@ -186,10 +189,13 @@
         "id": 1,
         "ops": [
           {
-            "kind": "delete_rows",
-            "rows": [
-              "01990000-0000-7000-8000-00000000e003"
-            ],
+            "change": {
+              "kind": "delete",
+              "rows": [
+                "01990000-0000-7000-8000-00000000e003"
+              ]
+            },
+            "kind": "rows",
             "table": "01990000-0000-7000-8000-00000000d001"
           }
         ],

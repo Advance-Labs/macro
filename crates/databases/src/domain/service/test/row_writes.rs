@@ -17,20 +17,24 @@ async fn a_write_to_a_row_of_another_table_is_refused() {
         edit(database_id),
         viewer(OWNER),
         OpBatch::from(vec![
-            DatabaseOp::CreateTable {
-                id: sessions,
-                name: "Sessions".into(),
-            },
-            DatabaseOp::CreateColumn {
+            DatabaseOp::Table {
                 table: sessions,
-                id: title,
-                definition: NewColumn::New {
-                    name: "Title".into(),
-                    kind: ColumnKind::Text,
-                    options: vec![],
-                    infer_type: false,
+                change: TableChange::Create {
+                    name: "Sessions".into(),
                 },
-                after: None,
+            },
+            DatabaseOp::Column {
+                table: sessions,
+                column: title,
+                change: ColumnChange::Create {
+                    definition: NewColumn::New {
+                        name: "Title".into(),
+                        kind: ColumnKind::Text,
+                        options: vec![],
+                        infer_type: false,
+                    },
+                    after: None,
+                },
             },
         ]),
     )
@@ -43,14 +47,16 @@ async fn a_write_to_a_row_of_another_table_is_refused() {
         .apply_ops(
             receipt::<EditAccessLevel>(database_id, OWNER, AccessLevel::Owner),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::UpdateRows {
+            OpBatch::from(vec![DatabaseOp::Rows {
                 table: sessions,
-                changes: RowChanges::Uniform {
-                    rows: vec![row_id],
-                    cells: vec![CellWrite {
-                        column: title,
-                        value: CellValue::Text("Hijacked".into()),
-                    }],
+                change: RowsChange::Update {
+                    changes: RowChanges::Uniform {
+                        rows: vec![row_id],
+                        cells: vec![CellWrite {
+                            column: title,
+                            value: CellValue::Text("Hijacked".into()),
+                        }],
+                    },
                 },
             }]),
         )
@@ -73,9 +79,9 @@ async fn a_write_to_a_row_of_another_table_is_refused() {
         .apply_ops(
             receipt::<EditAccessLevel>(database_id, OWNER, AccessLevel::Owner),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::DeleteRows {
+            OpBatch::from(vec![DatabaseOp::Rows {
                 table: sessions,
-                rows: vec![row_id],
+                change: RowsChange::Delete { rows: vec![row_id] },
             }]),
         )
         .await
@@ -169,23 +175,25 @@ async fn grants_scope_writes_per_database() {
         .apply_ops(
             receipt::<EditAccessLevel>(venue.id, VIEWER, AccessLevel::Owner),
             viewer(VIEWER),
-            OpBatch::from(vec![DatabaseOp::InsertRows {
+            OpBatch::from(vec![DatabaseOp::Rows {
                 table: rooms,
-                rows: vec![vec![CellWrite {
-                    column: room_name,
-                    value: CellValue::Text("Main Hall".into()),
-                }]],
+                change: RowsChange::Insert {
+                    rows: vec![vec![CellWrite {
+                        column: room_name,
+                        value: CellValue::Text("Main Hall".into()),
+                    }]],
+                },
             }]),
         )
         .await
         .unwrap();
     assert!(matches!(
         written.as_slice(),
-        [OpResult::RowsWritten {
+        [OpResult::Rows {
             table_version: TableVersion(1),
-            affected: 1,
+            change: RowsResult::Inserted { rows },
             ..
-        }]
+        }] if rows.len() == 1
     ));
 
     // ...but their receipt on it reaches no table of OWNER's.
@@ -193,9 +201,9 @@ async fn grants_scope_writes_per_database() {
         .apply_ops(
             receipt::<EditAccessLevel>(venue.id, VIEWER, AccessLevel::Owner),
             viewer(VIEWER),
-            OpBatch::from(vec![DatabaseOp::InsertRows {
+            OpBatch::from(vec![DatabaseOp::Rows {
                 table: seeded.table_id,
-                rows: vec![vec![]],
+                change: RowsChange::Insert { rows: vec![vec![]] },
             }]),
         )
         .await

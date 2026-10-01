@@ -5,7 +5,9 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
-use models_databases::{ColumnId, DatabaseId, DatabaseOp, NewOption, OptionId, TableId};
+use models_databases::{
+    ColumnChange, ColumnId, DatabaseId, DatabaseOp, NewOption, OptionId, TableId,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -109,17 +111,19 @@ where
             .apply(
                 user_id,
                 self.database_id,
-                OpBatch::from(vec![DatabaseOp::AddOptions {
+                OpBatch::from(vec![DatabaseOp::Column {
                     table: self.table_id,
                     column: self.column_id,
-                    options: self
-                        .labels
-                        .iter()
-                        .map(|label| NewOption {
-                            id: OptionId::new(),
-                            label: label.clone(),
-                        })
-                        .collect(),
+                    change: ColumnChange::AddOptions {
+                        options: self
+                            .labels
+                            .iter()
+                            .map(|label| NewOption {
+                                id: OptionId::new(),
+                                label: label.clone(),
+                            })
+                            .collect(),
+                    },
                 }]),
             )
             .await?;

@@ -84,7 +84,15 @@ const detail: DatabaseDetail = {
   ],
 };
 const answer: ApplyOpsResponse = {
-  results: [{ kind: 'column_renamed', tableVersion: 6 }],
+  results: [
+    {
+      kind: 'column',
+      table: 'tasks',
+      column: 'title',
+      tableVersion: 6,
+      change: { kind: 'renamed' },
+    },
+  ],
 };
 const params = {
   databaseId: 'db',
@@ -111,11 +119,10 @@ describe('column rename cache and labels', () => {
       request: {
         ops: [
           {
-            kind: 'rename_column',
+            kind: 'column',
             table: 'tasks',
             column: 'title',
-            name: 'Task',
-            previousName: 'Name',
+            change: { kind: 'rename', name: 'Task', previousName: 'Name' },
           },
         ],
       },

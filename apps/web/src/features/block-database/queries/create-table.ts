@@ -53,16 +53,19 @@ function createWithName(
 ): DatabaseSchemaChange<string> {
   const tableId = uuidv7();
   return applyDatabaseOps(databaseId, [
-    { kind: 'create_table', id: tableId, name },
+    { kind: 'table', table: tableId, change: { kind: 'create', name } },
     {
-      kind: 'create_column',
+      kind: 'column',
       table: tableId,
-      id: uuidv7(),
-      definition: {
-        source: 'new',
-        name: 'Name',
-        type: { type: 'text' },
-        inferType: true,
+      column: uuidv7(),
+      change: {
+        kind: 'create',
+        definition: {
+          source: 'new',
+          name: 'Name',
+          type: { type: 'text' },
+          inferType: true,
+        },
       },
     },
   ]).map(() => tableId);

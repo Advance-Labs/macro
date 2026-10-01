@@ -1,4 +1,4 @@
-use models_databases::DatabaseOp;
+use models_databases::{ColumnChange, DatabaseOp, TableChange};
 
 use super::*;
 
@@ -68,7 +68,10 @@ async fn committed_table_column_and_options_keep_ids_when_schema_refresh_fails()
     .unwrap();
     assert_eq!(table.database_id, DATABASE_ID);
     let created_table = match calls.lock().unwrap().applied[0].ops[0] {
-        DatabaseOp::CreateTable { id, .. } => id,
+        DatabaseOp::Table {
+            table,
+            change: TableChange::Create { .. },
+        } => table,
         ref other => panic!("a table creation, got {other:?}"),
     };
     assert_eq!(table.table_id, created_table);
@@ -89,7 +92,11 @@ async fn committed_table_column_and_options_keep_ids_when_schema_refresh_fails()
     .await
     .unwrap();
     let created_column = match calls.lock().unwrap().applied[1].ops[0] {
-        DatabaseOp::CreateColumn { id, .. } => id,
+        DatabaseOp::Column {
+            column,
+            change: ColumnChange::Create { .. },
+            ..
+        } => column,
         ref other => panic!("a column creation, got {other:?}"),
     };
     assert_eq!(column.column_id, created_column);

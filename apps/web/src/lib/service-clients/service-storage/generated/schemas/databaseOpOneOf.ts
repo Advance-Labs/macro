@@ -4,17 +4,19 @@
  * document_storage_service
  * OpenAPI spec version: 0.1.0
  */
+
 import type { DatabaseOpOneOfKind } from './databaseOpOneOfKind';
+import type { TableChange } from './tableChange';
 
 /**
- * Add a table, after the database's other tables. It starts with no
-columns and no rows.
+ * A change to a table itself: its creation, name, removal, or the
+order of its columns or views.
  */
 export type DatabaseOpOneOf = {
-  /** The new table's id, minted by the client; later ops of the
-request may name it. */
-  id: string;
+  /** What changes. */
+  change: TableChange;
   kind: DatabaseOpOneOfKind;
-  /** Its name, unique within the database ignoring case. */
-  name: string;
+  /** The table; for a creation, its new id, minted by the client, which
+later ops of the request may name. */
+  table: string;
 };

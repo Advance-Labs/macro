@@ -14,42 +14,121 @@ const GOING: OptionId = OptionId::from_uuid(Uuid::from_u128(0xc01b));
 const PEOPLE: DatabaseId = DatabaseId::from_uuid(Uuid::from_u128(0xa1e8));
 
 #[test]
-fn an_insert_reads_its_rows_cells_and_values_from_json() {
+fn a_column_rename_reads_its_change_from_json() {
     let op: DatabaseOp = serde_json::from_value(json!({
-        "kind": "insert_rows",
+        "kind": "column",
         "table": TABLE,
-        "rows": [
-            [
-                {"column": NAME, "value": {"type": "text", "value": "Sam"}},
-                {"column": STATUS, "value": {"type": "options", "value": [{"label": "Going"}]}},
-            ],
-            [
-                {"column": NAME, "value": {"type": "clear"}},
-            ],
-        ],
+        "column": STATUS,
+        "change": {"kind": "rename", "name": "Due"},
     }))
     .unwrap();
 
     assert_eq!(
         op,
-        DatabaseOp::InsertRows {
+        DatabaseOp::Column {
             table: TABLE,
-            rows: vec![
-                vec![
-                    CellWrite {
-                        column: NAME,
-                        value: CellValue::Text("Sam".into()),
-                    },
-                    CellWrite {
-                        column: STATUS,
-                        value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
-                    },
+            column: STATUS,
+            change: ColumnChange::Rename {
+                name: "Due".into(),
+                previous_name: None,
+            },
+        }
+    );
+}
+
+#[test]
+fn a_rename_names_the_name_it_saw_in_camel_case() {
+    assert_eq!(
+        serde_json::to_value(DatabaseOp::Table {
+            table: TABLE,
+            change: TableChange::Rename {
+                name: "People".into(),
+                previous_name: Some("Guests".into()),
+            },
+        })
+        .unwrap(),
+        json!({
+            "kind": "table",
+            "table": TABLE,
+            "change": {"kind": "rename", "name": "People", "previousName": "Guests"},
+        })
+    );
+}
+
+#[test]
+fn a_unit_change_is_its_kind_alone() {
+    let op: DatabaseOp = serde_json::from_value(json!({
+        "kind": "table",
+        "table": TABLE,
+        "change": {"kind": "delete"},
+    }))
+    .unwrap();
+    assert_eq!(
+        op,
+        DatabaseOp::Table {
+            table: TABLE,
+            change: TableChange::Delete,
+        }
+    );
+
+    assert_eq!(
+        serde_json::to_value(DatabaseOp::Column {
+            table: TABLE,
+            column: NAME,
+            change: ColumnChange::Delete,
+        })
+        .unwrap(),
+        json!({
+            "kind": "column",
+            "table": TABLE,
+            "column": NAME,
+            "change": {"kind": "delete"},
+        })
+    );
+}
+
+#[test]
+fn an_insert_reads_its_rows_cells_and_values_from_json() {
+    let op: DatabaseOp = serde_json::from_value(json!({
+        "kind": "rows",
+        "table": TABLE,
+        "change": {
+            "kind": "insert",
+            "rows": [
+                [
+                    {"column": NAME, "value": {"type": "text", "value": "Sam"}},
+                    {"column": STATUS, "value": {"type": "options", "value": [{"label": "Going"}]}},
                 ],
-                vec![CellWrite {
-                    column: NAME,
-                    value: CellValue::Clear,
-                }],
+                [
+                    {"column": NAME, "value": {"type": "clear"}},
+                ],
             ],
+        },
+    }))
+    .unwrap();
+
+    assert_eq!(
+        op,
+        DatabaseOp::Rows {
+            table: TABLE,
+            change: RowsChange::Insert {
+                rows: vec![
+                    vec![
+                        CellWrite {
+                            column: NAME,
+                            value: CellValue::Text("Sam".into()),
+                        },
+                        CellWrite {
+                            column: STATUS,
+                            value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
+                        },
+                    ],
+                    vec![CellWrite {
+                        column: NAME,
+                        value: CellValue::Clear,
+                    }],
+                ],
+            },
         }
     );
 }
@@ -94,50 +173,60 @@ fn every_value_kind_round_trips_through_json() {
 #[test]
 fn updates_name_their_rows_uniformly_or_one_by_one() {
     let uniform: DatabaseOp = serde_json::from_value(json!({
-        "kind": "update_rows",
+        "kind": "rows",
         "table": TABLE,
-        "changes": {
-            "kind": "uniform",
-            "rows": [SAM, ALEX],
-            "cells": [{"column": NAME, "value": {"type": "text", "value": "Guest"}}],
+        "change": {
+            "kind": "update",
+            "changes": {
+                "kind": "uniform",
+                "rows": [SAM, ALEX],
+                "cells": [{"column": NAME, "value": {"type": "text", "value": "Guest"}}],
+            },
         },
     }))
     .unwrap();
     assert_eq!(
         uniform,
-        DatabaseOp::UpdateRows {
+        DatabaseOp::Rows {
             table: TABLE,
-            changes: RowChanges::Uniform {
-                rows: vec![SAM, ALEX],
-                cells: vec![CellWrite {
-                    column: NAME,
-                    value: CellValue::Text("Guest".into()),
-                }],
+            change: RowsChange::Update {
+                changes: RowChanges::Uniform {
+                    rows: vec![SAM, ALEX],
+                    cells: vec![CellWrite {
+                        column: NAME,
+                        value: CellValue::Text("Guest".into()),
+                    }],
+                },
             },
         }
     );
 
     let per_row: DatabaseOp = serde_json::from_value(json!({
-        "kind": "update_rows",
+        "kind": "rows",
         "table": TABLE,
-        "changes": {
-            "kind": "per_row",
-            "rows": [{"row": SAM, "cells": [{"column": NAME, "value": {"type": "text", "value": "Sam"}}]}],
+        "change": {
+            "kind": "update",
+            "changes": {
+                "kind": "per_row",
+                "rows": [{"row": SAM, "cells": [{"column": NAME, "value": {"type": "text", "value": "Sam"}}]}],
+            },
         },
     }))
     .unwrap();
     assert_eq!(
         per_row,
-        DatabaseOp::UpdateRows {
+        DatabaseOp::Rows {
             table: TABLE,
-            changes: RowChanges::PerRow {
-                rows: vec![RowChange {
-                    row: SAM,
-                    cells: vec![CellWrite {
-                        column: NAME,
-                        value: CellValue::Text("Sam".into()),
+            change: RowsChange::Update {
+                changes: RowChanges::PerRow {
+                    rows: vec![RowChange {
+                        row: SAM,
+                        cells: vec![CellWrite {
+                            column: NAME,
+                            value: CellValue::Text("Sam".into()),
+                        }],
                     }],
-                }],
+                },
             },
         }
     );
@@ -146,24 +235,24 @@ fn updates_name_their_rows_uniformly_or_one_by_one() {
 #[test]
 fn deletes_and_type_changes_read_from_json() {
     let ops: Vec<DatabaseOp> = serde_json::from_value(json!([
-        {"kind": "delete_rows", "table": TABLE, "rows": [SAM]},
+        {"kind": "rows", "table": TABLE, "change": {"kind": "delete", "rows": [SAM]}},
         {
-            "kind": "change_column_type",
+            "kind": "column",
             "table": TABLE,
             "column": STATUS,
-            "to": {"type": "select", "multi": true},
+            "change": {"kind": "change_type", "to": {"type": "select", "multi": true}},
         },
         {
-            "kind": "change_column_type",
+            "kind": "column",
             "table": TABLE,
             "column": NAME,
-            "to": {"type": "entity", "target": "USER", "multi": false},
+            "change": {"kind": "change_type", "to": {"type": "entity", "target": "USER", "multi": false}},
         },
         {
-            "kind": "change_column_type",
+            "kind": "column",
             "table": TABLE,
             "column": NAME,
-            "to": {"type": "relation", "database": PEOPLE, "table": TABLE},
+            "change": {"kind": "change_type", "to": {"type": "relation", "database": PEOPLE, "table": TABLE}},
         },
     ]))
     .unwrap();
@@ -171,29 +260,35 @@ fn deletes_and_type_changes_read_from_json() {
     assert_eq!(
         ops,
         vec![
-            DatabaseOp::DeleteRows {
+            DatabaseOp::Rows {
                 table: TABLE,
-                rows: vec![SAM],
+                change: RowsChange::Delete { rows: vec![SAM] },
             },
-            DatabaseOp::ChangeColumnType {
+            DatabaseOp::Column {
                 table: TABLE,
                 column: STATUS,
-                to: ColumnKind::Select { multi: true },
-            },
-            DatabaseOp::ChangeColumnType {
-                table: TABLE,
-                column: NAME,
-                to: ColumnKind::Entity {
-                    target: EntityKind::User,
-                    multi: false,
+                change: ColumnChange::ChangeType {
+                    to: ColumnKind::Select { multi: true },
                 },
             },
-            DatabaseOp::ChangeColumnType {
+            DatabaseOp::Column {
                 table: TABLE,
                 column: NAME,
-                to: ColumnKind::Relation {
-                    database: PEOPLE,
-                    table: TABLE,
+                change: ColumnChange::ChangeType {
+                    to: ColumnKind::Entity {
+                        target: EntityKind::User,
+                        multi: false,
+                    },
+                },
+            },
+            DatabaseOp::Column {
+                table: TABLE,
+                column: NAME,
+                change: ColumnChange::ChangeType {
+                    to: ColumnKind::Relation {
+                        database: PEOPLE,
+                        table: TABLE,
+                    },
                 },
             },
         ]
@@ -203,93 +298,112 @@ fn deletes_and_type_changes_read_from_json() {
 #[test]
 fn results_say_what_each_op_did_in_camel_case() {
     let results = vec![
-        OpResult::RowsWritten {
+        OpResult::Rows {
+            table: TABLE,
             table_version: TableVersion(4),
-            inserted: vec![SAM],
-            affected: 1,
+            change: RowsResult::Inserted { rows: vec![SAM] },
         },
-        OpResult::ColumnTyped {
+        OpResult::Column {
+            table: TABLE,
+            column: NAME,
             table_version: TableVersion(5),
+            change: ColumnResult::TypeChanged,
+        },
+        OpResult::Table {
+            table: TABLE,
+            table_version: None,
+            change: TableResult::Deleted,
         },
     ];
 
     assert_eq!(
         serde_json::to_value(&results).unwrap(),
         json!([
-            {"kind": "rows_written", "tableVersion": 4, "inserted": [SAM], "affected": 1},
-            {"kind": "column_typed", "tableVersion": 5},
+            {
+                "kind": "rows",
+                "table": TABLE,
+                "tableVersion": 4,
+                "change": {"kind": "inserted", "rows": [SAM]},
+            },
+            {
+                "kind": "column",
+                "table": TABLE,
+                "column": NAME,
+                "tableVersion": 5,
+                "change": {"kind": "type_changed"},
+            },
+            {"kind": "table", "table": TABLE, "change": {"kind": "deleted"}},
         ])
     );
+    assert_eq!(results[0].table_version(), Some(TableVersion(4)));
+    assert_eq!(results[2].table_version(), None);
 }
 
 #[test]
 fn an_option_update_tells_a_missing_colour_from_a_cleared_one() {
     let option = OptionId::from_uuid(Uuid::from_u128(0x0b7));
-    let read = |body| serde_json::from_value::<DatabaseOp>(body).unwrap();
+    let read = |change| {
+        serde_json::from_value::<DatabaseOp>(json!({
+            "kind": "column",
+            "table": TABLE,
+            "column": STATUS,
+            "change": change,
+        }))
+        .unwrap()
+    };
 
     assert_eq!(
-        read(json!({
-            "kind": "update_option",
-            "table": TABLE,
-            "column": STATUS,
-            "option": option,
-            "label": "Maybe",
-        })),
-        DatabaseOp::UpdateOption {
+        read(json!({"kind": "update_option", "option": option, "label": "Maybe"})),
+        DatabaseOp::Column {
             table: TABLE,
             column: STATUS,
-            option,
-            label: Some("Maybe".into()),
-            color: None,
+            change: ColumnChange::UpdateOption {
+                option,
+                label: Some("Maybe".into()),
+                color: None,
+            },
         }
     );
     assert_eq!(
-        read(json!({
-            "kind": "update_option",
-            "table": TABLE,
-            "column": STATUS,
-            "option": option,
-            "color": null,
-        })),
-        DatabaseOp::UpdateOption {
+        read(json!({"kind": "update_option", "option": option, "color": null})),
+        DatabaseOp::Column {
             table: TABLE,
             column: STATUS,
-            option,
-            label: None,
-            color: Some(None),
+            change: ColumnChange::UpdateOption {
+                option,
+                label: None,
+                color: Some(None),
+            },
         }
     );
     assert_eq!(
-        read(json!({
-            "kind": "update_option",
-            "table": TABLE,
-            "column": STATUS,
-            "option": option,
-            "color": "#12A594",
-        })),
-        DatabaseOp::UpdateOption {
+        read(json!({"kind": "update_option", "option": option, "color": "#12A594"})),
+        DatabaseOp::Column {
             table: TABLE,
             column: STATUS,
-            option,
-            label: None,
-            color: Some(Some("#12A594".into())),
+            change: ColumnChange::UpdateOption {
+                option,
+                label: None,
+                color: Some(Some("#12A594".into())),
+            },
         }
     );
     assert_eq!(
-        serde_json::to_value(DatabaseOp::UpdateOption {
+        serde_json::to_value(DatabaseOp::Column {
             table: TABLE,
             column: STATUS,
-            option,
-            label: None,
-            color: Some(None),
+            change: ColumnChange::UpdateOption {
+                option,
+                label: None,
+                color: Some(None),
+            },
         })
         .unwrap(),
         json!({
-            "kind": "update_option",
+            "kind": "column",
             "table": TABLE,
             "column": STATUS,
-            "option": option,
-            "color": null,
+            "change": {"kind": "update_option", "option": option, "color": null},
         })
     );
 }
@@ -298,18 +412,18 @@ fn an_option_update_tells_a_missing_colour_from_a_cleared_one() {
 fn an_option_removal_names_its_table_column_and_option() {
     let option = OptionId::from_uuid(Uuid::from_u128(0x0b7));
     let op: DatabaseOp = serde_json::from_value(json!({
-        "kind": "delete_option",
+        "kind": "column",
         "table": TABLE,
         "column": STATUS,
-        "option": option,
+        "change": {"kind": "delete_option", "option": option},
     }))
     .unwrap();
     assert_eq!(
         op,
-        DatabaseOp::DeleteOption {
+        DatabaseOp::Column {
             table: TABLE,
             column: STATUS,
-            option,
+            change: ColumnChange::DeleteOption { option },
         }
     );
     assert_eq!(op.table(), Some(TABLE));
@@ -323,46 +437,58 @@ fn view_ops_read_their_table_view_and_card_from_json() {
 
     assert_eq!(
         read(json!({
-            "kind": "update_view",
+            "kind": "view",
             "table": TABLE,
             "view": view,
-            "name": "By stage",
+            "change": {"kind": "update", "name": "By stage"},
         })),
-        DatabaseOp::UpdateView {
+        DatabaseOp::View {
             table: TABLE,
             view,
-            name: Some("By stage".into()),
-            query: None,
-            layout: None,
-        }
-    );
-    assert_eq!(
-        read(json!({"kind": "reorder_views", "table": TABLE, "order": [view]})),
-        DatabaseOp::ReorderViews {
-            table: TABLE,
-            order: vec![view],
+            change: ViewChange::Update {
+                name: Some("By stage".into()),
+                query: None,
+                layout: None,
+            },
         }
     );
     assert_eq!(
         read(json!({
-            "kind": "move_card",
+            "kind": "table",
             "table": TABLE,
-            "view": view,
-            "row": SAM,
-            "lane": lane,
-            "before": ALEX,
+            "change": {"kind": "reorder_views", "order": [view]},
         })),
-        DatabaseOp::MoveCard {
+        DatabaseOp::Table {
             table: TABLE,
-            view,
-            row: SAM,
-            lane: Some(lane),
-            before: Some(ALEX),
-            after: None,
+            change: TableChange::ReorderViews { order: vec![view] },
         }
     );
     assert_eq!(
-        read(json!({"kind": "delete_view", "table": TABLE, "view": view})).table(),
+        read(json!({
+            "kind": "view",
+            "table": TABLE,
+            "view": view,
+            "change": {"kind": "move_card", "row": SAM, "lane": lane, "before": ALEX},
+        })),
+        DatabaseOp::View {
+            table: TABLE,
+            view,
+            change: ViewChange::MoveCard {
+                row: SAM,
+                lane: Some(lane),
+                before: Some(ALEX),
+                after: None,
+            },
+        }
+    );
+    assert_eq!(
+        read(json!({
+            "kind": "view",
+            "table": TABLE,
+            "view": view,
+            "change": {"kind": "delete"},
+        }))
+        .table(),
         Some(TABLE)
     );
 }
@@ -370,16 +496,18 @@ fn view_ops_read_their_table_view_and_card_from_json() {
 #[test]
 fn a_table_creation_carries_the_id_its_client_minted() {
     let op: DatabaseOp = serde_json::from_value(json!({
-        "kind": "create_table",
-        "id": TABLE,
-        "name": "Guests",
+        "kind": "table",
+        "table": TABLE,
+        "change": {"kind": "create", "name": "Guests"},
     }))
     .unwrap();
     assert_eq!(
         op,
-        DatabaseOp::CreateTable {
-            id: TABLE,
-            name: "Guests".into(),
+        DatabaseOp::Table {
+            table: TABLE,
+            change: TableChange::Create {
+                name: "Guests".into(),
+            },
         }
     );
     assert_eq!(op.table(), Some(TABLE));
@@ -405,33 +533,38 @@ fn a_table_reorder_names_no_one_table() {
 #[test]
 fn a_new_select_column_reads_its_type_and_minted_options_from_json() {
     let op: DatabaseOp = serde_json::from_value(json!({
-        "kind": "create_column",
+        "kind": "column",
         "table": TABLE,
-        "id": STATUS,
-        "definition": {
-            "source": "new",
-            "name": "Status",
-            "type": {"type": "select", "multi": false},
-            "options": [{"id": GOING, "label": "Going"}],
+        "column": STATUS,
+        "change": {
+            "kind": "create",
+            "definition": {
+                "source": "new",
+                "name": "Status",
+                "type": {"type": "select", "multi": false},
+                "options": [{"id": GOING, "label": "Going"}],
+            },
+            "after": NAME,
         },
-        "after": NAME,
     }))
     .unwrap();
     assert_eq!(
         op,
-        DatabaseOp::CreateColumn {
+        DatabaseOp::Column {
             table: TABLE,
-            id: STATUS,
-            definition: NewColumn::New {
-                name: "Status".into(),
-                kind: ColumnKind::Select { multi: false },
-                options: vec![NewOption {
-                    id: GOING,
-                    label: "Going".into(),
-                }],
-                infer_type: false,
+            column: STATUS,
+            change: ColumnChange::Create {
+                definition: NewColumn::New {
+                    name: "Status".into(),
+                    kind: ColumnKind::Select { multi: false },
+                    options: vec![NewOption {
+                        id: GOING,
+                        label: "Going".into(),
+                    }],
+                    infer_type: false,
+                },
+                after: Some(NAME),
             },
-            after: Some(NAME),
         }
     );
 }
@@ -439,27 +572,33 @@ fn a_new_select_column_reads_its_type_and_minted_options_from_json() {
 #[test]
 fn a_column_binding_an_existing_property_names_only_the_property() {
     let property = PropertyId::from_uuid(Uuid::from_u128(0x9e0));
-    let op = DatabaseOp::CreateColumn {
+    let op = DatabaseOp::Column {
         table: TABLE,
-        id: STATUS,
-        definition: NewColumn::Existing { property },
-        after: None,
+        column: STATUS,
+        change: ColumnChange::Create {
+            definition: NewColumn::Existing { property },
+            after: None,
+        },
     };
     assert_eq!(
         serde_json::to_value(&op).unwrap(),
         json!({
-            "kind": "create_column",
+            "kind": "column",
             "table": TABLE,
-            "id": STATUS,
-            "definition": {"source": "existing", "property": property},
+            "column": STATUS,
+            "change": {
+                "kind": "create",
+                "definition": {"source": "existing", "property": property},
+            },
         })
     );
 }
 
 #[test]
 fn a_taken_id_names_what_it_names() {
+    let view = ViewId::from_uuid(Uuid::from_u128(0x71e));
     assert_eq!(
-        serde_json::to_value(TakenId::Column(STATUS)).unwrap(),
-        json!({"kind": "column", "id": STATUS})
+        serde_json::to_value([TakenId::Column(STATUS), TakenId::View(view)]).unwrap(),
+        json!([{"kind": "column", "id": STATUS}, {"kind": "view", "id": view}])
     );
 }

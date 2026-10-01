@@ -1,6 +1,9 @@
 //! Table ops over Postgres: names, removal, and the database's lock.
 
-use models_databases::{CellValue, CellWrite, ColumnKind, DatabaseOp, NewColumn, OpResult};
+use models_databases::{
+    CellValue, CellWrite, ColumnChange, ColumnKind, DatabaseOp, NewColumn, OpResult, RowsChange,
+    TableChange, TableResult,
+};
 
 use super::apply_ops::{edit, guests, service, version, viewer};
 use super::*;
@@ -25,19 +28,23 @@ async fn table_ops_wait_for_a_concurrent_trash_and_then_find_the_database_gone(p
             service.apply_ops(
                 edit(guests.database_id),
                 viewer(),
-                vec![DatabaseOp::CreateTable {
-                    id: TableId::new(),
-                    name: "Blocked".into(),
+                vec![DatabaseOp::Table {
+                    table: TableId::new(),
+                    change: TableChange::Create {
+                        name: "Blocked".into()
+                    }
                 }]
                 .into(),
             ),
             service.apply_ops(
                 edit(guests.database_id),
                 viewer(),
-                vec![DatabaseOp::RenameTable {
+                vec![DatabaseOp::Table {
                     table: guests.table_id,
-                    name: "Blocked rename".into(),
-                    previous_name: None,
+                    change: TableChange::Rename {
+                        name: "Blocked rename".into(),
+                        previous_name: None
+                    }
                 }]
                 .into(),
             ),
@@ -111,30 +118,36 @@ async fn deleting_a_table_takes_its_rows_and_columns_but_never_the_last_table(po
             edit(guests.database_id),
             viewer(),
             vec![
-                DatabaseOp::CreateTable {
-                    id: sessions,
-                    name: "Sessions".into(),
-                },
-                DatabaseOp::CreateColumn {
+                DatabaseOp::Table {
                     table: sessions,
-                    id: topic,
-                    definition: NewColumn::New {
-                        name: "Topic".into(),
-                        kind: ColumnKind::Text,
-                        options: vec![],
-                        infer_type: false,
+                    change: TableChange::Create {
+                        name: "Sessions".into(),
                     },
-                    after: None,
                 },
-                DatabaseOp::InsertRows {
+                DatabaseOp::Column {
                     table: sessions,
-                    rows: vec![
-                        vec![CellWrite {
-                            column: topic,
-                            value: CellValue::Text("Keynote".into()),
-                        }],
-                        vec![],
-                    ],
+                    column: topic,
+                    change: ColumnChange::Create {
+                        definition: NewColumn::New {
+                            name: "Topic".into(),
+                            kind: ColumnKind::Text,
+                            options: vec![],
+                            infer_type: false,
+                        },
+                        after: None,
+                    },
+                },
+                DatabaseOp::Rows {
+                    table: sessions,
+                    change: RowsChange::Insert {
+                        rows: vec![
+                            vec![CellWrite {
+                                column: topic,
+                                value: CellValue::Text("Keynote".into()),
+                            }],
+                            vec![],
+                        ],
+                    },
                 },
             ]
             .into(),
@@ -146,12 +159,23 @@ async fn deleting_a_table_takes_its_rows_and_columns_but_never_the_last_table(po
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::DeleteTable { table: sessions }].into(),
+            vec![DatabaseOp::Table {
+                table: sessions,
+                change: TableChange::Delete,
+            }]
+            .into(),
         )
         .await
         .unwrap();
 
-    assert_eq!(results, vec![OpResult::TableDeleted { table: sessions }]);
+    assert_eq!(
+        results,
+        vec![OpResult::Table {
+            table: sessions,
+            table_version: None,
+            change: TableResult::Deleted,
+        }]
+    );
     let repo = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
     assert!(repo.row_refs(sessions).await.unwrap().is_empty());
     assert!(
@@ -174,7 +198,11 @@ async fn deleting_a_table_takes_its_rows_and_columns_but_never_the_last_table(po
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::DeleteTable { table: sessions }].into(),
+            vec![DatabaseOp::Table {
+                table: sessions,
+                change: TableChange::Delete,
+            }]
+            .into(),
         )
         .await
         .unwrap_err();
@@ -195,8 +223,9 @@ async fn deleting_a_table_takes_its_rows_and_columns_but_never_the_last_table(po
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::DeleteTable {
+            vec![DatabaseOp::Table {
                 table: guests.table_id,
+                change: TableChange::Delete,
             }]
             .into(),
         )
@@ -235,9 +264,11 @@ async fn a_table_rename_checks_its_previous_name_and_other_tables_names(pool: Pg
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::CreateTable {
-                id: hosts,
-                name: "Hosts".into(),
+            vec![DatabaseOp::Table {
+                table: hosts,
+                change: TableChange::Create {
+                    name: "Hosts".into(),
+                },
             }]
             .into(),
         )
@@ -249,10 +280,12 @@ async fn a_table_rename_checks_its_previous_name_and_other_tables_names(pool: Pg
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::RenameTable {
+            vec![DatabaseOp::Table {
                 table: hosts,
-                name: "table 1".into(),
-                previous_name: Some("Hosts".into()),
+                change: TableChange::Rename {
+                    name: "table 1".into(),
+                    previous_name: Some("Hosts".into()),
+                },
             }]
             .into(),
         )
@@ -273,10 +306,12 @@ async fn a_table_rename_checks_its_previous_name_and_other_tables_names(pool: Pg
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::RenameTable {
+            vec![DatabaseOp::Table {
                 table: hosts,
-                name: "Attendees".into(),
-                previous_name: Some("Hosts".into()),
+                change: TableChange::Rename {
+                    name: "Attendees".into(),
+                    previous_name: Some("Hosts".into()),
+                },
             }]
             .into(),
         )
@@ -284,8 +319,10 @@ async fn a_table_rename_checks_its_previous_name_and_other_tables_names(pool: Pg
         .unwrap();
     assert_eq!(
         renamed,
-        vec![OpResult::TableRenamed {
-            table_version: TableVersion(before.0 + 1),
+        vec![OpResult::Table {
+            table: hosts,
+            table_version: Some(TableVersion(before.0 + 1)),
+            change: TableResult::Renamed,
         }]
     );
 
@@ -293,10 +330,12 @@ async fn a_table_rename_checks_its_previous_name_and_other_tables_names(pool: Pg
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::RenameTable {
+            vec![DatabaseOp::Table {
                 table: hosts,
-                name: "People".into(),
-                previous_name: Some("Hosts".into()),
+                change: TableChange::Rename {
+                    name: "People".into(),
+                    previous_name: Some("Hosts".into()),
+                },
             }]
             .into(),
         )
@@ -325,19 +364,23 @@ async fn a_concurrent_table_create_and_rename_cannot_take_the_same_name(pool: Pg
         service.apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::RenameTable {
+            vec![DatabaseOp::Table {
                 table: guests.table_id,
-                name: "People".into(),
-                previous_name: Some("Table 1".into()),
+                change: TableChange::Rename {
+                    name: "People".into(),
+                    previous_name: Some("Table 1".into())
+                }
             }]
             .into(),
         ),
         service.apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::CreateTable {
-                id: TableId::new(),
-                name: "people".into(),
+            vec![DatabaseOp::Table {
+                table: TableId::new(),
+                change: TableChange::Create {
+                    name: "people".into()
+                }
             }]
             .into(),
         ),
@@ -360,9 +403,11 @@ async fn a_concurrent_table_create_and_rename_cannot_take_the_same_name(pool: Pg
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::CreateTable {
-                id: TableId::new(),
-                name: "people".into(),
+            vec![DatabaseOp::Table {
+                table: TableId::new(),
+                change: TableChange::Create {
+                    name: "people".into(),
+                },
             }]
             .into(),
         )

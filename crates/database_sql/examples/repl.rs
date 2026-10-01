@@ -24,7 +24,8 @@ use database_sql::fold::{Bin, Cell, Row};
 use database_sql::run::{OpsSink, Page, RowSource, run};
 use database_sql::split::GqlQuery;
 use models_databases::{
-    CellValue, CellWrite, DatabaseOp, OpResult, OptionRef, RowChanges, TableVersion,
+    CellValue, CellWrite, DatabaseOp, OpResult, OptionRef, RowChanges, RowsChange, RowsResult,
+    TableVersion,
 };
 use uuid::Uuid;
 
@@ -375,8 +376,11 @@ impl OpsSink for Memory {
         let mut stored = self.rows.lock().unwrap();
         let mut results = Vec::new();
         for op in ops {
-            let (inserted, affected) = match op {
-                DatabaseOp::InsertRows { rows, .. } => {
+            let DatabaseOp::Rows { table, change } = op else {
+                return Err(Refused::SchemaFixed);
+            };
+            let change = match change {
+                RowsChange::Insert { rows } => {
                     let mut inserted = Vec::new();
                     for cells in rows {
                         let mut row = Row {
@@ -388,10 +392,9 @@ impl OpsSink for Memory {
                         inserted.push(row.id);
                         stored.push(row);
                     }
-                    let affected = inserted.len();
-                    (inserted, affected)
+                    RowsResult::Inserted { rows: inserted }
                 }
-                DatabaseOp::UpdateRows { changes, .. } => {
+                RowsChange::Update { changes } => {
                     let changes: Vec<(RowId, Vec<CellWrite>)> = match changes {
                         RowChanges::Uniform { rows, cells } => {
                             rows.into_iter().map(|row| (row, cells.clone())).collect()
@@ -409,20 +412,21 @@ impl OpsSink for Memory {
                             .ok_or(Refused::NoRow(id))?;
                         self.write(row, cells)?;
                     }
-                    (Vec::new(), affected)
+                    RowsResult::Updated {
+                        affected: affected as u32,
+                    }
                 }
-                DatabaseOp::DeleteRows { rows, .. } => {
+                RowsChange::Delete { rows } => {
                     stored.retain(|row| !rows.contains(&row.id));
-                    (Vec::new(), rows.len())
-                }
-                _ => {
-                    return Err(Refused::SchemaFixed);
+                    RowsResult::Deleted {
+                        affected: rows.len() as u32,
+                    }
                 }
             };
-            results.push(OpResult::RowsWritten {
+            results.push(OpResult::Rows {
+                table,
                 table_version: TableVersion(0),
-                inserted,
-                affected: affected as u32,
+                change,
             });
         }
         Ok(results)

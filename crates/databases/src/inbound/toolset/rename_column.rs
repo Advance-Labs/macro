@@ -5,7 +5,7 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
-use models_databases::{ColumnId, DatabaseId, DatabaseOp, TableId};
+use models_databases::{ColumnChange, ColumnId, DatabaseId, DatabaseOp, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -99,11 +99,13 @@ where
             .apply(
                 user_id,
                 self.database_id,
-                OpBatch::from(vec![DatabaseOp::RenameColumn {
+                OpBatch::from(vec![DatabaseOp::Column {
                     table: self.table_id,
                     column: self.column_id,
-                    name: self.name.clone(),
-                    previous_name: Some(previous_name),
+                    change: ColumnChange::Rename {
+                        name: self.name.clone(),
+                        previous_name: Some(previous_name),
+                    },
                 }]),
             )
             .await?;

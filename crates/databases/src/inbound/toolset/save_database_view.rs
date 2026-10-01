@@ -9,10 +9,10 @@ use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
 use models_databases::views::{
     Conjunction, DatabaseView, FilterCondition, FilterGroup, FilterNode, NewView, RequestedLayout,
-    SortKey, ViewQuery,
+    SortKey, ViewId, ViewQuery,
 };
 use models_databases::{DatabaseId, TableId};
-use models_databases::{DatabaseOp, OpResult};
+use models_databases::{DatabaseOp, OpResult, ViewChange, ViewResult};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -124,19 +124,24 @@ where
             .view_named(&self.name)
             .map(|view| view.id);
         let op = match existing {
-            Some(view) => DatabaseOp::UpdateView {
+            Some(view) => DatabaseOp::View {
                 table: self.table_id,
                 view,
-                name: Some(self.name.clone()),
-                query: Some(self.query()),
-                layout: Some(self.layout.clone()),
+                change: ViewChange::Update {
+                    name: Some(self.name.clone()),
+                    query: Some(self.query()),
+                    layout: Some(self.layout.clone()),
+                },
             },
-            None => DatabaseOp::CreateView {
+            None => DatabaseOp::View {
                 table: self.table_id,
-                view: NewView {
-                    name: self.name.clone(),
-                    query: self.query(),
-                    layout: self.layout.clone(),
+                view: ViewId::new(),
+                change: ViewChange::Create {
+                    view: NewView {
+                        name: self.name.clone(),
+                        query: self.query(),
+                        layout: self.layout.clone(),
+                    },
                 },
             },
         };
@@ -144,7 +149,10 @@ where
             .apply(user_id, self.database_id, OpBatch::from(vec![op]))
             .await?;
         match results.into_iter().next() {
-            Some(OpResult::ViewWritten { view, .. }) => Ok(SavedDatabaseView {
+            Some(OpResult::View {
+                change: ViewResult::Created { view } | ViewResult::Updated { view },
+                ..
+            }) => Ok(SavedDatabaseView {
                 view: *view,
                 created: existing.is_none(),
             }),

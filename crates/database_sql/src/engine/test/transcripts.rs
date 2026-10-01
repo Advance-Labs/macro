@@ -11,8 +11,8 @@ use std::collections::HashMap;
 use serde_json::{Value, json};
 
 use models_databases::{
-    CellValue, CellWrite, ColumnKind as ColumnType, DatabaseOp, OpResult, OptionRef, RowChange,
-    RowChanges, TableVersion,
+    CellValue, CellWrite, ColumnChange, ColumnKind as ColumnType, ColumnResult, DatabaseOp,
+    OpResult, OptionRef, RowChange, RowChanges, RowsChange, RowsResult, TableVersion,
 };
 
 use super::*;
@@ -349,10 +349,12 @@ fn deals() -> Page {
 fn an_insert_of_two_rows_is_one_op() {
     let transcript = transcript(
         "INSERT INTO crm.deals (name, amount, stage) VALUES ('Hooli', 900, 'Lead'), ('Vandelay', NULL, 'won')",
-        vec![Feed::Results(vec![OpResult::RowsWritten {
+        vec![Feed::Results(vec![OpResult::Rows {
+            table: DEALS,
             table_version: TableVersion(7),
-            inserted: vec![HOOLI, VANDELAY],
-            affected: 2,
+            change: RowsResult::Inserted {
+                rows: vec![HOOLI, VANDELAY],
+            },
         }])],
     );
 
@@ -361,34 +363,36 @@ fn an_insert_of_two_rows_is_one_op() {
         json!(Step::Ops {
             id: 0,
             database: CRM,
-            ops: vec![DatabaseOp::InsertRows {
+            ops: vec![DatabaseOp::Rows {
                 table: DEALS,
-                rows: vec![
-                    vec![
-                        CellWrite {
-                            column: NAME_COLUMN,
-                            value: CellValue::Text("Hooli".into()),
-                        },
-                        CellWrite {
-                            column: AMOUNT_COLUMN,
-                            value: CellValue::Number(900.0),
-                        },
-                        CellWrite {
-                            column: STAGE_COLUMN,
-                            value: CellValue::Options(vec![OptionRef::Label("Lead".into())]),
-                        },
-                    ],
-                    vec![
-                        CellWrite {
-                            column: NAME_COLUMN,
-                            value: CellValue::Text("Vandelay".into()),
-                        },
-                        CellWrite {
-                            column: STAGE_COLUMN,
-                            value: CellValue::Options(vec![OptionRef::Label("Won".into())]),
-                        },
-                    ],
-                ],
+                change: RowsChange::Insert {
+                    rows: vec![
+                        vec![
+                            CellWrite {
+                                column: NAME_COLUMN,
+                                value: CellValue::Text("Hooli".into()),
+                            },
+                            CellWrite {
+                                column: AMOUNT_COLUMN,
+                                value: CellValue::Number(900.0),
+                            },
+                            CellWrite {
+                                column: STAGE_COLUMN,
+                                value: CellValue::Options(vec![OptionRef::Label("Lead".into())]),
+                            },
+                        ],
+                        vec![
+                            CellWrite {
+                                column: NAME_COLUMN,
+                                value: CellValue::Text("Vandelay".into()),
+                            },
+                            CellWrite {
+                                column: STAGE_COLUMN,
+                                value: CellValue::Options(vec![OptionRef::Label("Won".into())]),
+                            },
+                        ],
+                    ]
+                },
             }],
         })
     );
@@ -401,10 +405,10 @@ fn an_update_with_literal_values_sets_the_same_cells_on_every_matching_row() {
         "UPDATE crm.deals SET stage = 'Lead', pitch = NULL WHERE amount > 10000",
         vec![
             Feed::Page(deals()),
-            Feed::Results(vec![OpResult::RowsWritten {
+            Feed::Results(vec![OpResult::Rows {
+                table: DEALS,
                 table_version: TableVersion(8),
-                inserted: vec![],
-                affected: 2,
+                change: RowsResult::Updated { affected: 2 },
             }]),
         ],
     );
@@ -414,20 +418,22 @@ fn an_update_with_literal_values_sets_the_same_cells_on_every_matching_row() {
         json!(Step::Ops {
             id: 1,
             database: CRM,
-            ops: vec![DatabaseOp::UpdateRows {
+            ops: vec![DatabaseOp::Rows {
                 table: DEALS,
-                changes: RowChanges::Uniform {
-                    rows: vec![ACME, GLOBEX],
-                    cells: vec![
-                        CellWrite {
-                            column: STAGE_COLUMN,
-                            value: CellValue::Options(vec![OptionRef::Label("Lead".into())]),
-                        },
-                        CellWrite {
-                            column: PITCH_COLUMN,
-                            value: CellValue::Clear,
-                        },
-                    ],
+                change: RowsChange::Update {
+                    changes: RowChanges::Uniform {
+                        rows: vec![ACME, GLOBEX],
+                        cells: vec![
+                            CellWrite {
+                                column: STAGE_COLUMN,
+                                value: CellValue::Options(vec![OptionRef::Label("Lead".into())]),
+                            },
+                            CellWrite {
+                                column: PITCH_COLUMN,
+                                value: CellValue::Clear,
+                            },
+                        ],
+                    }
                 },
             }],
         })
@@ -447,10 +453,10 @@ fn an_update_that_copies_a_column_gives_each_row_its_own_cells() {
                 ],
                 next: None,
             }),
-            Feed::Results(vec![OpResult::RowsWritten {
+            Feed::Results(vec![OpResult::Rows {
+                table: DEALS,
                 table_version: TableVersion(9),
-                inserted: vec![],
-                affected: 2,
+                change: RowsResult::Updated { affected: 2 },
             }]),
         ],
     );
@@ -460,41 +466,43 @@ fn an_update_that_copies_a_column_gives_each_row_its_own_cells() {
         json!(Step::Ops {
             id: 1,
             database: CRM,
-            ops: vec![DatabaseOp::UpdateRows {
+            ops: vec![DatabaseOp::Rows {
                 table: DEALS,
-                changes: RowChanges::PerRow {
-                    rows: vec![
-                        RowChange {
-                            row: ACME,
-                            cells: vec![
-                                CellWrite {
-                                    column: PITCH_COLUMN,
-                                    value: CellValue::Text("Acme".into()),
-                                },
-                                CellWrite {
-                                    column: STAGE_COLUMN,
-                                    value: CellValue::Options(vec![OptionRef::Label(
-                                        "Lead".into()
-                                    )]),
-                                },
-                            ],
-                        },
-                        RowChange {
-                            row: GLOBEX,
-                            cells: vec![
-                                CellWrite {
-                                    column: PITCH_COLUMN,
-                                    value: CellValue::Text("Globex".into()),
-                                },
-                                CellWrite {
-                                    column: STAGE_COLUMN,
-                                    value: CellValue::Options(vec![OptionRef::Label(
-                                        "Lead".into()
-                                    )]),
-                                },
-                            ],
-                        },
-                    ],
+                change: RowsChange::Update {
+                    changes: RowChanges::PerRow {
+                        rows: vec![
+                            RowChange {
+                                row: ACME,
+                                cells: vec![
+                                    CellWrite {
+                                        column: PITCH_COLUMN,
+                                        value: CellValue::Text("Acme".into()),
+                                    },
+                                    CellWrite {
+                                        column: STAGE_COLUMN,
+                                        value: CellValue::Options(vec![OptionRef::Label(
+                                            "Lead".into()
+                                        )]),
+                                    },
+                                ],
+                            },
+                            RowChange {
+                                row: GLOBEX,
+                                cells: vec![
+                                    CellWrite {
+                                        column: PITCH_COLUMN,
+                                        value: CellValue::Text("Globex".into()),
+                                    },
+                                    CellWrite {
+                                        column: STAGE_COLUMN,
+                                        value: CellValue::Options(vec![OptionRef::Label(
+                                            "Lead".into()
+                                        )]),
+                                    },
+                                ],
+                            },
+                        ],
+                    }
                 },
             }],
         })
@@ -508,10 +516,10 @@ fn a_delete_with_a_where_removes_every_matching_row_in_one_op() {
         "DELETE FROM crm.deals WHERE amount < 1000",
         vec![
             Feed::Page(deals()),
-            Feed::Results(vec![OpResult::RowsWritten {
+            Feed::Results(vec![OpResult::Rows {
+                table: DEALS,
                 table_version: TableVersion(10),
-                inserted: vec![],
-                affected: 1,
+                change: RowsResult::Deleted { affected: 1 },
             }]),
         ],
     );
@@ -521,9 +529,11 @@ fn a_delete_with_a_where_removes_every_matching_row_in_one_op() {
         json!(Step::Ops {
             id: 1,
             database: CRM,
-            ops: vec![DatabaseOp::DeleteRows {
+            ops: vec![DatabaseOp::Rows {
                 table: DEALS,
-                rows: vec![INITECH],
+                change: RowsChange::Delete {
+                    rows: vec![INITECH],
+                },
             }],
         })
     );
@@ -534,8 +544,11 @@ fn a_delete_with_a_where_removes_every_matching_row_in_one_op() {
 fn an_alter_column_is_one_type_change_op() {
     let transcript = transcript(
         "ALTER TABLE crm.deals ALTER COLUMN amount TYPE text",
-        vec![Feed::Results(vec![OpResult::ColumnTyped {
+        vec![Feed::Results(vec![OpResult::Column {
+            table: DEALS,
+            column: AMOUNT_COLUMN,
             table_version: TableVersion(11),
+            change: ColumnResult::TypeChanged,
         }])],
     );
 
@@ -544,10 +557,12 @@ fn an_alter_column_is_one_type_change_op() {
         json!(Step::Ops {
             id: 0,
             database: CRM,
-            ops: vec![DatabaseOp::ChangeColumnType {
+            ops: vec![DatabaseOp::Column {
                 table: DEALS,
                 column: AMOUNT_COLUMN,
-                to: ColumnType::Text,
+                change: ColumnChange::ChangeType {
+                    to: ColumnType::Text,
+                },
             }],
         })
     );

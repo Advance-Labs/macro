@@ -15,16 +15,18 @@ async fn empty_column() -> EmptyColumn {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::CreateColumn {
+            OpBatch::from(vec![DatabaseOp::Column {
                 table: seeded.table_id,
-                id: column_id,
-                definition: NewColumn::New {
-                    name: "Estimate".into(),
-                    kind: ColumnKind::Text,
-                    options: vec![],
-                    infer_type: true,
+                column: column_id,
+                change: ColumnChange::Create {
+                    definition: NewColumn::New {
+                        name: "Estimate".into(),
+                        kind: ColumnKind::Text,
+                        options: vec![],
+                        infer_type: true,
+                    },
+                    after: None,
                 },
-                after: None,
             }]),
         )
         .await
@@ -95,17 +97,25 @@ async fn number_inference_preserves_label_old_definition_and_accepts_first_write
         .apply_ops(
             receipt(db, OWNER, AccessLevel::Edit),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::InsertRows {
+            OpBatch::from(vec![DatabaseOp::Rows {
                 table: table_id,
-                rows: vec![vec![CellWrite {
-                    column: column_id,
-                    value: CellValue::Number(12.0),
-                }]],
+                change: RowsChange::Insert {
+                    rows: vec![vec![CellWrite {
+                        column: column_id,
+                        value: CellValue::Number(12.0),
+                    }]],
+                },
             }]),
         )
         .await
         .unwrap();
-    let [OpResult::RowsWritten { inserted, .. }] = written.as_slice() else {
+    let [
+        OpResult::Rows {
+            change: RowsResult::Inserted { rows: inserted },
+            ..
+        },
+    ] = written.as_slice()
+    else {
         panic!("expected one insert, got {written:?}");
     };
     assert_eq!(
@@ -381,16 +391,18 @@ async fn inference_flag_is_rejected_for_an_explicitly_typed_creation() {
         .apply_ops(
             edit(db),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::CreateColumn {
+            OpBatch::from(vec![DatabaseOp::Column {
                 table: table_id,
-                id: ColumnId::new(),
-                definition: NewColumn::New {
-                    name: "Number".into(),
-                    kind: ColumnKind::Number,
-                    options: vec![],
-                    infer_type: true,
+                column: ColumnId::new(),
+                change: ColumnChange::Create {
+                    definition: NewColumn::New {
+                        name: "Number".into(),
+                        kind: ColumnKind::Number,
+                        options: vec![],
+                        infer_type: true,
+                    },
+                    after: None,
                 },
-                after: None,
             }]),
         )
         .await
@@ -424,12 +436,14 @@ async fn a_first_written_value_settles_text_type_and_later_inference_cannot_rety
     svc.apply_ops(
         receipt(db, OWNER, AccessLevel::Edit),
         viewer(OWNER),
-        OpBatch::from(vec![DatabaseOp::InsertRows {
+        OpBatch::from(vec![DatabaseOp::Rows {
             table: table_id,
-            rows: vec![vec![CellWrite {
-                column: column_id,
-                value: CellValue::Text("first text".into()),
-            }]],
+            change: RowsChange::Insert {
+                rows: vec![vec![CellWrite {
+                    column: column_id,
+                    value: CellValue::Text("first text".into()),
+                }]],
+            },
         }]),
     )
     .await

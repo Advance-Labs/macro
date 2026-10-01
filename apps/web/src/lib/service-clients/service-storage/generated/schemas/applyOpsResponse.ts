@@ -10,6 +10,8 @@ import type { OpResult } from './opResult';
  * What each op of a batch did.
  */
 export interface ApplyOpsResponse {
-  /** One result per op, in the order the ops were sent. */
+  /** One result per op, in the order the ops were sent. Each is grouped as
+its op is: the same outer `kind`, naming the same ids, with a
+`change` saying what happened. */
   results: OpResult[];
 }

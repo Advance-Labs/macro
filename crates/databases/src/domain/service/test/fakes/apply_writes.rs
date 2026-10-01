@@ -474,6 +474,12 @@ pub(super) fn apply_in_world(
                 inserted.push(Vec::new());
             }
             Write::CreateView { view } => {
+                if world.views.iter().any(|stored| stored.id == view.id) {
+                    return Ok(WritesOutcome::IdTaken {
+                        write: index,
+                        id: TakenId::View(view.id),
+                    });
+                }
                 if world.views.iter().any(|other| {
                     other.table_id == view.table_id && other.name.eq_ignore_ascii_case(&view.name)
                 }) {

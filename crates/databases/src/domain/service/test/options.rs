@@ -42,12 +42,14 @@ async fn relabelling_an_option_keeps_every_cell_that_holds_it() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::UpdateOption {
+            OpBatch::from(vec![DatabaseOp::Column {
                 table: seeded.table_id,
                 column: seeded.status_column.id,
-                option: going,
-                label: Some("  Attending ".into()),
-                color: None,
+                change: ColumnChange::UpdateOption {
+                    option: going,
+                    label: Some("  Attending ".into()),
+                    color: None,
+                },
             }]),
         )
         .await
@@ -55,8 +57,11 @@ async fn relabelling_an_option_keeps_every_cell_that_holds_it() {
 
     assert_eq!(
         results,
-        vec![OpResult::OptionChanged {
+        vec![OpResult::Column {
+            table: seeded.table_id,
+            column: seeded.status_column.id,
             table_version: TableVersion(before.0 + 1),
+            change: ColumnResult::OptionUpdated,
         }]
     );
     assert_eq!(
@@ -89,12 +94,14 @@ async fn an_option_takes_a_palette_colour_and_loses_it_again() {
     let seeded = seeded().await;
     let status = seeded.status_column.property_definition_id;
     let going = option_id(&seeded.world, status, "Going");
-    let recolour = |color| DatabaseOp::UpdateOption {
+    let recolour = |color| DatabaseOp::Column {
         table: seeded.table_id,
         column: seeded.status_column.id,
-        option: going,
-        label: None,
-        color,
+        change: ColumnChange::UpdateOption {
+            option: going,
+            label: None,
+            color,
+        },
     };
 
     seeded
@@ -141,12 +148,14 @@ async fn a_colour_that_is_not_hex_is_refused() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::UpdateOption {
+            OpBatch::from(vec![DatabaseOp::Column {
                 table: seeded.table_id,
                 column: seeded.status_column.id,
-                option: going,
-                label: None,
-                color: Some(Some("teal".into())),
+                change: ColumnChange::UpdateOption {
+                    option: going,
+                    label: None,
+                    color: Some(Some("teal".into())),
+                },
             }]),
         )
         .await
@@ -181,19 +190,21 @@ async fn a_tag_option_keeps_a_colour() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::CreateColumn {
+            OpBatch::from(vec![DatabaseOp::Column {
                 table: seeded.table_id,
-                id: labels,
-                definition: NewColumn::New {
-                    name: "Labels".into(),
-                    kind: ColumnKind::Tag,
-                    options: vec![NewOption {
-                        id: OptionId::new(),
-                        label: "VIP".into(),
-                    }],
-                    infer_type: false,
+                column: labels,
+                change: ColumnChange::Create {
+                    definition: NewColumn::New {
+                        name: "Labels".into(),
+                        kind: ColumnKind::Tag,
+                        options: vec![NewOption {
+                            id: OptionId::new(),
+                            label: "VIP".into(),
+                        }],
+                        infer_type: false,
+                    },
+                    after: None,
                 },
-                after: None,
             }]),
         )
         .await
@@ -214,12 +225,14 @@ async fn a_tag_option_keeps_a_colour() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::UpdateOption {
+            OpBatch::from(vec![DatabaseOp::Column {
                 table: seeded.table_id,
                 column: labels,
-                option: vip,
-                label: None,
-                color: Some(None),
+                change: ColumnChange::UpdateOption {
+                    option: vip,
+                    label: None,
+                    color: Some(None),
+                },
             }]),
         )
         .await
@@ -242,12 +255,14 @@ async fn a_label_is_refused_when_empty_or_already_taken_ignoring_case() {
     let seeded = seeded().await;
     let status = seeded.status_column.property_definition_id;
     let going = option_id(&seeded.world, status, "Going");
-    let relabel = |label: &str| DatabaseOp::UpdateOption {
+    let relabel = |label: &str| DatabaseOp::Column {
         table: seeded.table_id,
         column: seeded.status_column.id,
-        option: going,
-        label: Some(label.into()),
-        color: None,
+        change: ColumnChange::UpdateOption {
+            option: going,
+            label: Some(label.into()),
+            color: None,
+        },
     };
 
     let cases = [
@@ -301,25 +316,27 @@ async fn a_numeric_options_label_must_be_a_number() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::CreateColumn {
+            OpBatch::from(vec![DatabaseOp::Column {
                 table: seeded.table_id,
-                id: size,
-                definition: NewColumn::New {
-                    name: "Size".into(),
-                    kind: ColumnKind::SelectNumber { multi: false },
-                    options: vec![
-                        NewOption {
-                            id: OptionId::new(),
-                            label: "1".into(),
-                        },
-                        NewOption {
-                            id: OptionId::new(),
-                            label: "2".into(),
-                        },
-                    ],
-                    infer_type: false,
+                column: size,
+                change: ColumnChange::Create {
+                    definition: NewColumn::New {
+                        name: "Size".into(),
+                        kind: ColumnKind::SelectNumber { multi: false },
+                        options: vec![
+                            NewOption {
+                                id: OptionId::new(),
+                                label: "1".into(),
+                            },
+                            NewOption {
+                                id: OptionId::new(),
+                                label: "2".into(),
+                            },
+                        ],
+                        infer_type: false,
+                    },
+                    after: None,
                 },
-                after: None,
             }]),
         )
         .await
@@ -334,12 +351,14 @@ async fn a_numeric_options_label_must_be_a_number() {
         .unwrap()
         .property_definition_id;
     let one = options(&seeded.world, definition)[0].0;
-    let relabel = |label: &str| DatabaseOp::UpdateOption {
+    let relabel = |label: &str| DatabaseOp::Column {
         table: seeded.table_id,
         column: size,
-        option: one,
-        label: Some(label.into()),
-        color: None,
+        change: ColumnChange::UpdateOption {
+            option: one,
+            label: Some(label.into()),
+            color: None,
+        },
     };
 
     let cases = [
@@ -393,17 +412,21 @@ async fn an_option_the_column_lacks_is_refused() {
     let stale = Uuid::from_u128(0x57a1e);
 
     for op in [
-        DatabaseOp::UpdateOption {
+        DatabaseOp::Column {
             table: seeded.table_id,
             column: seeded.status_column.id,
-            option: OptionId::from_uuid(stale),
-            label: Some("Maybe".into()),
-            color: None,
+            change: ColumnChange::UpdateOption {
+                option: OptionId::from_uuid(stale),
+                label: Some("Maybe".into()),
+                color: None,
+            },
         },
-        DatabaseOp::DeleteOption {
+        DatabaseOp::Column {
             table: seeded.table_id,
             column: seeded.status_column.id,
-            option: OptionId::from_uuid(stale),
+            change: ColumnChange::DeleteOption {
+                option: OptionId::from_uuid(stale),
+            },
         },
     ] {
         let error = seeded
@@ -438,10 +461,12 @@ async fn a_column_without_options_has_none_to_change() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::DeleteOption {
+            OpBatch::from(vec![DatabaseOp::Column {
                 table: seeded.table_id,
                 column: seeded.name_column.id,
-                option: OptionId::from_uuid(Uuid::from_u128(1)),
+                change: ColumnChange::DeleteOption {
+                    option: OptionId::from_uuid(Uuid::from_u128(1)),
+                },
             }]),
         )
         .await
@@ -471,25 +496,27 @@ async fn removing_an_option_empties_single_select_cells_and_trims_multi_select_o
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::CreateColumn {
+            OpBatch::from(vec![DatabaseOp::Column {
                 table: seeded.table_id,
-                id: diet,
-                definition: NewColumn::New {
-                    name: "Diet".into(),
-                    kind: ColumnKind::Select { multi: true },
-                    options: vec![
-                        NewOption {
-                            id: OptionId::new(),
-                            label: "Vegan".into(),
-                        },
-                        NewOption {
-                            id: OptionId::new(),
-                            label: "Halal".into(),
-                        },
-                    ],
-                    infer_type: false,
+                column: diet,
+                change: ColumnChange::Create {
+                    definition: NewColumn::New {
+                        name: "Diet".into(),
+                        kind: ColumnKind::Select { multi: true },
+                        options: vec![
+                            NewOption {
+                                id: OptionId::new(),
+                                label: "Vegan".into(),
+                            },
+                            NewOption {
+                                id: OptionId::new(),
+                                label: "Halal".into(),
+                            },
+                        ],
+                        infer_type: false,
+                    },
+                    after: None,
                 },
-                after: None,
             }]),
         )
         .await
@@ -510,14 +537,19 @@ async fn removing_an_option_empties_single_select_cells_and_trims_multi_select_o
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::UpdateRows {
+            OpBatch::from(vec![DatabaseOp::Rows {
                 table: seeded.table_id,
-                changes: RowChanges::Uniform {
-                    rows: vec![seeded.row_id],
-                    cells: vec![CellWrite {
-                        column: diet,
-                        value: CellValue::Options(vec![OptionRef::Id(vegan), OptionRef::Id(halal)]),
-                    }],
+                change: RowsChange::Update {
+                    changes: RowChanges::Uniform {
+                        rows: vec![seeded.row_id],
+                        cells: vec![CellWrite {
+                            column: diet,
+                            value: CellValue::Options(vec![
+                                OptionRef::Id(vegan),
+                                OptionRef::Id(halal),
+                            ]),
+                        }],
+                    },
                 },
             }]),
         )
@@ -531,15 +563,15 @@ async fn removing_an_option_empties_single_select_cells_and_trims_multi_select_o
             edit(seeded.database_id),
             viewer(OWNER),
             OpBatch::from(vec![
-                DatabaseOp::DeleteOption {
+                DatabaseOp::Column {
                     table: seeded.table_id,
                     column: seeded.status_column.id,
-                    option: going,
+                    change: ColumnChange::DeleteOption { option: going },
                 },
-                DatabaseOp::DeleteOption {
+                DatabaseOp::Column {
                     table: seeded.table_id,
                     column: diet,
-                    option: vegan,
+                    change: ColumnChange::DeleteOption { option: vegan },
                 },
             ]),
         )
@@ -549,11 +581,17 @@ async fn removing_an_option_empties_single_select_cells_and_trims_multi_select_o
     assert_eq!(
         results,
         vec![
-            OpResult::OptionChanged {
+            OpResult::Column {
+                table: seeded.table_id,
+                column: seeded.status_column.id,
                 table_version: TableVersion(before.0 + 1),
+                change: ColumnResult::OptionDeleted,
             },
-            OpResult::OptionChanged {
+            OpResult::Column {
+                table: seeded.table_id,
+                column: diet,
                 table_version: TableVersion(before.0 + 1),
+                change: ColumnResult::OptionDeleted,
             },
         ]
     );
@@ -585,21 +623,27 @@ async fn a_later_op_sees_the_options_an_earlier_one_changed() {
             edit(seeded.database_id),
             viewer(OWNER),
             OpBatch::from(vec![
-                DatabaseOp::UpdateOption {
+                DatabaseOp::Column {
                     table: seeded.table_id,
                     column: seeded.status_column.id,
-                    option: going,
-                    label: Some("Attending".into()),
-                    color: None,
+                    change: ColumnChange::UpdateOption {
+                        option: going,
+                        label: Some("Attending".into()),
+                        color: None,
+                    },
                 },
-                DatabaseOp::UpdateRows {
+                DatabaseOp::Rows {
                     table: seeded.table_id,
-                    changes: RowChanges::Uniform {
-                        rows: vec![seeded.row_id],
-                        cells: vec![CellWrite {
-                            column: seeded.status_column.id,
-                            value: CellValue::Options(vec![OptionRef::Label("attending".into())]),
-                        }],
+                    change: RowsChange::Update {
+                        changes: RowChanges::Uniform {
+                            rows: vec![seeded.row_id],
+                            cells: vec![CellWrite {
+                                column: seeded.status_column.id,
+                                value: CellValue::Options(vec![OptionRef::Label(
+                                    "attending".into(),
+                                )]),
+                            }],
+                        },
                     },
                 },
             ]),
@@ -617,19 +661,21 @@ async fn a_later_op_sees_the_options_an_earlier_one_changed() {
             edit(seeded.database_id),
             viewer(OWNER),
             OpBatch::from(vec![
-                DatabaseOp::DeleteOption {
+                DatabaseOp::Column {
                     table: seeded.table_id,
                     column: seeded.status_column.id,
-                    option: declined,
+                    change: ColumnChange::DeleteOption { option: declined },
                 },
-                DatabaseOp::UpdateRows {
+                DatabaseOp::Rows {
                     table: seeded.table_id,
-                    changes: RowChanges::Uniform {
-                        rows: vec![seeded.row_id],
-                        cells: vec![CellWrite {
-                            column: seeded.status_column.id,
-                            value: CellValue::Options(vec![OptionRef::Id(declined)]),
-                        }],
+                    change: RowsChange::Update {
+                        changes: RowChanges::Uniform {
+                            rows: vec![seeded.row_id],
+                            cells: vec![CellWrite {
+                                column: seeded.status_column.id,
+                                value: CellValue::Options(vec![OptionRef::Id(declined)]),
+                            }],
+                        },
                     },
                 },
             ]),
@@ -675,17 +721,21 @@ async fn an_option_change_reaches_every_table_of_the_database_binding_it() {
             edit(seeded.database_id),
             viewer(OWNER),
             OpBatch::from(vec![
-                DatabaseOp::CreateTable {
-                    id: rsvps,
-                    name: "RSVPs".into(),
-                },
-                DatabaseOp::CreateColumn {
+                DatabaseOp::Table {
                     table: rsvps,
-                    id: ColumnId::new(),
-                    definition: NewColumn::Existing {
-                        property: PropertyId::from_uuid(status),
+                    change: TableChange::Create {
+                        name: "RSVPs".into(),
                     },
-                    after: None,
+                },
+                DatabaseOp::Column {
+                    table: rsvps,
+                    column: ColumnId::new(),
+                    change: ColumnChange::Create {
+                        definition: NewColumn::Existing {
+                            property: PropertyId::from_uuid(status),
+                        },
+                        after: None,
+                    },
                 },
             ]),
         )
@@ -700,12 +750,14 @@ async fn an_option_change_reaches_every_table_of_the_database_binding_it() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::UpdateOption {
+            OpBatch::from(vec![DatabaseOp::Column {
                 table: seeded.table_id,
                 column: seeded.status_column.id,
-                option: going,
-                label: Some("Attending".into()),
-                color: None,
+                change: ColumnChange::UpdateOption {
+                    option: going,
+                    label: Some("Attending".into()),
+                    color: None,
+                },
             }]),
         )
         .await
@@ -756,13 +808,15 @@ async fn shared_priority_column(seeded: &Seeded) -> Column {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::CreateColumn {
+            OpBatch::from(vec![DatabaseOp::Column {
                 table: seeded.table_id,
-                id: column,
-                definition: NewColumn::Existing {
-                    property: PropertyId::from_uuid(definition_id),
+                column,
+                change: ColumnChange::Create {
+                    definition: NewColumn::Existing {
+                        property: PropertyId::from_uuid(definition_id),
+                    },
+                    after: None,
                 },
-                after: None,
             }]),
         )
         .await
@@ -785,12 +839,14 @@ async fn a_shared_propertys_options_take_the_right_to_edit_that_property() {
     let seeded = seeded().await;
     let priority = shared_priority_column(&seeded).await;
     let high = option_id(&seeded.world, priority.property_definition_id, "High");
-    let relabel = DatabaseOp::UpdateOption {
+    let relabel = DatabaseOp::Column {
         table: seeded.table_id,
         column: priority.id,
-        option: high,
-        label: Some("Urgent".into()),
-        color: None,
+        change: ColumnChange::UpdateOption {
+            option: high,
+            label: Some("Urgent".into()),
+            color: None,
+        },
     };
 
     let error = seeded
@@ -889,12 +945,14 @@ async fn an_insert_naming_an_unknown_label_of_a_shared_property_is_refused_and_c
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::InsertRows {
+            OpBatch::from(vec![DatabaseOp::Rows {
                 table: seeded.table_id,
-                rows: vec![vec![CellWrite {
-                    column: priority.id,
-                    value: CellValue::Options(vec![OptionRef::Label("Someday".into())]),
-                }]],
+                change: RowsChange::Insert {
+                    rows: vec![vec![CellWrite {
+                        column: priority.id,
+                        value: CellValue::Options(vec![OptionRef::Label("Someday".into())]),
+                    }]],
+                },
             }]),
         )
         .await
@@ -943,14 +1001,16 @@ async fn an_update_naming_an_unknown_label_of_a_shared_property_is_refused_and_c
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::UpdateRows {
+            OpBatch::from(vec![DatabaseOp::Rows {
                 table: seeded.table_id,
-                changes: RowChanges::Uniform {
-                    rows: vec![seeded.row_id],
-                    cells: vec![CellWrite {
-                        column: priority.id,
-                        value: CellValue::Options(vec![OptionRef::Label("Someday".into())]),
-                    }],
+                change: RowsChange::Update {
+                    changes: RowChanges::Uniform {
+                        rows: vec![seeded.row_id],
+                        cells: vec![CellWrite {
+                            column: priority.id,
+                            value: CellValue::Options(vec![OptionRef::Label("Someday".into())]),
+                        }],
+                    },
                 },
             }]),
         )
@@ -987,14 +1047,16 @@ async fn an_existing_option_of_a_shared_property_is_written_without_the_right_to
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::UpdateRows {
+            OpBatch::from(vec![DatabaseOp::Rows {
                 table: seeded.table_id,
-                changes: RowChanges::Uniform {
-                    rows: vec![seeded.row_id],
-                    cells: vec![CellWrite {
-                        column: priority.id,
-                        value: CellValue::Options(vec![OptionRef::Label("High".into())]),
-                    }],
+                change: RowsChange::Update {
+                    changes: RowChanges::Uniform {
+                        rows: vec![seeded.row_id],
+                        cells: vec![CellWrite {
+                            column: priority.id,
+                            value: CellValue::Options(vec![OptionRef::Label("High".into())]),
+                        }],
+                    },
                 },
             }]),
         )
@@ -1008,13 +1070,15 @@ async fn adding_options_to_a_shared_property_takes_the_right_to_edit_it() {
     let priority = shared_priority_column(&seeded).await;
     let someday = OptionId::new();
     let add = || {
-        OpBatch::from(vec![DatabaseOp::AddOptions {
+        OpBatch::from(vec![DatabaseOp::Column {
             table: seeded.table_id,
             column: priority.id,
-            options: vec![NewOption {
-                id: someday,
-                label: "Someday".into(),
-            }],
+            change: ColumnChange::AddOptions {
+                options: vec![NewOption {
+                    id: someday,
+                    label: "Someday".into(),
+                }],
+            },
         }])
     };
 
@@ -1043,7 +1107,7 @@ async fn adding_options_to_a_shared_property_takes_the_right_to_edit_it() {
     assert!(
         matches!(
             results.as_slice(),
-            [OpResult::OptionsAdded { added, .. }] if added == &[someday]
+            [OpResult::Column { change: ColumnResult::OptionsAdded { added }, .. }] if added == &[someday]
         ),
         "{results:?}"
     );

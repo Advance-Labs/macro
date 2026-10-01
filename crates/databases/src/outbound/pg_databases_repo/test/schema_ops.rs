@@ -4,11 +4,12 @@
 
 use models_databases::views::{
     Conjunction, FilterCondition, FilterGroup, FilterNode, FilterTest, NewView, PresenceOperator,
-    RequestedLayout, SortDirection, SortKey, TextOperator, ViewQuery,
+    RequestedLayout, SortDirection, SortKey, TextOperator, ViewId, ViewQuery,
 };
 use models_databases::{
-    CellValue, CellWrite, ColumnKind, DatabaseOp, NewColumn, NewOption, OpResult, OptionId,
-    OptionRef, TakenId,
+    CellValue, CellWrite, ColumnChange, ColumnKind, ColumnResult, DatabaseOp, NewColumn, NewOption,
+    OpResult, OptionId, OptionRef, RowsChange, RowsResult, TableChange, TableResult, TakenId,
+    ViewChange, ViewResult,
 };
 use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::service::property_value::PropertyValue;
@@ -32,42 +33,48 @@ async fn one_batch_creates_a_table_a_select_column_on_it_and_rows_filling_it(poo
             edit(guests.database_id),
             viewer(),
             vec![
-                DatabaseOp::CreateTable {
-                    id: hosts,
-                    name: "Hosts".into(),
-                },
-                DatabaseOp::CreateColumn {
+                DatabaseOp::Table {
                     table: hosts,
-                    id: role,
-                    definition: NewColumn::New {
-                        name: "Role".into(),
-                        kind: ColumnKind::Select { multi: false },
-                        options: vec![
-                            NewOption {
-                                id: lead,
-                                label: "Lead".into(),
-                            },
-                            NewOption {
-                                id: crew,
-                                label: "Crew".into(),
-                            },
-                        ],
-                        infer_type: false,
+                    change: TableChange::Create {
+                        name: "Hosts".into(),
                     },
-                    after: None,
                 },
-                DatabaseOp::InsertRows {
+                DatabaseOp::Column {
                     table: hosts,
-                    rows: vec![
-                        vec![CellWrite {
-                            column: role,
-                            value: CellValue::Options(vec![OptionRef::Id(lead)]),
-                        }],
-                        vec![CellWrite {
-                            column: role,
-                            value: CellValue::Options(vec![OptionRef::Id(crew)]),
-                        }],
-                    ],
+                    column: role,
+                    change: ColumnChange::Create {
+                        definition: NewColumn::New {
+                            name: "Role".into(),
+                            kind: ColumnKind::Select { multi: false },
+                            options: vec![
+                                NewOption {
+                                    id: lead,
+                                    label: "Lead".into(),
+                                },
+                                NewOption {
+                                    id: crew,
+                                    label: "Crew".into(),
+                                },
+                            ],
+                            infer_type: false,
+                        },
+                        after: None,
+                    },
+                },
+                DatabaseOp::Rows {
+                    table: hosts,
+                    change: RowsChange::Insert {
+                        rows: vec![
+                            vec![CellWrite {
+                                column: role,
+                                value: CellValue::Options(vec![OptionRef::Id(lead)]),
+                            }],
+                            vec![CellWrite {
+                                column: role,
+                                value: CellValue::Options(vec![OptionRef::Id(crew)]),
+                            }],
+                        ],
+                    },
                 },
             ]
             .into(),
@@ -76,24 +83,28 @@ async fn one_batch_creates_a_table_a_select_column_on_it_and_rows_filling_it(poo
         .unwrap();
 
     let [
-        OpResult::TableCreated {
+        OpResult::Table {
             table,
-            table_version: created,
+            table_version: Some(created),
+            change: TableResult::Created,
         },
-        OpResult::ColumnCreated {
+        OpResult::Column {
             column,
             table_version: placed,
+            change: ColumnResult::Created,
+            ..
         },
-        OpResult::RowsWritten {
+        OpResult::Rows {
             table_version: filled,
-            inserted,
-            affected: 2,
+            change: RowsResult::Inserted { rows: inserted },
+            ..
         },
     ] = results.as_slice()
     else {
         panic!("expected a table, a column and two rows, got {results:?}");
     };
     assert_eq!((*table, *column), (hosts, role));
+    assert_eq!(inserted.len(), 2);
     // A new table is versioned once by everything the batch did to it.
     assert_eq!(
         (*created, *placed, *filled),
@@ -177,27 +188,31 @@ async fn a_batch_refused_at_its_last_op_leaves_none_of_its_schema_behind(pool: P
             edit(guests.database_id),
             viewer(),
             vec![
-                DatabaseOp::CreateTable {
-                    id: hosts,
-                    name: "Hosts".into(),
-                },
-                DatabaseOp::CreateColumn {
+                DatabaseOp::Table {
                     table: hosts,
-                    id: role,
-                    definition: NewColumn::New {
-                        name: "Role".into(),
-                        kind: ColumnKind::Select { multi: false },
-                        options: vec![NewOption {
-                            id: lead,
-                            label: "Lead".into(),
-                        }],
-                        infer_type: false,
+                    change: TableChange::Create {
+                        name: "Hosts".into(),
                     },
-                    after: None,
                 },
-                DatabaseOp::DeleteRows {
+                DatabaseOp::Column {
+                    table: hosts,
+                    column: role,
+                    change: ColumnChange::Create {
+                        definition: NewColumn::New {
+                            name: "Role".into(),
+                            kind: ColumnKind::Select { multi: false },
+                            options: vec![NewOption {
+                                id: lead,
+                                label: "Lead".into(),
+                            }],
+                            infer_type: false,
+                        },
+                        after: None,
+                    },
+                },
+                DatabaseOp::Rows {
                     table: guests.table_id,
-                    rows: vec![ghost],
+                    change: RowsChange::Delete { rows: vec![ghost] },
                 },
             ]
             .into(),
@@ -273,9 +288,11 @@ async fn a_table_id_another_database_already_has_is_refused_as_taken(pool: PgPoo
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::CreateTable {
-                id: taken,
-                name: "Hosts".into(),
+            vec![DatabaseOp::Table {
+                table: taken,
+                change: TableChange::Create {
+                    name: "Hosts".into(),
+                },
             }]
             .into(),
         )
@@ -341,19 +358,21 @@ async fn an_option_id_another_definition_already_has_is_refused_as_taken(pool: P
         .apply_ops(
             edit(elsewhere.id),
             viewer(),
-            vec![DatabaseOp::CreateColumn {
+            vec![DatabaseOp::Column {
                 table: elsewhere_table,
-                id: ColumnId::new(),
-                definition: NewColumn::New {
-                    name: "Stage".into(),
-                    kind: ColumnKind::Select { multi: false },
-                    options: vec![NewOption {
-                        id: taken,
-                        label: "Maybe".into(),
-                    }],
-                    infer_type: false,
+                column: ColumnId::new(),
+                change: ColumnChange::Create {
+                    definition: NewColumn::New {
+                        name: "Stage".into(),
+                        kind: ColumnKind::Select { multi: false },
+                        options: vec![NewOption {
+                            id: taken,
+                            label: "Maybe".into(),
+                        }],
+                        infer_type: false,
+                    },
+                    after: None,
                 },
-                after: None,
             }]
             .into(),
         )
@@ -364,13 +383,15 @@ async fn an_option_id_another_definition_already_has_is_refused_as_taken(pool: P
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::AddOptions {
+            vec![DatabaseOp::Column {
                 table: guests.table_id,
                 column: guests.status,
-                options: vec![NewOption {
-                    id: taken,
-                    label: "Maybe".into(),
-                }],
+                change: ColumnChange::AddOptions {
+                    options: vec![NewOption {
+                        id: taken,
+                        label: "Maybe".into(),
+                    }],
+                },
             }]
             .into(),
         )
@@ -404,6 +425,97 @@ async fn an_option_id_another_definition_already_has_is_refused_as_taken(pool: P
             .map(|option| option.value.clone())
             .collect::<Vec<_>>(),
         vec![PropertyOptionValue::String("Going".into())]
+    );
+    assert_eq!(version(&pool, guests.table_id).await, before);
+}
+
+/// A view id is the client's to mint, like a table's: one another database's
+/// view already has refuses the batch by the views' primary key, which the
+/// planner cannot see from this database's schema.
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn a_view_id_another_database_already_has_is_refused_as_taken(pool: PgPool) {
+    let guests = guests(&pool).await;
+    let service = service(&pool);
+    let repo = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
+    let before = version(&pool, guests.table_id).await;
+    let elsewhere = service
+        .create_database(CreateDatabase {
+            name: "Elsewhere".into(),
+            owner_id: viewer().user_id,
+            acting_bot: None,
+        })
+        .await
+        .unwrap();
+    let elsewhere_table = repo.get_database(elsewhere.id).await.unwrap().unwrap().1[0].id;
+    let taken = ViewId::new();
+    service
+        .apply_ops(
+            edit(elsewhere.id),
+            viewer(),
+            vec![DatabaseOp::View {
+                table: elsewhere_table,
+                view: taken,
+                change: ViewChange::Create {
+                    view: NewView {
+                        name: "Everything".into(),
+                        query: ViewQuery::default(),
+                        layout: RequestedLayout::Table { columns: vec![] },
+                    },
+                },
+            }]
+            .into(),
+        )
+        .await
+        .unwrap();
+
+    let error = service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::View {
+                table: guests.table_id,
+                view: taken,
+                change: ViewChange::Create {
+                    view: NewView {
+                        name: "Everyone".into(),
+                        query: ViewQuery::default(),
+                        layout: RequestedLayout::Table { columns: vec![] },
+                    },
+                },
+            }]
+            .into(),
+        )
+        .await
+        .unwrap_err();
+
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
+    assert_eq!(
+        refusal,
+        OpRefusal {
+            op: 0,
+            row: None,
+            column: None,
+            taken: Some(TakenId::View(taken)),
+            reason: format!(
+                "{taken} already names a view; mint a new id for each view a request creates"
+            ),
+        }
+    );
+    assert!(
+        repo.views_for_tables(&[guests.table_id])
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let elsewhere_views = repo.views_for_tables(&[elsewhere_table]).await.unwrap();
+    assert_eq!(
+        elsewhere_views
+            .iter()
+            .map(|view| (view.id, view.name.as_str()))
+            .collect::<Vec<_>>(),
+        vec![(taken, "Everything")]
     );
     assert_eq!(version(&pool, guests.table_id).await, before);
 }
@@ -462,48 +574,53 @@ async fn a_type_change_converts_stored_cells_and_rewrites_views_testing_the_colu
             edit(guests.database_id),
             viewer(),
             vec![
-                DatabaseOp::InsertRows {
+                DatabaseOp::Rows {
                     table: guests.table_id,
-                    rows: vec![
-                        vec![CellWrite {
-                            column: guests.name,
-                            value: CellValue::Text("12".into()),
-                        }],
-                        vec![CellWrite {
-                            column: guests.name,
-                            value: CellValue::Text("7".into()),
-                        }],
-                    ],
-                },
-                DatabaseOp::CreateView {
-                    table: guests.table_id,
-                    view: NewView {
-                        name: "Ones".into(),
-                        query: ViewQuery {
-                            filter: Some(FilterGroup {
-                                conjunction: Conjunction::And,
-                                conditions: vec![
-                                    FilterNode::Condition(FilterCondition {
-                                        column: guests.name,
-                                        test: FilterTest::Text {
-                                            operator: TextOperator::Contains,
-                                            value: "1".into(),
-                                        },
-                                    }),
-                                    FilterNode::Condition(FilterCondition {
-                                        column: guests.status,
-                                        test: FilterTest::Presence {
-                                            operator: PresenceOperator::IsNotEmpty,
-                                        },
-                                    }),
-                                ],
-                            }),
-                            sort: vec![SortKey {
+                    change: RowsChange::Insert {
+                        rows: vec![
+                            vec![CellWrite {
                                 column: guests.name,
-                                direction: SortDirection::Ascending,
+                                value: CellValue::Text("12".into()),
                             }],
+                            vec![CellWrite {
+                                column: guests.name,
+                                value: CellValue::Text("7".into()),
+                            }],
+                        ],
+                    },
+                },
+                DatabaseOp::View {
+                    table: guests.table_id,
+                    view: ViewId::new(),
+                    change: ViewChange::Create {
+                        view: NewView {
+                            name: "Ones".into(),
+                            query: ViewQuery {
+                                filter: Some(FilterGroup {
+                                    conjunction: Conjunction::And,
+                                    conditions: vec![
+                                        FilterNode::Condition(FilterCondition {
+                                            column: guests.name,
+                                            test: FilterTest::Text {
+                                                operator: TextOperator::Contains,
+                                                value: "1".into(),
+                                            },
+                                        }),
+                                        FilterNode::Condition(FilterCondition {
+                                            column: guests.status,
+                                            test: FilterTest::Presence {
+                                                operator: PresenceOperator::IsNotEmpty,
+                                            },
+                                        }),
+                                    ],
+                                }),
+                                sort: vec![SortKey {
+                                    column: guests.name,
+                                    direction: SortDirection::Ascending,
+                                }],
+                            },
+                            layout: RequestedLayout::Table { columns: vec![] },
                         },
-                        layout: RequestedLayout::Table { columns: vec![] },
                     },
                 },
             ]
@@ -512,8 +629,14 @@ async fn a_type_change_converts_stored_cells_and_rewrites_views_testing_the_colu
         .await
         .unwrap();
     let [
-        OpResult::RowsWritten { inserted, .. },
-        OpResult::ViewWritten { view, .. },
+        OpResult::Rows {
+            change: RowsResult::Inserted { rows: inserted },
+            ..
+        },
+        OpResult::View {
+            change: ViewResult::Created { view },
+            ..
+        },
     ] = written.as_slice()
     else {
         panic!("expected an insert and a view, got {written:?}");
@@ -524,10 +647,12 @@ async fn a_type_change_converts_stored_cells_and_rewrites_views_testing_the_colu
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::ChangeColumnType {
+            vec![DatabaseOp::Column {
                 table: guests.table_id,
                 column: guests.name,
-                to: ColumnKind::Number,
+                change: ColumnChange::ChangeType {
+                    to: ColumnKind::Number,
+                },
             }]
             .into(),
         )
@@ -536,8 +661,11 @@ async fn a_type_change_converts_stored_cells_and_rewrites_views_testing_the_colu
 
     assert_eq!(
         results,
-        vec![OpResult::ColumnTyped {
+        vec![OpResult::Column {
+            table: guests.table_id,
+            column: guests.name,
             table_version: TableVersion(before.0 + 1),
+            change: ColumnResult::TypeChanged,
         }]
     );
     let repo = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));

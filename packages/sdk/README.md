@@ -202,8 +202,11 @@ one batch that creates the column and fills it, at the version that read saw.
 
 To do several things at once, send the ops yourself. They apply in order in
 one transaction, later ops see what earlier ones did, and a refused op leaves
-the whole batch unwritten. Ids for new tables, columns, and options are yours
-to mint, so a later op of the batch can name them:
+the whole batch unwritten. Each op names the resource it changes (a `table`,
+`column`, `rows`, or `view`) and what `change` it makes; each result answers
+with the same `kind` and what happened as its own `change`. Ids for new
+tables, columns, options, and views are yours to mint, so a later op of the
+batch can name them:
 
 ```ts
 import { v7 as uuidv7 } from 'uuid';
@@ -212,30 +215,37 @@ const notes = uuidv7();
 const results = await database.applyOps(
   [
     {
-      kind: 'create_column',
+      kind: 'column',
       table: guests.id,
-      id: notes,
-      definition: { source: 'new', name: 'Notes', type: { type: 'text' } },
+      column: notes,
+      change: {
+        kind: 'create',
+        definition: { source: 'new', name: 'Notes', type: { type: 'text' } },
+      },
     },
     {
-      kind: 'insert_rows',
+      kind: 'rows',
       table: guests.id,
-      rows: [
-        [
-          { column: email.id, value: { type: 'text', value: 'ada@example.com' } },
-          { column: notes, value: { type: 'text', value: 'Vegetarian' } },
+      change: {
+        kind: 'insert',
+        rows: [
+          [
+            { column: email.id, value: { type: 'text', value: 'ada@example.com' } },
+            { column: notes, value: { type: 'text', value: 'Vegetarian' } },
+          ],
         ],
-      ],
+      },
     },
   ],
   { baseVersions: [{ table: guests, version: await guests.version() }] },
 );
+// results[1] is { kind: 'rows', table, tableVersion, change: { kind: 'inserted', rows: [rowId] } }
 ```
 
 A refusal throws `MacroOpRefusedError`, naming the op at fault (`op`, and
 `row` / `column` when one is) and, when the batch minted an id that already
-names something, that id as `taken` (`{ kind: 'table' | 'column' | 'option',
-id }`). A retried batch whose first attempt committed refuses this way.
+names something, that id as `taken` (`{ kind: 'table' | 'column' | 'option' |
+'view', id }`). A retried batch whose first attempt committed refuses this way.
 
 ```ts
 import { MacroOpRefusedError } from '@macro-inc/sdk';

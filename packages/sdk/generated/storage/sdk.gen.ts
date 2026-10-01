@@ -1410,8 +1410,8 @@ export class Sdk extends HeyApiClient {
      * rename, remove and order tables and columns, change a column's type, add
      * and change options, insert, update and delete rows, and write views and a
      * board's card places. The ops apply in order in one transaction, so a
-     * later op may name a table, column or option an earlier one created under
-     * the id its client minted. Ops are last-write-wins unless the batch names
+     * later op may name a table, column, option or view an earlier one created
+     * under the id its client minted. Ops are last-write-wins unless the batch names
      * base versions. A refused op, named by its index (and row and column where
      * relevant), leaves the whole batch unwritten.
      */

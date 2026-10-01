@@ -4,19 +4,20 @@
  * document_storage_service
  * OpenAPI spec version: 0.1.0
  */
+import type { ColumnChange } from './columnChange';
 import type { DatabaseOpOneOfThreeKind } from './databaseOpOneOfThreeKind';
 
 /**
- * Rename a table. Its id, columns and rows stay.
+ * A change to one column of a table: its creation, name, type, removal
+or options.
  */
 export type DatabaseOpOneOfThree = {
+  /** What changes. */
+  change: ColumnChange;
+  /** The column; for a creation, its new id, minted by the client,
+which later ops of the request may name. */
+  column: string;
   kind: DatabaseOpOneOfThreeKind;
-  /** Its new name, unique within the database ignoring case. */
-  name: string;
-  /** The name the caller saw. Given, the rename is refused if the
-table goes by another one now, so a concurrent rename is not
-overwritten. */
-  previousName?: string;
   /** The table. */
   table: string;
 };

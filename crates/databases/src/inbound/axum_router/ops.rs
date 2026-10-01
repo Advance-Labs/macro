@@ -12,10 +12,12 @@ use super::*;
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ApplyOpsRequest {
-    /// The ops, in the order they apply. Every one names a table of this
-    /// database, or one an earlier op of the batch creates: tables, columns
-    /// and options carry ids the client mints (UUIDv7), so a later op can
-    /// name them. An id that already names something refuses the batch.
+    /// The ops, in the order they apply, each grouped by the resource it
+    /// changes (`table`, `column`, `rows`, `view`, `reorder_tables`) with a
+    /// `change` saying how. Every one names a table of this database, or one
+    /// an earlier op of the batch creates: tables, columns, options and
+    /// views carry ids the client mints (UUIDv7), so a later op can name
+    /// them. An id that already names something refuses the batch.
     pub ops: Vec<DatabaseOp>,
     /// The version each named table must still be at, as the caller read
     /// it. A table that moved refuses the batch as a conflict, so a schema
@@ -30,7 +32,9 @@ pub struct ApplyOpsRequest {
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ApplyOpsResponse {
-    /// One result per op, in the order the ops were sent.
+    /// One result per op, in the order the ops were sent. Each is grouped as
+    /// its op is: the same outer `kind`, naming the same ids, with a
+    /// `change` saying what happened.
     pub results: Vec<OpResult>,
 }
 
@@ -71,8 +75,8 @@ impl From<OpRefusal> for OpRefusalResponse {
 /// rename, remove and order tables and columns, change a column's type, add
 /// and change options, insert, update and delete rows, and write views and a
 /// board's card places. The ops apply in order in one transaction, so a
-/// later op may name a table, column or option an earlier one created under
-/// the id its client minted. Ops are last-write-wins unless the batch names
+/// later op may name a table, column, option or view an earlier one created
+/// under the id its client minted. Ops are last-write-wins unless the batch names
 /// base versions. A refused op, named by its index (and row and column where
 /// relevant), leaves the whole batch unwritten.
 #[utoipa::path(

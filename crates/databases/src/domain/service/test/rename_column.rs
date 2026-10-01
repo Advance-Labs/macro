@@ -13,11 +13,13 @@ async fn label_rename_preserves_the_binding_moves_the_sql_name_and_retries_idemp
     );
     let before = table_version(&world, table_id);
     let rename = |name: &str| {
-        OpBatch::from(vec![DatabaseOp::RenameColumn {
+        OpBatch::from(vec![DatabaseOp::Column {
             table: table_id,
             column: column.id,
-            name: name.into(),
-            previous_name: Some("Name".into()),
+            change: ColumnChange::Rename {
+                name: name.into(),
+                previous_name: Some("Name".into()),
+            },
         }])
     };
     let results = svc
@@ -27,8 +29,11 @@ async fn label_rename_preserves_the_binding_moves_the_sql_name_and_retries_idemp
     let renamed_version = TableVersion(before.0 + 1);
     assert_eq!(
         results,
-        vec![OpResult::ColumnRenamed {
+        vec![OpResult::Column {
+            table: table_id,
+            column: column.id,
             table_version: renamed_version,
+            change: ColumnResult::Renamed,
         }]
     );
     assert_eq!(
@@ -64,8 +69,11 @@ async fn label_rename_preserves_the_binding_moves_the_sql_name_and_retries_idemp
         .unwrap();
     assert_eq!(
         retried,
-        vec![OpResult::ColumnRenamed {
+        vec![OpResult::Column {
+            table: table_id,
+            column: column.id,
             table_version: renamed_version,
+            change: ColumnResult::Renamed,
         }]
     );
     let error = svc
@@ -118,11 +126,13 @@ async fn rename_checks_effective_labels_and_creation_respects_renamed_labels() {
             .apply_ops(
                 edit(db),
                 viewer(OWNER),
-                OpBatch::from(vec![DatabaseOp::RenameColumn {
+                OpBatch::from(vec![DatabaseOp::Column {
                     table: table_id,
                     column: name_column.id,
-                    name: invalid.clone(),
-                    previous_name: Some("Name".into()),
+                    change: ColumnChange::Rename {
+                        name: invalid.clone(),
+                        previous_name: Some("Name".into()),
+                    },
                 }]),
             )
             .await
@@ -135,11 +145,13 @@ async fn rename_checks_effective_labels_and_creation_respects_renamed_labels() {
     svc.apply_ops(
         edit(db),
         viewer(OWNER),
-        OpBatch::from(vec![DatabaseOp::RenameColumn {
+        OpBatch::from(vec![DatabaseOp::Column {
             table: table_id,
             column: name_column.id,
-            name: "Task".into(),
-            previous_name: Some("Name".into()),
+            change: ColumnChange::Rename {
+                name: "Task".into(),
+                previous_name: Some("Name".into()),
+            },
         }]),
     )
     .await
@@ -148,11 +160,13 @@ async fn rename_checks_effective_labels_and_creation_respects_renamed_labels() {
         .apply_ops(
             edit(db),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::RenameColumn {
+            OpBatch::from(vec![DatabaseOp::Column {
                 table: table_id,
                 column: status_column.id,
-                name: " task ".into(),
-                previous_name: Some("Status".into()),
+                change: ColumnChange::Rename {
+                    name: " task ".into(),
+                    previous_name: Some("Status".into()),
+                },
             }]),
         )
         .await
@@ -165,16 +179,18 @@ async fn rename_checks_effective_labels_and_creation_respects_renamed_labels() {
         .apply_ops(
             edit(db),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::CreateColumn {
+            OpBatch::from(vec![DatabaseOp::Column {
                 table: table_id,
-                id: ColumnId::new(),
-                definition: NewColumn::New {
-                    name: " TASK ".into(),
-                    kind: ColumnKind::Text,
-                    options: vec![],
-                    infer_type: false,
+                column: ColumnId::new(),
+                change: ColumnChange::Create {
+                    definition: NewColumn::New {
+                        name: " TASK ".into(),
+                        kind: ColumnKind::Text,
+                        options: vec![],
+                        infer_type: false,
+                    },
+                    after: None,
                 },
-                after: None,
             }]),
         )
         .await
@@ -235,11 +251,13 @@ async fn rename_refuses_foreign_columns_tables_and_trashed_database() {
             .apply_ops(
                 edit(receipt_db),
                 viewer(OWNER),
-                OpBatch::from(vec![DatabaseOp::RenameColumn {
+                OpBatch::from(vec![DatabaseOp::Column {
                     table: target_table,
                     column: target_column,
-                    name: "Task".into(),
-                    previous_name: Some("Name".into()),
+                    change: ColumnChange::Rename {
+                        name: "Task".into(),
+                        previous_name: Some("Name".into()),
+                    },
                 }]),
             )
             .await
@@ -256,11 +274,13 @@ async fn rename_refuses_foreign_columns_tables_and_trashed_database() {
         .apply_ops(
             edit(db),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::RenameColumn {
+            OpBatch::from(vec![DatabaseOp::Column {
                 table: table_id,
                 column: column.id,
-                name: "Task".into(),
-                previous_name: Some("Name".into()),
+                change: ColumnChange::Rename {
+                    name: "Task".into(),
+                    previous_name: Some("Name".into()),
+                },
             }]),
         )
         .await
@@ -295,22 +315,26 @@ async fn reusing_a_previous_label_keeps_the_renamed_columns_values_intact() {
         edit(db),
         viewer(OWNER),
         OpBatch::from(vec![
-            DatabaseOp::RenameColumn {
+            DatabaseOp::Column {
                 table: table_id,
                 column: column.id,
-                name: "Task".into(),
-                previous_name: Some("Name".into()),
-            },
-            DatabaseOp::CreateColumn {
-                table: table_id,
-                id: added_id,
-                definition: NewColumn::New {
-                    name: "Name".into(),
-                    kind: ColumnKind::Text,
-                    options: vec![],
-                    infer_type: false,
+                change: ColumnChange::Rename {
+                    name: "Task".into(),
+                    previous_name: Some("Name".into()),
                 },
-                after: None,
+            },
+            DatabaseOp::Column {
+                table: table_id,
+                column: added_id,
+                change: ColumnChange::Create {
+                    definition: NewColumn::New {
+                        name: "Name".into(),
+                        kind: ColumnKind::Text,
+                        options: vec![],
+                        infer_type: false,
+                    },
+                    after: None,
+                },
             },
         ]),
     )

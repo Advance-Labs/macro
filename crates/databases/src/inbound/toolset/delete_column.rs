@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
 use std::collections::HashMap;
 
-use models_databases::{ColumnId, DatabaseId, DatabaseOp, TableId};
+use models_databases::{ColumnChange, ColumnId, DatabaseId, DatabaseOp, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -95,9 +95,10 @@ where
                 user_id,
                 self.database_id,
                 OpBatch {
-                    ops: vec![DatabaseOp::DeleteColumn {
+                    ops: vec![DatabaseOp::Column {
                         table: self.table_id,
                         column: self.column_id,
+                        change: ColumnChange::Delete,
                     }],
                     base_versions: HashMap::from([(self.table_id, base_version)]),
                 },

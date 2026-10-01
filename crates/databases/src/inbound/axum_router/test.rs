@@ -67,80 +67,102 @@ fn an_ops_body_reads_every_op_kind() {
     let request: ops::ApplyOpsRequest = serde_json::from_value(serde_json::json!({
         "ops": [
             {
-                "kind": "insert_rows",
+                "kind": "rows",
                 "table": table,
-                "rows": [[{"column": column, "value": {"type": "text", "value": "Sam"}}]],
-            },
-            {
-                "kind": "update_rows",
-                "table": table,
-                "changes": {
-                    "kind": "uniform",
-                    "rows": [row],
-                    "cells": [{"column": column, "value": {"type": "options", "value": [{"label": "Going"}]}}],
+                "change": {
+                    "kind": "insert",
+                    "rows": [[{"column": column, "value": {"type": "text", "value": "Sam"}}]],
                 },
             },
             {
-                "kind": "update_rows",
+                "kind": "rows",
                 "table": table,
-                "changes": {
-                    "kind": "per_row",
-                    "rows": [{"row": row, "cells": [{"column": column, "value": {"type": "clear"}}]}],
+                "change": {
+                    "kind": "update",
+                    "changes": {
+                        "kind": "uniform",
+                        "rows": [row],
+                        "cells": [{"column": column, "value": {"type": "options", "value": [{"label": "Going"}]}}],
+                    },
                 },
             },
-            {"kind": "delete_rows", "table": table, "rows": [row]},
             {
-                "kind": "change_column_type",
+                "kind": "rows",
+                "table": table,
+                "change": {
+                    "kind": "update",
+                    "changes": {
+                        "kind": "per_row",
+                        "rows": [{"row": row, "cells": [{"column": column, "value": {"type": "clear"}}]}],
+                    },
+                },
+            },
+            {"kind": "rows", "table": table, "change": {"kind": "delete", "rows": [row]}},
+            {
+                "kind": "column",
                 "table": table,
                 "column": column,
-                "to": {"type": "number"},
+                "change": {"kind": "change_type", "to": {"type": "number"}},
             },
         ],
     }))
     .unwrap();
 
     use models_databases::RowChanges;
-    use models_databases::{CellValue, CellWrite, ColumnKind, DatabaseOp, OptionRef, RowChange};
+    use models_databases::{
+        CellValue, CellWrite, ColumnChange, ColumnKind, DatabaseOp, OptionRef, RowChange,
+        RowsChange,
+    };
     assert_eq!(
         request.ops,
         vec![
-            DatabaseOp::InsertRows {
+            DatabaseOp::Rows {
                 table: TableId::from_uuid(table),
-                rows: vec![vec![CellWrite {
-                    column: ColumnId::from_uuid(column),
-                    value: CellValue::Text("Sam".into()),
-                }]],
-            },
-            DatabaseOp::UpdateRows {
-                table: TableId::from_uuid(table),
-                changes: RowChanges::Uniform {
-                    rows: vec![RowId::from_uuid(row)],
-                    cells: vec![CellWrite {
+                change: RowsChange::Insert {
+                    rows: vec![vec![CellWrite {
                         column: ColumnId::from_uuid(column),
-                        value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
-                    }],
+                        value: CellValue::Text("Sam".into()),
+                    }]],
                 },
             },
-            DatabaseOp::UpdateRows {
+            DatabaseOp::Rows {
                 table: TableId::from_uuid(table),
-                changes: RowChanges::PerRow {
-                    rows: vec![RowChange {
-                        row: RowId::from_uuid(row),
+                change: RowsChange::Update {
+                    changes: RowChanges::Uniform {
+                        rows: vec![RowId::from_uuid(row)],
                         cells: vec![CellWrite {
                             column: ColumnId::from_uuid(column),
-                            value: CellValue::Clear,
+                            value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
                         }],
-                    }],
+                    },
                 },
             },
-            DatabaseOp::DeleteRows {
+            DatabaseOp::Rows {
                 table: TableId::from_uuid(table),
-                rows: vec![RowId::from_uuid(row)],
+                change: RowsChange::Update {
+                    changes: RowChanges::PerRow {
+                        rows: vec![RowChange {
+                            row: RowId::from_uuid(row),
+                            cells: vec![CellWrite {
+                                column: ColumnId::from_uuid(column),
+                                value: CellValue::Clear,
+                            }],
+                        }],
+                    },
+                },
             },
-            DatabaseOp::ChangeColumnType {
+            DatabaseOp::Rows {
+                table: TableId::from_uuid(table),
+                change: RowsChange::Delete {
+                    rows: vec![RowId::from_uuid(row)],
+                },
+            },
+            DatabaseOp::Column {
                 table: TableId::from_uuid(table),
                 column: ColumnId::from_uuid(column),
-                to: ColumnKind::Number,
+                change: ColumnChange::ChangeType {
+                    to: ColumnKind::Number,
+                },
             },
         ]
     );
@@ -183,12 +205,15 @@ async fn view_access_cannot_change_an_option() {
     let database = Uuid::from_u128(0x0dbb);
     let body = serde_json::json!({
         "ops": [{
-            "kind": "update_option",
+            "kind": "column",
             "table": Uuid::from_u128(0x7ab1),
             "column": Uuid::from_u128(0xc01a),
-            "option": Uuid::from_u128(0x0b7),
-            "label": "Maybe",
-            "color": "#12A594",
+            "change": {
+                "kind": "update_option",
+                "option": Uuid::from_u128(0x0b7),
+                "label": "Maybe",
+                "color": "#12A594",
+            },
         }],
     })
     .to_string();
@@ -221,10 +246,10 @@ async fn view_access_cannot_remove_an_option() {
     let database = Uuid::from_u128(0x0dbb);
     let body = serde_json::json!({
         "ops": [{
-            "kind": "delete_option",
+            "kind": "column",
             "table": Uuid::from_u128(0x7ab1),
             "column": Uuid::from_u128(0xc01a),
-            "option": Uuid::from_u128(0x0b7),
+            "change": {"kind": "delete_option", "option": Uuid::from_u128(0x0b7)},
         }],
     })
     .to_string();
@@ -257,9 +282,13 @@ async fn view_access_cannot_create_a_view() {
     let database = Uuid::from_u128(0x0dbb);
     let body = serde_json::json!({
         "ops": [{
-            "kind": "create_view",
+            "kind": "view",
             "table": Uuid::from_u128(0x7ab1),
-            "view": {"name": "Everyone", "layout": {"kind": "table", "columns": []}},
+            "view": Uuid::from_u128(0x71e),
+            "change": {
+                "kind": "create",
+                "view": {"name": "Everyone", "layout": {"kind": "table", "columns": []}},
+            },
         }],
     })
     .to_string();
@@ -292,10 +321,10 @@ async fn view_access_cannot_change_a_view() {
     let database = Uuid::from_u128(0x0dbb);
     let body = serde_json::json!({
         "ops": [{
-            "kind": "update_view",
+            "kind": "view",
             "table": Uuid::from_u128(0x7ab1),
             "view": Uuid::from_u128(0x71e),
-            "name": "Everyone",
+            "change": {"kind": "update", "name": "Everyone"},
         }],
     })
     .to_string();
@@ -328,9 +357,10 @@ async fn view_access_cannot_remove_a_view() {
     let database = Uuid::from_u128(0x0dbb);
     let body = serde_json::json!({
         "ops": [{
-            "kind": "delete_view",
+            "kind": "view",
             "table": Uuid::from_u128(0x7ab1),
             "view": Uuid::from_u128(0x71e),
+            "change": {"kind": "delete"},
         }],
     })
     .to_string();
@@ -363,9 +393,9 @@ async fn view_access_cannot_reorder_views() {
     let database = Uuid::from_u128(0x0dbb);
     let body = serde_json::json!({
         "ops": [{
-            "kind": "reorder_views",
+            "kind": "table",
             "table": Uuid::from_u128(0x7ab1),
-            "order": [Uuid::from_u128(0x71e)],
+            "change": {"kind": "reorder_views", "order": [Uuid::from_u128(0x71e)]},
         }],
     })
     .to_string();
@@ -398,13 +428,16 @@ async fn view_access_cannot_move_a_card() {
     let database = Uuid::from_u128(0x0dbb);
     let body = serde_json::json!({
         "ops": [{
-            "kind": "move_card",
+            "kind": "view",
             "table": Uuid::from_u128(0x7ab1),
             "view": Uuid::from_u128(0x71e),
-            "row": Uuid::from_u128(0x5a11),
-            "lane": null,
-            "before": null,
-            "after": null,
+            "change": {
+                "kind": "move_card",
+                "row": Uuid::from_u128(0x5a11),
+                "lane": null,
+                "before": null,
+                "after": null,
+            },
         }],
     })
     .to_string();
@@ -500,7 +533,10 @@ async fn a_schema_batch_reaches_the_service_with_its_base_versions() {
     use axum::body::Body;
     use axum::http::{Request, header};
     use entity_access::domain::models::AccessLevel;
-    use models_databases::{ColumnKind, DatabaseOp, EntityKind, NewColumn, NewOption, PropertyId};
+    use models_databases::{
+        ColumnChange, ColumnKind, DatabaseOp, EntityKind, NewColumn, NewOption, PropertyId,
+        TableChange,
+    };
     use std::collections::HashMap;
     use tower::ServiceExt;
 
@@ -520,44 +556,64 @@ async fn a_schema_batch_reaches_the_service_with_its_base_versions() {
     let property = Uuid::from_u128(0x9a09);
     let body = serde_json::json!({
         "ops": [
-            {"kind": "create_table", "id": sessions, "name": "Sessions"},
+            {"kind": "table", "table": sessions, "change": {"kind": "create", "name": "Sessions"}},
             {
-                "kind": "create_column",
+                "kind": "column",
                 "table": sessions,
-                "id": stage,
-                "definition": {
-                    "source": "new",
-                    "name": "Stage",
-                    "type": {"type": "select", "multi": false},
-                    "options": [{"id": going, "label": "Going"}],
+                "column": stage,
+                "change": {
+                    "kind": "create",
+                    "definition": {
+                        "source": "new",
+                        "name": "Stage",
+                        "type": {"type": "select", "multi": false},
+                        "options": [{"id": going, "label": "Going"}],
+                    },
                 },
             },
             {
-                "kind": "create_column",
+                "kind": "column",
                 "table": sessions,
-                "id": notes,
-                "definition": {"source": "new", "name": "Notes", "type": {"type": "text"}, "inferType": true},
-                "after": stage,
+                "column": notes,
+                "change": {
+                    "kind": "create",
+                    "definition": {"source": "new", "name": "Notes", "type": {"type": "text"}, "inferType": true},
+                    "after": stage,
+                },
             },
             {
-                "kind": "create_column",
+                "kind": "column",
                 "table": guests,
-                "id": owner,
-                "definition": {"source": "existing", "property": property},
+                "column": owner,
+                "change": {"kind": "create", "definition": {"source": "existing", "property": property}},
             },
-            {"kind": "rename_table", "table": guests, "name": "Guests", "previousName": "Table 1"},
-            {"kind": "rename_column", "table": guests, "column": status, "name": "RSVP", "previousName": "Status"},
-            {"kind": "reorder_columns", "table": guests, "order": [owner, status]},
-            {"kind": "add_options", "table": guests, "column": status, "options": [{"id": maybe, "label": "Maybe"}]},
             {
-                "kind": "change_column_type",
+                "kind": "table",
+                "table": guests,
+                "change": {"kind": "rename", "name": "Guests", "previousName": "Table 1"},
+            },
+            {
+                "kind": "column",
                 "table": guests,
                 "column": status,
-                "to": {"type": "entity", "target": "USER", "multi": true},
+                "change": {"kind": "rename", "name": "RSVP", "previousName": "Status"},
             },
-            {"kind": "delete_column", "table": guests, "column": retired},
+            {"kind": "table", "table": guests, "change": {"kind": "reorder_columns", "order": [owner, status]}},
+            {
+                "kind": "column",
+                "table": guests,
+                "column": status,
+                "change": {"kind": "add_options", "options": [{"id": maybe, "label": "Maybe"}]},
+            },
+            {
+                "kind": "column",
+                "table": guests,
+                "column": status,
+                "change": {"kind": "change_type", "to": {"type": "entity", "target": "USER", "multi": true}},
+            },
+            {"kind": "column", "table": guests, "column": retired, "change": {"kind": "delete"}},
             {"kind": "reorder_tables", "order": [sessions, guests, archive]},
-            {"kind": "delete_table", "table": archive},
+            {"kind": "table", "table": archive, "change": {"kind": "delete"}},
         ],
         "baseVersions": {guests.to_string(): 3},
     })
@@ -583,82 +639,104 @@ async fn a_schema_batch_reaches_the_service_with_its_base_versions() {
         *service.applied.lock().unwrap(),
         vec![OpBatch {
             ops: vec![
-                DatabaseOp::CreateTable {
-                    id: sessions,
-                    name: "Sessions".into(),
-                },
-                DatabaseOp::CreateColumn {
+                DatabaseOp::Table {
                     table: sessions,
-                    id: ColumnId::from_uuid(stage),
-                    definition: NewColumn::New {
-                        name: "Stage".into(),
-                        kind: ColumnKind::Select { multi: false },
+                    change: TableChange::Create {
+                        name: "Sessions".into(),
+                    },
+                },
+                DatabaseOp::Column {
+                    table: sessions,
+                    column: ColumnId::from_uuid(stage),
+                    change: ColumnChange::Create {
+                        definition: NewColumn::New {
+                            name: "Stage".into(),
+                            kind: ColumnKind::Select { multi: false },
+                            options: vec![NewOption {
+                                id: OptionId::from_uuid(going),
+                                label: "Going".into(),
+                            }],
+                            infer_type: false,
+                        },
+                        after: None,
+                    },
+                },
+                DatabaseOp::Column {
+                    table: sessions,
+                    column: ColumnId::from_uuid(notes),
+                    change: ColumnChange::Create {
+                        definition: NewColumn::New {
+                            name: "Notes".into(),
+                            kind: ColumnKind::Text,
+                            options: vec![],
+                            infer_type: true,
+                        },
+                        after: Some(ColumnId::from_uuid(stage)),
+                    },
+                },
+                DatabaseOp::Column {
+                    table: guests,
+                    column: ColumnId::from_uuid(owner),
+                    change: ColumnChange::Create {
+                        definition: NewColumn::Existing {
+                            property: PropertyId::from_uuid(property),
+                        },
+                        after: None,
+                    },
+                },
+                DatabaseOp::Table {
+                    table: guests,
+                    change: TableChange::Rename {
+                        name: "Guests".into(),
+                        previous_name: Some("Table 1".into()),
+                    },
+                },
+                DatabaseOp::Column {
+                    table: guests,
+                    column: ColumnId::from_uuid(status),
+                    change: ColumnChange::Rename {
+                        name: "RSVP".into(),
+                        previous_name: Some("Status".into()),
+                    },
+                },
+                DatabaseOp::Table {
+                    table: guests,
+                    change: TableChange::ReorderColumns {
+                        order: vec![ColumnId::from_uuid(owner), ColumnId::from_uuid(status)],
+                    },
+                },
+                DatabaseOp::Column {
+                    table: guests,
+                    column: ColumnId::from_uuid(status),
+                    change: ColumnChange::AddOptions {
                         options: vec![NewOption {
-                            id: OptionId::from_uuid(going),
-                            label: "Going".into(),
+                            id: OptionId::from_uuid(maybe),
+                            label: "Maybe".into(),
                         }],
-                        infer_type: false,
                     },
-                    after: None,
                 },
-                DatabaseOp::CreateColumn {
-                    table: sessions,
-                    id: ColumnId::from_uuid(notes),
-                    definition: NewColumn::New {
-                        name: "Notes".into(),
-                        kind: ColumnKind::Text,
-                        options: vec![],
-                        infer_type: true,
-                    },
-                    after: Some(ColumnId::from_uuid(stage)),
-                },
-                DatabaseOp::CreateColumn {
-                    table: guests,
-                    id: ColumnId::from_uuid(owner),
-                    definition: NewColumn::Existing {
-                        property: PropertyId::from_uuid(property),
-                    },
-                    after: None,
-                },
-                DatabaseOp::RenameTable {
-                    table: guests,
-                    name: "Guests".into(),
-                    previous_name: Some("Table 1".into()),
-                },
-                DatabaseOp::RenameColumn {
+                DatabaseOp::Column {
                     table: guests,
                     column: ColumnId::from_uuid(status),
-                    name: "RSVP".into(),
-                    previous_name: Some("Status".into()),
-                },
-                DatabaseOp::ReorderColumns {
-                    table: guests,
-                    order: vec![ColumnId::from_uuid(owner), ColumnId::from_uuid(status)],
-                },
-                DatabaseOp::AddOptions {
-                    table: guests,
-                    column: ColumnId::from_uuid(status),
-                    options: vec![NewOption {
-                        id: OptionId::from_uuid(maybe),
-                        label: "Maybe".into(),
-                    }],
-                },
-                DatabaseOp::ChangeColumnType {
-                    table: guests,
-                    column: ColumnId::from_uuid(status),
-                    to: ColumnKind::Entity {
-                        target: EntityKind::User,
-                        multi: true,
+                    change: ColumnChange::ChangeType {
+                        to: ColumnKind::Entity {
+                            target: EntityKind::User,
+                            multi: true,
+                        },
                     },
                 },
-                DatabaseOp::DeleteColumn {
+                DatabaseOp::Column {
                     table: guests,
                     column: ColumnId::from_uuid(retired),
+                    change: ColumnChange::Delete,
                 },
                 DatabaseOp::ReorderTables {
                     order: vec![sessions, guests, archive],
                 },
-                DatabaseOp::DeleteTable { table: archive },
+                DatabaseOp::Table {
+                    table: archive,
+                    change: TableChange::Delete,
+                },
             ],
             base_versions: HashMap::from([(guests, TableVersion(3))]),
         }]
@@ -680,10 +758,13 @@ async fn a_taken_id_refuses_the_batch_with_400_naming_it() {
     let column = Uuid::from_u128(0xc01a);
     let body = serde_json::json!({
         "ops": [{
-            "kind": "create_column",
+            "kind": "column",
             "table": table,
-            "id": column,
-            "definition": {"source": "new", "name": "Notes", "type": {"type": "text"}},
+            "column": column,
+            "change": {
+                "kind": "create",
+                "definition": {"source": "new", "name": "Notes", "type": {"type": "text"}},
+            },
         }],
     })
     .to_string();
@@ -734,7 +815,12 @@ async fn a_table_off_its_base_version_answers_409() {
     let database = Uuid::from_u128(0x0dbb);
     let table = Uuid::from_u128(0x7ab1);
     let body = serde_json::json!({
-        "ops": [{"kind": "delete_column", "table": table, "column": Uuid::from_u128(0xc01a)}],
+        "ops": [{
+            "kind": "column",
+            "table": table,
+            "column": Uuid::from_u128(0xc01a),
+            "change": {"kind": "delete"},
+        }],
         "baseVersions": {table.to_string(): 3},
     })
     .to_string();

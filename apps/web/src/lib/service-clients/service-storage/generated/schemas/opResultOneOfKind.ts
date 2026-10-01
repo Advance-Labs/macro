@@ -10,5 +10,5 @@ export type OpResultOneOfKind =
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const OpResultOneOfKind = {
-  table_created: 'table_created',
+  table: 'table',
 } as const;

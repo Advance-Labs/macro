@@ -36,14 +36,16 @@ async fn lifecycle_and_writes_publish_domain_events() {
     svc.apply_ops(
         receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
         viewer(OWNER),
-        OpBatch::from(vec![DatabaseOp::UpdateRows {
+        OpBatch::from(vec![DatabaseOp::Rows {
             table: seeded.table_id,
-            changes: RowChanges::Uniform {
-                rows: vec![row_id],
-                cells: vec![CellWrite {
-                    column: seeded.status_column.id,
-                    value: CellValue::Options(vec![OptionRef::Label("Declined".into())]),
-                }],
+            change: RowsChange::Update {
+                changes: RowChanges::Uniform {
+                    rows: vec![row_id],
+                    cells: vec![CellWrite {
+                        column: seeded.status_column.id,
+                        value: CellValue::Options(vec![OptionRef::Label("Declined".into())]),
+                    }],
+                },
             },
         }]),
     )
@@ -140,14 +142,16 @@ async fn an_agent_is_attributed_as_acting_for_the_user() {
             user_id: user(OWNER),
             acting_bot: Some(agent),
         },
-        OpBatch::from(vec![DatabaseOp::UpdateRows {
+        OpBatch::from(vec![DatabaseOp::Rows {
             table: seeded.table_id,
-            changes: RowChanges::Uniform {
-                rows: vec![row_id],
-                cells: vec![CellWrite {
-                    column: seeded.status_column.id,
-                    value: CellValue::Options(vec![OptionRef::Label("Declined".into())]),
-                }],
+            change: RowsChange::Update {
+                changes: RowChanges::Uniform {
+                    rows: vec![row_id],
+                    cells: vec![CellWrite {
+                        column: seeded.status_column.id,
+                        value: CellValue::Options(vec![OptionRef::Label("Declined".into())]),
+                    }],
+                },
             },
         }]),
     )

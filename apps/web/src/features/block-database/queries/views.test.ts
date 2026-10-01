@@ -4,7 +4,11 @@ import type { DatabaseDetail } from '@service-storage/generated/schemas/database
 import type { OpResult } from '@service-storage/generated/schemas/opResult';
 import { errAsync, ResultAsync } from 'neverthrow';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { reorderDatabaseViews, updateDatabaseView } from './views';
+import {
+  createDatabaseView,
+  reorderDatabaseViews,
+  updateDatabaseView,
+} from './views';
 
 const transport = vi.hoisted(() => ({
   applyDatabaseOps: vi.fn(),
@@ -80,6 +84,90 @@ function cachedViews() {
     ?.tables[0].views.map((view) => [view.id, view.position]);
 }
 
+describe('creating a view', () => {
+  it('sends the view under an id minted here and adds the stored view', async () => {
+    queryClient.setQueryData(databasesKeys.detail('db').queryKey, detail);
+    const stored = {
+      id: '0199a3c4-0000-7000-8000-000000000003',
+      databaseId: 'db',
+      tableId: 'invites',
+      name: 'Third',
+      position: 'a2',
+      query: { filter: null, sort: [] },
+      layout: { kind: 'table' as const, columns: [] },
+      createdAt: '2026-10-01T00:03:00Z',
+      updatedAt: '2026-10-01T00:03:00Z',
+    };
+    transport.applyDatabaseOps.mockReturnValue(
+      ResultAsync.fromSafePromise(
+        Promise.resolve<OpResult[]>([
+          {
+            kind: 'view',
+            table: 'invites',
+            view: '0199a3c4-0000-7000-8000-000000000003',
+            tableVersion: 4,
+            change: { kind: 'created', view: stored },
+          },
+        ])
+      )
+    );
+
+    const created = await createDatabaseView(
+      'db',
+      'invites',
+      { name: 'Third', layout: { kind: 'table', columns: [] } },
+      '0199a3c4-0000-7000-8000-000000000003'
+    );
+
+    expect(created._unsafeUnwrap()).toEqual(stored);
+    expect(transport.applyDatabaseOps).toHaveBeenCalledExactlyOnceWith('db', [
+      {
+        kind: 'view',
+        table: 'invites',
+        view: '0199a3c4-0000-7000-8000-000000000003',
+        change: {
+          kind: 'create',
+          view: { name: 'Third', layout: { kind: 'table', columns: [] } },
+        },
+      },
+    ]);
+    expect(cachedViews()).toEqual([
+      ['first', 'a0'],
+      ['second', 'a1'],
+      ['0199a3c4-0000-7000-8000-000000000003', 'a2'],
+    ]);
+  });
+
+  it('mints a UUIDv7 view id when none is given', async () => {
+    transport.applyDatabaseOps.mockReturnValue(
+      errAsync({
+        code: 'INVALID_OP',
+        message: 'the view needs a name',
+        refusal: null,
+      })
+    );
+
+    await createDatabaseView('db', 'invites', {
+      name: '',
+      layout: { kind: 'table', columns: [] },
+    });
+
+    expect(transport.applyDatabaseOps).toHaveBeenCalledExactlyOnceWith('db', [
+      {
+        kind: 'view',
+        table: 'invites',
+        view: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+        ),
+        change: {
+          kind: 'create',
+          view: { name: '', layout: { kind: 'table', columns: [] } },
+        },
+      },
+    ]);
+  });
+});
+
 describe('reordering a table’s views', () => {
   it('sends reorder_views with every view, shows the order at once and keeps the keys the server wrote', async () => {
     queryClient.setQueryData(databasesKeys.detail('db').queryKey, detail);
@@ -102,18 +190,26 @@ describe('reordering a table’s views', () => {
     ]);
     answer([
       {
-        kind: 'views_reordered',
+        kind: 'table',
+        table: 'invites',
         tableVersion: 4,
-        positions: [
-          { view: 'second', position: 'Zz' },
-          { view: 'first', position: 'a0' },
-        ],
+        change: {
+          kind: 'views_reordered',
+          positions: [
+            { view: 'second', position: 'Zz' },
+            { view: 'first', position: 'a0' },
+          ],
+        },
       },
     ]);
     expect((await reordered).isOk()).toBe(true);
 
     expect(transport.applyDatabaseOps).toHaveBeenCalledExactlyOnceWith('db', [
-      { kind: 'reorder_views', table: 'invites', order: ['second', 'first'] },
+      {
+        kind: 'table',
+        table: 'invites',
+        change: { kind: 'reorder_views', order: ['second', 'first'] },
+      },
     ]);
     expect(transport.applyDatabaseTableVersions).toHaveBeenCalledWith('db', {
       invites: 4,
@@ -165,9 +261,18 @@ describe('changing a view', () => {
     );
     answerFirst([
       {
-        kind: 'view_written',
+        kind: 'view',
+        table: 'invites',
+        view: 'first',
         tableVersion: 4,
-        view: { ...first, name: 'Guests', updatedAt: '2026-10-01T00:01:00Z' },
+        change: {
+          kind: 'updated',
+          view: {
+            ...first,
+            name: 'Guests',
+            updatedAt: '2026-10-01T00:01:00Z',
+          },
+        },
       },
     ]);
     expect((await renamed).isOk()).toBe(true);
@@ -183,12 +288,17 @@ describe('changing a view', () => {
     );
     answerSecond([
       {
-        kind: 'view_written',
+        kind: 'view',
+        table: 'invites',
+        view: 'first',
         tableVersion: 5,
-        view: {
-          ...first,
-          name: 'Attendees',
-          updatedAt: '2026-10-01T00:02:00Z',
+        change: {
+          kind: 'updated',
+          view: {
+            ...first,
+            name: 'Attendees',
+            updatedAt: '2026-10-01T00:02:00Z',
+          },
         },
       },
     ]);
@@ -209,14 +319,19 @@ describe('changing a view', () => {
       updatedAt: '2026-10-01T00:02:00Z',
     });
     expect(transport.applyDatabaseOps).toHaveBeenNthCalledWith(1, 'db', [
-      { kind: 'update_view', table: 'invites', view: 'first', name: 'Guests' },
+      {
+        kind: 'view',
+        table: 'invites',
+        view: 'first',
+        change: { kind: 'update', name: 'Guests' },
+      },
     ]);
     expect(transport.applyDatabaseOps).toHaveBeenNthCalledWith(2, 'db', [
       {
-        kind: 'update_view',
+        kind: 'view',
         table: 'invites',
         view: 'first',
-        name: 'Attendees',
+        change: { kind: 'update', name: 'Attendees' },
       },
     ]);
   });

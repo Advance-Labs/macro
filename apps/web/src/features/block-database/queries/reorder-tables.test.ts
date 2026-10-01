@@ -117,7 +117,7 @@ describe('reordering tables', () => {
         Promise.resolve(
           ok([
             {
-              kind: 'tables_reordered',
+              kind: 'reorder_tables',
               tables: [
                 { table: 'venues', version: 2 },
                 { table: 'invites', version: 4 },

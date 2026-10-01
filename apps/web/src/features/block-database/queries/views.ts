@@ -11,6 +11,7 @@ import type { ViewQuery } from '@service-storage/generated/schemas/viewQuery';
 import { useQuery } from '@tanstack/solid-query';
 import { ResultAsync } from 'neverthrow';
 import type { Accessor } from 'solid-js';
+import { v7 as uuidv7 } from 'uuid';
 import type { CardMove } from '../core/board-moves';
 import { createKeyedSerializer } from '../core/keyed-serializer';
 import type { DatabaseOpFailure } from '../core/write-failure';
@@ -33,19 +34,26 @@ const viewListKey = (tableId: string) => `table:${tableId}`;
 const latestChanges = new Map<string, number>();
 let changeSequence = 0;
 
+/** Add a view under an id minted here, which `viewId` may name ahead of the answer. */
 export function createDatabaseView(
   databaseId: string,
   tableId: string,
-  view: NewView
+  view: NewView,
+  viewId: string = uuidv7()
 ): ResultAsync<DatabaseView, DatabaseOpFailure> {
   return inOrder(viewListKey(tableId), () =>
     applyOp(
       databaseId,
       tableId,
-      { kind: 'create_view', table: tableId, view },
-      'view_written'
+      {
+        kind: 'view',
+        table: tableId,
+        view: viewId,
+        change: { kind: 'create', view },
+      },
+      { kind: 'view', change: 'created' }
     )
-  ).map(async ({ view: created }) => {
+  ).map(async ({ change: { view: created } }) => {
     await patchViews(databaseId, tableId, (views) => [
       ...views.filter((existing) => existing.id !== created.id),
       created,
@@ -84,16 +92,16 @@ export function updateDatabaseView(
           view.databaseId,
           view.tableId,
           {
-            kind: 'update_view',
+            kind: 'view',
             table: view.tableId,
             view: view.id,
-            ...change,
+            change: { kind: 'update', ...change },
           },
-          'view_written'
+          { kind: 'view', change: 'updated' }
         )
       )
     )
-    .map(async ({ view: stored }) => {
+    .map(async ({ change: { view: stored } }) => {
       if (isLatest())
         await patchViews(view.databaseId, view.tableId, (views) =>
           views.map((existing) =>
@@ -122,8 +130,13 @@ export function deleteDatabaseView(
         applyOp(
           view.databaseId,
           view.tableId,
-          { kind: 'delete_view', table: view.tableId, view: view.id },
-          'view_deleted'
+          {
+            kind: 'view',
+            table: view.tableId,
+            view: view.id,
+            change: { kind: 'delete' },
+          },
+          { kind: 'view', change: 'deleted' }
         )
       )
     )
@@ -144,12 +157,16 @@ export function reorderDatabaseViews(
         applyOp(
           databaseId,
           tableId,
-          { kind: 'reorder_views', table: tableId, order },
-          'views_reordered'
+          {
+            kind: 'table',
+            table: tableId,
+            change: { kind: 'reorder_views', order },
+          },
+          { kind: 'table', change: 'views_reordered' }
         )
       )
     )
-    .map(async ({ positions }) => {
+    .map(async ({ change: { positions } }) => {
       await patchViews(databaseId, tableId, (views) =>
         ordered(views).map((view) => ({
           ...view,
@@ -217,18 +234,24 @@ export function moveDatabaseCard(
       view.databaseId,
       view.tableId,
       {
-        kind: 'move_card',
+        kind: 'view',
         table: view.tableId,
         view: view.id,
-        row: move.row,
-        lane: move.lane,
-        before: move.before,
-        after: move.after,
+        change: {
+          kind: 'move_card',
+          row: move.row,
+          lane: move.lane,
+          before: move.before,
+          after: move.after,
+        },
       },
-      'card_moved'
+      { kind: 'view', change: 'card_moved' }
     )
   )
-    .map(({ positions, tableVersion }) => ({ positions, tableVersion }))
+    .map(({ change: { positions }, tableVersion }) => ({
+      positions,
+      tableVersion,
+    }))
     .mapErr((failure) => {
       void refreshCardPositions(view.databaseId, view.id);
       return failure;

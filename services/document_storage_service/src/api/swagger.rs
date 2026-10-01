@@ -156,11 +156,15 @@ use models_databases::views::{
 };
 use models_databases::{
     CellValue as DatabaseCellValue, CellWrite as DatabaseCellWrite,
-    ColumnKind as DatabaseColumnKind, DatabaseOp, EntityKind as DatabaseEntityKind,
+    ColumnChange as DatabaseColumnChange, ColumnKind as DatabaseColumnKind,
+    ColumnResult as DatabaseColumnResult, DatabaseOp, EntityKind as DatabaseEntityKind,
     EntityRef as DatabaseEntityRef, NewColumn as DatabaseNewColumn, NewOption as DatabaseNewOption,
     OpResult as DatabaseOpResult, OptionRef as DatabaseOptionRef, RowChange as DatabaseRowChange,
-    RowChanges as DatabaseRowChanges, TakenId as DatabaseTakenId,
-    VersionedTable as DatabaseVersionedTable,
+    RowChanges as DatabaseRowChanges, RowsChange as DatabaseRowsChange,
+    RowsResult as DatabaseRowsResult, TableChange as DatabaseTableChange,
+    TableResult as DatabaseTableResult, TakenId as DatabaseTakenId,
+    VersionedTable as DatabaseVersionedTable, ViewChange as DatabaseViewChange,
+    ViewResult as DatabaseViewResult,
 };
 use models_permissions::share_permission::channel_share_permission::UpdateOperation;
 use models_soup::call_record::{SoupCallRecord, SoupCallRecordParticipant};
@@ -637,6 +641,10 @@ use utoipa::OpenApi;
             DatabaseApplyOpsResponse,
             DatabaseOpRefusalResponse,
             DatabaseOp,
+            DatabaseTableChange,
+            DatabaseColumnChange,
+            DatabaseRowsChange,
+            DatabaseViewChange,
             DatabaseCellWrite,
             DatabaseCellValue,
             DatabaseRowChanges,
@@ -648,6 +656,10 @@ use utoipa::OpenApi;
             DatabaseNewColumn,
             DatabaseNewOption,
             DatabaseOpResult,
+            DatabaseTableResult,
+            DatabaseColumnResult,
+            DatabaseRowsResult,
+            DatabaseViewResult,
             DatabaseTakenId,
             DatabaseVersionedTable,
             DatabaseView,

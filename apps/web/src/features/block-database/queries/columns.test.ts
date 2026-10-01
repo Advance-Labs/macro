@@ -25,9 +25,17 @@ afterEach(() => {
 });
 
 describe('adding columns and options', () => {
-  it('creates a select column with its options, each under a minted id, in one create_column op', async () => {
+  it('creates a select column with its options, each under a minted id, in one column create op', async () => {
     storage.applyDatabaseOps.mockReturnValue(
-      okAsync([{ kind: 'column_created', column: 'status', tableVersion: 3 }])
+      okAsync([
+        {
+          kind: 'column',
+          table: 'tasks',
+          column: 'status',
+          tableVersion: 3,
+          change: { kind: 'created' },
+        },
+      ])
     );
 
     const created = await createDatabaseColumn({
@@ -40,33 +48,44 @@ describe('adding columns and options', () => {
 
     expect(storage.applyDatabaseOps).toHaveBeenCalledExactlyOnceWith('db', [
       {
-        kind: 'create_column',
+        kind: 'column',
         table: 'tasks',
-        id: expect.stringMatching(uuidv7),
-        definition: {
-          source: 'new',
-          name: 'Status',
-          type: { type: 'select', multi: false },
-          options: [
-            { id: expect.stringMatching(uuidv7), label: 'Todo' },
-            { id: expect.stringMatching(uuidv7), label: 'Done' },
-          ],
+        column: expect.stringMatching(uuidv7),
+        change: {
+          kind: 'create',
+          definition: {
+            source: 'new',
+            name: 'Status',
+            type: { type: 'select', multi: false },
+            options: [
+              { id: expect.stringMatching(uuidv7), label: 'Todo' },
+              { id: expect.stringMatching(uuidv7), label: 'Done' },
+            ],
+          },
         },
       },
     ]);
     const [[, [op]]] = storage.applyDatabaseOps.mock.calls;
     const ids = [
-      op.id,
-      ...op.definition.options.map((option: NewOption) => option.id),
+      op.column,
+      ...op.change.definition.options.map((option: NewOption) => option.id),
     ];
     expect(new Set(ids).size).toBe(3);
-    expect(created._unsafeUnwrap()).toBe(op.id);
+    expect(created._unsafeUnwrap()).toBe(op.column);
     expect(storage.invalidateDatabase).toHaveBeenCalledExactlyOnceWith('db');
   });
 
   it('adds options to a column under minted ids and reads the schema again', async () => {
     storage.applyDatabaseOps.mockReturnValue(
-      okAsync([{ kind: 'options_added', tableVersion: 4, added: ['done'] }])
+      okAsync([
+        {
+          kind: 'column',
+          table: 'tasks',
+          column: 'status',
+          tableVersion: 4,
+          change: { kind: 'options_added', added: ['done'] },
+        },
+      ])
     );
 
     const added = await addDatabaseColumnOptions({
@@ -79,10 +98,13 @@ describe('adding columns and options', () => {
     expect(added.isOk()).toBe(true);
     expect(storage.applyDatabaseOps).toHaveBeenCalledExactlyOnceWith('db', [
       {
-        kind: 'add_options',
+        kind: 'column',
         table: 'tasks',
         column: 'status',
-        options: [{ id: expect.stringMatching(uuidv7), label: 'Done' }],
+        change: {
+          kind: 'add_options',
+          options: [{ id: expect.stringMatching(uuidv7), label: 'Done' }],
+        },
       },
     ]);
     expect(storage.invalidateDatabase).toHaveBeenCalledExactlyOnceWith('db');
@@ -108,8 +130,19 @@ describe('adding columns and options', () => {
     );
     storage.applyDatabaseOps.mockReturnValue(
       okAsync([
-        { kind: 'column_created', column: 'new', tableVersion: 7 },
-        { kind: 'rows_written', tableVersion: 7, inserted: [] },
+        {
+          kind: 'column',
+          table: 'tasks',
+          column: 'new',
+          tableVersion: 7,
+          change: { kind: 'created' },
+        },
+        {
+          kind: 'rows',
+          table: 'tasks',
+          tableVersion: 7,
+          change: { kind: 'updated', affected: 2 },
+        },
       ])
     );
 
@@ -129,57 +162,63 @@ describe('adding columns and options', () => {
     });
     const [[, ops]] = storage.applyDatabaseOps.mock.calls;
     const [created] = ops;
-    const [high, low] = created.definition.options;
+    const [high, low] = created.change.definition.options;
     expect(storage.applyDatabaseOps).toHaveBeenCalledExactlyOnceWith(
       'db',
       [
         {
-          kind: 'create_column',
+          kind: 'column',
           table: 'tasks',
-          id: expect.stringMatching(uuidv7),
-          definition: {
-            source: 'new',
-            name: 'Priority (Select)',
-            type: { type: 'select', multi: false },
-            options: [
-              { id: expect.stringMatching(uuidv7), label: 'High' },
-              { id: expect.stringMatching(uuidv7), label: 'Low' },
-            ],
+          column: expect.stringMatching(uuidv7),
+          change: {
+            kind: 'create',
+            definition: {
+              source: 'new',
+              name: 'Priority (Select)',
+              type: { type: 'select', multi: false },
+              options: [
+                { id: expect.stringMatching(uuidv7), label: 'High' },
+                { id: expect.stringMatching(uuidv7), label: 'Low' },
+              ],
+            },
+            after: 'priority',
           },
-          after: 'priority',
         },
         {
-          kind: 'update_rows',
+          kind: 'rows',
           table: 'tasks',
-          changes: {
-            kind: 'per_row',
-            rows: [
-              {
-                row: 'row-1',
-                cells: [
-                  {
-                    column: created.id,
-                    value: { type: 'options', value: [{ label: 'High' }] },
-                  },
-                ],
-              },
-              {
-                row: 'row-2',
-                cells: [
-                  {
-                    column: created.id,
-                    value: { type: 'options', value: [{ label: 'Low' }] },
-                  },
-                ],
-              },
-            ],
+          change: {
+            kind: 'update',
+            changes: {
+              kind: 'per_row',
+              rows: [
+                {
+                  row: 'row-1',
+                  cells: [
+                    {
+                      column: created.column,
+                      value: { type: 'options', value: [{ label: 'High' }] },
+                    },
+                  ],
+                },
+                {
+                  row: 'row-2',
+                  cells: [
+                    {
+                      column: created.column,
+                      value: { type: 'options', value: [{ label: 'Low' }] },
+                    },
+                  ],
+                },
+              ],
+            },
           },
         },
       ],
       { tasks: 6 }
     );
-    expect(new Set([created.id, high.id, low.id]).size).toBe(3);
-    expect(converted._unsafeUnwrap()).toBe(created.id);
+    expect(new Set([created.column, high.id, low.id]).size).toBe(3);
+    expect(converted._unsafeUnwrap()).toBe(created.column);
     expect(storage.invalidateDatabase).toHaveBeenCalledExactlyOnceWith('db');
   });
 
@@ -188,7 +227,15 @@ describe('adding columns and options', () => {
       okAsync({ tableVersion: 2, options: [], cells: [], misfits: 4 })
     );
     storage.applyDatabaseOps.mockReturnValue(
-      okAsync([{ kind: 'column_created', column: 'new', tableVersion: 3 }])
+      okAsync([
+        {
+          kind: 'column',
+          table: 'tasks',
+          column: 'new',
+          tableVersion: 3,
+          change: { kind: 'created' },
+        },
+      ])
     );
 
     await convertDatabaseColumn({
@@ -209,16 +256,19 @@ describe('adding columns and options', () => {
       'db',
       [
         {
-          kind: 'create_column',
+          kind: 'column',
           table: 'tasks',
-          id: expect.stringMatching(uuidv7),
-          definition: {
-            source: 'new',
-            name: 'Owner (People)',
-            type: { type: 'relation', database: 'db', table: 'people' },
-            options: [],
+          column: expect.stringMatching(uuidv7),
+          change: {
+            kind: 'create',
+            definition: {
+              source: 'new',
+              name: 'Owner (People)',
+              type: { type: 'relation', database: 'db', table: 'people' },
+              options: [],
+            },
+            after: 'owner',
           },
-          after: 'owner',
         },
       ],
       { tasks: 2 }

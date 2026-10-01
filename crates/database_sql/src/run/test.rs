@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use chrono::{TimeZone, Utc};
-use models_databases::{CellValue, CellWrite, OptionRef, RowChanges, TableVersion};
+use models_databases::{
+    CellValue, CellWrite, ColumnChange, ColumnResult, OptionRef, RowChanges, RowsChange,
+    RowsResult, TableVersion,
+};
 
 use super::*;
 use crate::fold::Cell;
@@ -99,30 +102,37 @@ impl OpsSink for FakeSink {
         Ok(ops
             .iter()
             .map(|op| match op {
-                DatabaseOp::InsertRows { rows, .. } => OpResult::RowsWritten {
+                DatabaseOp::Rows { table, change } => OpResult::Rows {
+                    table: *table,
                     table_version: TableVersion(8),
-                    inserted: self.inserted[..rows.len()].to_vec(),
-                    affected: rows.len() as u32,
+                    change: match change {
+                        RowsChange::Insert { rows } => RowsResult::Inserted {
+                            rows: self.inserted[..rows.len()].to_vec(),
+                        },
+                        RowsChange::Update {
+                            changes: RowChanges::Uniform { rows, .. },
+                        } => RowsResult::Updated {
+                            affected: rows.len() as u32,
+                        },
+                        RowsChange::Update {
+                            changes: RowChanges::PerRow { rows },
+                        } => RowsResult::Updated {
+                            affected: rows.len() as u32,
+                        },
+                        RowsChange::Delete { rows } => RowsResult::Deleted {
+                            affected: rows.len() as u32,
+                        },
+                    },
                 },
-                DatabaseOp::UpdateRows {
-                    changes: RowChanges::Uniform { rows, .. },
-                    ..
-                }
-                | DatabaseOp::DeleteRows { rows, .. } => OpResult::RowsWritten {
+                DatabaseOp::Column {
+                    table,
+                    column,
+                    change: ColumnChange::ChangeType { .. },
+                } => OpResult::Column {
+                    table: *table,
+                    column: *column,
                     table_version: TableVersion(8),
-                    inserted: vec![],
-                    affected: rows.len() as u32,
-                },
-                DatabaseOp::UpdateRows {
-                    changes: RowChanges::PerRow { rows },
-                    ..
-                } => OpResult::RowsWritten {
-                    table_version: TableVersion(8),
-                    inserted: vec![],
-                    affected: rows.len() as u32,
-                },
-                DatabaseOp::ChangeColumnType { .. } => OpResult::ColumnTyped {
-                    table_version: TableVersion(8),
+                    change: ColumnResult::TypeChanged,
                 },
                 other => panic!("a statement sends no {other:?}"),
             })
@@ -562,34 +572,36 @@ fn an_insert_is_one_op_holding_every_row() {
         *sink.applied.lock().unwrap(),
         vec![(
             CRM,
-            vec![DatabaseOp::InsertRows {
+            vec![DatabaseOp::Rows {
                 table: DEALS,
-                rows: vec![
-                    vec![
-                        CellWrite {
+                change: RowsChange::Insert {
+                    rows: vec![
+                        vec![
+                            CellWrite {
+                                column: ColumnId::from_uuid(NAME),
+                                value: CellValue::Text("Acme".into()),
+                            },
+                            CellWrite {
+                                column: ColumnId::from_uuid(STAGE),
+                                value: CellValue::Options(vec![OptionRef::Label("Won".into())]),
+                            },
+                        ],
+                        vec![
+                            CellWrite {
+                                column: ColumnId::from_uuid(NAME),
+                                value: CellValue::Text("Globex".into()),
+                            },
+                            CellWrite {
+                                column: ColumnId::from_uuid(STAGE),
+                                value: CellValue::Options(vec![OptionRef::Label("Lead".into())]),
+                            },
+                        ],
+                        vec![CellWrite {
                             column: ColumnId::from_uuid(NAME),
-                            value: CellValue::Text("Acme".into()),
-                        },
-                        CellWrite {
-                            column: ColumnId::from_uuid(STAGE),
-                            value: CellValue::Options(vec![OptionRef::Label("Won".into())]),
-                        },
-                    ],
-                    vec![
-                        CellWrite {
-                            column: ColumnId::from_uuid(NAME),
-                            value: CellValue::Text("Globex".into()),
-                        },
-                        CellWrite {
-                            column: ColumnId::from_uuid(STAGE),
-                            value: CellValue::Options(vec![OptionRef::Label("Lead".into())]),
-                        },
-                    ],
-                    vec![CellWrite {
-                        column: ColumnId::from_uuid(NAME),
-                        value: CellValue::Text("Hooli".into()),
-                    }],
-                ],
+                            value: CellValue::Text("Hooli".into()),
+                        }],
+                    ]
+                },
             }],
         )]
     );
@@ -622,28 +634,30 @@ fn update_and_delete_by_row_id_read_the_row_then_write_it() {
         vec![
             (
                 CRM,
-                vec![DatabaseOp::UpdateRows {
+                vec![DatabaseOp::Rows {
                     table: DEALS,
-                    changes: RowChanges::Uniform {
-                        rows: vec![ACME],
-                        cells: vec![
-                            CellWrite {
-                                column: ColumnId::from_uuid(STAGE),
-                                value: CellValue::Options(vec![OptionRef::Label("Won".into())]),
-                            },
-                            CellWrite {
-                                column: ColumnId::from_uuid(AMOUNT),
-                                value: CellValue::Clear,
-                            },
-                        ],
+                    change: RowsChange::Update {
+                        changes: RowChanges::Uniform {
+                            rows: vec![ACME],
+                            cells: vec![
+                                CellWrite {
+                                    column: ColumnId::from_uuid(STAGE),
+                                    value: CellValue::Options(vec![OptionRef::Label("Won".into())]),
+                                },
+                                CellWrite {
+                                    column: ColumnId::from_uuid(AMOUNT),
+                                    value: CellValue::Clear,
+                                },
+                            ],
+                        }
                     },
                 }],
             ),
             (
                 CRM,
-                vec![DatabaseOp::DeleteRows {
+                vec![DatabaseOp::Rows {
                     table: DEALS,
-                    rows: vec![GLOBEX],
+                    change: RowsChange::Delete { rows: vec![GLOBEX] },
                 }],
             ),
         ]
@@ -766,10 +780,12 @@ fn a_type_change_is_one_op_without_reading_rows() {
         *sink.applied.lock().unwrap(),
         vec![(
             CRM,
-            vec![DatabaseOp::ChangeColumnType {
+            vec![DatabaseOp::Column {
                 table: DEALS,
                 column: ColumnId::from_uuid(NAME),
-                to: models_databases::ColumnKind::Number,
+                change: ColumnChange::ChangeType {
+                    to: models_databases::ColumnKind::Number,
+                },
             }],
         )]
     );
@@ -795,5 +811,50 @@ fn a_type_change_the_sink_refuses_is_the_statement_error() {
         RunFailure::Write(Refused(
             "2 values in \"name\" aren't numbers: 'Acme', 'Globex'."
         ))
+    );
+}
+
+/// A sink that answers every op as though it had updated one row.
+struct AnswersRowsUpdated;
+
+impl OpsSink for AnswersRowsUpdated {
+    type Error = Refused;
+
+    async fn apply(
+        &self,
+        _: DatabaseId,
+        ops: Vec<DatabaseOp>,
+    ) -> Result<Vec<OpResult>, Self::Error> {
+        Ok(ops
+            .iter()
+            .map(|_| OpResult::Rows {
+                table: DEALS,
+                table_version: TableVersion(8),
+                change: RowsResult::Updated { affected: 1 },
+            })
+            .collect())
+    }
+}
+
+#[test]
+fn a_result_of_another_kind_than_the_op_is_refused() {
+    let error = pollster::block_on(run(
+        &catalog(),
+        "ALTER TABLE crm.deals ALTER COLUMN name TYPE number",
+        &source(vec![]),
+        &AnswersRowsUpdated,
+    ))
+    .unwrap_err();
+
+    assert_eq!(
+        error,
+        RunFailure::Engine(RunError::UnexpectedOpResult {
+            sent: SentOp::ColumnTypeChange,
+            received: OpResultKind::RowsUpdated,
+        })
+    );
+    assert_eq!(
+        error.to_string(),
+        "a column type change was sent, but rows updated came back"
     );
 }

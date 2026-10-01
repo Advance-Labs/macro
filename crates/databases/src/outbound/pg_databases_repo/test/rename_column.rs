@@ -1,7 +1,9 @@
 //! Column renames through the ops over Postgres: a rename relabels one
 //! placement, and of two at once exactly one wins.
 
-use models_databases::{DatabaseOp, NewColumn, OpResult, PropertyId};
+use models_databases::{
+    ColumnChange, ColumnResult, DatabaseOp, NewColumn, OpResult, PropertyId, TableChange,
+};
 
 use super::apply_ops::{edit, guests, service, version, viewer};
 use super::*;
@@ -22,17 +24,21 @@ async fn a_column_rename_relabels_that_placement_alone_and_checks_what_the_calle
             edit(guests.database_id),
             viewer(),
             vec![
-                DatabaseOp::CreateTable {
-                    id: hosts,
-                    name: "Hosts".into(),
-                },
-                DatabaseOp::CreateColumn {
+                DatabaseOp::Table {
                     table: hosts,
-                    id: host_name,
-                    definition: NewColumn::Existing {
-                        property: PropertyId::from_uuid(guests.name_definition),
+                    change: TableChange::Create {
+                        name: "Hosts".into(),
                     },
-                    after: None,
+                },
+                DatabaseOp::Column {
+                    table: hosts,
+                    column: host_name,
+                    change: ColumnChange::Create {
+                        definition: NewColumn::Existing {
+                            property: PropertyId::from_uuid(guests.name_definition),
+                        },
+                        after: None,
+                    },
                 },
             ]
             .into(),
@@ -45,11 +51,13 @@ async fn a_column_rename_relabels_that_placement_alone_and_checks_what_the_calle
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::RenameColumn {
+            vec![DatabaseOp::Column {
                 table: guests.table_id,
                 column: guests.name,
-                name: "Task".into(),
-                previous_name: Some("Name".into()),
+                change: ColumnChange::Rename {
+                    name: "Task".into(),
+                    previous_name: Some("Name".into()),
+                },
             }]
             .into(),
         )
@@ -59,8 +67,11 @@ async fn a_column_rename_relabels_that_placement_alone_and_checks_what_the_calle
     let after = TableVersion(before.0 + 1);
     assert_eq!(
         renamed,
-        vec![OpResult::ColumnRenamed {
-            table_version: after
+        vec![OpResult::Column {
+            table: guests.table_id,
+            column: guests.name,
+            table_version: after,
+            change: ColumnResult::Renamed,
         }]
     );
     let stored = repo
@@ -82,11 +93,13 @@ async fn a_column_rename_relabels_that_placement_alone_and_checks_what_the_calle
             edit(guests.database_id),
             viewer(),
             OpBatch {
-                ops: vec![DatabaseOp::RenameColumn {
+                ops: vec![DatabaseOp::Column {
                     table: guests.table_id,
                     column: guests.name,
-                    name: "Stale".into(),
-                    previous_name: None,
+                    change: ColumnChange::Rename {
+                        name: "Stale".into(),
+                        previous_name: None,
+                    },
                 }],
                 base_versions: HashMap::from([(guests.table_id, before)]),
             },
@@ -103,11 +116,13 @@ async fn a_column_rename_relabels_that_placement_alone_and_checks_what_the_calle
             edit(guests.database_id),
             viewer(),
             OpBatch {
-                ops: vec![DatabaseOp::RenameColumn {
+                ops: vec![DatabaseOp::Column {
                     table: guests.table_id,
                     column: guests.name,
-                    name: "Wrong previous".into(),
-                    previous_name: Some("Name".into()),
+                    change: ColumnChange::Rename {
+                        name: "Wrong previous".into(),
+                        previous_name: Some("Name".into()),
+                    },
                 }],
                 base_versions: HashMap::from([(guests.table_id, after)]),
             },
@@ -132,11 +147,13 @@ async fn a_column_rename_relabels_that_placement_alone_and_checks_what_the_calle
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::RenameColumn {
+            vec![DatabaseOp::Column {
                 table: guests.table_id,
                 column: guests.name,
-                name: "Work item".into(),
-                previous_name: Some("Task".into()),
+                change: ColumnChange::Rename {
+                    name: "Work item".into(),
+                    previous_name: Some("Task".into()),
+                },
             }]
             .into(),
         )
@@ -144,8 +161,11 @@ async fn a_column_rename_relabels_that_placement_alone_and_checks_what_the_calle
         .unwrap();
     assert_eq!(
         next,
-        vec![OpResult::ColumnRenamed {
-            table_version: TableVersion(after.0 + 1)
+        vec![OpResult::Column {
+            table: guests.table_id,
+            column: guests.name,
+            table_version: TableVersion(after.0 + 1),
+            change: ColumnResult::Renamed,
         }]
     );
     assert_eq!(
@@ -170,11 +190,13 @@ async fn concurrent_column_renames_have_exactly_one_winner(pool: PgPool) {
         service.apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::RenameColumn {
+            vec![DatabaseOp::Column {
                 table: guests.table_id,
                 column: guests.name,
-                name: name.into(),
-                previous_name: Some("Name".into()),
+                change: ColumnChange::Rename {
+                    name: name.into(),
+                    previous_name: Some("Name".into()),
+                },
             }]
             .into(),
         )
@@ -205,11 +227,13 @@ async fn concurrent_column_renames_have_exactly_one_winner(pool: PgPool) {
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::RenameColumn {
+            vec![DatabaseOp::Column {
                 table: guests.table_id,
                 column: guests.name,
-                name: "Hidden".into(),
-                previous_name: Some(winner.into()),
+                change: ColumnChange::Rename {
+                    name: "Hidden".into(),
+                    previous_name: Some(winner.into()),
+                },
             }]
             .into(),
         )

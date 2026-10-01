@@ -3,7 +3,15 @@ import { databasesKeys } from '@queries/storage/keys';
 import type { ColumnDetail } from '@service-storage/generated/schemas/columnDetail';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import { err, errAsync, ok, okAsync } from 'neverthrow';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterEach,
+  assert,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { createTableWithName } from './create-table';
 
 const transport = vi.hoisted(() => ({
@@ -85,8 +93,19 @@ beforeEach(() => {
   transport.applyOps.mockImplementation(() =>
     okAsync({
       results: [
-        { kind: 'table_created', table: 'projects', tableVersion: 1 },
-        { kind: 'column_created', column: 'name', tableVersion: 1 },
+        {
+          kind: 'table',
+          table: 'projects',
+          tableVersion: 1,
+          change: { kind: 'created' },
+        },
+        {
+          kind: 'column',
+          table: 'projects',
+          column: 'name',
+          tableVersion: 1,
+          change: { kind: 'created' },
+        },
       ],
     })
   );
@@ -104,27 +123,31 @@ describe('table setup', () => {
     expect(transport.applyOps).toHaveBeenCalledTimes(1);
     const [{ id, request }] = transport.applyOps.mock.calls[0];
     const [table, column] = request.ops;
+    assert(table?.kind === 'table' && column?.kind === 'column');
     expect(id).toBe('db');
     expect(request.ops).toEqual([
       {
-        kind: 'create_table',
-        id: expect.stringMatching(uuidv7),
-        name: 'Projects',
+        kind: 'table',
+        table: expect.stringMatching(uuidv7),
+        change: { kind: 'create', name: 'Projects' },
       },
       {
-        kind: 'create_column',
-        table: table.id,
-        id: expect.stringMatching(uuidv7),
-        definition: {
-          source: 'new',
-          name: 'Name',
-          type: { type: 'text' },
-          inferType: true,
+        kind: 'column',
+        table: table.table,
+        column: expect.stringMatching(uuidv7),
+        change: {
+          kind: 'create',
+          definition: {
+            source: 'new',
+            name: 'Name',
+            type: { type: 'text' },
+            inferType: true,
+          },
         },
       },
     ]);
-    expect(column.id).not.toBe(table.id);
-    expect(result).toEqual(ok({ tableId: table.id, ready: true }));
+    expect(column.column).not.toBe(table.table);
+    expect(result).toEqual(ok({ tableId: table.table, ready: true }));
     expect(
       queryClient.getQueryData(databasesKeys.detail('db').queryKey)
     ).toEqual(detail([name]));

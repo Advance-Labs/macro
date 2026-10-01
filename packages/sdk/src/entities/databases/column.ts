@@ -76,7 +76,7 @@ export class DatabaseColumn {
   /** Change this column's type. See {@link Database.changeColumnType}. */
   changeType(
     options: ChangeColumnTypeOptions,
-  ): Promise<OpResultOf<'column_typed'>> {
+  ): Promise<OpResultOf<'column', 'type_changed'>> {
     return this.table.database.changeColumnType(this, options);
   }
 

@@ -1,4 +1,4 @@
-use models_databases::{DatabaseOp, NewColumn, NewOption};
+use models_databases::{ColumnChange, DatabaseOp, NewColumn, NewOption, TableChange};
 
 use super::*;
 
@@ -90,10 +90,12 @@ async fn renaming_a_table_replaces_its_current_name() {
     assert!(response.database.is_some());
     assert_eq!(
         calls.lock().unwrap().applied,
-        vec![OpBatch::from(vec![DatabaseOp::RenameTable {
+        vec![OpBatch::from(vec![DatabaseOp::Table {
             table: TABLE_ID,
-            name: "Attendees".to_string(),
-            previous_name: Some("Guests".to_string()),
+            change: TableChange::Rename {
+                name: "Attendees".to_string(),
+                previous_name: Some("Guests".to_string()),
+            },
         }])]
     );
 }
@@ -133,14 +135,16 @@ async fn creating_a_table_with_edit_access_succeeds() {
     let [batch] = calls.applied.as_slice() else {
         panic!("one batch, got {:?}", calls.applied);
     };
-    let DatabaseOp::CreateTable { id, .. } = batch.ops[0] else {
+    let DatabaseOp::Table { table: id, .. } = batch.ops[0] else {
         panic!("a table creation, got {:?}", batch.ops);
     };
     assert_eq!(
         *batch,
-        OpBatch::from(vec![DatabaseOp::CreateTable {
-            id,
-            name: "Sessions".to_string(),
+        OpBatch::from(vec![DatabaseOp::Table {
+            table: id,
+            change: TableChange::Create {
+                name: "Sessions".to_string(),
+            },
         }])
     );
     assert_eq!(response.table_id, id, "the response names the minted table");
@@ -201,9 +205,13 @@ async fn adding_a_column_passes_the_type_through() {
     let [batch] = calls.applied.as_slice() else {
         panic!("one batch, got {:?}", calls.applied);
     };
-    let DatabaseOp::CreateColumn {
-        id,
-        definition: NewColumn::New { options, .. },
+    let DatabaseOp::Column {
+        column: id,
+        change:
+            ColumnChange::Create {
+                definition: NewColumn::New { options, .. },
+                ..
+            },
         ..
     } = &batch.ops[0]
     else {
@@ -211,25 +219,27 @@ async fn adding_a_column_passes_the_type_through() {
     };
     assert_eq!(
         *batch,
-        OpBatch::from(vec![DatabaseOp::CreateColumn {
+        OpBatch::from(vec![DatabaseOp::Column {
             table: TABLE_ID,
-            id: *id,
-            definition: NewColumn::New {
-                name: "Dietary Needs".to_string(),
-                kind: ColumnKind::Select { multi: true },
-                options: vec![
-                    NewOption {
-                        id: options[0].id,
-                        label: "Vegan".to_string(),
-                    },
-                    NewOption {
-                        id: options[1].id,
-                        label: "Gluten-free".to_string(),
-                    },
-                ],
-                infer_type: false,
+            column: *id,
+            change: ColumnChange::Create {
+                definition: NewColumn::New {
+                    name: "Dietary Needs".to_string(),
+                    kind: ColumnKind::Select { multi: true },
+                    options: vec![
+                        NewOption {
+                            id: options[0].id,
+                            label: "Vegan".to_string(),
+                        },
+                        NewOption {
+                            id: options[1].id,
+                            label: "Gluten-free".to_string(),
+                        },
+                    ],
+                    infer_type: false,
+                },
+                after: None,
             },
-            after: None,
         }])
     );
     assert_ne!(options[0].id, options[1].id, "each option mints its own id");
@@ -258,19 +268,21 @@ async fn adding_a_people_column_names_the_entity_kind() {
 
     assert_eq!(
         calls.lock().unwrap().applied,
-        vec![OpBatch::from(vec![DatabaseOp::CreateColumn {
+        vec![OpBatch::from(vec![DatabaseOp::Column {
             table: TABLE_ID,
-            id: response.column_id,
-            definition: NewColumn::New {
-                name: "Host".to_string(),
-                kind: ColumnKind::Entity {
-                    target: models_databases::EntityKind::User,
-                    multi: false,
+            column: response.column_id,
+            change: ColumnChange::Create {
+                definition: NewColumn::New {
+                    name: "Host".to_string(),
+                    kind: ColumnKind::Entity {
+                        target: models_databases::EntityKind::User,
+                        multi: false,
+                    },
+                    options: vec![],
+                    infer_type: false,
                 },
-                options: vec![],
-                infer_type: false,
+                after: None,
             },
-            after: None,
         }])]
     );
 }
@@ -371,19 +383,21 @@ async fn adding_a_relation_column_targets_this_database() {
 
     assert_eq!(
         calls.lock().unwrap().applied,
-        vec![OpBatch::from(vec![DatabaseOp::CreateColumn {
+        vec![OpBatch::from(vec![DatabaseOp::Column {
             table: TABLE_ID,
-            id: response.column_id,
-            definition: NewColumn::New {
-                name: "Party".to_string(),
-                kind: ColumnKind::Relation {
-                    database: DATABASE_ID,
-                    table: parties,
+            column: response.column_id,
+            change: ColumnChange::Create {
+                definition: NewColumn::New {
+                    name: "Party".to_string(),
+                    kind: ColumnKind::Relation {
+                        database: DATABASE_ID,
+                        table: parties,
+                    },
+                    options: vec![],
+                    infer_type: false,
                 },
-                options: vec![],
-                infer_type: false,
+                after: None,
             },
-            after: None,
         }])]
     );
 }

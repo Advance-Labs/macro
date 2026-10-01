@@ -1,4 +1,4 @@
-use models_databases::{DatabaseOp, NewOption};
+use models_databases::{ColumnChange, DatabaseOp, NewOption, TableChange};
 
 use super::*;
 
@@ -22,11 +22,13 @@ async fn renaming_a_column_replaces_its_current_label() {
     assert!(response.database.is_some());
     assert_eq!(
         calls.lock().unwrap().applied,
-        vec![OpBatch::from(vec![DatabaseOp::RenameColumn {
+        vec![OpBatch::from(vec![DatabaseOp::Column {
             table: TABLE_ID,
             column: COLUMN_ID,
-            name: " RSVP ".to_string(),
-            previous_name: Some("Status".to_string()),
+            change: ColumnChange::Rename {
+                name: " RSVP ".to_string(),
+                previous_name: Some("Status".to_string()),
+            },
         }])]
     );
 }
@@ -78,25 +80,33 @@ async fn changing_a_column_type_uses_the_current_version_and_adds_extra_options(
     let [batch] = calls.applied.as_slice() else {
         panic!("one batch, got {:?}", calls.applied);
     };
-    let DatabaseOp::AddOptions { options, .. } = &batch.ops[1] else {
+    let DatabaseOp::Column {
+        change: ColumnChange::AddOptions { options },
+        ..
+    } = &batch.ops[1]
+    else {
         panic!("the options follow the change, got {:?}", batch.ops);
     };
     assert_eq!(
         *batch,
         OpBatch {
             ops: vec![
-                DatabaseOp::ChangeColumnType {
+                DatabaseOp::Column {
                     table: TABLE_ID,
                     column: COLUMN_ID,
-                    to: ColumnKind::Select { multi: false },
+                    change: ColumnChange::ChangeType {
+                        to: ColumnKind::Select { multi: false },
+                    },
                 },
-                DatabaseOp::AddOptions {
+                DatabaseOp::Column {
                     table: TABLE_ID,
                     column: COLUMN_ID,
-                    options: vec![NewOption {
-                        id: options[0].id,
-                        label: "Waitlisted".to_string(),
-                    }],
+                    change: ColumnChange::AddOptions {
+                        options: vec![NewOption {
+                            id: options[0].id,
+                            label: "Waitlisted".to_string(),
+                        }],
+                    },
                 },
             ],
             base_versions: HashMap::from([(TABLE_ID, TableVersion(3))]),
@@ -125,12 +135,14 @@ async fn changing_a_column_to_a_relation_targets_this_database() {
     assert_eq!(
         calls.lock().unwrap().applied,
         vec![OpBatch {
-            ops: vec![DatabaseOp::ChangeColumnType {
+            ops: vec![DatabaseOp::Column {
                 table: TABLE_ID,
                 column: COLUMN_ID,
-                to: ColumnKind::Relation {
-                    database: DATABASE_ID,
-                    table: parties,
+                change: ColumnChange::ChangeType {
+                    to: ColumnKind::Relation {
+                        database: DATABASE_ID,
+                        table: parties,
+                    },
                 },
             }],
             base_versions: HashMap::from([(TABLE_ID, TableVersion(3))]),
@@ -158,12 +170,14 @@ async fn changing_a_column_to_people_names_the_entity_kind() {
     assert_eq!(
         calls.lock().unwrap().applied,
         vec![OpBatch {
-            ops: vec![DatabaseOp::ChangeColumnType {
+            ops: vec![DatabaseOp::Column {
                 table: TABLE_ID,
                 column: COLUMN_ID,
-                to: ColumnKind::Entity {
-                    target: models_databases::EntityKind::User,
-                    multi: true,
+                change: ColumnChange::ChangeType {
+                    to: ColumnKind::Entity {
+                        target: models_databases::EntityKind::User,
+                        multi: true,
+                    },
                 },
             }],
             base_versions: HashMap::from([(TABLE_ID, TableVersion(3))]),
@@ -217,9 +231,10 @@ async fn deleting_a_column_guards_on_the_version_just_read() {
     assert_eq!(
         calls.lock().unwrap().applied,
         vec![OpBatch {
-            ops: vec![DatabaseOp::DeleteColumn {
+            ops: vec![DatabaseOp::Column {
                 table: TABLE_ID,
                 column: COLUMN_ID,
+                change: ColumnChange::Delete,
             }],
             base_versions: HashMap::from([(TABLE_ID, TableVersion(3))]),
         }]
@@ -242,9 +257,11 @@ async fn reordering_columns_guards_on_the_version_just_read() {
     assert_eq!(
         calls.lock().unwrap().applied,
         vec![OpBatch {
-            ops: vec![DatabaseOp::ReorderColumns {
+            ops: vec![DatabaseOp::Table {
                 table: TABLE_ID,
-                order: vec![COLUMN_ID],
+                change: TableChange::ReorderColumns {
+                    order: vec![COLUMN_ID],
+                },
             }],
             base_versions: HashMap::from([(TABLE_ID, TableVersion(3))]),
         }]
@@ -330,8 +347,9 @@ async fn deleting_a_table_returns_the_schema_after_it() {
     assert!(response.database.is_some());
     assert_eq!(
         calls.lock().unwrap().applied,
-        vec![OpBatch::from(vec![DatabaseOp::DeleteTable {
-            table: TABLE_ID
+        vec![OpBatch::from(vec![DatabaseOp::Table {
+            table: TABLE_ID,
+            change: TableChange::Delete,
         }])]
     );
 }

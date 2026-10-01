@@ -37,7 +37,8 @@ use database_sql::split::GqlQuery;
 use filter_ast::Expr;
 use item_filters::ast::properties::{PropertiesLiteral, PropertyMatchValue};
 use models_databases::{
-    CellValue, CellWrite, DatabaseOp, OpResult, OptionRef, RowChanges, TableVersion,
+    CellValue, CellWrite, DatabaseOp, OpResult, OptionRef, RowChanges, RowsChange, RowsResult,
+    TableVersion,
 };
 use serde::Deserialize;
 use serde_json::{Value as Json, json};
@@ -598,16 +599,18 @@ impl OpsSink for Api {
     ) -> Result<Vec<OpResult>, Self::Error> {
         let mut results = Vec::new();
         for op in ops {
-            let (inserted, affected) = match op {
-                DatabaseOp::InsertRows { rows, .. } => {
+            let DatabaseOp::Rows { table, change } = op else {
+                return Err(WriteError::SchemaNotWired);
+            };
+            let change = match change {
+                RowsChange::Insert { rows } => {
                     let mut inserted = Vec::new();
                     for cells in rows {
                         inserted.push(self.create(cells).await?);
                     }
-                    let affected = inserted.len();
-                    (inserted, affected)
+                    RowsResult::Inserted { rows: inserted }
                 }
-                DatabaseOp::UpdateRows { changes, .. } => {
+                RowsChange::Update { changes } => {
                     let changes: Vec<(RowId, Vec<CellWrite>)> = match changes {
                         RowChanges::Uniform { rows, cells } => {
                             rows.into_iter().map(|row| (row, cells.clone())).collect()
@@ -623,19 +626,18 @@ impl OpsSink for Api {
                             self.set(task, cell.column, cell.value).await?;
                         }
                     }
-                    (Vec::new(), affected)
+                    RowsResult::Updated {
+                        affected: affected as u32,
+                    }
                 }
-                DatabaseOp::DeleteRows { .. } => {
+                RowsChange::Delete { .. } => {
                     return Err(WriteError::DeleteNotWired);
                 }
-                _ => {
-                    return Err(WriteError::SchemaNotWired);
-                }
             };
-            results.push(OpResult::RowsWritten {
+            results.push(OpResult::Rows {
+                table,
                 table_version: TableVersion(0),
-                inserted,
-                affected: affected as u32,
+                change,
             });
         }
         Ok(results)

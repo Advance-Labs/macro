@@ -175,9 +175,12 @@
     {
       "results": [
         {
-          "affected": 2,
-          "inserted": [],
-          "kind": "rows_written",
+          "change": {
+            "affected": 2,
+            "kind": "updated"
+          },
+          "kind": "rows",
+          "table": "01990000-0000-7000-8000-00000000d001",
           "tableVersion": 8
         }
       ],
@@ -186,33 +189,36 @@
         "id": 1,
         "ops": [
           {
-            "changes": {
-              "cells": [
-                {
-                  "column": "01990000-0000-7000-8000-00000000b003",
-                  "value": {
-                    "type": "options",
-                    "value": [
-                      {
-                        "label": "Lead"
-                      }
-                    ]
+            "change": {
+              "changes": {
+                "cells": [
+                  {
+                    "column": "01990000-0000-7000-8000-00000000b003",
+                    "value": {
+                      "type": "options",
+                      "value": [
+                        {
+                          "label": "Lead"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "column": "01990000-0000-7000-8000-00000000b006",
+                    "value": {
+                      "type": "clear"
+                    }
                   }
-                },
-                {
-                  "column": "01990000-0000-7000-8000-00000000b006",
-                  "value": {
-                    "type": "clear"
-                  }
-                }
-              ],
-              "kind": "uniform",
-              "rows": [
-                "01990000-0000-7000-8000-00000000e001",
-                "01990000-0000-7000-8000-00000000e002"
-              ]
+                ],
+                "kind": "uniform",
+                "rows": [
+                  "01990000-0000-7000-8000-00000000e001",
+                  "01990000-0000-7000-8000-00000000e002"
+                ]
+              },
+              "kind": "update"
             },
-            "kind": "update_rows",
+            "kind": "rows",
             "table": "01990000-0000-7000-8000-00000000d001"
           }
         ],

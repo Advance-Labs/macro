@@ -4,14 +4,19 @@
  * document_storage_service
  * OpenAPI spec version: 0.1.0
  */
+
 import type { DatabaseOpOneOfSevenKind } from './databaseOpOneOfSevenKind';
+import type { ViewChange } from './viewChange';
 
 /**
- * Set the order of the database's tables: `order` names every one of
-them once.
+ * A change to one view of a table.
  */
 export type DatabaseOpOneOfSeven = {
+  /** What changes. */
+  change: ViewChange;
   kind: DatabaseOpOneOfSevenKind;
-  /** Every table, in its new order. */
-  order: string[];
+  /** The view's table. */
+  table: string;
+  /** The view; for a creation, its new id, minted by the client. */
+  view: string;
 };

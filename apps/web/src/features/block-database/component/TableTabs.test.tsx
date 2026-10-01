@@ -152,7 +152,7 @@ describe('reordering tabs', () => {
       ok({
         results: [
           {
-            kind: 'tables_reordered',
+            kind: 'reorder_tables',
             tables: [
               { table: 'budget', version: 2 },
               { table: 'guests', version: 4 },

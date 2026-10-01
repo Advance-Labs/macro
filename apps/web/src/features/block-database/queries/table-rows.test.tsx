@@ -117,22 +117,25 @@ function guests(
     changesApplied: 0,
   };
 }
-const rowsWritten: Extract<OpResult, { kind: 'rows_written' }> = {
-  kind: 'rows_written',
+const rowsWritten: Extract<OpResult, { kind: 'rows' }> = {
+  kind: 'rows',
+  table: 'guests-table',
   tableVersion: 6,
-  inserted: [],
-  affected: 1,
+  change: { kind: 'updated', affected: 1 },
 };
 const written: OpResult[] = [rowsWritten];
 /** The one op that sets `record`'s Name cell. */
 function nameEdit(value: CellValue): DatabaseOp[] {
   return [
     {
-      kind: 'update_rows',
+      kind: 'rows',
       table: 'guests-table',
-      changes: {
-        kind: 'per_row',
-        rows: [{ row: 'record', cells: [{ column: 'name', value }] }],
+      change: {
+        kind: 'update',
+        changes: {
+          kind: 'per_row',
+          rows: [{ row: 'record', cells: [{ column: 'name', value }] }],
+        },
       },
     },
   ];
@@ -141,9 +144,9 @@ function nameEdit(value: CellValue): DatabaseOp[] {
 function nameInsert(value: CellValue): DatabaseOp[] {
   return [
     {
-      kind: 'insert_rows',
+      kind: 'rows',
       table: 'guests-table',
-      rows: [[{ column: 'name', value }]],
+      change: { kind: 'insert', rows: [[{ column: 'name', value }]] },
     },
   ];
 }
@@ -476,7 +479,13 @@ describe('database view reads', () => {
     ];
     const applyOps = vi.fn<ApplyOps>(() =>
       okAsync([
-        { kind: 'options_added', tableVersion: 6, added: ['new-option'] },
+        {
+          kind: 'column',
+          table: 'guests-table',
+          column: 'name',
+          tableVersion: 6,
+          change: { kind: 'options_added', added: ['new-option'] },
+        },
         rowsWritten,
       ])
     );
@@ -492,27 +501,33 @@ describe('database view reads', () => {
     expect(result.isOk()).toBe(true);
     expect(applyOps).toHaveBeenCalledExactlyOnceWith([
       {
-        kind: 'add_options',
+        kind: 'column',
         table: 'guests-table',
         column: 'name',
-        options: [{ id: expect.any(String), label: 'Plus one' }],
+        change: {
+          kind: 'add_options',
+          options: [{ id: expect.any(String), label: 'Plus one' }],
+        },
       },
       {
-        kind: 'update_rows',
+        kind: 'rows',
         table: 'guests-table',
-        changes: {
-          kind: 'per_row',
-          rows: [
-            {
-              row: 'record',
-              cells: [
-                {
-                  column: 'name',
-                  value: { type: 'options', value: [{ label: 'Plus one' }] },
-                },
-              ],
-            },
-          ],
+        change: {
+          kind: 'update',
+          changes: {
+            kind: 'per_row',
+            rows: [
+              {
+                row: 'record',
+                cells: [
+                  {
+                    column: 'name',
+                    value: { type: 'options', value: [{ label: 'Plus one' }] },
+                  },
+                ],
+              },
+            ],
+          },
         },
       },
     ]);
@@ -738,21 +753,27 @@ describe('database rows SQL names', () => {
     );
     expect(applyOps).toHaveBeenLastCalledWith([
       {
-        kind: 'update_rows',
+        kind: 'rows',
         table: 'guests-table',
-        changes: {
-          kind: 'per_row',
-          rows: [
-            {
-              row: 'record',
-              cells: [
-                {
-                  column: 'name',
-                  value: { type: 'rows', value: ['customer-1', 'customer-2'] },
-                },
-              ],
-            },
-          ],
+        change: {
+          kind: 'update',
+          changes: {
+            kind: 'per_row',
+            rows: [
+              {
+                row: 'record',
+                cells: [
+                  {
+                    column: 'name',
+                    value: {
+                      type: 'rows',
+                      value: ['customer-1', 'customer-2'],
+                    },
+                  },
+                ],
+              },
+            ],
+          },
         },
       },
     ]);
@@ -771,7 +792,12 @@ describe('database rows SQL names', () => {
     await waitFor(() => expect(source.loading()).toBe(false));
     applyOps.mockClear();
     applyOps.mockReturnValueOnce(
-      okAsync([{ ...rowsWritten, inserted: ['new-record'] }])
+      okAsync([
+        {
+          ...rowsWritten,
+          change: { kind: 'inserted', rows: ['new-record'] },
+        },
+      ])
     );
     const result = await source.write(
       { kind: 'create', values: { name: '["customer-1"]' } },
@@ -1056,7 +1082,8 @@ describe('accepted writes after switching tables', () => {
     const writes: DatabaseOp[][] = [];
     const applyOps = vi.fn<ApplyOps>((ops) => {
       writes.push(ops);
-      const creating = ops[0]?.kind === 'insert_rows';
+      const creating =
+        ops[0]?.kind === 'rows' && ops[0].change.kind === 'insert';
       const applied = async (): Promise<OpResult[]> => {
         if (creating) await createReady;
         if (creating)
@@ -1070,7 +1097,9 @@ describe('accepted writes after switching tables', () => {
           {
             ...rowsWritten,
             tableVersion: version,
-            inserted: creating ? ['server-record'] : [],
+            change: creating
+              ? { kind: 'inserted', rows: ['server-record'] }
+              : { kind: 'updated', affected: 1 },
           },
         ];
       };
@@ -1109,21 +1138,24 @@ describe('accepted writes after switching tables', () => {
       nameInsert({ type: 'text', value: 'Accepted record' }),
       [
         {
-          kind: 'update_rows',
+          kind: 'rows',
           table: 'guests-table',
-          changes: {
-            kind: 'per_row',
-            rows: [
-              {
-                row: 'server-record',
-                cells: [
-                  {
-                    column: 'status',
-                    value: { type: 'text', value: 'In review' },
-                  },
-                ],
-              },
-            ],
+          change: {
+            kind: 'update',
+            changes: {
+              kind: 'per_row',
+              rows: [
+                {
+                  row: 'server-record',
+                  cells: [
+                    {
+                      column: 'status',
+                      value: { type: 'text', value: 'In review' },
+                    },
+                  ],
+                },
+              ],
+            },
           },
         },
       ],

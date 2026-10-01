@@ -6,6 +6,7 @@
  */
 import type { TakenIdOneOf } from './takenIdOneOf';
 import type { TakenIdOneOfFive } from './takenIdOneOfFive';
+import type { TakenIdOneOfSeven } from './takenIdOneOfSeven';
 import type { TakenIdOneOfThree } from './takenIdOneOfThree';
 
 /**
@@ -13,4 +14,8 @@ import type { TakenIdOneOfThree } from './takenIdOneOfThree';
 which refuses the request: a retried request whose first attempt
 committed, or an id minted twice.
  */
-export type TakenId = TakenIdOneOf | TakenIdOneOfThree | TakenIdOneOfFive;
+export type TakenId =
+  | TakenIdOneOf
+  | TakenIdOneOfThree
+  | TakenIdOneOfFive
+  | TakenIdOneOfSeven;

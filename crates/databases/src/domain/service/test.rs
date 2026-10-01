@@ -14,8 +14,9 @@ use macro_event_broker::{EventBrokerError, MacroEvent, MacroEventBroker};
 use macro_user_id::user_id::MacroUserIdStr;
 use models_databases::position::Position;
 use models_databases::{
-    CellValue, CellWrite, ColumnKind, DatabaseOp, NewColumn, NewOption, OpResult, OptionId,
-    OptionRef, PropertyId, RowChanges,
+    CellValue, CellWrite, ColumnChange, ColumnKind, ColumnResult, DatabaseOp, NewColumn, NewOption,
+    OpResult, OptionId, OptionRef, PropertyId, RowChanges, RowsChange, RowsResult, TableChange,
+    TableResult, ViewChange, ViewResult,
 };
 use models_properties::service::property_definition::PropertyDefinition;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
@@ -178,22 +179,30 @@ async fn insert_names(seeded: &Seeded, names: &[&str]) -> Vec<RowId> {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::InsertRows {
+            OpBatch::from(vec![DatabaseOp::Rows {
                 table: seeded.table_id,
-                rows: names
-                    .iter()
-                    .map(|name| {
-                        vec![CellWrite {
-                            column: seeded.name_column.id,
-                            value: CellValue::Text((*name).into()),
-                        }]
-                    })
-                    .collect(),
+                change: RowsChange::Insert {
+                    rows: names
+                        .iter()
+                        .map(|name| {
+                            vec![CellWrite {
+                                column: seeded.name_column.id,
+                                value: CellValue::Text((*name).into()),
+                            }]
+                        })
+                        .collect(),
+                },
             }]),
         )
         .await
         .unwrap();
-    let [OpResult::RowsWritten { inserted, .. }] = results.as_slice() else {
+    let [
+        OpResult::Rows {
+            change: RowsResult::Inserted { rows: inserted },
+            ..
+        },
+    ] = results.as_slice()
+    else {
         panic!("expected one insert, got {results:?}");
     };
     inserted.clone()
@@ -245,36 +254,40 @@ async fn seeded() -> Seeded {
             receipt::<EditAccessLevel>(database.id, OWNER, AccessLevel::Owner),
             viewer(OWNER),
             OpBatch::from(vec![
-                DatabaseOp::CreateColumn {
+                DatabaseOp::Column {
                     table: table_id,
-                    id: status_column,
-                    definition: NewColumn::New {
-                        name: "Status".into(),
-                        kind: ColumnKind::Select { multi: false },
-                        options: vec![
-                            NewOption {
-                                id: OptionId::new(),
-                                label: "Going".into(),
-                            },
-                            NewOption {
-                                id: OptionId::new(),
-                                label: "Declined".into(),
-                            },
-                        ],
-                        infer_type: false,
+                    column: status_column,
+                    change: ColumnChange::Create {
+                        definition: NewColumn::New {
+                            name: "Status".into(),
+                            kind: ColumnKind::Select { multi: false },
+                            options: vec![
+                                NewOption {
+                                    id: OptionId::new(),
+                                    label: "Going".into(),
+                                },
+                                NewOption {
+                                    id: OptionId::new(),
+                                    label: "Declined".into(),
+                                },
+                            ],
+                            infer_type: false,
+                        },
+                        after: None,
                     },
-                    after: None,
                 },
-                DatabaseOp::CreateColumn {
+                DatabaseOp::Column {
                     table: table_id,
-                    id: plus_ones_column,
-                    definition: NewColumn::New {
-                        name: "Plus ones".into(),
-                        kind: ColumnKind::Number,
-                        options: vec![],
-                        infer_type: false,
+                    column: plus_ones_column,
+                    change: ColumnChange::Create {
+                        definition: NewColumn::New {
+                            name: "Plus ones".into(),
+                            kind: ColumnKind::Number,
+                            options: vec![],
+                            infer_type: false,
+                        },
+                        after: None,
                     },
-                    after: None,
                 },
             ]),
         )
@@ -291,27 +304,35 @@ async fn seeded() -> Seeded {
         .apply_ops(
             receipt::<EditAccessLevel>(database.id, OWNER, AccessLevel::Owner),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::InsertRows {
+            OpBatch::from(vec![DatabaseOp::Rows {
                 table: table_id,
-                rows: vec![vec![
-                    CellWrite {
-                        column: name_column,
-                        value: CellValue::Text("Sam".into()),
-                    },
-                    CellWrite {
-                        column: status_column,
-                        value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
-                    },
-                    CellWrite {
-                        column: plus_ones_column,
-                        value: CellValue::Number(2.0),
-                    },
-                ]],
+                change: RowsChange::Insert {
+                    rows: vec![vec![
+                        CellWrite {
+                            column: name_column,
+                            value: CellValue::Text("Sam".into()),
+                        },
+                        CellWrite {
+                            column: status_column,
+                            value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
+                        },
+                        CellWrite {
+                            column: plus_ones_column,
+                            value: CellValue::Number(2.0),
+                        },
+                    ]],
+                },
             }]),
         )
         .await
         .unwrap();
-    let [OpResult::RowsWritten { inserted, .. }] = inserted.as_slice() else {
+    let [
+        OpResult::Rows {
+            change: RowsResult::Inserted { rows: inserted },
+            ..
+        },
+    ] = inserted.as_slice()
+    else {
         panic!("expected one insert, got {inserted:?}");
     };
     // Tests count the batches their own writes make, not the seed row's.

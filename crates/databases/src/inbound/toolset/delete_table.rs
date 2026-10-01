@@ -5,7 +5,7 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
-use models_databases::{DatabaseId, DatabaseOp, TableId};
+use models_databases::{DatabaseId, DatabaseOp, TableChange, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -79,8 +79,9 @@ where
             .apply(
                 user_id,
                 self.database_id,
-                OpBatch::from(vec![DatabaseOp::DeleteTable {
+                OpBatch::from(vec![DatabaseOp::Table {
                     table: self.table_id,
+                    change: TableChange::Delete,
                 }]),
             )
             .await?;

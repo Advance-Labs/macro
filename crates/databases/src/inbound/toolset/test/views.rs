@@ -1,8 +1,8 @@
 //! SaveDatabaseView: a typed view saved through the view ops, created under
 //! a new name and replacing the view of a name the table has.
 
-use models_databases::DatabaseOp;
 use models_databases::views::{NewView, RequestedLayout, ViewLayout, ViewQuery};
+use models_databases::{DatabaseOp, ViewChange};
 
 use super::*;
 
@@ -32,21 +32,25 @@ async fn a_new_name_creates_the_view_through_an_op() {
         .await
         .unwrap();
 
+    // The tool mints the new view's id; the view saved is the one it named.
     assert!(saved.created);
-    assert_eq!(saved.view.id, VIEW_ID);
+    assert_ne!(saved.view.id, VIEW_ID);
     assert_eq!(
         calls.lock().unwrap().applied,
-        vec![OpBatch::from(vec![DatabaseOp::CreateView {
+        vec![OpBatch::from(vec![DatabaseOp::View {
             table: TABLE_ID,
-            view: NewView {
-                name: "Stages".into(),
-                query: ViewQuery::default(),
-                layout: RequestedLayout::Board {
-                    group_by: COLUMN_ID,
-                    title: None,
-                    lanes: vec![],
-                    card_fields: vec![],
-                    hide_empty_lanes: true,
+            view: saved.view.id,
+            change: ViewChange::Create {
+                view: NewView {
+                    name: "Stages".into(),
+                    query: ViewQuery::default(),
+                    layout: RequestedLayout::Board {
+                        group_by: COLUMN_ID,
+                        title: None,
+                        lanes: vec![],
+                        card_fields: vec![],
+                        hide_empty_lanes: true,
+                    },
                 },
             },
         }])]
@@ -81,18 +85,20 @@ async fn the_name_of_an_existing_view_replaces_it() {
     assert!(!saved.created);
     assert_eq!(
         calls.lock().unwrap().applied,
-        vec![OpBatch::from(vec![DatabaseOp::UpdateView {
+        vec![OpBatch::from(vec![DatabaseOp::View {
             table: TABLE_ID,
             view: VIEW_ID,
-            name: Some("Stages".into()),
-            query: Some(ViewQuery::default()),
-            layout: Some(RequestedLayout::Board {
-                group_by: COLUMN_ID,
-                title: None,
-                lanes: vec![],
-                card_fields: vec![],
-                hide_empty_lanes: true,
-            }),
+            change: ViewChange::Update {
+                name: Some("Stages".into()),
+                query: Some(ViewQuery::default()),
+                layout: Some(RequestedLayout::Board {
+                    group_by: COLUMN_ID,
+                    title: None,
+                    lanes: vec![],
+                    card_fields: vec![],
+                    hide_empty_lanes: true,
+                }),
+            },
         }])]
     );
 }

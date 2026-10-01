@@ -287,11 +287,15 @@ export function traceDatabaseSqlRun<Failure extends { kind: string }>(
 /** Post an ops batch inside a `database_sql.ops` span, and log it as one group. */
 export function traceDatabaseOps<Value, Failure>(
   databaseId: string,
-  ops: readonly { kind: string }[],
+  ops: readonly { kind: string; change?: { kind: string } }[],
   apply: () => ResultAsync<Value, Failure>
 ): ResultAsync<Value, Failure> {
   const started = performance.now();
-  const kinds = [...new Set(ops.map((op) => op.kind))];
+  const kinds = [
+    ...new Set(
+      ops.map((op) => (op.change ? `${op.kind}.${op.change.kind}` : op.kind))
+    ),
+  ];
   const span = Telemetry.span('database_sql.ops');
   span.setAttr('database_sql.database_id', databaseId);
   span.setAttr('database_sql.op_count', ops.length);

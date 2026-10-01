@@ -233,12 +233,18 @@ describe('grid values a column cannot take', () => {
 });
 
 describe('grid edits as ops', () => {
-  it('deletes a record as one delete_rows op', () => {
+  it('deletes a record as one rows delete op', () => {
     expect(
       mutationOp('table', { kind: 'delete', rowId: 'row-1' }, () =>
         ok(column('STRING'))
       )
-    ).toEqual(ok({ kind: 'delete_rows', table: 'table', rows: ['row-1'] }));
+    ).toEqual(
+      ok({
+        kind: 'rows',
+        table: 'table',
+        change: { kind: 'delete', rows: ['row-1'] },
+      })
+    );
   });
 
   it('creates a record with every value it starts with, naming options by label', () => {
@@ -250,16 +256,19 @@ describe('grid edits as ops', () => {
       )
     ).toEqual(
       ok({
-        kind: 'insert_rows',
+        kind: 'rows',
         table: 'table',
-        rows: [
-          [
-            {
-              column: 'status',
-              value: { type: 'options', value: [{ label: 'New lane' }] },
-            },
+        change: {
+          kind: 'insert',
+          rows: [
+            [
+              {
+                column: 'status',
+                value: { type: 'options', value: [{ label: 'New lane' }] },
+              },
+            ],
           ],
-        ],
+        },
       })
     );
   });
@@ -268,30 +277,33 @@ describe('grid edits as ops', () => {
     expect(
       missingOptionLabels(
         {
-          kind: 'update_rows',
+          kind: 'rows',
           table: 'table',
-          changes: {
-            kind: 'per_row',
-            rows: [
-              {
-                row: 'row-1',
-                cells: [
-                  {
-                    column: 'tags',
-                    value: {
-                      type: 'options',
-                      value: [
-                        { label: 'urgent' },
-                        { label: 'Blocked' },
-                        { label: 'blocked' },
-                        { id: 'option-1' },
-                      ],
+          change: {
+            kind: 'update',
+            changes: {
+              kind: 'per_row',
+              rows: [
+                {
+                  row: 'row-1',
+                  cells: [
+                    {
+                      column: 'tags',
+                      value: {
+                        type: 'options',
+                        value: [
+                          { label: 'urgent' },
+                          { label: 'Blocked' },
+                          { label: 'blocked' },
+                          { id: 'option-1' },
+                        ],
+                      },
                     },
-                  },
-                  { column: 'name', value: { type: 'text', value: 'Ada' } },
-                ],
-              },
-            ],
+                    { column: 'name', value: { type: 'text', value: 'Ada' } },
+                  ],
+                },
+              ],
+            },
           },
         },
         (columnId) => (columnId === 'tags' ? ['Urgent'] : [])

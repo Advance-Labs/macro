@@ -20,7 +20,15 @@ afterEach(() => {
 describe('column schema changes', () => {
   it('sends a type change, with nothing but its type, against the table version it was made at', async () => {
     storage.applyDatabaseOps.mockReturnValue(
-      okAsync([{ kind: 'column_typed', tableVersion: 5 }])
+      okAsync([
+        {
+          kind: 'column',
+          table: 'tasks',
+          column: 'price',
+          tableVersion: 5,
+          change: { kind: 'type_changed' },
+        },
+      ])
     );
 
     const changed = await updateDatabaseColumns({
@@ -39,10 +47,10 @@ describe('column schema changes', () => {
       'db',
       [
         {
-          kind: 'change_column_type',
+          kind: 'column',
           table: 'tasks',
           column: 'price',
-          to: { type: 'number' },
+          change: { kind: 'change_type', to: { type: 'number' } },
         },
       ],
       { tasks: 4 }
@@ -53,7 +61,15 @@ describe('column schema changes', () => {
 
   it('names this database as a relation target', async () => {
     storage.applyDatabaseOps.mockReturnValue(
-      okAsync([{ kind: 'column_typed', tableVersion: 5 }])
+      okAsync([
+        {
+          kind: 'column',
+          table: 'tasks',
+          column: 'owner',
+          tableVersion: 5,
+          change: { kind: 'type_changed' },
+        },
+      ])
     );
 
     await updateDatabaseColumns({
@@ -71,10 +87,13 @@ describe('column schema changes', () => {
       'db',
       [
         {
-          kind: 'change_column_type',
+          kind: 'column',
           table: 'tasks',
           column: 'owner',
-          to: { type: 'relation', database: 'db', table: 'people' },
+          change: {
+            kind: 'change_type',
+            to: { type: 'relation', database: 'db', table: 'people' },
+          },
         },
       ],
       { tasks: 4 }
@@ -83,7 +102,15 @@ describe('column schema changes', () => {
 
   it('deletes a column against the table version', async () => {
     storage.applyDatabaseOps.mockReturnValue(
-      okAsync([{ kind: 'column_deleted', tableVersion: 8 }])
+      okAsync([
+        {
+          kind: 'column',
+          table: 'tasks',
+          column: 'notes',
+          tableVersion: 8,
+          change: { kind: 'deleted' },
+        },
+      ])
     );
 
     await updateDatabaseColumns({
@@ -95,14 +122,28 @@ describe('column schema changes', () => {
 
     expect(storage.applyDatabaseOps).toHaveBeenCalledExactlyOnceWith(
       'db',
-      [{ kind: 'delete_column', table: 'tasks', column: 'notes' }],
+      [
+        {
+          kind: 'column',
+          table: 'tasks',
+          column: 'notes',
+          change: { kind: 'delete' },
+        },
+      ],
       { tasks: 7 }
     );
   });
 
   it('reorders columns against the table version', async () => {
     storage.applyDatabaseOps.mockReturnValue(
-      okAsync([{ kind: 'columns_reordered', tableVersion: 9 }])
+      okAsync([
+        {
+          kind: 'table',
+          table: 'tasks',
+          tableVersion: 9,
+          change: { kind: 'columns_reordered' },
+        },
+      ])
     );
 
     await updateDatabaseColumns({
@@ -114,7 +155,13 @@ describe('column schema changes', () => {
 
     expect(storage.applyDatabaseOps).toHaveBeenCalledExactlyOnceWith(
       'db',
-      [{ kind: 'reorder_columns', table: 'tasks', order: ['title', 'status'] }],
+      [
+        {
+          kind: 'table',
+          table: 'tasks',
+          change: { kind: 'reorder_columns', order: ['title', 'status'] },
+        },
+      ],
       { tasks: 8 }
     );
   });

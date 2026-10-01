@@ -3,8 +3,9 @@
 //! statement's [`Outcome`].
 
 use models_databases::{
-    CellValue, CellWrite, ColumnKind as OpColumnKind, DatabaseOp, EntityKind as OpEntityKind,
-    EntityRef, OpResult, OptionId, OptionRef, RowChange, RowChanges, RowId, TableId,
+    CellValue, CellWrite, ColumnChange, ColumnKind as OpColumnKind, ColumnResult, DatabaseOp,
+    EntityKind as OpEntityKind, EntityRef, OpResult, OptionId, OptionRef, RowChange, RowChanges,
+    RowId, RowsChange, RowsResult, TableId,
 };
 use uuid::Uuid;
 
@@ -31,24 +32,26 @@ pub(crate) enum Sent {
 /// `INSERT`: every row in one op. Labels name options the column has.
 pub(crate) fn insert(catalog: &Catalog, query: &InsertQuery) -> DatabaseOp {
     let table = table(catalog, query.table);
-    DatabaseOp::InsertRows {
+    DatabaseOp::Rows {
         table: query.table,
-        rows: query
-            .rows
-            .iter()
-            .map(|cells| {
-                cells
-                    .iter()
-                    .map(|(definition, value)| {
-                        let column = column(table, *definition);
-                        CellWrite {
-                            column: column.placement,
-                            value: cell_value(column, Some(value)),
-                        }
-                    })
-                    .collect()
-            })
-            .collect(),
+        change: RowsChange::Insert {
+            rows: query
+                .rows
+                .iter()
+                .map(|cells| {
+                    cells
+                        .iter()
+                        .map(|(definition, value)| {
+                            let column = column(table, *definition);
+                            CellWrite {
+                                column: column.placement,
+                                value: cell_value(column, Some(value)),
+                            }
+                        })
+                        .collect()
+                })
+                .collect(),
+        },
     }
 }
 
@@ -113,26 +116,28 @@ pub(crate) fn update(
                 .collect(),
         }
     };
-    Some(DatabaseOp::UpdateRows {
+    Some(DatabaseOp::Rows {
         table: query.table,
-        changes,
+        change: RowsChange::Update { changes },
     })
 }
 
 /// `DELETE` of the rows its read found; `None` when it found nothing.
 pub(crate) fn delete(table: TableId, found: &Outcome) -> Option<DatabaseOp> {
-    (!found.row_ids.is_empty()).then(|| DatabaseOp::DeleteRows {
+    (!found.row_ids.is_empty()).then(|| DatabaseOp::Rows {
         table,
-        rows: found.row_ids.clone(),
+        change: RowsChange::Delete {
+            rows: found.row_ids.clone(),
+        },
     })
 }
 
 /// `ALTER COLUMN … TYPE`.
 pub(crate) fn alter(catalog: &Catalog, query: &AlterColumnTypeQuery) -> DatabaseOp {
-    DatabaseOp::ChangeColumnType {
+    DatabaseOp::Column {
         table: query.table,
         column: column(table(catalog, query.table), query.column).placement,
-        to: query.to,
+        change: ColumnChange::ChangeType { to: query.to },
     }
 }
 
@@ -146,15 +151,32 @@ pub(crate) fn outcome(sent: &Sent, results: &[OpResult]) -> Result<Outcome, RunE
     match (sent, result) {
         (
             Sent::Rows,
-            OpResult::RowsWritten {
-                inserted, affected, ..
+            OpResult::Rows {
+                change: RowsResult::Inserted { rows },
+                ..
             },
         ) => Ok(Outcome {
-            inserted_row_ids: inserted.clone(),
+            inserted_row_ids: rows.clone(),
+            changes_applied: u32::try_from(rows.len()).unwrap_or(u32::MAX),
+            ..Outcome::default()
+        }),
+        (
+            Sent::Rows,
+            OpResult::Rows {
+                change: RowsResult::Updated { affected } | RowsResult::Deleted { affected },
+                ..
+            },
+        ) => Ok(Outcome {
             changes_applied: *affected,
             ..Outcome::default()
         }),
-        (Sent::Column { table, column, to }, OpResult::ColumnTyped { .. }) => Ok(Outcome {
+        (
+            Sent::Column { table, column, to },
+            OpResult::Column {
+                change: ColumnResult::TypeChanged,
+                ..
+            },
+        ) => Ok(Outcome {
             altered_column: Some(AlteredColumn {
                 table: *table,
                 column: *column,

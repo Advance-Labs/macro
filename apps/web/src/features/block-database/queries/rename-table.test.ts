@@ -31,7 +31,14 @@ const original: Table = {
 };
 const renamed: Table = { ...original, name: 'Attendees', version: 6 };
 const answer: ApplyOpsResponse = {
-  results: [{ kind: 'table_renamed', tableVersion: 6 }],
+  results: [
+    {
+      kind: 'table',
+      table: 'guests',
+      tableVersion: 6,
+      change: { kind: 'renamed' },
+    },
+  ],
 };
 const detail: DatabaseDetail = {
   database: {
@@ -85,10 +92,13 @@ describe('table rename cache', () => {
       request: {
         ops: [
           {
-            kind: 'rename_table',
+            kind: 'table',
             table: 'guests',
-            name: 'Attendees',
-            previousName: 'Guests',
+            change: {
+              kind: 'rename',
+              name: 'Attendees',
+              previousName: 'Guests',
+            },
           },
         ],
       },

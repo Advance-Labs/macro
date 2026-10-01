@@ -1,7 +1,7 @@
 //! The OpenAPI schema names the fields serde actually writes. utoipa reads
 //! some serde attributes and not others (it ignores `rename_all_fields`), so
-//! a sample of every op, result and view is serialized and walked against
-//! the schema it claims.
+//! a sample of every op, result and view, and of every change nested in
+//! them, is serialized and walked against the schema it claims.
 
 use chrono::{TimeZone, Utc};
 use models_databases::views::{
@@ -11,16 +11,28 @@ use models_databases::views::{
     ViewQuery,
 };
 use models_databases::{
-    CellValue, CellWrite, ColumnId, ColumnKind, DatabaseId, DatabaseOp, EntityKind, EntityRef,
-    NewColumn, NewOption, OpResult, OptionId, OptionRef, PropertyId, RowChange, RowChanges, RowId,
-    TableId, TableVersion, VersionedTable, ViewId,
+    CellValue, CellWrite, ColumnChange, ColumnId, ColumnKind, ColumnResult, DatabaseId, DatabaseOp,
+    EntityKind, EntityRef, NewColumn, NewOption, OpResult, OptionId, OptionRef, PropertyId,
+    RowChange, RowChanges, RowId, RowsChange, RowsResult, TableChange, TableId, TableResult,
+    TableVersion, VersionedTable, ViewChange, ViewId, ViewResult,
 };
 use serde_json::{Map, Value};
 use utoipa::OpenApi;
 use uuid::Uuid;
 
 #[derive(OpenApi)]
-#[openapi(components(schemas(DatabaseOp, OpResult)))]
+#[openapi(components(schemas(
+    DatabaseOp,
+    TableChange,
+    ColumnChange,
+    RowsChange,
+    ViewChange,
+    OpResult,
+    TableResult,
+    ColumnResult,
+    RowsResult,
+    ViewResult,
+)))]
 struct Schemas;
 
 const DATABASE: DatabaseId = DatabaseId::from_uuid(Uuid::from_u128(0xdb));
@@ -91,7 +103,7 @@ fn board() -> ViewLayout {
     }
 }
 
-fn table() -> ViewLayout {
+fn table_layout() -> ViewLayout {
     ViewLayout::Table {
         columns: vec![ViewColumn {
             column: NAME,
@@ -134,26 +146,44 @@ fn every_cell_value() -> Vec<CellWrite> {
 }
 
 fn ops() -> Vec<DatabaseOp> {
+    let table = |change| DatabaseOp::Table {
+        table: TABLE,
+        change,
+    };
+    let column = |change| DatabaseOp::Column {
+        table: TABLE,
+        column: STATUS,
+        change,
+    };
+    let rows = |change| DatabaseOp::Rows {
+        table: TABLE,
+        change,
+    };
+    let view = |change| DatabaseOp::View {
+        table: TABLE,
+        view: VIEW,
+        change,
+    };
     let mut ops = vec![
-        DatabaseOp::CreateTable {
-            id: TABLE,
+        table(TableChange::Create {
             name: "Guests".into(),
-        },
-        DatabaseOp::RenameTable {
-            table: TABLE,
+        }),
+        table(TableChange::Rename {
             name: "People".into(),
             previous_name: Some("Guests".into()),
-        },
-        DatabaseOp::RenameTable {
-            table: TABLE,
+        }),
+        table(TableChange::Rename {
             name: "People".into(),
             previous_name: None,
-        },
-        DatabaseOp::DeleteTable { table: TABLE },
+        }),
+        table(TableChange::Delete),
+        table(TableChange::ReorderColumns {
+            order: vec![STATUS, NAME],
+        }),
+        table(TableChange::ReorderViews { order: vec![VIEW] }),
         DatabaseOp::ReorderTables { order: vec![TABLE] },
-        DatabaseOp::CreateColumn {
-            table: TABLE,
-            id: STATUS,
+        DatabaseOp::ReorderTables { order: vec![] },
+        column(ColumnChange::Create {
             definition: NewColumn::New {
                 name: "Status".into(),
                 kind: ColumnKind::Select { multi: false },
@@ -164,10 +194,8 @@ fn ops() -> Vec<DatabaseOp> {
                 infer_type: false,
             },
             after: Some(NAME),
-        },
-        DatabaseOp::CreateColumn {
-            table: TABLE,
-            id: NAME,
+        }),
+        column(ColumnChange::Create {
             definition: NewColumn::New {
                 name: "Name".into(),
                 kind: ColumnKind::Text,
@@ -175,80 +203,61 @@ fn ops() -> Vec<DatabaseOp> {
                 infer_type: true,
             },
             after: None,
-        },
-        DatabaseOp::CreateColumn {
-            table: TABLE,
-            id: STATUS,
+        }),
+        column(ColumnChange::Create {
             definition: NewColumn::Existing { property: PROPERTY },
             after: None,
-        },
-        DatabaseOp::RenameColumn {
-            table: TABLE,
-            column: NAME,
+        }),
+        column(ColumnChange::Rename {
             name: "Title".into(),
             previous_name: Some("Name".into()),
-        },
-        DatabaseOp::DeleteColumn {
-            table: TABLE,
-            column: NAME,
-        },
-        DatabaseOp::ReorderColumns {
-            table: TABLE,
-            order: vec![STATUS, NAME],
-        },
-        DatabaseOp::AddOptions {
-            table: TABLE,
-            column: STATUS,
+        }),
+        column(ColumnChange::Rename {
+            name: "Title".into(),
+            previous_name: None,
+        }),
+        column(ColumnChange::Delete),
+        column(ColumnChange::AddOptions {
             options: vec![NewOption {
                 id: DONE,
                 label: "Done".into(),
             }],
-        },
-        DatabaseOp::InsertRows {
-            table: TABLE,
+        }),
+        column(ColumnChange::UpdateOption {
+            option: DONE,
+            label: Some("Done".into()),
+            color: Some(Some("#0091FF".into())),
+        }),
+        column(ColumnChange::UpdateOption {
+            option: DONE,
+            label: None,
+            color: Some(None),
+        }),
+        column(ColumnChange::UpdateOption {
+            option: DONE,
+            label: None,
+            color: None,
+        }),
+        column(ColumnChange::DeleteOption { option: DONE }),
+        rows(RowsChange::Insert {
             rows: vec![every_cell_value()],
-        },
-        DatabaseOp::UpdateRows {
-            table: TABLE,
+        }),
+        rows(RowsChange::Update {
             changes: RowChanges::Uniform {
                 rows: vec![ROW],
                 cells: every_cell_value(),
             },
-        },
-        DatabaseOp::UpdateRows {
-            table: TABLE,
+        }),
+        rows(RowsChange::Update {
             changes: RowChanges::PerRow {
                 rows: vec![RowChange {
                     row: ROW,
                     cells: every_cell_value(),
                 }],
             },
-        },
-        DatabaseOp::DeleteRows {
-            table: TABLE,
-            rows: vec![ROW],
-        },
-        DatabaseOp::UpdateOption {
-            table: TABLE,
-            column: STATUS,
-            option: DONE,
-            label: Some("Done".into()),
-            color: Some(Some("#0091FF".into())),
-        },
-        DatabaseOp::UpdateOption {
-            table: TABLE,
-            column: STATUS,
-            option: DONE,
-            label: None,
-            color: Some(None),
-        },
-        DatabaseOp::DeleteOption {
-            table: TABLE,
-            column: STATUS,
-            option: DONE,
-        },
-        DatabaseOp::CreateView {
-            table: TABLE,
+        }),
+        rows(RowsChange::Delete { rows: vec![ROW] }),
+        view(ViewChange::Create {
             view: NewView {
                 name: "Board".into(),
                 query: query(),
@@ -260,45 +269,48 @@ fn ops() -> Vec<DatabaseOp> {
                     hide_empty_lanes: false,
                 },
             },
-        },
-        DatabaseOp::UpdateView {
-            table: TABLE,
-            view: VIEW,
+        }),
+        view(ViewChange::Create {
+            view: NewView {
+                name: "Grid".into(),
+                query: ViewQuery::default(),
+                layout: table_layout().into(),
+            },
+        }),
+        view(ViewChange::Update {
             name: Some("Grid".into()),
             query: Some(query()),
-            layout: Some(table().into()),
-        },
-        DatabaseOp::UpdateView {
-            table: TABLE,
-            view: VIEW,
+            layout: Some(table_layout().into()),
+        }),
+        view(ViewChange::Update {
             name: None,
             query: None,
             layout: Some(board().into()),
-        },
-        DatabaseOp::DeleteView {
-            table: TABLE,
-            view: VIEW,
-        },
-        DatabaseOp::ReorderViews {
-            table: TABLE,
-            order: vec![VIEW],
-        },
-        DatabaseOp::MoveCard {
-            table: TABLE,
-            view: VIEW,
+        }),
+        view(ViewChange::Update {
+            name: None,
+            query: None,
+            layout: None,
+        }),
+        view(ViewChange::Delete),
+        view(ViewChange::MoveCard {
             row: ROW,
             lane: Some(DONE),
             before: Some(OTHER_ROW),
             after: None,
-        },
-        DatabaseOp::MoveCard {
-            table: TABLE,
-            view: VIEW,
+        }),
+        view(ViewChange::MoveCard {
+            row: ROW,
+            lane: None,
+            before: None,
+            after: Some(OTHER_ROW),
+        }),
+        view(ViewChange::MoveCard {
             row: ROW,
             lane: None,
             before: None,
             after: None,
-        },
+        }),
     ];
     let kinds = [
         ColumnKind::Text,
@@ -318,86 +330,92 @@ fn ops() -> Vec<DatabaseOp> {
             table: TABLE,
         },
     ];
-    ops.extend(kinds.into_iter().map(|to| DatabaseOp::ChangeColumnType {
-        table: TABLE,
-        column: NAME,
-        to,
-    }));
+    ops.extend(
+        kinds
+            .into_iter()
+            .map(|to| column(ColumnChange::ChangeType { to })),
+    );
     ops
+}
+
+fn stored_view() -> Box<DatabaseView> {
+    let at = Utc.with_ymd_and_hms(2026, 10, 1, 0, 0, 0).unwrap();
+    Box::new(DatabaseView {
+        id: VIEW,
+        database_id: DATABASE,
+        table_id: TABLE,
+        name: "Board".into(),
+        position: "80".parse().unwrap(),
+        query: query(),
+        layout: board(),
+        created_at: at,
+        updated_at: at,
+    })
 }
 
 fn results() -> Vec<OpResult> {
     let version = TableVersion(7);
-    let at = Utc.with_ymd_and_hms(2026, 10, 1, 0, 0, 0).unwrap();
+    let table = |table_version, change| OpResult::Table {
+        table: TABLE,
+        table_version,
+        change,
+    };
+    let column = |change| OpResult::Column {
+        table: TABLE,
+        column: NAME,
+        table_version: version,
+        change,
+    };
+    let rows = |change| OpResult::Rows {
+        table: TABLE,
+        table_version: version,
+        change,
+    };
+    let view = |change| OpResult::View {
+        table: TABLE,
+        view: VIEW,
+        table_version: version,
+        change,
+    };
     vec![
-        OpResult::TableCreated {
-            table: TABLE,
-            table_version: version,
-        },
-        OpResult::TableRenamed {
-            table_version: version,
-        },
-        OpResult::TableDeleted { table: TABLE },
-        OpResult::TablesReordered {
+        table(Some(version), TableResult::Created),
+        table(Some(version), TableResult::Renamed),
+        table(None, TableResult::Deleted),
+        table(Some(version), TableResult::ColumnsReordered),
+        table(
+            Some(version),
+            TableResult::ViewsReordered {
+                positions: vec![ViewPosition {
+                    view: VIEW,
+                    position: "80".parse().unwrap(),
+                }],
+            },
+        ),
+        OpResult::ReorderTables {
             tables: vec![VersionedTable {
                 table: TABLE,
                 version,
             }],
         },
-        OpResult::ColumnCreated {
-            column: NAME,
-            table_version: version,
-        },
-        OpResult::ColumnRenamed {
-            table_version: version,
-        },
-        OpResult::ColumnDeleted {
-            table_version: version,
-        },
-        OpResult::ColumnsReordered {
-            table_version: version,
-        },
-        OpResult::OptionsAdded {
-            table_version: version,
-            added: vec![DONE],
-        },
-        OpResult::RowsWritten {
-            table_version: version,
-            inserted: vec![ROW],
-            affected: 1,
-        },
-        OpResult::ColumnTyped {
-            table_version: version,
-        },
-        OpResult::OptionChanged {
-            table_version: version,
-        },
-        OpResult::ViewWritten {
-            table_version: version,
-            view: Box::new(DatabaseView {
-                id: VIEW,
-                database_id: DATABASE,
-                table_id: TABLE,
-                name: "Board".into(),
-                position: "80".parse().unwrap(),
-                query: query(),
-                layout: board(),
-                created_at: at,
-                updated_at: at,
-            }),
-        },
-        OpResult::ViewDeleted {
-            table_version: version,
-        },
-        OpResult::ViewsReordered {
-            table_version: version,
-            positions: vec![ViewPosition {
-                view: VIEW,
-                position: "80".parse().unwrap(),
-            }],
-        },
-        OpResult::CardMoved {
-            table_version: version,
+        column(ColumnResult::Created),
+        column(ColumnResult::Renamed),
+        column(ColumnResult::TypeChanged),
+        column(ColumnResult::Deleted),
+        column(ColumnResult::OptionsAdded { added: vec![DONE] }),
+        column(ColumnResult::OptionsAdded { added: vec![] }),
+        column(ColumnResult::OptionUpdated),
+        column(ColumnResult::OptionDeleted),
+        rows(RowsResult::Inserted { rows: vec![ROW] }),
+        rows(RowsResult::Updated { affected: 1 }),
+        rows(RowsResult::Deleted { affected: 2 }),
+        view(ViewResult::Created {
+            view: stored_view(),
+        }),
+        view(ViewResult::Updated {
+            view: stored_view(),
+        }),
+        view(ViewResult::Deleted),
+        view(ViewResult::CardMoved {
             positions: vec![
                 CardPosition {
                     row: ROW,
@@ -410,7 +428,7 @@ fn results() -> Vec<OpResult> {
                     position: "8180".parse().unwrap(),
                 },
             ],
-        },
+        }),
     ]
 }
 
@@ -482,7 +500,75 @@ fn mismatch(
                 )
             })
         }
-        _ => None,
+        scalar => {
+            let allowed = schema.get("enum").and_then(Value::as_array)?;
+            (!allowed.contains(scalar))
+                .then(|| format!("{path}: {scalar} is not among the schema's {allowed:?}"))
+        }
+    }
+}
+
+/// The discriminators of a tagged enum's schema, one per variant: the
+/// single `kind` each alternative of its `oneOf` allows.
+fn kinds(schema: &Value) -> Vec<String> {
+    let mut kinds: Vec<String> = schema["oneOf"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|variant| {
+            variant["properties"]["kind"]["enum"][0]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    kinds.sort();
+    kinds
+}
+
+/// The schema of `component`'s variant whose `kind` is `kind`.
+fn variant<'schema>(component: &'schema Value, kind: &str) -> &'schema Value {
+    component["oneOf"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|variant| variant["properties"]["kind"]["enum"][0] == kind)
+        .unwrap_or_else(|| panic!("no `{kind}` variant"))
+}
+
+/// Every outer `kind` of `component` and, below each outer one carrying a
+/// `change`, every inner `kind` of its change's schema, appears among
+/// `samples`.
+fn assert_every_kind_sampled(component: &str, samples: &[Value]) {
+    let components = components();
+    let outer = &components[component];
+    let mut sampled: Vec<String> = samples
+        .iter()
+        .map(|sample| sample["kind"].as_str().unwrap().to_owned())
+        .collect();
+    sampled.sort();
+    sampled.dedup();
+    assert_eq!(sampled, kinds(outer), "{component}");
+    for kind in kinds(outer) {
+        let Some(change) = variant(outer, &kind)["properties"].get("change") else {
+            continue;
+        };
+        let reference = change["$ref"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{component} {kind}: `change` is not a reference"));
+        let change = reference.trim_start_matches("#/components/schemas/");
+        let mut sampled: Vec<String> = samples
+            .iter()
+            .filter(|sample| sample["kind"] == kind.as_str())
+            .map(|sample| sample["change"]["kind"].as_str().unwrap().to_owned())
+            .collect();
+        sampled.sort();
+        sampled.dedup();
+        assert_eq!(
+            sampled,
+            kinds(&components[change]),
+            "{component} {kind}: {change}"
+        );
     }
 }
 
@@ -528,12 +614,7 @@ fn a_board_names_its_fields_in_camel_case() {
 #[test]
 fn a_card_move_may_leave_out_where_it_lands() {
     let components = components();
-    let move_card = components["DatabaseOp"]["oneOf"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|variant| variant["properties"]["kind"]["enum"][0] == "move_card")
-        .unwrap();
+    let move_card = variant(&components["ViewChange"], "move_card");
     let required: Vec<&str> = move_card["required"]
         .as_array()
         .unwrap()
@@ -543,4 +624,33 @@ fn a_card_move_may_leave_out_where_it_lands() {
     assert!(!required.contains(&"before"), "{required:?}");
     assert!(!required.contains(&"after"), "{required:?}");
     assert!(required.contains(&"lane"), "{required:?}");
+}
+
+#[test]
+fn the_samples_cover_every_op_and_change() {
+    let samples: Vec<Value> = ops()
+        .iter()
+        .map(|op| serde_json::to_value(op).unwrap())
+        .collect();
+    assert_every_kind_sampled("DatabaseOp", &samples);
+}
+
+#[test]
+fn the_samples_cover_every_result_and_change() {
+    let samples: Vec<Value> = results()
+        .iter()
+        .map(|result| serde_json::to_value(result).unwrap())
+        .collect();
+    assert_every_kind_sampled("OpResult", &samples);
+}
+
+#[test]
+fn a_wrong_inner_kind_is_a_mismatch() {
+    let components = components();
+    let op = serde_json::json!({
+        "kind": "table",
+        "table": TABLE,
+        "change": {"kind": "change_type", "to": {"type": "text"}},
+    });
+    assert!(mismatch(&op, &components["DatabaseOp"], &components, "op").is_some());
 }

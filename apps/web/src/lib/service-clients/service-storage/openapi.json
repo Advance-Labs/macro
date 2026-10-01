@@ -8238,7 +8238,7 @@
     "/databases/{id}/ops": {
       "post": {
         "tags": ["databases"],
-        "summary": "Apply a batch of typed ops, the one write surface of a database: add,\nrename, remove and order tables and columns, change a column's type, add\nand change options, insert, update and delete rows, and write views and a\nboard's card places. The ops apply in order in one transaction, so a\nlater op may name a table, column or option an earlier one created under\nthe id its client minted. Ops are last-write-wins unless the batch names\nbase versions. A refused op, named by its index (and row and column where\nrelevant), leaves the whole batch unwritten.",
+        "summary": "Apply a batch of typed ops, the one write surface of a database: add,\nrename, remove and order tables and columns, change a column's type, add\nand change options, insert, update and delete rows, and write views and a\nboard's card places. The ops apply in order in one transaction, so a\nlater op may name a table, column, option or view an earlier one created\nunder the id its client minted. Ops are last-write-wins unless the batch names\nbase versions. A refused op, named by its index (and row and column where\nrelevant), leaves the whole batch unwritten.",
         "operationId": "apply_database_ops",
         "parameters": [
           {
@@ -18722,7 +18722,7 @@
             "items": {
               "$ref": "#/components/schemas/DatabaseOp"
             },
-            "description": "The ops, in the order they apply. Every one names a table of this\ndatabase, or one an earlier op of the batch creates: tables, columns\nand options carry ids the client mints (UUIDv7), so a later op can\nname them. An id that already names something refuses the batch."
+            "description": "The ops, in the order they apply, each grouped by the resource it\nchanges (`table`, `column`, `rows`, `view`, `reorder_tables`) with a\n`change` saying how. Every one names a table of this database, or one\nan earlier op of the batch creates: tables, columns, options and\nviews carry ids the client mints (UUIDv7), so a later op can name\nthem. An id that already names something refuses the batch."
           }
         }
       },
@@ -18736,7 +18736,7 @@
             "items": {
               "$ref": "#/components/schemas/OpResult"
             },
-            "description": "One result per op, in the order the ops were sent."
+            "description": "One result per op, in the order the ops were sent. Each is grouped as\nits op is: the same outer `kind`, naming the same ids, with a\n`change` saying what happened."
           }
         }
       },
@@ -21935,6 +21935,134 @@
           }
         }
       },
+      "ColumnChange": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Add the column to the table: a new property the database owns, or an\nexisting one bound into the table.",
+            "required": ["definition", "kind"],
+            "properties": {
+              "after": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The column it goes right after; left out, it goes after the\ntable's last column."
+              },
+              "definition": {
+                "$ref": "#/components/schemas/NewColumn",
+                "description": "What the column holds."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["create"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Rename the column. Its id, type and cells stay; SQL names it by its\nnew name.",
+            "required": ["name", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["rename"]
+              },
+              "name": {
+                "type": "string",
+                "description": "Its new name, unique within the table ignoring case."
+              },
+              "previousName": {
+                "type": "string",
+                "description": "The name the caller saw. Given, the rename is refused if the\ncolumn goes by another one now."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Convert the column to another type, converting its cells; its id\nsurvives the change. A value that does not fit refuses the change,\ncounting and quoting the misfits: a type change never empties a\ncell. To keep the original, create a column of the new type and\nwrite it the values that convert.",
+            "required": ["to", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["change_type"]
+              },
+              "to": {
+                "$ref": "#/components/schemas/ColumnKind",
+                "description": "The type it becomes."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Remove the column and its cells. The views naming it forget it; a\nboard grouped by it must go or regroup first. A property shared\nbeyond the database stays, unbound here.",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["delete"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Add options to a select or tag column, after its others. An option\nwhose label the column already has, ignoring case, is left out, so\nre-sending a list adds only what is new. Like\n[`ColumnChange::UpdateOption`], an option of a property shared beyond\nthe database goes everywhere it is used.",
+            "required": ["options", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["add_options"]
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/NewOption"
+                },
+                "description": "The options, each under an id the client mints."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Relabel or recolour one option of a select or tag column. Every cell\nholding it keeps it. A column bound to a property shared outside the\ndatabase changes wherever that property is used, so it takes the\nright to edit that property.",
+            "required": ["option", "kind"],
+            "properties": {
+              "color": {
+                "type": ["string", "null"],
+                "description": "Its new colour, a hex string like `#RRGGBB`, or `null` to clear\nit; left out, it keeps its own. A tag option always has one."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["update_option"]
+              },
+              "label": {
+                "type": "string",
+                "description": "Its new label; left out, it keeps its own. Labels are unique\nwithin a column, ignoring case."
+              },
+              "option": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The option."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Remove one option of a select or tag column, and take it out of every\ncell holding it: a single-valued cell is emptied, a multi-valued one\nkeeps its other options. Like [`ColumnChange::UpdateOption`], an\noption of a shared property goes everywhere it is used.",
+            "required": ["option", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["delete_option"]
+              },
+              "option": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The option."
+              }
+            }
+          }
+        ],
+        "description": "A change to one column."
+      },
       "ColumnConfig": {
         "oneOf": [
           {
@@ -22176,6 +22304,96 @@
           }
         ],
         "description": "A type a column can have."
+      },
+      "ColumnResult": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "It was added.",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["created"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "It was renamed.",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["renamed"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Its type changed, and its cells with it.",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["type_changed"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "It was removed.",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["deleted"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "It gained options.",
+            "required": ["added", "kind"],
+            "properties": {
+              "added": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "The options created, in order: those sent, less any whose label\nthe column already had."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["options_added"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "One of its options was relabelled or recoloured.",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["option_updated"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "One of its options was removed.",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["option_deleted"]
+              }
+            }
+          }
+        ],
+        "description": "What happened to a column."
       },
       "CommandFailure": {
         "type": "object",
@@ -24072,40 +24290,41 @@
         "oneOf": [
           {
             "type": "object",
-            "description": "Add a table, after the database's other tables. It starts with no\ncolumns and no rows.",
-            "required": ["id", "name", "kind"],
+            "description": "A change to a table itself: its creation, name, removal, or the\norder of its columns or views.",
+            "required": ["table", "change", "kind"],
             "properties": {
-              "id": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The new table's id, minted by the client; later ops of the\nrequest may name it."
+              "change": {
+                "$ref": "#/components/schemas/TableChange",
+                "description": "What changes."
               },
               "kind": {
                 "type": "string",
-                "enum": ["create_table"]
+                "enum": ["table"]
               },
-              "name": {
+              "table": {
                 "type": "string",
-                "description": "Its name, unique within the database ignoring case."
+                "format": "uuid",
+                "description": "The table; for a creation, its new id, minted by the client, which\nlater ops of the request may name."
               }
             }
           },
           {
             "type": "object",
-            "description": "Rename a table. Its id, columns and rows stay.",
-            "required": ["table", "name", "kind"],
+            "description": "A change to one column of a table: its creation, name, type, removal\nor options.",
+            "required": ["table", "column", "change", "kind"],
             "properties": {
+              "change": {
+                "$ref": "#/components/schemas/ColumnChange",
+                "description": "What changes."
+              },
+              "column": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The column; for a creation, its new id, minted by the client,\nwhich later ops of the request may name."
+              },
               "kind": {
                 "type": "string",
-                "enum": ["rename_table"]
-              },
-              "name": {
-                "type": "string",
-                "description": "Its new name, unique within the database ignoring case."
-              },
-              "previousName": {
-                "type": "string",
-                "description": "The name the caller saw. Given, the rename is refused if the\ntable goes by another one now, so a concurrent rename is not\noverwritten."
+                "enum": ["column"]
               },
               "table": {
                 "type": "string",
@@ -24116,17 +24335,46 @@
           },
           {
             "type": "object",
-            "description": "Remove a table with its columns, rows and views. A database keeps at\nleast one table, and a table another table's relation points at\nstays until that relation goes.",
-            "required": ["table", "kind"],
+            "description": "A write to a table's rows.",
+            "required": ["table", "change", "kind"],
             "properties": {
+              "change": {
+                "$ref": "#/components/schemas/RowsChange",
+                "description": "What changes."
+              },
               "kind": {
                 "type": "string",
-                "enum": ["delete_table"]
+                "enum": ["rows"]
               },
               "table": {
                 "type": "string",
                 "format": "uuid",
-                "description": "The table."
+                "description": "The table the rows belong to."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A change to one view of a table.",
+            "required": ["table", "view", "change", "kind"],
+            "properties": {
+              "change": {
+                "$ref": "#/components/schemas/ViewChange",
+                "description": "What changes."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["view"]
+              },
+              "table": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The view's table."
+              },
+              "view": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The view; for a creation, its new id, minted by the client."
               }
             }
           },
@@ -24148,435 +24396,9 @@
                 "description": "Every table, in its new order."
               }
             }
-          },
-          {
-            "type": "object",
-            "description": "Add a column to a table: a new property the database owns, or an\nexisting one bound into the table.",
-            "required": ["table", "id", "definition", "kind"],
-            "properties": {
-              "after": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The column it goes right after; left out, it goes after the\ntable's last column."
-              },
-              "definition": {
-                "$ref": "#/components/schemas/NewColumn",
-                "description": "What the column holds."
-              },
-              "id": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The new column's id, minted by the client; later ops of the\nrequest may name it."
-              },
-              "kind": {
-                "type": "string",
-                "enum": ["create_column"]
-              },
-              "table": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The table."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Rename a column. Its id, type and cells stay; SQL names it by its new\nname.",
-            "required": ["table", "column", "name", "kind"],
-            "properties": {
-              "column": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The column."
-              },
-              "kind": {
-                "type": "string",
-                "enum": ["rename_column"]
-              },
-              "name": {
-                "type": "string",
-                "description": "Its new name, unique within the table ignoring case."
-              },
-              "previousName": {
-                "type": "string",
-                "description": "The name the caller saw. Given, the rename is refused if the\ncolumn goes by another one now."
-              },
-              "table": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The table."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Remove a column and its cells. The views naming it forget it; a\nboard grouped by it must go or regroup first. A property shared\nbeyond the database stays, unbound here.",
-            "required": ["table", "column", "kind"],
-            "properties": {
-              "column": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The column."
-              },
-              "kind": {
-                "type": "string",
-                "enum": ["delete_column"]
-              },
-              "table": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The table."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Set the order of a table's columns: `order` names every one of them\nonce.",
-            "required": ["table", "order", "kind"],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": ["reorder_columns"]
-              },
-              "order": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                "description": "Its columns, in their new order."
-              },
-              "table": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The table."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Add options to a select or tag column, after its others. An option\nwhose label the column already has, ignoring case, is left out, so\nre-sending a list adds only what is new. Like\n[`DatabaseOp::UpdateOption`], an option of a property shared beyond\nthe database goes everywhere it is used.",
-            "required": ["table", "column", "options", "kind"],
-            "properties": {
-              "column": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The select or tag column."
-              },
-              "kind": {
-                "type": "string",
-                "enum": ["add_options"]
-              },
-              "options": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/NewOption"
-                },
-                "description": "The options, each under an id the client mints."
-              },
-              "table": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The table."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Append rows to a table, in order, each with the cells it starts with.",
-            "required": ["table", "rows", "kind"],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": ["insert_rows"]
-              },
-              "rows": {
-                "type": "array",
-                "items": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/CellWrite"
-                  }
-                },
-                "description": "One entry per new row: the cells it starts with. Columns left out\nstart empty."
-              },
-              "table": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The table."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Write cells of existing rows. Last write wins: there is no version\ncheck.",
-            "required": ["table", "changes", "kind"],
-            "properties": {
-              "changes": {
-                "$ref": "#/components/schemas/RowChanges",
-                "description": "Which rows get which cells."
-              },
-              "kind": {
-                "type": "string",
-                "enum": ["update_rows"]
-              },
-              "table": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The table the rows belong to."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Remove rows and their cells.",
-            "required": ["table", "rows", "kind"],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": ["delete_rows"]
-              },
-              "rows": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                "description": "The rows, each named once."
-              },
-              "table": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The table the rows belong to."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Convert a column to another type, converting its cells. A value that\ndoes not fit refuses the change, counting and quoting the misfits: a\ntype change never empties a cell. To keep the original, create a\ncolumn of the new type and write it the values that convert.",
-            "required": ["table", "column", "to", "kind"],
-            "properties": {
-              "column": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The column placement; its id survives the change."
-              },
-              "kind": {
-                "type": "string",
-                "enum": ["change_column_type"]
-              },
-              "table": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The table."
-              },
-              "to": {
-                "$ref": "#/components/schemas/ColumnKind",
-                "description": "The type it becomes."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Relabel or recolour one option of a select or tag column. Every cell\nholding it keeps it. A column bound to a property shared outside the\ndatabase changes wherever that property is used, so it takes the\nright to edit that property.",
-            "required": ["table", "column", "option", "kind"],
-            "properties": {
-              "color": {
-                "type": ["string", "null"],
-                "description": "Its new colour, a hex string like `#RRGGBB`, or `null` to clear\nit; left out, it keeps its own. A tag option always has one."
-              },
-              "column": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The select or tag column."
-              },
-              "kind": {
-                "type": "string",
-                "enum": ["update_option"]
-              },
-              "label": {
-                "type": "string",
-                "description": "Its new label; left out, it keeps its own. Labels are unique\nwithin a column, ignoring case."
-              },
-              "option": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The option."
-              },
-              "table": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The table."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Remove one option of a select or tag column, and take it out of every\ncell holding it: a single-valued cell is emptied, a multi-valued one\nkeeps its other options. Like [`DatabaseOp::UpdateOption`], an option\nof a shared property goes everywhere it is used.",
-            "required": ["table", "column", "option", "kind"],
-            "properties": {
-              "column": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The select or tag column."
-              },
-              "kind": {
-                "type": "string",
-                "enum": ["delete_option"]
-              },
-              "option": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The option."
-              },
-              "table": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The table."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Add a view of the table, after its other views.",
-            "required": ["table", "view", "kind"],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": ["create_view"]
-              },
-              "table": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The table."
-              },
-              "view": {
-                "$ref": "#/components/schemas/NewView",
-                "description": "What it shows and how."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Change a view's name, query or layout; what is left out stays.",
-            "required": ["table", "view", "kind"],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": ["update_view"]
-              },
-              "layout": {
-                "$ref": "#/components/schemas/RequestedLayout",
-                "description": "Its new layout. A board grouped by another column forgets where\nits cards were; a board left without a card title keeps the one\nit has, or takes the table's first column."
-              },
-              "name": {
-                "type": "string",
-                "description": "Its new name."
-              },
-              "query": {
-                "$ref": "#/components/schemas/ViewQuery",
-                "description": "Its new query."
-              },
-              "table": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The view's table."
-              },
-              "view": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The view."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Remove a view, with where its cards were.",
-            "required": ["table", "view", "kind"],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": ["delete_view"]
-              },
-              "table": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The view's table."
-              },
-              "view": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The view."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Set the order of a table's views: `order` names every one of them\nonce.",
-            "required": ["table", "order", "kind"],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": ["reorder_views"]
-              },
-              "order": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                "description": "Its views, in their new order."
-              },
-              "table": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The table."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Move a board's card: into a lane, which sets the row's grouping cell\nto the lane's option (or empties it for the lane without one), and to\na place there, between two of its cards. Only an unsorted board's\ncards move by hand.",
-            "required": ["table", "view", "row", "lane", "kind"],
-            "properties": {
-              "after": {
-                "type": ["string", "null"],
-                "format": "uuid",
-                "description": "The card that ends up just after it, if any. Given with `before`,\nit must be the card right after `before`; with neither, the card\ngoes to the end of the lane."
-              },
-              "before": {
-                "type": ["string", "null"],
-                "format": "uuid",
-                "description": "The card that ends up just before it (it lands right after this\none), if any."
-              },
-              "kind": {
-                "type": "string",
-                "enum": ["move_card"]
-              },
-              "lane": {
-                "type": ["string", "null"],
-                "format": "uuid",
-                "description": "The lane it goes to: an option of the board's column, or `null`\nfor the lane of cards without one."
-              },
-              "row": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The card's row."
-              },
-              "table": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The view's table."
-              },
-              "view": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The board."
-              }
-            }
           }
         ],
-        "description": "One write to a database: its tables, columns, options, rows or views. A\nrequest's ops apply in order and together, or not at all, and every op\nnames a table of the database the request is for (or, creating one, adds\nit there)."
+        "description": "One write to a database: its tables, columns, options, rows or views,\ngrouped by the resource it changes. A request's ops apply in order and\ntogether, or not at all, and every op names a table of the database the\nrequest is for (or, creating one, adds it there)."
       },
       "DatabaseView": {
         "type": "object",
@@ -30577,32 +30399,50 @@
         "oneOf": [
           {
             "type": "object",
-            "description": "The table a creation added.",
-            "required": ["table", "tableVersion", "kind"],
+            "description": "What a table op did.",
+            "required": ["table", "change", "kind"],
             "properties": {
+              "change": {
+                "$ref": "#/components/schemas/TableResult",
+                "description": "What happened to it."
+              },
               "kind": {
                 "type": "string",
-                "enum": ["table_created"]
+                "enum": ["table"]
               },
               "table": {
                 "type": "string",
                 "format": "uuid",
-                "description": "The new table."
+                "description": "The table."
               },
               "tableVersion": {
                 "$ref": "#/components/schemas/TableVersion",
-                "description": "Its version once the request committed."
+                "description": "Its version once the request committed; left out when the op\nremoved it."
               }
             }
           },
           {
             "type": "object",
-            "description": "A table's rename.",
-            "required": ["tableVersion", "kind"],
+            "description": "What a column op did.",
+            "required": ["table", "column", "tableVersion", "change", "kind"],
             "properties": {
+              "change": {
+                "$ref": "#/components/schemas/ColumnResult",
+                "description": "What happened to it."
+              },
+              "column": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The column."
+              },
               "kind": {
                 "type": "string",
-                "enum": ["table_renamed"]
+                "enum": ["column"]
+              },
+              "table": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The table."
               },
               "tableVersion": {
                 "$ref": "#/components/schemas/TableVersion",
@@ -30612,17 +30452,54 @@
           },
           {
             "type": "object",
-            "description": "A table's removal.",
-            "required": ["table", "kind"],
+            "description": "What a rows op did.",
+            "required": ["table", "tableVersion", "change", "kind"],
             "properties": {
+              "change": {
+                "$ref": "#/components/schemas/RowsResult",
+                "description": "What happened to them."
+              },
               "kind": {
                 "type": "string",
-                "enum": ["table_deleted"]
+                "enum": ["rows"]
               },
               "table": {
                 "type": "string",
                 "format": "uuid",
-                "description": "The table removed."
+                "description": "The table."
+              },
+              "tableVersion": {
+                "$ref": "#/components/schemas/TableVersion",
+                "description": "The table's version once the request committed."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "What a view op did.",
+            "required": ["table", "view", "tableVersion", "change", "kind"],
+            "properties": {
+              "change": {
+                "$ref": "#/components/schemas/ViewResult",
+                "description": "What happened to it."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["view"]
+              },
+              "table": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The view's table."
+              },
+              "tableVersion": {
+                "$ref": "#/components/schemas/TableVersion",
+                "description": "The table's version once the request committed."
+              },
+              "view": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The view."
               }
             }
           },
@@ -30633,7 +30510,7 @@
             "properties": {
               "kind": {
                 "type": "string",
-                "enum": ["tables_reordered"]
+                "enum": ["reorder_tables"]
               },
               "tables": {
                 "type": "array",
@@ -30643,234 +30520,9 @@
                 "description": "Every table, in its new order, with its version once the request\ncommitted."
               }
             }
-          },
-          {
-            "type": "object",
-            "description": "The column a creation added.",
-            "required": ["column", "tableVersion", "kind"],
-            "properties": {
-              "column": {
-                "type": "string",
-                "format": "uuid",
-                "description": "The new column."
-              },
-              "kind": {
-                "type": "string",
-                "enum": ["column_created"]
-              },
-              "tableVersion": {
-                "$ref": "#/components/schemas/TableVersion",
-                "description": "The table's version once the request committed."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A column's rename.",
-            "required": ["tableVersion", "kind"],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": ["column_renamed"]
-              },
-              "tableVersion": {
-                "$ref": "#/components/schemas/TableVersion",
-                "description": "The table's version once the request committed."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A column's removal.",
-            "required": ["tableVersion", "kind"],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": ["column_deleted"]
-              },
-              "tableVersion": {
-                "$ref": "#/components/schemas/TableVersion",
-                "description": "The table's version once the request committed."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A table's columns in their new order.",
-            "required": ["tableVersion", "kind"],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": ["columns_reordered"]
-              },
-              "tableVersion": {
-                "$ref": "#/components/schemas/TableVersion",
-                "description": "The table's version once the request committed."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "The options an addition created.",
-            "required": ["tableVersion", "added", "kind"],
-            "properties": {
-              "added": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                "description": "The options created, in order: those sent, less any whose label\nthe column already had."
-              },
-              "kind": {
-                "type": "string",
-                "enum": ["options_added"]
-              },
-              "tableVersion": {
-                "$ref": "#/components/schemas/TableVersion",
-                "description": "The table's version once the request committed."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "What an insert, update or delete did.",
-            "required": ["tableVersion", "inserted", "affected", "kind"],
-            "properties": {
-              "affected": {
-                "type": "integer",
-                "format": "int32",
-                "description": "How many rows the op inserted, updated or deleted.",
-                "minimum": 0
-              },
-              "inserted": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                "description": "The rows an insert created, in the order they were sent; empty\nfor an update or a delete."
-              },
-              "kind": {
-                "type": "string",
-                "enum": ["rows_written"]
-              },
-              "tableVersion": {
-                "$ref": "#/components/schemas/TableVersion",
-                "description": "The table's version once the request committed."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "What a column type change did.",
-            "required": ["tableVersion", "kind"],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": ["column_typed"]
-              },
-              "tableVersion": {
-                "$ref": "#/components/schemas/TableVersion",
-                "description": "The table's version after the change."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "What an option change or removal did.",
-            "required": ["tableVersion", "kind"],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": ["option_changed"]
-              },
-              "tableVersion": {
-                "$ref": "#/components/schemas/TableVersion",
-                "description": "The table's version after the change."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "The view a creation or change left.",
-            "required": ["tableVersion", "view", "kind"],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": ["view_written"]
-              },
-              "tableVersion": {
-                "$ref": "#/components/schemas/TableVersion",
-                "description": "The table's version after the change."
-              },
-              "view": {
-                "$ref": "#/components/schemas/DatabaseView",
-                "description": "The view as stored."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "A view's removal.",
-            "required": ["tableVersion", "kind"],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": ["view_deleted"]
-              },
-              "tableVersion": {
-                "$ref": "#/components/schemas/TableVersion",
-                "description": "The table's version after the change."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "The table's views' new places.",
-            "required": ["tableVersion", "positions", "kind"],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": ["views_reordered"]
-              },
-              "positions": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/ViewPosition"
-                },
-                "description": "Every view's key, in their new order."
-              },
-              "tableVersion": {
-                "$ref": "#/components/schemas/TableVersion",
-                "description": "The table's version after the change."
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "Where a moved card, and any card it needed placed first, now sit.",
-            "required": ["tableVersion", "positions", "kind"],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": ["card_moved"]
-              },
-              "positions": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/CardPosition"
-                },
-                "description": "The positions written, the moved card's last."
-              },
-              "tableVersion": {
-                "$ref": "#/components/schemas/TableVersion",
-                "description": "The table's version after the change."
-              }
-            }
           }
         ],
-        "description": "What one op did, in the order the ops were sent."
+        "description": "What one op did, in the order the ops were sent, grouped as the ops are:\na result's `kind` is its op's, naming the same resource, and its\n`change` says what happened to it."
       },
       "OptionRef": {
         "oneOf": [
@@ -33040,6 +32692,124 @@
           }
         ],
         "description": "Which rows an update writes, and with what."
+      },
+      "RowsChange": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Append rows to the table, in order, each with the cells it starts\nwith.",
+            "required": ["rows", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["insert"]
+              },
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CellWrite"
+                  }
+                },
+                "description": "One entry per new row: the cells it starts with. Columns left out\nstart empty."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Write cells of existing rows. Last write wins: there is no version\ncheck.",
+            "required": ["changes", "kind"],
+            "properties": {
+              "changes": {
+                "$ref": "#/components/schemas/RowChanges",
+                "description": "Which rows get which cells."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["update"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Remove rows and their cells.",
+            "required": ["rows", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["delete"]
+              },
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "The rows, each named once."
+              }
+            }
+          }
+        ],
+        "description": "A write to a table's rows."
+      },
+      "RowsResult": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Rows were added.",
+            "required": ["rows", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["inserted"]
+              },
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "The new rows, in the order they were sent."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Rows' cells were written.",
+            "required": ["affected", "kind"],
+            "properties": {
+              "affected": {
+                "type": "integer",
+                "format": "int32",
+                "description": "How many rows the op updated.",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["updated"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Rows were removed.",
+            "required": ["affected", "kind"],
+            "properties": {
+              "affected": {
+                "type": "integer",
+                "format": "int32",
+                "description": "How many rows the op deleted.",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["deleted"]
+              }
+            }
+          }
+        ],
+        "description": "What happened to a table's rows."
       },
       "S3ObjectInfo": {
         "type": "object",
@@ -35920,6 +35690,94 @@
           }
         }
       },
+      "TableChange": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Add the table, after the database's other tables. It starts with no\ncolumns and no rows.",
+            "required": ["name", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["create"]
+              },
+              "name": {
+                "type": "string",
+                "description": "Its name, unique within the database ignoring case."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Rename the table. Its id, columns and rows stay.",
+            "required": ["name", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["rename"]
+              },
+              "name": {
+                "type": "string",
+                "description": "Its new name, unique within the database ignoring case."
+              },
+              "previousName": {
+                "type": "string",
+                "description": "The name the caller saw. Given, the rename is refused if the\ntable goes by another one now, so a concurrent rename is not\noverwritten."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Remove the table with its columns, rows and views. A database keeps\nat least one table, and a table another table's relation points at\nstays until that relation goes.",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["delete"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Set the order of the table's columns: `order` names every one of\nthem once.",
+            "required": ["order", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["reorder_columns"]
+              },
+              "order": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "Its columns, in their new order."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Set the order of the table's views: `order` names every one of them\nonce.",
+            "required": ["order", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["reorder_views"]
+              },
+              "order": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "Its views, in their new order."
+              }
+            }
+          }
+        ],
+        "description": "A change to a table itself."
+      },
       "TableChanged": {
         "type": "object",
         "description": "The [`TABLE_CHANGED_MESSAGE_TYPE`] payload: one table's new version.",
@@ -35969,6 +35827,73 @@
             "description": "The table's views, in their order."
           }
         }
+      },
+      "TableResult": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "It was added.",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["created"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "It was renamed.",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["renamed"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "It was removed.",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["deleted"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Its columns were reordered.",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["columns_reordered"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Its views were reordered.",
+            "required": ["positions", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["views_reordered"]
+              },
+              "positions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ViewPosition"
+                },
+                "description": "Every view's key, in their new order."
+              }
+            }
+          }
+        ],
+        "description": "What happened to a table."
       },
       "TableVersion": {
         "type": "integer",
@@ -36027,6 +35952,22 @@
               "kind": {
                 "type": "string",
                 "enum": ["option"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A view's.",
+            "required": ["id", "kind"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "A view's."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["view"]
               }
             }
           }
@@ -37185,6 +37126,91 @@
           }
         }
       },
+      "ViewChange": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Add the view to the table, after its other views.",
+            "required": ["view", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["create"]
+              },
+              "view": {
+                "$ref": "#/components/schemas/NewView",
+                "description": "What it shows and how."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Change the view's name, query or layout; what is left out stays.",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["update"]
+              },
+              "layout": {
+                "$ref": "#/components/schemas/RequestedLayout",
+                "description": "Its new layout. A board grouped by another column forgets where\nits cards were; a board left without a card title keeps the one\nit has, or takes the table's first column."
+              },
+              "name": {
+                "type": "string",
+                "description": "Its new name."
+              },
+              "query": {
+                "$ref": "#/components/schemas/ViewQuery",
+                "description": "Its new query."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Remove the view, with where its cards were.",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["delete"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Move one of the board's cards: into a lane, which sets the row's\ngrouping cell to the lane's option (or empties it for the lane\nwithout one), and to a place there, between two of its cards. Only\nan unsorted board's cards move by hand.",
+            "required": ["row", "lane", "kind"],
+            "properties": {
+              "after": {
+                "type": ["string", "null"],
+                "format": "uuid",
+                "description": "The card that ends up just after it, if any. Given with `before`,\nit must be the card right after `before`; with neither, the card\ngoes to the end of the lane."
+              },
+              "before": {
+                "type": ["string", "null"],
+                "format": "uuid",
+                "description": "The card that ends up just before it (it lands right after this\none), if any."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["move_card"]
+              },
+              "lane": {
+                "type": ["string", "null"],
+                "format": "uuid",
+                "description": "The lane it goes to: an option of the board's column, or `null`\nfor the lane of cards without one."
+              },
+              "row": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The card's row."
+              }
+            }
+          }
+        ],
+        "description": "A change to one view."
+      },
       "ViewColumn": {
         "type": "object",
         "description": "How one column shows in a table layout.",
@@ -37336,6 +37362,70 @@
             "description": "The sort keys, first key first. Rows the keys leave tied keep the\ntable's own order; with no keys, the table's order is the view's."
           }
         }
+      },
+      "ViewResult": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "It was added.",
+            "required": ["view", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["created"]
+              },
+              "view": {
+                "$ref": "#/components/schemas/DatabaseView",
+                "description": "The view as stored."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "It was changed.",
+            "required": ["view", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["updated"]
+              },
+              "view": {
+                "$ref": "#/components/schemas/DatabaseView",
+                "description": "The view as stored."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "It was removed.",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["deleted"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "One of its cards moved.",
+            "required": ["positions", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["card_moved"]
+              },
+              "positions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CardPosition"
+                },
+                "description": "The positions written, the moved card's last."
+              }
+            }
+          }
+        ],
+        "description": "What happened to a view."
       },
       "ViewsResponse": {
         "type": "object",

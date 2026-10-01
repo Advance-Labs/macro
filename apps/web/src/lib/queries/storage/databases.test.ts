@@ -126,22 +126,52 @@ describe('database write version acknowledgments', () => {
 describe('applying ops', () => {
   it('sends the base versions with the batch and returns its results', async () => {
     mock.applyOps.mockReturnValue(
-      okAsync({ results: [{ kind: 'column_deleted', tableVersion: 6 }] })
+      okAsync({
+        results: [
+          {
+            kind: 'column',
+            table: 'tasks',
+            column: 'status',
+            tableVersion: 6,
+            change: { kind: 'deleted' },
+          },
+        ],
+      })
     );
 
     const applied = await applyDatabaseOps(
       'db',
-      [{ kind: 'delete_column', table: 'tasks', column: 'status' }],
+      [
+        {
+          kind: 'column',
+          table: 'tasks',
+          column: 'status',
+          change: { kind: 'delete' },
+        },
+      ],
       { tasks: 5 }
     );
 
     expect(applied._unsafeUnwrap()).toEqual([
-      { kind: 'column_deleted', tableVersion: 6 },
+      {
+        kind: 'column',
+        table: 'tasks',
+        column: 'status',
+        tableVersion: 6,
+        change: { kind: 'deleted' },
+      },
     ]);
     expect(mock.applyOps).toHaveBeenCalledExactlyOnceWith({
       id: 'db',
       request: {
-        ops: [{ kind: 'delete_column', table: 'tasks', column: 'status' }],
+        ops: [
+          {
+            kind: 'column',
+            table: 'tasks',
+            column: 'status',
+            change: { kind: 'delete' },
+          },
+        ],
         baseVersions: { tasks: 5 },
       },
     });
@@ -159,7 +189,7 @@ describe('applying ops', () => {
     );
 
     const applied = await applyDatabaseOps('db', [
-      { kind: 'delete_table', table: 'tasks' },
+      { kind: 'table', table: 'tasks', change: { kind: 'delete' } },
     ]);
 
     expect(applied._unsafeUnwrapErr()).toEqual({
@@ -169,7 +199,9 @@ describe('applying ops', () => {
     });
     expect(mock.applyOps).toHaveBeenCalledExactlyOnceWith({
       id: 'db',
-      request: { ops: [{ kind: 'delete_table', table: 'tasks' }] },
+      request: {
+        ops: [{ kind: 'table', table: 'tasks', change: { kind: 'delete' } }],
+      },
     });
   });
 });

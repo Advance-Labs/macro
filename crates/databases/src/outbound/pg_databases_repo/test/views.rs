@@ -3,10 +3,11 @@
 
 use models_databases::position::{Position, key_between, keys_between};
 use models_databases::views::{
-    CardPosition, Lane, NewView, RequestedLayout, ViewLayout, ViewQuery,
+    CardPosition, Lane, NewView, RequestedLayout, ViewId, ViewLayout, ViewQuery,
 };
 use models_databases::{
-    CellValue, CellWrite, DatabaseOp, NewOption, OpResult, OptionId, OptionRef, RowId,
+    CellValue, CellWrite, ColumnChange, DatabaseOp, NewOption, OpResult, OptionId, OptionRef,
+    RowId, RowsChange, RowsResult, ViewChange, ViewResult,
 };
 use models_properties::service::property_value::PropertyValue;
 use properties::outbound::properties_pg_repo::PropertiesPgRepo;
@@ -23,23 +24,31 @@ async fn insert_statuses(pool: &PgPool, guests: &Guests, statuses: &[&str]) -> V
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::InsertRows {
+            vec![DatabaseOp::Rows {
                 table: guests.table_id,
-                rows: statuses
-                    .iter()
-                    .map(|status| {
-                        vec![CellWrite {
-                            column: guests.status,
-                            value: CellValue::Options(vec![OptionRef::Label((*status).into())]),
-                        }]
-                    })
-                    .collect(),
+                change: RowsChange::Insert {
+                    rows: statuses
+                        .iter()
+                        .map(|status| {
+                            vec![CellWrite {
+                                column: guests.status,
+                                value: CellValue::Options(vec![OptionRef::Label((*status).into())]),
+                            }]
+                        })
+                        .collect(),
+                },
             }]
             .into(),
         )
         .await
         .unwrap();
-    let [OpResult::RowsWritten { inserted, .. }] = results.as_slice() else {
+    let [
+        OpResult::Rows {
+            change: RowsResult::Inserted { rows: inserted },
+            ..
+        },
+    ] = results.as_slice()
+    else {
         panic!("expected one insert, got {results:?}");
     };
     inserted.clone()
@@ -119,13 +128,15 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::AddOptions {
+            vec![DatabaseOp::Column {
                 table: guests.table_id,
                 column: guests.status,
-                options: vec![NewOption {
-                    id: OptionId::new(),
-                    label: "Maybe".into(),
-                }],
+                change: ColumnChange::AddOptions {
+                    options: vec![NewOption {
+                        id: OptionId::new(),
+                        label: "Maybe".into(),
+                    }],
+                },
             }]
             .into(),
         )
@@ -146,26 +157,29 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::CreateView {
+            vec![DatabaseOp::View {
                 table: guests.table_id,
-                view: NewView {
-                    name: "Stages".into(),
-                    query: ViewQuery::default(),
-                    layout: RequestedLayout::Board {
-                        group_by: guests.status,
-                        title: Some(guests.name),
-                        lanes: vec![
-                            Lane {
-                                option: Some(maybe),
-                                hidden: false,
-                            },
-                            Lane {
-                                option: Some(going),
-                                hidden: false,
-                            },
-                        ],
-                        card_fields: vec![guests.name],
-                        hide_empty_lanes: false,
+                view: ViewId::new(),
+                change: ViewChange::Create {
+                    view: NewView {
+                        name: "Stages".into(),
+                        query: ViewQuery::default(),
+                        layout: RequestedLayout::Board {
+                            group_by: guests.status,
+                            title: Some(guests.name),
+                            lanes: vec![
+                                Lane {
+                                    option: Some(maybe),
+                                    hidden: false,
+                                },
+                                Lane {
+                                    option: Some(going),
+                                    hidden: false,
+                                },
+                            ],
+                            card_fields: vec![guests.name],
+                            hide_empty_lanes: false,
+                        },
                     },
                 },
             }]
@@ -173,7 +187,13 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
         )
         .await
         .unwrap();
-    let [OpResult::ViewWritten { view: board, .. }] = results.as_slice() else {
+    let [
+        OpResult::View {
+            change: ViewResult::Created { view: board },
+            ..
+        },
+    ] = results.as_slice()
+    else {
         panic!("expected a view, got {results:?}");
     };
     let repo = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
@@ -186,13 +206,15 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::MoveCard {
+            vec![DatabaseOp::View {
                 table: guests.table_id,
                 view: board.id,
-                row: rows[2],
-                lane: Some(maybe),
-                before: Some(rows[1]),
-                after: None,
+                change: ViewChange::MoveCard {
+                    row: rows[2],
+                    lane: Some(maybe),
+                    before: Some(rows[1]),
+                    after: None,
+                },
             }]
             .into(),
         )
@@ -224,9 +246,11 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::DeleteRows {
+            vec![DatabaseOp::Rows {
                 table: guests.table_id,
-                rows: vec![rows[1]],
+                change: RowsChange::Delete {
+                    rows: vec![rows[1]],
+                },
             }]
             .into(),
         )
@@ -245,10 +269,10 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::DeleteOption {
+            vec![DatabaseOp::Column {
                 table: guests.table_id,
                 column: guests.status,
-                option: maybe,
+                change: ColumnChange::DeleteOption { option: maybe },
             }]
             .into(),
         )
@@ -273,9 +297,10 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::DeleteView {
+            vec![DatabaseOp::View {
                 table: guests.table_id,
                 view: board.id,
+                change: ViewChange::Delete,
             }]
             .into(),
         )
@@ -295,17 +320,20 @@ async fn removing_a_column_rewrites_the_views_that_named_it(pool: PgPool) {
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::CreateView {
+            vec![DatabaseOp::View {
                 table: guests.table_id,
-                view: NewView {
-                    name: "Stages".into(),
-                    query: ViewQuery::default(),
-                    layout: RequestedLayout::Board {
-                        group_by: guests.status,
-                        title: Some(guests.name),
-                        lanes: vec![],
-                        card_fields: vec![guests.name],
-                        hide_empty_lanes: false,
+                view: ViewId::new(),
+                change: ViewChange::Create {
+                    view: NewView {
+                        name: "Stages".into(),
+                        query: ViewQuery::default(),
+                        layout: RequestedLayout::Board {
+                            group_by: guests.status,
+                            title: Some(guests.name),
+                            lanes: vec![],
+                            card_fields: vec![guests.name],
+                            hide_empty_lanes: false,
+                        },
                     },
                 },
             }]
@@ -313,7 +341,13 @@ async fn removing_a_column_rewrites_the_views_that_named_it(pool: PgPool) {
         )
         .await
         .unwrap();
-    let [OpResult::ViewWritten { view: board, .. }] = results.as_slice() else {
+    let [
+        OpResult::View {
+            change: ViewResult::Created { view: board },
+            ..
+        },
+    ] = results.as_slice()
+    else {
         panic!("expected a view, got {results:?}");
     };
 
@@ -322,9 +356,10 @@ async fn removing_a_column_rewrites_the_views_that_named_it(pool: PgPool) {
             edit(guests.database_id),
             viewer(),
             OpBatch {
-                ops: vec![DatabaseOp::DeleteColumn {
+                ops: vec![DatabaseOp::Column {
                     table: guests.table_id,
                     column: guests.name,
+                    change: ColumnChange::Delete,
                 }],
                 base_versions: HashMap::from([(
                     guests.table_id,

@@ -4,15 +4,17 @@
  * document_storage_service
  * OpenAPI spec version: 0.1.0
  */
+
 import type { DatabaseOpOneOfFiveKind } from './databaseOpOneOfFiveKind';
+import type { RowsChange } from './rowsChange';
 
 /**
- * Remove a table with its columns, rows and views. A database keeps at
-least one table, and a table another table's relation points at
-stays until that relation goes.
+ * A write to a table's rows.
  */
 export type DatabaseOpOneOfFive = {
+  /** What changes. */
+  change: RowsChange;
   kind: DatabaseOpOneOfFiveKind;
-  /** The table. */
+  /** The table the rows belong to. */
   table: string;
 };

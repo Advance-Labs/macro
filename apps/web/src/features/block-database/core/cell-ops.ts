@@ -145,11 +145,14 @@ export function mutationOp(
     .returnType<Result<DatabaseOp, DatabaseCellFailure>>()
     .with({ kind: 'cell' }, ({ rowId, columnId, value }) =>
       cell(columnId, value).map((written) => ({
-        kind: 'update_rows',
+        kind: 'rows',
         table: tableId,
-        changes: {
-          kind: 'per_row',
-          rows: [{ row: rowId, cells: [written] }],
+        change: {
+          kind: 'update',
+          changes: {
+            kind: 'per_row',
+            rows: [{ row: rowId, cells: [written] }],
+          },
         },
       }))
     )
@@ -157,20 +160,24 @@ export function mutationOp(
       Result.combine(
         Object.entries(values).map(([columnId, value]) => cell(columnId, value))
       ).map((cells) => ({
-        kind: 'insert_rows',
+        kind: 'rows',
         table: tableId,
-        rows: [cells],
+        change: { kind: 'insert', rows: [cells] },
       }))
     )
     .with({ kind: 'delete' }, ({ rowId }) =>
-      ok({ kind: 'delete_rows', table: tableId, rows: [rowId] })
+      ok({
+        kind: 'rows',
+        table: tableId,
+        change: { kind: 'delete', rows: [rowId] },
+      })
     )
     .exhaustive();
 }
 
 /**
  * The labels a write names options by that its columns lack, per column:
- * what an `add_options` op ahead of it must create, since an unknown label
+ * what an `add_options` column op ahead of it must create, since an unknown label
  * refuses the write. `labelsOf` answers a column's own option labels.
  */
 export function missingOptionLabels(
@@ -179,14 +186,22 @@ export function missingOptionLabels(
 ): { column: string; labels: string[] }[] {
   const cells = match(op)
     .returnType<CellWrite[]>()
-    .with({ kind: 'insert_rows' }, ({ rows }) => rows.flat())
-    .with(
-      { kind: 'update_rows', changes: { kind: 'uniform' } },
-      ({ changes }) => changes.cells
+    .with({ kind: 'rows', change: { kind: 'insert' } }, ({ change }) =>
+      change.rows.flat()
     )
     .with(
-      { kind: 'update_rows', changes: { kind: 'per_row' } },
-      ({ changes }) => changes.rows.flatMap((row) => row.cells)
+      {
+        kind: 'rows',
+        change: { kind: 'update', changes: { kind: 'uniform' } },
+      },
+      ({ change }) => change.changes.cells
+    )
+    .with(
+      {
+        kind: 'rows',
+        change: { kind: 'update', changes: { kind: 'per_row' } },
+      },
+      ({ change }) => change.changes.rows.flatMap((row) => row.cells)
     )
     .otherwise(() => []);
   const missing = new Map<string, Map<string, string>>();

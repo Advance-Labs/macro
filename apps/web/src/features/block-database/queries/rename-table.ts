@@ -16,10 +16,13 @@ export function renameDatabaseTable(params: {
 }): DatabaseSchemaChange {
   return applyDatabaseOps(params.databaseId, [
     {
-      kind: 'rename_table',
+      kind: 'table',
       table: params.tableId,
-      name: params.name,
-      previousName: params.previousName,
+      change: {
+        kind: 'rename',
+        name: params.name,
+        previousName: params.previousName,
+      },
     },
   ])
     .mapErr((error) => {
@@ -29,8 +32,10 @@ export function renameDatabaseTable(params: {
     .map(async ([result]) => {
       // An older request must not overwrite the committed name after navigation.
       await queryClient.cancelQueries({ queryKey: databasesKeys.detail._def });
-      if (isResult(result, 'table_renamed')) {
-        const version = result.tableVersion;
+      const version = isResult(result, 'table', 'renamed')
+        ? result.tableVersion
+        : undefined;
+      if (version !== undefined) {
         queryClient.setQueryData(
           databasesKeys.detail(params.databaseId).queryKey,
           (previous: DatabaseDetail | undefined) =>

@@ -17,7 +17,10 @@ use specta::Type;
 use uuid::Uuid;
 
 use models_databases::views::ViewProblem;
-use models_databases::{DatabaseId, DatabaseOp, OpResult, RowId, TableId};
+use models_databases::{
+    ColumnResult, DatabaseId, DatabaseOp, OpResult, RowId, RowsResult, TableId, TableResult,
+    ViewResult,
+};
 
 use crate::catalog::{Catalog, ColumnKind};
 use crate::engine::{Engine, Step};
@@ -244,79 +247,152 @@ pub enum SentOp {
     ColumnTypeChange,
 }
 
-/// The kind of an [`OpResult`].
+/// The kind of an [`OpResult`], with what happened to its resource.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type, strum::Display)]
 #[serde(rename_all = "camelCase")]
 pub enum OpResultKind {
-    /// [`OpResult::TableCreated`].
+    /// [`TableResult::Created`] of an [`OpResult::Table`].
     #[strum(serialize = "a table created")]
     TableCreated,
-    /// [`OpResult::TableRenamed`].
+    /// [`TableResult::Renamed`] of an [`OpResult::Table`].
     #[strum(serialize = "a table renamed")]
     TableRenamed,
-    /// [`OpResult::TableDeleted`].
+    /// [`TableResult::Deleted`] of an [`OpResult::Table`].
     #[strum(serialize = "a table deleted")]
     TableDeleted,
-    /// [`OpResult::TablesReordered`].
-    #[strum(serialize = "tables reordered")]
-    TablesReordered,
-    /// [`OpResult::ColumnCreated`].
-    #[strum(serialize = "a column created")]
-    ColumnCreated,
-    /// [`OpResult::ColumnRenamed`].
-    #[strum(serialize = "a column renamed")]
-    ColumnRenamed,
-    /// [`OpResult::ColumnDeleted`].
-    #[strum(serialize = "a column deleted")]
-    ColumnDeleted,
-    /// [`OpResult::ColumnsReordered`].
+    /// [`TableResult::ColumnsReordered`] of an [`OpResult::Table`].
     #[strum(serialize = "columns reordered")]
     ColumnsReordered,
-    /// [`OpResult::OptionsAdded`].
-    #[strum(serialize = "options added")]
-    OptionsAdded,
-    /// [`OpResult::RowsWritten`].
-    #[strum(serialize = "rows written")]
-    RowsWritten,
-    /// [`OpResult::ColumnTyped`].
-    #[strum(serialize = "a column typed")]
-    ColumnTyped,
-    /// [`OpResult::OptionChanged`].
-    #[strum(serialize = "an option changed")]
-    OptionChanged,
-    /// [`OpResult::ViewWritten`].
-    #[strum(serialize = "a view written")]
-    ViewWritten,
-    /// [`OpResult::ViewDeleted`].
-    #[strum(serialize = "a view deleted")]
-    ViewDeleted,
-    /// [`OpResult::ViewsReordered`].
+    /// [`TableResult::ViewsReordered`] of an [`OpResult::Table`].
     #[strum(serialize = "views reordered")]
     ViewsReordered,
-    /// [`OpResult::CardMoved`].
+    /// [`ColumnResult::Created`] of an [`OpResult::Column`].
+    #[strum(serialize = "a column created")]
+    ColumnCreated,
+    /// [`ColumnResult::Renamed`] of an [`OpResult::Column`].
+    #[strum(serialize = "a column renamed")]
+    ColumnRenamed,
+    /// [`ColumnResult::TypeChanged`] of an [`OpResult::Column`].
+    #[strum(serialize = "a column type changed")]
+    ColumnTypeChanged,
+    /// [`ColumnResult::Deleted`] of an [`OpResult::Column`].
+    #[strum(serialize = "a column deleted")]
+    ColumnDeleted,
+    /// [`ColumnResult::OptionsAdded`] of an [`OpResult::Column`].
+    #[strum(serialize = "options added")]
+    OptionsAdded,
+    /// [`ColumnResult::OptionUpdated`] of an [`OpResult::Column`].
+    #[strum(serialize = "an option updated")]
+    OptionUpdated,
+    /// [`ColumnResult::OptionDeleted`] of an [`OpResult::Column`].
+    #[strum(serialize = "an option deleted")]
+    OptionDeleted,
+    /// [`RowsResult::Inserted`] of an [`OpResult::Rows`].
+    #[strum(serialize = "rows inserted")]
+    RowsInserted,
+    /// [`RowsResult::Updated`] of an [`OpResult::Rows`].
+    #[strum(serialize = "rows updated")]
+    RowsUpdated,
+    /// [`RowsResult::Deleted`] of an [`OpResult::Rows`].
+    #[strum(serialize = "rows deleted")]
+    RowsDeleted,
+    /// [`ViewResult::Created`] of an [`OpResult::View`].
+    #[strum(serialize = "a view created")]
+    ViewCreated,
+    /// [`ViewResult::Updated`] of an [`OpResult::View`].
+    #[strum(serialize = "a view updated")]
+    ViewUpdated,
+    /// [`ViewResult::Deleted`] of an [`OpResult::View`].
+    #[strum(serialize = "a view deleted")]
+    ViewDeleted,
+    /// [`ViewResult::CardMoved`] of an [`OpResult::View`].
     #[strum(serialize = "a card moved")]
     CardMoved,
+    /// [`OpResult::ReorderTables`].
+    #[strum(serialize = "tables reordered")]
+    TablesReordered,
 }
 
 impl From<&OpResult> for OpResultKind {
     fn from(result: &OpResult) -> Self {
         match result {
-            OpResult::TableCreated { .. } => OpResultKind::TableCreated,
-            OpResult::TableRenamed { .. } => OpResultKind::TableRenamed,
-            OpResult::TableDeleted { .. } => OpResultKind::TableDeleted,
-            OpResult::TablesReordered { .. } => OpResultKind::TablesReordered,
-            OpResult::ColumnCreated { .. } => OpResultKind::ColumnCreated,
-            OpResult::ColumnRenamed { .. } => OpResultKind::ColumnRenamed,
-            OpResult::ColumnDeleted { .. } => OpResultKind::ColumnDeleted,
-            OpResult::ColumnsReordered { .. } => OpResultKind::ColumnsReordered,
-            OpResult::OptionsAdded { .. } => OpResultKind::OptionsAdded,
-            OpResult::RowsWritten { .. } => OpResultKind::RowsWritten,
-            OpResult::ColumnTyped { .. } => OpResultKind::ColumnTyped,
-            OpResult::OptionChanged { .. } => OpResultKind::OptionChanged,
-            OpResult::ViewWritten { .. } => OpResultKind::ViewWritten,
-            OpResult::ViewDeleted { .. } => OpResultKind::ViewDeleted,
-            OpResult::ViewsReordered { .. } => OpResultKind::ViewsReordered,
-            OpResult::CardMoved { .. } => OpResultKind::CardMoved,
+            OpResult::Table {
+                change: TableResult::Created,
+                ..
+            } => OpResultKind::TableCreated,
+            OpResult::Table {
+                change: TableResult::Renamed,
+                ..
+            } => OpResultKind::TableRenamed,
+            OpResult::Table {
+                change: TableResult::Deleted,
+                ..
+            } => OpResultKind::TableDeleted,
+            OpResult::Table {
+                change: TableResult::ColumnsReordered,
+                ..
+            } => OpResultKind::ColumnsReordered,
+            OpResult::Table {
+                change: TableResult::ViewsReordered { .. },
+                ..
+            } => OpResultKind::ViewsReordered,
+            OpResult::Column {
+                change: ColumnResult::Created,
+                ..
+            } => OpResultKind::ColumnCreated,
+            OpResult::Column {
+                change: ColumnResult::Renamed,
+                ..
+            } => OpResultKind::ColumnRenamed,
+            OpResult::Column {
+                change: ColumnResult::TypeChanged,
+                ..
+            } => OpResultKind::ColumnTypeChanged,
+            OpResult::Column {
+                change: ColumnResult::Deleted,
+                ..
+            } => OpResultKind::ColumnDeleted,
+            OpResult::Column {
+                change: ColumnResult::OptionsAdded { .. },
+                ..
+            } => OpResultKind::OptionsAdded,
+            OpResult::Column {
+                change: ColumnResult::OptionUpdated,
+                ..
+            } => OpResultKind::OptionUpdated,
+            OpResult::Column {
+                change: ColumnResult::OptionDeleted,
+                ..
+            } => OpResultKind::OptionDeleted,
+            OpResult::Rows {
+                change: RowsResult::Inserted { .. },
+                ..
+            } => OpResultKind::RowsInserted,
+            OpResult::Rows {
+                change: RowsResult::Updated { .. },
+                ..
+            } => OpResultKind::RowsUpdated,
+            OpResult::Rows {
+                change: RowsResult::Deleted { .. },
+                ..
+            } => OpResultKind::RowsDeleted,
+            OpResult::View {
+                change: ViewResult::Created { .. },
+                ..
+            } => OpResultKind::ViewCreated,
+            OpResult::View {
+                change: ViewResult::Updated { .. },
+                ..
+            } => OpResultKind::ViewUpdated,
+            OpResult::View {
+                change: ViewResult::Deleted,
+                ..
+            } => OpResultKind::ViewDeleted,
+            OpResult::View {
+                change: ViewResult::CardMoved { .. },
+                ..
+            } => OpResultKind::CardMoved,
+            OpResult::ReorderTables { .. } => OpResultKind::TablesReordered,
         }
     }
 }

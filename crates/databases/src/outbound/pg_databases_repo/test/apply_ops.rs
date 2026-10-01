@@ -13,8 +13,8 @@ use macro_db_migrator::MACRO_DB_MIGRATIONS;
 use macro_event_broker::NoopMacroEventBroker;
 use macro_user_id::{cowlike::CowLike, user_id::MacroUserIdStr};
 use models_databases::{
-    CellValue, CellWrite, ColumnKind, DatabaseOp, NewColumn, NewOption, OpResult, OptionRef,
-    RowChange, RowChanges,
+    CellValue, CellWrite, ColumnChange, ColumnKind, ColumnResult, DatabaseOp, NewColumn, NewOption,
+    OpResult, OptionRef, RowChange, RowChanges, RowsChange, RowsResult, TableChange,
 };
 use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::service::property_value::PropertyValue;
@@ -105,19 +105,21 @@ pub(super) async fn guests(pool: &PgPool) -> Guests {
         .apply_ops(
             edit(database.id),
             viewer(),
-            vec![DatabaseOp::CreateColumn {
+            vec![DatabaseOp::Column {
                 table: table_id,
-                id: status,
-                definition: NewColumn::New {
-                    name: "Status".into(),
-                    kind: ColumnKind::Select { multi: false },
-                    options: vec![NewOption {
-                        id: OptionId::new(),
-                        label: "Going".into(),
-                    }],
-                    infer_type: false,
+                column: status,
+                change: ColumnChange::Create {
+                    definition: NewColumn::New {
+                        name: "Status".into(),
+                        kind: ColumnKind::Select { multi: false },
+                        options: vec![NewOption {
+                            id: OptionId::new(),
+                            label: "Going".into(),
+                        }],
+                        infer_type: false,
+                    },
+                    after: None,
                 },
-                after: None,
             }]
             .into(),
         )
@@ -180,38 +182,41 @@ async fn ops_insert_update_and_delete_rows_bumping_the_table_once_per_request(po
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::InsertRows {
+            vec![DatabaseOp::Rows {
                 table: guests.table_id,
-                rows: vec![
-                    vec![CellWrite {
-                        column: guests.name,
-                        value: CellValue::Text("Sam".into()),
-                    }],
-                    vec![CellWrite {
-                        column: guests.name,
-                        value: CellValue::Text("Alex".into()),
-                    }],
-                    vec![CellWrite {
-                        column: guests.name,
-                        value: CellValue::Text("Robin".into()),
-                    }],
-                ],
+                change: RowsChange::Insert {
+                    rows: vec![
+                        vec![CellWrite {
+                            column: guests.name,
+                            value: CellValue::Text("Sam".into()),
+                        }],
+                        vec![CellWrite {
+                            column: guests.name,
+                            value: CellValue::Text("Alex".into()),
+                        }],
+                        vec![CellWrite {
+                            column: guests.name,
+                            value: CellValue::Text("Robin".into()),
+                        }],
+                    ],
+                },
             }]
             .into(),
         )
         .await
         .unwrap();
     let [
-        OpResult::RowsWritten {
+        OpResult::Rows {
             table_version,
-            inserted,
-            affected: 3,
+            change: RowsResult::Inserted { rows: inserted },
+            ..
         },
     ] = inserted.as_slice()
     else {
         panic!("expected one insert of three rows, got {inserted:?}");
     };
     assert_eq!(*table_version, TableVersion(before.0 + 1));
+    assert_eq!(inserted.len(), 3);
     let rows = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
         .row_refs(guests.table_id)
         .await
@@ -233,42 +238,46 @@ async fn ops_insert_update_and_delete_rows_bumping_the_table_once_per_request(po
             edit(guests.database_id),
             viewer(),
             vec![
-                DatabaseOp::UpdateRows {
+                DatabaseOp::Rows {
                     table: guests.table_id,
-                    changes: RowChanges::Uniform {
-                        rows: vec![sam, alex, robin],
-                        cells: vec![CellWrite {
-                            column: guests.status,
-                            value: CellValue::Options(vec![OptionRef::Id(OptionId::from_uuid(
-                                going,
-                            ))]),
-                        }],
+                    change: RowsChange::Update {
+                        changes: RowChanges::Uniform {
+                            rows: vec![sam, alex, robin],
+                            cells: vec![CellWrite {
+                                column: guests.status,
+                                value: CellValue::Options(vec![OptionRef::Id(
+                                    OptionId::from_uuid(going),
+                                )]),
+                            }],
+                        },
                     },
                 },
-                DatabaseOp::UpdateRows {
+                DatabaseOp::Rows {
                     table: guests.table_id,
-                    changes: RowChanges::PerRow {
-                        rows: vec![
-                            RowChange {
-                                row: sam,
-                                cells: vec![CellWrite {
-                                    column: guests.name,
-                                    value: CellValue::Text("Samantha".into()),
-                                }],
-                            },
-                            RowChange {
-                                row: alex,
-                                cells: vec![CellWrite {
-                                    column: guests.status,
-                                    value: CellValue::Clear,
-                                }],
-                            },
-                        ],
+                    change: RowsChange::Update {
+                        changes: RowChanges::PerRow {
+                            rows: vec![
+                                RowChange {
+                                    row: sam,
+                                    cells: vec![CellWrite {
+                                        column: guests.name,
+                                        value: CellValue::Text("Samantha".into()),
+                                    }],
+                                },
+                                RowChange {
+                                    row: alex,
+                                    cells: vec![CellWrite {
+                                        column: guests.status,
+                                        value: CellValue::Clear,
+                                    }],
+                                },
+                            ],
+                        },
                     },
                 },
-                DatabaseOp::DeleteRows {
+                DatabaseOp::Rows {
                     table: guests.table_id,
-                    rows: vec![robin],
+                    change: RowsChange::Delete { rows: vec![robin] },
                 },
             ]
             .into(),
@@ -280,20 +289,20 @@ async fn ops_insert_update_and_delete_rows_bumping_the_table_once_per_request(po
     assert_eq!(
         results,
         vec![
-            OpResult::RowsWritten {
+            OpResult::Rows {
+                table: guests.table_id,
                 table_version: after,
-                inserted: vec![],
-                affected: 3,
+                change: RowsResult::Updated { affected: 3 },
             },
-            OpResult::RowsWritten {
+            OpResult::Rows {
+                table: guests.table_id,
                 table_version: after,
-                inserted: vec![],
-                affected: 2,
+                change: RowsResult::Updated { affected: 2 },
             },
-            OpResult::RowsWritten {
+            OpResult::Rows {
+                table: guests.table_id,
                 table_version: after,
-                inserted: vec![],
-                affected: 1,
+                change: RowsResult::Deleted { affected: 1 },
             },
         ]
     );
@@ -333,12 +342,14 @@ async fn an_unknown_label_is_refused_and_creates_no_option(pool: PgPool) {
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::InsertRows {
+            vec![DatabaseOp::Rows {
                 table: guests.table_id,
-                rows: vec![vec![CellWrite {
-                    column: guests.status,
-                    value: CellValue::Options(vec![OptionRef::Label("Maybe".into())]),
-                }]],
+                change: RowsChange::Insert {
+                    rows: vec![vec![CellWrite {
+                        column: guests.status,
+                        value: CellValue::Options(vec![OptionRef::Label("Maybe".into())]),
+                    }]],
+                },
             }]
             .into(),
         )
@@ -389,16 +400,20 @@ async fn a_refused_op_leaves_nothing_of_its_batch_behind(pool: PgPool) {
             edit(guests.database_id),
             viewer(),
             vec![
-                DatabaseOp::InsertRows {
+                DatabaseOp::Rows {
                     table: guests.table_id,
-                    rows: vec![vec![CellWrite {
-                        column: guests.status,
-                        value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
-                    }]],
+                    change: RowsChange::Insert {
+                        rows: vec![vec![CellWrite {
+                            column: guests.status,
+                            value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
+                        }]],
+                    },
                 },
-                DatabaseOp::DeleteRows {
+                DatabaseOp::Rows {
                     table: guests.table_id,
-                    rows: vec![RowId::from_uuid(ghost)],
+                    change: RowsChange::Delete {
+                        rows: vec![RowId::from_uuid(ghost)],
+                    },
                 },
             ]
             .into(),
@@ -463,13 +478,13 @@ async fn a_refused_op_leaves_nothing_of_its_batch_behind(pool: PgPool) {
             edit(guests.database_id),
             viewer(),
             vec![
-                DatabaseOp::InsertRows {
+                DatabaseOp::Rows {
                     table: guests.table_id,
-                    rows: vec![vec![]],
+                    change: RowsChange::Insert { rows: vec![vec![]] },
                 },
-                DatabaseOp::InsertRows {
+                DatabaseOp::Rows {
                     table: elsewhere_table,
-                    rows: vec![vec![]],
+                    change: RowsChange::Insert { rows: vec![vec![]] },
                 },
             ]
             .into(),
@@ -502,23 +517,27 @@ async fn a_relation_cell_holds_rows_of_its_target_table(pool: PgPool) {
             edit(guests.database_id),
             viewer(),
             vec![
-                DatabaseOp::CreateTable {
-                    id: sessions,
-                    name: "Sessions".into(),
-                },
-                DatabaseOp::CreateColumn {
-                    table: guests.table_id,
-                    id: relation,
-                    definition: NewColumn::New {
+                DatabaseOp::Table {
+                    table: sessions,
+                    change: TableChange::Create {
                         name: "Sessions".into(),
-                        kind: ColumnKind::Relation {
-                            database: guests.database_id,
-                            table: sessions,
-                        },
-                        options: vec![],
-                        infer_type: false,
                     },
-                    after: None,
+                },
+                DatabaseOp::Column {
+                    table: guests.table_id,
+                    column: relation,
+                    change: ColumnChange::Create {
+                        definition: NewColumn::New {
+                            name: "Sessions".into(),
+                            kind: ColumnKind::Relation {
+                                database: guests.database_id,
+                                table: sessions,
+                            },
+                            options: vec![],
+                            infer_type: false,
+                        },
+                        after: None,
+                    },
                 },
             ]
             .into(),
@@ -538,15 +557,21 @@ async fn a_relation_cell_holds_rows_of_its_target_table(pool: PgPool) {
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::InsertRows {
+            vec![DatabaseOp::Rows {
                 table: sessions,
-                rows: vec![vec![]],
+                change: RowsChange::Insert { rows: vec![vec![]] },
             }]
             .into(),
         )
         .await
         .unwrap();
-    let [OpResult::RowsWritten { inserted, .. }] = keynote.as_slice() else {
+    let [
+        OpResult::Rows {
+            change: RowsResult::Inserted { rows: inserted },
+            ..
+        },
+    ] = keynote.as_slice()
+    else {
         panic!("expected one insert, got {keynote:?}");
     };
     let keynote = inserted[0];
@@ -555,18 +580,26 @@ async fn a_relation_cell_holds_rows_of_its_target_table(pool: PgPool) {
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::InsertRows {
+            vec![DatabaseOp::Rows {
                 table: guests.table_id,
-                rows: vec![vec![CellWrite {
-                    column: relation,
-                    value: CellValue::Rows(vec![keynote]),
-                }]],
+                change: RowsChange::Insert {
+                    rows: vec![vec![CellWrite {
+                        column: relation,
+                        value: CellValue::Rows(vec![keynote]),
+                    }]],
+                },
             }]
             .into(),
         )
         .await
         .unwrap();
-    let [OpResult::RowsWritten { inserted, .. }] = guest.as_slice() else {
+    let [
+        OpResult::Rows {
+            change: RowsResult::Inserted { rows: inserted },
+            ..
+        },
+    ] = guest.as_slice()
+    else {
         panic!("expected one insert, got {guest:?}");
     };
     let guest = inserted[0];
@@ -583,16 +616,18 @@ async fn a_relation_cell_holds_rows_of_its_target_table(pool: PgPool) {
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::UpdateRows {
+            vec![DatabaseOp::Rows {
                 table: guests.table_id,
-                changes: RowChanges::PerRow {
-                    rows: vec![RowChange {
-                        row: guest,
-                        cells: vec![CellWrite {
-                            column: relation,
-                            value: CellValue::Rows(vec![guest]),
+                change: RowsChange::Update {
+                    changes: RowChanges::PerRow {
+                        rows: vec![RowChange {
+                            row: guest,
+                            cells: vec![CellWrite {
+                                column: relation,
+                                value: CellValue::Rows(vec![guest]),
+                            }],
                         }],
-                    }],
+                    },
                 },
             }]
             .into(),
@@ -630,24 +665,32 @@ async fn a_type_change_refuses_misfits_and_keeps_the_cells(pool: PgPool) {
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::InsertRows {
+            vec![DatabaseOp::Rows {
                 table: guests.table_id,
-                rows: vec![
-                    vec![CellWrite {
-                        column: guests.name,
-                        value: CellValue::Text("12".into()),
-                    }],
-                    vec![CellWrite {
-                        column: guests.name,
-                        value: CellValue::Text("TBD".into()),
-                    }],
-                ],
+                change: RowsChange::Insert {
+                    rows: vec![
+                        vec![CellWrite {
+                            column: guests.name,
+                            value: CellValue::Text("12".into()),
+                        }],
+                        vec![CellWrite {
+                            column: guests.name,
+                            value: CellValue::Text("TBD".into()),
+                        }],
+                    ],
+                },
             }]
             .into(),
         )
         .await
         .unwrap();
-    let [OpResult::RowsWritten { inserted, .. }] = inserted.as_slice() else {
+    let [
+        OpResult::Rows {
+            change: RowsResult::Inserted { rows: inserted },
+            ..
+        },
+    ] = inserted.as_slice()
+    else {
         panic!("expected one insert, got {inserted:?}");
     };
 
@@ -655,10 +698,12 @@ async fn a_type_change_refuses_misfits_and_keeps_the_cells(pool: PgPool) {
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::ChangeColumnType {
+            vec![DatabaseOp::Column {
                 table: guests.table_id,
                 column: guests.name,
-                to: ColumnKind::Number,
+                change: ColumnChange::ChangeType {
+                    to: ColumnKind::Number,
+                },
             }]
             .into(),
         )
@@ -716,12 +761,14 @@ async fn an_option_is_relabelled_and_recoloured_in_place(pool: PgPool) {
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::UpdateOption {
+            vec![DatabaseOp::Column {
                 table: guests.table_id,
                 column: guests.status,
-                option: OptionId::from_uuid(going),
-                label: Some("Attending".into()),
-                color: Some(Some(properties::TagColor::Pink.hex().into())),
+                change: ColumnChange::UpdateOption {
+                    option: OptionId::from_uuid(going),
+                    label: Some("Attending".into()),
+                    color: Some(Some(properties::TagColor::Pink.hex().into())),
+                },
             }]
             .into(),
         )
@@ -730,8 +777,11 @@ async fn an_option_is_relabelled_and_recoloured_in_place(pool: PgPool) {
 
     assert_eq!(
         results,
-        vec![OpResult::OptionChanged {
+        vec![OpResult::Column {
+            table: guests.table_id,
+            column: guests.status,
             table_version: TableVersion(before.0 + 1),
+            change: ColumnResult::OptionUpdated,
         }]
     );
     let option = definitions
@@ -760,26 +810,30 @@ async fn a_removed_option_leaves_its_cells_empty_and_the_others_alone(pool: PgPo
             edit(guests.database_id),
             viewer(),
             vec![
-                DatabaseOp::AddOptions {
+                DatabaseOp::Column {
                     table: guests.table_id,
                     column: guests.status,
-                    options: vec![NewOption {
-                        id: OptionId::new(),
-                        label: "Maybe".into(),
-                    }],
+                    change: ColumnChange::AddOptions {
+                        options: vec![NewOption {
+                            id: OptionId::new(),
+                            label: "Maybe".into(),
+                        }],
+                    },
                 },
-                DatabaseOp::InsertRows {
+                DatabaseOp::Rows {
                     table: guests.table_id,
-                    rows: vec![
-                        vec![CellWrite {
-                            column: guests.status,
-                            value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
-                        }],
-                        vec![CellWrite {
-                            column: guests.status,
-                            value: CellValue::Options(vec![OptionRef::Label("Maybe".into())]),
-                        }],
-                    ],
+                    change: RowsChange::Insert {
+                        rows: vec![
+                            vec![CellWrite {
+                                column: guests.status,
+                                value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
+                            }],
+                            vec![CellWrite {
+                                column: guests.status,
+                                value: CellValue::Options(vec![OptionRef::Label("Maybe".into())]),
+                            }],
+                        ],
+                    },
                 },
             ]
             .into(),
@@ -787,8 +841,14 @@ async fn a_removed_option_leaves_its_cells_empty_and_the_others_alone(pool: PgPo
         .await
         .unwrap();
     let [
-        OpResult::OptionsAdded { .. },
-        OpResult::RowsWritten { inserted, .. },
+        OpResult::Column {
+            change: ColumnResult::OptionsAdded { .. },
+            ..
+        },
+        OpResult::Rows {
+            change: RowsResult::Inserted { rows: inserted },
+            ..
+        },
     ] = inserted.as_slice()
     else {
         panic!("expected the option then the insert, got {inserted:?}");
@@ -806,10 +866,12 @@ async fn a_removed_option_leaves_its_cells_empty_and_the_others_alone(pool: PgPo
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::DeleteOption {
+            vec![DatabaseOp::Column {
                 table: guests.table_id,
                 column: guests.status,
-                option: OptionId::from_uuid(going),
+                change: ColumnChange::DeleteOption {
+                    option: OptionId::from_uuid(going),
+                },
             }]
             .into(),
         )
@@ -901,19 +963,21 @@ async fn appended_options_follow_the_existing_ones_in_place_and_colour(pool: PgP
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::AddOptions {
+            vec![DatabaseOp::Column {
                 table: guests.table_id,
                 column: guests.status,
-                options: vec![
-                    NewOption {
-                        id: maybe,
-                        label: "Maybe".into(),
-                    },
-                    NewOption {
-                        id: declined,
-                        label: "Declined".into(),
-                    },
-                ],
+                change: ColumnChange::AddOptions {
+                    options: vec![
+                        NewOption {
+                            id: maybe,
+                            label: "Maybe".into(),
+                        },
+                        NewOption {
+                            id: declined,
+                            label: "Declined".into(),
+                        },
+                    ],
+                },
             }]
             .into(),
         )
@@ -922,9 +986,13 @@ async fn appended_options_follow_the_existing_ones_in_place_and_colour(pool: PgP
 
     assert_eq!(
         results,
-        vec![OpResult::OptionsAdded {
+        vec![OpResult::Column {
+            table: guests.table_id,
+            column: guests.status,
             table_version: TableVersion(before.0 + 1),
-            added: vec![maybe, declined],
+            change: ColumnResult::OptionsAdded {
+                added: vec![maybe, declined],
+            },
         }]
     );
     let options = &PgDefinitionStore::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
@@ -984,28 +1052,36 @@ async fn a_text_column_converts_into_a_new_number_column_and_keeps_its_rows(pool
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::InsertRows {
+            vec![DatabaseOp::Rows {
                 table: guests.table_id,
-                rows: vec![
-                    vec![CellWrite {
-                        column: guests.name,
-                        value: CellValue::Text("1".into()),
-                    }],
-                    vec![CellWrite {
-                        column: guests.name,
-                        value: CellValue::Text("2".into()),
-                    }],
-                    vec![CellWrite {
-                        column: guests.name,
-                        value: CellValue::Text("soon".into()),
-                    }],
-                ],
+                change: RowsChange::Insert {
+                    rows: vec![
+                        vec![CellWrite {
+                            column: guests.name,
+                            value: CellValue::Text("1".into()),
+                        }],
+                        vec![CellWrite {
+                            column: guests.name,
+                            value: CellValue::Text("2".into()),
+                        }],
+                        vec![CellWrite {
+                            column: guests.name,
+                            value: CellValue::Text("soon".into()),
+                        }],
+                    ],
+                },
             }]
             .into(),
         )
         .await
         .unwrap();
-    let [OpResult::RowsWritten { inserted, .. }] = inserted.as_slice() else {
+    let [
+        OpResult::Rows {
+            change: RowsResult::Inserted { rows: inserted },
+            ..
+        },
+    ] = inserted.as_slice()
+    else {
         panic!("expected one insert, got {inserted:?}");
     };
     let stored_names = || async {
@@ -1071,31 +1147,35 @@ async fn a_text_column_converts_into_a_new_number_column_and_keeps_its_rows(pool
             viewer(),
             crate::domain::models::OpBatch {
                 ops: vec![
-                    DatabaseOp::CreateColumn {
+                    DatabaseOp::Column {
                         table: guests.table_id,
-                        id: count,
-                        definition: NewColumn::New {
-                            name: "Count".into(),
-                            kind: ColumnKind::Number,
-                            options: vec![],
-                            infer_type: false,
+                        column: count,
+                        change: ColumnChange::Create {
+                            definition: NewColumn::New {
+                                name: "Count".into(),
+                                kind: ColumnKind::Number,
+                                options: vec![],
+                                infer_type: false,
+                            },
+                            after: Some(guests.name),
                         },
-                        after: Some(guests.name),
                     },
-                    DatabaseOp::UpdateRows {
+                    DatabaseOp::Rows {
                         table: guests.table_id,
-                        changes: RowChanges::PerRow {
-                            rows: conversion
-                                .cells
-                                .into_iter()
-                                .map(|cell| RowChange {
-                                    row: cell.row,
-                                    cells: vec![CellWrite {
-                                        column: count,
-                                        value: cell.value,
-                                    }],
-                                })
-                                .collect(),
+                        change: RowsChange::Update {
+                            changes: RowChanges::PerRow {
+                                rows: conversion
+                                    .cells
+                                    .into_iter()
+                                    .map(|cell| RowChange {
+                                        row: cell.row,
+                                        cells: vec![CellWrite {
+                                            column: count,
+                                            value: cell.value,
+                                        }],
+                                    })
+                                    .collect(),
+                            },
                         },
                     },
                 ],

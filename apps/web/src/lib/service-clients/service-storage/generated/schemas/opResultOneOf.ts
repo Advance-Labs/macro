@@ -4,16 +4,21 @@
  * document_storage_service
  * OpenAPI spec version: 0.1.0
  */
+
 import type { OpResultOneOfKind } from './opResultOneOfKind';
+import type { TableResult } from './tableResult';
 import type { TableVersion } from './tableVersion';
 
 /**
- * The table a creation added.
+ * What a table op did.
  */
 export type OpResultOneOf = {
+  /** What happened to it. */
+  change: TableResult;
   kind: OpResultOneOfKind;
-  /** The new table. */
+  /** The table. */
   table: string;
-  /** Its version once the request committed. */
-  tableVersion: TableVersion;
+  /** Its version once the request committed; left out when the op
+removed it. */
+  tableVersion?: TableVersion;
 };

@@ -220,7 +220,10 @@ impl DatabasesService for FakeService {
         viewer: Viewer,
         batch: OpBatch,
     ) -> Result<Vec<OpResult>, DatabaseError> {
-        use models_databases::{DatabaseOp, VersionedTable};
+        use models_databases::{
+            ColumnChange, ColumnResult, DatabaseOp, TableChange, TableResult, VersionedTable,
+            ViewChange, ViewResult,
+        };
         {
             let mut calls = self.calls.lock().unwrap();
             calls.applied.push(batch.clone());
@@ -232,13 +235,23 @@ impl DatabasesService for FakeService {
             .ops
             .into_iter()
             .map(|op| match op {
-                DatabaseOp::CreateTable { id, .. } => OpResult::TableCreated {
-                    table: id,
-                    table_version: TableVersion(1),
-                },
-                DatabaseOp::RenameTable { .. } => OpResult::TableRenamed { table_version },
-                DatabaseOp::DeleteTable { table } => OpResult::TableDeleted { table },
-                DatabaseOp::ReorderTables { order } => OpResult::TablesReordered {
+                DatabaseOp::Table { table, change } => {
+                    let (table_version, change) = match change {
+                        TableChange::Create { .. } => (Some(TableVersion(1)), TableResult::Created),
+                        TableChange::Rename { .. } => (Some(table_version), TableResult::Renamed),
+                        TableChange::Delete => (None, TableResult::Deleted),
+                        TableChange::ReorderColumns { .. } => {
+                            (Some(table_version), TableResult::ColumnsReordered)
+                        }
+                        other => unimplemented!("the toolset sends no {other:?}"),
+                    };
+                    OpResult::Table {
+                        table,
+                        table_version,
+                        change,
+                    }
+                }
+                DatabaseOp::ReorderTables { order } => OpResult::ReorderTables {
                     tables: order
                         .into_iter()
                         .map(|table| VersionedTable {
@@ -247,41 +260,59 @@ impl DatabasesService for FakeService {
                         })
                         .collect(),
                 },
-                DatabaseOp::CreateColumn { id, .. } => OpResult::ColumnCreated {
-                    column: id,
+                DatabaseOp::Column {
+                    table,
+                    column,
+                    change,
+                } => OpResult::Column {
+                    table,
+                    column,
                     table_version,
+                    change: match change {
+                        ColumnChange::Create { .. } => ColumnResult::Created,
+                        ColumnChange::Rename { .. } => ColumnResult::Renamed,
+                        ColumnChange::Delete => ColumnResult::Deleted,
+                        ColumnChange::AddOptions { options } => ColumnResult::OptionsAdded {
+                            added: options.into_iter().map(|option| option.id).collect(),
+                        },
+                        ColumnChange::ChangeType { .. } => ColumnResult::TypeChanged,
+                        other => unimplemented!("the toolset sends no {other:?}"),
+                    },
                 },
-                DatabaseOp::RenameColumn { .. } => OpResult::ColumnRenamed { table_version },
-                DatabaseOp::DeleteColumn { .. } => OpResult::ColumnDeleted { table_version },
-                DatabaseOp::ReorderColumns { .. } => OpResult::ColumnsReordered { table_version },
-                DatabaseOp::AddOptions { options, .. } => OpResult::OptionsAdded {
+                DatabaseOp::View {
+                    table,
+                    view: id,
+                    change: ViewChange::Create { view },
+                } => OpResult::View {
+                    table,
+                    view: id,
                     table_version,
-                    added: options.into_iter().map(|option| option.id).collect(),
+                    change: ViewResult::Created {
+                        view: Box::new(crate::domain::models::DatabaseView {
+                            id,
+                            database_id: DATABASE_ID,
+                            table_id: table,
+                            name: view.name,
+                            position: "80".parse::<Position>().unwrap(),
+                            query: view.query,
+                            layout: view
+                                .layout
+                                .with_default_title(Some(COLUMN_ID))
+                                .expect("a title to default to"),
+                            created_at: at,
+                            updated_at: at,
+                        }),
+                    },
                 },
-                DatabaseOp::ChangeColumnType { .. } => OpResult::ColumnTyped { table_version },
-                DatabaseOp::CreateView { table, view } => OpResult::ViewWritten {
-                    table_version,
-                    view: Box::new(crate::domain::models::DatabaseView {
-                        id: VIEW_ID,
-                        database_id: DATABASE_ID,
-                        table_id: table,
-                        name: view.name,
-                        position: "80".parse::<Position>().unwrap(),
-                        query: view.query,
-                        layout: view
-                            .layout
-                            .with_default_title(Some(COLUMN_ID))
-                            .expect("a title to default to"),
-                        created_at: at,
-                        updated_at: at,
-                    }),
-                },
-                DatabaseOp::UpdateView {
+                DatabaseOp::View {
+                    table,
                     view,
-                    name,
-                    query,
-                    layout,
-                    ..
+                    change:
+                        ViewChange::Update {
+                            name,
+                            query,
+                            layout,
+                        },
                 } => {
                     let current = self
                         .views
@@ -289,16 +320,20 @@ impl DatabasesService for FakeService {
                         .find(|stored| stored.id == view)
                         .expect("the view the tool found")
                         .clone();
-                    OpResult::ViewWritten {
+                    OpResult::View {
+                        table,
+                        view,
                         table_version,
-                        view: Box::new(crate::domain::models::DatabaseView {
-                            name: name.unwrap_or(current.name),
-                            query: query.unwrap_or(current.query),
-                            layout: layout
-                                .and_then(|layout| layout.with_default_title(Some(COLUMN_ID)))
-                                .unwrap_or(current.layout),
-                            ..current
-                        }),
+                        change: ViewResult::Updated {
+                            view: Box::new(crate::domain::models::DatabaseView {
+                                name: name.unwrap_or(current.name),
+                                query: query.unwrap_or(current.query),
+                                layout: layout
+                                    .and_then(|layout| layout.with_default_title(Some(COLUMN_ID)))
+                                    .unwrap_or(current.layout),
+                                ..current
+                            }),
+                        },
                     }
                 }
                 other => unimplemented!("the toolset sends no {other:?}"),
@@ -328,8 +363,10 @@ impl DatabasesService for FakeService {
             .iter()
             .flat_map(|batch| &batch.ops)
             .filter_map(|op| match op {
-                models_databases::DatabaseOp::AddOptions {
-                    column, options, ..
+                models_databases::DatabaseOp::Column {
+                    column,
+                    change: models_databases::ColumnChange::AddOptions { options },
+                    ..
                 } if *column == COLUMN_ID => Some(options),
                 _ => None,
             })

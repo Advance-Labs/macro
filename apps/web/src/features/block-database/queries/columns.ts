@@ -31,17 +31,20 @@ export function createDatabaseColumn(params: {
   const id = uuidv7();
   return applyDatabaseOps(params.databaseId, [
     {
-      kind: 'create_column',
+      kind: 'column',
       table: params.tableId,
-      id,
-      definition: {
-        source: 'new',
-        name: params.name,
-        type: params.type,
-        ...(params.options && {
-          options: params.options.map((label) => ({ id: uuidv7(), label })),
-        }),
-        ...(params.inferType && { inferType: true }),
+      column: id,
+      change: {
+        kind: 'create',
+        definition: {
+          source: 'new',
+          name: params.name,
+          type: params.type,
+          ...(params.options && {
+            options: params.options.map((label) => ({ id: uuidv7(), label })),
+          }),
+          ...(params.inferType && { inferType: true }),
+        },
       },
     },
   ]).map(async () => {
@@ -59,10 +62,13 @@ export function addDatabaseColumnOptions(params: {
 }): DatabaseSchemaChange {
   return applyDatabaseOps(params.databaseId, [
     {
-      kind: 'add_options',
+      kind: 'column',
       table: params.tableId,
       column: params.columnId,
-      options: params.labels.map((label) => ({ id: uuidv7(), label })),
+      change: {
+        kind: 'add_options',
+        options: params.labels.map((label) => ({ id: uuidv7(), label })),
+      },
     },
   ]).map(async () => {
     await invalidateDatabase(params.databaseId);
@@ -96,31 +102,37 @@ export function convertDatabaseColumn(params: {
       const id = uuidv7();
       const ops: DatabaseOp[] = [
         {
-          kind: 'create_column',
+          kind: 'column',
           table,
-          id,
-          definition: {
-            source: 'new',
-            name: params.name,
-            type,
-            options: conversion.options.map((label) => ({
-              id: uuidv7(),
-              label,
-            })),
+          column: id,
+          change: {
+            kind: 'create',
+            definition: {
+              source: 'new',
+              name: params.name,
+              type,
+              options: conversion.options.map((label) => ({
+                id: uuidv7(),
+                label,
+              })),
+            },
+            after: params.columnId,
           },
-          after: params.columnId,
         },
       ];
       if (conversion.cells.length)
         ops.push({
-          kind: 'update_rows',
+          kind: 'rows',
           table,
-          changes: {
-            kind: 'per_row',
-            rows: conversion.cells.map(({ row, value }) => ({
-              row,
-              cells: [{ column: id, value }],
-            })),
+          change: {
+            kind: 'update',
+            changes: {
+              kind: 'per_row',
+              rows: conversion.cells.map(({ row, value }) => ({
+                row,
+                cells: [{ column: id, value }],
+              })),
+            },
           },
         });
       return applyDatabaseOps(params.databaseId, ops, {

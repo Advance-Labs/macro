@@ -7,7 +7,9 @@ use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
 use std::collections::HashMap;
 
-use models_databases::{ColumnId, DatabaseId, DatabaseOp, NewOption, OptionId, TableId};
+use models_databases::{
+    ColumnChange, ColumnId, DatabaseId, DatabaseOp, NewOption, OptionId, TableId,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -148,22 +150,24 @@ where
 
         // The labels no row has yet join the new type's options in the same
         // request, so the change and its options commit together.
-        let mut ops = vec![DatabaseOp::ChangeColumnType {
+        let mut ops = vec![DatabaseOp::Column {
             table: self.table_id,
             column: self.column_id,
-            to,
+            change: ColumnChange::ChangeType { to },
         }];
         if let Some(labels) = self.options.as_ref().filter(|labels| !labels.is_empty()) {
-            ops.push(DatabaseOp::AddOptions {
+            ops.push(DatabaseOp::Column {
                 table: self.table_id,
                 column: self.column_id,
-                options: labels
-                    .iter()
-                    .map(|label| NewOption {
-                        id: OptionId::new(),
-                        label: label.clone(),
-                    })
-                    .collect(),
+                change: ColumnChange::AddOptions {
+                    options: labels
+                        .iter()
+                        .map(|label| NewOption {
+                            id: OptionId::new(),
+                            label: label.clone(),
+                        })
+                        .collect(),
+                },
             });
         }
         service_context

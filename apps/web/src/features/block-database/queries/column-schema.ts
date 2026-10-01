@@ -42,20 +42,24 @@ export function updateDatabaseColumns(params: {
   const op = match(params.mutation)
     .returnType<DatabaseOp>()
     .with({ kind: 'type' }, ({ columnId, change }) => ({
-      kind: 'change_column_type',
+      kind: 'column',
       table,
       column: columnId,
-      to: opColumnKind(params.databaseId, change.to),
+      change: {
+        kind: 'change_type',
+        to: opColumnKind(params.databaseId, change.to),
+      },
     }))
     .with({ kind: 'delete' }, ({ columnId }) => ({
-      kind: 'delete_column',
+      kind: 'column',
       table,
       column: columnId,
+      change: { kind: 'delete' },
     }))
     .with({ kind: 'order' }, ({ columnIds }) => ({
-      kind: 'reorder_columns',
+      kind: 'table',
       table,
-      order: columnIds,
+      change: { kind: 'reorder_columns', order: columnIds },
     }))
     .exhaustive();
   const applied = applyDatabaseOps(params.databaseId, [op], {

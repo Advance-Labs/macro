@@ -17,8 +17,8 @@ use ai_toolset::{AsyncTool, RequestContext, ServiceContext};
 use entity_access::domain::models::AccessLevel;
 use models_databases::position::Position;
 use models_databases::{
-    CellValue, CellWrite, ColumnId, DatabaseId, DatabaseOp, OpResult, OptionId, OptionRef,
-    RowChanges, RowId, TableId,
+    CellValue, CellWrite, ColumnId, ColumnResult, DatabaseId, DatabaseOp, OpResult, OptionId,
+    OptionRef, RowChanges, RowId, RowsChange, RowsResult, TableId,
 };
 use models_properties::service::property_value::PropertyValue;
 use models_properties::shared::DataType;
@@ -299,10 +299,10 @@ async fn a_write_runs_as_the_agent_for_the_user_and_guards_its_base_versions() {
         .lock()
         .unwrap()
         .op_answers
-        .push_back(Ok(vec![OpResult::RowsWritten {
+        .push_back(Ok(vec![OpResult::Rows {
+            table: GUESTS,
             table_version: TableVersion(2),
-            inserted: vec![],
-            affected: 1,
+            change: RowsResult::Updated { affected: 1 },
         }]));
     let request: QueryDatabase = serde_json::from_value(serde_json::json!({
         "sql": "UPDATE \"Guests\" SET \"Status\" = 'Going' WHERE \"Name\" = 'Maria'",
@@ -329,14 +329,16 @@ async fn a_write_runs_as_the_agent_for_the_user_and_guards_its_base_versions() {
             database: OFFSITE,
             level: AccessLevel::Owner,
             acting_bot: Some(bot_id::MACRO_AI_BOT_ID),
-            ops: vec![DatabaseOp::UpdateRows {
+            ops: vec![DatabaseOp::Rows {
                 table: GUESTS,
-                changes: RowChanges::Uniform {
-                    rows: vec![MARIA],
-                    cells: vec![CellWrite {
-                        column: STATUS_COLUMN,
-                        value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
-                    }],
+                change: RowsChange::Update {
+                    changes: RowChanges::Uniform {
+                        rows: vec![MARIA],
+                        cells: vec![CellWrite {
+                            column: STATUS_COLUMN,
+                            value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
+                        }],
+                    }
                 },
             }],
         }]
@@ -542,23 +544,28 @@ async fn a_refused_write_says_what_was_refused_without_name_advice() {
 async fn every_statement_kind_names_what_it_wrote() {
     let world = world();
     world.lock().unwrap().op_answers.extend([
-        Ok(vec![OpResult::RowsWritten {
+        Ok(vec![OpResult::Rows {
+            table: GUESTS,
             table_version: TableVersion(2),
-            inserted: vec![RowId::from_uuid(Uuid::from_u128(0xe002))],
-            affected: 1,
+            change: RowsResult::Inserted {
+                rows: vec![RowId::from_uuid(Uuid::from_u128(0xe002))],
+            },
         }]),
-        Ok(vec![OpResult::RowsWritten {
+        Ok(vec![OpResult::Rows {
+            table: GUESTS,
             table_version: TableVersion(3),
-            inserted: vec![],
-            affected: 1,
+            change: RowsResult::Updated { affected: 1 },
         }]),
-        Ok(vec![OpResult::RowsWritten {
+        Ok(vec![OpResult::Rows {
+            table: GUESTS,
             table_version: TableVersion(4),
-            inserted: vec![],
-            affected: 1,
+            change: RowsResult::Deleted { affected: 1 },
         }]),
-        Ok(vec![OpResult::ColumnTyped {
+        Ok(vec![OpResult::Column {
+            table: GUESTS,
+            column: STATUS_COLUMN,
             table_version: TableVersion(5),
+            change: ColumnResult::TypeChanged,
         }]),
     ]);
     let statement = async |statement: &str| {

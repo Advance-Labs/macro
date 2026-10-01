@@ -47,7 +47,7 @@ export type DatabaseOpsError = ResultError<DatabaseOpsErrorCode> & {
   refusal: OpRefusalResponse | null;
 };
 
-/** A {@link ColumnConversion} whose cells are the engine's own values, ready for an `update_rows` op. */
+/** A {@link ColumnConversion} whose cells are the engine's own values, ready for a rows `update` op. */
 export type DatabaseColumnConversion = Omit<ColumnConversion, 'cells'> & {
   cells: { row: string; value: CellValue }[];
 };
@@ -75,7 +75,7 @@ function takenIdOf(taken: unknown): TakenId | null {
   const id = taken.id;
   return match(taken.kind)
     .returnType<TakenId | null>()
-    .with('table', 'column', 'option', (kind) => ({ kind, id }))
+    .with('table', 'column', 'option', 'view', (kind) => ({ kind, id }))
     .otherwise(() => null);
 }
 

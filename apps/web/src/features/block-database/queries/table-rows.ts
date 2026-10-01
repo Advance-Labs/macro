@@ -472,10 +472,13 @@ export function createDatabaseRowsSource(props: {
       ? missingOptionLabels(op.value, (columnId) =>
           optionLabelsOf(table, columnId)
         ).map(({ column, labels }) => ({
-          kind: 'add_options',
+          kind: 'column',
           table: tableId,
           column,
-          options: labels.map((label) => ({ id: uuidv7(), label })),
+          change: {
+            kind: 'add_options',
+            options: labels.map((label) => ({ id: uuidv7(), label })),
+          },
         }))
       : [];
     const applied = await props.applyOps([...newOptions, op.value]);
@@ -486,8 +489,7 @@ export function createDatabaseRowsSource(props: {
           : { kind: 'ops', error: applied.error }
       );
     const written = applied.value.at(-1);
-    if (written?.kind !== 'rows_written')
-      return err({ kind: 'unexpected-result' });
+    if (written?.kind !== 'rows') return err({ kind: 'unexpected-result' });
     props.applyVersions({ [tableId]: written.tableVersion });
     // New options live in the schema; read it again in the background
     // so they show as options without suspending the grid.
@@ -497,7 +499,10 @@ export function createDatabaseRowsSource(props: {
         exact: true,
       });
     return ok({
-      insertedRowIds: written.inserted,
+      insertedRowIds: match(written.change)
+        .with({ kind: 'inserted' }, ({ rows }) => rows)
+        .with({ kind: 'updated' }, { kind: 'deleted' }, () => [])
+        .exhaustive(),
       version: written.tableVersion,
     });
   }

@@ -15,42 +15,48 @@ async fn one_batch_creates_a_table_a_select_column_and_rows_filling_it_by_option
             edit(seeded.database_id),
             viewer(OWNER),
             OpBatch::from(vec![
-                DatabaseOp::CreateTable {
-                    id: sessions,
-                    name: "Sessions".into(),
-                },
-                DatabaseOp::CreateColumn {
+                DatabaseOp::Table {
                     table: sessions,
-                    id: track,
-                    definition: NewColumn::New {
-                        name: "Track".into(),
-                        kind: ColumnKind::Select { multi: false },
-                        options: vec![
-                            NewOption {
-                                id: design,
-                                label: "Design".into(),
-                            },
-                            NewOption {
-                                id: engineering,
-                                label: "Engineering".into(),
-                            },
-                        ],
-                        infer_type: false,
+                    change: TableChange::Create {
+                        name: "Sessions".into(),
                     },
-                    after: None,
                 },
-                DatabaseOp::InsertRows {
+                DatabaseOp::Column {
                     table: sessions,
-                    rows: vec![
-                        vec![CellWrite {
-                            column: track,
-                            value: CellValue::Options(vec![OptionRef::Id(engineering)]),
-                        }],
-                        vec![CellWrite {
-                            column: track,
-                            value: CellValue::Options(vec![OptionRef::Id(design)]),
-                        }],
-                    ],
+                    column: track,
+                    change: ColumnChange::Create {
+                        definition: NewColumn::New {
+                            name: "Track".into(),
+                            kind: ColumnKind::Select { multi: false },
+                            options: vec![
+                                NewOption {
+                                    id: design,
+                                    label: "Design".into(),
+                                },
+                                NewOption {
+                                    id: engineering,
+                                    label: "Engineering".into(),
+                                },
+                            ],
+                            infer_type: false,
+                        },
+                        after: None,
+                    },
+                },
+                DatabaseOp::Rows {
+                    table: sessions,
+                    change: RowsChange::Insert {
+                        rows: vec![
+                            vec![CellWrite {
+                                column: track,
+                                value: CellValue::Options(vec![OptionRef::Id(engineering)]),
+                            }],
+                            vec![CellWrite {
+                                column: track,
+                                value: CellValue::Options(vec![OptionRef::Id(design)]),
+                            }],
+                        ],
+                    },
                 },
             ]),
         )
@@ -61,18 +67,21 @@ async fn one_batch_creates_a_table_a_select_column_and_rows_filling_it_by_option
     assert_eq!(
         results,
         vec![
-            OpResult::TableCreated {
+            OpResult::Table {
                 table: sessions,
-                table_version: TableVersion(1),
+                table_version: Some(TableVersion(1)),
+                change: TableResult::Created,
             },
-            OpResult::ColumnCreated {
+            OpResult::Column {
+                table: sessions,
                 column: track,
                 table_version: TableVersion(1),
+                change: ColumnResult::Created,
             },
-            OpResult::RowsWritten {
+            OpResult::Rows {
+                table: sessions,
                 table_version: TableVersion(1),
-                inserted: rows.clone(),
-                affected: 2,
+                change: RowsResult::Inserted { rows: rows.clone() },
             },
         ]
     );
@@ -121,30 +130,36 @@ async fn a_refused_later_op_leaves_the_tables_and_columns_before_it_unwritten() 
             edit(seeded.database_id),
             viewer(OWNER),
             OpBatch::from(vec![
-                DatabaseOp::CreateTable {
-                    id: sessions,
-                    name: "Sessions".into(),
-                },
-                DatabaseOp::CreateColumn {
+                DatabaseOp::Table {
                     table: sessions,
-                    id: track,
-                    definition: NewColumn::New {
-                        name: "Track".into(),
-                        kind: ColumnKind::Select { multi: false },
-                        options: vec![NewOption {
-                            id: OptionId::new(),
-                            label: "Design".into(),
-                        }],
-                        infer_type: false,
+                    change: TableChange::Create {
+                        name: "Sessions".into(),
                     },
-                    after: None,
                 },
-                DatabaseOp::InsertRows {
+                DatabaseOp::Column {
                     table: sessions,
-                    rows: vec![vec![CellWrite {
-                        column: track,
-                        value: CellValue::Options(vec![OptionRef::Label("Marketing".into())]),
-                    }]],
+                    column: track,
+                    change: ColumnChange::Create {
+                        definition: NewColumn::New {
+                            name: "Track".into(),
+                            kind: ColumnKind::Select { multi: false },
+                            options: vec![NewOption {
+                                id: OptionId::new(),
+                                label: "Design".into(),
+                            }],
+                            infer_type: false,
+                        },
+                        after: None,
+                    },
+                },
+                DatabaseOp::Rows {
+                    table: sessions,
+                    change: RowsChange::Insert {
+                        rows: vec![vec![CellWrite {
+                            column: track,
+                            value: CellValue::Options(vec![OptionRef::Label("Marketing".into())]),
+                        }]],
+                    },
                 },
             ]),
         )
@@ -183,16 +198,18 @@ async fn a_new_column_under_an_existing_columns_id_is_refused_as_taken() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            OpBatch::from(vec![DatabaseOp::CreateColumn {
+            OpBatch::from(vec![DatabaseOp::Column {
                 table: seeded.table_id,
-                id: taken,
-                definition: NewColumn::New {
-                    name: "Notes".into(),
-                    kind: ColumnKind::Text,
-                    options: vec![],
-                    infer_type: false,
+                column: taken,
+                change: ColumnChange::Create {
+                    definition: NewColumn::New {
+                        name: "Notes".into(),
+                        kind: ColumnKind::Text,
+                        options: vec![],
+                        infer_type: false,
+                    },
+                    after: None,
                 },
-                after: None,
             }]),
         )
         .await
@@ -236,27 +253,31 @@ async fn an_option_id_minted_twice_in_one_batch_is_refused_as_taken() {
             edit(seeded.database_id),
             viewer(OWNER),
             OpBatch::from(vec![
-                DatabaseOp::CreateColumn {
+                DatabaseOp::Column {
                     table: seeded.table_id,
-                    id: diet,
-                    definition: NewColumn::New {
-                        name: "Diet".into(),
-                        kind: ColumnKind::Select { multi: true },
-                        options: vec![NewOption {
-                            id: minted,
-                            label: "Vegan".into(),
-                        }],
-                        infer_type: false,
+                    column: diet,
+                    change: ColumnChange::Create {
+                        definition: NewColumn::New {
+                            name: "Diet".into(),
+                            kind: ColumnKind::Select { multi: true },
+                            options: vec![NewOption {
+                                id: minted,
+                                label: "Vegan".into(),
+                            }],
+                            infer_type: false,
+                        },
+                        after: None,
                     },
-                    after: None,
                 },
-                DatabaseOp::AddOptions {
+                DatabaseOp::Column {
                     table: seeded.table_id,
                     column: seeded.status_column.id,
-                    options: vec![NewOption {
-                        id: minted,
-                        label: "Maybe".into(),
-                    }],
+                    change: ColumnChange::AddOptions {
+                        options: vec![NewOption {
+                            id: minted,
+                            label: "Maybe".into(),
+                        }],
+                    },
                 },
             ]),
         )
@@ -303,23 +324,27 @@ async fn a_stale_base_version_is_a_conflict_and_writes_nothing() {
             viewer(OWNER),
             OpBatch {
                 ops: vec![
-                    DatabaseOp::CreateColumn {
+                    DatabaseOp::Column {
                         table: seeded.table_id,
-                        id: notes,
-                        definition: NewColumn::New {
-                            name: "Notes".into(),
-                            kind: ColumnKind::Text,
-                            options: vec![],
-                            infer_type: false,
+                        column: notes,
+                        change: ColumnChange::Create {
+                            definition: NewColumn::New {
+                                name: "Notes".into(),
+                                kind: ColumnKind::Text,
+                                options: vec![],
+                                infer_type: false,
+                            },
+                            after: None,
                         },
-                        after: None,
                     },
-                    DatabaseOp::InsertRows {
+                    DatabaseOp::Rows {
                         table: seeded.table_id,
-                        rows: vec![vec![CellWrite {
-                            column: notes,
-                            value: CellValue::Text("Vegetarian".into()),
-                        }]],
+                        change: RowsChange::Insert {
+                            rows: vec![vec![CellWrite {
+                                column: notes,
+                                value: CellValue::Text("Vegetarian".into()),
+                            }]],
+                        },
                     },
                 ],
                 base_versions: HashMap::from([(seeded.table_id, TableVersion(current.0 - 1))]),
@@ -347,20 +372,24 @@ async fn a_type_change_after_a_row_update_of_its_table_is_refused() {
             edit(seeded.database_id),
             viewer(OWNER),
             OpBatch::from(vec![
-                DatabaseOp::UpdateRows {
+                DatabaseOp::Rows {
                     table: seeded.table_id,
-                    changes: RowChanges::Uniform {
-                        rows: vec![seeded.row_id],
-                        cells: vec![CellWrite {
-                            column: seeded.plus_ones_column.id,
-                            value: CellValue::Number(3.0),
-                        }],
+                    change: RowsChange::Update {
+                        changes: RowChanges::Uniform {
+                            rows: vec![seeded.row_id],
+                            cells: vec![CellWrite {
+                                column: seeded.plus_ones_column.id,
+                                value: CellValue::Number(3.0),
+                            }],
+                        },
                     },
                 },
-                DatabaseOp::ChangeColumnType {
+                DatabaseOp::Column {
                     table: seeded.table_id,
                     column: seeded.name_column.id,
-                    to: ColumnKind::Select { multi: false },
+                    change: ColumnChange::ChangeType {
+                        to: ColumnKind::Select { multi: false },
+                    },
                 },
             ]),
         )
@@ -403,18 +432,22 @@ async fn options_added_after_a_type_change_of_their_column_land_with_it() {
             edit(seeded.database_id),
             viewer(OWNER),
             OpBatch::from(vec![
-                DatabaseOp::ChangeColumnType {
+                DatabaseOp::Column {
                     table: seeded.table_id,
                     column: seeded.name_column.id,
-                    to: ColumnKind::Select { multi: false },
+                    change: ColumnChange::ChangeType {
+                        to: ColumnKind::Select { multi: false },
+                    },
                 },
-                DatabaseOp::AddOptions {
+                DatabaseOp::Column {
                     table: seeded.table_id,
                     column: seeded.name_column.id,
-                    options: vec![NewOption {
-                        id: vip,
-                        label: "VIP".into(),
-                    }],
+                    change: ColumnChange::AddOptions {
+                        options: vec![NewOption {
+                            id: vip,
+                            label: "VIP".into(),
+                        }],
+                    },
                 },
             ]),
         )
@@ -425,12 +458,17 @@ async fn options_added_after_a_type_change_of_their_column_land_with_it() {
     assert_eq!(
         results,
         vec![
-            OpResult::ColumnTyped {
+            OpResult::Column {
+                table: seeded.table_id,
+                column: seeded.name_column.id,
                 table_version: after,
+                change: ColumnResult::TypeChanged,
             },
-            OpResult::OptionsAdded {
+            OpResult::Column {
+                table: seeded.table_id,
+                column: seeded.name_column.id,
                 table_version: after,
-                added: vec![vip],
+                change: ColumnResult::OptionsAdded { added: vec![vip] },
             },
         ]
     );

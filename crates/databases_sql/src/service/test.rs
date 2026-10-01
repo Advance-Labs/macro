@@ -13,8 +13,8 @@ use entity_access::domain::models::AccessLevel;
 use item_filters::ast::database_row::DatabaseRowLiteral;
 use models_databases::position::Position;
 use models_databases::{
-    CellValue, CellWrite, ColumnId, DatabaseId, DatabaseOp, OpResult, OptionId, OptionRef,
-    RowChanges, RowId, TableId,
+    CellValue, CellWrite, ColumnId, ColumnResult, DatabaseId, DatabaseOp, OpResult, OptionId,
+    OptionRef, RowChanges, RowId, RowsChange, RowsResult, TableId,
 };
 use models_properties::service::property_value::PropertyValue;
 use models_properties::shared::{DataType, EntityReference, EntityType as PropertyEntityType};
@@ -470,10 +470,10 @@ async fn a_write_is_applied_under_an_edit_receipt_for_its_database() {
         .lock()
         .unwrap()
         .op_answers
-        .push_back(Ok(vec![OpResult::RowsWritten {
+        .push_back(Ok(vec![OpResult::Rows {
+            table: GUESTS,
             table_version: TableVersion(2),
-            inserted: vec![],
-            affected: 1,
+            change: RowsResult::Updated { affected: 1 },
         }]));
     let outcome = sql(&world)
         .execute(
@@ -500,14 +500,16 @@ async fn a_write_is_applied_under_an_edit_receipt_for_its_database() {
             database: OFFSITE,
             level: AccessLevel::Owner,
             acting_bot: Some(bot_id::MACRO_AI_BOT_ID),
-            ops: vec![DatabaseOp::UpdateRows {
+            ops: vec![DatabaseOp::Rows {
                 table: GUESTS,
-                changes: RowChanges::Uniform {
-                    rows: vec![SAM],
-                    cells: vec![CellWrite {
-                        column: STATUS_COLUMN,
-                        value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
-                    }],
+                change: RowsChange::Update {
+                    changes: RowChanges::Uniform {
+                        rows: vec![SAM],
+                        cells: vec![CellWrite {
+                            column: STATUS_COLUMN,
+                            value: CellValue::Options(vec![OptionRef::Label("Going".into())]),
+                        }],
+                    }
                 },
             }],
         }]
@@ -784,8 +786,11 @@ async fn an_alter_column_reports_the_column_it_changed() {
         .lock()
         .unwrap()
         .op_answers
-        .push_back(Ok(vec![OpResult::ColumnTyped {
+        .push_back(Ok(vec![OpResult::Column {
+            table: GUESTS,
+            column: STATUS_COLUMN,
             table_version: TableVersion(2),
+            change: ColumnResult::TypeChanged,
         }]));
     let outcome = sql(&world)
         .execute(

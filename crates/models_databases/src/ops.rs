@@ -2,10 +2,10 @@
 //! what each one did.
 //!
 //! A request's ops apply in order, in one transaction, so a later op may name
-//! what an earlier one created: tables, columns and options carry ids the
-//! client mints (UUIDv7, `TableId::new()` and the like). An id that already
-//! names something refuses the request. Rows keep server-minted ids, which
-//! an insert's result answers.
+//! what an earlier one created: tables, columns, options and views carry ids
+//! the client mints (UUIDv7, `TableId::new()` and the like). An id that
+//! already names something refuses the request. Rows keep server-minted ids,
+//! which an insert's result answers.
 
 #[cfg(test)]
 mod test;
@@ -18,29 +18,77 @@ use crate::views::{
     CardPosition, DatabaseView, NewView, RequestedLayout, ViewId, ViewPosition, ViewQuery,
 };
 
-/// One write to a database: its tables, columns, options, rows or views. A
-/// request's ops apply in order and together, or not at all, and every op
-/// names a table of the database the request is for (or, creating one, adds
-/// it there).
+/// One write to a database: its tables, columns, options, rows or views,
+/// grouped by the resource it changes. A request's ops apply in order and
+/// together, or not at all, and every op names a table of the database the
+/// request is for (or, creating one, adds it there).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DatabaseOp {
-    /// Add a table, after the database's other tables. It starts with no
-    /// columns and no rows.
-    CreateTable {
-        /// The new table's id, minted by the client; later ops of the
-        /// request may name it.
+    /// A change to a table itself: its creation, name, removal, or the
+    /// order of its columns or views.
+    Table {
+        /// The table; for a creation, its new id, minted by the client, which
+        /// later ops of the request may name.
         #[schema(value_type = Uuid)]
-        id: TableId,
-        /// Its name, unique within the database ignoring case.
-        name: String,
+        table: TableId,
+        /// What changes.
+        change: TableChange,
     },
-    /// Rename a table. Its id, columns and rows stay.
-    #[serde(rename_all = "camelCase")]
-    RenameTable {
+    /// A change to one column of a table: its creation, name, type, removal
+    /// or options.
+    Column {
         /// The table.
         #[schema(value_type = Uuid)]
         table: TableId,
+        /// The column; for a creation, its new id, minted by the client,
+        /// which later ops of the request may name.
+        #[schema(value_type = Uuid)]
+        column: ColumnId,
+        /// What changes.
+        change: ColumnChange,
+    },
+    /// A write to a table's rows.
+    Rows {
+        /// The table the rows belong to.
+        #[schema(value_type = Uuid)]
+        table: TableId,
+        /// What changes.
+        change: RowsChange,
+    },
+    /// A change to one view of a table.
+    View {
+        /// The view's table.
+        #[schema(value_type = Uuid)]
+        table: TableId,
+        /// The view; for a creation, its new id, minted by the client.
+        #[schema(value_type = Uuid)]
+        view: ViewId,
+        /// What changes.
+        change: ViewChange,
+    },
+    /// Set the order of the database's tables: `order` names every one of
+    /// them once.
+    ReorderTables {
+        /// Every table, in its new order.
+        #[schema(value_type = Vec<Uuid>)]
+        order: Vec<TableId>,
+    },
+}
+
+/// A change to a table itself.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TableChange {
+    /// Add the table, after the database's other tables. It starts with no
+    /// columns and no rows.
+    Create {
+        /// Its name, unique within the database ignoring case.
+        name: String,
+    },
+    /// Rename the table. Its id, columns and rows stay.
+    #[serde(rename_all = "camelCase")]
+    Rename {
         /// Its new name, unique within the database ignoring case.
         name: String,
         /// The name the caller saw. Given, the rename is refused if the
@@ -51,31 +99,33 @@ pub enum DatabaseOp {
         #[specta(optional)]
         previous_name: Option<String>,
     },
-    /// Remove a table with its columns, rows and views. A database keeps at
-    /// least one table, and a table another table's relation points at
+    /// Remove the table with its columns, rows and views. A database keeps
+    /// at least one table, and a table another table's relation points at
     /// stays until that relation goes.
-    DeleteTable {
-        /// The table.
-        #[schema(value_type = Uuid)]
-        table: TableId,
-    },
-    /// Set the order of the database's tables: `order` names every one of
+    Delete,
+    /// Set the order of the table's columns: `order` names every one of
     /// them once.
-    ReorderTables {
-        /// Every table, in its new order.
+    ReorderColumns {
+        /// Its columns, in their new order.
         #[schema(value_type = Vec<Uuid>)]
-        order: Vec<TableId>,
+        order: Vec<ColumnId>,
     },
-    /// Add a column to a table: a new property the database owns, or an
+    /// Set the order of the table's views: `order` names every one of them
+    /// once.
+    ReorderViews {
+        /// Its views, in their new order.
+        #[schema(value_type = Vec<Uuid>)]
+        order: Vec<ViewId>,
+    },
+}
+
+/// A change to one column.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ColumnChange {
+    /// Add the column to the table: a new property the database owns, or an
     /// existing one bound into the table.
-    CreateColumn {
-        /// The table.
-        #[schema(value_type = Uuid)]
-        table: TableId,
-        /// The new column's id, minted by the client; later ops of the
-        /// request may name it.
-        #[schema(value_type = Uuid)]
-        id: ColumnId,
+    Create {
         /// What the column holds.
         definition: NewColumn,
         /// The column it goes right after; left out, it goes after the
@@ -85,16 +135,10 @@ pub enum DatabaseOp {
         #[specta(optional)]
         after: Option<ColumnId>,
     },
-    /// Rename a column. Its id, type and cells stay; SQL names it by its new
-    /// name.
+    /// Rename the column. Its id, type and cells stay; SQL names it by its
+    /// new name.
     #[serde(rename_all = "camelCase")]
-    RenameColumn {
-        /// The table.
-        #[schema(value_type = Uuid)]
-        table: TableId,
-        /// The column.
-        #[schema(value_type = Uuid)]
-        column: ColumnId,
+    Rename {
         /// Its new name, unique within the table ignoring case.
         name: String,
         /// The name the caller saw. Given, the rename is refused if the
@@ -104,97 +148,33 @@ pub enum DatabaseOp {
         #[specta(optional)]
         previous_name: Option<String>,
     },
-    /// Remove a column and its cells. The views naming it forget it; a
+    /// Convert the column to another type, converting its cells; its id
+    /// survives the change. A value that does not fit refuses the change,
+    /// counting and quoting the misfits: a type change never empties a
+    /// cell. To keep the original, create a column of the new type and
+    /// write it the values that convert.
+    ChangeType {
+        /// The type it becomes.
+        to: ColumnKind,
+    },
+    /// Remove the column and its cells. The views naming it forget it; a
     /// board grouped by it must go or regroup first. A property shared
     /// beyond the database stays, unbound here.
-    DeleteColumn {
-        /// The table.
-        #[schema(value_type = Uuid)]
-        table: TableId,
-        /// The column.
-        #[schema(value_type = Uuid)]
-        column: ColumnId,
-    },
-    /// Set the order of a table's columns: `order` names every one of them
-    /// once.
-    ReorderColumns {
-        /// The table.
-        #[schema(value_type = Uuid)]
-        table: TableId,
-        /// Its columns, in their new order.
-        #[schema(value_type = Vec<Uuid>)]
-        order: Vec<ColumnId>,
-    },
+    Delete,
     /// Add options to a select or tag column, after its others. An option
     /// whose label the column already has, ignoring case, is left out, so
     /// re-sending a list adds only what is new. Like
-    /// [`DatabaseOp::UpdateOption`], an option of a property shared beyond
+    /// [`ColumnChange::UpdateOption`], an option of a property shared beyond
     /// the database goes everywhere it is used.
     AddOptions {
-        /// The table.
-        #[schema(value_type = Uuid)]
-        table: TableId,
-        /// The select or tag column.
-        #[schema(value_type = Uuid)]
-        column: ColumnId,
         /// The options, each under an id the client mints.
         options: Vec<NewOption>,
-    },
-    /// Append rows to a table, in order, each with the cells it starts with.
-    #[serde(rename_all = "camelCase")]
-    InsertRows {
-        /// The table.
-        #[schema(value_type = Uuid)]
-        table: TableId,
-        /// One entry per new row: the cells it starts with. Columns left out
-        /// start empty.
-        rows: Vec<Vec<CellWrite>>,
-    },
-    /// Write cells of existing rows. Last write wins: there is no version
-    /// check.
-    #[serde(rename_all = "camelCase")]
-    UpdateRows {
-        /// The table the rows belong to.
-        #[schema(value_type = Uuid)]
-        table: TableId,
-        /// Which rows get which cells.
-        changes: RowChanges,
-    },
-    /// Remove rows and their cells.
-    DeleteRows {
-        /// The table the rows belong to.
-        #[schema(value_type = Uuid)]
-        table: TableId,
-        /// The rows, each named once.
-        #[schema(value_type = Vec<Uuid>)]
-        rows: Vec<RowId>,
-    },
-    /// Convert a column to another type, converting its cells. A value that
-    /// does not fit refuses the change, counting and quoting the misfits: a
-    /// type change never empties a cell. To keep the original, create a
-    /// column of the new type and write it the values that convert.
-    #[serde(rename_all = "camelCase")]
-    ChangeColumnType {
-        /// The table.
-        #[schema(value_type = Uuid)]
-        table: TableId,
-        /// The column placement; its id survives the change.
-        #[schema(value_type = Uuid)]
-        column: ColumnId,
-        /// The type it becomes.
-        to: ColumnKind,
     },
     /// Relabel or recolour one option of a select or tag column. Every cell
     /// holding it keeps it. A column bound to a property shared outside the
     /// database changes wherever that property is used, so it takes the
     /// right to edit that property.
     UpdateOption {
-        /// The table.
-        #[schema(value_type = Uuid)]
-        table: TableId,
-        /// The select or tag column.
-        #[schema(value_type = Uuid)]
-        column: ColumnId,
         /// The option.
         #[schema(value_type = Uuid)]
         option: OptionId,
@@ -217,35 +197,51 @@ pub enum DatabaseOp {
     },
     /// Remove one option of a select or tag column, and take it out of every
     /// cell holding it: a single-valued cell is emptied, a multi-valued one
-    /// keeps its other options. Like [`DatabaseOp::UpdateOption`], an option
-    /// of a shared property goes everywhere it is used.
+    /// keeps its other options. Like [`ColumnChange::UpdateOption`], an
+    /// option of a shared property goes everywhere it is used.
     DeleteOption {
-        /// The table.
-        #[schema(value_type = Uuid)]
-        table: TableId,
-        /// The select or tag column.
-        #[schema(value_type = Uuid)]
-        column: ColumnId,
         /// The option.
         #[schema(value_type = Uuid)]
         option: OptionId,
     },
-    /// Add a view of the table, after its other views.
-    CreateView {
-        /// The table.
-        #[schema(value_type = Uuid)]
-        table: TableId,
+}
+
+/// A write to a table's rows.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RowsChange {
+    /// Append rows to the table, in order, each with the cells it starts
+    /// with.
+    Insert {
+        /// One entry per new row: the cells it starts with. Columns left out
+        /// start empty.
+        rows: Vec<Vec<CellWrite>>,
+    },
+    /// Write cells of existing rows. Last write wins: there is no version
+    /// check.
+    Update {
+        /// Which rows get which cells.
+        changes: RowChanges,
+    },
+    /// Remove rows and their cells.
+    Delete {
+        /// The rows, each named once.
+        #[schema(value_type = Vec<Uuid>)]
+        rows: Vec<RowId>,
+    },
+}
+
+/// A change to one view.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ViewChange {
+    /// Add the view to the table, after its other views.
+    Create {
         /// What it shows and how.
         view: NewView,
     },
-    /// Change a view's name, query or layout; what is left out stays.
-    UpdateView {
-        /// The view's table.
-        #[schema(value_type = Uuid)]
-        table: TableId,
-        /// The view.
-        #[schema(value_type = Uuid)]
-        view: ViewId,
+    /// Change the view's name, query or layout; what is left out stays.
+    Update {
         /// Its new name.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[schema(nullable = false)]
@@ -264,36 +260,13 @@ pub enum DatabaseOp {
         #[specta(optional)]
         layout: Option<RequestedLayout>,
     },
-    /// Remove a view, with where its cards were.
-    DeleteView {
-        /// The view's table.
-        #[schema(value_type = Uuid)]
-        table: TableId,
-        /// The view.
-        #[schema(value_type = Uuid)]
-        view: ViewId,
-    },
-    /// Set the order of a table's views: `order` names every one of them
-    /// once.
-    ReorderViews {
-        /// The table.
-        #[schema(value_type = Uuid)]
-        table: TableId,
-        /// Its views, in their new order.
-        #[schema(value_type = Vec<Uuid>)]
-        order: Vec<ViewId>,
-    },
-    /// Move a board's card: into a lane, which sets the row's grouping cell
-    /// to the lane's option (or empties it for the lane without one), and to
-    /// a place there, between two of its cards. Only an unsorted board's
-    /// cards move by hand.
+    /// Remove the view, with where its cards were.
+    Delete,
+    /// Move one of the board's cards: into a lane, which sets the row's
+    /// grouping cell to the lane's option (or empties it for the lane
+    /// without one), and to a place there, between two of its cards. Only
+    /// an unsorted board's cards move by hand.
     MoveCard {
-        /// The view's table.
-        #[schema(value_type = Uuid)]
-        table: TableId,
-        /// The board.
-        #[schema(value_type = Uuid)]
-        view: ViewId,
         /// The card's row.
         #[schema(value_type = Uuid)]
         row: RowId,
@@ -320,26 +293,11 @@ impl DatabaseOp {
     /// for a reorder of the database's tables, which names them all.
     pub fn table(&self) -> Option<TableId> {
         match self {
-            DatabaseOp::CreateTable { id, .. } => Some(*id),
             DatabaseOp::ReorderTables { .. } => None,
-            DatabaseOp::RenameTable { table, .. }
-            | DatabaseOp::DeleteTable { table }
-            | DatabaseOp::CreateColumn { table, .. }
-            | DatabaseOp::RenameColumn { table, .. }
-            | DatabaseOp::DeleteColumn { table, .. }
-            | DatabaseOp::ReorderColumns { table, .. }
-            | DatabaseOp::AddOptions { table, .. }
-            | DatabaseOp::InsertRows { table, .. }
-            | DatabaseOp::UpdateRows { table, .. }
-            | DatabaseOp::DeleteRows { table, .. }
-            | DatabaseOp::ChangeColumnType { table, .. }
-            | DatabaseOp::UpdateOption { table, .. }
-            | DatabaseOp::DeleteOption { table, .. }
-            | DatabaseOp::CreateView { table, .. }
-            | DatabaseOp::UpdateView { table, .. }
-            | DatabaseOp::DeleteView { table, .. }
-            | DatabaseOp::ReorderViews { table, .. }
-            | DatabaseOp::MoveCard { table, .. } => Some(*table),
+            DatabaseOp::Table { table, .. }
+            | DatabaseOp::Column { table, .. }
+            | DatabaseOp::Rows { table, .. }
+            | DatabaseOp::View { table, .. } => Some(*table),
         }
     }
 }
@@ -583,126 +541,158 @@ impl EntityKind {
     }
 }
 
-/// What one op did, in the order the ops were sent.
+/// What one op did, in the order the ops were sent, grouped as the ops are:
+/// a result's `kind` is its op's, naming the same resource, and its
+/// `change` says what happened to it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum OpResult {
-    /// The table a creation added.
+    /// What a table op did.
     #[serde(rename_all = "camelCase")]
-    TableCreated {
-        /// The new table.
+    Table {
+        /// The table.
         #[schema(value_type = Uuid)]
         table: TableId,
-        /// Its version once the request committed.
-        table_version: TableVersion,
+        /// Its version once the request committed; left out when the op
+        /// removed it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schema(nullable = false)]
+        #[specta(optional)]
+        table_version: Option<TableVersion>,
+        /// What happened to it.
+        change: TableResult,
     },
-    /// A table's rename.
+    /// What a column op did.
     #[serde(rename_all = "camelCase")]
-    TableRenamed {
-        /// The table's version once the request committed.
-        table_version: TableVersion,
-    },
-    /// A table's removal.
-    TableDeleted {
-        /// The table removed.
+    Column {
+        /// The table.
         #[schema(value_type = Uuid)]
         table: TableId,
-    },
-    /// The database's tables in their new order.
-    #[serde(rename_all = "camelCase")]
-    TablesReordered {
-        /// Every table, in its new order, with its version once the request
-        /// committed.
-        tables: Vec<VersionedTable>,
-    },
-    /// The column a creation added.
-    #[serde(rename_all = "camelCase")]
-    ColumnCreated {
-        /// The new column.
+        /// The column.
         #[schema(value_type = Uuid)]
         column: ColumnId,
         /// The table's version once the request committed.
         table_version: TableVersion,
+        /// What happened to it.
+        change: ColumnResult,
     },
-    /// A column's rename.
+    /// What a rows op did.
     #[serde(rename_all = "camelCase")]
-    ColumnRenamed {
+    Rows {
+        /// The table.
+        #[schema(value_type = Uuid)]
+        table: TableId,
         /// The table's version once the request committed.
         table_version: TableVersion,
+        /// What happened to them.
+        change: RowsResult,
     },
-    /// A column's removal.
+    /// What a view op did.
     #[serde(rename_all = "camelCase")]
-    ColumnDeleted {
+    View {
+        /// The view's table.
+        #[schema(value_type = Uuid)]
+        table: TableId,
+        /// The view.
+        #[schema(value_type = Uuid)]
+        view: ViewId,
         /// The table's version once the request committed.
         table_version: TableVersion,
+        /// What happened to it.
+        change: ViewResult,
     },
-    /// A table's columns in their new order.
-    #[serde(rename_all = "camelCase")]
-    ColumnsReordered {
-        /// The table's version once the request committed.
-        table_version: TableVersion,
+    /// The database's tables in their new order.
+    ReorderTables {
+        /// Every table, in its new order, with its version once the request
+        /// committed.
+        tables: Vec<VersionedTable>,
     },
-    /// The options an addition created.
-    #[serde(rename_all = "camelCase")]
+}
+
+/// What happened to a table.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TableResult {
+    /// It was added.
+    Created,
+    /// It was renamed.
+    Renamed,
+    /// It was removed.
+    Deleted,
+    /// Its columns were reordered.
+    ColumnsReordered,
+    /// Its views were reordered.
+    ViewsReordered {
+        /// Every view's key, in their new order.
+        positions: Vec<ViewPosition>,
+    },
+}
+
+/// What happened to a column.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ColumnResult {
+    /// It was added.
+    Created,
+    /// It was renamed.
+    Renamed,
+    /// Its type changed, and its cells with it.
+    TypeChanged,
+    /// It was removed.
+    Deleted,
+    /// It gained options.
     OptionsAdded {
-        /// The table's version once the request committed.
-        table_version: TableVersion,
         /// The options created, in order: those sent, less any whose label
         /// the column already had.
         #[schema(value_type = Vec<Uuid>)]
         added: Vec<OptionId>,
     },
-    /// What an insert, update or delete did.
-    #[serde(rename_all = "camelCase")]
-    RowsWritten {
-        /// The table's version once the request committed.
-        table_version: TableVersion,
-        /// The rows an insert created, in the order they were sent; empty
-        /// for an update or a delete.
+    /// One of its options was relabelled or recoloured.
+    OptionUpdated,
+    /// One of its options was removed.
+    OptionDeleted,
+}
+
+/// What happened to a table's rows.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RowsResult {
+    /// Rows were added.
+    Inserted {
+        /// The new rows, in the order they were sent.
         #[schema(value_type = Vec<Uuid>)]
-        inserted: Vec<RowId>,
-        /// How many rows the op inserted, updated or deleted.
+        rows: Vec<RowId>,
+    },
+    /// Rows' cells were written.
+    Updated {
+        /// How many rows the op updated.
         affected: u32,
     },
-    /// What a column type change did.
-    #[serde(rename_all = "camelCase")]
-    ColumnTyped {
-        /// The table's version after the change.
-        table_version: TableVersion,
+    /// Rows were removed.
+    Deleted {
+        /// How many rows the op deleted.
+        affected: u32,
     },
-    /// What an option change or removal did.
-    #[serde(rename_all = "camelCase")]
-    OptionChanged {
-        /// The table's version after the change.
-        table_version: TableVersion,
-    },
-    /// The view a creation or change left.
-    #[serde(rename_all = "camelCase")]
-    ViewWritten {
-        /// The table's version after the change.
-        table_version: TableVersion,
+}
+
+/// What happened to a view.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, specta::Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ViewResult {
+    /// It was added.
+    Created {
         /// The view as stored.
         view: Box<DatabaseView>,
     },
-    /// A view's removal.
-    #[serde(rename_all = "camelCase")]
-    ViewDeleted {
-        /// The table's version after the change.
-        table_version: TableVersion,
+    /// It was changed.
+    Updated {
+        /// The view as stored.
+        view: Box<DatabaseView>,
     },
-    /// The table's views' new places.
-    #[serde(rename_all = "camelCase")]
-    ViewsReordered {
-        /// The table's version after the change.
-        table_version: TableVersion,
-        /// Every view's key, in their new order.
-        positions: Vec<ViewPosition>,
-    },
-    /// Where a moved card, and any card it needed placed first, now sit.
-    #[serde(rename_all = "camelCase")]
+    /// It was removed.
+    Deleted,
+    /// One of its cards moved.
     CardMoved {
-        /// The table's version after the change.
-        table_version: TableVersion,
         /// The positions written, the moved card's last.
         positions: Vec<CardPosition>,
     },
@@ -725,6 +715,9 @@ pub enum TakenId {
     /// An option's.
     #[schema(value_type = Uuid)]
     Option(OptionId),
+    /// A view's.
+    #[schema(value_type = Uuid)]
+    View(ViewId),
 }
 
 /// A table and its version.
@@ -744,21 +737,11 @@ impl OpResult {
     /// when the op removed it, or names every table of the database.
     pub fn table_version(&self) -> Option<TableVersion> {
         match self {
-            OpResult::TableDeleted { .. } | OpResult::TablesReordered { .. } => None,
-            OpResult::TableCreated { table_version, .. }
-            | OpResult::TableRenamed { table_version }
-            | OpResult::ColumnCreated { table_version, .. }
-            | OpResult::ColumnRenamed { table_version }
-            | OpResult::ColumnDeleted { table_version }
-            | OpResult::ColumnsReordered { table_version }
-            | OpResult::OptionsAdded { table_version, .. }
-            | OpResult::RowsWritten { table_version, .. }
-            | OpResult::ColumnTyped { table_version }
-            | OpResult::OptionChanged { table_version }
-            | OpResult::ViewWritten { table_version, .. }
-            | OpResult::ViewDeleted { table_version }
-            | OpResult::ViewsReordered { table_version, .. }
-            | OpResult::CardMoved { table_version, .. } => Some(*table_version),
+            OpResult::Table { table_version, .. } => *table_version,
+            OpResult::ReorderTables { .. } => None,
+            OpResult::Column { table_version, .. }
+            | OpResult::Rows { table_version, .. }
+            | OpResult::View { table_version, .. } => Some(*table_version),
         }
     }
 }

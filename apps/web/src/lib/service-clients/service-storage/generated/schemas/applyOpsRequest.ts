@@ -17,9 +17,11 @@ it. A table that moved refuses the batch as a conflict, so a schema
 edit made against what the caller saw does not overwrite another's.
 Left out, ops are last-write-wins. */
   baseVersions?: ApplyOpsRequestBaseVersions;
-  /** The ops, in the order they apply. Every one names a table of this
-database, or one an earlier op of the batch creates: tables, columns
-and options carry ids the client mints (UUIDv7), so a later op can
-name them. An id that already names something refuses the batch. */
+  /** The ops, in the order they apply, each grouped by the resource it
+changes (`table`, `column`, `rows`, `view`, `reorder_tables`) with a
+`change` saying how. Every one names a table of this database, or one
+an earlier op of the batch creates: tables, columns, options and
+views carry ids the client mints (UUIDv7), so a later op can name
+them. An id that already names something refuses the batch. */
   ops: DatabaseOp[];
 }

@@ -89,32 +89,63 @@ export async function patchTableColumn(
   );
 }
 
-export function isResult<Kind extends OpResult['kind']>(
+/** A result naming what happened to its resource: every kind but a reorder of the database's tables. */
+type ChangedResult = Extract<OpResult, { change: unknown }>;
+
+/** What a result of each op kind can say happened. */
+type ResultChanges = {
+  [Kind in ChangedResult['kind']]: Extract<
+    ChangedResult,
+    { kind: Kind }
+  >['change']['kind'];
+};
+
+/** The result of a `Kind` op whose change answered `Change`. */
+export type ResultOf<
+  Kind extends keyof ResultChanges,
+  Change extends ResultChanges[Kind],
+> = Extract<ChangedResult, { kind: Kind }> & {
+  change: Extract<
+    Extract<ChangedResult, { kind: Kind }>['change'],
+    { kind: Change }
+  >;
+};
+
+export function isResult<
+  Kind extends keyof ResultChanges,
+  Change extends ResultChanges[Kind],
+>(
   result: OpResult | undefined,
-  kind: Kind
-): result is Extract<OpResult, { kind: Kind }> {
-  return result?.kind === kind;
+  kind: Kind,
+  change: Change
+): result is ResultOf<Kind, Change> {
+  return (
+    result?.kind === kind && 'change' in result && result.change.kind === change
+  );
 }
 
 /**
  * Apply one op and pick its result. A refusal reads the detail again, so
  * whatever was patched in ahead of the answer gives way to what is stored.
  */
-export function applyOp<Kind extends OpResult['kind']>(
+export function applyOp<
+  Kind extends keyof ResultChanges,
+  Change extends ResultChanges[Kind],
+>(
   databaseId: string,
   tableId: string,
   op: DatabaseOp,
-  kind: Kind
-): ResultAsync<Extract<OpResult, { kind: Kind }>, DatabaseOpFailure> {
+  expected: { kind: Kind; change: Change }
+): ResultAsync<ResultOf<Kind, Change>, DatabaseOpFailure> {
   return applyDatabaseOps(databaseId, [op])
     .mapErr((error): DatabaseOpFailure => ({ kind: 'ops', error }))
     .andThen((results) => {
       const [result] = results;
-      if (!isResult(result, kind))
-        return errAsync<Extract<OpResult, { kind: Kind }>, DatabaseOpFailure>({
+      if (!isResult(result, expected.kind, expected.change))
+        return errAsync<ResultOf<Kind, Change>, DatabaseOpFailure>({
           kind: 'unexpected-result',
         });
-      if ('tableVersion' in result)
+      if (result.tableVersion !== undefined)
         applyDatabaseTableVersions(databaseId, {
           [tableId]: result.tableVersion,
         });

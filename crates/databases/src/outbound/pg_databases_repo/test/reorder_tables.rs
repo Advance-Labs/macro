@@ -1,6 +1,6 @@
 //! Reordering a database's tables through the ops over Postgres.
 
-use models_databases::{DatabaseOp, OpResult, VersionedTable};
+use models_databases::{DatabaseOp, OpResult, TableChange, VersionedTable};
 
 use super::apply_ops::{edit, guests, service, viewer};
 use super::*;
@@ -18,13 +18,17 @@ async fn reordering_three_tables_rewrites_every_position_and_reads_back_in_order
             edit(guests.database_id),
             viewer(),
             vec![
-                DatabaseOp::CreateTable {
-                    id: hosts,
-                    name: "Hosts".into(),
+                DatabaseOp::Table {
+                    table: hosts,
+                    change: TableChange::Create {
+                        name: "Hosts".into(),
+                    },
                 },
-                DatabaseOp::CreateTable {
-                    id: budget,
-                    name: "Budget".into(),
+                DatabaseOp::Table {
+                    table: budget,
+                    change: TableChange::Create {
+                        name: "Budget".into(),
+                    },
                 },
             ]
             .into(),
@@ -55,7 +59,7 @@ async fn reordering_three_tables_rewrites_every_position_and_reads_back_in_order
 
     assert_eq!(
         results,
-        vec![OpResult::TablesReordered {
+        vec![OpResult::ReorderTables {
             tables: vec![
                 VersionedTable {
                     table: budget,
@@ -91,9 +95,11 @@ async fn reordering_three_tables_rewrites_every_position_and_reads_back_in_order
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::CreateTable {
-                id: notes,
-                name: "Notes".into(),
+            vec![DatabaseOp::Table {
+                table: notes,
+                change: TableChange::Create {
+                    name: "Notes".into(),
+                },
             }]
             .into(),
         )
@@ -118,9 +124,11 @@ async fn an_order_missing_or_repeating_a_table_is_refused_and_changes_nothing(po
         .apply_ops(
             edit(guests.database_id),
             viewer(),
-            vec![DatabaseOp::CreateTable {
-                id: hosts,
-                name: "Hosts".into(),
+            vec![DatabaseOp::Table {
+                table: hosts,
+                change: TableChange::Create {
+                    name: "Hosts".into(),
+                },
             }]
             .into(),
         )

@@ -8,7 +8,7 @@ import {
   waitFor,
 } from '@solidjs/testing-library';
 import { err, okAsync, type Result, ResultAsync } from 'neverthrow';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, assert, describe, expect, it, vi } from 'vitest';
 import { AddColumnMenu } from './AddColumnMenu';
 
 const storage = vi.hoisted(() => ({
@@ -25,7 +25,15 @@ afterEach(() => {
 describe('immediate column creation', () => {
   it('creates an inferred Text column under a minted id without a popup and focuses its header', async () => {
     storage.applyDatabaseOps.mockReturnValue(
-      okAsync([{ kind: 'column_created', column: 'column', tableVersion: 2 }])
+      okAsync([
+        {
+          kind: 'column',
+          table: 'table',
+          column: 'column',
+          tableVersion: 2,
+          change: { kind: 'created' },
+        },
+      ])
     );
     const created = vi.fn(() => true);
     render(() => (
@@ -40,21 +48,25 @@ describe('immediate column creation', () => {
     await waitFor(() => expect(created).toHaveBeenCalledOnce());
     expect(storage.applyDatabaseOps).toHaveBeenCalledExactlyOnceWith('db', [
       {
-        kind: 'create_column',
+        kind: 'column',
         table: 'table',
-        id: expect.stringMatching(
+        column: expect.stringMatching(
           /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
         ),
-        definition: {
-          source: 'new',
-          name: 'Unnamed',
-          type: { type: 'text' },
-          inferType: true,
+        change: {
+          kind: 'create',
+          definition: {
+            source: 'new',
+            name: 'Unnamed',
+            type: { type: 'text' },
+            inferType: true,
+          },
         },
       },
     ]);
     const [[, [op]]] = storage.applyDatabaseOps.mock.calls;
-    expect(created).toHaveBeenCalledExactlyOnceWith(op.id);
+    assert(op.kind === 'column');
+    expect(created).toHaveBeenCalledExactlyOnceWith(op.column);
     expect(storage.invalidateDatabase).toHaveBeenCalledExactlyOnceWith('db');
     expect(screen.queryByRole('dialog')).toBeNull();
   });

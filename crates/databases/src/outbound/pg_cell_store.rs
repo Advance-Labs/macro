@@ -76,14 +76,20 @@ pub enum PgCellStoreError {
 
 /// The unique index on a table's view names.
 const VIEW_NAME_CONSTRAINT: &str = "database_views_table_name_key";
+/// The primary key of `database_views`.
+const VIEW_KEY: &str = "database_views_pkey";
+
+/// Which constraint a view statement failed on, if it failed on one.
+fn violated(error: &PgDatabasesRepoError) -> Option<&str> {
+    match error {
+        PgDatabasesRepoError::Sqlx(sqlx::Error::Database(database)) => database.constraint(),
+        _ => None,
+    }
+}
 
 /// Whether a view statement failed on the unique view name of its table.
 fn name_taken(error: &PgDatabasesRepoError) -> bool {
-    matches!(
-        error,
-        PgDatabasesRepoError::Sqlx(sqlx::Error::Database(database))
-            if database.constraint() == Some(VIEW_NAME_CONSTRAINT)
-    )
+    violated(error) == Some(VIEW_NAME_CONSTRAINT)
 }
 
 /// The row a properties-side entity id names.
@@ -628,6 +634,12 @@ where
             Write::CreateView { view } => {
                 match views::insert_view(&mut **transaction, view).await {
                     Ok(()) => {}
+                    Err(error) if violated(&error) == Some(VIEW_KEY) => {
+                        return refused(WritesOutcome::IdTaken {
+                            write: index,
+                            id: TakenId::View(view.id),
+                        });
+                    }
                     Err(error) if name_taken(&error) => {
                         return refused(WritesOutcome::ViewNameTaken { write: index });
                     }

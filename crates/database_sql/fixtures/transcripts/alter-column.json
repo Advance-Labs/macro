@@ -86,7 +86,12 @@
     {
       "results": [
         {
-          "kind": "column_typed",
+          "change": {
+            "kind": "type_changed"
+          },
+          "column": "01990000-0000-7000-8000-00000000b002",
+          "kind": "column",
+          "table": "01990000-0000-7000-8000-00000000d001",
           "tableVersion": 11
         }
       ],
@@ -95,12 +100,15 @@
         "id": 0,
         "ops": [
           {
+            "change": {
+              "kind": "change_type",
+              "to": {
+                "type": "text"
+              }
+            },
             "column": "01990000-0000-7000-8000-00000000b002",
-            "kind": "change_column_type",
-            "table": "01990000-0000-7000-8000-00000000d001",
-            "to": {
-              "type": "text"
-            }
+            "kind": "column",
+            "table": "01990000-0000-7000-8000-00000000d001"
           }
         ],
         "step": "ops"

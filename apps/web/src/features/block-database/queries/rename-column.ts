@@ -15,11 +15,14 @@ export function renameDatabaseColumn(params: {
   const queryKey = databasesKeys.detail(params.databaseId).queryKey;
   return applyDatabaseOps(params.databaseId, [
     {
-      kind: 'rename_column',
+      kind: 'column',
       table: params.tableId,
       column: params.columnId,
-      name: params.name,
-      previousName: params.previousName,
+      change: {
+        kind: 'rename',
+        name: params.name,
+        previousName: params.previousName,
+      },
     },
   ])
     .mapErr((error) => {
@@ -29,7 +32,7 @@ export function renameDatabaseColumn(params: {
     .map(async ([result]) => {
       // A newer version may contain another rename, so a delayed response
       // must not replace it.
-      if (isResult(result, 'column_renamed'))
+      if (isResult(result, 'column', 'renamed'))
         await patchTableColumn(queryClient, {
           databaseId: params.databaseId,
           tableId: params.tableId,
