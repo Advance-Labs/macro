@@ -321,6 +321,13 @@ describe('answer details', () => {
         }}
         error={{
           kind: 'engine',
+          error: {
+            stage: 'resolve',
+            kind: 'unknownColumn',
+            name: 'Price',
+            table: 'Shop.Items',
+            suggestion: null,
+          },
           message: 'unknown column "Price" in "Shop"."Items"',
         }}
         loading={false}
@@ -330,7 +337,9 @@ describe('answer details', () => {
     fireEvent.click(rendered.getByRole('button', { name: 'Details' }));
     expect(
       (await screen.findAllByRole('alert')).map((alert) => alert.textContent)
-    ).toContain("This answer couldn't be computed. Try asking again.");
+    ).toContain(
+      "This answer couldn't be computed: the column Price no longer exists."
+    );
     rendered.unmount();
   });
 });

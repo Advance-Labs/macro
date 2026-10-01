@@ -21,8 +21,8 @@ import type {
 /**
  * One statement in flight. Mirrors `database_sql::wasm::Query`, whose
  * methods cross as untyped `JsValue`s: read the first step once, then feed
- * each request's answer back until `done`. Every method throws a string the
- * agent should read.
+ * each request's answer back until `done`. Every method throws an
+ * `EngineError`.
  */
 export interface DatabaseSqlQuery {
   start: () => Step;
@@ -35,12 +35,12 @@ export interface DatabaseSqlQuery {
 
 interface DatabaseSqlWasmModule {
   default: (input?: { module_or_path?: unknown }) => Promise<unknown>;
-  /** Compiles a statement. Throws a string when it does not compile. */
+  /** Compiles a statement. Throws an `EngineError` when it does not compile. */
   Query: new (
     catalog: Catalog,
     sql: string
   ) => DatabaseSqlQuery;
-  /** The catalog a statement run from `scope` sees. Throws a string. */
+  /** The catalog a statement run from `scope` sees. Throws an `EngineError`. */
   buildCatalog: (schema: Schema, scope: string | undefined) => Catalog;
 }
 

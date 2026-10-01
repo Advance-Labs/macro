@@ -185,8 +185,16 @@ describe('queryErrorMessage with SQL hidden', () => {
     expect(
       queryErrorMessage({
         kind: 'engine',
+        error: {
+          stage: 'parse',
+          span: { start: 14, end: 14 },
+          message: 'expected FROM, found end of input',
+        },
         message: 'expected FROM, found end of input at 14..14',
       })
+    ).toBe("This answer couldn't be computed. Try asking again.");
+    expect(
+      queryErrorMessage({ kind: 'crash', message: 'wasm failed to load' })
     ).toBe("This answer couldn't be computed. Try asking again.");
     expect(
       queryErrorMessage({
@@ -210,6 +218,11 @@ describe('queryErrorMessage with SQL hidden', () => {
     expect(
       queryErrorMessage({
         kind: 'engine',
+        error: {
+          stage: 'parse',
+          span: { start: 14, end: 14 },
+          message: 'expected FROM, found end of input',
+        },
         message: 'expected FROM, found end of input at 14..14',
       })
     ).toBe('expected FROM, found end of input at 14..14');
@@ -224,10 +237,114 @@ describe('queryErrorMessage with SQL hidden', () => {
   });
 });
 
+describe('engine refusals in the reader’s terms', () => {
+  it('names the column, table or option a question no longer matches', () => {
+    expect(
+      queryErrorMessage({
+        kind: 'engine',
+        error: {
+          stage: 'resolve',
+          kind: 'unknownColumn',
+          name: 'Stage',
+          table: 'CRM.Deals',
+          suggestion: 'Status',
+        },
+        message: 'unknown column "Stage" in CRM.Deals — did you mean "Status"?',
+      })
+    ).toBe(
+      "This answer couldn't be computed: the column Stage no longer exists."
+    );
+    expect(
+      queryErrorMessage({
+        kind: 'engine',
+        error: {
+          stage: 'resolve',
+          kind: 'unknownTable',
+          name: 'Guests',
+          suggestion: null,
+        },
+        message: 'unknown table Guests',
+      })
+    ).toBe(
+      "This answer couldn't be computed: the table Guests no longer exists."
+    );
+    expect(
+      queryErrorMessage({
+        kind: 'engine',
+        error: {
+          stage: 'resolve',
+          kind: 'ambiguousTable',
+          name: 'Tasks',
+          databases: ['Work', 'Home'],
+        },
+        message: 'table "Tasks" exists in Work, Home',
+      })
+    ).toBe(
+      "This answer couldn't be computed: more than one database has a table named Tasks."
+    );
+    expect(
+      queryErrorMessage({
+        kind: 'engine',
+        error: {
+          stage: 'resolve',
+          kind: 'unknownOption',
+          column: 'RSVP',
+          label: 'Perhaps',
+          options: ['Yes', 'No', 'Maybe'],
+        },
+        message: '"Perhaps" is not an option of "RSVP"',
+      })
+    ).toBe(
+      "This answer couldn't be computed: Perhaps is not an option of RSVP."
+    );
+  });
+
+  it('says a column cannot be used that way, and when a request reads too much', () => {
+    expect(
+      queryErrorMessage({
+        kind: 'engine',
+        error: { stage: 'resolve', kind: 'hasOnSingleValued', column: 'Owner' },
+        message: '"Owner" holds one value; use = instead of HAS',
+      })
+    ).toBe("This answer couldn't be computed: Owner can't be used that way.");
+    expect(
+      queryErrorMessage({
+        kind: 'engine',
+        error: {
+          stage: 'resolve',
+          kind: 'typeMismatch',
+          column: 'Budget',
+          expected: 'number',
+          hint: 'compare it to a number',
+        },
+        message: '"Budget" is a number column',
+      })
+    ).toBe(
+      "This answer couldn't be computed: Budget holds number values, which don't fit this question."
+    );
+    expect(
+      queryErrorMessage({
+        kind: 'engine',
+        error: { stage: 'tooManyRows', limit: 10000 },
+        message: 'the WHERE matches more than 10000 rows',
+      })
+    ).toBe('This request matches too many records. Try a narrower request.');
+  });
+});
+
 describe('queryFailureDetail', () => {
   it('is the engine’s or the service’s own words', () => {
     expect(
-      queryFailureDetail({ kind: 'engine', message: 'unknown table "Old"' })
+      queryFailureDetail({
+        kind: 'engine',
+        error: {
+          stage: 'resolve',
+          kind: 'unknownTable',
+          name: 'Old',
+          suggestion: null,
+        },
+        message: 'unknown table "Old"',
+      })
     ).toBe('unknown table "Old"');
     expect(
       queryFailureDetail({

@@ -97,14 +97,42 @@ describe('runDatabaseSql', () => {
       {
         source: { page: vi.fn(), bins: vi.fn() },
         open: async () => {
-          throw 'no such table: crm.deals';
+          throw {
+            error: {
+              stage: 'resolve',
+              kind: 'unknownTable',
+              name: 'crm.deals',
+              suggestion: null,
+            },
+            message: 'unknown table crm.deals',
+          };
         },
       }
     );
 
     expect(outcome._unsafeUnwrapErr()).toEqual({
       kind: 'engine',
-      message: 'no such table: crm.deals',
+      error: {
+        stage: 'resolve',
+        kind: 'unknownTable',
+        name: 'crm.deals',
+        suggestion: null,
+      },
+      message: 'unknown table crm.deals',
+    });
+  });
+
+  it('reports anything else thrown while opening the engine as a crash', async () => {
+    const outcome = await runDatabaseSql({ tables: [] }, 'SELECT 1', {
+      source: { page: vi.fn(), bins: vi.fn() },
+      open: async () => {
+        throw new TypeError('buildCatalog is not a function');
+      },
+    });
+
+    expect(outcome._unsafeUnwrapErr()).toEqual({
+      kind: 'crash',
+      message: 'buildCatalog is not a function',
     });
   });
 
@@ -258,12 +286,24 @@ describe('checkReadStatement', () => {
   it('reports what the engine does not compile', async () => {
     const checked = await checkReadStatement({ tables: [] }, 'SELEC 1', {
       open: async () => {
-        throw 'expected a statement, found "SELEC"';
+        throw {
+          error: {
+            stage: 'parse',
+            span: { start: 0, end: 5 },
+            message: 'expected a statement, found "SELEC"',
+          },
+          message: 'expected a statement, found "SELEC"',
+        };
       },
     });
 
     expect(checked._unsafeUnwrapErr()).toEqual({
       kind: 'engine',
+      error: {
+        stage: 'parse',
+        span: { start: 0, end: 5 },
+        message: 'expected a statement, found "SELEC"',
+      },
       message: 'expected a statement, found "SELEC"',
     });
   });

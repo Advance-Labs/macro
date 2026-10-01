@@ -12,18 +12,22 @@ import type {
   Bin,
   Catalog,
   DatabaseOp,
+  EngineError,
   GqlQuery,
   OpResult,
   Outcome,
   Page,
+  RunError,
   Step,
 } from './generated/types';
 import { type DatabaseSqlQuery, openDatabaseSqlQuery } from './wasm-module';
 
 /** Why a statement has no outcome. */
 export type DatabaseSqlFailure =
-  /** The engine refused the statement or a step, in its own words. */
-  | { kind: 'engine'; message: string }
+  /** The engine refused the statement or a step; `message` is its words for an agent. */
+  | { kind: 'engine'; error: RunError; message: string }
+  /** The engine could not be loaded or did not answer as an engine does. */
+  | { kind: 'crash'; message: string }
   /** The row source could not read what the engine asked for. */
   | { kind: 'fetch'; message: string }
   /** The sink refused the statement's writes; none of them landed. */
@@ -68,16 +72,23 @@ export type OpenEngine = (
   sql: string
 ) => Promise<DatabaseSqlQuery>;
 
-/** The engine throws its messages as strings. */
+function isEngineError(thrown: unknown): thrown is EngineError {
+  return (
+    !!thrown &&
+    typeof thrown === 'object' &&
+    'error' in thrown &&
+    'message' in thrown &&
+    typeof thrown.message === 'string'
+  );
+}
+
+/** The engine throws an `EngineError`; anything else is a crash. */
 export function engineFailure(thrown: unknown): DatabaseSqlFailure {
+  if (isEngineError(thrown))
+    return { kind: 'engine', error: thrown.error, message: thrown.message };
   return {
-    kind: 'engine',
-    message:
-      typeof thrown === 'string'
-        ? thrown
-        : thrown instanceof Error
-          ? thrown.message
-          : String(thrown),
+    kind: 'crash',
+    message: thrown instanceof Error ? thrown.message : String(thrown),
   };
 }
 

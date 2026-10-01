@@ -1,6 +1,7 @@
 import { isFeatureEnabled, showDatabaseSql } from '@core/constant/featureFlags';
 import type { DatabaseSqlAnswer } from '@core/database-sql/answer';
 import type { DatabaseSqlFailure } from '@core/database-sql/driver';
+import type { RunError } from '@core/database-sql/generated/types';
 import { type ResultError, ThrownResultError } from '@core/util/result';
 import { match, P } from 'ts-pattern';
 import {
@@ -234,9 +235,63 @@ export function looksLikeReadQuery(sql: string): boolean {
   return /^SELECT\b/i.test(start);
 }
 
-const UNCOMPUTED = "This answer couldn't be computed. Try asking again.";
+const UNCOMPUTED = "This answer couldn't be computed";
 const TRY_AGAIN = 'Something went wrong reaching your data. Try again.';
 const OFFLINE = 'Your data could not be reached. Check your connection.';
+
+/** An engine refusal in the reader's terms rather than the statement's. */
+function engineErrorMessage(error: RunError): string {
+  return match(error)
+    .returnType<string>()
+    .with(
+      { stage: 'resolve', kind: 'unknownColumn' },
+      ({ name }) => `${UNCOMPUTED}: the column ${name} no longer exists.`
+    )
+    .with(
+      { stage: 'resolve', kind: 'unknownTable' },
+      ({ name }) => `${UNCOMPUTED}: the table ${name} no longer exists.`
+    )
+    .with(
+      { stage: 'resolve', kind: 'ambiguousTable' },
+      ({ name }) =>
+        `${UNCOMPUTED}: more than one database has a table named ${name}.`
+    )
+    .with(
+      { stage: 'resolve', kind: 'unknownOption' },
+      ({ label, column }) =>
+        `${UNCOMPUTED}: ${label} is not an option of ${column}.`
+    )
+    .with(
+      { stage: 'resolve', kind: 'typeMismatch' },
+      ({ column, expected }) =>
+        `${UNCOMPUTED}: ${column} holds ${expected} values, which don't fit this question.`
+    )
+    .with(
+      {
+        stage: 'resolve',
+        kind: P.union(
+          'operatorNotSupported',
+          'hasOnSingleValued',
+          'equalityOnMultiValued',
+          'compareToNull',
+          'aggregateNotSupported',
+          'listOnSingleValued',
+          'listInComparison'
+        ),
+      },
+      ({ column }) => `${UNCOMPUTED}: ${column} can't be used that way.`
+    )
+    .with(
+      { stage: 'resolve', kind: 'readOnlyTable' },
+      () =>
+        'Questions can only read data you have access to. Edit records in the table or board.'
+    )
+    .with(
+      { stage: 'tooManyRows' },
+      () => 'This request matches too many records. Try a narrower request.'
+    )
+    .otherwise(() => `${UNCOMPUTED}. Try asking again.`);
+}
 
 /**
  * What to tell a person when a question fails. With SQL hidden
@@ -248,7 +303,10 @@ export function queryErrorMessage(failure: QueryFailure): string {
   const showSql = isFeatureEnabled(showDatabaseSql);
   return match(failure)
     .returnType<string>()
-    .with({ kind: 'engine' }, ({ message }) => (showSql ? message : UNCOMPUTED))
+    .with({ kind: 'engine' }, ({ error, message }) =>
+      showSql ? message : engineErrorMessage(error)
+    )
+    .with({ kind: 'crash' }, () => `${UNCOMPUTED}. Try asking again.`)
     .with({ kind: 'fetch' }, () => OFFLINE)
     .with({ kind: 'ops' }, { kind: 'read-only' }, () =>
       showSql
@@ -258,7 +316,9 @@ export function queryErrorMessage(failure: QueryFailure): string {
     .with({ kind: 'question' }, ({ error }) =>
       match(error.code)
         .with('NOT_FOUND', () => 'This saved question no longer exists.')
-        .with('INVALID_QUERY', () => (showSql ? error.message : UNCOMPUTED))
+        .with('INVALID_QUERY', () =>
+          showSql ? error.message : `${UNCOMPUTED}. Try asking again.`
+        )
         .with(
           'READ_ONLY',
           () =>
@@ -307,7 +367,10 @@ export function queryErrorMessage(failure: QueryFailure): string {
 /** The failure in the engine's or the service's own words, when it has them. */
 export function queryFailureDetail(failure: QueryFailure): string | undefined {
   return match(failure)
-    .with({ kind: P.union('engine', 'fetch') }, ({ message }) => message)
+    .with(
+      { kind: P.union('engine', 'crash', 'fetch') },
+      ({ message }) => message
+    )
     .with({ kind: 'ops' }, ({ error }) => error.message)
     .with(
       { kind: P.union('question', 'databases') },

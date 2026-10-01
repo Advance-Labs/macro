@@ -562,15 +562,25 @@ describe('question composer', () => {
   it('retains previous answer on failure and exposes original error', async () => {
     const { controller } = setup({
       generate: () =>
-        errAsync({ kind: 'engine', message: 'no such column: retired' }),
+        errAsync({
+          kind: 'engine',
+          error: {
+            stage: 'resolve',
+            kind: 'unknownColumn',
+            name: 'retired',
+            table: 'Items',
+            suggestion: null,
+          },
+          message: 'unknown column "retired" in Items',
+        }),
     });
     await controller.run();
     await controller.generate();
     expect(controller.preview()?.answer).toEqual(answer);
     expect(controller.error()).toBe(
-      "This answer couldn't be computed. Try asking again."
+      "This answer couldn't be computed: the column retired no longer exists."
     );
-    expect(controller.errorDetail()).toBe('no such column: retired');
+    expect(controller.errorDetail()).toBe('unknown column "retired" in Items');
   });
   it('ignores stale SQL responses', async () => {
     let resolve!: (answer: QueryAnswer) => void;

@@ -96,7 +96,7 @@ export function databaseWriteMessage(failure: DatabaseWriteFailure): string {
 export function databaseReadMessage(failure: DatabaseReadFailure): string {
   return match(failure)
     .returnType<string>()
-    .with({ kind: 'engine' }, ({ message }) => message)
+    .with({ kind: 'engine' }, { kind: 'crash' }, ({ message }) => message)
     .with(
       { kind: 'fetch' },
       () => 'The rows could not be loaded. Check your connection.'

@@ -652,7 +652,15 @@ describe('database rows SQL names', () => {
     const { read, reads } = engine(() => {
       if (refused) {
         refused = false;
-        throw 'no such table: guests';
+        throw {
+          error: {
+            stage: 'resolve',
+            kind: 'unknownTable',
+            name: 'guests',
+            suggestion: null,
+          },
+          message: 'unknown table guests',
+        };
       }
       return guests();
     });
@@ -660,7 +668,13 @@ describe('database rows SQL names', () => {
     await waitFor(() =>
       expect(source.error()).toEqual({
         kind: 'engine',
-        message: 'no such table: guests',
+        error: {
+          stage: 'resolve',
+          kind: 'unknownTable',
+          name: 'guests',
+          suggestion: null,
+        },
+        message: 'unknown table guests',
       })
     );
     transport.get.mockImplementation(() =>

@@ -1015,6 +1015,13 @@ describe('question editor with SQL hidden', () => {
     const read = vi.fn<QueryCapabilities['read']>(() =>
       errAsync({
         kind: 'engine',
+        error: {
+          stage: 'resolve',
+          kind: 'unknownColumn',
+          name: 'Price',
+          table: 'Shop.Items',
+          suggestion: null,
+        },
         message: 'unknown column "Price" in "Shop"."Items"',
       })
     );
@@ -1031,7 +1038,7 @@ describe('question editor with SQL hidden', () => {
       />
     ));
     expect((await result.findByRole('alert')).textContent).toBe(
-      "This answer couldn't be computed. Try asking again."
+      "This answer couldn't be computed: the column Price no longer exists."
     );
     expect(result.queryByText('Technical details')).toBeNull();
     expect(result.container.textContent).not.toMatch(/SQL|SELECT|unknown/);
