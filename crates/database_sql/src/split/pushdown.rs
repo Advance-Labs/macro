@@ -11,12 +11,19 @@
 //! it tests belongs to one relation, since each relation is fetched on its
 //! own; the row id is not a property, so it never pushes. Nothing pushes
 //! into `people`, whose query takes no filter.
+//!
+//! Nothing pushes into a left-joined relation either: filtering its read
+//! narrows what the join matches, so a row with no match would survive with
+//! `NULL`s where `WHERE` should drop it. Its conditions stay residual and
+//! apply after the join.
 
 use filter_ast::Expr;
 use item_filters::ast::properties::{EntityRefId, PropertiesLiteral, PropertyMatchValue};
 
 use crate::catalog::TableSource;
-use crate::resolve::{Binding, ComparisonOperator, Filter, Relation, Value, binding};
+use crate::resolve::{
+    Binding, ComparisonOperator, Filter, JoinKind, Relation, ResolvedJoin, Value, binding,
+};
 
 /// The expression pushed into each relation's query, indexed by relation,
 /// and the filter that remains.
@@ -24,7 +31,17 @@ pub fn divide(
     filter: Filter,
     bindings: &[Binding],
     relations: &[Relation],
+    joins: &[ResolvedJoin],
 ) -> (Vec<Option<Expr<PropertiesLiteral>>>, Option<Filter>) {
+    let left_joined: Vec<usize> = joins
+        .iter()
+        .filter(|join| join.kind == JoinKind::Left)
+        .map(|join| join.relation)
+        .collect();
+    let pushable = |filter: &Filter| {
+        pushable(filter, bindings, relations)
+            .filter(|(relation, _)| !left_joined.contains(relation))
+    };
     let mut pushed: Vec<Option<Expr<PropertiesLiteral>>> = vec![None; relations.len()];
     let mut push_into = |relation: usize, expr: Expr<PropertiesLiteral>| {
         pushed[relation] = Some(match pushed[relation].take() {
@@ -36,7 +53,7 @@ pub fn divide(
         Filter::And(parts) => {
             let mut kept = Vec::new();
             for part in parts {
-                match pushable(&part, bindings, relations) {
+                match pushable(&part) {
                     Some((relation, expr)) => push_into(relation, expr),
                     None => kept.push(part),
                 }
@@ -47,7 +64,7 @@ pub fn divide(
                 _ => Some(Filter::And(kept)),
             }
         }
-        other => match pushable(&other, bindings, relations) {
+        other => match pushable(&other) {
             Some((relation, expr)) => {
                 push_into(relation, expr);
                 None

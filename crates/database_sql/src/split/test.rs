@@ -483,17 +483,13 @@ fn each_relation_gets_its_own_pushdown_and_needs() {
                     alias: "d".into(),
                     source: TableSource::Database,
                 },
-                // The pushed literal names the property, not the key.
+                // Left joined: its conditions apply after the join.
                 query: GqlQuery::Soup {
                     table: DEALS,
-                    property_filter: Some(Expr::Literal(PropertiesLiteral {
-                        property_definition_id: STAGE,
-                        entity_type: None,
-                        value: PropertyMatchValue::SelectOption(WON.into_uuid())
-                    })),
+                    property_filter: None,
                     key_hint: None,
                 },
-                needs: vec![deals_amount, row_id_key(DEALS)],
+                needs: vec![deals_stage, deals_amount, row_id_key(DEALS)],
             },
         ]
     );
@@ -516,6 +512,11 @@ fn each_relation_gets_its_own_pushdown_and_needs() {
         plan.residual,
         Some(Filter::And(vec![
             Filter::Comparison {
+                column: deals_stage,
+                operator: ComparisonOperator::Equal,
+                value: Value::Option(WON),
+            },
+            Filter::Comparison {
                 column: deals_amount,
                 operator: ComparisonOperator::Greater,
                 value: Value::Number(100.0),
@@ -536,7 +537,53 @@ fn each_relation_gets_its_own_pushdown_and_needs() {
     );
     assert_eq!(plan.column(&catalog(), row_id_key(DEALS)), None);
     assert_eq!(plan.table(), TASKS);
-    assert_eq!(deals_stage, column_key(2, STAGE));
+}
+
+#[test]
+fn a_left_joined_relation_takes_no_pushdown_and_an_inner_joined_one_does() {
+    let plan = split(
+        &catalog(),
+        select(
+            "SELECT p.name FROM crm.people p
+             JOIN crm.deals d ON p.row_id = d.owner
+             LEFT JOIN macro.tasks t ON d.row_id = t.deal
+             WHERE d.stage = 'Won' AND t.priority = 'High'",
+        ),
+    );
+    let tasks_priority = column_key(2, PRIORITY);
+
+    assert_eq!(
+        plan.relations[1].query,
+        GqlQuery::Soup {
+            table: DEALS,
+            property_filter: Some(Expr::Literal(PropertiesLiteral {
+                property_definition_id: STAGE,
+                entity_type: None,
+                value: PropertyMatchValue::SelectOption(WON.into_uuid())
+            })),
+            key_hint: None,
+        }
+    );
+    assert_eq!(
+        plan.relations[2].query,
+        GqlQuery::Soup {
+            table: TASKS,
+            property_filter: None,
+            key_hint: None,
+        }
+    );
+    assert_eq!(
+        plan.residual,
+        Some(Filter::Comparison {
+            column: tasks_priority,
+            operator: ComparisonOperator::Equal,
+            value: Value::Option(HIGH),
+        })
+    );
+    assert_eq!(
+        plan.relations[2].needs,
+        vec![tasks_priority, column_key(2, DEAL)]
+    );
 }
 
 #[test]

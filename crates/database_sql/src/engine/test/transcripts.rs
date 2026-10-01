@@ -49,6 +49,7 @@ const INITECH: RowId = RowId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_800
 const HOOLI: RowId = RowId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000e004));
 const VANDELAY: RowId = RowId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000e005));
 const SAM: RowId = RowId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000f001));
+const ANA: RowId = RowId::from_uuid(Uuid::from_u128(0x01990000_0000_7000_8000_00000000f002));
 
 /// `crm.deals` (texts, a number, a single select, a relation to people)
 /// and `crm.people`, sharing the `name` definition, as the browser builds
@@ -262,6 +263,35 @@ fn a_join_asks_for_the_joined_rows_it_needs() {
             ],
         ),
         fixture("join")
+    );
+}
+
+#[test]
+fn where_on_a_left_joined_table_applies_after_the_join() {
+    let person = |id: RowId, name: &str, position: &str| Row {
+        id,
+        position: Some(position.parse().unwrap()),
+        cells: HashMap::from([(NAME, Cell::Text(name.into()))]),
+    };
+    assert_eq!(
+        transcript(
+            "SELECT p.name, d.name FROM crm.people p LEFT JOIN crm.deals d ON p.row_id = d.owner
+             WHERE d.stage = 'Won'",
+            vec![
+                Feed::Page(Page {
+                    rows: vec![person(SAM, "Sam", "80"), person(ANA, "Ana", "8180")],
+                    next: None,
+                }),
+                Feed::Page(Page {
+                    rows: vec![
+                        deal(ACME, "80", "Acme", 12000.0, WON, Some(SAM)),
+                        deal(INITECH, "8280", "Initech", 300.0, LEAD, Some(ANA)),
+                    ],
+                    next: None,
+                }),
+            ],
+        ),
+        fixture("left-join-where")
     );
 }
 

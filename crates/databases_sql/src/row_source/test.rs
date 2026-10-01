@@ -372,6 +372,7 @@ async fn every_transcript_reaches_its_outcome_through_soup() {
         "delete-where",
         "insert-two-rows",
         "join",
+        "left-join-where",
         "paging",
         "row-position",
         "select-column-filter",
